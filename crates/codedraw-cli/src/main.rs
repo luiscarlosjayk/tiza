@@ -16,10 +16,10 @@ use codedraw_core::{Theme, ThemeName};
 #[derive(Parser)]
 #[command(name = "codedraw", version, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
-    after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw render demo.codedraw --out demo.png --step 3   PNG (or .svg) of a step\n  codedraw render --out shot.png   PNG of what the live instance shows\n  codedraw mcp                       MCP server for agents"
+    after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw render demo.codedraw --out demo.png --step 3   PNG (or .svg) of a step\n  codedraw render --out shot.png   PNG of what the live instance shows\n  codedraw mcp                       MCP server for agents\n  codedraw schema api                JSON Schema of the local API (schema document = the .codedraw format)\n  cat demo.codedraw | codedraw render - --out -   `-` is stdin everywhere"
 )]
 struct Cli {
-    /// Source file (`main.rs`, `main.rs:12-48`) or `.codedraw` document. Without it, reads stdin.
+    /// Source file (`main.rs`, `main.rs:12-48`), `.codedraw` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
     file: Option<String>,
     /// Language when it cannot be inferred (rs, ts, py, go…)
     #[arg(long)]
@@ -98,6 +98,9 @@ enum Cmd {
         /// No line numbers
         #[arg(long)]
         no_numbers: bool,
+        /// Language of code read from stdin (`render -`)
+        #[arg(long)]
+        lang: Option<String>,
         /// SVG/PNG: font size in px (cells are 0.6 × 1.32 em)
         #[arg(long, default_value_t = 16.0)]
         font_size: f32,
@@ -130,6 +133,20 @@ enum Cmd {
         /// JSON parameters (or `-` to read them from stdin)
         params: Option<String>,
     },
+    /// Print a JSON Schema: `document` (the .codedraw format) or `api` (every socket method)
+    Schema {
+        #[arg(value_enum, default_value_t = SchemaKind::Document)]
+        kind: SchemaKind,
+        /// Output: a path or `-` for stdout
+        #[arg(long, default_value = "-")]
+        out: String,
+    },
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum SchemaKind {
+    Document,
+    Api,
 }
 
 #[derive(Subcommand)]
@@ -168,6 +185,7 @@ fn real_main() -> anyhow::Result<()> {
             format,
             theme,
             no_numbers,
+            lang,
             font_size,
             margin,
             radius,
@@ -189,40 +207,48 @@ fn real_main() -> anyhow::Result<()> {
                 }
             });
             // The document: a file, or the live instance's scene.
-            let (doc, step, width) =
-                match &file {
-                    Some(f) => {
-                        let opened = fs::open(f).with_context(|| format!("could not open {f}"))?;
-                        if let Some(n) = &opened.notice {
-                            eprintln!("codedraw: {n}");
-                        }
-                        (
-                            opened.document,
-                            step.unwrap_or(u32::MAX),
-                            width.unwrap_or(100),
-                        )
+            let (doc, step, width) = match &file {
+                Some(f) => {
+                    let opened = if f == "-" {
+                        let mut text = String::new();
+                        std::io::stdin().read_to_string(&mut text)?;
+                        fs::from_stdin(&text, &lang_or_txt(lang.as_deref().or(cli.lang.as_deref())))
+                            .context("could not read the document from stdin")?
+                    } else {
+                        fs::open(f).with_context(|| format!("could not open {f}"))?
+                    };
+                    if let Some(n) = &opened.notice {
+                        eprintln!("codedraw: {n}");
                     }
-                    None => {
-                        let mut scene: codedraw_core::protocol::Scene = serde_json::from_value(
-                            call(&socket_path, "scene.get", serde_json::json!({}))?,
-                        )
-                        .context("unexpected scene.get response")?;
-                        fs::resolve_code(&mut scene.document, None)
-                            .context("the live document has no code")?;
-                        let status: codedraw_core::protocol::Status = serde_json::from_value(call(
-                            &socket_path,
-                            "status",
-                            serde_json::json!({}),
-                        )?)
-                        .context("unexpected status response")?;
-                        let live_w = (status.cols as usize).saturating_sub(2).max(40);
-                        (
-                            scene.document,
-                            step.unwrap_or(scene.step),
-                            width.unwrap_or(live_w),
-                        )
-                    }
-                };
+                    (
+                        opened.document,
+                        step.unwrap_or(u32::MAX),
+                        width.unwrap_or(100),
+                    )
+                }
+                None => {
+                    let mut scene: codedraw_core::protocol::Scene = serde_json::from_value(call(
+                        &socket_path,
+                        "scene.get",
+                        serde_json::json!({}),
+                    )?)
+                    .context("unexpected scene.get response")?;
+                    fs::resolve_code(&mut scene.document, None)
+                        .context("the live document has no code")?;
+                    let status: codedraw_core::protocol::Status = serde_json::from_value(call(
+                        &socket_path,
+                        "status",
+                        serde_json::json!({}),
+                    )?)
+                    .context("unexpected status response")?;
+                    let live_w = (status.cols as usize).saturating_sub(2).max(40);
+                    (
+                        scene.document,
+                        step.unwrap_or(scene.step),
+                        width.unwrap_or(live_w),
+                    )
+                }
+            };
             let theme = Theme::from_name(
                 theme
                     .map(Into::into)
@@ -303,6 +329,20 @@ fn real_main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Schema { kind, out }) => {
+            let value = match kind {
+                SchemaKind::Document => codedraw_core::schema::document_schema(),
+                SchemaKind::Api => serde_json::to_value(codedraw_core::schema::api_schema())?,
+            };
+            let text = serde_json::to_string_pretty(&value)? + "\n";
+            if out == "-" {
+                std::io::stdout().write_all(text.as_bytes())?;
+            } else {
+                std::fs::write(&out, text).with_context(|| format!("could not write {out}"))?;
+                eprintln!("wrote {out}");
+            }
+            Ok(())
+        }
         Some(Cmd::Api { method, params }) => {
             let params = match params.as_deref() {
                 None => serde_json::json!({}),
@@ -335,26 +375,24 @@ fn call(
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
 }
 
+fn lang_or_txt(lang: Option<&str>) -> String {
+    lang.map(codedraw_core::highlight::normalize_language)
+        .unwrap_or_else(|| "txt".into())
+}
+
 fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
-    let opened = match &cli.file {
-        Some(f) => fs::open(f).with_context(|| format!("could not open {f}"))?,
-        None => {
-            if std::io::stdin().is_terminal() {
+    let opened = match cli.file.as_deref() {
+        Some(f) if f != "-" => fs::open(f).with_context(|| format!("could not open {f}"))?,
+        explicit => {
+            if explicit.is_none() && std::io::stdin().is_terminal() {
                 bail!(
                     "give a file (codedraw src/main.rs:12-48) or pipe code through stdin (pbpaste | codedraw --lang rs)"
                 );
             }
             let mut text = String::new();
             std::io::stdin().read_to_string(&mut text)?;
-            if text.trim().is_empty() {
-                bail!("empty stdin");
-            }
-            let lang = cli
-                .lang
-                .as_deref()
-                .map(codedraw_core::highlight::normalize_language)
-                .unwrap_or_else(|| "txt".into());
-            fs::from_stdin_text(&text, &lang)
+            fs::from_stdin(&text, &lang_or_txt(cli.lang.as_deref()))
+                .map_err(|e| anyhow::anyhow!("{e}"))?
         }
     };
     let mut opened = opened;

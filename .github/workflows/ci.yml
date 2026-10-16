@@ -29,6 +29,17 @@ jobs:
       - name: smoke render
         run: cargo run -q -- render examples/ownership.rs.codedraw --width 100 --step 5
 
+  schema:
+    name: JSON Schema validates examples and fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install jsonschema
+      - run: python3 scripts/check-schema.py
+
   deny:
     name: cargo-deny (licenses, advisories, duplicates)
     runs-on: ubuntu-latest

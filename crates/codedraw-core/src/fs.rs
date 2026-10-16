@@ -140,6 +140,25 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
 }
 
 /// Creates a document from text read on stdin (no path).
+/// Opens what came through stdin (`-`): a `.codedraw` document when the text
+/// is JSON with a `schema` field, otherwise code in `language`.
+pub fn from_stdin(text: &str, language: &str) -> Result<Opened, Error> {
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    if trimmed.starts_with('{') && trimmed.contains("\"schema\"") {
+        let document = parse_document(text, std::env::current_dir().ok().as_deref())?;
+        return Ok(Opened {
+            document,
+            save_path: PathBuf::from(format!("codedraw-stdin.{EXT}")),
+            existing: true,
+            notice: None,
+        });
+    }
+    if text.trim().is_empty() {
+        return Err(Error::Invalid("empty stdin".into()));
+    }
+    Ok(from_stdin_text(text, language))
+}
+
 pub fn from_stdin_text(text: &str, language: &str) -> Opened {
     let document = Document::from_code(text, language, None);
     let stamp = std::time::SystemTime::now()

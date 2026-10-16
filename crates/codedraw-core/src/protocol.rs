@@ -14,7 +14,7 @@ use crate::model::{
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Request {
     pub id: Value,
     pub method: String,
@@ -22,7 +22,7 @@ pub struct Request {
     pub params: Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Response {
     pub id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -31,7 +31,7 @@ pub struct Response {
     pub error: Option<ApiError>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ApiError {
     pub code: String,
     pub message: String,
@@ -59,7 +59,7 @@ impl Response {
 
 /// Where to anchor something: explicit coordinates or a text search.
 /// An agent rarely knows the exact column; `find` is more robust.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct Where {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
@@ -114,7 +114,7 @@ impl Where {
 }
 
 /// Parameters of `annotation.add`: a shape described in an agent-friendly way.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ShapeSpec {
     Highlight {
@@ -252,7 +252,7 @@ impl ShapeSpec {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct AddParams {
     #[serde(default)]
     pub id: Option<String>,
@@ -265,7 +265,7 @@ pub struct AddParams {
     pub shape: ShapeSpec,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct UpdateParams {
     pub id: String,
     #[serde(default)]
@@ -301,7 +301,7 @@ pub struct UpdateParams {
     pub fill: Option<bool>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct HeadsPatch {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub start: Option<Head>,
@@ -323,7 +323,7 @@ impl UpdateParams {
 /// `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field
 /// that does not apply to the annotation's type is an `invalid_argument`
 /// error, never silently ignored.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MoveSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Where>,
@@ -447,18 +447,18 @@ impl MoveSpec {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct IdParams {
     pub id: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct StepParams {
     pub step: u32,
 }
 
 /// Response of `scene.get`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Scene {
     pub revision: u64,
     pub step: u32,
@@ -467,7 +467,7 @@ pub struct Scene {
 }
 
 /// Response of `status`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Status {
     pub app: String,
     pub version: String,
@@ -486,7 +486,7 @@ pub struct Status {
 }
 
 /// Result of a mutation.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Mutated {
     pub id: String,
     pub revision: u64,
@@ -500,6 +500,10 @@ pub const METHODS: &[(&str, &str)] = &[
         "Instance summary: file, lines, annotations, step, terminal size",
     ),
     ("api.methods", "This list"),
+    (
+        "api.schema",
+        "JSON Schema of every method (params and result) and of the request/response lines",
+    ),
     ("code.get", "Code with line numbers (text)"),
     (
         "scene.get",

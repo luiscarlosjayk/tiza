@@ -122,6 +122,8 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 
 Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`, `export_image`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
+The contract is published as JSON Schema: [`schema/codedraw.schema.json`](schema/codedraw.schema.json) (the document) and [`schema/api.schema.json`](schema/api.schema.json) (every socket method, params and result), regenerated with `codedraw schema document|api` and checked in CI; the live instance also answers `api.schema`. `-` means stdin everywhere: `cat demo.codedraw | codedraw render - --out -`, `pbpaste | codedraw render - --lang rs --out shot.png`, `codedraw api annotation.add -`.
+
 The same API is available as a Unix socket with line-delimited JSON (design borrowed from herdr) and from the CLI:
 
 ```sh

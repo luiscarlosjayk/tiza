@@ -1,0 +1,2330 @@
+{
+  "methods": [
+    {
+      "description": "Checks that the instance responds",
+      "method": "ping",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "protocol": {
+            "type": "integer"
+          },
+          "type": {
+            "const": "pong"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Instance summary: file, lines, annotations, step, terminal size",
+      "method": "status",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Response of `status`.",
+        "properties": {
+          "annotations": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "app": {
+            "type": "string"
+          },
+          "cols": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "lines": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "protocol": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rows": {
+            "format": "uint16",
+            "maximum": 65535,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          },
+          "warnings": {
+            "description": "Human-readable warnings about the viewport (small terminal, clipped code).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "app",
+          "version",
+          "protocol",
+          "revision",
+          "lines",
+          "annotations",
+          "step",
+          "max_step",
+          "cols",
+          "rows"
+        ],
+        "title": "Status",
+        "type": "object"
+      }
+    },
+    {
+      "description": "This list",
+      "method": "api.methods",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "items": {
+          "properties": {
+            "description": {
+              "type": "string"
+            },
+            "method": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "description": "JSON Schema of every method (params and result) and of the request/response lines",
+      "method": "api.schema",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "MethodSchema": {
+            "description": "One method of the local API with the schema of its params and result.",
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "method": {
+                "type": "string"
+              },
+              "params": true,
+              "result": true
+            },
+            "required": [
+              "method",
+              "description",
+              "params",
+              "result"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "The whole API contract, as `api.schema` and `codedraw schema api` return it.",
+        "properties": {
+          "methods": {
+            "items": {
+              "$ref": "#/$defs/MethodSchema"
+            },
+            "type": "array"
+          },
+          "protocol": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "request": {
+            "description": "Shape of every request and response line."
+          },
+          "response": true
+        },
+        "required": [
+          "protocol",
+          "request",
+          "response",
+          "methods"
+        ],
+        "title": "ApiSchema",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Code with line numbers (text)",
+      "method": "code.get",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "first_line": {
+            "type": "integer"
+          },
+          "language": {
+            "type": "string"
+          },
+          "last_line": {
+            "type": "integer"
+          },
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Full document with annotations and current step (code embedded)",
+      "method": "scene.get",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "Anchor": {
+            "description": "A point in the code: absolute line (1-based) and grapheme (0-based).",
+            "properties": {
+              "col": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "line",
+              "col"
+            ],
+            "type": "object"
+          },
+          "Annotation": {
+            "oneOf": [
+              {
+                "description": "Highlights a text range.",
+                "properties": {
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "span": {
+                    "$ref": "#/$defs/TextSpan"
+                  },
+                  "type": {
+                    "const": "highlight",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "span"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),\nan alias, or a reusable style from `Document::styles`; `style` overrides any\nfield inline for this one annotation.",
+                "properties": {
+                  "kind": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "span": {
+                    "$ref": "#/$defs/TextSpan"
+                  },
+                  "style": {
+                    "$ref": "#/$defs/MarkStyle"
+                  },
+                  "type": {
+                    "const": "mark",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "kind",
+                  "span"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Box around a range of lines.",
+                "properties": {
+                  "border": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "corners": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "fill": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "from_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "to_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "box",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "from_line",
+                  "to_line"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Arrow from one point of the code to another.",
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/Anchor"
+                  },
+                  "heads": {
+                    "$ref": "#/$defs/Heads"
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "route": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "stroke": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/Anchor"
+                  },
+                  "type": {
+                    "const": "arrow",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "from",
+                  "to"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Text note anchored to a line.",
+                "properties": {
+                  "line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "note",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "line",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Bordered multi-line text block explaining a range of lines. Laid out as a\nblock (reserving its rows), not as a per-line label, so a paragraph does\nnot push every other label down.",
+                "properties": {
+                  "border": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "corners": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "fill": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "from_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "placement": {
+                    "$ref": "#/$defs/Placement"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "to_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "const": "callout",
+                    "type": "string"
+                  },
+                  "width": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "from_line",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
+                "properties": {
+                  "from_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "to_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "const": "spotlight",
+                    "type": "string"
+                  },
+                  "until": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ],
+            "properties": {
+              "color": {
+                "description": "Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.\nWithout a color, arrows rotate through a palette and the rest use the theme color.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
+                "type": "string"
+              },
+              "step": {
+                "default": 1,
+                "description": "Step at which it appears (1-based).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "id"
+            ],
+            "type": "object"
+          },
+          "CodeSource": {
+            "anyOf": [
+              {
+                "description": "Copy of the code inside the document: portable, but frozen.",
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "description": "Reference to an existing file. `file` may be absolute or relative to the\n`.codedraw` directory; `lines` is an optional range `\"12-48\"` or `\"7\"`.",
+                "properties": {
+                  "file": {
+                    "type": "string"
+                  },
+                  "lines": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "file"
+                ],
+                "type": "object"
+              }
+            ],
+            "description": "Where the code of a `.codedraw` comes from."
+          },
+          "Document": {
+            "properties": {
+              "annotations": {
+                "default": [],
+                "items": {
+                  "$ref": "#/$defs/Annotation"
+                },
+                "type": "array"
+              },
+              "code": {
+                "$ref": "#/$defs/CodeSource",
+                "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
+              },
+              "padding": {
+                "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",
+                "maxItems": 2,
+                "minItems": 2,
+                "prefixItems": [
+                  {
+                    "format": "uint16",
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "format": "uint16",
+                    "maximum": 65535,
+                    "minimum": 0,
+                    "type": "integer"
+                  }
+                ],
+                "type": [
+                  "array",
+                  "null"
+                ]
+              },
+              "schema": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "source": {
+                "$ref": "#/$defs/Source"
+              },
+              "step": {
+                "default": 1,
+                "description": "Current presentation step. 0 = code only, no annotations;\nannotations live at steps ≥ 1.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "styles": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/MarkStyle"
+                },
+                "description": "Reusable mark styles defined by the author, referenced by name in `kind`.",
+                "type": "object"
+              },
+              "theme": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/ThemeName"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "title": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "schema",
+              "source",
+              "code"
+            ],
+            "type": "object"
+          },
+          "Head": {
+            "description": "What is drawn at an end of a line.",
+            "enum": [
+              "none",
+              "arrow",
+              "dot",
+              "bar",
+              "open"
+            ],
+            "type": "string"
+          },
+          "Heads": {
+            "description": "Heads at both ends. Default: nothing at the start, `▶` at the end.",
+            "properties": {
+              "end": {
+                "$ref": "#/$defs/Head",
+                "default": "arrow"
+              },
+              "start": {
+                "$ref": "#/$defs/Head",
+                "default": "none"
+              }
+            },
+            "type": "object"
+          },
+          "MarkStyle": {
+            "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
+            "properties": {
+              "color": {
+                "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glyph": {
+                "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "legend": {
+                "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Placement": {
+            "description": "Where a callout is drawn.",
+            "oneOf": [
+              {
+                "const": "margin",
+                "description": "In the right margin, aligned with `from_line` (default).",
+                "type": "string"
+              },
+              {
+                "const": "below",
+                "description": "As its own rows between `to_line` and the next code line.",
+                "type": "string"
+              },
+              {
+                "const": "auto",
+                "description": "Margin when the terminal has room, below otherwise.",
+                "type": "string"
+              }
+            ]
+          },
+          "Route": {
+            "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
+            "enum": [
+              "rounded",
+              "sharp"
+            ],
+            "type": "string"
+          },
+          "Source": {
+            "properties": {
+              "first_line": {
+                "default": 1,
+                "description": "Number of the first displayed line (allows opening `main.rs:12-48`).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "language": {
+                "default": "",
+                "description": "Language identifier (extension or name): `rs`, `ts`, `py`…",
+                "type": "string"
+              },
+              "path": {
+                "description": "Path of the original file, if there was one.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Stroke": {
+            "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
+            "enum": [
+              "solid",
+              "dashed",
+              "dotted",
+              "thick",
+              "double"
+            ],
+            "type": "string"
+          },
+          "TextSpan": {
+            "description": "A range within ONE line, in graphemes, exclusive end.",
+            "properties": {
+              "end": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "start": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "line",
+              "start",
+              "end"
+            ],
+            "type": "object"
+          },
+          "ThemeName": {
+            "enum": [
+              "dark",
+              "light"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Response of `scene.get`.",
+        "properties": {
+          "document": {
+            "$ref": "#/$defs/Document"
+          },
+          "max_step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "revision",
+          "step",
+          "max_step",
+          "document"
+        ],
+        "title": "Scene",
+        "type": "object"
+      }
+    },
+    {
+      "description": "One line per annotation, in document order",
+      "method": "scene.list",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    {
+      "description": "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
+      "method": "annotation.add",
+      "params": {
+        "$defs": {
+          "Head": {
+            "description": "What is drawn at an end of a line.",
+            "enum": [
+              "none",
+              "arrow",
+              "dot",
+              "bar",
+              "open"
+            ],
+            "type": "string"
+          },
+          "Heads": {
+            "description": "Heads at both ends. Default: nothing at the start, `▶` at the end.",
+            "properties": {
+              "end": {
+                "$ref": "#/$defs/Head",
+                "default": "arrow"
+              },
+              "start": {
+                "$ref": "#/$defs/Head",
+                "default": "none"
+              }
+            },
+            "type": "object"
+          },
+          "MarkStyle": {
+            "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
+            "properties": {
+              "color": {
+                "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glyph": {
+                "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "legend": {
+                "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Placement": {
+            "description": "Where a callout is drawn.",
+            "oneOf": [
+              {
+                "const": "margin",
+                "description": "In the right margin, aligned with `from_line` (default).",
+                "type": "string"
+              },
+              {
+                "const": "below",
+                "description": "As its own rows between `to_line` and the next code line.",
+                "type": "string"
+              },
+              {
+                "const": "auto",
+                "description": "Margin when the terminal has room, below otherwise.",
+                "type": "string"
+              }
+            ]
+          },
+          "Route": {
+            "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
+            "enum": [
+              "rounded",
+              "sharp"
+            ],
+            "type": "string"
+          },
+          "Stroke": {
+            "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
+            "enum": [
+              "solid",
+              "dashed",
+              "dotted",
+              "thick",
+              "double"
+            ],
+            "type": "string"
+          },
+          "Where": {
+            "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
+            "properties": {
+              "col": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "end": {
+                "description": "With `line` and `col`: end of the span (exclusive). Without it the span runs to the end of the line.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "find": {
+                "description": "Text to search for in the code; with `line`, that line is searched first.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `annotation.add`: a shape described in an agent-friendly way.",
+        "oneOf": [
+          {
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/Where"
+              },
+              "label": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "highlight",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "at"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/Where"
+              },
+              "kind": {
+                "type": "string"
+              },
+              "label": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "style": {
+                "$ref": "#/$defs/MarkStyle",
+                "default": {}
+              },
+              "type": {
+                "const": "mark",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "kind",
+              "at"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Border of a box or callout: stroke, corners and whether the inside is\ntinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).",
+            "properties": {
+              "border": {
+                "$ref": "#/$defs/Stroke"
+              },
+              "corners": {
+                "$ref": "#/$defs/Route"
+              },
+              "fill": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "from_line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "label": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "to_line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "type": {
+                "const": "box",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "from_line",
+              "to_line"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Stroke, corners and heads of a line-like annotation. Every field defaults\nto today's look, so documents without them are unchanged.",
+            "properties": {
+              "from": {
+                "$ref": "#/$defs/Where"
+              },
+              "heads": {
+                "$ref": "#/$defs/Heads"
+              },
+              "label": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "route": {
+                "$ref": "#/$defs/Route"
+              },
+              "stroke": {
+                "$ref": "#/$defs/Stroke"
+              },
+              "to": {
+                "$ref": "#/$defs/Where"
+              },
+              "type": {
+                "const": "arrow",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "from",
+              "to"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "text": {
+                "type": "string"
+              },
+              "type": {
+                "const": "note",
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "line",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "description": "Border of a box or callout: stroke, corners and whether the inside is\ntinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).",
+            "properties": {
+              "border": {
+                "$ref": "#/$defs/Stroke"
+              },
+              "corners": {
+                "$ref": "#/$defs/Route"
+              },
+              "fill": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "from_line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "placement": {
+                "$ref": "#/$defs/Placement",
+                "default": "margin"
+              },
+              "text": {
+                "type": "string"
+              },
+              "title": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "to_line": {
+                "default": null,
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "callout",
+                "type": "string"
+              },
+              "width": {
+                "default": null,
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type",
+              "from_line",
+              "text"
+            ],
+            "type": "object"
+          },
+          {
+            "properties": {
+              "from_line": {
+                "default": null,
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "ids": {
+                "default": [],
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "to_line": {
+                "default": null,
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "type": {
+                "const": "spotlight",
+                "type": "string"
+              },
+              "until": {
+                "default": null,
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ],
+            "type": "object"
+          }
+        ],
+        "properties": {
+          "color": {
+            "default": null,
+            "description": "Palette name (orange, blue, green, purple, pink, cyan, yellow, red, gray) or `#rrggbb`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "id": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "step": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "AddParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of a mutation.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "title": "Mutated",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Changes the step, color, label, shape, arrow style (stroke, route, heads) of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style",
+      "method": "annotation.update",
+      "params": {
+        "$defs": {
+          "Head": {
+            "description": "What is drawn at an end of a line.",
+            "enum": [
+              "none",
+              "arrow",
+              "dot",
+              "bar",
+              "open"
+            ],
+            "type": "string"
+          },
+          "Heads": {
+            "description": "Heads at both ends. Default: nothing at the start, `▶` at the end.",
+            "properties": {
+              "end": {
+                "$ref": "#/$defs/Head",
+                "default": "arrow"
+              },
+              "start": {
+                "$ref": "#/$defs/Head",
+                "default": "none"
+              }
+            },
+            "type": "object"
+          },
+          "HeadsPatch": {
+            "properties": {
+              "end": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Head"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "start": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Head"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "MarkStyle": {
+            "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
+            "properties": {
+              "color": {
+                "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "glyph": {
+                "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "legend": {
+                "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "MoveSpec": {
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "properties": {
+              "at": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Where"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "from": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Where"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "from_line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "to": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Where"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "to_line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          },
+          "Placement": {
+            "description": "Where a callout is drawn.",
+            "oneOf": [
+              {
+                "const": "margin",
+                "description": "In the right margin, aligned with `from_line` (default).",
+                "type": "string"
+              },
+              {
+                "const": "below",
+                "description": "As its own rows between `to_line` and the next code line.",
+                "type": "string"
+              },
+              {
+                "const": "auto",
+                "description": "Margin when the terminal has room, below otherwise.",
+                "type": "string"
+              }
+            ]
+          },
+          "Route": {
+            "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
+            "enum": [
+              "rounded",
+              "sharp"
+            ],
+            "type": "string"
+          },
+          "ShapeSpec": {
+            "description": "Parameters of `annotation.add`: a shape described in an agent-friendly way.",
+            "oneOf": [
+              {
+                "properties": {
+                  "at": {
+                    "$ref": "#/$defs/Where"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "const": "highlight",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "at"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "at": {
+                    "$ref": "#/$defs/Where"
+                  },
+                  "kind": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "style": {
+                    "$ref": "#/$defs/MarkStyle",
+                    "default": {}
+                  },
+                  "type": {
+                    "const": "mark",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "kind",
+                  "at"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Border of a box or callout: stroke, corners and whether the inside is\ntinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).",
+                "properties": {
+                  "border": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "corners": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "fill": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "from_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "to_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "box",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "from_line",
+                  "to_line"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Stroke, corners and heads of a line-like annotation. Every field defaults\nto today's look, so documents without them are unchanged.",
+                "properties": {
+                  "from": {
+                    "$ref": "#/$defs/Where"
+                  },
+                  "heads": {
+                    "$ref": "#/$defs/Heads"
+                  },
+                  "label": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "route": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "stroke": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "to": {
+                    "$ref": "#/$defs/Where"
+                  },
+                  "type": {
+                    "const": "arrow",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "from",
+                  "to"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "note",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "line",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "description": "Border of a box or callout: stroke, corners and whether the inside is\ntinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).",
+                "properties": {
+                  "border": {
+                    "$ref": "#/$defs/Stroke"
+                  },
+                  "corners": {
+                    "$ref": "#/$defs/Route"
+                  },
+                  "fill": {
+                    "type": [
+                      "boolean",
+                      "null"
+                    ]
+                  },
+                  "from_line": {
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "placement": {
+                    "$ref": "#/$defs/Placement",
+                    "default": "margin"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "to_line": {
+                    "default": null,
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "const": "callout",
+                    "type": "string"
+                  },
+                  "width": {
+                    "default": null,
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type",
+                  "from_line",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "from_line": {
+                    "default": null,
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "ids": {
+                    "default": [],
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "to_line": {
+                    "default": null,
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
+                  "type": {
+                    "const": "spotlight",
+                    "type": "string"
+                  },
+                  "until": {
+                    "default": null,
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "Stroke": {
+            "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
+            "enum": [
+              "solid",
+              "dashed",
+              "dotted",
+              "thick",
+              "double"
+            ],
+            "type": "string"
+          },
+          "Where": {
+            "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
+            "properties": {
+              "col": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "end": {
+                "description": "With `line` and `col`: end of the span (exclusive). Without it the span runs to the end of the line.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "find": {
+                "description": "Text to search for in the code; with `line`, that line is searched first.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "line": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "border": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Stroke"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Boxes and callouts: new border stroke."
+          },
+          "color": {
+            "default": null,
+            "description": "New color; an empty string returns to the automatic color.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "corners": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Route"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Boxes and callouts: new corners."
+          },
+          "fill": {
+            "description": "Boxes and callouts: tint the inside (`true`), do not (`false`).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "heads": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/HeadsPatch"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Arrows: new heads; each end optional (`{\"start\": \"dot\"}` keeps the other)."
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "default": null,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "move": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/MoveSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Moves the annotation, keeping its type, kind and style (`move`)."
+          },
+          "route": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Route"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Arrows: new corner style (rounded, sharp)."
+          },
+          "shape": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ShapeSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "If present, replaces the whole shape."
+          },
+          "step": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "stroke": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Stroke"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Arrows: new stroke (solid, dashed, dotted, thick, double)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "UpdateParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of a mutation.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "title": "Mutated",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Deletes an annotation by id",
+      "method": "annotation.delete",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "IdParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of a mutation.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "revision"
+        ],
+        "title": "Mutated",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Defines or updates a reusable mark style (name, glyph, legend, color)",
+      "method": "style.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `style.set`.",
+        "properties": {
+          "color": {
+            "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "glyph": {
+            "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legend": {
+            "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StyleSetParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Lists document styles, built-in kinds and aliases",
+      "method": "style.list",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "aliases": {
+            "type": "array"
+          },
+          "builtin": {
+            "type": "array"
+          },
+          "document": {
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Removes every annotation (or only those of `step`); can be undone in the TUI",
+      "method": "scene.clear",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `scene.clear`.",
+        "properties": {
+          "step": {
+            "description": "Only this step; omit to clear everything.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "ClearParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "removed": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Sets the current presentation step",
+      "method": "step.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "properties": {
+          "step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "step"
+        ],
+        "title": "StepParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "max_step": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "step": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Advances one step",
+      "method": "step.next",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "max_step": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "step": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Goes back one step",
+      "method": "step.prev",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "max_step": {
+            "type": "integer"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "step": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Dims everything outside `from_line..to_line`; without lines, clears the focus",
+      "method": "focus.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `focus.set`: omit both to clear the focus.",
+        "properties": {
+          "from_line": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "to_line": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "FocusParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "focus": {},
+          "revision": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Switches the theme: `dark` or `light`",
+      "method": "theme.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `theme.set`.",
+        "properties": {
+          "theme": {
+            "description": "`dark`, `light` or `toggle` (the default when omitted).",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "title": "ThemeParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "revision": {
+            "type": "integer"
+          },
+          "theme": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Returns the current canvas as plain text",
+      "method": "render.text",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `render.text`.",
+        "properties": {
+          "width": {
+            "description": "Columns; defaults to the terminal's width.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "RenderParams",
+        "type": "object"
+      },
+      "result": {
+        "properties": {
+          "text": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  ],
+  "protocol": 1,
+  "request": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "id": true,
+      "method": {
+        "type": "string"
+      },
+      "params": {
+        "default": null
+      }
+    },
+    "required": [
+      "id",
+      "method"
+    ],
+    "title": "Request",
+    "type": "object"
+  },
+  "response": {
+    "$defs": {
+      "ApiError": {
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "error": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/ApiError"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": true,
+      "result": true
+    },
+    "required": [
+      "id"
+    ],
+    "title": "Response",
+    "type": "object"
+  }
+}

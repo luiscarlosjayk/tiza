@@ -49,6 +49,10 @@ Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
 
+## Schema
+
+`codedraw schema document` and `codedraw schema api` print the JSON Schemas (also committed under `schema/`); the live instance answers `api.schema` with the params and result of every method, so a client can validate what it sends. Agents without a terminal can pipe documents: `codedraw render - --out shot.png < demo.codedraw`.
+
 ## Without MCP: socket and CLI
 
 Same contract, one JSON request per line over the Unix socket:

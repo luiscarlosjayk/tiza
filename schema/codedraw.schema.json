@@ -1,0 +1,571 @@
+{
+  "$defs": {
+    "Anchor": {
+      "description": "A point in the code: absolute line (1-based) and grapheme (0-based).",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "col"
+      ],
+      "type": "object"
+    },
+    "Annotation": {
+      "oneOf": [
+        {
+          "description": "Highlights a text range.",
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "span": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "type": {
+              "const": "highlight",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "span"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),\nan alias, or a reusable style from `Document::styles`; `style` overrides any\nfield inline for this one annotation.",
+          "properties": {
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "span": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "style": {
+              "$ref": "#/$defs/MarkStyle"
+            },
+            "type": {
+              "const": "mark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "kind",
+            "span"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Box around a range of lines.",
+          "properties": {
+            "border": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "corners": {
+              "$ref": "#/$defs/Route"
+            },
+            "fill": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "box",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "from_line",
+            "to_line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Arrow from one point of the code to another.",
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/Anchor"
+            },
+            "heads": {
+              "$ref": "#/$defs/Heads"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "route": {
+              "$ref": "#/$defs/Route"
+            },
+            "stroke": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "to": {
+              "$ref": "#/$defs/Anchor"
+            },
+            "type": {
+              "const": "arrow",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Text note anchored to a line.",
+          "properties": {
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "note",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "line",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Bordered multi-line text block explaining a range of lines. Laid out as a\nblock (reserving its rows), not as a per-line label, so a paragraph does\nnot push every other label down.",
+          "properties": {
+            "border": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "corners": {
+              "$ref": "#/$defs/Route"
+            },
+            "fill": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "placement": {
+              "$ref": "#/$defs/Placement"
+            },
+            "text": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "callout",
+              "type": "string"
+            },
+            "width": {
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "from_line",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
+          "properties": {
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "spotlight",
+              "type": "string"
+            },
+            "until": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "color": {
+          "description": "Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.\nWithout a color, arrows rotate through a palette and the rest use the theme color.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
+          "type": "string"
+        },
+        "step": {
+          "default": 1,
+          "description": "Step at which it appears (1-based).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "CodeSource": {
+      "anyOf": [
+        {
+          "description": "Copy of the code inside the document: portable, but frozen.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "description": "Reference to an existing file. `file` may be absolute or relative to the\n`.codedraw` directory; `lines` is an optional range `\"12-48\"` or `\"7\"`.",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "lines": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Where the code of a `.codedraw` comes from."
+    },
+    "Head": {
+      "description": "What is drawn at an end of a line.",
+      "enum": [
+        "none",
+        "arrow",
+        "dot",
+        "bar",
+        "open"
+      ],
+      "type": "string"
+    },
+    "Heads": {
+      "description": "Heads at both ends. Default: nothing at the start, `▶` at the end.",
+      "properties": {
+        "end": {
+          "$ref": "#/$defs/Head",
+          "default": "arrow"
+        },
+        "start": {
+          "$ref": "#/$defs/Head",
+          "default": "none"
+        }
+      },
+      "type": "object"
+    },
+    "MarkStyle": {
+      "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
+      "properties": {
+        "color": {
+          "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "glyph": {
+          "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legend": {
+          "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Placement": {
+      "description": "Where a callout is drawn.",
+      "oneOf": [
+        {
+          "const": "margin",
+          "description": "In the right margin, aligned with `from_line` (default).",
+          "type": "string"
+        },
+        {
+          "const": "below",
+          "description": "As its own rows between `to_line` and the next code line.",
+          "type": "string"
+        },
+        {
+          "const": "auto",
+          "description": "Margin when the terminal has room, below otherwise.",
+          "type": "string"
+        }
+      ]
+    },
+    "Route": {
+      "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
+      "enum": [
+        "rounded",
+        "sharp"
+      ],
+      "type": "string"
+    },
+    "Source": {
+      "properties": {
+        "first_line": {
+          "default": 1,
+          "description": "Number of the first displayed line (allows opening `main.rs:12-48`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "language": {
+          "default": "",
+          "description": "Language identifier (extension or name): `rs`, `ts`, `py`…",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path of the original file, if there was one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Stroke": {
+      "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
+      "enum": [
+        "solid",
+        "dashed",
+        "dotted",
+        "thick",
+        "double"
+      ],
+      "type": "string"
+    },
+    "TextSpan": {
+      "description": "A range within ONE line, in graphemes, exclusive end.",
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "ThemeName": {
+      "enum": [
+        "dark",
+        "light"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "https://github.com/luiscarlosjayk/codedraw/schema/codedraw.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "annotations": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      },
+      "type": "array"
+    },
+    "code": {
+      "$ref": "#/$defs/CodeSource",
+      "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
+    },
+    "padding": {
+      "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "schema": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "step": {
+      "default": 1,
+      "description": "Current presentation step. 0 = code only, no annotations;\nannotations live at steps ≥ 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "styles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MarkStyle"
+      },
+      "description": "Reusable mark styles defined by the author, referenced by name in `kind`.",
+      "type": "object"
+    },
+    "theme": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ThemeName"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "source",
+    "code"
+  ],
+  "title": "CodeDraw document (.codedraw)",
+  "type": "object"
+}

@@ -14,7 +14,7 @@ use crate::error::Error;
 /// Schema version of the `.codedraw` file.
 pub const SCHEMA_VERSION: u32 = 1;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Document {
     pub schema: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -45,7 +45,7 @@ pub struct Document {
 }
 
 /// Where the code of a `.codedraw` comes from.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum CodeSource {
     /// Copy of the code inside the document: portable, but frozen.
@@ -65,7 +65,7 @@ impl Default for CodeSource {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default, schemars::JsonSchema)]
 pub struct Source {
     /// Path of the original file, if there was one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,7 +78,7 @@ pub struct Source {
     pub first_line: u32,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum ThemeName {
     Dark,
@@ -86,7 +86,9 @@ pub enum ThemeName {
 }
 
 /// How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Stroke {
     #[default]
@@ -98,7 +100,9 @@ pub enum Stroke {
 }
 
 /// Corner shape of a routed line: `╭╰` (rounded, the cell-grid "curve") or `┌└` (sharp).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Route {
     #[default]
@@ -107,7 +111,9 @@ pub enum Route {
 }
 
 /// What is drawn at an end of a line.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Head {
     #[default]
@@ -119,7 +125,7 @@ pub enum Head {
 }
 
 /// Heads at both ends. Default: nothing at the start, `▶` at the end.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Heads {
     #[serde(default)]
     pub start: Head,
@@ -180,7 +186,9 @@ impl Route {
 
 /// Border of a box or callout: stroke, corners and whether the inside is
 /// tinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 pub struct BorderStyle {
     #[serde(default, skip_serializing_if = "is_default")]
     pub border: Stroke,
@@ -203,7 +211,9 @@ impl BorderStyle {
 
 /// Stroke, corners and heads of a line-like annotation. Every field defaults
 /// to today's look, so documents without them are unchanged.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema,
+)]
 pub struct LineStyle {
     #[serde(default, skip_serializing_if = "is_default")]
     pub stroke: Stroke,
@@ -236,14 +246,14 @@ impl Heads {
 }
 
 /// A point in the code: absolute line (1-based) and grapheme (0-based).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
 pub struct Anchor {
     pub line: u32,
     pub col: u32,
 }
 
 /// A range within ONE line, in graphemes, exclusive end.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, schemars::JsonSchema)]
 pub struct TextSpan {
     pub line: u32,
     pub start: u32,
@@ -254,7 +264,7 @@ pub struct TextSpan {
 /// Visual style of a mark: a glyph, a short legend and a color name. Styles come
 /// from three places, in priority order: an inline `style` on the annotation, the
 /// document's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema)]
 pub struct MarkStyle {
     /// One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -349,7 +359,7 @@ pub fn builtin_style(name: &str) -> Option<MarkStyle> {
         .map(|(_, g, l, c)| MarkStyle::new(g, l, c))
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Shape {
     /// Highlights a text range.
@@ -425,7 +435,9 @@ pub enum Shape {
 }
 
 /// Where a callout is drawn.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum Placement {
     /// In the right margin, aligned with `from_line` (default).
@@ -494,7 +506,7 @@ impl Shape {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Annotation {
     /// Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.
     pub id: String,

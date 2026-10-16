@@ -1707,6 +1707,7 @@ impl App {
                 json!({"type": "pong", "protocol": codedraw_core::protocol::PROTOCOL_VERSION})
             }
             "status" => serde_json::to_value(self.status())?,
+            "api.schema" => serde_json::to_value(codedraw_core::schema::api_schema())?,
             "api.methods" => json!(
                 METHODS
                     .iter()

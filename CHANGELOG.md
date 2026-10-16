@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - A callout placed below is drawn inside a box only when the box contains its whole range; a callout wider than the box (e.g. one that sums up several functions) now goes after the box's bottom border, without the box's rail or background. The ownership example's `move` mark on line 3 points at the argument `s` instead of the `s` in `takes`.
 
 ### Added
+- JSON Schema of the `.codedraw` document and of the local API, generated from the types (`codedraw schema document|api`, `api.schema` over the socket), committed under `schema/` and checked by a test; CI validates every example and fixture against it. `-` means stdin for `codedraw -`, `codedraw render -` (code with `--lang`, or a document) and `codedraw api METHOD -`.
 - Box and callout border styles: `border` (solid, dashed, dotted, thick, double), `corners` (rounded, sharp) and `fill` (boxes tinted by default, callouts not). `:box … border=double corners=sharp fill=no`, `:callout … border=…`, `:set ID border|corners|fill=…`, socket fields, MCP `add_box` / `add_callout` / `update_annotation`. A callout below the code never grows past the code column.
 - README: an animated GIF of the ownership example, generated from the PNG export of each step (`docs/img/ownership.gif`).
 - Property tests (proptest) in `codedraw-core`: anchors never panic on arbitrary code, the layout never overflows the width (20..=240 columns, tabs/emoji/CJK/RTL) and documents round-trip through JSON.
