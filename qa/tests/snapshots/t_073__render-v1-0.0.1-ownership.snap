@@ -5,14 +5,14 @@ expression: out
   1          fn main() {
   2 ╭───────     let s = String::from("hola");
     │                ◀───╯                                                      nace s
-  3 │            takes(s);                                                      ━▶ move: s pasa a
-  4 │            // println!("{s}"); // error: value borrowed here after move   takes
-  5 │                                                                           ┆ s ya no es dueña:
-  6 │            let t = String::from("mundo");                                   usarla aquí no
-  7 │   ╭───     let n = len(&t);                                                 compila
-  8 │   │        println!("{t} tiene {n} letras");                              ╌▶ read: préstamo
-  9 │   │                                                                       ┆ t sigue siendo
- 10 │   │        let mut u = String::from("hey");                                 válida
+  3 │            takes(s);                                                      ━▶ move: s pasa a …
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s ya no es dueña:
+  5 │                                                                             usarla aquí no
+  6 │            let t = String::from("mundo");                                   compila
+  7 │   ╭───     let n = len(&t);                                               ╌▶ read: préstamo
+  8 │   │        println!("{t} tiene {n} letras");                              ┆ t sigue siendo
+  9 │   │                                                                         válida
+ 10 │   │        let mut u = String::from("hey");
  11 │ ╭─┼───     push(&mut u);                                                  ═▶ write
  12 │ │ │        println!("{u}");                                               ┆ u ahora vale
  13 │ │ │    }                                                                    «hey!»

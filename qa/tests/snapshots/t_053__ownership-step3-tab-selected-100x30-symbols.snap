@@ -6,11 +6,11 @@ expression: symbols
     1      fn main() {
   ▸ 2 ╭───     let s = String::from("hello");
       │            ◀───╯                                                      s is born
-    3 │        takes(s);                                                      ━▶ move: s moves
-    4 │        // println!("{s}"); // error: value borrowed here after move   into takes
-    5 │                                                                       ┆ s no longer owns
-    6 │        let t = String::from("world");                                   it: using it here
-    7 │        let n = len(&t);                                                 does not compile
+    3 │        takes(s);                                                      ━▶ move: s moves i…
+    4 │        // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns
+    5 │                                                                         it: using it here
+    6 │        let t = String::from("world");                                   does not compile
+    7 │        let n = len(&t);
     8 │        println!("{t} has {n} letters");
     9 │
    10 │        let mut u = String::from("hey");

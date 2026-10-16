@@ -6,19 +6,19 @@ expression: symbols
     1          fn main() {
     2 ╭───────     let s = String::from("hello");
       │                ◀───╯                                                      s is born
-    3 │            takes(s);                                                      ━▶ move: s
-    4 │            // println!("{s}"); // error: value borrowed here after move   moves into
-    5 │                                                                           takes
-    6 │            let t = String::from("world");                                 ┆ s no longer
-    7 │   ╭╌╌╌     let n = len(&t);                                                 owns it:
-    8 │   ╎        println!("{t} has {n} letters");                                 using it here
-    9 │   ╎                                                                         does not
-   10 │   ╎        let mut u = String::from("hey");                                 compile
-   11 │ ┏━┿━━━     push(&mut u);                                                  ╌▶ read: shared
-   12 │ ┃ ╎        println!("{u}");                                               borrow
-   13 │ ┃ ╎    }                                                                  ┆ t is still
-   14 │ ┃ ╎                                                                         valid
-      │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮ ✎▶ &mut borrow
+    3 │            takes(s);                                                      ━▶ move: s mov…
+    4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer
+    5 │                                                                             owns it:
+    6 │            let t = String::from("world");                                   using it her…
+    7 │   ╭╌╌╌     let n = len(&t);                                               ╌▶ read: share…
+    8 │   ╎        println!("{t} has {n} letters");                               ┆ t is still
+    9 │   ╎                                                                         valid
+   10 │   ╎        let mut u = String::from("hey");
+   11 │ ┏━┿━━━     push(&mut u);                                                  ✎▶ &mut borrow
+   12 │ ┃ ╎        println!("{u}");
+   13 │ ┃ ╎    }
+   14 │ ┃ ╎
+      │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮
    15 ╰─╂─┼─┼▶ fn takes(s: String) {                                            │ move
    16   ┃ ╎ │      println!("{s}");                                             │
    17   ┃ ╎ │  }                                                                │ ╳ drop: s dies

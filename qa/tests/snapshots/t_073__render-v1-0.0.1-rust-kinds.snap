@@ -6,7 +6,7 @@ expression: out
      ╭─ scope ──────────────────────────╮
  2 ╭─┼─     let s = String::from("x");  │
  3 │ │      let r = &s;                 │ ╌▶ read: shared
- 4 │ │      let m = &mut String::new(); │ ┆ scope
- 5 ╰─┼▶     drop(s);                    │ ┆ a note from v0.0.1
-     ╰──────────────────────────────────╯ ═▶ write
- 6      }                                 ╳ drop: s dies
+ 4 │ │      let m = &mut String::new(); │ ═▶ write
+ 5 ╰─┼▶     drop(s);                    │ ╳ drop: s dies
+     ╰──────────────────────────────────╯ ┆ scope
+ 6      }                                 ┆ a note from v0.0.1

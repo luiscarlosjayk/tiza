@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Fixed
+- Margin labels no longer drift next to the wrong line when an earlier label wraps: a label keeps its own row and continues only through rows no other label owns, clipping with `…` otherwise (long text belongs in a callout).
 - Labels, notes and titles are single-line (control characters become spaces); loading a document clamps `step` to its last step and rejects duplicate ids; the line-number gutter reserves a column for the cursor/selection marker so three-digit numbers keep every digit; `--padding` is taken into account by the viewport warning; `theme.set` with a non-string value is rejected; help and list overlays no longer panic on terminals under 8×4.
 - `:pad 0 0` really removes the padding (it used to fall back to the default); `:pad default` restores it. SVG/PNG size no longer gains a pixel from float rounding (50 cols → 480 px).
 - A callout placed below is drawn inside a box only when the box contains its whole range; a callout wider than the box (e.g. one that sums up several functions) now goes after the box's bottom border, without the box's rail or background. The ownership example's `move` mark on line 3 points at the argument `s` instead of the `s` in `takes`.

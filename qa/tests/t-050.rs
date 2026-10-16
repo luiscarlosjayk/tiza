@@ -142,7 +142,7 @@ fn ac3_live_instance_is_exported_without_a_file() {
     ]);
     let text = std::fs::read_to_string(&svg).unwrap();
     assert!(
-        text.contains("owner") && !text.contains("a note in the margin"),
+        text.contains("important") && !text.contains("a note in the margin"),
         "step 1 only"
     );
     // Corner: no instance → clear error, exit 1.

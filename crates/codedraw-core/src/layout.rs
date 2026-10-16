@@ -924,12 +924,18 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // ---- 7. margin ----
     // Each label takes its own margin row. If a line has several, the next
     // ones move down to the free rows below; if a label does not fit, it is
-    // split into words and continues on the next row. It is only clipped
-    // when no free rows remain before the next label.
+    // split into words and continues on the next row. A row that belongs to
+    // another line's label is never taken by a continuation or an overflow
+    // (so labels do not drift away from their line); what does not fit is
+    // clipped with an ellipsis on the last row it got.
     if labels_in_margin && margin_w > 0 {
         let height = canvas.height;
+        let reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
         for (y, labels) in margin.iter().enumerate() {
             let mut next_row = y;
+            let free = |r: usize, occupied: &[bool]| {
+                r < height && !occupied[r] && (!reserved[r] || r == y)
+            };
             for l in labels {
                 let prefix = if l.note { "┆ " } else { "" };
                 let style = if l.note {
@@ -937,7 +943,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 } else {
                     base.fg(l.color)
                 };
-                let Some(mut r) = (next_row..height).find(|&r| !occupied[r]) else {
+                let Some(mut r) = (next_row..height).find(|&r| free(r, &occupied)) else {
                     break;
                 };
                 let x0 = margin_x + shift[r];
@@ -946,25 +952,25 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     break;
                 }
                 let pieces = wrap_words(&l.text, text_w);
-                let mut first = true;
-                for piece in pieces {
-                    if r >= height || occupied[r] || shift[r] > x0 - margin_x {
-                        // No room: clip what remains onto the previous row.
-                        if r > 0 && r - 1 < height {
-                            let px = x0 + display_width(prefix, 4);
-                            canvas.put_str_clipped(px, r - 1, &l.text, text_w, style);
+                let px = x0 + display_width(prefix, 4);
+                for (i, piece) in pieces.iter().enumerate() {
+                    if !free(r, &occupied) || shift[r] > x0 - margin_x {
+                        // No room for this piece: the previous row shows the
+                        // rest of the text, clipped with an ellipsis.
+                        if i > 0 {
+                            let rest = pieces[i - 1..].join(" ");
+                            canvas.put_str_clipped(px, r - 1, &rest, text_w, style);
                         }
                         break;
                     }
                     let mut x = x0;
-                    if first {
+                    if i == 0 {
                         x += canvas.put_str(x, r, prefix, style);
                     } else {
                         x += canvas.put_str(x, r, &" ".repeat(display_width(prefix, 4)), style);
                     }
-                    canvas.put_str(x, r, &piece, style);
+                    canvas.put_str(x, r, piece, style);
                     occupied[r] = true;
-                    first = false;
                     r += 1;
                 }
                 next_row = r;
@@ -1422,15 +1428,41 @@ mod tests {
         );
         let text = l.canvas.to_plain_text();
         println!("{text}");
+        // Line 3 has its own label (the mark), so the long note on line 2
+        // cannot continue onto row 3: it is clipped there with an ellipsis
+        // and the second note takes the next free row. Labels never drift
+        // away from their line.
+        let row = |line: u32| l.row_of_line[&line];
         assert!(
-            !text.contains('…'),
-            "must not clip when there are free rows below"
+            l.canvas.row_text(row(2)).contains("s is born here"),
+            "{text}"
         );
-        assert!(text.contains("second note"));
-        assert!(text.contains("s is born here"));
+        assert!(l.canvas.row_text(row(2)).contains('…'), "{text}");
+        assert!(
+            l.canvas.row_text(row(3)).contains("━▶ move"),
+            "line 3 keeps its label: {text}"
+        );
+        assert!(l.canvas.row_text(row(4)).contains("second note"), "{text}");
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
         }
+        // Without a label on line 3, the note wraps freely over rows 2-4.
+        d.delete("a1").unwrap();
+        let l = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        assert!(!text.contains('…'), "free rows below: no clipping\n{text}");
+        let row = |line: u32| l.row_of_line[&line];
+        assert!(l.canvas.row_text(row(2)).contains("s is born here"));
+        assert!(l.canvas.row_text(row(3)).contains("and lives until"));
         assert_eq!(
             wrap_words("hello cruel world", 11),
             vec!["hello cruel", "world"]
