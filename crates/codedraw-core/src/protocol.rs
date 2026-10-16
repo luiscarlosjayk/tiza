@@ -259,6 +259,138 @@ pub struct UpdateParams {
     /// If present, replaces the whole shape.
     #[serde(default)]
     pub shape: Option<ShapeSpec>,
+    /// Moves the annotation, keeping its type, kind and style (`move`).
+    #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
+    pub mv: Option<MoveSpec>,
+}
+
+/// Partial re-anchoring of an existing annotation. Which fields apply depends
+/// on the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;
+/// `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field
+/// that does not apply to the annotation's type is an `invalid_argument`
+/// error, never silently ignored.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct MoveSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub at: Option<Where>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<Where>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<Where>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_line: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_line: Option<u32>,
+}
+
+impl MoveSpec {
+    pub fn is_empty(&self) -> bool {
+        self.at.is_none()
+            && self.from.is_none()
+            && self.to.is_none()
+            && self.from_line.is_none()
+            && self.to_line.is_none()
+    }
+
+    /// Applies the move to `shape`. Validation of the resulting ranges is left
+    /// to `Document::update`.
+    pub fn apply(&self, shape: &mut Shape, doc: &Document) -> Result<(), crate::Error> {
+        let kind = shape.kind_name();
+        let reject = |field: &str, hint: &str| {
+            Err(crate::Error::Invalid(format!(
+                "`{field}` does not apply to a {kind}; use {hint}"
+            )))
+        };
+        if self.is_empty() {
+            return Err(crate::Error::Invalid(
+                "`move` needs at, from, to, from_line or to_line".into(),
+            ));
+        }
+        match shape {
+            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+                if self.from.is_some() || self.to.is_some() {
+                    return reject("from/to", "`at`");
+                }
+                if self.from_line.is_some() || self.to_line.is_some() {
+                    return reject("from_line/to_line", "`at`");
+                }
+                if let Some(at) = &self.at {
+                    *span = at.resolve_span(doc)?;
+                }
+            }
+            Shape::Note { line, .. } => {
+                if self.from.is_some() || self.to.is_some() {
+                    return reject("from/to", "`at` or `from_line`");
+                }
+                if self.to_line.is_some() {
+                    return reject("to_line", "`at` or `from_line`");
+                }
+                if let Some(at) = &self.at {
+                    *line = at.resolve_anchor(doc)?.line;
+                }
+                if let Some(l) = self.from_line {
+                    *line = l;
+                }
+            }
+            Shape::Box {
+                from_line, to_line, ..
+            } => {
+                if self.at.is_some() || self.from.is_some() || self.to.is_some() {
+                    return reject("at/from/to", "`from_line`/`to_line`");
+                }
+                if let Some(l) = self.from_line {
+                    *from_line = l;
+                }
+                if let Some(l) = self.to_line {
+                    *to_line = l;
+                }
+            }
+            Shape::Arrow { from, to, .. } => {
+                if self.at.is_some() {
+                    return reject("at", "`from`/`to`");
+                }
+                if self.from_line.is_some() || self.to_line.is_some() {
+                    return reject("from_line/to_line", "`from`/`to`");
+                }
+                if let Some(w) = &self.from {
+                    *from = w.resolve_anchor(doc)?;
+                }
+                if let Some(w) = &self.to {
+                    *to = w.resolve_anchor(doc)?;
+                }
+            }
+            Shape::Callout {
+                from_line, to_line, ..
+            } => {
+                if self.at.is_some() || self.from.is_some() || self.to.is_some() {
+                    return reject("at/from/to", "`from_line`/`to_line`");
+                }
+                if let Some(l) = self.from_line {
+                    *from_line = l;
+                }
+                if let Some(l) = self.to_line {
+                    *to_line = Some(l);
+                }
+            }
+            Shape::Spotlight {
+                from_line, to_line, ..
+            } => {
+                if self.at.is_some() || self.from.is_some() || self.to.is_some() {
+                    return reject("at/from/to", "`from_line`/`to_line`");
+                }
+                if let Some(l) = self.from_line {
+                    *from_line = Some(l);
+                    if to_line.is_none() {
+                        *to_line = Some(l);
+                    }
+                }
+                if let Some(l) = self.to_line {
+                    *to_line = Some(l);
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -321,7 +453,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.update",
-        "Changes the step, label or shape of an annotation",
+        "Changes the step, color, label or shape of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style",
     ),
     ("annotation.delete", "Deletes an annotation by id"),
     (

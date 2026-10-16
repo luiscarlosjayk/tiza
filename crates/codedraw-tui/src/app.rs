@@ -249,6 +249,9 @@ impl App {
         if let Some(spec) = &p.shape {
             ann.shape = spec.resolve(&self.doc)?;
         }
+        if let Some(mv) = &p.mv {
+            mv.apply(&mut ann.shape, &self.doc)?;
+        }
         if let Some(l) = &p.label {
             let l = if l.trim().is_empty() {
                 None
@@ -686,6 +689,7 @@ impl App {
                     color: None,
                     label: None,
                     shape: None,
+                    mv: None,
                 }) {
                     Ok(()) => self.info(format!("{id} → step {step}")),
                     Err(e) => self.error(e.to_string()),
@@ -917,6 +921,7 @@ impl App {
                         color: Some(c.into()),
                         label: None,
                         shape: None,
+                        mv: None,
                     })
                     .map(|_| format!("{id}: color {}", if c.is_empty() { "auto" } else { c }))
                 }
@@ -930,6 +935,7 @@ impl App {
                         color: None,
                         label: Some(text.trim().into()),
                         shape: None,
+                        mv: None,
                     })
                     .map(|_| format!("{id} updated"))
                 }
@@ -953,6 +959,7 @@ impl App {
                                 color: None,
                                 label: None,
                                 shape: None,
+                                mv: None,
                             })
                             .map(|_| format!("{id} now appears at step {n}"))
                         }
@@ -2001,6 +2008,82 @@ mod tests {
         }
         a.run_command("callout 2");
         assert!(matches!(a.message, Some((_, true))), "empty text must fail");
+    }
+
+    #[test]
+    fn api_update_moves_without_losing_kind_or_style() {
+        let mut a = app();
+        let call = |a: &mut App, method: &str, params: Value| {
+            a.handle_request(Request {
+                id: json!(1),
+                method: method.into(),
+                params,
+            })
+        };
+        let r = call(
+            &mut a,
+            "annotation.add",
+            json!({"id": "m", "type": "mark", "kind": "move", "at": {"find": "takes"}, "label": "moves", "style": {"glyph": "🔥"}}),
+        );
+        assert!(r.error.is_none(), "{:?}", r.error);
+        // Move by text: kind, style and label survive, the span changes.
+        let r = call(
+            &mut a,
+            "annotation.update",
+            json!({"id": "m", "move": {"at": {"find": "let s"}}}),
+        );
+        assert!(r.error.is_none(), "{:?}", r.error);
+        let want = a.doc.find_text("let s", 1, None).unwrap();
+        match &a.doc.find_annotation("m").unwrap().shape {
+            Shape::Mark {
+                kind,
+                span,
+                label,
+                style,
+            } => {
+                assert_eq!(kind, "move");
+                assert_eq!(*span, want);
+                assert_eq!(label.as_deref(), Some("moves"));
+                assert_eq!(style.glyph.as_deref(), Some("🔥"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // A field that does not apply to the type is an error, not a no-op.
+        let r = call(
+            &mut a,
+            "annotation.update",
+            json!({"id": "m", "move": {"from_line": 2}}),
+        );
+        assert_eq!(r.error.unwrap().code, "invalid_argument");
+        // Unknown text is still text_not_found.
+        let r = call(
+            &mut a,
+            "annotation.update",
+            json!({"id": "m", "move": {"at": {"find": "nope nope"}}}),
+        );
+        assert_eq!(r.error.unwrap().code, "text_not_found");
+        // Boxes move by lines; an out-of-range result is rejected and rolled back.
+        call(
+            &mut a,
+            "annotation.add",
+            json!({"id": "b", "type": "box", "from_line": 1, "to_line": 2}),
+        );
+        let r = call(
+            &mut a,
+            "annotation.update",
+            json!({"id": "b", "move": {"to_line": 3}}),
+        );
+        assert!(r.error.is_none(), "{:?}", r.error);
+        let r = call(
+            &mut a,
+            "annotation.update",
+            json!({"id": "b", "move": {"to_line": 999}}),
+        );
+        assert_eq!(r.error.unwrap().code, "out_of_range");
+        assert!(matches!(
+            a.doc.find_annotation("b").unwrap().shape,
+            Shape::Box { to_line: 3, .. }
+        ));
     }
 
     #[test]

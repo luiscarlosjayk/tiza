@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Added
+- `update_annotation` (MCP) and `annotation.update` (socket, `move`) can move an annotation keeping its type, kind, style and label: `at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes. Fields that do not apply to the type fail with `invalid_argument`; the MCP tool rejects unknown fields instead of ignoring them.
 - `callout` annotation: a bordered multi-line paragraph explaining a range of lines, with optional title, `placement` (`margin`, `below`, `auto`) and `width`. `:callout A[-B] [@below|@margin|@auto] [title="…"] text`, `C` on a selection, `annotation.add` with `type: callout`, MCP `add_callout`. In the margin it reserves its rows and the neighbouring labels are drawn beside it instead of being pushed down; below, boxes extend around it. The ownership example closes with one (step 7).
 - Default padding of one column at the left and right edges when the document sets none (`:pad 0 0` removes it).
 - `Tab`/`Shift-Tab` select an annotation in reading order; on it, `Enter` edits the label, `x` deletes, `c` changes the color, `+`/`-` move it between steps.

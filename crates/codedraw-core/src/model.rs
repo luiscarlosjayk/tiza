@@ -298,6 +298,19 @@ impl Placement {
 }
 
 impl Shape {
+    /// The JSON `type` name of this shape.
+    pub fn kind_name(&self) -> &'static str {
+        match self {
+            Shape::Highlight { .. } => "highlight",
+            Shape::Mark { .. } => "mark",
+            Shape::Box { .. } => "box",
+            Shape::Arrow { .. } => "arrow",
+            Shape::Note { .. } => "note",
+            Shape::Callout { .. } => "callout",
+            Shape::Spotlight { .. } => "spotlight",
+        }
+    }
+
     /// Line ranges the shape occupies (to focus the code of an annotation).
     /// An arrow occupies only its two endpoints, not the stretch between them.
     pub fn line_ranges(&self) -> Vec<(u32, u32)> {

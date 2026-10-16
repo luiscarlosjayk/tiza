@@ -139,6 +139,7 @@ pub struct MarkParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateParams {
     pub id: String,
     #[schemars(description = "New step at which it appears")]
@@ -148,9 +149,21 @@ pub struct UpdateParams {
     )]
     pub color: Option<String>,
     #[schemars(
-        description = "New label (or new text if it is a note). An empty string removes it."
+        description = "New label (or new text if it is a note, new title if it is a callout). An empty string removes it."
     )]
     pub label: Option<String>,
+    #[schemars(
+        description = "Move a highlight, mark or note to another position (same `find`/line/col as add_mark). Kind, style and label are kept."
+    )]
+    pub at: Option<At>,
+    #[schemars(description = "Arrows only: new source anchor")]
+    pub from: Option<At>,
+    #[schemars(description = "Arrows only: new target anchor")]
+    pub to: Option<At>,
+    #[schemars(description = "Boxes, callouts, spotlights and notes: new first line")]
+    pub from_line: Option<u32>,
+    #[schemars(description = "Boxes, callouts and spotlights: new last line")]
+    pub to_line: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -392,17 +405,22 @@ impl CodeDrawServer {
         Ok(text(pretty(&v)))
     }
 
-    #[tool(description = "Changes the step or label of an existing annotation.")]
+    #[tool(
+        description = "Changes the step, color or label of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
+    )]
     async fn update_annotation(
         &self,
         Parameters(p): Parameters<UpdateParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self
-            .call(
-                "annotation.update",
-                json!({"id": p.id, "step": p.step, "label": p.label, "color": p.color}),
-            )
-            .await?;
+        let mut params = json!({"id": p.id, "step": p.step, "label": p.label, "color": p.color});
+        let mv = json!({"at": p.at, "from": p.from, "to": p.to, "from_line": p.from_line, "to_line": p.to_line});
+        if mv
+            .as_object()
+            .is_some_and(|m| m.values().any(|v| !v.is_null()))
+        {
+            params["move"] = mv;
+        }
+        let v = self.call("annotation.update", params).await?;
         Ok(text(pretty(&v)))
     }
 

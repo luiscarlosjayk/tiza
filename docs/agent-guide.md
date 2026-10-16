@@ -35,6 +35,10 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 
 Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (Spanish aliases such as `azul`, `verde`… also work) or `#rrggbb`. Use it to tell a story per value: everything that happens to `s` in one color, everything about `t` in another. Arrows without a color rotate through an automatic palette; boxes, notes and highlights without a color use the theme's. `update_annotation` with `color: ""` returns to automatic.
 
+## Fixing a misplaced annotation
+
+`update_annotation` moves an annotation without recreating it, so it keeps its id, kind, style, label, color and place in the list: `at` for highlights, marks and notes (`{"id": "a1", "at": {"line": 15, "find": "s: String"}}`), `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field that does not apply to the annotation's type fails with `invalid_argument` (e.g. `from_line` on a mark), and unknown fields are rejected, so a call that returns a new revision did change something. Over the socket the same goes under `move`: `annotation.update {"id": "a1", "move": {"at": {...}}}`.
+
 ## Between takes
 
 `clear_annotations` empties the canvas at once (or only one step with `step`). The presenter can undo it with `u`, so it is not destructive live.
