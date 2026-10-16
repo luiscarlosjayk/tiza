@@ -1,0 +1,34 @@
+---
+source: qa/tests/t-053.rs
+expression: symbols
+---
+
+    1          fn main() {
+    2 ╭───────     let s = String::from("hello");
+      │                ◀───╯                                                      s is born
+    3 │            takes(s);                                                      ━▶ move: s
+    4 │            // println!("{s}"); // error: value borrowed here after move   moves into
+    5 │                                                                           takes
+    6 │            let t = String::from("world");                                 ┆ s no longer
+    7 │   ╭╌╌╌     let n = len(&t);                                                 owns it:
+    8 │   ╎        println!("{t} has {n} letters");                                 using it here
+    9 │   ╎                                                                         does not
+   10 │   ╎        let mut u = String::from("hey");                                 compile
+   11 │ ┏━┿━━━     push(&mut u);                                                  ╌▶ read: shared
+   12 │ ┃ ╎        println!("{u}");                                               borrow
+   13 │ ┃ ╎    }                                                                  ┆ t is still
+   14 │ ┃ ╎                                                                         valid
+      │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮ ✎▶ &mut borrow
+   15 ╰─╂─┼─┼▶ fn takes(s: String) {                                            │ move
+   16   ┃ ╎ │      println!("{s}");                                             │
+   17   ┃ ╎ │  }                                                                │ ╳ drop: s dies
+        ┃ ╎ ╰───────────────────────────────────────────────────────────────────╯ here
+   18   ┃ ╎
+   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+   20   ┃          s.len()
+   21   ┃      }
+   22   ┃
+        ┃   ╭─ mutates without taking ownership ────────────────────────────────╮
+   23   ┗━━━┿▶ fn push(s: &mut String) {                                        │ &mut
+
+ ╭▶ NORMAL  step 5/7  100×30  dark  ownership.rs  L1  16 ann.                                 ?help

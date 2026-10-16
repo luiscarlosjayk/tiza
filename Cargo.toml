@@ -43,6 +43,7 @@ clap = { version = "4.6.7", features = ["derive"] }
 
 base64 = "0.23.1"
 proptest = "1.12.0"
+insta = "1.49.0"
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }

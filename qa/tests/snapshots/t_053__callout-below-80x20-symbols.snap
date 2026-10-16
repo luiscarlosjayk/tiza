@@ -1,0 +1,24 @@
+---
+source: qa/tests/t-053.rs
+expression: symbols
+---
+  1    fn main() {
+    ╭─ moved here ───────────────────────╮
+  2 │      let s = String::from("hola"); │ ╭─ move ─────────────────────────╮
+  3 │      takes(s);                     │ │ s owns the String. Passing it  │
+    │  ╭─ inside the box ──────────────╮ │ │ to takes moves the value, so   │
+    │  │ This callout explains exactly │ │ │ after line 3 main cannot use s │
+    │  │ the boxed lines, so it is     │ │ │ any more.                      │
+    │  │ drawn inside the box.         │ │ ╰────────────────────────────────╯
+    │  ╰───────────────────────────────╯ │
+    ╰────────────────────────────────────╯
+       ╭─ whole main ───────────────╮
+       │ This callout explains more │
+       │ than the box, so it goes   │
+       │ after the box's bottom     │
+       │ border.                    │
+       ╰────────────────────────────╯
+  4        println!("{s}");                ┆ does not compile
+  5    }
+  6
+ ╭▶ NORMAL  step 3/3  80×20  dark  (stdin)  L1  5 ann.  ⚠ small terminal  ?help

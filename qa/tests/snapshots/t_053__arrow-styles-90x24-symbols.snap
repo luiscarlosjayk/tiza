@@ -1,0 +1,28 @@
+---
+source: qa/tests/t-053.rs
+expression: symbols
+---
+   1   ┏━━━▶ fn main() {                               thick, crossed by the connector
+   2   ┃ ╭──     let a = 1;                            at L3
+   3 ╭─╂─┼──     let b = 2;
+   4 │ ┃ ╰─▶     let c = 3;                            solid rounded ▶ (default)
+   5 │ ┃ ╭╌╌     let d = 4;
+   6 │ ┃ ╎       let e = 5;
+   7 │ ┃ ╰╌▶     let f = 6;                            dashed
+   8 │ ┃ ┌┄┄     let g = 7;
+   9 │ ┃ ┆       let h = 8;
+  10 │ ┃ └┄▶     let i = 9;                            dotted sharp
+  11 │ ┃ ┏━●     let j = 10;
+  12 │ ┗━╋━━     let k = 11;
+  13 │   ┗━┤     let l = 12;                           thick, dot→bar
+  14 │ ╔═══>     let m = 13;
+  15 │ ║         let n = 14;
+  16 │ ╚═══>     let o = 15;                           double, open heads
+  17 │           let p = 16;
+  18 ╰──────     println!("{a} {b} {c} {d} {e} {f}");  no heads: connector
+                           ◀╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌●           same line dashed ◀ … ●
+  19         }
+
+
+
+ ╭▶ NORMAL  step 1/1  90×24  dark  (stdin)  L1  8 ann.  ⚠ small terminal            ?help

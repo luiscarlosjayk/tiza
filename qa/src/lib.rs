@@ -202,6 +202,75 @@ impl Live {
         })
     }
 
+    /// Two snapshot-friendly dumps of the screen at `cols×rows`: the symbols
+    /// (one line per row, trailing blanks trimmed) and the styles (per row, a
+    /// run-length list of `x:fg/bg[+mods]` wherever the style changes).
+    /// Display of the TestBackend does not carry colors, hence the second dump.
+    pub fn snapshot(&self, cols: u16, rows: u16) -> (String, String) {
+        self.with(move |app| {
+            let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
+            t.draw(|f| codedraw_tui::ui::draw(f, app)).unwrap();
+            let buf = t.backend().buffer().clone();
+            let symbols = (0..rows)
+                .map(|y| {
+                    (0..cols)
+                        .map(|x| buf[(x, y)].symbol().to_string())
+                        .collect::<String>()
+                        .trim_end()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let color = |c: ratatui::style::Color| match c {
+                ratatui::style::Color::Rgb(r, g, b) => format!("#{r:02x}{g:02x}{b:02x}"),
+                ratatui::style::Color::Reset => "reset".into(),
+                other => format!("{other:?}").to_lowercase(),
+            };
+            let mut styles = String::new();
+            for y in 0..rows {
+                let mut last: Option<String> = None;
+                let mut row = format!("{y:>3}:");
+                for x in 0..cols {
+                    let c = &buf[(x, y)];
+                    let mut mods = Vec::new();
+                    let m = c.modifier;
+                    if m.contains(ratatui::style::Modifier::BOLD) {
+                        mods.push("b");
+                    }
+                    if m.contains(ratatui::style::Modifier::ITALIC) {
+                        mods.push("i");
+                    }
+                    if m.contains(ratatui::style::Modifier::DIM) {
+                        mods.push("d");
+                    }
+                    if m.contains(ratatui::style::Modifier::REVERSED) {
+                        mods.push("r");
+                    }
+                    if m.contains(ratatui::style::Modifier::UNDERLINED) {
+                        mods.push("u");
+                    }
+                    let key = format!(
+                        "{}/{}{}",
+                        color(c.fg),
+                        color(c.bg),
+                        if mods.is_empty() {
+                            String::new()
+                        } else {
+                            format!("+{}", mods.join(""))
+                        }
+                    );
+                    if last.as_deref() != Some(&key) {
+                        row.push_str(&format!(" {x}:{key}"));
+                        last = Some(key);
+                    }
+                }
+                styles.push_str(&row);
+                styles.push('\n');
+            }
+            (symbols, styles)
+        })
+    }
+
     /// The last status-line message and whether it was an error.
     pub fn message(&self) -> Option<(String, bool)> {
         self.with(|app| app.message.clone())

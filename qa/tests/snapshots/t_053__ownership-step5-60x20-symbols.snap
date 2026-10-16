@@ -1,0 +1,24 @@
+---
+source: qa/tests/t-053.rs
+expression: symbols
+---
+
+    1          fn main() {
+    2 ╭───────     let s = String::from("hello");
+      │                ◀───╯
+      │        · s is born
+    3 │            takes(s);
+      │        · ━▶ move: s moves into takes
+    4 │            // println!("{s}"); // error: value …
+      │        ┆ s no longer owns it: using it here does …
+    5 │
+    6 │            let t = String::from("world");
+    7 │ ╭╌╌╌╌╌     let n = len(&t);
+      │ ╎      · ╌▶ read: shared borrow
+    8 │ ╎          println!("{t} has {n} letters");
+      │ ╎      ┆ t is still valid
+    9 │ ╎
+   10 │ ╎          let mut u = String::from("hey");
+   11 │ ╎ ┏━━━     push(&mut u);
+
+ ╭▶ NORMAL  step 5/7  60×20  ⚠ code clipped (64 cols)

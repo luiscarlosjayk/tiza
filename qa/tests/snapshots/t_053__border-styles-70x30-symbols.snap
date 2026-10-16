@@ -1,0 +1,34 @@
+---
+source: qa/tests/t-053.rs
+expression: symbols
+---
+     ┏━ thick sharp… ┓
+   1 ┃   fn a() {    ┃
+   2 ┃       1       ┃
+   3 ┃   }           ┃
+     ┗━━━━━━━━━━━━━━━┛
+     ╔═ double ══════╗
+   4 ║   fn b() {    ║
+   5 ║       2       ║
+   6 ║   }           ║
+     ║   ╔═ fil… ═╗  ║
+     ║   ║ a      ║  ║
+     ║   ║ callout║  ║
+     ║   ║ with a ║  ║
+     ║   ║ double ║  ║
+     ║   ║ border ║  ║
+     ║   ║ and a  ║  ║
+     ║   ║ tint.  ║  ║
+     ║   ╚════════╝  ║
+     ╚═══════════════╝
+     ┌╌ dashed sharp ┐
+   7 ╎   fn c() {    ╎
+   8 ╎       3       ╎
+   9 ╎   }           ╎
+     └╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┘
+     ╭┄ dotted + ne… ╮
+  10 ┆   fn d() {    ┆
+     ┆╭─ inner ─────╮┆
+  11 ┆│      4      │┆
+     ┆╰─────────────╯┆
+ ╭▶ NORMAL  step 1/1  70×30  (stdin)  L1  6 ann.  ⚠ small terminal

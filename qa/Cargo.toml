@@ -19,3 +19,6 @@ codedraw-export.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+
+[dev-dependencies]
+insta.workspace = true
