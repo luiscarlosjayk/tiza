@@ -70,6 +70,11 @@ pub struct App {
     pub size: (u16, u16),
     pub socket_path: Option<PathBuf>,
     pub autosave: bool,
+    /// The last autosave failure; stays on the status line until a save succeeds.
+    pub save_error: Option<String>,
+    /// `--padding` for this session only: shown instead of the document's
+    /// value but never written to it (`:pad` sets the document and clears this).
+    pub padding_override: Option<(u16, u16)>,
 }
 
 impl App {
@@ -100,7 +105,16 @@ impl App {
             size: (80, 24),
             socket_path: None,
             autosave: true,
+            save_error: None,
+            padding_override: None,
         }
+    }
+
+    /// Padding in effect: the session override, else the document's, else the default.
+    pub fn effective_padding(&self) -> (u16, u16) {
+        self.padding_override
+            .or(self.doc.padding)
+            .unwrap_or(crate::ui::DEFAULT_PADDING)
     }
 
     pub fn info(&mut self, msg: impl Into<String>) {
@@ -130,18 +144,38 @@ impl App {
     fn touch(&mut self) {
         self.revision += 1;
         self.dirty = true;
-        if self.autosave
-            && let Err(e) = self.save()
-        {
-            self.error(format!("could not save: {e}"));
+        if self.autosave {
+            // `save` records the failure in `save_error`, apart from `message`,
+            // so a later info message cannot hide it.
+            let _ = self.save();
         }
     }
 
     pub fn save(&mut self) -> Result<(), Error> {
         self.doc.theme = Some(self.theme.name);
-        fs::save_document(&self.doc, &self.save_path)?;
-        self.dirty = false;
-        Ok(())
+        match fs::save_document(&self.doc, &self.save_path) {
+            Ok(()) => {
+                self.dirty = false;
+                self.save_error = None;
+                Ok(())
+            }
+            Err(e) => {
+                self.save_error = Some(format!("could not save {}: {e}", self.save_path.display()));
+                Err(e)
+            }
+        }
+    }
+
+    /// Quits unless unsaved changes could not be written (`force` ignores that).
+    pub fn request_quit(&mut self, force: bool) {
+        if !force && self.dirty && self.save_error.is_some() {
+            self.error(format!(
+                ":q! quits anyway, :w PATH saves elsewhere ({})",
+                self.save_error.clone().unwrap_or_default()
+            ));
+            return;
+        }
+        self.quit = true;
     }
 
     pub fn add_annotation(
@@ -347,19 +381,40 @@ impl App {
     }
 
     /// Replaces the code (paste, stdin). Only when there are no annotations that would be lost.
+    /// Replaces the code with pasted text. Annotations whose lines (and
+    /// columns) still exist are kept; the others are dropped, and `u` brings
+    /// everything back. Re-anchoring by text is the job of moves (ADR 0007).
     pub fn replace_code(&mut self, text: &str) -> Result<(), Error> {
-        if !self.doc.annotations.is_empty() {
-            return Err(Error::Invalid(
-                "the document already has annotations; open another file to paste new code".into(),
-            ));
-        }
+        self.history.record(&self.doc);
         let lang = self.doc.source.language.clone();
         let mut d = Document::from_code(text, lang, None);
         d.theme = Some(self.theme.name);
+        d.styles = self.doc.styles.clone();
+        d.step = self.doc.step;
+        d.padding = self.doc.padding;
+        d.title = self.doc.title.clone();
+        let before = self.doc.annotations.len();
+        for a in &self.doc.annotations {
+            if d.validate_shape(&a.shape).is_ok() {
+                let _ = d.add(a.clone());
+            }
+        }
+        let kept = d.annotations.len();
         self.doc = d;
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
+        self.selected = None;
         self.touch();
+        let dropped = before - kept;
+        if dropped > 0 {
+            self.info(format!(
+                "{} lines pasted; {dropped} annotation{} dropped (outside the new code; u undoes)",
+                self.doc.code.len(),
+                if dropped == 1 { "" } else { "s" }
+            ));
+        } else {
+            self.info(format!("{} lines pasted", self.doc.code.len()));
+        }
         Ok(())
     }
 
@@ -843,7 +898,11 @@ impl App {
         let mut exec = || -> Result<String, Error> {
             match cmd {
                 "q" | "quit" => {
-                    self.quit = true;
+                    self.request_quit(false);
+                    Ok(String::new())
+                }
+                "q!" | "quit!" => {
+                    self.request_quit(true);
                     Ok(String::new())
                 }
                 "w" | "write" => {
@@ -1027,10 +1086,15 @@ impl App {
                     }
                 }
                 "theme" | "t" => {
-                    match rest {
+                    match rest.trim().to_ascii_lowercase().as_str() {
                         "dark" | "oscuro" => self.theme = Theme::dark(),
                         "light" | "claro" => self.theme = Theme::light(),
-                        _ => self.theme = self.theme.toggled(),
+                        "" | "toggle" => self.theme = self.theme.toggled(),
+                        other => {
+                            return Err(Error::Invalid(format!(
+                                "unknown theme: {other} (dark, light; :theme alone toggles)"
+                            )));
+                        }
                     }
                     self.doc.theme = Some(self.theme.name);
                     self.revision += 1;
@@ -1081,6 +1145,7 @@ impl App {
                 }
                 "pad" | "padding" if matches!(rest.trim(), "default" | "reset") => {
                     self.doc.padding = None;
+                    self.padding_override = None;
                     self.touch();
                     let (v, h) = crate::ui::DEFAULT_PADDING;
                     Ok(format!("padding {v} {h} (default)"))
@@ -1094,11 +1159,13 @@ impl App {
                         .map_err(|_| Error::Invalid("usage: :pad V [H] | :pad default   (blank cells around the drawing; :pad 0 0 removes it)".into()))?;
                     let (v, h) = match nums.as_slice() {
                         [] => {
-                            let (v, h) = self.doc.padding.unwrap_or(crate::ui::DEFAULT_PADDING);
+                            let (v, h) = self.effective_padding();
                             return Ok(format!(
                                 "padding {v} {h}{}",
-                                if self.doc.padding.is_none() {
-                                    " (default; :pad V H to set, :pad default to reset)"
+                                if self.padding_override.is_some() {
+                                    " (from --padding, not saved)"
+                                } else if self.doc.padding.is_none() {
+                                    " (default)"
                                 } else {
                                     ""
                                 }
@@ -1109,8 +1176,16 @@ impl App {
                     };
                     // `:pad 0 0` is a real value (no padding); `:pad default` returns to the theme default.
                     self.doc.padding = Some((v, h));
+                    self.padding_override = None;
                     self.touch();
-                    Ok(format!("padding {v} {h}"))
+                    let (cv, ch) = crate::ui::clamp_padding((v, h), self.size, self.present);
+                    Ok(if (cv, ch) != (v, h) {
+                        format!(
+                            "padding {v} {h} (shown as {cv} {ch}: the terminal is too small for more)"
+                        )
+                    } else {
+                        format!("padding {v} {h}")
+                    })
                 }
                 "autosave" => {
                     self.autosave = !matches!(rest, "off" | "no");
@@ -1693,10 +1768,20 @@ impl App {
                 json!({"focus": self.focus, "revision": self.revision})
             }
             "theme.set" => {
-                match params.get("theme").and_then(|t| t.as_str()) {
-                    Some("dark") => self.theme = Theme::dark(),
-                    Some("light") => self.theme = Theme::light(),
-                    _ => self.theme = self.theme.toggled(),
+                match params
+                    .get("theme")
+                    .and_then(|t| t.as_str())
+                    .map(|t| t.trim().to_ascii_lowercase())
+                    .as_deref()
+                {
+                    Some("dark") | Some("oscuro") => self.theme = Theme::dark(),
+                    Some("light") | Some("claro") => self.theme = Theme::light(),
+                    None | Some("") | Some("toggle") => self.theme = self.theme.toggled(),
+                    Some(other) => {
+                        return Err(Error::Invalid(format!(
+                            "unknown theme: {other} (dark, light, toggle)"
+                        )));
+                    }
                 }
                 self.doc.theme = Some(self.theme.name);
                 self.revision += 1;

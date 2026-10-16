@@ -8,8 +8,10 @@ pub const ENV_SOCKET: &str = "CODEDRAW_SOCKET";
 pub const ENV_SESSION: &str = "CODEDRAW_SESSION";
 
 pub fn runtime_dir() -> PathBuf {
+    // An empty variable counts as unset (a cwd-relative `codedraw/` would be a surprise).
     let base = std::env::var_os("XDG_RUNTIME_DIR")
-        .or_else(|| std::env::var_os("TMPDIR"))
+        .filter(|v| !v.is_empty())
+        .or_else(|| std::env::var_os("TMPDIR").filter(|v| !v.is_empty()))
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("/tmp"));
     base.join("codedraw")

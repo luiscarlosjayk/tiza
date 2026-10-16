@@ -9,6 +9,7 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
 use crate::app::{App, Mode, Overlay, Selection, theme_label};
@@ -79,6 +80,16 @@ fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buf
 /// document does not set `padding` (`:pad V H`).
 pub const DEFAULT_PADDING: (u16, u16) = (0, 1);
 
+/// Padding that fits a terminal of `size`: the code keeps at least 20 columns
+/// and three rows plus the status line.
+pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, u16) {
+    let status_h = if present { 0 } else { 1 };
+    (
+        pad.0.min(size.1.saturating_sub(status_h + 3) / 2),
+        pad.1.min(size.0.saturating_sub(20) / 2),
+    )
+}
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     app.size = (area.width, area.height);
@@ -92,9 +103,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.buffer_mut().set_style(area, base);
 
     let status_h = if app.present { 0 } else { 1 };
-    let (pad_v, pad_h) = app.doc.padding.unwrap_or(DEFAULT_PADDING);
-    let pad_h = pad_h.min(area.width.saturating_sub(20) / 2);
-    let pad_v = pad_v.min(area.height.saturating_sub(status_h + 3) / 2);
+    let (pad_v, pad_h) = clamp_padding(
+        app.effective_padding(),
+        (area.width, area.height),
+        app.present,
+    );
     let canvas_area = Rect {
         x: area.x + pad_h,
         y: area.y + pad_v,
@@ -156,11 +169,40 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             && row < end
         {
             let y = canvas_area.y + (row - app.scroll) as u16;
-            frame.buffer_mut().set_string(
-                canvas_area.x,
-                y,
-                "▍",
-                Style::default().fg(rgb(th.accent)).bg(rgb(th.bg)),
+            // The selected annotation (Tab): ▸ in the gutter of its first line, so
+            // the selection is visible even when the status line has no room for it.
+            if let Some(sel_id) = &app.selected
+                && let Some(line) = app
+                    .doc
+                    .find_annotation(sel_id)
+                    .and_then(|a| a.shape.line_ranges().first().map(|r| r.0))
+                && let Some(&srow) = layout.row_of_line.get(&line)
+                && srow >= app.scroll
+                && srow < end
+            {
+                frame.buffer_mut().set_string(
+                    canvas_area.x,
+                    canvas_area.y + (srow - app.scroll) as u16,
+                    "▸",
+                    Style::default()
+                        .fg(rgb(th.accent))
+                        .bg(rgb(th.bg))
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
+            // The cursor line: its number in the accent color, bold, with no
+            // glyph of its own so the gutter keeps every digit.
+            let gutter_w = (layout.code_x as u16).min(canvas_area.width);
+            frame.buffer_mut().set_style(
+                Rect {
+                    x: canvas_area.x,
+                    y,
+                    width: gutter_w,
+                    height: 1,
+                },
+                Style::default()
+                    .fg(rgb(th.accent))
+                    .add_modifier(Modifier::BOLD),
             );
             let text = app.doc.line_text(app.cursor_line).unwrap_or("");
             if let Some(Selection::Span(sp)) = sel {
@@ -309,67 +351,101 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     }
     let warnings = app.viewport_warnings();
     if let Some(w) = warnings.first() {
+        // Short form on the bar; the full text is in `status.warnings`.
+        let short = if w.starts_with("code clipped") {
+            w.clone()
+        } else if w.contains("under the lines") {
+            "labels under the lines".to_string()
+        } else {
+            "small terminal".to_string()
+        };
         left.push(Span::styled(
-            format!("  ⚠ {w}"),
+            format!("  ⚠ {short}"),
             Style::default()
                 .fg(rgb(th.error))
                 .bg(rgb(th.status_bg))
                 .add_modifier(Modifier::BOLD),
         ));
     }
-    let right: Vec<Span> = match &app.message {
-        Some((m, is_err)) => vec![Span::styled(
-            format!("{m} "),
-            if *is_err {
-                Style::default()
-                    .fg(rgb(th.error))
-                    .bg(rgb(th.status_bg))
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                bar
-            },
-        )],
-        None if app.selected.is_some() => vec![Span::styled(
-            format!(
-                "▸ {}   Enter label  e set  x delete  c color  +/- step  Tab next  Esc ",
-                app.selected_text().unwrap_or_default()
+    // What goes on the right, by priority: a failed save, then the last
+    // message, then the selection hint, then the key hints.
+    let err_style = Style::default()
+        .fg(rgb(th.error))
+        .bg(rgb(th.status_bg))
+        .add_modifier(Modifier::BOLD);
+    let (right_text, right_style, essential): (String, Style, bool) =
+        match (&app.save_error, &app.message) {
+            (Some(e), m) if m.as_ref().is_none_or(|(_, is_err)| !*is_err) => {
+                (format!("{e} "), err_style, true)
+            }
+            (_, Some((m, is_err))) => {
+                (format!("{m} "), if *is_err { err_style } else { bar }, true)
+            }
+            (Some(e), None) => (format!("{e} "), err_style, true),
+            (None, None) if app.selected.is_some() => (
+                format!(
+                    "▸ {}   Enter label  e set  x delete  c color  +/- step  Tab next  Esc ",
+                    app.selected_text().unwrap_or_default()
+                ),
+                accent,
+                true,
             ),
-            accent,
-        )],
-        None => vec![Span::styled(
-            if matches!(app.mode, Mode::Select { .. }) {
-                "h highlight  m mark  n note  C callout  b box  a arrow  s spotlight  Esc "
-            } else {
-                "v select  i word  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
-            },
-            muted,
-        )],
+            (None, None) => (
+                if matches!(app.mode, Mode::Select { .. }) {
+                    "h highlight  m mark  n note  C callout  b box  a arrow  s spotlight  Esc "
+                } else {
+                    "v select  i word  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
+                }
+                .to_string(),
+                muted,
+                false,
+            ),
+        };
+    // Make room: drop the optional left segments (theme, cursor line,
+    // annotation count, file) before cutting anything that matters, then
+    // truncate the right text with an ellipsis instead of hiding it.
+    let width = area.width as usize;
+    let lw = |left: &Vec<Span>| left.iter().map(|s| s.content.width()).sum::<usize>();
+    let need = if essential {
+        right_text.width().min(width / 2)
+    } else {
+        0
     };
-    // On a narrow bar, drop the least useful segments (theme, cursor line,
-    // annotation count, file) so a warning never gets cut off.
-    if !warnings.is_empty() {
-        for drop_idx in [4usize, 6, 7, 5] {
-            let lw: usize = left.iter().map(|s| s.content.width()).sum();
-            if lw <= area.width as usize {
-                break;
-            }
-            if drop_idx < left.len() {
-                left[drop_idx] = Span::styled("", bar);
-            }
+    for drop_idx in [4usize, 6, 7, 5, 3] {
+        if lw(&left) + need <= width {
+            break;
+        }
+        if drop_idx < left.len() {
+            left[drop_idx] = Span::styled("", bar);
         }
     }
-    let lw: usize = left.iter().map(|s| s.content.width()).sum();
-    let mut right = right;
-    let mut rw: usize = right.iter().map(|s| s.content.width()).sum();
-    if lw + rw > area.width as usize && app.message.is_none() {
-        right = vec![Span::styled("?help ", muted)];
-        rw = right.iter().map(|s| s.content.width()).sum();
+    // One blank cell between the left segments and the message.
+    let room = width.saturating_sub(lw(&left) + 1);
+    let mut right: Vec<Span> = Vec::new();
+    if essential {
+        if right_text.width() <= room {
+            right.push(Span::styled(right_text, right_style));
+        } else if room >= 4 {
+            // Keep the beginning: that is where the useful part of a message is.
+            let mut cut = String::new();
+            let mut w = 0;
+            for g in right_text.graphemes(true) {
+                let gw = g.width();
+                if w + gw > room - 2 {
+                    break;
+                }
+                cut.push_str(g);
+                w += gw;
+            }
+            right.push(Span::styled(format!("{cut}… "), right_style));
+        }
+    } else if right_text.width() <= room {
+        right.push(Span::styled(right_text, right_style));
+    } else if room >= 7 {
+        right.push(Span::styled("?help ", muted));
     }
-    if lw + rw > area.width as usize {
-        right.clear();
-        rw = 0;
-    }
-    let gap = (area.width as usize).saturating_sub(lw + rw);
+    let rw: usize = right.iter().map(|s| s.content.width()).sum();
+    let gap = width.saturating_sub(lw(&left) + rw);
     let mut spans = left;
     spans.push(Span::styled(" ".repeat(gap), bar));
     spans.extend(right);
@@ -416,14 +492,14 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
 
 fn help_lines() -> Vec<String> {
     [
-        "j/k ↑/↓ line   h/l ←/→ column   w/b/e words   0/$ line start/end   g/G   J/K page",
+        "j/k ↑/↓ line   h/l column   w/b/e words   0/$ line start/end   g/G   J/K page",
+        "n/p →/← PgDn/PgUp  next/previous step (0 = code only)",
         "v  select text   V  select lines   i  select the word under the cursor   Esc  cancel",
         "Tab/Shift-Tab  select an annotation: Enter edit label  x delete  c color  +/- move step  Esc",
         "  with a selection:  h highlight   m mark (then type KIND [label])   n note   b box",
         "                     a arrow (select source, a, select target, a)   s spotlight",
-        "n/p      next/previous step (0 = code only)   u / U  undo / redo",
-        "t        dark/light theme            P      presentation mode",
-        "l        annotation list             :      command line",
+        "u / U    undo / redo                 t      dark/light theme",
+        "P        presentation mode           L      annotation list      :  command line",
         "",
         "Commands (L = line number, text = fragment to find on that line):",
         "  :mark KIND[@COLOR] L:text [label]   KIND: info warn error ok question important read write move new drop scope flow todo",
@@ -437,8 +513,10 @@ fn help_lines() -> Vec<String> {
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
-        "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [path]   :q",
+        "  :focus A-B | :focus     :theme dark|light     :lang rs     :title text",
+        "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
         "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
+        "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
         "MCP server (`codedraw mcp`) do exactly the same thing as these commands.",

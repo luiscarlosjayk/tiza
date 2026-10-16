@@ -486,7 +486,13 @@ fn one() -> u32 {
 
 impl Document {
     pub fn from_code(code: &str, language: impl Into<String>, path: Option<String>) -> Self {
-        let lines: Vec<String> = code.lines().map(|l| l.to_string()).collect();
+        let code = code.strip_prefix('\u{feff}').unwrap_or(code);
+        let mut lines: Vec<String> = code.lines().map(|l| l.to_string()).collect();
+        if lines.is_empty() {
+            // An empty file is still a document with one (empty) line: every
+            // layout assumes at least one row.
+            lines.push(String::new());
+        }
         Self {
             schema: SCHEMA_VERSION,
             title: None,

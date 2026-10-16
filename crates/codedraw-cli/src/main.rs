@@ -193,6 +193,9 @@ fn real_main() -> anyhow::Result<()> {
                 match &file {
                     Some(f) => {
                         let opened = fs::open(f).with_context(|| format!("could not open {f}"))?;
+                        if let Some(n) = &opened.notice {
+                            eprintln!("codedraw: {n}");
+                        }
                         (
                             opened.document,
                             step.unwrap_or(u32::MAX),
@@ -358,18 +361,22 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     if let Some(l) = &cli.lang {
         opened.document.source.language = codedraw_core::highlight::normalize_language(l);
     }
-    if let Some(pad) = &cli.padding {
-        let nums: Vec<u16> = pad
-            .split(',')
-            .map(|t| t.trim().parse::<u16>())
-            .collect::<Result<_, _>>()
-            .context("--padding expects V or V,H")?;
-        opened.document.padding = match nums.as_slice() {
-            [v] => Some((*v, *v * 2)),
-            [v, h, ..] => Some((*v, *h)),
-            [] => None,
-        };
-    }
+    // `--padding` is for this session: it is not written into the document.
+    let padding = match &cli.padding {
+        Some(pad) => {
+            let nums: Vec<u16> = pad
+                .split(',')
+                .map(|t| t.trim().parse::<u16>())
+                .collect::<Result<_, _>>()
+                .context("--padding expects V or V,H")?;
+            match nums.as_slice() {
+                [v] => Some((*v, *v * 2)),
+                [v, h, ..] => Some((*v, *h)),
+                [] => None,
+            }
+        }
+        None => None,
+    };
     let focus = match &cli.focus {
         Some(f) => Some(codedraw_tui::app::parse_range(f).map_err(|e| anyhow::anyhow!("{e}"))?),
         None => None,
@@ -389,6 +396,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
                 Some(socket_path)
             },
             focus,
+            padding,
         },
     )?;
     Ok(())

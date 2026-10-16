@@ -110,9 +110,7 @@ impl Live {
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
-                if app.quit {
-                    break;
-                }
+                // `quit` is only a flag here: tests inspect it after `q`.
             }
         });
         ready_rx.recv().unwrap();

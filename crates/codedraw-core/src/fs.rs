@@ -10,21 +10,41 @@ pub const EXT: &str = "codedraw";
 
 /// Splits `path[:A[-B]]`. Returns the path and the line range (1-based, inclusive).
 pub fn parse_target(spec: &str) -> (PathBuf, Option<(u32, u32)>) {
+    match parse_target_checked(spec) {
+        Ok(t) => t,
+        Err(_) => (PathBuf::from(spec), None),
+    }
+}
+
+/// Like [`parse_target`], but `A-B` with `A > B` or `A == 0` is an error
+/// instead of being silently reordered. Accepts `A-B`, `A..B` and `A`.
+pub fn parse_target_checked(spec: &str) -> Result<(PathBuf, Option<(u32, u32)>), Error> {
     if let Some((path, range)) = spec.rsplit_once(':')
         && !path.is_empty()
         && !range.is_empty()
-        && range.chars().all(|c| c.is_ascii_digit() || c == '-')
+        && range
+            .chars()
+            .all(|c| c.is_ascii_digit() || c == '-' || c == '.')
     {
-        let (a, b): (Option<u32>, Option<u32>) = match range.split_once('-') {
-            Some((a, b)) => (a.parse().ok(), b.parse().ok()),
-            None => (range.parse().ok(), None),
-        };
+        let (a, b): (Option<u32>, Option<u32>) =
+            match range.split_once("..").or_else(|| range.split_once('-')) {
+                Some((a, b)) => (a.parse().ok(), b.parse().ok()),
+                None => (range.parse().ok(), None),
+            };
         if let Some(a) = a {
             let b = b.unwrap_or(a);
-            return (PathBuf::from(path), Some((a.min(b), a.max(b))));
+            if a == 0 {
+                return Err(Error::Invalid("line ranges start at 1".into()));
+            }
+            if a > b {
+                return Err(Error::Invalid(format!(
+                    "range {a}-{b}: the first line must not be after the last"
+                )));
+            }
+            return Ok((PathBuf::from(path), Some((a, b))));
         }
     }
-    (PathBuf::from(spec), None)
+    Ok((PathBuf::from(spec), None))
 }
 
 /// Path of the `.codedraw` that sits next to a source file (`src/main.rs` → `src/main.rs.codedraw`).
@@ -46,18 +66,21 @@ pub struct Opened {
     pub save_path: PathBuf,
     /// true if the document was loaded from an existing `.codedraw`.
     pub existing: bool,
+    /// Something worth telling the user (e.g. a range clamped to the file's end).
+    pub notice: Option<String>,
 }
 
 /// Opens a `.codedraw` or a source file (with an optional range). If the source
 /// has a `.codedraw` sidecar next to it, the sidecar is preferred (it keeps the annotations).
 pub fn open(spec: &str) -> Result<Opened, Error> {
-    let (path, range) = parse_target(spec);
+    let (path, range) = parse_target_checked(spec)?;
     if is_document_path(&path) {
         let document = load_document(&path)?;
         return Ok(Opened {
             document,
             save_path: path,
             existing: true,
+            notice: None,
         });
     }
     let sidecar = sidecar_path(&path);
@@ -67,6 +90,7 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
             document,
             save_path: sidecar,
             existing: true,
+            notice: None,
         });
     }
     let text = std::fs::read_to_string(&path)?;
@@ -75,8 +99,16 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         language_from_path(&path.to_string_lossy()),
         Some(path.to_string_lossy().into_owned()),
     );
+    let mut notice = None;
     let range = range.map(|(a, b)| {
         let last = document.code.len() as u32;
+        if a > last || b > last {
+            notice = Some(format!(
+                "the file has {last} lines: range {a}-{b} clamped to {}-{}",
+                a.min(last.max(1)),
+                b.min(last.max(1))
+            ));
+        }
         let a = a.clamp(1, last.max(1));
         (a, b.clamp(a, last.max(1)))
     });
@@ -103,6 +135,7 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         document,
         save_path,
         existing: false,
+        notice,
     })
 }
 
@@ -117,6 +150,7 @@ pub fn from_stdin_text(text: &str, language: &str) -> Opened {
         document,
         save_path: PathBuf::from(format!("codedraw-{stamp}.{EXT}")),
         existing: false,
+        notice: None,
     }
 }
 
@@ -128,6 +162,7 @@ pub fn load_document(path: &Path) -> Result<Document, Error> {
 /// Parses a `.codedraw` and resolves its code. `base_dir` is the document's
 /// directory, against which relative `code.file` paths are resolved.
 pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, Error> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut doc: Document = serde_json::from_str(text)?;
     if doc.schema > SCHEMA_VERSION {
         return Err(Error::UnsupportedSchema {
@@ -139,8 +174,16 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     Ok(doc)
 }
 
-/// Fills `doc.code` from `doc.code_src`.
+/// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
 pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
+    resolve_code_inner(doc, base_dir)?;
+    if doc.code.is_empty() {
+        doc.code.push(String::new());
+    }
+    Ok(())
+}
+
+fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
     match &doc.code_src {
         CodeSource::Embedded(lines) => {
             doc.code = lines.clone();

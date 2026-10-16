@@ -1,19 +1,53 @@
-//! Undo/redo via snapshots of the annotations (documents are small).
+//! Undo/redo via snapshots of what the user edits: code, annotations and
+//! styles (documents are small). The code is part of the snapshot so that a
+//! paste or a future `code.patch` move can be undone together with the
+//! annotations it dropped or re-anchored.
 
-use crate::model::{Annotation, Document};
+use std::collections::BTreeMap;
+
+use crate::model::{Annotation, CodeSource, Document, MarkStyle};
+
+#[derive(Debug, Clone)]
+struct Snapshot {
+    code: Vec<String>,
+    code_src: CodeSource,
+    annotations: Vec<Annotation>,
+    styles: BTreeMap<String, MarkStyle>,
+}
+
+impl Snapshot {
+    fn take(doc: &Document) -> Self {
+        Self {
+            code: doc.code.clone(),
+            code_src: doc.code_src.clone(),
+            annotations: doc.annotations.clone(),
+            styles: doc.styles.clone(),
+        }
+    }
+
+    /// Puts the snapshot into `doc` and returns what was there.
+    fn swap(self, doc: &mut Document) -> Self {
+        let current = Self::take(doc);
+        doc.code = self.code;
+        doc.code_src = self.code_src;
+        doc.annotations = self.annotations;
+        doc.styles = self.styles;
+        current
+    }
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct History {
-    undo: Vec<Vec<Annotation>>,
-    redo: Vec<Vec<Annotation>>,
+    undo: Vec<Snapshot>,
+    redo: Vec<Snapshot>,
 }
 
 impl History {
     const MAX: usize = 200;
 
-    /// Call BEFORE mutating `doc.annotations`.
+    /// Call BEFORE mutating the document.
     pub fn record(&mut self, doc: &Document) {
-        self.undo.push(doc.annotations.clone());
+        self.undo.push(Snapshot::take(doc));
         if self.undo.len() > Self::MAX {
             self.undo.remove(0);
         }
@@ -24,8 +58,7 @@ impl History {
         let Some(prev) = self.undo.pop() else {
             return false;
         };
-        self.redo
-            .push(std::mem::replace(&mut doc.annotations, prev));
+        self.redo.push(prev.swap(doc));
         true
     }
 
@@ -33,8 +66,7 @@ impl History {
         let Some(next) = self.redo.pop() else {
             return false;
         };
-        self.undo
-            .push(std::mem::replace(&mut doc.annotations, next));
+        self.undo.push(next.swap(doc));
         true
     }
 

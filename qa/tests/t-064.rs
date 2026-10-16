@@ -2,8 +2,8 @@
 //!
 //! Acceptance criteria:
 //! - AC1 The status line shows cols×rows and, when cols < 100 or rows < 30, a
-//!   ⚠ badge "small terminal C×R < 100×30"; when labels fall under the lines
-//!   the badge says so.
+//!   short ⚠ badge ("small terminal" / "labels under the lines"); the full
+//!   text "small terminal C×R < 100×30…" is in `status.warnings`.
 //! - AC2 When the widest code line does not fit, the badge says "code clipped (N cols)".
 //! - AC3 The badge disappears when the terminal grows; presentation mode never shows it.
 //! - AC4 `status` over the socket returns `warnings: [...]` with the same texts.
@@ -30,15 +30,20 @@ fn ac1_small_terminal_badge_and_label_placement() {
     let s = live.screen(80, 24);
     let bar = status_line(&s);
     assert!(bar.contains("80×24"), "{bar}");
-    assert!(
-        bar.contains("⚠ small terminal 80×24 < 100×30: labels go under"),
-        "{bar}"
-    );
+    assert!(bar.contains("⚠ labels under the lines"), "{bar}");
     assert!(s.contains("┆ a note"), "note drawn under the line:\n{s}");
     // Wide but short: labels fit in the margin, the badge only mentions the size.
     let bar = status_line(&live.screen(120, 20));
-    assert!(bar.contains("⚠ small terminal 120×20 < 100×30"), "{bar}");
-    assert!(!bar.contains("labels go under"), "{bar}");
+    assert!(bar.contains("⚠ small terminal"), "{bar}");
+    assert!(!bar.contains("labels under"), "{bar}");
+    let w = live.api_ok("status", json!({}))["warnings"][0]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        w.contains("120×20 < 100×30"),
+        "full text over the socket: {w}"
+    );
 }
 
 #[test]

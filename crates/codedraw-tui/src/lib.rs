@@ -23,6 +23,8 @@ pub struct RunOptions {
     /// `None` = no local API server.
     pub socket: Option<PathBuf>,
     pub focus: Option<(u32, u32)>,
+    /// `--padding`: shown this session, never saved into the document.
+    pub padding: Option<(u16, u16)>,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -36,6 +38,10 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     app.present = opts.present;
     app.focus = opts.focus;
+    app.padding_override = opts.padding;
+    if let Some(n) = &opened.notice {
+        app.info(n.clone());
+    }
 
     let ipc = match &opts.socket {
         Some(path) => match ipc::start(path) {
@@ -56,8 +62,14 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let result = event_loop(&mut terminal, &mut app, ipc.as_ref());
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     ratatui::restore();
-    if app.dirty {
-        let _ = app.save();
+    if app.dirty && app.save().is_err() {
+        // The terminal is restored by now: say it where it will be read.
+        eprintln!(
+            "codedraw: {}",
+            app.save_error
+                .as_deref()
+                .unwrap_or("could not save the document")
+        );
     }
     drop(ipc);
     result
@@ -214,15 +226,18 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('v') => app.start_select(false),
         KeyCode::Char('V') => app.start_select(true),
         KeyCode::Char('i') => app.select_word(),
-        KeyCode::Char('h') | KeyCode::Left => app.move_col(-1),
-        KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
+        KeyCode::Char('h') => app.move_col(-1),
+        KeyCode::Char('l') => app.move_col(1),
+        // ←/→ advance the steps (a clicker sends them); h/l move the column.
+        KeyCode::Right => app.set_step(app.doc.step + 1),
+        KeyCode::Left => app.set_step(app.doc.step.saturating_sub(1)),
         KeyCode::Char('w') => app.word_forward(),
         KeyCode::Char('e') => app.word_end(),
         KeyCode::Char('b') => app.word_backward(),
         KeyCode::Char('0') => app.line_start(),
         KeyCode::Char('$') => app.line_end(),
         KeyCode::Char('L') => app.overlay = Overlay::List,
-        KeyCode::Char('q') => app.quit = true,
+        KeyCode::Char('q') => app.request_quit(false),
         KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
         KeyCode::Char('?') => app.overlay = Overlay::Help,
         KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),

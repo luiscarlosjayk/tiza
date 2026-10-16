@@ -479,11 +479,13 @@ pub const METHODS: &[(&str, &str)] = &[
         "status",
         "Instance summary: file, lines, annotations, step, terminal size",
     ),
+    ("api.methods", "This list"),
     ("code.get", "Code with line numbers (text)"),
     (
         "scene.get",
-        "Full document with annotations and current step",
+        "Full document with annotations and current step (code embedded)",
     ),
+    ("scene.list", "One line per annotation, in document order"),
     (
         "annotation.add",
         "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
@@ -508,6 +510,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ("step.set", "Sets the current presentation step"),
     ("step.next", "Advances one step"),
     ("step.prev", "Goes back one step"),
+    (
+        "focus.set",
+        "Dims everything outside `from_line..to_line`; without lines, clears the focus",
+    ),
+    ("theme.set", "Switches the theme: `dark` or `light`"),
     ("render.text", "Returns the current canvas as plain text"),
 ];
 
