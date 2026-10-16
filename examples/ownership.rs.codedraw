@@ -1,5 +1,6 @@
 {
   "schema": 1,
+  "title": "Ownership in Rust: move, borrow and &mut",
   "source": {
     "language": "rs",
     "first_line": 1
@@ -7,6 +8,15 @@
   "code": {
     "file": "ownership.rs"
   },
+  "styles": {
+    "borrow_mut": {
+      "glyph": "✎▶",
+      "legend": "&mut borrow",
+      "color": "yellow"
+    }
+  },
+  "step": 0,
+  "theme": "dark",
   "annotations": [
     {
       "id": "a1",
@@ -105,7 +115,7 @@
       "id": "a9",
       "step": 5,
       "type": "mark",
-      "kind": "write",
+      "kind": "borrow_mut",
       "span": {
         "line": 11,
         "start": 9,
@@ -180,8 +190,5 @@
         "a8"
       ]
     }
-  ],
-  "step": 0,
-  "theme": "dark",
-  "title": "Ownership in Rust: move, borrow and &mut"
+  ]
 }
