@@ -145,6 +145,23 @@ impl Canvas {
         w
     }
 
+    /// Dibuja un trazo de línea (`─`, `│`, esquinas) respetando lo que ya hay:
+    /// si cruza un trazo perpendicular, pone una unión `┼` en lugar de taparlo.
+    pub fn put_line(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) {
+        let existing = self.get(x, y).map(|c| c.sym.as_str()).unwrap_or(" ");
+        let horizontal = |g: &str| matches!(g, "─" | "━" | "┄" | "╌" | "═");
+        let vertical = |g: &str| matches!(g, "│" | "┃" | "┆" | "║");
+        let merged =
+            if (horizontal(sym) && vertical(existing)) || (vertical(sym) && horizontal(existing)) {
+                "┼"
+            } else if existing == "┼" && (horizontal(sym) || vertical(sym)) {
+                "┼"
+            } else {
+                sym
+            };
+        self.put(x, y, merged, style);
+    }
+
     /// Escribe una cadena a partir de (x, y), grafema a grafema. Devuelve el ancho total.
     pub fn put_str(&mut self, x: usize, y: usize, s: &str, style: CellStyle) -> usize {
         let mut cx = x;
@@ -280,6 +297,19 @@ mod tests {
         assert_eq!(w, 4);
         assert_eq!(c.row_text(0), "a🦀b  ");
         assert_eq!(c.get(2, 0).unwrap().sym, "");
+    }
+
+    #[test]
+    fn put_line_makes_junctions_at_crossings() {
+        let mut c = Canvas::new(3, 3);
+        for y in 0..3 {
+            c.put_line(1, y, "│", CellStyle::new());
+        }
+        for x in 0..3 {
+            c.put_line(x, 1, "─", CellStyle::new());
+        }
+        assert_eq!(c.row_text(1), "─┼─");
+        assert_eq!(c.row_text(0), " │ ");
     }
 
     #[test]

@@ -477,8 +477,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             continue;
         };
         for y in top + 1..bottom {
-            canvas.put(lx, y, "│", box_style);
-            canvas.put(rx, y, "│", box_style);
+            canvas.put_line(lx, y, "│", box_style);
+            canvas.put_line(rx, y, "│", box_style);
             // tinte sutil dentro de la caja
             canvas.restyle(
                 lx + 1,
@@ -518,16 +518,16 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let yt = row_of_line[&to.line];
         let (top, bottom) = (ys.min(yt), ys.max(yt));
         for y in top + 1..bottom {
-            canvas.put(lane_x, y, "│", arrow_style);
+            canvas.put_line(lane_x, y, "│", arrow_style);
         }
         let down = yt > ys;
         canvas.put(lane_x, ys, if down { "╭" } else { "╰" }, arrow_style);
         canvas.put(lane_x, yt, if down { "╰" } else { "╭" }, arrow_style);
         for x in lane_x + 1..code_x - 1 {
-            canvas.put(x, ys, "─", arrow_style);
+            canvas.put_line(x, ys, "─", arrow_style);
         }
         for x in lane_x + 1..code_x - 2 {
-            canvas.put(x, yt, "─", arrow_style);
+            canvas.put_line(x, yt, "─", arrow_style);
         }
         canvas.put(code_x - 2, yt, "▶", arrow_style);
         // Marcar los puntos de origen y destino en el código.
@@ -576,13 +576,13 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         if tx > fx {
             canvas.put(fx, y, "╰", arrow_style);
             for x in fx + 1..tx {
-                canvas.put(x, y, "─", arrow_style);
+                canvas.put_line(x, y, "─", arrow_style);
             }
             canvas.put(tx, y, "▶", arrow_style);
         } else if fx > tx {
             canvas.put(tx, y, "◀", arrow_style);
             for x in tx + 1..fx {
-                canvas.put(x, y, "─", arrow_style);
+                canvas.put_line(x, y, "─", arrow_style);
             }
             canvas.put(fx, y, "╯", arrow_style);
         } else {
@@ -650,33 +650,52 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
 
     // ---- 7. margen ----
+    // Cada etiqueta ocupa su propia fila del margen. Si una línea tiene varias,
+    // las siguientes bajan a las filas libres de abajo; si una etiqueta no cabe,
+    // se parte en palabras y continúa en la fila siguiente. Solo se recorta
+    // cuando ya no quedan filas libres antes de la próxima etiqueta.
     if labels_in_margin && margin_w > 0 {
+        let height = canvas.height;
+        let mut occupied = vec![false; height];
         for (y, labels) in margin.iter().enumerate() {
-            let mut x = margin_x;
-            for (i, l) in labels.iter().enumerate() {
-                if x >= width {
-                    break;
-                }
-                if i > 0 {
-                    x += canvas.put_str(x, y, "  ", base);
-                }
-                let avail = width.saturating_sub(x);
-                let is_note = l.note;
-                let style = if is_note {
+            let mut next_row = y;
+            for l in labels {
+                let prefix = if l.note { "┆ " } else { "" };
+                let style = if l.note {
                     base.fg(l.color).italic()
                 } else {
                     base.fg(l.color)
                 };
-                if is_note {
-                    x += canvas.put_str(x, y, "┆ ", style);
+                let text_w = margin_w.saturating_sub(display_width(prefix, 4));
+                if text_w < 4 {
+                    break;
                 }
-                x += canvas.put_str_clipped(
-                    x,
-                    y,
-                    &l.text,
-                    width.saturating_sub(x).min(avail),
-                    style,
-                );
+                let Some(mut r) = (next_row..height).find(|&r| !occupied[r]) else {
+                    break;
+                };
+                let pieces = wrap_words(&l.text, text_w);
+                let mut first = true;
+                for piece in pieces {
+                    if r >= height || occupied[r] {
+                        // Sin sitio: recortar lo que queda en la fila anterior.
+                        if r > 0 && r - 1 < height {
+                            let px = margin_x + display_width(prefix, 4);
+                            canvas.put_str_clipped(px, r - 1, &l.text, text_w, style);
+                        }
+                        break;
+                    }
+                    let mut x = margin_x;
+                    if first {
+                        x += canvas.put_str(x, r, prefix, style);
+                    } else {
+                        x += canvas.put_str(x, r, &" ".repeat(display_width(prefix, 4)), style);
+                    }
+                    canvas.put_str(x, r, &piece, style);
+                    occupied[r] = true;
+                    first = false;
+                    r += 1;
+                }
+                next_row = r;
             }
         }
     }
@@ -687,6 +706,53 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         row_of_line,
         code_x,
     }
+}
+
+/// Parte `text` en trozos de a lo sumo `width` celdas, cortando por palabras
+/// (y por grafemas si una palabra sola no cabe).
+fn wrap_words(text: &str, width: usize) -> Vec<String> {
+    let width = width.max(1);
+    let mut out = Vec::new();
+    let mut line = String::new();
+    let mut line_w = 0usize;
+    for word in text.split_whitespace() {
+        let w = display_width(word, 4);
+        if w > width {
+            // Palabra más larga que el ancho: partir por grafemas.
+            if !line.is_empty() {
+                out.push(std::mem::take(&mut line));
+            }
+            let mut chunk = String::new();
+            let mut cw = 0;
+            for g in word.graphemes(true) {
+                let gw = unicode_width::UnicodeWidthStr::width(g).max(1);
+                if cw + gw > width {
+                    out.push(std::mem::take(&mut chunk));
+                    cw = 0;
+                }
+                chunk.push_str(g);
+                cw += gw;
+            }
+            line = chunk;
+            line_w = cw;
+            continue;
+        }
+        let sep = usize::from(!line.is_empty());
+        if line_w + sep + w > width {
+            out.push(std::mem::take(&mut line));
+            line_w = 0;
+        }
+        if !line.is_empty() {
+            line.push(' ');
+            line_w += 1;
+        }
+        line.push_str(word);
+        line_w += w;
+    }
+    if !line.is_empty() || out.is_empty() {
+        out.push(line);
+    }
+    out
 }
 
 /// Columna de pantalla (relativa al inicio del código) del grafema `col` de `text`.
@@ -877,6 +943,10 @@ mod tests {
         // 9 líneas + 2 filas de caja
         assert_eq!(l.rows.len(), 11);
         assert!(text.contains("╭─ takes"));
+        assert!(
+            text.contains("┼"),
+            "la flecha cruza el riel de la caja con una unión"
+        );
         assert!(text.contains("╰─"));
         assert!(text.contains("▶"));
         assert!(text.contains("━▶ move"));
@@ -942,6 +1012,61 @@ mod tests {
             .find(|c| c.sym == "┆")
             .unwrap();
         assert_eq!(note_cell.style.fg, Some(th.dimmed));
+    }
+
+    #[test]
+    fn margin_labels_wrap_and_stack_instead_of_clipping() {
+        let mut d = doc();
+        // Dos etiquetas en la misma línea y una nota larga.
+        d.add(Annotation {
+            id: "n1".into(),
+            step: 1,
+            color: None,
+            shape: Shape::Note {
+                line: 2,
+                text: "aquí nace s con String::from y vive hasta que se mueve".into(),
+            },
+        })
+        .unwrap();
+        d.add(Annotation {
+            id: "n2".into(),
+            step: 1,
+            color: None,
+            shape: Shape::Note {
+                line: 2,
+                text: "segunda nota".into(),
+            },
+        })
+        .unwrap();
+        let th = Theme::dark();
+        let l = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        assert!(
+            !text.contains('…'),
+            "no debe recortar si hay filas libres debajo"
+        );
+        assert!(text.contains("segunda nota"));
+        assert!(text.contains("aquí nace s"));
+        for y in 0..l.canvas.height {
+            assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
+        }
+        assert_eq!(
+            wrap_words("hola mundo cruel", 10),
+            vec!["hola mundo", "cruel"]
+        );
+        assert_eq!(
+            wrap_words("supercalifragilistico", 8),
+            vec!["supercal", "ifragili", "stico"]
+        );
     }
 
     #[test]
