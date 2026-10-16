@@ -16,6 +16,7 @@ path = "src/lib.rs"
 codedraw-core.workspace = true
 codedraw-tui.workspace = true
 codedraw-export.workspace = true
+codedraw-mcp.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true

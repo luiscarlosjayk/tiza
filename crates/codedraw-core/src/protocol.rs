@@ -485,6 +485,9 @@ pub struct Scene {
 pub struct Status {
     pub app: String,
     pub version: String,
+    /// Git commit the instance was built from (`unknown` outside a checkout).
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub build: String,
     pub protocol: u32,
     pub revision: u64,
     pub file: Option<String>,

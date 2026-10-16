@@ -57,6 +57,10 @@ Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
 
+## After a rebuild
+
+`status` returns a `bridge` object: `version`, `build` (git commit of this MCP server) and, when the `codedraw` binary on disk is newer than the running server, `binary_rebuilt: true` plus a `hint`. That means the tool list you hold may be stale: tell the user to reconnect the server (Claude Code: `/mcp` → codedraw → reconnect) before relying on a tool you cannot see. `instance_build` appears when the TUI was built from a different commit than the bridge: ask the user to restart the TUI as well.
+
 ## Schema
 
 `codedraw schema document` and `codedraw schema api` print the JSON Schemas (also committed under `schema/`); the live instance answers `api.schema` with the params and result of every method, so a client can validate what it sends. Agents without a terminal can pipe documents: `codedraw render - --out shot.png < demo.codedraw`.

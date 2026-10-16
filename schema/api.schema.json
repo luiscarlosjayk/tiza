@@ -42,6 +42,10 @@
           "app": {
             "type": "string"
           },
+          "build": {
+            "description": "Git commit the instance was built from (`unknown` outside a checkout).",
+            "type": "string"
+          },
           "cols": {
             "format": "uint16",
             "maximum": 65535,

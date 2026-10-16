@@ -15,7 +15,7 @@ use codedraw_core::socket;
 use codedraw_core::{Theme, ThemeName};
 
 #[derive(Parser)]
-#[command(name = "codedraw", version, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
+#[command(name = "codedraw", version = codedraw_core::VERSION_LONG, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
     after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw render demo.codedraw --out demo.png --step 3   PNG (or .svg) of a step\n  codedraw render --out shot.png   PNG of what the live instance shows\n  codedraw mcp                       MCP server for agents\n  codedraw schema api                JSON Schema of the local API (schema document = the .codedraw format)\n  cat demo.codedraw | codedraw render - --out -   `-` is stdin everywhere"
 )]

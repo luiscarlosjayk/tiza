@@ -2301,6 +2301,7 @@ impl App {
         Status {
             app: codedraw_core::APP_NAME.into(),
             version: codedraw_core::VERSION.into(),
+            build: codedraw_core::GIT_SHA.into(),
             protocol: codedraw_core::protocol::PROTOCOL_VERSION,
             revision: self.revision,
             file: self.doc.source.path.clone(),

@@ -458,6 +458,7 @@ version = "0.0.1"
 dependencies = [
  "codedraw-core",
  "codedraw-export",
+ "codedraw-mcp",
  "codedraw-tui",
  "crossterm",
  "insta",

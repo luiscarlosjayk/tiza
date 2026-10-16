@@ -425,8 +425,20 @@ pub struct RenderParams {
 #[derive(Debug, Clone)]
 pub struct CodeDrawServer {
     socket: PathBuf,
+    /// Modification time of our own binary when the bridge started: if the
+    /// file is newer now, `cargo build` replaced it and this process (and the
+    /// tool list the client cached from it) is stale.
+    exe_mtime: Option<std::time::SystemTime>,
     #[allow(dead_code)]
     tool_router: ToolRouter<Self>,
+}
+
+/// Modification time of the running binary, if it can be read.
+fn exe_mtime() -> Option<std::time::SystemTime> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|p| std::fs::metadata(p).ok())
+        .and_then(|m| m.modified().ok())
 }
 
 fn text(v: impl ToString) -> CallToolResult {
@@ -442,8 +454,49 @@ impl CodeDrawServer {
     pub fn new(socket: PathBuf) -> Self {
         Self {
             socket,
+            exe_mtime: exe_mtime(),
             tool_router: Self::tool_router(),
         }
+    }
+
+    /// A server that believes its binary was modified at `mtime` (tests).
+    pub fn with_exe_mtime(socket: PathBuf, mtime: Option<std::time::SystemTime>) -> Self {
+        Self {
+            socket,
+            exe_mtime: mtime,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    /// True when the `codedraw` binary on disk is newer than this process.
+    pub fn binary_rebuilt(&self) -> bool {
+        matches!((self.exe_mtime, exe_mtime()), (Some(a), Some(b)) if b > a)
+    }
+
+    /// What `status` reports about the bridge itself (version, build, staleness).
+    pub fn bridge_status(&self, instance: &Value) -> Value {
+        let mut bridge = json!({
+            "version": codedraw_core::VERSION,
+            "build": codedraw_core::GIT_SHA,
+        });
+        let rebuilt = self.binary_rebuilt();
+        let instance_build = instance.get("build").and_then(|b| b.as_str());
+        let mismatch = instance_build.is_some_and(|b| b != codedraw_core::GIT_SHA);
+        if rebuilt {
+            bridge["binary_rebuilt"] = json!(true);
+        }
+        if mismatch {
+            bridge["instance_build"] = json!(instance_build);
+        }
+        if rebuilt || mismatch {
+            bridge["hint"] = json!(
+                "the codedraw binary was rebuilt: this MCP process (and the tool list \
+                 the client cached from it) may be stale. Ask the user to reconnect the \
+                 server (in Claude Code: /mcp → codedraw → reconnect) and, if the TUI \
+                 build differs, to restart the TUI."
+            );
+        }
+        bridge
     }
 
     /// Calls the live instance. Turns connection errors into messages useful to the agent.
@@ -472,10 +525,15 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "State of the live CodeDraw instance: open file, lines, annotations, current step and terminal size. Call it first to learn whether an instance exists."
+        description = "State of the live CodeDraw instance: open file, lines, annotations, current step and terminal size, plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when codedraw was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
-        Ok(text(pretty(&self.call("status", json!({})).await?)))
+        let mut v = self.call("status", json!({})).await?;
+        let bridge = self.bridge_status(&v);
+        if let Some(obj) = v.as_object_mut() {
+            obj.insert("bridge".into(), bridge);
+        }
+        Ok(text(pretty(&v)))
     }
 
     #[tool(
