@@ -296,12 +296,30 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         ]);
         frame.render_widget(Paragraph::new(line), area);
         if let Some((m, _)) = &app.message {
-            let w = m.width() as u16;
-            if area.width > input.width() as u16 + 4 + w {
+            // Completion candidates and notices: as much as fits, with an ellipsis.
+            let room = (area.width as usize).saturating_sub(input.width() + 4);
+            let text = if m.width() <= room {
+                m.clone()
+            } else if room >= 4 {
+                let mut cut = String::new();
+                let mut w = 0;
+                for g in m.graphemes(true) {
+                    if w + g.width() > room - 1 {
+                        break;
+                    }
+                    cut.push_str(g);
+                    w += g.width();
+                }
+                format!("{cut}…")
+            } else {
+                String::new()
+            };
+            let w = text.width() as u16;
+            if w > 0 {
                 frame.buffer_mut().set_string(
                     area.x + area.width - w - 1,
                     area.y,
-                    m,
+                    &text,
                     Style::default().fg(rgb(th.muted)).bg(rgb(th.cmd_bg)),
                 );
             }
@@ -331,6 +349,12 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
                 .file_name()
                 .map(|f| f.to_string_lossy().into_owned())
                 .unwrap_or_else(|| p.to_string())
+        })
+        .or_else(|| {
+            // Embedded code: name the document instead of "(stdin)".
+            app.save_path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "(stdin)".into());
     let mut left = vec![
@@ -427,6 +451,16 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             left[drop_idx] = Span::styled("", bar);
         }
     }
+    // Hints are optional, but `?help` should find room when giving up only
+    // the theme and the size (cursor line and count are worth more).
+    if !essential {
+        for drop_idx in [3usize, 4] {
+            if lw(&left) + "?help ".len() <= width {
+                break;
+            }
+            left[drop_idx] = Span::styled("", bar);
+        }
+    }
     // One blank cell between the left segments and the message.
     let room = width.saturating_sub(lw(&left) + 1);
     let mut right: Vec<Span> = Vec::new();
@@ -449,8 +483,24 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         }
     } else if right_text.width() <= room {
         right.push(Span::styled(right_text, right_style));
-    } else if room >= 7 {
-        right.push(Span::styled("?help ", muted));
+    } else {
+        // Shorter hint tiers before giving up on all but `?help`.
+        let tiers: &[&str] = if matches!(app.mode, Mode::Select { .. }) {
+            &[
+                "h hl  m mark  n note  b box  a arrow  Esc ",
+                "h m n b a  Esc ",
+                "?help ",
+            ]
+        } else {
+            &[
+                ":cmd  ?help  n/p steps  q quit ",
+                "?help  q quit ",
+                "?help ",
+            ]
+        };
+        if let Some(t) = tiers.iter().find(|t| t.width() <= room) {
+            right.push(Span::styled(*t, muted));
+        }
     }
     let rw: usize = right.iter().map(|s| s.content.width()).sum();
     let gap = width.saturating_sub(lw(&left) + rw);

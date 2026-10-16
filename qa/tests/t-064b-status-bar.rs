@@ -84,3 +84,35 @@ fn ac3_selection_is_visible_in_the_gutter() {
     let l3 = s.lines().find(|l| l.contains("let t = 2")).unwrap();
     assert!(l3.trim_start().starts_with('▸'), "{l3:?}");
 }
+
+#[test]
+fn qa_hints_shrink_in_tiers_instead_of_vanishing() {
+    let live = Live::from_code("fn main() {}\n", "rs", "t064b-tiers");
+    assert!(bar(&live, 160).contains("v select  :cmd  ?help"));
+    // 100 columns with the small-terminal badge: the middle tier.
+    let b = bar(&live, 100);
+    assert!(b.contains("?help  q quit"), "{b}");
+    let b = bar(&live, 80);
+    assert!(b.contains("?help"), "{b}");
+}
+
+#[test]
+fn qa_command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
+    let live = Live::from_code("fn main() {}\n", "rs", "t064b-cands");
+    live.keys(&[KeyCode::Char(':'), KeyCode::Tab]);
+    let b = bar(&live, 100);
+    assert!(b.contains("arrow  autosave"), "candidates listed: {b}");
+    assert!(
+        b.trim_end().ends_with('…'),
+        "truncated with an ellipsis: {b}"
+    );
+    live.keys(&[KeyCode::Esc]);
+    live.command("note 1 one");
+    live.command("theme dark");
+    live.keys(&[KeyCode::Char(':'), KeyCode::Up, KeyCode::Up, KeyCode::Up]);
+    let input = live.with(|app| match &app.mode {
+        codedraw_tui::app::Mode::Command(i) => i.clone(),
+        _ => String::new(),
+    });
+    assert_eq!(input, "note 1 one", "↑ past the oldest stays on the oldest");
+}

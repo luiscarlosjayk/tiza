@@ -31,4 +31,4 @@ expression: symbols
         ┃   ╭─ mutates without taking ownership ────────────────────────────────╮
    23   ┗━━━┿▶ fn push(s: &mut String) {                                        │ &mut
 
- ╭▶ NORMAL  step 5/7  100×30  dark  ownership.rs  L1  16 ann.                                 ?help
+ ╭▶ NORMAL  step 5/7  100×30  dark  ownership.rs  L1  16 ann.        :cmd  ?help  n/p steps  q quit

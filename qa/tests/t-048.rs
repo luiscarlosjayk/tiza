@@ -69,3 +69,21 @@ fn ac3_q_bang_quits_anyway() {
     live.command("q!");
     assert!(live.with(|app| app.quit));
 }
+
+#[test]
+fn qa_wq_does_not_quit_when_the_write_fails() {
+    let dir = scratch("t048-wq");
+    let save = dir.join("doc.codedraw");
+    std::fs::create_dir_all(&save).unwrap();
+    let live = Live::open(
+        codedraw_core::Document::from_code("fn main() {}\n", "rs", None),
+        save,
+        dir.join("s.sock"),
+    );
+    live.command("wq");
+    assert!(
+        !live.with(|app| app.quit),
+        ":wq must stay when the write fails"
+    );
+    assert!(live.with(|app| app.save_error.is_some()));
+}

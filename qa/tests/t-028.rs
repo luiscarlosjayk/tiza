@@ -30,3 +30,23 @@ fn ac1_arrows_change_the_step_and_hl_the_column() {
         "l does not touch the step"
     );
 }
+
+#[test]
+fn qa_step_one_past_the_last_opens_an_empty_step() {
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "t028-newstep");
+    live.command("note 1 first");
+    live.command("step 2");
+    let (msg, is_err) = live.with(|app| app.message.clone()).unwrap();
+    assert!(!is_err, "{msg}");
+    assert_eq!(msg, "step 2/1: empty, new annotations go here");
+    live.command("note 2 second");
+    assert_eq!(live.with(|app| (app.doc.step, app.doc.max_step())), (2, 2));
+    live.command("step 9");
+    let (msg, is_err) = live.with(|app| app.message.clone()).unwrap();
+    assert!(is_err);
+    assert!(
+        msg.contains("beyond the last step (2); :step 3 opens a new one"),
+        "{msg}"
+    );
+    assert_eq!(live.with(|app| app.doc.step), 2);
+}

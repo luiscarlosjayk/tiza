@@ -1072,7 +1072,8 @@ impl App {
         let next = match self.history_pos {
             None if dir < 0 => n - 1,
             None => return None,
-            Some(p) => (p as i64 + dir as i64).clamp(-1, n),
+            // ↑ stops at the oldest entry; ↓ past the newest clears the input.
+            Some(p) => (p as i64 + dir as i64).clamp(0, n),
         };
         if next < 0 || next >= n {
             self.history_pos = None;
@@ -1118,8 +1119,10 @@ impl App {
                         .map(|_| format!("saved to {}", self.save_path.display()))
                 }
                 "wq" => {
+                    // Quit only when the write succeeded (`:q!` leaves anyway).
+                    self.save()?;
                     self.quit = true;
-                    self.save().map(|_| String::new())
+                    Ok(String::new())
                 }
                 "box" => self.cmd_box(rest),
                 "arrow" | "ar" => self.cmd_arrow(rest),
@@ -1275,6 +1278,22 @@ impl App {
                             let n: u32 = n.parse().map_err(|_| {
                                 Error::Invalid("usage: :step N  |  :step ID N".into())
                             })?;
+                            // One past the last step is allowed: it opens an
+                            // empty step for the next annotations.
+                            let max = self.doc.max_step();
+                            if n > max + 1 {
+                                return Err(Error::Invalid(format!(
+                                    "step {n} is beyond the last step ({max}); :step {} opens a new one",
+                                    max + 1
+                                )));
+                            }
+                            if n == max + 1 && n != self.doc.step {
+                                self.doc.step = n;
+                                self.revision += 1;
+                                return Ok(format!(
+                                    "step {n}/{max}: empty, new annotations go here"
+                                ));
+                            }
                             self.set_step(n);
                             Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
                         }

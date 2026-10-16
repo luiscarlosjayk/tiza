@@ -1159,7 +1159,7 @@ fn paint_code(
         let style = if in_focus {
             let mut s = base;
             if let Some(fg) = seg.fg {
-                s = s.fg(fg);
+                s = s.fg(theme.legible(fg));
             }
             if seg.bold {
                 s = s.bold();

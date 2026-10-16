@@ -38,3 +38,17 @@ fn ac2_bad_and_clamped_ranges() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn qa_malformed_numeric_ranges_are_errors() {
+    let f = example("src/stack.rs");
+    for bad in ["12-", "-5", "12..", "1-2-3", "0"] {
+        let out = codedraw(&["render", &format!("{}:{bad}", f.display()), "--out", "-"]);
+        assert!(!out.status.success(), "{bad} accepted");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("malformed line range") || err.contains("start at 1"),
+            "{bad}: {err}"
+        );
+    }
+}

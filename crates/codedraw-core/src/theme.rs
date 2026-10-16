@@ -110,6 +110,49 @@ impl Theme {
     }
 }
 
+/// Minimum contrast of code against the background (WCAG AA for text), so
+/// comments and other dim syntax colors survive video compression.
+pub const MIN_CODE_CONTRAST: f32 = 4.5;
+
+/// WCAG relative luminance (0 = black, 1 = white).
+pub fn luminance(c: Rgb) -> f32 {
+    let lin = |v: u8| {
+        let s = v as f32 / 255.0;
+        if s <= 0.03928 {
+            s / 12.92
+        } else {
+            ((s + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c.0) + 0.7152 * lin(c.1) + 0.0722 * lin(c.2)
+}
+
+/// WCAG contrast ratio between two colors (1..21).
+pub fn contrast(a: Rgb, b: Rgb) -> f32 {
+    let (la, lb) = (luminance(a) + 0.05, luminance(b) + 0.05);
+    if la > lb { la / lb } else { lb / la }
+}
+
+impl Theme {
+    /// `fg` pushed toward the theme's text color until it reads at
+    /// [`MIN_CODE_CONTRAST`] against the background. Colors that already do
+    /// are returned unchanged, so the syntax palette keeps its hues.
+    pub fn legible(&self, fg: Rgb) -> Rgb {
+        if contrast(fg, self.bg) >= MIN_CODE_CONTRAST {
+            return fg;
+        }
+        let mut t = 0.1;
+        while t < 1.0 {
+            let c = blend(self.fg, fg, t);
+            if contrast(c, self.bg) >= MIN_CODE_CONTRAST {
+                return c;
+            }
+            t += 0.1;
+        }
+        self.fg
+    }
+}
+
 /// Blends `a` over `b` with opacity `t` (0..1).
 pub fn blend(a: Rgb, b: Rgb, t: f32) -> Rgb {
     let f = |x: u8, y: u8| {
@@ -160,5 +203,32 @@ impl Theme {
         .iter()
         .filter_map(|n| self.named_color(n))
         .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dim_syntax_colors_are_raised_to_aa_contrast() {
+        for th in [Theme::dark(), Theme::light()] {
+            for c in [Rgb::hex(0x5C6370), Rgb::hex(0xA0A1A7), th.muted, th.fg] {
+                let out = th.legible(c);
+                assert!(
+                    contrast(out, th.bg) >= MIN_CODE_CONTRAST,
+                    "{:?} -> {:?}",
+                    c,
+                    out
+                );
+            }
+            assert_eq!(th.legible(th.fg), th.fg);
+            assert!(
+                contrast(th.muted, th.bg) >= MIN_CODE_CONTRAST,
+                "gutter {:?}",
+                th.name
+            );
+        }
+        assert!((contrast(Rgb(0, 0, 0), Rgb(255, 255, 255)) - 21.0).abs() < 0.01);
     }
 }

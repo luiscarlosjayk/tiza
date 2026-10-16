@@ -26,13 +26,22 @@ pub fn parse_target_checked(spec: &str) -> Result<(PathBuf, Option<(u32, u32)>),
             .chars()
             .all(|c| c.is_ascii_digit() || c == '-' || c == '.')
     {
-        let (a, b): (Option<u32>, Option<u32>) =
-            match range.split_once("..").or_else(|| range.split_once('-')) {
-                Some((a, b)) => (a.parse().ok(), b.parse().ok()),
-                None => (range.parse().ok(), None),
-            };
-        if let Some(a) = a {
-            let b = b.unwrap_or(a);
+        let malformed = || {
+            Error::Invalid(format!(
+                "malformed line range `{range}`: use A, A-B or A..B"
+            ))
+        };
+        let (a, b): (u32, u32) = match range.split_once("..").or_else(|| range.split_once('-')) {
+            Some((a, b)) => (
+                a.parse().map_err(|_| malformed())?,
+                b.parse().map_err(|_| malformed())?,
+            ),
+            None => {
+                let a = range.parse().map_err(|_| malformed())?;
+                (a, a)
+            }
+        };
+        {
             if a == 0 {
                 return Err(Error::Invalid("line ranges start at 1".into()));
             }
@@ -72,25 +81,49 @@ pub struct Opened {
 
 /// Opens a `.codedraw` or a source file (with an optional range). If the source
 /// has a `.codedraw` sidecar next to it, the sidecar is preferred (it keeps the annotations).
+/// One line naming the annotations whose lines fall outside the code (they
+/// are kept in the file but cannot be drawn), or `None`.
+pub fn outside_notice(doc: &Document) -> Option<String> {
+    let bad: Vec<&str> = doc
+        .annotations
+        .iter()
+        .filter(|a| doc.validate_shape(&a.shape).is_err())
+        .map(|a| a.id.as_str())
+        .collect();
+    if bad.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{} annotation{} outside the code (lines {}-{}) and not drawn: {}",
+        bad.len(),
+        if bad.len() == 1 { "" } else { "s" },
+        doc.source.first_line,
+        doc.last_line(),
+        bad.join(", ")
+    ))
+}
+
 pub fn open(spec: &str) -> Result<Opened, Error> {
     let (path, range) = parse_target_checked(spec)?;
     if is_document_path(&path) {
         let document = load_document(&path)?;
+        let notice = outside_notice(&document);
         return Ok(Opened {
             document,
             save_path: path,
             existing: true,
-            notice: None,
+            notice,
         });
     }
     let sidecar = sidecar_path(&path);
     if range.is_none() && sidecar.exists() {
         let document = load_document(&sidecar)?;
+        let notice = outside_notice(&document);
         return Ok(Opened {
             document,
             save_path: sidecar,
             existing: true,
-            notice: None,
+            notice,
         });
     }
     let text = std::fs::read_to_string(&path)?;
@@ -146,11 +179,12 @@ pub fn from_stdin(text: &str, language: &str) -> Result<Opened, Error> {
     let trimmed = text.trim_start_matches('\u{feff}').trim_start();
     if trimmed.starts_with('{') && trimmed.contains("\"schema\"") {
         let document = parse_document(text, std::env::current_dir().ok().as_deref())?;
+        let notice = outside_notice(&document);
         return Ok(Opened {
             document,
             save_path: PathBuf::from(format!("codedraw-stdin.{EXT}")),
             existing: true,
-            notice: None,
+            notice,
         });
     }
     if text.trim().is_empty() {

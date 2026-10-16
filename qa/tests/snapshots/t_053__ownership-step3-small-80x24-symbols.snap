@@ -25,4 +25,4 @@ expression: symbols
    15 ╰─┼▶ fn takes(s: String) {                                            │
         │  · move                                                           │
 
- ╭▶ NORMAL  step 3/7  80×24  ownership.rs  L1  16 ann.  ⚠ labels under the lines
+ ╭▶ NORMAL  step 3/7  ownership.rs  L1  16 ann.  ⚠ labels under the lines ?help
