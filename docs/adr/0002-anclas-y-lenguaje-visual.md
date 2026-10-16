@@ -14,7 +14,7 @@ Annotations must survive scrolling, terminal resizing and theme changes. Termina
   - **Boxes** truly surround the range: unnumbered virtual rows above and below (`╭─ label ──╮` … `╰──╯`) and `│` rails on both sides. Boxes nest.
   - **Arrows between lines** run along a lane to the left of the code: `╭──` leaves the source line, `╰──▶` enters the target line; the longest ones take the farthest lane.
   - **Arrows on the same line** use a virtual row below (`╰───▶`).
-  - **Highlights and marks** tint the span background. Rust marks (`move ━▶`, `borrow ╌▶`, `&mut ═▶`, `drop ╳`, `lifetime ┆`) have a fixed color and glyph: they are told apart by shape, not only by color.
+  - **Highlights and marks** tint the span's background. Marks are language-agnostic: a built-in set of kinds (`info`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo`), each with a fixed glyph + legend + color so they are told apart by shape, not only color. Rust names stay as aliases. Authors extend them in two ways: a one-off inline `style` on an annotation, or reusable named `styles` in the document (`:style`, `define_style`). Resolution: inline > document > built-in. Emoji are allowed in user styles (width is measured per cell); built-ins avoid them.
   - **Notes and legends** go in the right margin when ≥ 14 cells remain; otherwise in a virtual row below the line (`┆ note`, `· legend`).
 - **Steps** are an integer per annotation; annotations with `step <= current step` are shown.
 - A **spotlight** is an annotation that draws nothing: while active (`step..=until`) it dims the code outside its lines and the annotations outside its `ids`. It allows "look here" steps without adding strokes.

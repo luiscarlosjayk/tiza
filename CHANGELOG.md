@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Added
+- Generic, language-agnostic mark kinds (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo) replacing the Rust-only set; Rust names remain as aliases. Custom styles in two modes: inline per annotation (`style: {glyph, legend, color}`, emoji allowed) and reusable document `styles` (`:style NAME …`, MCP `define_style`, `list_kinds`). `:mark 🔥 L:text legend` creates a one-off mark.
 - `spotlight` annotation: a step that directs attention by dimming the code outside a range and/or the annotations outside a group (`:spot`, `:until`, `add_spotlight`, `annotation.add` with `type: spotlight`). The ownership example interleaves two.
 - `code` as an object `{"file", "lines"}` with absolute paths or paths relative to the `.codedraw`; sidecars reference the source by default. `:embed` and `:link`.
 - Step 0 = code only: `p` from step 1, `:step 0`, `--step 0` or `set_step 0` show the code without annotations. The ownership example starts that way.

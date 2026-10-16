@@ -4,6 +4,8 @@
 //! grapheme offset), never in screen cells. The conversion to cells happens
 //! only when rendering (see `layout`).
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -26,6 +28,9 @@ pub struct Document {
     /// (see `fs::load_document`) and never serialized directly.
     #[serde(skip)]
     pub code: Vec<String>,
+    /// Reusable mark styles defined by the author, referenced by name in `kind`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub styles: BTreeMap<String, MarkStyle>,
     #[serde(default)]
     pub annotations: Vec<Annotation>,
     /// Current presentation step. 0 = code only, no annotations;
@@ -93,49 +98,102 @@ pub struct TextSpan {
 }
 
 /// Semantic marks for explaining Rust (each with a fixed color, glyph and legend).
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum MarkKind {
-    Move,
-    Borrow,
-    BorrowMut,
-    Drop,
-    Lifetime,
+/// Visual style of a mark: a glyph, a short legend and a color name. Styles come
+/// from three places, in priority order: an inline `style` on the annotation, the
+/// document's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct MarkStyle {
+    /// One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub glyph: Option<String>,
+    /// Text shown after the glyph; the annotation's `label` is appended after `: `.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub legend: Option<String>,
+    /// Palette name (`red`, `cyan`, …) or `#rrggbb`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
 }
 
-impl MarkKind {
-    pub fn parse(s: &str) -> Option<Self> {
-        Some(match s.to_ascii_lowercase().as_str() {
-            "move" | "m" => Self::Move,
-            "borrow" | "ref" | "&" | "b" => Self::Borrow,
-            "mut" | "borrow_mut" | "borrowmut" | "&mut" => Self::BorrowMut,
-            "drop" | "d" => Self::Drop,
-            "lifetime" | "life" | "'a" | "l" => Self::Lifetime,
-            _ => return None,
-        })
-    }
-
-    /// Short legend shown next to the mark.
-    pub fn legend(self) -> &'static str {
-        match self {
-            Self::Move => "move",
-            Self::Borrow => "borrow &",
-            Self::BorrowMut => "borrow &mut",
-            Self::Drop => "drop",
-            Self::Lifetime => "lifetime",
+impl MarkStyle {
+    pub fn new(glyph: &str, legend: &str, color: &str) -> Self {
+        Self {
+            glyph: Some(glyph.into()),
+            legend: Some(legend.into()),
+            color: Some(color.into()),
         }
     }
 
-    /// Glyph that accompanies the legend (the shape tells marks apart without relying on color).
-    pub fn glyph(self) -> &'static str {
-        match self {
-            Self::Move => "━▶",
-            Self::Borrow => "╌▶",
-            Self::BorrowMut => "═▶",
-            Self::Drop => "╳",
-            Self::Lifetime => "┆",
+    /// `over` wins field by field; missing fields fall back to `self`.
+    pub fn merged(&self, over: &MarkStyle) -> MarkStyle {
+        MarkStyle {
+            glyph: over.glyph.clone().or_else(|| self.glyph.clone()),
+            legend: over.legend.clone().or_else(|| self.legend.clone()),
+            color: over.color.clone().or_else(|| self.color.clone()),
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.glyph.is_none() && self.legend.is_none() && self.color.is_none()
+    }
+}
+
+/// Built-in, language-agnostic kinds: (name, glyph, legend, color).
+/// Chosen to be useful in any language; glyphs are one or two cells wide and
+/// never emoji (ambiguous width across terminals).
+pub const BUILTIN_KINDS: &[(&str, &str, &str, &str)] = &[
+    ("info", "i", "info", "blue"),
+    ("note", "·", "note", "gray"),
+    ("warn", "!", "warning", "yellow"),
+    ("error", "✗", "error", "red"),
+    ("ok", "✓", "ok", "green"),
+    ("question", "?", "why?", "purple"),
+    ("important", "★", "important", "orange"),
+    ("read", "╌▶", "read", "cyan"),
+    ("write", "═▶", "write", "yellow"),
+    ("move", "━▶", "move", "pink"),
+    ("new", "+", "new", "green"),
+    ("drop", "╳", "drop", "red"),
+    ("scope", "┆", "scope", "purple"),
+    ("flow", "→", "flow", "blue"),
+    ("todo", "□", "todo", "gray"),
+];
+
+/// Aliases so older documents and language-specific habits keep working.
+pub const KIND_ALIASES: &[(&str, &str)] = &[
+    ("borrow", "read"),
+    ("ref", "read"),
+    ("&", "read"),
+    ("borrow_mut", "write"),
+    ("borrowmut", "write"),
+    ("mut", "write"),
+    ("&mut", "write"),
+    ("lifetime", "scope"),
+    ("life", "scope"),
+    ("'a", "scope"),
+    ("free", "drop"),
+    ("delete", "drop"),
+    ("alloc", "new"),
+    ("create", "new"),
+    ("bug", "error"),
+    ("warning", "warn"),
+    ("tip", "info"),
+];
+
+/// Canonical name of a built-in kind, resolving aliases. `None` if unknown.
+pub fn builtin_kind(name: &str) -> Option<&'static str> {
+    let n = name.trim().to_ascii_lowercase();
+    if let Some((k, ..)) = BUILTIN_KINDS.iter().find(|(k, ..)| *k == n) {
+        return Some(k);
+    }
+    KIND_ALIASES.iter().find(|(a, _)| *a == n).map(|(_, k)| *k)
+}
+
+pub fn builtin_style(name: &str) -> Option<MarkStyle> {
+    let k = builtin_kind(name)?;
+    BUILTIN_KINDS
+        .iter()
+        .find(|(n, ..)| *n == k)
+        .map(|(_, g, l, c)| MarkStyle::new(g, l, c))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -147,12 +205,16 @@ pub enum Shape {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Highlight with meaning (move, borrow…).
+    /// Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),
+    /// an alias, or a reusable style from `Document::styles`; `style` overrides any
+    /// field inline for this one annotation.
     Mark {
-        kind: MarkKind,
+        kind: String,
         span: TextSpan,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "MarkStyle::is_empty")]
+        style: MarkStyle,
     },
     /// Box around a range of lines.
     Box {
@@ -239,6 +301,7 @@ impl Document {
             },
             code_src: CodeSource::Embedded(lines.clone()),
             code: lines,
+            styles: BTreeMap::new(),
             annotations: Vec::new(),
             step: 1,
             theme: None,
@@ -273,6 +336,35 @@ impl Document {
         if let CodeSource::Embedded(lines) = &mut self.code_src {
             *lines = self.code.clone();
         }
+    }
+
+    /// Resolves the style of a mark: inline `style` > document `styles[kind]` >
+    /// built-in kind (aliases included). `None` if `kind` is unknown and the
+    /// inline style has no glyph (nothing to draw).
+    pub fn resolve_style(&self, kind: &str, inline: &MarkStyle) -> Option<MarkStyle> {
+        let base = self
+            .styles
+            .get(kind.trim())
+            .cloned()
+            .or_else(|| builtin_style(kind));
+        match base {
+            Some(b) => Some(b.merged(inline)),
+            None if inline.glyph.is_some() => Some(MarkStyle {
+                legend: inline
+                    .legend
+                    .clone()
+                    .or_else(|| Some(kind.trim().to_string())),
+                ..inline.clone()
+            }),
+            None => None,
+        }
+    }
+
+    /// Names available as `kind`: document styles first, then built-ins.
+    pub fn kind_names(&self) -> Vec<String> {
+        let mut v: Vec<String> = self.styles.keys().cloned().collect();
+        v.extend(BUILTIN_KINDS.iter().map(|(k, ..)| k.to_string()));
+        v
     }
 
     /// Last absolute line of the document.
@@ -367,7 +459,23 @@ impl Document {
             Ok(())
         };
         match shape {
-            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => check_span(span),
+            Shape::Highlight { span, .. } => check_span(span),
+            Shape::Mark {
+                span, kind, style, ..
+            } => {
+                check_span(span)?;
+                if self.resolve_style(kind, style).is_none() {
+                    return Err(Error::Invalid(format!(
+                        "unknown mark kind: {kind} (use one of {}, a style from this document, or an inline style with a glyph)",
+                        BUILTIN_KINDS
+                            .iter()
+                            .map(|(k, ..)| *k)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    )));
+                }
+                Ok(())
+            }
             Shape::Box {
                 from_line, to_line, ..
             } => {

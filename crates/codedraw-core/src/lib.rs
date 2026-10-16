@@ -19,7 +19,7 @@ pub mod socket;
 pub mod theme;
 
 pub use error::Error;
-pub use model::{Anchor, Annotation, Document, MarkKind, Shape, TextSpan, ThemeName};
+pub use model::{Anchor, Annotation, Document, MarkStyle, Shape, TextSpan, ThemeName};
 pub use theme::Theme;
 
 pub const APP_NAME: &str = "codedraw";

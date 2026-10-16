@@ -111,7 +111,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             }
             (Shape::Box { .. }, None) => theme.box_line,
             (Shape::Note { .. }, None) => theme.note,
-            (Shape::Mark { kind, .. }, None) => theme.mark_color(*kind),
+            (Shape::Mark { kind, style, .. }, None) => doc
+                .resolve_style(kind, style)
+                .map(|st| theme.mark_color(&st))
+                .unwrap_or(theme.accent),
             (Shape::Highlight { .. }, None) => theme.accent,
             (Shape::Spotlight { .. }, None) => theme.accent,
         };
@@ -289,13 +292,14 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     Shape::Note { line: l, text } if *l == line => {
                         Some((text.clone(), color_of(a), true))
                     }
-                    Shape::Mark { kind, span, label } if span.line == line => Some((
-                        format!(
-                            "{} {}{}",
-                            kind.glyph(),
-                            kind.legend(),
-                            label.as_ref().map(|l| format!(": {l}")).unwrap_or_default()
-                        ),
+                    Shape::Mark {
+                        kind,
+                        span,
+                        label,
+                        style,
+                        ..
+                    } if span.line == line => Some((
+                        mark_text(doc, kind, style, label.as_deref()),
                         color_of(a),
                         false,
                     )),
@@ -424,23 +428,28 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 };
                 (span, fg, bg, label.clone())
             }
-            Shape::Mark { kind, span, .. } if ann_dimmed(a) => (
+            Shape::Mark {
+                kind, span, style, ..
+            } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
                 crate::theme::blend(theme.dimmed, theme.bg, 0.12),
-                Some(format!("{} {}", kind.glyph(), kind.legend())),
+                Some(mark_text(doc, kind, style, None)),
             ),
-            Shape::Mark { kind, span, label } => (
+            Shape::Mark {
+                kind,
                 span,
-                theme.mark_color(*kind),
-                theme.mark_bg(*kind),
-                Some(format!(
-                    "{} {}{}",
-                    kind.glyph(),
-                    kind.legend(),
-                    label.as_ref().map(|l| format!(": {l}")).unwrap_or_default()
-                )),
-            ),
+                label,
+                style,
+            } => {
+                let st = doc.resolve_style(kind, style).unwrap_or_default();
+                (
+                    span,
+                    theme.mark_color(&st),
+                    theme.mark_bg(&st),
+                    Some(mark_text(doc, kind, style, label.as_deref())),
+                )
+            }
             _ => continue,
         };
         let Some(&y) = row_of_line.get(&span.line) else {
@@ -709,6 +718,27 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 }
 
 /// Splits `text` into chunks of at most `width` cells, breaking on words
+/// `glyph legend[: label]` for a mark, from its resolved style.
+fn mark_text(
+    doc: &Document,
+    kind: &str,
+    style: &crate::model::MarkStyle,
+    label: Option<&str>,
+) -> String {
+    let st = doc.resolve_style(kind, style).unwrap_or_default();
+    let mut out = String::new();
+    if let Some(g) = &st.glyph {
+        out.push_str(g);
+        out.push(' ');
+    }
+    out.push_str(st.legend.as_deref().unwrap_or(kind));
+    if let Some(l) = label {
+        out.push_str(": ");
+        out.push_str(l);
+    }
+    out
+}
+
 /// (and on graphemes if a single word does not fit).
 fn wrap_words(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
@@ -863,7 +893,7 @@ fn mark_anchor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Anchor, MarkKind, TextSpan};
+    use crate::model::{Anchor, TextSpan};
 
     fn doc() -> Document {
         let mut d = Document::from_code(
@@ -877,7 +907,8 @@ mod tests {
             step: 1,
             color: None,
             shape: Shape::Mark {
-                kind: MarkKind::Move,
+                kind: "move".into(),
+                style: Default::default(),
                 span: TextSpan {
                     line: 3,
                     start: 10,

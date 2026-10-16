@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model::{Anchor, Annotation, Document, MarkKind, Shape, TextSpan};
+use crate::model::{Anchor, Annotation, Document, MarkStyle, Shape, TextSpan};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -117,10 +117,12 @@ pub enum ShapeSpec {
         label: Option<String>,
     },
     Mark {
-        kind: MarkKind,
+        kind: String,
         at: Where,
         #[serde(default)]
         label: Option<String>,
+        #[serde(default)]
+        style: MarkStyle,
     },
     Box {
         from_line: u32,
@@ -157,8 +159,14 @@ impl ShapeSpec {
                 span: at.resolve_span(doc)?,
                 label: label.clone(),
             },
-            ShapeSpec::Mark { kind, at, label } => Shape::Mark {
-                kind: *kind,
+            ShapeSpec::Mark {
+                kind,
+                at,
+                label,
+                style,
+            } => Shape::Mark {
+                kind: kind.clone(),
+                style: style.clone(),
                 span: at.resolve_span(doc)?,
                 label: label.clone(),
             },
@@ -279,13 +287,21 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.add",
-        "Adds an annotation (highlight, mark, box, arrow, note)",
+        "Adds an annotation (highlight, mark, box, arrow, note, spotlight)",
     ),
     (
         "annotation.update",
         "Changes the step, label or shape of an annotation",
     ),
     ("annotation.delete", "Deletes an annotation by id"),
+    (
+        "style.set",
+        "Defines or updates a reusable mark style (name, glyph, legend, color)",
+    ),
+    (
+        "style.list",
+        "Lists document styles, built-in kinds and aliases",
+    ),
     (
         "scene.clear",
         "Removes every annotation (or only those of `step`); can be undone in the TUI",
@@ -311,11 +327,13 @@ pub fn describe(a: &Annotation) -> String {
                 .map(|l| format!(" «{l}»"))
                 .unwrap_or_default()
         ),
-        Shape::Mark { kind, span, label } => format!(
+        Shape::Mark {
+            kind, span, label, ..
+        } => format!(
             "{} [step {}] mark {} L{} {}..{}{}",
             a.id,
             a.step,
-            kind.legend(),
+            kind,
             span.line,
             span.start,
             span.end,

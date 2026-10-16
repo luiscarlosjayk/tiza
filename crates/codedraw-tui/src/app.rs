@@ -6,7 +6,7 @@ use std::path::PathBuf;
 
 use codedraw_core::history::History;
 use codedraw_core::layout::{Layout, LayoutOptions, layout};
-use codedraw_core::model::{Annotation, Document, MarkKind, Shape, ThemeName};
+use codedraw_core::model::{Annotation, BUILTIN_KINDS, Document, MarkStyle, Shape, ThemeName};
 use codedraw_core::protocol::{
     AddParams, IdParams, METHODS, Mutated, Request, Response, Scene, Status, StepParams,
     UpdateParams, Where,
@@ -342,6 +342,7 @@ impl App {
                 "arrow" | "ar" => self.cmd_arrow(rest),
                 "hl" | "highlight" => self.cmd_highlight(rest),
                 "mark" | "m" => self.cmd_mark(rest),
+                "style" | "kinds" => self.cmd_style(rest),
                 "note" | "n" => self.cmd_note(rest),
                 "embed" => {
                     self.doc.embed_code();
@@ -620,28 +621,142 @@ impl App {
         Ok(format!("{id}: highlight at L{}", span.line))
     }
 
+    /// `:mark KIND L:text [label]` where KIND is a built-in kind (`warn`, `read`, `move`…),
+    /// an alias (`borrow`), a style defined with `:style`, or a bare glyph/emoji for a
+    /// one-off inline style (`:mark 🔥 7:&t hot path`). `KIND@COLOR` sets the color.
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
-        let (kind, rest) = split_first(rest);
+        let (kind_tok, rest) = split_first(rest);
         let (at, label) = split_first(rest);
-        let kind = MarkKind::parse(kind).ok_or_else(|| {
-            Error::Invalid("usage: :mark move|borrow|mut|drop|life L:text [label]".into())
-        })?;
-        if at.is_empty() {
-            return Err(Error::Invalid(
-                "usage: :mark move|borrow|mut|drop|life L:text [label]".into(),
-            ));
+        if kind_tok.is_empty() || at.is_empty() {
+            return Err(Error::Invalid(format!(
+                "usage: :mark KIND[@COLOR] L:text [label]   KIND: {} | a :style name | a glyph",
+                self.doc.kind_names().join(" ")
+            )));
         }
+        let (kind_tok, color) = match kind_tok.rsplit_once('@') {
+            Some((k, c)) if !k.is_empty() => (k, Some(c.to_string())),
+            _ => (kind_tok, None),
+        };
+        let known = self.doc.styles.contains_key(kind_tok)
+            || codedraw_core::model::builtin_kind(kind_tok).is_some();
+        let (kind, mut style) = if known {
+            (kind_tok.to_string(), MarkStyle::default())
+        } else {
+            // Not a known kind: treat it as a glyph for an inline style.
+            let w = codedraw_core::canvas::display_width(kind_tok, 4);
+            if w == 0
+                || w > 2
+                || kind_tok
+                    .chars()
+                    .any(|c| c.is_alphanumeric() && c.is_ascii())
+            {
+                return Err(Error::Invalid(format!(
+                    "unknown mark kind: {kind_tok} (kinds: {}; or define one with :style, or use a glyph/emoji)",
+                    self.doc.kind_names().join(" ")
+                )));
+            }
+            (
+                kind_tok.to_string(),
+                MarkStyle {
+                    glyph: Some(kind_tok.to_string()),
+                    legend: opt(label),
+                    color: None,
+                },
+            )
+        };
+        if let Some(c) = color {
+            if self.theme.named_color(&c).is_none() {
+                return Err(Error::Invalid(format!("unknown color: {c}")));
+            }
+            style.color = Some(c);
+        }
+        let inline = !known;
         let span = parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?;
+        let legend = self
+            .doc
+            .resolve_style(&kind, &style)
+            .and_then(|st| st.legend)
+            .unwrap_or_else(|| kind.clone());
         let id = self.add_annotation(
             None,
             None,
             Shape::Mark {
                 kind,
                 span,
-                label: opt(label),
+                label: if inline { None } else { opt(label) },
+                style,
             },
         )?;
-        Ok(format!("{id}: {} at L{}", kind.legend(), span.line))
+        Ok(format!("{id}: {legend} at L{}", span.line))
+    }
+
+    /// `:style NAME glyph=🔥 legend="hot path" color=red` defines a reusable style.
+    /// `:style NAME` removes it; `:style` lists styles and built-in kinds.
+    fn cmd_style(&mut self, rest: &str) -> Result<String, Error> {
+        let (name, rest) = split_first(rest);
+        if name.is_empty() {
+            let mut out: Vec<String> = self
+                .doc
+                .styles
+                .iter()
+                .map(|(n, st)| {
+                    format!(
+                        "{n} = {} {}{}",
+                        st.glyph.as_deref().unwrap_or(""),
+                        st.legend.as_deref().unwrap_or(""),
+                        st.color
+                            .as_ref()
+                            .map(|c| format!(" @{c}"))
+                            .unwrap_or_default()
+                    )
+                })
+                .collect();
+            out.push(format!(
+                "built-in: {}",
+                BUILTIN_KINDS
+                    .iter()
+                    .map(|(k, g, ..)| format!("{k} {g}"))
+                    .collect::<Vec<_>>()
+                    .join("  ")
+            ));
+            return Ok(out.join(" | "));
+        }
+        if rest.is_empty() {
+            return match self.doc.styles.remove(name) {
+                Some(_) => {
+                    self.touch();
+                    Ok(format!("style {name} removed"))
+                }
+                None => Err(Error::Invalid(
+                    "usage: :style NAME glyph=G legend=\"text\" color=C   (:style NAME removes it)"
+                        .into(),
+                )),
+            };
+        }
+        let mut st = self.doc.styles.get(name).cloned().unwrap_or_default();
+        for (k, v) in parse_kv(rest) {
+            match k.as_str() {
+                "glyph" | "g" => st.glyph = Some(v),
+                "legend" | "l" | "text" => st.legend = Some(v),
+                "color" | "c" => {
+                    if self.theme.named_color(&v).is_none() {
+                        return Err(Error::Invalid(format!("unknown color: {v}")));
+                    }
+                    st.color = Some(v);
+                }
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "unknown style field: {other} (glyph, legend, color)"
+                    )));
+                }
+            }
+        }
+        if st.glyph.is_none() && codedraw_core::model::builtin_style(name).is_none() {
+            return Err(Error::Invalid("a style needs at least a glyph".into()));
+        }
+        self.doc.styles.insert(name.to_string(), st);
+        self.touch();
+        Ok(format!("style {name} defined (use it with :mark {name} …)"))
     }
 
     /// `:spot 7-12`, `:spot a2 a3`, `:spot 7-12 a2 a3`. Active only in the current step
@@ -763,6 +878,44 @@ impl App {
                     revision: self.revision,
                 })?
             }
+            "style.set" => {
+                let name = params
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(str::trim)
+                    .filter(|n| !n.is_empty())
+                    .ok_or_else(|| Error::Invalid("style.set needs `name`".into()))?;
+                let get = |k: &str| {
+                    params
+                        .get(k)
+                        .and_then(|v| v.as_str())
+                        .map(|v| v.to_string())
+                };
+                let mut st = self.doc.styles.get(name).cloned().unwrap_or_default();
+                if let Some(g) = get("glyph") {
+                    st.glyph = Some(g);
+                }
+                if let Some(l) = get("legend") {
+                    st.legend = Some(l);
+                }
+                if let Some(c) = get("color") {
+                    if self.theme.named_color(&c).is_none() {
+                        return Err(Error::Invalid(format!("unknown color: {c}")));
+                    }
+                    st.color = Some(c);
+                }
+                if st.glyph.is_none() && codedraw_core::model::builtin_style(name).is_none() {
+                    return Err(Error::Invalid("a style needs at least a glyph".into()));
+                }
+                self.doc.styles.insert(name.to_string(), st.clone());
+                self.touch();
+                json!({"name": name, "style": st, "revision": self.revision})
+            }
+            "style.list" => json!({
+                "document": self.doc.styles,
+                "builtin": BUILTIN_KINDS.iter().map(|(k, g, l, c)| json!({"kind": k, "glyph": g, "legend": l, "color": c})).collect::<Vec<_>>(),
+                "aliases": codedraw_core::model::KIND_ALIASES.iter().map(|(a, k)| json!({"alias": a, "kind": k})).collect::<Vec<_>>(),
+            }),
             "scene.clear" => {
                 let step = params
                     .get("step")
@@ -862,6 +1015,33 @@ fn opt(s: &str) -> Option<String> {
     } else {
         Some(s.to_string())
     }
+}
+
+/// `key=value key2="value with spaces"` → pairs. Unquoted values end at whitespace.
+pub fn parse_kv(s: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut rest = s.trim();
+    while !rest.is_empty() {
+        let Some((key, after)) = rest.split_once('=') else {
+            break;
+        };
+        let key = key.trim().to_string();
+        let after = after.trim_start();
+        let (val, next) = if let Some(inner) = after.strip_prefix('"') {
+            match inner.find('"') {
+                Some(i) => (inner[..i].to_string(), inner[i + 1..].trim_start()),
+                None => (inner.to_string(), ""),
+            }
+        } else {
+            match after.find(char::is_whitespace) {
+                Some(i) => (after[..i].to_string(), after[i..].trim_start()),
+                None => (after.to_string(), ""),
+            }
+        };
+        out.push((key, val));
+        rest = next;
+    }
+    out
 }
 
 fn split_first(s: &str) -> (&str, &str) {
@@ -978,6 +1158,36 @@ mod tests {
         a.run_command("note . starts here");
         assert_eq!(a.doc.annotations.len(), 4);
         assert!(matches!(a.message, Some((_, false))));
+        a.run_command("mark warn 2:String careful");
+        assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
+        a.run_command("mark 🔥 3:takes hot path");
+        assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
+        match &a.doc.annotations.last().unwrap().shape {
+            Shape::Mark { kind, style, .. } => {
+                assert_eq!(kind, "🔥");
+                assert_eq!(style.glyph.as_deref(), Some("🔥"));
+                assert_eq!(style.legend.as_deref(), Some("hot path"));
+            }
+            other => panic!("{other:?}"),
+        }
+        a.run_command("style hot glyph=🔥 legend=\"hot path\" color=red");
+        assert!(a.doc.styles.contains_key("hot"), "{:?}", a.message);
+        a.run_command("mark hot@blue 5:takes");
+        assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
+        a.run_command("mark nope 5:takes");
+        assert!(
+            matches!(a.message, Some((_, true))),
+            "unknown kind must fail"
+        );
+        a.run_command("del a5 a6 a7");
+        assert_eq!(
+            parse_kv("glyph=🔥 legend=\"hot path\" color=red"),
+            vec![
+                ("glyph".to_string(), "🔥".to_string()),
+                ("legend".to_string(), "hot path".to_string()),
+                ("color".to_string(), "red".to_string())
+            ]
+        );
         a.run_command("spot 2-3 a1");
         assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
         assert!(matches!(

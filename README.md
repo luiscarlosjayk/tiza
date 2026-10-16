@@ -2,7 +2,7 @@
 
 **Draw on top of code in the terminal to explain it on video.**
 
-CodeDraw is a Rust TUI (ratatui) built for tutorials: you share your screen with your editor, send the code to CodeDraw in a terminal and draw on top of it (boxes, arrows, highlights, notes and Rust semantic marks such as *move*, *borrow* or *drop*) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
+CodeDraw is a Rust TUI (ratatui) built for tutorials: you share your screen with your editor, send the code to CodeDraw in a terminal and draw on top of it (boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*, plus any style you define, emoji included) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
 
 It is also **for agents**: it exposes a local socket API and an **MCP server**, so Claude Code (or any MCP client) can draw live on what you are showing.
 
@@ -63,7 +63,9 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 `L` is a line number and `text` an exact fragment to find on that line (`.` is the cursor line).
 
 ```
-:mark move 3:s s moves into takes     semantic mark: move | borrow | mut | drop | life
+:mark warn 3:s careful here           built-in kinds: info warn error ok question important read write move new drop scope flow todo
+:mark 🔥 4:res.json hot path          one-off mark: any glyph/emoji + your legend
+:style io glyph=⇄ legend="network I/O" color=cyan   reusable style, then :mark io 2:fetch
 :arrow 2:s 15:s: String move          arrow between two points, with a label
 :box 15-17 takes owns s               box around a range of lines
 :hl 7:&t shared borrow                highlight
@@ -94,7 +96,7 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
+Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
 The same API is available as a Unix socket with line-delimited JSON (design borrowed from herdr) and from the CLI:
 

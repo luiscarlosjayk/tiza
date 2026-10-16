@@ -13,7 +13,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 1. `status` — confirm there is an instance and look at `cols`/`rows` (if `cols < 100`, labels go below the line: keep them short).
 2. `get_code` — read the code with line numbers. Pick exact texts.
 3. Annotate in the order of the explanation, assigning an increasing `step`:
-   - `add_mark` for Rust semantics (`move`, `borrow`, `borrow_mut`, `drop`, `lifetime`): each kind has a fixed color and glyph and shows its legend.
+   - `add_mark` for semantic marks. Built-in, language-agnostic kinds: `info`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo` (Rust habits work as aliases: `borrow`→`read`, `borrow_mut`→`write`, `lifetime`→`scope`). Each shows glyph + legend; `label` is appended. For something the author will reuse, `define_style` once (`{name, glyph, legend, color}`) and then use `name` as `kind`; for a one-off, pass `style: {glyph, legend, color}` inline. Emoji are allowed as glyphs. `list_kinds` shows what exists.
    - `add_arrow` for relationships (from where a value is born to where it is consumed).
    - `add_box` to delimit a function or a block.
    - `add_note` for a short sentence; `highlight` for a fragment without semantics.

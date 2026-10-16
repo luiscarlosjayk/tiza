@@ -33,6 +33,25 @@ pub struct At {
     pub occurrence: Option<u32>,
 }
 
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
+pub struct InlineStyle {
+    #[schemars(description = "Glyph, one or two cells wide (box-drawing, arrows, emoji)")]
+    pub glyph: Option<String>,
+    #[schemars(description = "Short legend shown after the glyph")]
+    pub legend: Option<String>,
+    #[schemars(description = "Palette name or #rrggbb")]
+    pub color: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct DefineStyleParams {
+    #[schemars(description = "Name to use later as `kind` (e.g. \"hot\")")]
+    pub name: String,
+    pub glyph: Option<String>,
+    pub legend: Option<String>,
+    pub color: Option<String>,
+}
+
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct Empty {}
 
@@ -101,9 +120,13 @@ pub struct HighlightParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct MarkParams {
     #[schemars(
-        description = "Kind of Rust semantic mark: move, borrow, borrow_mut, drop or lifetime"
+        description = "Built-in kind (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph."
     )]
     pub kind: String,
+    #[schemars(
+        description = "Inline one-off style for this mark: {glyph, legend, color}. Overrides the kind's fields."
+    )]
+    pub style: Option<InlineStyle>,
     pub at: At,
     #[schemars(description = "Extra text after the legend (e.g. \"s goes into t\")")]
     pub label: Option<String>,
@@ -198,23 +221,6 @@ fn text(v: impl ToString) -> CallToolResult {
 
 fn pretty(v: &Value) -> String {
     serde_json::to_string_pretty(v).unwrap_or_default()
-}
-
-fn mark_kind(s: &str) -> Result<&'static str, McpError> {
-    codedraw_core::MarkKind::parse(s)
-        .map(|k| match k {
-            codedraw_core::MarkKind::Move => "move",
-            codedraw_core::MarkKind::Borrow => "borrow",
-            codedraw_core::MarkKind::BorrowMut => "borrow_mut",
-            codedraw_core::MarkKind::Drop => "drop",
-            codedraw_core::MarkKind::Lifetime => "lifetime",
-        })
-        .ok_or_else(|| {
-            McpError::invalid_params(
-                format!("unknown mark kind: {s} (move, borrow, borrow_mut, drop, lifetime)"),
-                None,
-            )
-        })
 }
 
 #[tool_router]
@@ -349,15 +355,14 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Rust semantic mark on a fragment: move, borrow (&), borrow_mut (&mut), drop or lifetime. Each kind has a fixed color and glyph and shows its legend."
+        description = "Semantic mark on a fragment: a built-in kind (warn, error, ok, read, write, move, drop, scope…), a reusable style from define_style, or a one-off inline style. Each shows glyph + legend; language-agnostic."
     )]
     async fn add_mark(
         &self,
         Parameters(p): Parameters<MarkParams>,
     ) -> Result<CallToolResult, McpError> {
-        let kind = mark_kind(&p.kind)?;
         let v = self
-            .call("annotation.add", json!({"type": "mark", "kind": kind, "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
+            .call("annotation.add", json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
             .await?;
         Ok(text(pretty(&v)))
     }
@@ -402,6 +407,32 @@ impl CodeDrawServer {
             )
             .await?;
         Ok(text(pretty(&v)))
+    }
+
+    #[tool(
+        description = "Defines (or updates) a reusable mark style in the document: name + glyph + legend + color. Afterwards use `name` as `kind` in add_mark."
+    )]
+    async fn define_style(
+        &self,
+        Parameters(p): Parameters<DefineStyleParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let v = self
+            .call(
+                "style.set",
+                json!({"name": p.name, "glyph": p.glyph, "legend": p.legend, "color": p.color}),
+            )
+            .await?;
+        Ok(text(pretty(&v)))
+    }
+
+    #[tool(
+        description = "Lists the mark kinds available: the document's styles and the built-in ones, with their glyphs."
+    )]
+    async fn list_kinds(
+        &self,
+        Parameters(_p): Parameters<Empty>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(&self.call("style.list", json!({})).await?)))
     }
 
     #[tool(description = "Deletes an annotation by id.")]

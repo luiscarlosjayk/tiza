@@ -1,18 +1,107 @@
 {
   "schema": 1,
   "title": "&self vs &mut self in an impl",
-  "source": { "language": "rs", "first_line": 1 },
-  "code": { "file": "src/stack.rs", "lines": "7-30" },
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "src/stack.rs",
+    "lines": "7-30"
+  },
   "step": 0,
   "theme": "dark",
   "annotations": [
-    { "id": "a1", "step": 1, "type": "box", "from_line": 7, "to_line": 30, "label": "impl<T> Stack<T>", "color": "gray" },
-    { "id": "a2", "step": 2, "type": "mark", "kind": "borrow_mut", "span": { "line": 12, "start": 16, "end": 25 }, "label": "mutates: needs &mut" },
-    { "id": "a3", "step": 2, "type": "mark", "kind": "borrow_mut", "span": { "line": 16, "start": 15, "end": 24 }, "label": "also mutates" },
-    { "id": "a4", "step": 3, "type": "mark", "kind": "borrow", "span": { "line": 20, "start": 16, "end": 21 }, "label": "only reads" },
-    { "id": "a5", "step": 3, "type": "note", "line": 21, "text": "returns Option<&T>: a borrow that lives as long as self does", "color": "cyan" },
-    { "id": "a6", "step": 4, "type": "arrow", "from": { "line": 16, "col": 32 }, "to": { "line": 20, "col": 31 }, "label": "T vs &T", "color": "purple" },
-    { "id": "a7", "step": 5, "type": "highlight", "span": { "line": 24, "start": 11, "end": 14 }, "label": "&self is enough", "color": "green" },
-    { "id": "a8", "step": 5, "type": "highlight", "span": { "line": 28, "start": 11, "end": 19 }, "color": "green" }
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "box",
+      "from_line": 7,
+      "to_line": 30,
+      "label": "impl<T> Stack<T>",
+      "color": "gray"
+    },
+    {
+      "id": "a2",
+      "step": 2,
+      "type": "mark",
+      "kind": "write",
+      "span": {
+        "line": 12,
+        "start": 16,
+        "end": 25
+      },
+      "label": "mutates: needs &mut"
+    },
+    {
+      "id": "a3",
+      "step": 2,
+      "type": "mark",
+      "kind": "write",
+      "span": {
+        "line": 16,
+        "start": 15,
+        "end": 24
+      },
+      "label": "also mutates"
+    },
+    {
+      "id": "a4",
+      "step": 3,
+      "type": "mark",
+      "kind": "read",
+      "span": {
+        "line": 20,
+        "start": 16,
+        "end": 21
+      },
+      "label": "only reads"
+    },
+    {
+      "id": "a5",
+      "step": 3,
+      "type": "note",
+      "line": 21,
+      "text": "returns Option<&T>: a borrow that lives as long as self does",
+      "color": "cyan"
+    },
+    {
+      "id": "a6",
+      "step": 4,
+      "type": "arrow",
+      "from": {
+        "line": 16,
+        "col": 32
+      },
+      "to": {
+        "line": 20,
+        "col": 31
+      },
+      "label": "T vs &T",
+      "color": "purple"
+    },
+    {
+      "id": "a7",
+      "step": 5,
+      "type": "highlight",
+      "span": {
+        "line": 24,
+        "start": 11,
+        "end": 14
+      },
+      "label": "&self is enough",
+      "color": "green"
+    },
+    {
+      "id": "a8",
+      "step": 5,
+      "type": "highlight",
+      "span": {
+        "line": 28,
+        "start": 11,
+        "end": 19
+      },
+      "color": "green"
+    }
   ]
 }

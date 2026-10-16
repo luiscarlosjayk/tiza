@@ -1,9 +1,9 @@
 //! Dark and light themes (like Excalidraw), with explicit RGB colors meant to
 //! look good on 1080p video. Semantic marks use hues the syntax highlighting
-//! does not, and are also told apart by shape (see `MarkKind::glyph`).
+//! does not, and are also told apart by shape (each kind has its own glyph).
 
 use crate::canvas::{CellStyle, Rgb};
-use crate::model::{MarkKind, ThemeName};
+use crate::model::{MarkStyle, ThemeName};
 
 #[derive(Debug, Clone)]
 pub struct Theme {
@@ -25,11 +25,6 @@ pub struct Theme {
     pub status_fg: Rgb,
     pub cmd_bg: Rgb,
     pub error: Rgb,
-    pub mark_move: Rgb,
-    pub mark_borrow: Rgb,
-    pub mark_borrow_mut: Rgb,
-    pub mark_drop: Rgb,
-    pub mark_lifetime: Rgb,
     /// Matching two-face syntax theme.
     pub syntax: two_face::theme::EmbeddedThemeName,
 }
@@ -54,11 +49,6 @@ impl Theme {
             status_fg: Rgb::hex(0xE8E6E1),
             cmd_bg: Rgb::hex(0x1D2026),
             error: Rgb::hex(0xF47C6F),
-            mark_move: Rgb::hex(0xE85DD0),
-            mark_borrow: Rgb::hex(0x3DD6CF),
-            mark_borrow_mut: Rgb::hex(0xFFC53D),
-            mark_drop: Rgb::hex(0xFF3D5A),
-            mark_lifetime: Rgb::hex(0xB48CFF),
             syntax: T::OneHalfDark,
         }
     }
@@ -82,11 +72,6 @@ impl Theme {
             status_fg: Rgb::hex(0x1F2328),
             cmd_bg: Rgb::hex(0xFBFAF7),
             error: Rgb::hex(0xB42318),
-            mark_move: Rgb::hex(0xC0188F),
-            mark_borrow: Rgb::hex(0x007A7A),
-            mark_borrow_mut: Rgb::hex(0x8F5E00),
-            mark_drop: Rgb::hex(0xD1203A),
-            mark_lifetime: Rgb::hex(0x6B3FD6),
             syntax: T::OneHalfLight,
         }
     }
@@ -105,19 +90,19 @@ impl Theme {
         }
     }
 
-    pub fn mark_color(&self, kind: MarkKind) -> Rgb {
-        match kind {
-            MarkKind::Move => self.mark_move,
-            MarkKind::Borrow => self.mark_borrow,
-            MarkKind::BorrowMut => self.mark_borrow_mut,
-            MarkKind::Drop => self.mark_drop,
-            MarkKind::Lifetime => self.mark_lifetime,
-        }
+    /// Color of a resolved mark style (falls back to the accent).
+    pub fn mark_color(&self, style: &MarkStyle) -> Rgb {
+        style
+            .color
+            .as_deref()
+            .and_then(|c| self.named_color(c))
+            .unwrap_or(self.accent)
     }
 
     /// Faint background for a mark's span: the mark color blended with the background.
-    pub fn mark_bg(&self, kind: MarkKind) -> Rgb {
-        blend(self.mark_color(kind), self.bg, 0.22)
+    /// Subtle background for a mark's span: the mark color blended into the background.
+    pub fn mark_bg(&self, style: &MarkStyle) -> Rgb {
+        blend(self.mark_color(style), self.bg, 0.22)
     }
 
     pub fn base(&self) -> CellStyle {
