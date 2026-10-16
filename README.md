@@ -6,6 +6,8 @@ CodeDraw is a Rust TUI (ratatui) built for tutorials: you share your screen with
 
 It is also **for agents**: it exposes a local socket API and an **MCP server**, so Claude Code (or any MCP client) can draw live on what you are showing.
 
+![CodeDraw explaining Rust ownership step by step](docs/img/ownership.gif)
+
 > Status: **v0.0.1, first working demo**. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev) and [tuios](https://github.com/Gaurav-Gosain/tuios).
 
 ```
@@ -100,6 +102,8 @@ codedraw render --out shot.png                                   # what the live
 Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL) and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool.
 
 ![ownership example, step 7](docs/img/ownership-step7.png)
+
+The GIF at the top of this README is eight of these exports (`--all-steps` is t-101; today it is a loop over `--step`) stitched with Pillow — no screen recording involved.
 
 ## For agents: MCP and local API
 
