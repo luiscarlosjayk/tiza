@@ -36,7 +36,7 @@ struct Cli {
     /// Focus a range of lines on open (A-B)
     #[arg(long)]
     focus: Option<String>,
-    /// Blank cells around the drawing: `V` or `V,H` (saved in the document)
+    /// Blank cells around the drawing for this session: `V` or `V,H` (`:pad` saves it in the document)
     #[arg(long)]
     padding: Option<String>,
     /// Path of the local API socket (defaults to $CODEDRAW_SOCKET or the session)
@@ -371,8 +371,8 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
                 .context("--padding expects V or V,H")?;
             match nums.as_slice() {
                 [v] => Some((*v, *v * 2)),
-                [v, h, ..] => Some((*v, *h)),
-                [] => None,
+                [v, h] => Some((*v, *h)),
+                _ => bail!("--padding expects V or V,H"),
             }
         }
         None => None,

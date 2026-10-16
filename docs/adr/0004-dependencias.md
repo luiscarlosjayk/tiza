@@ -34,7 +34,7 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |
 
-Evaluated and **postponed**: `notify` 8 (file watching; Zed saves with tmp+rename, watch the directory), `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS), `resvg` (PNG; requires embedding fonts), `insta`/`proptest` (will come with the snapshot tests).
+Evaluated and **postponed**: `notify` 8 (file watching; Zed saves with tmp+rename, watch the directory), `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS), `insta` (snapshot tests; the per-ticket `qa/` crate covers that need for now). `resvg` and `proptest` were adopted later (rows above).
 
 ### Recorded exceptions
 

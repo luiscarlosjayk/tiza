@@ -1986,12 +1986,20 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
             to,
             label,
             line,
-        } => Shape::Arrow {
-            from: anchor(from)?,
-            to: anchor(to)?,
-            label: label.clone(),
-            line: *line,
-        },
+        } => {
+            let (f, t) = (anchor(from)?, anchor(to)?);
+            // Both ends landing on the same cell means one of them lost its
+            // text and matched the other's: the arrow has nothing to point at.
+            if f == t && from != to {
+                return None;
+            }
+            Shape::Arrow {
+                from: f,
+                to: t,
+                label: label.clone(),
+                line: *line,
+            }
+        }
         Shape::Note { line, text } => Shape::Note {
             line: find_line(old, new, *line)?,
             text: text.clone(),
