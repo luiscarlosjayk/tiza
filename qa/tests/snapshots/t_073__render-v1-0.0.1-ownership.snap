@@ -1,0 +1,34 @@
+---
+source: qa/tests/t-073.rs
+expression: out
+---
+  1          fn main() {
+  2 ╭───────     let s = String::from("hola");
+    │                ◀───╯                                                      nace s
+  3 │            takes(s);                                                      ━▶ move: s pasa a
+  4 │            // println!("{s}"); // error: value borrowed here after move   takes
+  5 │                                                                           ┆ s ya no es dueña:
+  6 │            let t = String::from("mundo");                                   usarla aquí no
+  7 │   ╭───     let n = len(&t);                                                 compila
+  8 │   │        println!("{t} tiene {n} letras");                              ╌▶ read: préstamo
+  9 │   │                                                                       ┆ t sigue siendo
+ 10 │   │        let mut u = String::from("hey");                                 válida
+ 11 │ ╭─┼───     push(&mut u);                                                  ═▶ write
+ 12 │ │ │        println!("{u}");                                               ┆ u ahora vale
+ 13 │ │ │    }                                                                    «hey!»
+ 14 │ │ │
+    │ │ │ ╭─ takes es dueña de s y la libera al final ────────────────────────╮
+ 15 ╰─┼─┼─┼▶ fn takes(s: String) {                                            │ move
+ 16   │ │ │      println!("{s}");                                             │
+ 17   │ │ │  }                                                                │ ╳ drop: aquí muere
+      │ │ ╰───────────────────────────────────────────────────────────────────╯ s
+ 18   │ │
+ 19   │ ╰──▶ fn len(s: &String) -> usize {                                      borrow &
+ 20   │          s.len()
+ 21   │      }
+ 22   │
+      │   ╭─ muta sin tomar propiedad ────────────────────────────────────────╮
+ 23   ╰───┼▶ fn push(s: &mut String) {                                        │ &mut
+ 24       │      s.push('!');                                                 │
+ 25       │  }                                                                │
+          ╰───────────────────────────────────────────────────────────────────╯

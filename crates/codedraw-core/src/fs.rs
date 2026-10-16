@@ -182,17 +182,32 @@ pub fn load_document(path: &Path) -> Result<Document, Error> {
 /// directory, against which relative `code.file` paths are resolved.
 pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, Error> {
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut doc: Document = serde_json::from_str(text)?;
-    if doc.schema > SCHEMA_VERSION {
+    let mut raw: serde_json::Value = serde_json::from_str(text)?;
+    let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+    if found > SCHEMA_VERSION {
         return Err(Error::UnsupportedSchema {
-            found: doc.schema,
+            found,
             supported: SCHEMA_VERSION,
         });
     }
+    // Older files are migrated step by step before being read as the current schema.
+    for (from, migrate) in MIGRATIONS {
+        if found <= *from {
+            migrate(&mut raw);
+        }
+    }
+    let mut doc: Document = serde_json::from_value(raw)?;
+    doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
 }
+
+/// Migrations between schema versions: `(from, f)` turns a schema-`from`
+/// JSON value into schema `from + 1`. Applied in order on load; files are
+/// written in the current schema. Every bump of `SCHEMA_VERSION` adds one
+/// entry here and a fixture under `qa/fixtures/compat/` (t-073 checks both).
+pub const MIGRATIONS: &[(u32, fn(&mut serde_json::Value))] = &[];
 
 /// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
 pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
