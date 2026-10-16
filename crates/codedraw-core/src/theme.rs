@@ -134,3 +134,46 @@ pub fn blend(a: Rgb, b: Rgb, t: f32) -> Rgb {
     };
     Rgb(f(a.0, b.0), f(a.1, b.1), f(a.2, b.2))
 }
+
+/// Nombres de color que acepta `color` en una anotación (y su hex por tema).
+/// También se acepta `#rrggbb`.
+pub const PALETTE: &[&str] = &[
+    "orange", "blue", "green", "purple", "pink", "cyan", "yellow", "red", "gray",
+];
+
+impl Theme {
+    /// Resuelve un color de anotación: nombre de la paleta, alias en español o `#rrggbb`.
+    pub fn named_color(&self, name: &str) -> Option<Rgb> {
+        let n = name.trim().to_ascii_lowercase();
+        if let Some(hex) = n.strip_prefix('#')
+            && hex.len() == 6
+            && let Ok(v) = u32::from_str_radix(hex, 16)
+        {
+            return Some(Rgb::hex(v));
+        }
+        let dark = self.name == ThemeName::Dark;
+        let pick = |d: u32, l: u32| Some(Rgb::hex(if dark { d } else { l }));
+        match n.as_str() {
+            "orange" | "naranja" | "rust" | "accent" => Some(self.accent),
+            "blue" | "azul" => pick(0x7BB0D5, 0x2F4F9E),
+            "green" | "verde" => pick(0x9CC98A, 0x2F6B3A),
+            "purple" | "morado" | "violeta" => pick(0xB48CFF, 0x6B3FD6),
+            "pink" | "rosa" | "magenta" => pick(0xE85DD0, 0xC0188F),
+            "cyan" | "cian" | "teal" => pick(0x3DD6CF, 0x007A7A),
+            "yellow" | "amarillo" => pick(0xF2D98D, 0x8A5A00),
+            "red" | "rojo" => pick(0xFF3D5A, 0xD1203A),
+            "gray" | "grey" | "gris" => Some(self.muted),
+            _ => None,
+        }
+    }
+
+    /// Paleta que rotan las flechas sin color explícito, para que se distingan entre sí.
+    pub fn auto_palette(&self) -> Vec<Rgb> {
+        [
+            "orange", "blue", "green", "purple", "cyan", "pink", "yellow",
+        ]
+        .iter()
+        .filter_map(|n| self.named_color(n))
+        .collect()
+    }
+}

@@ -180,6 +180,9 @@ pub struct AddParams {
     pub id: Option<String>,
     #[serde(default)]
     pub step: Option<u32>,
+    /// Nombre de la paleta (orange, blue, green, purple, pink, cyan, yellow, red, gray) o `#rrggbb`.
+    #[serde(default)]
+    pub color: Option<String>,
     #[serde(flatten)]
     pub shape: ShapeSpec,
 }
@@ -189,6 +192,9 @@ pub struct UpdateParams {
     pub id: String,
     #[serde(default)]
     pub step: Option<u32>,
+    /// Nuevo color; cadena vacía vuelve al color automático.
+    #[serde(default)]
+    pub color: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
     /// Si viene, reemplaza la forma completa.

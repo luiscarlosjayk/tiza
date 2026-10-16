@@ -85,6 +85,7 @@ struct ArrowInfo<'a> {
 struct Label {
     text: String,
     color: Rgb,
+    note: bool,
 }
 
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
@@ -94,6 +95,28 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         .iter()
         .filter(|a| a.step <= opts.step)
         .collect();
+    // Color por anotación: el elegido por el usuario; si no, las flechas rotan la paleta
+    // automática (en orden de aparición) y el resto usa el color del tema.
+    let auto = theme.auto_palette();
+    let mut arrow_seq = 0usize;
+    let mut colors: std::collections::HashMap<&str, Rgb> = std::collections::HashMap::new();
+    for a in &vis {
+        let chosen = a.color.as_deref().and_then(|c| theme.named_color(c));
+        let c = match (&a.shape, chosen) {
+            (_, Some(c)) => c,
+            (Shape::Arrow { .. }, None) => {
+                let c = auto[arrow_seq % auto.len().max(1)];
+                arrow_seq += 1;
+                c
+            }
+            (Shape::Box { .. }, None) => theme.box_line,
+            (Shape::Note { .. }, None) => theme.note,
+            (Shape::Mark { kind, .. }, None) => theme.mark_color(*kind),
+            (Shape::Highlight { .. }, None) => theme.accent,
+        };
+        colors.insert(a.id.as_str(), c);
+    }
+    let color_of = |a: &Annotation| colors.get(a.id.as_str()).copied().unwrap_or(theme.accent);
 
     // ---- cajas y su anidamiento ----
     let mut boxes: Vec<BoxInfo> = vis
@@ -202,7 +225,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     unders.push((
                         Label {
                             text: l.clone(),
-                            color: theme.arrow,
+                            color: color_of(a),
+                            note: false,
                         },
                         false,
                     ));
@@ -214,7 +238,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             for a in &vis {
                 let lbl = match &a.shape {
                     Shape::Note { line: l, text } if *l == line => {
-                        Some((text.clone(), theme.note, true))
+                        Some((text.clone(), color_of(a), true))
                     }
                     Shape::Mark { kind, span, label } if span.line == line => Some((
                         format!(
@@ -229,18 +253,25 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     Shape::Highlight {
                         span,
                         label: Some(l),
-                    } if span.line == line => Some((l.clone(), theme.accent, false)),
+                    } if span.line == line => Some((l.clone(), color_of(a), false)),
                     Shape::Arrow {
                         from,
                         to,
                         label: Some(l),
                     } if from.line != to.line && to.line == line => {
-                        Some((l.clone(), theme.arrow, false))
+                        Some((l.clone(), color_of(a), false))
                     }
                     _ => None,
                 };
                 if let Some((text, color, is_note)) = lbl {
-                    unders.push((Label { text, color }, is_note));
+                    unders.push((
+                        Label {
+                            text,
+                            color,
+                            note: is_note,
+                        },
+                        is_note,
+                    ));
                     rows.push(Row::Under(unders.len() - 1));
                 }
             }
@@ -328,7 +359,15 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // ---- 2. resaltes y marcas ----
     for a in &vis {
         let (span, fg, bg, label) = match &a.shape {
-            Shape::Highlight { span, label } => (span, theme.fg, theme.highlight_bg, label.clone()),
+            Shape::Highlight { span, label } => {
+                let c = color_of(a);
+                let (fg, bg) = if a.color.is_some() {
+                    (c, crate::theme::blend(c, theme.bg, 0.22))
+                } else {
+                    (theme.fg, theme.highlight_bg)
+                };
+                (span, fg, bg, label.clone())
+            }
             Shape::Mark { kind, span, label } => (
                 span,
                 theme.mark_color(*kind),
@@ -353,18 +392,18 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(fg).bg(bg).bold());
         }
         if labels_in_margin && let Some(l) = label {
-            let color = if matches!(a.shape, Shape::Mark { .. }) {
-                fg
-            } else {
-                theme.accent
-            };
-            margin[y].push(Label { text: l, color });
+            margin[y].push(Label {
+                text: l,
+                color: color_of(a),
+                note: false,
+            });
         }
     }
 
     // ---- 3. cajas ----
-    let box_style = base.fg(theme.box_line);
     for (bi, b) in boxes.iter().enumerate() {
+        let box_color = color_of(b.ann);
+        let box_style = base.fg(box_color);
         let lx = box_x0 + b.depth;
         let rx = rbox_x0 + (box_depth - 1 - b.depth);
         let Shape::Box { label, .. } = &b.ann.shape else {
@@ -379,7 +418,12 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             canvas.put(lx, y, "│", box_style);
             canvas.put(rx, y, "│", box_style);
             // tinte sutil dentro de la caja
-            canvas.restyle(lx + 1, y, rx - lx - 1, CellStyle::new().bg(theme.box_bg));
+            canvas.restyle(
+                lx + 1,
+                y,
+                rx - lx - 1,
+                CellStyle::new().bg(crate::theme::blend(box_color, theme.bg, 0.08)),
+            );
         }
         canvas.put(lx, top, "╭", box_style);
         canvas.put(rx, top, "╮", box_style);
@@ -401,11 +445,12 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
 
     // ---- 4. flechas entre líneas ----
-    let arrow_style = base.fg(theme.arrow).bold();
     for a in &arrows {
         let Shape::Arrow { from, to, label } = &a.ann.shape else {
             continue;
         };
+        let arrow_color = color_of(a.ann);
+        let arrow_style = base.fg(arrow_color).bold();
         let lane_x = arrow_x0 + a.lane * 2;
         let ys = row_of_line[&from.line];
         let yt = row_of_line[&to.line];
@@ -433,7 +478,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             from.line,
             from.col,
             opts.tab_width,
-            theme.arrow,
+            arrow_color,
         );
         mark_anchor(
             &mut canvas,
@@ -444,12 +489,13 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             to.line,
             to.col,
             opts.tab_width,
-            theme.arrow,
+            arrow_color,
         );
         if labels_in_margin && let Some(l) = label {
             margin[yt].push(Label {
                 text: l.clone(),
-                color: theme.arrow,
+                color: arrow_color,
+                note: false,
             });
         }
     }
@@ -460,6 +506,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let Shape::Arrow { from, to, label } = &vis[*i].shape else {
             continue;
         };
+        let arrow_color = color_of(vis[*i]);
+        let arrow_style = base.fg(arrow_color).bold();
         let text = doc.line_text(from.line).unwrap_or("");
         let fx = code_x + col_to_x(text, from.col, opts.tab_width).min(code_w.saturating_sub(1));
         let tx = code_x + col_to_x(text, to.col, opts.tab_width).min(code_w.saturating_sub(1));
@@ -481,7 +529,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         if labels_in_margin && let Some(l) = label {
             margin[y].push(Label {
                 text: l.clone(),
-                color: theme.arrow,
+                color: arrow_color,
+                note: false,
             });
         }
         let code_row = row_of_line[&from.line];
@@ -494,7 +543,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             from.line,
             from.col,
             opts.tab_width,
-            theme.arrow,
+            arrow_color,
         );
         mark_anchor(
             &mut canvas,
@@ -505,7 +554,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             to.line,
             to.col,
             opts.tab_width,
-            theme.arrow,
+            arrow_color,
         );
     }
 
@@ -517,7 +566,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             {
                 margin[y].push(Label {
                     text: text.clone(),
-                    color: theme.note,
+                    color: color_of(a),
+                    note: true,
                 });
             }
         }
@@ -549,7 +599,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     x += canvas.put_str(x, y, "  ", base);
                 }
                 let avail = width.saturating_sub(x);
-                let is_note = l.color == theme.note;
+                let is_note = l.note;
                 let style = if is_note {
                     base.fg(l.color).italic()
                 } else {
@@ -697,6 +747,7 @@ mod tests {
         d.add(Annotation {
             id: "a1".into(),
             step: 1,
+            color: None,
             shape: Shape::Mark {
                 kind: MarkKind::Move,
                 span: TextSpan {
@@ -711,6 +762,7 @@ mod tests {
         d.add(Annotation {
             id: "a2".into(),
             step: 1,
+            color: None,
             shape: Shape::Arrow {
                 from: Anchor {
                     line: s.line,
@@ -724,6 +776,7 @@ mod tests {
         d.add(Annotation {
             id: "a3".into(),
             step: 2,
+            color: None,
             shape: Shape::Box {
                 from_line: 7,
                 to_line: 9,
@@ -734,6 +787,7 @@ mod tests {
         d.add(Annotation {
             id: "a4".into(),
             step: 2,
+            color: None,
             shape: Shape::Note {
                 line: 4,
                 text: "error: s ya no es dueña".into(),

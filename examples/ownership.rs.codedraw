@@ -43,7 +43,8 @@
         "start": 8,
         "end": 9
       },
-      "label": "s pasa a takes"
+      "label": "s pasa a takes",
+      "color": "orange"
     },
     {
       "id": "a2",
@@ -57,14 +58,16 @@
         "line": 15,
         "col": 9
       },
-      "label": "move"
+      "label": "move",
+      "color": "orange"
     },
     {
       "id": "a3",
       "step": 2,
       "type": "note",
       "line": 4,
-      "text": "s ya no es dueña: usarla aquí no compila"
+      "text": "s ya no es dueña: usarla aquí no compila",
+      "color": "orange"
     },
     {
       "id": "a4",
@@ -72,7 +75,8 @@
       "type": "box",
       "from_line": 15,
       "to_line": 17,
-      "label": "takes es dueña de s y la libera al final"
+      "label": "takes es dueña de s y la libera al final",
+      "color": "orange"
     },
     {
       "id": "a5",
@@ -96,7 +100,8 @@
         "start": 16,
         "end": 18
       },
-      "label": "préstamo"
+      "label": "préstamo",
+      "color": "cyan"
     },
     {
       "id": "a7",
@@ -110,14 +115,16 @@
         "line": 19,
         "col": 7
       },
-      "label": "borrow &"
+      "label": "borrow &",
+      "color": "cyan"
     },
     {
       "id": "a8",
       "step": 3,
       "type": "note",
       "line": 8,
-      "text": "t sigue siendo válida"
+      "text": "t sigue siendo válida",
+      "color": "cyan"
     },
     {
       "id": "a9",
@@ -142,7 +149,8 @@
         "line": 23,
         "col": 8
       },
-      "label": "&mut"
+      "label": "&mut",
+      "color": "yellow"
     },
     {
       "id": "a11",
@@ -150,14 +158,16 @@
       "type": "box",
       "from_line": 23,
       "to_line": 25,
-      "label": "muta sin tomar propiedad"
+      "label": "muta sin tomar propiedad",
+      "color": "yellow"
     },
     {
       "id": "a12",
       "step": 5,
       "type": "note",
       "line": 12,
-      "text": "u ahora vale «hey!»"
+      "text": "u ahora vale «hey!»",
+      "color": "yellow"
     },
     {
       "id": "a13",
@@ -171,7 +181,8 @@
         "line": 2,
         "col": 8
       },
-      "label": "nace s"
+      "label": "nace s",
+      "color": "purple"
     }
   ],
   "step": 1,

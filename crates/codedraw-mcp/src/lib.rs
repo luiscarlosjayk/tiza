@@ -48,6 +48,10 @@ pub struct BoxParams {
         description = "Paso de la presentación en que aparece (1-based). Por defecto, el paso actual."
     )]
     pub step: Option<u32>,
+    #[schemars(
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+    )]
+    pub color: Option<String>,
     #[schemars(description = "Id propio (p. ej. \"caja-takes\"); si se omite se asigna a1, a2…")]
     pub id: Option<String>,
 }
@@ -59,6 +63,10 @@ pub struct ArrowParams {
     #[schemars(description = "Texto junto a la punta de la flecha (p. ej. \"move\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+    )]
+    pub color: Option<String>,
     pub id: Option<String>,
 }
 
@@ -71,6 +79,10 @@ pub struct NoteParams {
     )]
     pub text: String,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+    )]
+    pub color: Option<String>,
     pub id: Option<String>,
 }
 
@@ -79,6 +91,10 @@ pub struct HighlightParams {
     pub at: At,
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+    )]
+    pub color: Option<String>,
     pub id: Option<String>,
 }
 
@@ -92,6 +108,10 @@ pub struct MarkParams {
     #[schemars(description = "Texto adicional tras la leyenda (p. ej. \"s pasa a t\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
+    #[schemars(
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+    )]
+    pub color: Option<String>,
     pub id: Option<String>,
 }
 
@@ -100,6 +120,10 @@ pub struct UpdateParams {
     pub id: String,
     #[schemars(description = "Nuevo paso en el que aparece")]
     pub step: Option<u32>,
+    #[schemars(
+        description = "Nuevo color (nombre de la paleta o #rrggbb); cadena vacía vuelve al automático"
+    )]
+    pub color: Option<String>,
     #[schemars(
         description = "Nueva etiqueta (o nuevo texto si es una nota). Cadena vacía la quita."
     )]
@@ -258,7 +282,7 @@ impl CodeDrawServer {
         Parameters(p): Parameters<BoxParams>,
     ) -> Result<CallToolResult, McpError> {
         let v = self
-            .call("annotation.add", json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "label": p.label, "step": p.step, "id": p.id}))
+            .call("annotation.add", json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
             .await?;
         Ok(text(pretty(&v)))
     }
@@ -271,7 +295,7 @@ impl CodeDrawServer {
         Parameters(p): Parameters<ArrowParams>,
     ) -> Result<CallToolResult, McpError> {
         let v = self
-            .call("annotation.add", json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id}))
+            .call("annotation.add", json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
             .await?;
         Ok(text(pretty(&v)))
     }
@@ -286,7 +310,7 @@ impl CodeDrawServer {
         let v = self
             .call(
                 "annotation.add",
-                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id}),
+                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id, "color": p.color}),
             )
             .await?;
         Ok(text(pretty(&v)))
@@ -299,7 +323,7 @@ impl CodeDrawServer {
         &self,
         Parameters(p): Parameters<HighlightParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self.call("annotation.add", json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id})).await?;
+        let v = self.call("annotation.add", json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color})).await?;
         Ok(text(pretty(&v)))
     }
 
@@ -312,7 +336,7 @@ impl CodeDrawServer {
     ) -> Result<CallToolResult, McpError> {
         let kind = mark_kind(&p.kind)?;
         let v = self
-            .call("annotation.add", json!({"type": "mark", "kind": kind, "at": p.at, "label": p.label, "step": p.step, "id": p.id}))
+            .call("annotation.add", json!({"type": "mark", "kind": kind, "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
             .await?;
         Ok(text(pretty(&v)))
     }
@@ -325,7 +349,7 @@ impl CodeDrawServer {
         let v = self
             .call(
                 "annotation.update",
-                json!({"id": p.id, "step": p.step, "label": p.label}),
+                json!({"id": p.id, "step": p.step, "label": p.label, "color": p.color}),
             )
             .await?;
         Ok(text(pretty(&v)))

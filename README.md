@@ -68,11 +68,12 @@ Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` y avanza con 
 :note 4 s ya no es dueña              nota anclada a una línea
 :step 2        :step a3 2             cambiar de paso · mover la anotación a3 al paso 2
 :del a1        :label a2 nuevo texto  borrar · cambiar etiqueta
+:color a2 blue   :color a3 #ff8800   color por anotación (orange blue green purple pink cyan yellow red gray · auto)
 :focus 15-17   :focus                 atenuar todo salvo un rango · quitar el enfoque
 :theme light   :lang ts   :w   :q
 ```
 
-Las anotaciones nuevas aparecen en el paso actual. Todo se guarda automáticamente en un `.codedraw` (JSON) junto al archivo fuente (`src/main.rs.codedraw`).
+Las anotaciones nuevas aparecen en el paso actual. El color es tuyo, como en Excalidraw: cada anotación acepta `color` (nombre o `#rrggbb`); las flechas sin color rotan una paleta para distinguirse entre sí. Todo se guarda automáticamente en un `.codedraw` (JSON) junto al archivo fuente (`src/main.rs.codedraw`).
 
 ## Para agentes: MCP y API local
 

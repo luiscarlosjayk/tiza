@@ -151,6 +151,10 @@ pub struct Annotation {
     /// Paso en el que aparece (1-based).
     #[serde(default = "one")]
     pub step: u32,
+    /// Color elegido por quien explica: nombre de la paleta (`blue`, `verde`…) o `#rrggbb`.
+    /// Sin color, las flechas rotan por una paleta y el resto usa el color del tema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
     #[serde(flatten)]
     pub shape: Shape,
 }
@@ -450,6 +454,7 @@ mod tests {
             .add(Annotation {
                 id: String::new(),
                 step: 1,
+                color: None,
                 shape: Shape::Note {
                     line: 2,
                     text: "aquí nace s".into(),
@@ -461,6 +466,7 @@ mod tests {
             .add(Annotation {
                 id: String::new(),
                 step: 1,
+                color: None,
                 shape: Shape::Note {
                     line: 99,
                     text: "x".into(),
@@ -476,6 +482,7 @@ mod tests {
         d.add(Annotation {
             id: "a1".into(),
             step: 2,
+            color: None,
             shape: Shape::Arrow {
                 from: Anchor { line: 2, col: 8 },
                 to: Anchor { line: 3, col: 10 },

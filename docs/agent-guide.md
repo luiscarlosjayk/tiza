@@ -24,10 +24,14 @@ Esta página es para un agente (Claude Code, Zed, cualquier cliente MCP) que vay
 
 ```json
 {"name":"add_mark","arguments":{"kind":"move","at":{"line":3,"find":"s"},"label":"s pasa a takes","step":1}}
-{"name":"add_arrow","arguments":{"from":{"line":2,"find":"s"},"to":{"line":15,"find":"s: String"},"label":"move","step":1}}
+{"name":"add_arrow","arguments":{"from":{"line":2,"find":"s"},"to":{"line":15,"find":"s: String"},"label":"move","step":1,"color":"orange"}}
 {"name":"add_note","arguments":{"line":4,"text":"s ya no es dueña: usarla aquí no compila","step":2}}
 {"name":"add_box","arguments":{"from_line":15,"to_line":17,"label":"takes es dueña de s y la libera al final","step":2}}
 ```
+
+## Color
+
+Cada anotación acepta `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (también en español: `azul`, `verde`…) o `#rrggbb`. Úsalo para contar una historia por valor: todo lo que le pasa a `s` en un color, todo lo de `t` en otro. Las flechas sin color rotan una paleta automática; cajas, notas y resaltes sin color usan el del tema. `update_annotation` con `color: ""` vuelve al automático.
 
 ## Idempotencia
 

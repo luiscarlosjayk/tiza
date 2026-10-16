@@ -120,11 +120,30 @@ impl App {
         step: Option<u32>,
         shape: Shape,
     ) -> Result<String, Error> {
+        self.add_annotation_colored(id, step, None, shape)
+    }
+
+    pub fn add_annotation_colored(
+        &mut self,
+        id: Option<String>,
+        step: Option<u32>,
+        color: Option<String>,
+        shape: Shape,
+    ) -> Result<String, Error> {
+        if let Some(c) = &color
+            && self.theme.named_color(c).is_none()
+        {
+            return Err(Error::Invalid(format!(
+                "color desconocido: {c} (usa {} o #rrggbb)",
+                codedraw_core::theme::PALETTE.join(", ")
+            )));
+        }
         self.history.record(&self.doc);
         let step = step.unwrap_or(self.doc.step).max(1);
         let res = self.doc.add(Annotation {
             id: id.unwrap_or_default(),
             step,
+            color,
             shape,
         });
         match res {
@@ -161,6 +180,18 @@ impl App {
             .ok_or_else(|| Error::NotFound(p.id.clone()))?;
         if let Some(s) = p.step {
             ann.step = s.max(1);
+        }
+        if let Some(c) = &p.color {
+            if c.trim().is_empty() {
+                ann.color = None;
+            } else if self.theme.named_color(c).is_some() {
+                ann.color = Some(c.trim().to_string());
+            } else {
+                return Err(Error::Invalid(format!(
+                    "color desconocido: {c} (usa {} o #rrggbb)",
+                    codedraw_core::theme::PALETTE.join(", ")
+                )));
+            }
         }
         if let Some(spec) = &p.shape {
             ann.shape = spec.resolve(&self.doc)?;
@@ -300,6 +331,29 @@ impl App {
                         Ok(format!("{n} eliminada(s)"))
                     }
                 }
+                "color" | "col" => {
+                    let (id, c) = split_first(rest);
+                    if id.is_empty() {
+                        return Err(Error::Invalid(format!(
+                            "uso: :color ID nombre|#rrggbb|auto   (nombres: {})",
+                            codedraw_core::theme::PALETTE.join(", ")
+                        )));
+                    }
+                    let c = if c == "auto" { "" } else { c };
+                    self.update_annotation(&UpdateParams {
+                        id: id.into(),
+                        step: None,
+                        color: Some(c.into()),
+                        label: None,
+                        shape: None,
+                    })
+                    .map(|_| {
+                        format!(
+                            "{id}: color {}",
+                            if c.is_empty() { "automático" } else { c }
+                        )
+                    })
+                }
                 "label" => {
                     let (id, text) = rest
                         .split_once(char::is_whitespace)
@@ -307,6 +361,7 @@ impl App {
                     self.update_annotation(&UpdateParams {
                         id: id.into(),
                         step: None,
+                        color: None,
                         label: Some(text.trim().into()),
                         shape: None,
                     })
@@ -329,6 +384,7 @@ impl App {
                             self.update_annotation(&UpdateParams {
                                 id: id.to_string(),
                                 step: Some(n),
+                                color: None,
                                 label: None,
                                 shape: None,
                             })
@@ -588,7 +644,7 @@ impl App {
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
                 let shape = p.shape.resolve(&self.doc)?;
-                let id = self.add_annotation(p.id, p.step, shape)?;
+                let id = self.add_annotation_colored(p.id, p.step, p.color, shape)?;
                 serde_json::to_value(Mutated {
                     id,
                     revision: self.revision,
@@ -809,6 +865,15 @@ mod tests {
         a.run_command("note . aquí empieza");
         assert_eq!(a.doc.annotations.len(), 4);
         assert!(matches!(a.message, Some((_, false))));
+        a.run_command("color a2 blue");
+        assert_eq!(a.doc.annotations[1].color.as_deref(), Some("blue"));
+        a.run_command("color a2 fucsia");
+        assert!(
+            matches!(a.message, Some((_, true))),
+            "color desconocido debe dar error"
+        );
+        a.run_command("color a2 auto");
+        assert_eq!(a.doc.annotations[1].color, None);
         a.run_command("del a1");
         assert_eq!(a.doc.annotations.len(), 3);
         a.run_command("arrow 2:zzz 5:t");

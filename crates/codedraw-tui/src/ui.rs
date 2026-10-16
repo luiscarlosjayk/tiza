@@ -301,6 +301,7 @@ fn help_lines() -> Vec<String> {
         "  :arrow L:texto L:texto [etiqueta]        :hl L:texto [etiqueta]",
         "  :box A-B [etiqueta]                      :note L texto   (L puede ser .)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :label ID texto",
+        "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
         "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [ruta]   :q",
         "",
         "Las anotaciones nuevas aparecen en el paso actual. La API local (socket) y",

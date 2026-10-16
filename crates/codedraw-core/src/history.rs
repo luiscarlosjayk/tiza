@@ -60,6 +60,7 @@ mod tests {
         d.add(Annotation {
             id: "a1".into(),
             step: 1,
+            color: None,
             shape: Shape::Note {
                 line: 1,
                 text: "x".into(),

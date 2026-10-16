@@ -2,6 +2,11 @@
 
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/); versiones [SemVer](https://semver.org/lang/es/).
 
+## [Unreleased]
+
+### Añadido
+- Color por anotación (`color`: nombre de la paleta o `#rrggbb`) en el modelo, `:color ID …`, API y MCP. Las flechas sin color rotan una paleta para distinguirse; el ejemplo de ownership usa un color por valor.
+
 ## [0.0.1] - 2026-10-16
 
 Primer demo funcional.
