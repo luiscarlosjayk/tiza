@@ -52,6 +52,7 @@ fn shape_strategy(lines: u32) -> impl Strategy<Value = Shape> {
             from_line: a.min(b),
             to_line: a.max(b),
             label: Some("a box with a fairly long label to wrap".into()),
+            frame: Default::default(),
         }),
         (line.clone(), col.clone(), line.clone(), col.clone()).prop_map(|(l1, c1, l2, c2)| {
             Shape::Arrow {
@@ -74,6 +75,7 @@ fn shape_strategy(lines: u32) -> impl Strategy<Value = Shape> {
                     _ => Placement::Auto,
                 },
                 width: None,
+                frame: Default::default(),
             }
         }),
         (line.clone(), line).prop_map(|(a, b)| Shape::Spotlight {

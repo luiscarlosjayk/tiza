@@ -178,6 +178,29 @@ impl Route {
     pub const NAMES: &[&str] = &["rounded", "sharp"];
 }
 
+/// Border of a box or callout: stroke, corners and whether the inside is
+/// tinted. `fill` is `None` for the shape's default (boxes tint, callouts do not).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BorderStyle {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub border: Stroke,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub corners: Route,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<bool>,
+}
+
+impl BorderStyle {
+    /// Parses a `fill=` value: yes/tint/true or no/none/false.
+    pub fn parse_fill(s: &str) -> Option<bool> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "yes" | "tint" | "true" | "on" => Some(true),
+            "no" | "none" | "false" | "off" => Some(false),
+            _ => None,
+        }
+    }
+}
+
 /// Stroke, corners and heads of a line-like annotation. Every field defaults
 /// to today's look, so documents without them are unchanged.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -352,6 +375,9 @@ pub enum Shape {
         to_line: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        /// Border stroke, corners and fill (all optional; defaults draw `╭─╮` with a tint).
+        #[serde(flatten, default)]
+        frame: BorderStyle,
     },
     /// Arrow from one point of the code to another.
     Arrow {
@@ -379,6 +405,9 @@ pub enum Shape {
         placement: Placement,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         width: Option<usize>,
+        /// Border stroke, corners and fill (defaults: `╭─╮`, no fill).
+        #[serde(flatten, default)]
+        frame: BorderStyle,
     },
     /// Directs attention: while active (from `step` to `until`, or only at
     /// `step`), dims the code outside `lines` and the annotations outside `ids`.

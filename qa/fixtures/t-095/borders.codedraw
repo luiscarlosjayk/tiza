@@ -1,0 +1,8 @@
+{"schema":1,"source":{"language":"rs"},"code":["fn a() {","    1","}","fn b() {","    2","}","fn c() {","    3","}","fn d() {","    4","}"],"step":1,"annotations":[
+{"id":"b1","step":1,"type":"box","from_line":1,"to_line":3,"label":"thick sharp no fill","border":"thick","fill":false,"color":"orange"},
+{"id":"b2","step":1,"type":"box","from_line":4,"to_line":6,"label":"double","border":"double","color":"blue"},
+{"id":"b3","step":1,"type":"box","from_line":7,"to_line":9,"label":"dashed sharp","border":"dashed","corners":"sharp","color":"green"},
+{"id":"b4","step":1,"type":"box","from_line":10,"to_line":12,"label":"dotted + nested default","border":"dotted","color":"purple"},
+{"id":"b5","step":1,"type":"box","from_line":11,"to_line":11,"label":"inner","color":"pink"},
+{"id":"c1","step":1,"type":"callout","from_line":4,"to_line":6,"title":"filled double","text":"a callout with a double border and a tint.","border":"double","fill":true,"placement":"below","color":"cyan"}
+]}

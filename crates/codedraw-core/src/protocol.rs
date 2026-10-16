@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::{
-    Anchor, Annotation, Document, Head, LineStyle, MarkStyle, Placement, Route, Shape, Stroke,
-    TextSpan,
+    Anchor, Annotation, BorderStyle, Document, Head, LineStyle, MarkStyle, Placement, Route, Shape,
+    Stroke, TextSpan,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -135,6 +135,8 @@ pub enum ShapeSpec {
         to_line: u32,
         #[serde(default)]
         label: Option<String>,
+        #[serde(flatten, default)]
+        frame: BorderStyle,
     },
     Arrow {
         from: Where,
@@ -159,6 +161,8 @@ pub enum ShapeSpec {
         placement: Placement,
         #[serde(default)]
         width: Option<usize>,
+        #[serde(flatten, default)]
+        frame: BorderStyle,
     },
     Spotlight {
         #[serde(default)]
@@ -194,10 +198,12 @@ impl ShapeSpec {
                 from_line,
                 to_line,
                 label,
+                frame,
             } => Shape::Box {
                 from_line: *from_line,
                 to_line: *to_line,
                 label: label.clone(),
+                frame: *frame,
             },
             ShapeSpec::Arrow {
                 from,
@@ -221,6 +227,7 @@ impl ShapeSpec {
                 title,
                 placement,
                 width,
+                frame,
             } => Shape::Callout {
                 from_line: *from_line,
                 to_line: *to_line,
@@ -228,6 +235,7 @@ impl ShapeSpec {
                 title: title.clone(),
                 placement: *placement,
                 width: *width,
+                frame: *frame,
             },
             ShapeSpec::Spotlight {
                 from_line,
@@ -282,6 +290,15 @@ pub struct UpdateParams {
     /// Arrows: new heads; each end optional (`{"start": "dot"}` keeps the other).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub heads: Option<HeadsPatch>,
+    /// Boxes and callouts: new border stroke.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub border: Option<Stroke>,
+    /// Boxes and callouts: new corners.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corners: Option<Route>,
+    /// Boxes and callouts: tint the inside (`true`), do not (`false`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fill: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -295,6 +312,9 @@ pub struct HeadsPatch {
 impl UpdateParams {
     pub fn has_line_style(&self) -> bool {
         self.stroke.is_some() || self.route.is_some() || self.heads.is_some()
+    }
+    pub fn has_border_style(&self) -> bool {
+        self.border.is_some() || self.corners.is_some() || self.fill.is_some()
     }
 }
 
@@ -552,6 +572,7 @@ pub fn describe(a: &Annotation) -> String {
             from_line,
             to_line,
             label,
+            ..
         } => format!(
             "{} [step {}] box L{}-{}{}",
             a.id,

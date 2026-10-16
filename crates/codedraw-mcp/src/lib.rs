@@ -73,6 +73,14 @@ pub struct BoxParams {
     pub color: Option<String>,
     #[schemars(description = "Custom id (e.g. \"box-takes\"); if omitted, a1, a2… is assigned")]
     pub id: Option<String>,
+    #[schemars(description = "Border stroke: solid (default), dashed, dotted, thick, double")]
+    pub border: Option<String>,
+    #[schemars(description = "Corners: rounded (default) or sharp")]
+    pub corners: Option<String>,
+    #[schemars(
+        description = "Tint the inside: true/false (boxes default to true, callouts to false)"
+    )]
+    pub fill: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -97,6 +105,38 @@ pub struct ArrowParams {
         description = "Head at the target: arrow (default), none, dot, bar, open. none+none draws a plain connector."
     )]
     pub head_end: Option<String>,
+}
+
+/// Validates box/callout border strings and returns the protocol fields.
+fn border_style_json(
+    border: &Option<String>,
+    corners: &Option<String>,
+    fill: Option<bool>,
+) -> Result<serde_json::Map<String, Value>, McpError> {
+    use codedraw_core::model::{Route, Stroke};
+    let mut m = serde_json::Map::new();
+    if let Some(b) = border {
+        let v = Stroke::parse(b).ok_or_else(|| {
+            McpError::invalid_params(
+                format!("unknown border: {b} (use {})", Stroke::NAMES.join(", ")),
+                None,
+            )
+        })?;
+        m.insert("border".into(), serde_json::to_value(v).unwrap());
+    }
+    if let Some(c) = corners {
+        let v = Route::parse(c).ok_or_else(|| {
+            McpError::invalid_params(
+                format!("unknown corners: {c} (use {})", Route::NAMES.join(", ")),
+                None,
+            )
+        })?;
+        m.insert("corners".into(), serde_json::to_value(v).unwrap());
+    }
+    if let Some(f) = fill {
+        m.insert("fill".into(), Value::Bool(f));
+    }
+    Ok(m)
 }
 
 /// Validates the arrow style strings and returns the protocol fields
@@ -228,6 +268,14 @@ pub struct UpdateParams {
     pub head_start: Option<String>,
     #[schemars(description = "Arrows: head at the target (none, arrow, dot, bar, open)")]
     pub head_end: Option<String>,
+    #[schemars(
+        description = "Boxes/callouts: border stroke (solid, dashed, dotted, thick, double)"
+    )]
+    pub border: Option<String>,
+    #[schemars(description = "Boxes/callouts: corners (rounded, sharp)")]
+    pub corners: Option<String>,
+    #[schemars(description = "Boxes/callouts: tint the inside (true/false)")]
+    pub fill: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -271,6 +319,14 @@ pub struct CalloutParams {
     pub step: Option<u32>,
     pub color: Option<String>,
     pub id: Option<String>,
+    #[schemars(description = "Border stroke: solid (default), dashed, dotted, thick, double")]
+    pub border: Option<String>,
+    #[schemars(description = "Corners: rounded (default) or sharp")]
+    pub corners: Option<String>,
+    #[schemars(
+        description = "Tint the inside: true/false (boxes default to true, callouts to false)"
+    )]
+    pub fill: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -428,9 +484,11 @@ impl CodeDrawServer {
         &self,
         Parameters(p): Parameters<BoxParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self
-            .call("annotation.add", json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
-            .await?;
+        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
+            params[k] = v;
+        }
+        let v = self.call("annotation.add", params).await?;
         Ok(text(pretty(&v)))
     }
 
@@ -500,7 +558,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Changes the step, color, label or arrow style (stroke, route, head_start, head_end) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
+        description = "Changes the step, color, label, arrow style (stroke, route, head_start, head_end) or box/callout border (border, corners, fill) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
     )]
     async fn update_annotation(
         &self,
@@ -515,6 +573,9 @@ impl CodeDrawServer {
             params["move"] = mv;
         }
         for (k, v) in line_style_json(&p.stroke, &p.route, &p.head_start, &p.head_end)? {
+            params[k] = v;
+        }
+        for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
         let v = self.call("annotation.update", params).await?;
@@ -556,12 +617,11 @@ impl CodeDrawServer {
                 ));
             }
         };
-        let v = self
-            .call(
-                "annotation.add",
-                json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id}),
-            )
-            .await?;
+        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id});
+        for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
+            params[k] = v;
+        }
+        let v = self.call("annotation.add", params).await?;
         Ok(text(pretty(&v)))
     }
 

@@ -269,6 +269,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         lines: Vec<String>,
         /// Outer block width (borders included).
         width: usize,
+        frame: crate::model::BorderStyle,
     }
     let mut callouts: Vec<CalloutPlan> = Vec::new();
     for (i, a) in vis.iter().enumerate() {
@@ -277,6 +278,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             title,
             placement,
             width: want,
+            frame,
             ..
         } = &a.shape
         else {
@@ -315,12 +317,20 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             .unwrap_or(0)
             .max(title.as_ref().map(|t| display_width(t, 4) + 4).unwrap_or(0))
             .max(4);
+        // Below the code the block never grows past the code column (a long
+        // title is clipped in the border instead of breaking a box's rail).
+        let inner = if below {
+            inner.min(code_w.saturating_sub(4).max(4))
+        } else {
+            inner
+        };
         callouts.push(CalloutPlan {
             idx: i,
             below,
             title: title.clone(),
             lines,
             width: inner + 4, // "│ " + text + " │"
+            frame: *frame,
         });
     }
 
@@ -580,41 +590,44 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let box_style = base.fg(box_color);
         let lx = box_x0 + b.depth;
         let rx = rbox_x0 + (box_depth - 1 - b.depth);
-        let Shape::Box { label, .. } = &b.ann.shape else {
+        let Shape::Box { label, frame, .. } = &b.ann.shape else {
             continue;
         };
+        let g = Glyphs::for_border(frame);
         let top = rows.iter().position(|r| *r == Row::BoxTop(bi));
         let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi));
         let (Some(top), Some(bottom)) = (top, bottom) else {
             continue;
         };
         for y in top + 1..bottom {
-            canvas.put_line(lx, y, "│", box_style);
-            canvas.put_line(rx, y, "│", box_style);
-            // subtle tint inside the box
-            canvas.restyle(
-                lx + 1,
-                y,
-                rx - lx - 1,
-                CellStyle::new().bg(crate::theme::blend(box_color, theme.bg, 0.08)),
-            );
+            canvas.put_line(lx, y, g.v, box_style);
+            canvas.put_line(rx, y, g.v, box_style);
+            // subtle tint inside the box (the default; `fill: false` turns it off)
+            if frame.fill.unwrap_or(true) {
+                canvas.restyle(
+                    lx + 1,
+                    y,
+                    rx - lx - 1,
+                    CellStyle::new().bg(crate::theme::blend(box_color, theme.bg, 0.08)),
+                );
+            }
         }
-        canvas.put(lx, top, "╭", box_style);
-        canvas.put(rx, top, "╮", box_style);
+        canvas.put(lx, top, g.tl, box_style);
+        canvas.put(rx, top, g.tr, box_style);
         for x in lx + 1..rx {
-            canvas.put(x, top, "─", box_style);
+            canvas.put(x, top, g.h, box_style);
         }
         if let Some(l) = label {
             let avail = rx.saturating_sub(lx + 4);
-            canvas.put(lx + 1, top, "─", box_style);
+            canvas.put(lx + 1, top, g.h, box_style);
             canvas.put(lx + 2, top, " ", box_style);
             let w = canvas.put_str_clipped(lx + 3, top, l, avail, box_style.bold());
             canvas.put(lx + 3 + w, top, " ", box_style);
         }
-        canvas.put(lx, bottom, "╰", box_style);
-        canvas.put(rx, bottom, "╯", box_style);
+        canvas.put(lx, bottom, g.bl, box_style);
+        canvas.put(rx, bottom, g.br, box_style);
         for x in lx + 1..rx {
-            canvas.put(x, bottom, "─", box_style);
+            canvas.put(x, bottom, g.h, box_style);
         }
     }
 
@@ -828,13 +841,20 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let mut shift = vec![0usize; canvas.height];
     let draw_block = |canvas: &mut Canvas, c: &CalloutPlan, x: usize, y0: usize, color: Rgb| {
         let w = c.width;
+        let g = Glyphs::for_border(&c.frame);
         let border = base.fg(color);
-        let text_style = base.fg(color).italic();
-        canvas.put(x, y0, "╭", border);
+        // Callouts are not tinted unless asked (`fill: true`).
+        let inside = if c.frame.fill.unwrap_or(false) {
+            base.bg(crate::theme::blend(color, theme.bg, 0.08))
+        } else {
+            base
+        };
+        let text_style = inside.fg(color).italic();
+        canvas.put(x, y0, g.tl, border);
         for xx in x + 1..x + w - 1 {
-            canvas.put(xx, y0, "─", border);
+            canvas.put(xx, y0, g.h, border);
         }
-        canvas.put(x + w - 1, y0, "╮", border);
+        canvas.put(x + w - 1, y0, g.tr, border);
         if let Some(t) = &c.title {
             canvas.put(x + 2, y0, " ", border);
             let tw = canvas.put_str_clipped(x + 3, y0, t, w.saturating_sub(6), border.bold());
@@ -842,19 +862,19 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
         for (k, l) in c.lines.iter().enumerate() {
             let y = y0 + 1 + k;
-            canvas.put(x, y, "│", border);
+            canvas.put(x, y, g.v, border);
             for xx in x + 1..x + w - 1 {
-                canvas.put(xx, y, " ", base);
+                canvas.put(xx, y, " ", inside);
             }
             canvas.put_str(x + 2, y, l, text_style);
-            canvas.put(x + w - 1, y, "│", border);
+            canvas.put(x + w - 1, y, g.v, border);
         }
         let yb = y0 + 1 + c.lines.len();
-        canvas.put(x, yb, "╰", border);
+        canvas.put(x, yb, g.bl, border);
         for xx in x + 1..x + w - 1 {
-            canvas.put(xx, yb, "─", border);
+            canvas.put(xx, yb, g.h, border);
         }
-        canvas.put(x + w - 1, yb, "╯", border);
+        canvas.put(x + w - 1, yb, g.br, border);
     };
     // Below: their rows already exist.
     for c in &callouts {
@@ -968,18 +988,20 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 struct Glyphs {
     h: &'static str,
     v: &'static str,
-    /// Corner at the top of a vertical run that turns right (`╭`).
+    /// Top-left corner (`╭`).
     tl: &'static str,
-    /// Corner at the bottom of a vertical run that turns right (`╰`).
+    /// Top-right corner (`╮`).
+    tr: &'static str,
+    /// Bottom-left corner (`╰`).
     bl: &'static str,
-    /// Corner at the bottom of a vertical run coming from the left (`╯`).
+    /// Bottom-right corner (`╯`).
     br: &'static str,
 }
 
 impl Glyphs {
-    fn for_style(ls: &crate::model::LineStyle) -> Glyphs {
+    fn new(stroke: crate::model::Stroke, route: crate::model::Route) -> Glyphs {
         use crate::model::{Route, Stroke};
-        let (h, v) = match ls.stroke {
+        let (h, v) = match stroke {
             Stroke::Solid => ("─", "│"),
             Stroke::Dashed => ("╌", "╎"),
             Stroke::Dotted => ("┄", "┆"),
@@ -987,13 +1009,28 @@ impl Glyphs {
             Stroke::Double => ("═", "║"),
         };
         // Thick and double have no rounded corners in Unicode.
-        let (tl, bl, br) = match (ls.stroke, ls.route) {
-            (Stroke::Thick, _) => ("┏", "┗", "┛"),
-            (Stroke::Double, _) => ("╔", "╚", "╝"),
-            (_, Route::Rounded) => ("╭", "╰", "╯"),
-            (_, Route::Sharp) => ("┌", "└", "┘"),
+        let (tl, tr, bl, br) = match (stroke, route) {
+            (Stroke::Thick, _) => ("┏", "┓", "┗", "┛"),
+            (Stroke::Double, _) => ("╔", "╗", "╚", "╝"),
+            (_, Route::Rounded) => ("╭", "╮", "╰", "╯"),
+            (_, Route::Sharp) => ("┌", "┐", "└", "┘"),
         };
-        Glyphs { h, v, tl, bl, br }
+        Glyphs {
+            h,
+            v,
+            tl,
+            tr,
+            bl,
+            br,
+        }
+    }
+
+    fn for_style(ls: &crate::model::LineStyle) -> Glyphs {
+        Glyphs::new(ls.stroke, ls.route)
+    }
+
+    fn for_border(bs: &crate::model::BorderStyle) -> Glyphs {
+        Glyphs::new(bs.border, bs.corners)
     }
 }
 
@@ -1235,6 +1272,7 @@ mod tests {
                 from_line: 7,
                 to_line: 9,
                 label: Some("takes".into()),
+                frame: Default::default(),
             },
         })
         .unwrap();
@@ -1460,6 +1498,7 @@ mod tests {
                 title: Some("move".into()),
                 placement,
                 width: None,
+                frame: Default::default(),
             },
         })
         .unwrap();
@@ -1481,6 +1520,7 @@ mod tests {
                 from_line: 2,
                 to_line: 3,
                 label: Some("moved here".into()),
+                frame: Default::default(),
             },
         })
         .unwrap();
@@ -1587,6 +1627,7 @@ mod tests {
                 title: Some("whole main".into()),
                 placement: Placement::Below,
                 width: None,
+                frame: Default::default(),
             },
         })
         .unwrap();

@@ -289,6 +289,28 @@ impl App {
         if let Some(mv) = &p.mv {
             mv.apply(&mut ann.shape, &self.doc)?;
         }
+        if p.has_border_style() {
+            match &mut ann.shape {
+                Shape::Box { frame, .. } | Shape::Callout { frame, .. } => {
+                    if let Some(b) = p.border {
+                        frame.border = b;
+                    }
+                    if let Some(c) = p.corners {
+                        frame.corners = c;
+                    }
+                    if let Some(f) = p.fill {
+                        frame.fill = Some(f);
+                    }
+                }
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "border/corners/fill apply to boxes and callouts only; {} is a {}",
+                        p.id,
+                        other.kind_name()
+                    )));
+                }
+            }
+        }
         if p.has_line_style() {
             match &mut ann.shape {
                 Shape::Arrow { line, .. } => {
@@ -792,6 +814,9 @@ impl App {
                     stroke: None,
                     route: None,
                     heads: None,
+                    border: None,
+                    corners: None,
+                    fill: None,
                 }) {
                     Ok(()) => self.info(format!("{id} → step {step}")),
                     Err(e) => self.error(e.to_string()),
@@ -1032,6 +1057,9 @@ impl App {
                         stroke: None,
                         route: None,
                         heads: None,
+                        border: None,
+                        corners: None,
+                        fill: None,
                     })
                     .map(|_| format!("{id}: color {}", if c.is_empty() { "auto" } else { c }))
                 }
@@ -1049,6 +1077,9 @@ impl App {
                         stroke: None,
                         route: None,
                         heads: None,
+                        border: None,
+                        corners: None,
+                        fill: None,
                     })
                     .map(|_| format!("{id} updated"))
                 }
@@ -1076,6 +1107,9 @@ impl App {
                                 stroke: None,
                                 route: None,
                                 heads: None,
+                                border: None,
+                                corners: None,
+                                fill: None,
                             })
                             .map(|_| format!("{id} now appears at step {n}"))
                         }
@@ -1223,9 +1257,17 @@ impl App {
     }
 
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
-        let (range, label) = split_first(rest);
-        let (a, b) =
-            parse_range(range).map_err(|_| Error::Invalid("usage: :box A-B [label]".into()))?;
+        let (range, rest) = split_first(rest);
+        let (a, b) = parse_range(range).map_err(|_| {
+            Error::Invalid(
+                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]".into(),
+            )
+        })?;
+        let (label, kv) = split_trailing_kv(rest);
+        let mut frame = codedraw_core::model::BorderStyle::default();
+        for (k, v) in &kv {
+            apply_border_kv(&mut frame, k, v)?;
+        }
         let id = self.add_annotation(
             None,
             None,
@@ -1233,6 +1275,7 @@ impl App {
                 from_line: a,
                 to_line: b,
                 label: opt(label),
+                frame,
             },
         )?;
         Ok(format!("{id}: box {a}-{b}"))
@@ -1275,13 +1318,17 @@ impl App {
         let kv = parse_kv(rest);
         if id.is_empty() || kv.is_empty() {
             return Err(Error::Invalid(
-                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end)"
+                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill)"
                     .into(),
             ));
         }
         let is_arrow = matches!(
             self.doc.find_annotation(id).map(|a| &a.shape),
             Some(Shape::Arrow { .. })
+        );
+        let is_framed = matches!(
+            self.doc.find_annotation(id).map(|a| &a.shape),
+            Some(Shape::Box { .. } | Shape::Callout { .. })
         );
         let mut p = UpdateParams {
             id: id.to_string(),
@@ -1293,6 +1340,9 @@ impl App {
             stroke: None,
             route: None,
             heads: None,
+            border: None,
+            corners: None,
+            fill: None,
         };
         let mut heads = codedraw_core::protocol::HeadsPatch::default();
         for (k, v) in &kv {
@@ -1309,6 +1359,20 @@ impl App {
                     return Err(Error::Invalid(format!(
                         "`{k}` applies to arrows only ({id} is not an arrow)"
                     )));
+                }
+                "border" | "corners" | "fill" if !is_framed => {
+                    return Err(Error::Invalid(format!(
+                        "`{k}` applies to boxes and callouts only ({id} is not one)"
+                    )));
+                }
+                "border" | "corners" | "fill" => {
+                    let mut bs = codedraw_core::model::BorderStyle::default();
+                    apply_border_kv(&mut bs, k, v)?;
+                    match k.as_str() {
+                        "border" => p.border = Some(bs.border),
+                        "corners" => p.corners = Some(bs.corners),
+                        _ => p.fill = bs.fill,
+                    }
                 }
                 _ => {
                     let mut ls = codedraw_core::model::LineStyle::default();
@@ -1576,7 +1640,12 @@ impl App {
                 break;
             }
         }
-        if rest.trim().is_empty() {
+        let (text, kv) = split_trailing_kv(rest);
+        let mut frame = codedraw_core::model::BorderStyle::default();
+        for (k, v) in &kv {
+            apply_border_kv(&mut frame, k, v)?;
+        }
+        if text.trim().is_empty() {
             return Err(Error::Invalid("the callout text is empty".into()));
         }
         let id = self.add_annotation(
@@ -1585,10 +1654,11 @@ impl App {
             Shape::Callout {
                 from_line: a,
                 to_line: if b == a { None } else { Some(b) },
-                text: rest.trim().to_string(),
+                text: text.trim().to_string(),
                 title,
                 placement,
                 width: None,
+                frame,
             },
         )?;
         Ok(format!("{id}: callout at L{a}-{b}"))
@@ -1972,6 +2042,7 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
             from_line,
             to_line,
             label,
+            frame,
         } => {
             let a = find_line(old, new, *from_line)?;
             let b = find_line(old, new, *to_line)?;
@@ -1979,6 +2050,7 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
                 from_line: a.min(b),
                 to_line: a.max(b),
                 label: label.clone(),
+                frame: *frame,
             }
         }
         Shape::Arrow {
@@ -2011,6 +2083,7 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
             title,
             placement,
             width,
+            frame,
         } => {
             let a = find_line(old, new, *from_line)?;
             let b = match to_line {
@@ -2024,6 +2097,7 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
                 title: title.clone(),
                 placement: *placement,
                 width: *width,
+                frame: *frame,
             }
         }
         Shape::Spotlight {
@@ -2084,6 +2158,44 @@ fn is_kv_token(t: &str) -> bool {
 fn split_token(t: &str) -> (String, String) {
     let (k, v) = t.split_once('=').unwrap_or((t, ""));
     (k.to_string(), v.to_string())
+}
+
+/// Applies one `key=value` to a border style; errors list the valid values.
+pub fn apply_border_kv(
+    bs: &mut codedraw_core::model::BorderStyle,
+    k: &str,
+    v: &str,
+) -> Result<(), Error> {
+    use codedraw_core::model::{BorderStyle, Route, Stroke};
+    match k {
+        "border" | "stroke" => {
+            bs.border = Stroke::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown border: {v} (use {})",
+                    Stroke::NAMES.join(", ")
+                ))
+            })?
+        }
+        "corners" | "route" => {
+            bs.corners = Route::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown corners: {v} (use {})",
+                    Route::NAMES.join(", ")
+                ))
+            })?
+        }
+        "fill" => {
+            bs.fill = Some(BorderStyle::parse_fill(v).ok_or_else(|| {
+                Error::Invalid(format!("fill must be yes|tint or no|none, got {v}"))
+            })?)
+        }
+        other => {
+            return Err(Error::Invalid(format!(
+                "unknown key: {other} (border, corners, fill)"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Applies one `key=value` to a line style; errors list the valid values.
