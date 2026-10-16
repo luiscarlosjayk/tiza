@@ -1,0 +1,298 @@
+//! Lienzo de celdas independiente del backend. La TUI lo copia a un `Buffer`
+//! de ratatui; el CLI lo vuelca a texto plano o ANSI.
+
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct Rgb(pub u8, pub u8, pub u8);
+
+impl Rgb {
+    pub const fn hex(v: u32) -> Self {
+        Self(
+            ((v >> 16) & 0xff) as u8,
+            ((v >> 8) & 0xff) as u8,
+            (v & 0xff) as u8,
+        )
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub struct CellStyle {
+    pub fg: Option<Rgb>,
+    pub bg: Option<Rgb>,
+    pub bold: bool,
+    pub dim: bool,
+    pub italic: bool,
+}
+
+impl CellStyle {
+    pub const fn new() -> Self {
+        Self {
+            fg: None,
+            bg: None,
+            bold: false,
+            dim: false,
+            italic: false,
+        }
+    }
+    pub const fn fg(mut self, c: Rgb) -> Self {
+        self.fg = Some(c);
+        self
+    }
+    pub const fn bg(mut self, c: Rgb) -> Self {
+        self.bg = Some(c);
+        self
+    }
+    pub const fn bold(mut self) -> Self {
+        self.bold = true;
+        self
+    }
+    pub const fn dim(mut self) -> Self {
+        self.dim = true;
+        self
+    }
+    pub const fn italic(mut self) -> Self {
+        self.italic = true;
+        self
+    }
+    /// Combina: lo que `over` define gana; lo demás se conserva.
+    pub fn merge(self, over: CellStyle) -> CellStyle {
+        CellStyle {
+            fg: over.fg.or(self.fg),
+            bg: over.bg.or(self.bg),
+            bold: self.bold || over.bold,
+            dim: self.dim || over.dim,
+            italic: self.italic || over.italic,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cell {
+    /// Grafema que ocupa la celda; vacío si la celda es la segunda mitad de un carácter ancho.
+    pub sym: String,
+    pub style: CellStyle,
+}
+
+impl Default for Cell {
+    fn default() -> Self {
+        Self {
+            sym: " ".to_string(),
+            style: CellStyle::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Canvas {
+    pub width: usize,
+    pub height: usize,
+    cells: Vec<Cell>,
+}
+
+impl Canvas {
+    pub fn new(width: usize, height: usize) -> Self {
+        Self {
+            width,
+            height,
+            cells: vec![Cell::default(); width * height],
+        }
+    }
+
+    pub fn new_filled(width: usize, height: usize, style: CellStyle) -> Self {
+        let mut c = Self::new(width, height);
+        for cell in &mut c.cells {
+            cell.style = style;
+        }
+        c
+    }
+
+    fn idx(&self, x: usize, y: usize) -> Option<usize> {
+        if x < self.width && y < self.height {
+            Some(y * self.width + x)
+        } else {
+            None
+        }
+    }
+
+    pub fn get(&self, x: usize, y: usize) -> Option<&Cell> {
+        self.idx(x, y).map(|i| &self.cells[i])
+    }
+
+    /// Escribe un grafema (ancho 1 o 2) en (x, y). Devuelve el ancho ocupado.
+    pub fn put(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) -> usize {
+        let w = UnicodeWidthStr::width(sym).max(1);
+        let Some(i) = self.idx(x, y) else { return w };
+        if w == 2 && x + 1 >= self.width {
+            // No cabe entero: dejamos un espacio.
+            self.cells[i] = Cell {
+                sym: " ".into(),
+                style,
+            };
+            return w;
+        }
+        self.cells[i] = Cell {
+            sym: sym.to_string(),
+            style,
+        };
+        if w == 2 {
+            self.cells[i + 1] = Cell {
+                sym: String::new(),
+                style,
+            };
+        }
+        w
+    }
+
+    /// Escribe una cadena a partir de (x, y), grafema a grafema. Devuelve el ancho total.
+    pub fn put_str(&mut self, x: usize, y: usize, s: &str, style: CellStyle) -> usize {
+        let mut cx = x;
+        for g in s.graphemes(true) {
+            if cx >= self.width {
+                break;
+            }
+            cx += self.put(cx, y, g, style);
+        }
+        cx - x
+    }
+
+    /// Escribe `s` recortado a `max_w` celdas, con `…` si no cabe.
+    pub fn put_str_clipped(
+        &mut self,
+        x: usize,
+        y: usize,
+        s: &str,
+        max_w: usize,
+        style: CellStyle,
+    ) -> usize {
+        if max_w == 0 {
+            return 0;
+        }
+        let full = UnicodeWidthStr::width(s);
+        if full <= max_w {
+            return self.put_str(x, y, s, style);
+        }
+        let mut cx = x;
+        for g in s.graphemes(true) {
+            let w = UnicodeWidthStr::width(g).max(1);
+            if cx - x + w > max_w.saturating_sub(1) {
+                break;
+            }
+            cx += self.put(cx, y, g, style);
+        }
+        cx += self.put(cx, y, "…", style);
+        cx - x
+    }
+
+    /// Aplica `style` (merge) a las celdas x..x+w de la fila y.
+    pub fn restyle(&mut self, x: usize, y: usize, w: usize, style: CellStyle) {
+        for cx in x..x + w {
+            if let Some(i) = self.idx(cx, y) {
+                self.cells[i].style = self.cells[i].style.merge(style);
+            }
+        }
+    }
+
+    pub fn row_text(&self, y: usize) -> String {
+        let mut s = String::new();
+        for x in 0..self.width {
+            if let Some(c) = self.get(x, y) {
+                s.push_str(&c.sym);
+            }
+        }
+        s
+    }
+
+    /// Texto plano, sin estilos, sin espacios finales.
+    pub fn to_plain_text(&self) -> String {
+        (0..self.height)
+            .map(|y| self.row_text(y).trim_end().to_string())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Texto con secuencias ANSI (24 bits).
+    pub fn to_ansi(&self) -> String {
+        let mut out = String::new();
+        for y in 0..self.height {
+            let mut last: Option<CellStyle> = None;
+            for x in 0..self.width {
+                let Some(c) = self.get(x, y) else { continue };
+                if c.sym.is_empty() {
+                    continue;
+                }
+                if last != Some(c.style) {
+                    out.push_str("\x1b[0m");
+                    if let Some(Rgb(r, g, b)) = c.style.fg {
+                        out.push_str(&format!("\x1b[38;2;{r};{g};{b}m"));
+                    }
+                    if let Some(Rgb(r, g, b)) = c.style.bg {
+                        out.push_str(&format!("\x1b[48;2;{r};{g};{b}m"));
+                    }
+                    if c.style.bold {
+                        out.push_str("\x1b[1m");
+                    }
+                    if c.style.dim {
+                        out.push_str("\x1b[2m");
+                    }
+                    if c.style.italic {
+                        out.push_str("\x1b[3m");
+                    }
+                    last = Some(c.style);
+                }
+                out.push_str(&c.sym);
+            }
+            out.push_str("\x1b[0m\n");
+        }
+        out
+    }
+
+    pub fn cells(&self) -> impl Iterator<Item = (usize, usize, &Cell)> {
+        self.cells
+            .iter()
+            .enumerate()
+            .map(move |(i, c)| (i % self.width, i / self.width, c))
+    }
+}
+
+/// Ancho en celdas de una cadena (tabs expandidos a `tab_width`).
+pub fn display_width(s: &str, tab_width: usize) -> usize {
+    let mut w = 0;
+    for g in s.graphemes(true) {
+        if g == "\t" {
+            w += tab_width - (w % tab_width);
+        } else {
+            w += UnicodeWidthStr::width(g);
+        }
+    }
+    w
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wide_chars_take_two_cells() {
+        let mut c = Canvas::new(6, 1);
+        let w = c.put_str(0, 0, "a🦀b", CellStyle::new());
+        assert_eq!(w, 4);
+        assert_eq!(c.row_text(0), "a🦀b  ");
+        assert_eq!(c.get(2, 0).unwrap().sym, "");
+    }
+
+    #[test]
+    fn clipped_adds_ellipsis() {
+        let mut c = Canvas::new(5, 1);
+        c.put_str_clipped(0, 0, "abcdefgh", 5, CellStyle::new());
+        assert_eq!(c.row_text(0), "abcd…");
+    }
+
+    #[test]
+    fn plain_text_trims() {
+        let mut c = Canvas::new(5, 2);
+        c.put_str(0, 1, "hi", CellStyle::new());
+        assert_eq!(c.to_plain_text(), "\nhi");
+    }
+}

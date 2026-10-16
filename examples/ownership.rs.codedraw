@@ -1,0 +1,180 @@
+{
+  "schema": 1,
+  "source": {
+    "path": "examples/ownership.rs",
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hola\");",
+    "    takes(s);",
+    "    // println!(\"{s}\"); // error: value borrowed here after move",
+    "",
+    "    let t = String::from(\"mundo\");",
+    "    let n = len(&t);",
+    "    println!(\"{t} tiene {n} letras\");",
+    "",
+    "    let mut u = String::from(\"hey\");",
+    "    push(&mut u);",
+    "    println!(\"{u}\");",
+    "}",
+    "",
+    "fn takes(s: String) {",
+    "    println!(\"{s}\");",
+    "}",
+    "",
+    "fn len(s: &String) -> usize {",
+    "    s.len()",
+    "}",
+    "",
+    "fn push(s: &mut String) {",
+    "    s.push('!');",
+    "}"
+  ],
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "mark",
+      "kind": "move",
+      "span": {
+        "line": 3,
+        "start": 8,
+        "end": 9
+      },
+      "label": "s pasa a takes"
+    },
+    {
+      "id": "a2",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 8
+      },
+      "to": {
+        "line": 15,
+        "col": 9
+      },
+      "label": "move"
+    },
+    {
+      "id": "a3",
+      "step": 2,
+      "type": "note",
+      "line": 4,
+      "text": "s ya no es dueña: usarla aquí no compila"
+    },
+    {
+      "id": "a4",
+      "step": 2,
+      "type": "box",
+      "from_line": 15,
+      "to_line": 17,
+      "label": "takes es dueña de s y la libera al final"
+    },
+    {
+      "id": "a5",
+      "step": 2,
+      "type": "mark",
+      "kind": "drop",
+      "span": {
+        "line": 17,
+        "start": 0,
+        "end": 1
+      },
+      "label": "aquí muere s"
+    },
+    {
+      "id": "a6",
+      "step": 3,
+      "type": "mark",
+      "kind": "borrow",
+      "span": {
+        "line": 7,
+        "start": 16,
+        "end": 18
+      },
+      "label": "préstamo"
+    },
+    {
+      "id": "a7",
+      "step": 3,
+      "type": "arrow",
+      "from": {
+        "line": 7,
+        "col": 16
+      },
+      "to": {
+        "line": 19,
+        "col": 7
+      },
+      "label": "borrow &"
+    },
+    {
+      "id": "a8",
+      "step": 3,
+      "type": "note",
+      "line": 8,
+      "text": "t sigue siendo válida"
+    },
+    {
+      "id": "a9",
+      "step": 4,
+      "type": "mark",
+      "kind": "borrow_mut",
+      "span": {
+        "line": 11,
+        "start": 9,
+        "end": 15
+      }
+    },
+    {
+      "id": "a10",
+      "step": 4,
+      "type": "arrow",
+      "from": {
+        "line": 11,
+        "col": 9
+      },
+      "to": {
+        "line": 23,
+        "col": 8
+      },
+      "label": "&mut"
+    },
+    {
+      "id": "a11",
+      "step": 4,
+      "type": "box",
+      "from_line": 23,
+      "to_line": 25,
+      "label": "muta sin tomar propiedad"
+    },
+    {
+      "id": "a12",
+      "step": 5,
+      "type": "note",
+      "line": 12,
+      "text": "u ahora vale «hey!»"
+    },
+    {
+      "id": "a13",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 12
+      },
+      "to": {
+        "line": 2,
+        "col": 8
+      },
+      "label": "nace s"
+    }
+  ],
+  "step": 1,
+  "theme": "dark",
+  "title": "Ownership en Rust: move, borrow y &mut"
+}
