@@ -1,8 +1,8 @@
-//! Protocolo de la API local (socket Unix, NDJSON), compartido por TUI, CLI y MCP.
+//! Local API protocol (Unix socket, NDJSON), shared by the TUI, CLI and MCP.
 //!
-//! Diseño tomado de herdr: una petición por línea `{id, method, params}`,
-//! respuesta `{id, result}` o `{id, error: {code, message}}`, métodos con
-//! puntos. Los clientes ignoran campos desconocidos.
+//! Design borrowed from herdr: one request per line `{id, method, params}`,
+//! response `{id, result}` or `{id, error: {code, message}}`, dotted method
+//! names. Clients ignore unknown fields.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -54,15 +54,15 @@ impl Response {
     }
 }
 
-/// Dónde anclar algo: coordenadas explícitas o búsqueda de texto.
-/// Un agente rara vez sabe la columna exacta; `find` es más robusto.
+/// Where to anchor something: explicit coordinates or a text search.
+/// An agent rarely knows the exact column; `find` is more robust.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Where {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub col: Option<u32>,
-    /// Texto a buscar en el código; con `line` restringe la búsqueda a esa línea primero.
+    /// Text to search for in the code; with `line`, that line is searched first.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub find: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -78,7 +78,7 @@ impl Where {
         }
         let line = self
             .line
-            .ok_or_else(|| crate::Error::Invalid("falta `line` o `find`".into()))?;
+            .ok_or_else(|| crate::Error::Invalid("missing `line` or `find`".into()))?;
         let start = self.col.unwrap_or(0);
         Ok(TextSpan {
             line,
@@ -99,7 +99,7 @@ impl Where {
         }
         let line = self
             .line
-            .ok_or_else(|| crate::Error::Invalid("falta `line` o `find`".into()))?;
+            .ok_or_else(|| crate::Error::Invalid("missing `line` or `find`".into()))?;
         Ok(Anchor {
             line,
             col: self.col.unwrap_or(0),
@@ -107,7 +107,7 @@ impl Where {
     }
 }
 
-/// Parámetros de `annotation.add`: una forma descrita de manera amigable para agentes.
+/// Parameters of `annotation.add`: a shape described in an agent-friendly way.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ShapeSpec {
@@ -201,7 +201,7 @@ pub struct AddParams {
     pub id: Option<String>,
     #[serde(default)]
     pub step: Option<u32>,
-    /// Nombre de la paleta (orange, blue, green, purple, pink, cyan, yellow, red, gray) o `#rrggbb`.
+    /// Palette name (orange, blue, green, purple, pink, cyan, yellow, red, gray) or `#rrggbb`.
     #[serde(default)]
     pub color: Option<String>,
     #[serde(flatten)]
@@ -213,12 +213,12 @@ pub struct UpdateParams {
     pub id: String,
     #[serde(default)]
     pub step: Option<u32>,
-    /// Nuevo color; cadena vacía vuelve al color automático.
+    /// New color; an empty string returns to the automatic color.
     #[serde(default)]
     pub color: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
-    /// Si viene, reemplaza la forma completa.
+    /// If present, replaces the whole shape.
     #[serde(default)]
     pub shape: Option<ShapeSpec>,
 }
@@ -233,7 +233,7 @@ pub struct StepParams {
     pub step: u32,
 }
 
-/// Respuesta de `scene.get`.
+/// Response of `scene.get`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Scene {
     pub revision: u64,
@@ -242,7 +242,7 @@ pub struct Scene {
     pub document: Document,
 }
 
-/// Respuesta de `status`.
+/// Response of `status`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Status {
     pub app: String,
@@ -258,49 +258,49 @@ pub struct Status {
     pub rows: u16,
 }
 
-/// Resultado de una mutación.
+/// Result of a mutation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Mutated {
     pub id: String,
     pub revision: u64,
 }
 
-/// Métodos soportados, para `api.methods` y para la ayuda.
+/// Supported methods, for `api.methods` and for the help.
 pub const METHODS: &[(&str, &str)] = &[
-    ("ping", "Comprueba que la instancia responde"),
+    ("ping", "Checks that the instance responds"),
     (
         "status",
-        "Resumen de la instancia: archivo, líneas, anotaciones, paso, tamaño de terminal",
+        "Instance summary: file, lines, annotations, step, terminal size",
     ),
-    ("code.get", "Código con números de línea (texto)"),
+    ("code.get", "Code with line numbers (text)"),
     (
         "scene.get",
-        "Documento completo con anotaciones y paso actual",
+        "Full document with annotations and current step",
     ),
     (
         "annotation.add",
-        "Añade una anotación (highlight, mark, box, arrow, note)",
+        "Adds an annotation (highlight, mark, box, arrow, note)",
     ),
     (
         "annotation.update",
-        "Cambia paso, etiqueta o forma de una anotación",
+        "Changes the step, label or shape of an annotation",
     ),
-    ("annotation.delete", "Elimina una anotación por id"),
+    ("annotation.delete", "Deletes an annotation by id"),
     (
         "scene.clear",
-        "Vacía todas las anotaciones (o solo las de `step`); se puede deshacer en la TUI",
+        "Removes every annotation (or only those of `step`); can be undone in the TUI",
     ),
-    ("step.set", "Cambia el paso actual de la presentación"),
-    ("step.next", "Avanza un paso"),
-    ("step.prev", "Retrocede un paso"),
-    ("render.text", "Devuelve el lienzo actual como texto plano"),
+    ("step.set", "Sets the current presentation step"),
+    ("step.next", "Advances one step"),
+    ("step.prev", "Goes back one step"),
+    ("render.text", "Returns the current canvas as plain text"),
 ];
 
-/// Representa una anotación en el formato de `scene.list`.
+/// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
     match &a.shape {
         Shape::Highlight { span, label } => format!(
-            "{} [paso {}] highlight L{} {}..{}{}",
+            "{} [step {}] highlight L{} {}..{}{}",
             a.id,
             a.step,
             span.line,
@@ -312,7 +312,7 @@ pub fn describe(a: &Annotation) -> String {
                 .unwrap_or_default()
         ),
         Shape::Mark { kind, span, label } => format!(
-            "{} [paso {}] mark {} L{} {}..{}{}",
+            "{} [step {}] mark {} L{} {}..{}{}",
             a.id,
             a.step,
             kind.legend(),
@@ -329,7 +329,7 @@ pub fn describe(a: &Annotation) -> String {
             to_line,
             label,
         } => format!(
-            "{} [paso {}] box L{}-{}{}",
+            "{} [step {}] box L{}-{}{}",
             a.id,
             a.step,
             from_line,
@@ -340,7 +340,7 @@ pub fn describe(a: &Annotation) -> String {
                 .unwrap_or_default()
         ),
         Shape::Arrow { from, to, label } => format!(
-            "{} [paso {}] arrow L{}:{} → L{}:{}{}",
+            "{} [step {}] arrow L{}:{} → L{}:{}{}",
             a.id,
             a.step,
             from.line,
@@ -353,7 +353,7 @@ pub fn describe(a: &Annotation) -> String {
                 .unwrap_or_default()
         ),
         Shape::Note { line, text } => {
-            format!("{} [paso {}] note L{} «{}»", a.id, a.step, line, text)
+            format!("{} [step {}] note L{} «{}»", a.id, a.step, line, text)
         }
         Shape::Spotlight {
             from_line,
@@ -361,7 +361,7 @@ pub fn describe(a: &Annotation) -> String {
             ids,
             until,
         } => format!(
-            "{} [paso {}{}] spotlight{}{}",
+            "{} [step {}{}] spotlight{}{}",
             a.id,
             a.step,
             until.map(|u| format!("-{u}")).unwrap_or_default(),

@@ -1,15 +1,15 @@
-//! Modelo del documento: código fuente + anotaciones ancladas al texto.
+//! Document model: source code + annotations anchored to the text.
 //!
-//! Las anclas viven en coordenadas del código (línea absoluta 1-based y
-//! offset de grafema 0-based), nunca en celdas de pantalla. La conversión a
-//! celdas ocurre solo al renderizar (ver `layout`).
+//! Anchors live in code coordinates (absolute 1-based line and 0-based
+//! grapheme offset), never in screen cells. The conversion to cells happens
+//! only when rendering (see `layout`).
 
 use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::Error;
 
-/// Versión del esquema del archivo `.codedraw`.
+/// Schema version of the `.codedraw` file.
 pub const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -18,32 +18,32 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub source: Source,
-    /// Cómo se guarda el código en el archivo: embebido (array de líneas) o
-    /// referencia a un archivo (`{"file": "src/main.rs", "lines": "12-48"}`).
+    /// How the code is stored in the file: embedded (array of lines) or a
+    /// reference to a file (`{"file": "src/main.rs", "lines": "12-48"}`).
     #[serde(rename = "code")]
     pub code_src: CodeSource,
-    /// Líneas de código en memoria, sin el salto de línea final. Se rellenan
-    /// al cargar (ver `fs::load_document`) y nunca se serializan directamente.
+    /// Code lines in memory, without the trailing newline. Filled in on load
+    /// (see `fs::load_document`) and never serialized directly.
     #[serde(skip)]
     pub code: Vec<String>,
     #[serde(default)]
     pub annotations: Vec<Annotation>,
-    /// Paso actual de la presentación. 0 = solo el código, sin anotaciones;
-    /// las anotaciones van en pasos ≥ 1.
+    /// Current presentation step. 0 = code only, no annotations;
+    /// annotations live at steps ≥ 1.
     #[serde(default = "one")]
     pub step: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ThemeName>,
 }
 
-/// Origen del código dentro de un `.codedraw`.
+/// Where the code of a `.codedraw` comes from.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum CodeSource {
-    /// Copia del código dentro del documento: portable, pero congelada.
+    /// Copy of the code inside the document: portable, but frozen.
     Embedded(Vec<String>),
-    /// Referencia a un archivo existente. `file` puede ser absoluta o relativa al
-    /// directorio del `.codedraw`; `lines` es un rango opcional `"12-48"` o `"7"`.
+    /// Reference to an existing file. `file` may be absolute or relative to the
+    /// `.codedraw` directory; `lines` is an optional range `"12-48"` or `"7"`.
     File {
         file: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -59,13 +59,13 @@ impl Default for CodeSource {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct Source {
-    /// Ruta del archivo original, si lo hubo.
+    /// Path of the original file, if there was one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub path: Option<String>,
-    /// Identificador de lenguaje (extensión o nombre): `rs`, `ts`, `py`…
+    /// Language identifier (extension or name): `rs`, `ts`, `py`…
     #[serde(default)]
     pub language: String,
-    /// Número de la primera línea mostrada (permite abrir `main.rs:12-48`).
+    /// Number of the first displayed line (allows opening `main.rs:12-48`).
     #[serde(default = "one")]
     pub first_line: u32,
 }
@@ -77,14 +77,14 @@ pub enum ThemeName {
     Light,
 }
 
-/// Un punto en el código: línea absoluta (1-based) y grafema (0-based).
+/// A point in the code: absolute line (1-based) and grapheme (0-based).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Anchor {
     pub line: u32,
     pub col: u32,
 }
 
-/// Un rango dentro de UNA línea, en grafemas, fin exclusivo.
+/// A range within ONE line, in graphemes, exclusive end.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct TextSpan {
     pub line: u32,
@@ -92,7 +92,7 @@ pub struct TextSpan {
     pub end: u32,
 }
 
-/// Marcas semánticas para explicar Rust (cada una con color, glifo y leyenda fijos).
+/// Semantic marks for explaining Rust (each with a fixed color, glyph and legend).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(rename_all = "snake_case")]
 pub enum MarkKind {
@@ -115,7 +115,7 @@ impl MarkKind {
         })
     }
 
-    /// Leyenda corta que se muestra junto a la marca.
+    /// Short legend shown next to the mark.
     pub fn legend(self) -> &'static str {
         match self {
             Self::Move => "move",
@@ -126,7 +126,7 @@ impl MarkKind {
         }
     }
 
-    /// Glifo que acompaña a la leyenda (la forma distingue la marca sin depender del color).
+    /// Glyph that accompanies the legend (the shape tells marks apart without relying on color).
     pub fn glyph(self) -> &'static str {
         match self {
             Self::Move => "━▶",
@@ -141,38 +141,38 @@ impl MarkKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Shape {
-    /// Resalta un rango de texto.
+    /// Highlights a text range.
     Highlight {
         span: TextSpan,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Resalte con significado (move, borrow…).
+    /// Highlight with meaning (move, borrow…).
     Mark {
         kind: MarkKind,
         span: TextSpan,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Caja alrededor de un rango de líneas.
+    /// Box around a range of lines.
     Box {
         from_line: u32,
         to_line: u32,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Flecha de un punto del código a otro.
+    /// Arrow from one point of the code to another.
     Arrow {
         from: Anchor,
         to: Anchor,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
     },
-    /// Nota de texto anclada a una línea.
+    /// Text note anchored to a line.
     Note { line: u32, text: String },
-    /// Dirige la atención: mientras está activo (de `step` hasta `until`, o solo en
-    /// `step`), atenúa el código fuera de `lines` y las anotaciones fuera de `ids`.
-    /// Si solo hay `ids`, el código enfocado es el de esas anotaciones.
+    /// Directs attention: while active (from `step` to `until`, or only at
+    /// `step`), dims the code outside `lines` and the annotations outside `ids`.
+    /// With only `ids`, the focused code is that of those annotations.
     Spotlight {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from_line: Option<u32>,
@@ -186,8 +186,8 @@ pub enum Shape {
 }
 
 impl Shape {
-    /// Rangos de líneas que ocupa la forma (para enfocar el código de una
-    /// anotación). Una flecha ocupa solo sus dos extremos, no el tramo entre ellos.
+    /// Line ranges the shape occupies (to focus the code of an annotation).
+    /// An arrow occupies only its two endpoints, not the stretch between them.
     pub fn line_ranges(&self) -> Vec<(u32, u32)> {
         match self {
             Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
@@ -209,13 +209,13 @@ impl Shape {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Annotation {
-    /// Id público corto y estable (`a1`, `a2`…), elegido por el cliente o asignado.
+    /// Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.
     pub id: String,
-    /// Paso en el que aparece (1-based).
+    /// Step at which it appears (1-based).
     #[serde(default = "one")]
     pub step: u32,
-    /// Color elegido por quien explica: nombre de la paleta (`blue`, `verde`…) o `#rrggbb`.
-    /// Sin color, las flechas rotan por una paleta y el resto usa el color del tema.
+    /// Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.
+    /// Without a color, arrows rotate through a palette and the rest use the theme color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     #[serde(flatten)]
@@ -245,7 +245,7 @@ impl Document {
         }
     }
 
-    /// Cambia el origen a referencia de archivo (el código en memoria no cambia).
+    /// Switches the source to a file reference (the code in memory does not change).
     pub fn reference_file(&mut self, file: impl Into<String>, lines: Option<(u32, u32)>) {
         self.code_src = CodeSource::File {
             file: file.into(),
@@ -259,7 +259,7 @@ impl Document {
         };
     }
 
-    /// Congela el código dentro del documento (deja de depender del archivo).
+    /// Freezes the code inside the document (no longer depends on the file).
     pub fn embed_code(&mut self) {
         self.code_src = CodeSource::Embedded(self.code.clone());
     }
@@ -268,14 +268,14 @@ impl Document {
         matches!(self.code_src, CodeSource::Embedded(_))
     }
 
-    /// Deja `code_src` coherente con `code` antes de serializar.
+    /// Keeps `code_src` consistent with `code` before serializing.
     pub fn sync_code_src(&mut self) {
         if let CodeSource::Embedded(lines) = &mut self.code_src {
             *lines = self.code.clone();
         }
     }
 
-    /// Última línea absoluta del documento.
+    /// Last absolute line of the document.
     pub fn last_line(&self) -> u32 {
         self.source.first_line + self.code.len().saturating_sub(1) as u32
     }
@@ -284,7 +284,7 @@ impl Document {
         line >= self.source.first_line && line <= self.last_line()
     }
 
-    /// Texto de una línea absoluta.
+    /// Text of an absolute line.
     pub fn line_text(&self, line: u32) -> Option<&str> {
         if !self.has_line(line) {
             return None;
@@ -294,14 +294,14 @@ impl Document {
             .map(|s| s.as_str())
     }
 
-    /// Número de grafemas de una línea.
+    /// Number of graphemes on a line.
     pub fn line_len(&self, line: u32) -> u32 {
         self.line_text(line)
             .map(|t| t.graphemes(true).count() as u32)
             .unwrap_or(0)
     }
 
-    /// Mayor paso usado por alguna anotación (mínimo 1).
+    /// Highest step used by any annotation (at least 1).
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()
@@ -315,7 +315,7 @@ impl Document {
         self.annotations.iter().find(|a| a.id == id)
     }
 
-    /// Siguiente id libre con el prefijo `a` (a1, a2, …).
+    /// Next free id with the `a` prefix (a1, a2, …).
     pub fn next_id(&self) -> String {
         let mut n = self.annotations.len() as u32 + 1;
         loop {
@@ -327,7 +327,7 @@ impl Document {
         }
     }
 
-    /// Valida que una forma apunte a líneas/columnas existentes.
+    /// Validates that a shape points to existing lines/columns.
     pub fn validate_shape(&self, shape: &Shape) -> Result<(), Error> {
         let check_line = |l: u32| {
             if self.has_line(l) {
@@ -375,7 +375,7 @@ impl Document {
                 check_line(*to_line)?;
                 if from_line > to_line {
                     return Err(Error::Invalid(format!(
-                        "la caja empieza en {from_line} y termina antes, en {to_line}"
+                        "the box starts at {from_line} and ends earlier, at {to_line}"
                     )));
                 }
                 Ok(())
@@ -387,7 +387,7 @@ impl Document {
             Shape::Note { line, text } => {
                 check_line(*line)?;
                 if text.trim().is_empty() {
-                    return Err(Error::Invalid("la nota está vacía".into()));
+                    return Err(Error::Invalid("the note is empty".into()));
                 }
                 Ok(())
             }
@@ -399,8 +399,7 @@ impl Document {
             } => {
                 if from_line.is_none() && ids.is_empty() {
                     return Err(Error::Invalid(
-                        "un spotlight necesita un rango de líneas, ids de anotaciones, o ambos"
-                            .into(),
+                        "a spotlight needs a line range, annotation ids, or both".into(),
                     ));
                 }
                 if let Some(a) = from_line {
@@ -409,7 +408,7 @@ impl Document {
                     check_line(b)?;
                     if *a > b {
                         return Err(Error::Invalid(format!(
-                            "el spotlight empieza en {a} y termina antes, en {b}"
+                            "the spotlight starts at {a} and ends earlier, at {b}"
                         )));
                     }
                 }
@@ -423,7 +422,7 @@ impl Document {
         }
     }
 
-    /// Añade una anotación. Si `id` viene vacío se asigna uno nuevo. Devuelve el id.
+    /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
         self.validate_shape(&ann.shape)?;
         if ann.id.trim().is_empty() {
@@ -459,8 +458,8 @@ impl Document {
         Ok(self.annotations.remove(pos))
     }
 
-    /// Busca `text` en el código y devuelve el span de la `occurrence`-ésima
-    /// aparición (1-based). Si `near_line` viene, busca primero en esa línea.
+    /// Searches `text` in the code and returns the span of the `occurrence`-th
+    /// match (1-based). If `near_line` is given, that line is searched first.
     pub fn find_text(
         &self,
         text: &str,
@@ -502,14 +501,14 @@ impl Document {
     }
 }
 
-/// Convierte un offset en bytes de `s` al índice de grafema correspondiente.
+/// Converts a byte offset into `s` to the corresponding grapheme index.
 pub fn grapheme_index(s: &str, byte_offset: usize) -> u32 {
     s.grapheme_indices(true)
         .take_while(|(b, _)| *b < byte_offset)
         .count() as u32
 }
 
-/// Devuelve el slice de `s` entre los grafemas `start..end`.
+/// Returns the slice of `s` between graphemes `start..end`.
 pub fn grapheme_slice(s: &str, start: u32, end: u32) -> &str {
     let mut it = s.grapheme_indices(true);
     let b0 = it
@@ -561,11 +560,11 @@ mod tests {
     #[test]
     fn find_text_second_occurrence() {
         let d = doc();
-        // En la línea 2, "o" aparece en `from` (1) y en `hola` (2).
+        // On line 2, "o" appears in `from` (1) and in `hola` (2).
         let s = d.find_text("o", 2, Some(2)).unwrap();
         assert_eq!(s.line, 2);
         assert_eq!(s.start, 27);
-        // Si no hay suficientes ocurrencias en la línea pedida, se busca en todo el documento.
+        // If the requested line has too few occurrences, the whole document is searched.
         let s = d.find_text("s", 2, Some(2)).unwrap();
         assert_eq!(s.line, 3);
     }
@@ -580,7 +579,7 @@ mod tests {
                 color: None,
                 shape: Shape::Note {
                     line: 2,
-                    text: "aquí nace s".into(),
+                    text: "s is born here".into(),
                 },
             })
             .unwrap();

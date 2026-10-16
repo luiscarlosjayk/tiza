@@ -1,133 +1,135 @@
 # ╭─ CodeDraw ─▶
 
-**Dibuja encima de código en la terminal para explicarlo en video.**
+**Draw on top of code in the terminal to explain it on video.**
 
-CodeDraw es una TUI en Rust (ratatui) pensada para tutoriales: compartes pantalla con tu editor, mandas el código a CodeDraw en una terminal y dibujas encima (cajas, flechas, resaltes, notas y marcas semánticas de Rust como *move*, *borrow* o *drop*) para explicar un concepto por pasos. Las anotaciones se anclan al texto del código, no a celdas de pantalla, así que sobreviven al scroll, al cambio de tamaño y al cambio de tema.
+CodeDraw is a Rust TUI (ratatui) built for tutorials: you share your screen with your editor, send the code to CodeDraw in a terminal and draw on top of it (boxes, arrows, highlights, notes and Rust semantic marks such as *move*, *borrow* or *drop*) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
 
-También es **para agentes**: expone una API local por socket y un **servidor MCP**, así que Claude Code (o cualquier cliente MCP) puede dibujar en vivo sobre lo que estás mostrando.
+It is also **for agents**: it exposes a local socket API and an **MCP server**, so Claude Code (or any MCP client) can draw live on what you are showing.
 
-> Estado: **v0.0.1, primer demo funcional**. Inspirado en [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev) y [tuios](https://github.com/Gaurav-Gosain/tuios).
+> Status: **v0.0.1, first working demo**. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev) and [tuios](https://github.com/Gaurav-Gosain/tuios).
 
 ```
  1          fn main() {
- 2 ╭───────     let s = String::from("hola");
-   │                ◀───╯                                                      nace s
- 3 │            takes(s);                                                      ━▶ move: s pasa a takes
- 4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s ya no es dueña
- 5 │
- 6 │            let t = String::from("mundo");
- 7 │   ╭───     let n = len(&t);                                               ╌▶ borrow &: préstamo
- 8 │   │        println!("{t} tiene {n} letras");                              ┆ t sigue siendo válida
+ 2 ╭───────     let s = String::from("hello");
+   │                ◀───╯                                                      s is born
+ 3 │            takes(s);                                                      ━▶ move: s moves into
+ 4 │            // println!("{s}"); // error: value borrowed here after move   takes
+ 5 │                                                                           ┆ s no longer owns
+ 6 │            let t = String::from("world");                                   it: using it here
+ 7 │   ╭───     let n = len(&t);                                                 does not compile
+ 8 │   │        println!("{t} has {n} letters");                               ╌▶ borrow &: shared
+ 9 │   │                                                                       borrow
+10 │   │        let mut u = String::from("hey");                               ┆ t is still valid
    ⋮   ⋮
-   │ │ │ ╭─ takes es dueña de s y la libera al final ────────────────────────╮
-15 ╰─│─│──▶ fn takes(s: String) {                                            │ move
+   │ │ │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+15 ╰─┼─┼─┼▶ fn takes(s: String) {                                            │ move
 16   │ │ │      println!("{s}");                                             │
-17   │ │ │  }                                                                │ ╳ drop: aquí muere s
+17   │ │ │  }                                                                │ ╳ drop: s dies here
      │ │ ╰───────────────────────────────────────────────────────────────────╯
 ```
 
-## Instalación
+## Installation
 
-Binarios para macOS (Apple Silicon e Intel) y Linux en [Releases](https://github.com/luiscarlosjayk/codedraw/releases). O desde el código (Rust ≥ 1.88):
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/codedraw/releases). Or from source (Rust ≥ 1.88):
 
 ```sh
 cargo install --git https://github.com/luiscarlosjayk/codedraw codedraw-cli
 ```
 
-## Uso rápido
+## Quick start
 
 ```sh
-codedraw src/main.rs            # abre un archivo
-codedraw src/main.rs:12-48      # solo un rango de líneas (la numeración se conserva)
-pbpaste | codedraw --lang rs    # código desde el portapapeles (macOS)
-codedraw examples/ownership.rs.codedraw --present   # abre el demo en modo presentación
+codedraw src/main.rs            # open a file
+codedraw src/main.rs:12-48      # only a range of lines (numbering is preserved)
+pbpaste | codedraw --lang rs    # code from the clipboard (macOS)
+codedraw examples/ownership.rs.codedraw --present   # open the demo in presentation mode
 ```
 
-Prueba los demos incluidos (ver [examples/README.md](examples/README.md)): `codedraw examples/ownership.rs.codedraw` arranca con el código limpio; avanza con `n`.
+Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw examples/ownership.rs.codedraw` starts with the bare code; advance with `n`.
 
-### Teclas
+### Keys
 
-| Tecla | Acción |
+| Key | Action |
 |---|---|
-| `j`/`k`, `↑`/`↓`, `g`/`G` | mover el cursor de línea |
-| `n` / `p` (o `→`/`←`) | paso siguiente / anterior; el paso 0 muestra solo el código |
-| `u` / `U` | deshacer / rehacer |
-| `t` | tema oscuro ⇄ claro (como Excalidraw) |
-| `P` | modo presentación (oculta la UI) |
-| `l` | lista de anotaciones · `?` ayuda · `:` comandos · `q` salir |
+| `j`/`k`, `↑`/`↓`, `g`/`G` | move the line cursor |
+| `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
+| `u` / `U` | undo / redo |
+| `t` | dark ⇄ light theme (like Excalidraw) |
+| `P` | presentation mode (hides the UI) |
+| `l` | annotation list · `?` help · `:` commands · `q` quit |
 
-### Comandos `:`
+### `:` commands
 
-`L` es un número de línea y `texto` un fragmento exacto a buscar en esa línea (`.` es la línea del cursor).
+`L` is a line number and `text` an exact fragment to find on that line (`.` is the cursor line).
 
 ```
-:mark move 3:s s pasa a takes        marca semántica: move | borrow | mut | drop | life
-:arrow 2:s 15:s: String move          flecha entre dos puntos, con etiqueta
-:box 15-17 takes es dueña de s        caja alrededor de un rango de líneas
-:hl 7:&t préstamo                     resalte
-:note 4 s ya no es dueña              nota anclada a una línea
-:step 2        :step a3 2             cambiar de paso · mover la anotación a3 al paso 2
-:del a1        :clear | :clear 2       borrar una · vaciar todo o solo un paso (u deshace)
-:label a2 nuevo texto                  cambiar etiqueta
-:color a2 blue   :color a3 #ff8800   color por anotación (orange blue green purple pink cyan yellow red gray · auto)
-:spot 15-17 a2 a3   :spot a6 a7      spotlight: en este paso se atenúa todo salvo esas líneas/anotaciones
-:until s1 4                            el spotlight s1 sigue activo hasta el paso 4
-:focus 15-17   :focus                 atenuar todo salvo un rango · quitar el enfoque
+:mark move 3:s s moves into takes     semantic mark: move | borrow | mut | drop | life
+:arrow 2:s 15:s: String move          arrow between two points, with a label
+:box 15-17 takes owns s               box around a range of lines
+:hl 7:&t shared borrow                highlight
+:note 4 s no longer owns it           note anchored to a line
+:step 2        :step a3 2             change step · move annotation a3 to step 2
+:del a1        :clear | :clear 2       delete one · clear everything or only one step (u undoes)
+:label a2 new text                     change the label
+:color a2 blue   :color a3 #ff8800   color per annotation (orange blue green purple pink cyan yellow red gray · auto)
+:spot 15-17 a2 a3   :spot a6 a7      spotlight: in this step everything but those lines/annotations is dimmed
+:until s1 4                            spotlight s1 stays active until step 4
+:focus 15-17   :focus                 dim everything but a range · clear the focus
 :theme light   :lang ts   :w   :q
 ```
 
-Las anotaciones nuevas aparecen en el paso actual. El `.codedraw` referencia al archivo fuente por ruta (`"code": {"file": "main.rs", "lines": "12-48"}`, absoluta o relativa al `.codedraw`), así siempre muestra el código actual; `:embed` congela una copia dentro del documento y `:link ruta[:A-B]` vuelve a referenciar. El color es tuyo, como en Excalidraw: cada anotación acepta `color` (nombre o `#rrggbb`); las flechas sin color rotan una paleta para distinguirse entre sí. Todo se guarda automáticamente en un `.codedraw` (JSON) junto al archivo fuente (`src/main.rs.codedraw`).
+New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
 
-## Para agentes: MCP y API local
+## For agents: MCP and local API
 
-Con la TUI abierta, arranca el servidor MCP en otro proceso:
+With the TUI open, start the MCP server in another process:
 
 ```sh
 codedraw mcp
 ```
 
-Configuración para Claude Code (`.mcp.json` del proyecto o `claude mcp add codedraw -- codedraw mcp`):
+Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add codedraw -- codedraw mcp`):
 
 ```json
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Herramientas: `status`, `get_code`, `list_annotations`, `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Las anclas aceptan `{"find": "takes(s)"}` además de línea y columna, porque un agente rara vez conoce la columna exacta. Guía completa: [docs/agent-guide.md](docs/agent-guide.md).
+Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
-La misma API está disponible como socket Unix con JSON por líneas (diseño tomado de herdr) y desde el CLI:
+The same API is available as a Unix socket with line-delimited JSON (design borrowed from herdr) and from the CLI:
 
 ```sh
-codedraw scene status                 # ¿hay una instancia? ¿qué muestra?
-codedraw scene list                   # anotaciones
-codedraw scene text                   # lo que se ve, como texto
-codedraw api annotation.add '{"type":"note","line":4,"text":"hola"}'
-codedraw render demo.codedraw --out - --step 2 --width 100   # sin abrir la TUI
+codedraw scene status                 # is there an instance? what is it showing?
+codedraw scene list                   # annotations
+codedraw scene text                   # what is on screen, as text
+codedraw api annotation.add '{"type":"note","line":4,"text":"hello"}'
+codedraw render demo.codedraw --out - --step 2 --width 100   # without opening the TUI
 ```
 
-Varias instancias: `--session nombre` (o `CODEDRAW_SESSION`). Socket explícito: `--socket ruta` (o `CODEDRAW_SOCKET`). El socket vive en `$XDG_RUNTIME_DIR` o `$TMPDIR` con permisos 0600 y **nunca** escucha en TCP. CodeDraw no envía nada a ningún sitio.
+Several instances: `--session name` (or `CODEDRAW_SESSION`). Explicit socket: `--socket path` (or `CODEDRAW_SOCKET`). The socket lives in `$XDG_RUNTIME_DIR` or `$TMPDIR` with 0600 permissions and **never** listens on TCP. CodeDraw sends nothing anywhere.
 
-## Integración con Zed
+## Zed integration
 
-Una tarea que manda la selección actual a CodeDraw en el terminal integrado: [docs/zed.md](docs/zed.md).
+A task that sends the current selection to CodeDraw in the integrated terminal: [docs/zed.md](docs/zed.md).
 
-## Perfil de grabación recomendado
+## Recommended recording profile
 
-Terminal a pantalla completa o al 50 % junto a Zed, fuente de 18–22 px, snippets de ≤ 60 columnas. La línea de estado muestra `cols×rows`; con menos de ~100 columnas las notas se dibujan debajo de la línea en vez de en el margen. Los dos temas usan colores RGB explícitos pensados para 1080p.
+Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows`; below ~100 columns, notes are drawn under the line instead of in the margin. Both themes use explicit RGB colors designed for 1080p.
 
-## Desarrollo
+## Development
 
 ```sh
-cargo test                                   # núcleo, TUI (incl. socket) y comandos
+cargo test                                   # core, TUI (incl. socket) and commands
 cargo clippy --all-targets -- -D warnings
 cargo run -- examples/ownership.rs
 ```
 
-Crates: `codedraw-core` (modelo, anclas, layout, render, protocolo; sin dependencias de terminal), `codedraw-tui` (ratatui + crossterm + servidor del socket), `codedraw-mcp` (puente MCP con [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `codedraw-cli` (binario `codedraw`). Decisiones en [docs/adr](docs/adr). Política de dependencias (solo crates mantenidos, `cargo-deny` en CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).
+Crates: `codedraw-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `codedraw-tui` (ratatui + crossterm + socket server), `codedraw-mcp` (MCP bridge with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `codedraw-cli` (the `codedraw` binary). Decisions in [docs/adr](docs/adr). Dependency policy (maintained crates only, `cargo-deny` in CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).
 
-## Nombre
+## Name
 
-Existe una librería Java llamada [CodeDraw](https://github.com/Krassnig/CodeDraw) (dibujo para principiantes). No tienen relación; este proyecto es una herramienta de terminal en Rust.
+There is a Java library called [CodeDraw](https://github.com/Krassnig/CodeDraw) (drawing for beginners). They are unrelated; this project is a Rust terminal tool.
 
-## Licencia
+## License
 
-MIT o Apache-2.0, a tu elección.
+MIT or Apache-2.0, at your option.

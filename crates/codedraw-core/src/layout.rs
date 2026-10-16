@@ -1,13 +1,13 @@
-//! Convierte documento + tema + ancho disponible en un `Canvas`.
+//! Turns document + theme + available width into a `Canvas`.
 //!
-//! Decisiones de esta primera versión (ver docs/adr/0002):
-//! - Las cajas rodean de verdad a las líneas: insertan filas virtuales (sin
-//!   número) arriba y abajo, y rieles verticales a izquierda y derecha.
-//! - Las flechas entre líneas distintas van por un carril a la izquierda del
-//!   código (`╭──` sale de la línea origen, `╰──▶` entra en la destino).
-//! - Las flechas dentro de una misma línea usan una fila virtual debajo.
-//! - Notas y leyendas van al margen derecho si hay ≥ 14 celdas; si no, en una
-//!   fila virtual debajo de la línea. Así funciona en una terminal de 75 columnas.
+//! Decisions of this first version (see docs/adr/0002):
+//! - Boxes truly surround the lines: they insert virtual rows (without a
+//!   number) above and below, and vertical rails on the left and right.
+//! - Arrows between different lines run along a lane to the left of the
+//!   code (`╭──` leaves the source line, `╰──▶` enters the target line).
+//! - Arrows within the same line use a virtual row below it.
+//! - Notes and legends go in the right margin when there are ≥ 14 cells;
+//!   otherwise in a virtual row below the line. This works in a 75-column terminal.
 
 use std::collections::BTreeMap;
 
@@ -21,9 +21,9 @@ use crate::theme::Theme;
 #[derive(Debug, Clone)]
 pub struct LayoutOptions {
     pub width: usize,
-    /// Paso actual: se dibujan las anotaciones con `step <= step`.
+    /// Current step: annotations with `step <= step` are drawn.
     pub step: u32,
-    /// Rango de líneas enfocadas; el resto se atenúa.
+    /// Focused line range; the rest is dimmed.
     pub focus: Option<(u32, u32)>,
     pub line_numbers: bool,
     pub tab_width: usize,
@@ -47,7 +47,7 @@ pub enum Row {
     BoxTop(usize),
     BoxBottom(usize),
     ArrowUnder(usize),
-    /// Fila virtual con texto (nota, leyenda de flecha) bajo la línea.
+    /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
 }
 
@@ -80,7 +80,7 @@ struct ArrowInfo<'a> {
     lane: usize,
 }
 
-/// Texto pendiente de colocar en el margen (o debajo) de una fila.
+/// Text waiting to be placed in the margin (or below) of a row.
 #[derive(Clone)]
 struct Label {
     text: String,
@@ -95,8 +95,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         .iter()
         .filter(|a| a.step <= opts.step)
         .collect();
-    // Color por anotación: el elegido por el usuario; si no, las flechas rotan la paleta
-    // automática (en orden de aparición) y el resto usa el color del tema.
+    // Color per annotation: the one chosen by the user; otherwise arrows rotate through the
+    // automatic palette (in order of appearance) and the rest use the theme color.
     let auto = theme.auto_palette();
     let mut arrow_seq = 0usize;
     let mut colors: std::collections::HashMap<&str, Rgb> = std::collections::HashMap::new();
@@ -119,7 +119,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
     let color_of = |a: &Annotation| colors.get(a.id.as_str()).copied().unwrap_or(theme.accent);
 
-    // ---- spotlights activos en este paso ----
+    // ---- spotlights active at this step ----
     let mut spot_lines: Vec<(u32, u32)> = Vec::new();
     let mut spot_ids: Vec<&str> = Vec::new();
     let mut spot_any = false;
@@ -147,7 +147,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
     let line_in_spot =
         |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
-    // Una anotación se atenúa si hay spotlights con ids y no está entre ellos.
+    // An annotation is dimmed if there are spotlights with ids and it is not among them.
     let ann_dimmed = |a: &Annotation| {
         spot_any
             && !spot_ids.is_empty()
@@ -161,13 +161,13 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             color_of(a)
         }
     };
-    // Los spotlights no se dibujan; solo filtran.
+    // Spotlights are not drawn; they only filter.
     let vis: Vec<&Annotation> = vis
         .into_iter()
         .filter(|a| !matches!(a.shape, Shape::Spotlight { .. }))
         .collect();
 
-    // ---- cajas y su anidamiento ----
+    // ---- boxes and their nesting ----
     let mut boxes: Vec<BoxInfo> = vis
         .iter()
         .filter_map(|a| match &a.shape {
@@ -194,7 +194,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
     let box_depth = boxes.iter().map(|b| b.depth + 1).max().unwrap_or(0);
 
-    // ---- anchos de columnas ----
+    // ---- column widths ----
     let num_w = if opts.line_numbers {
         doc.last_line().to_string().len() + 1
     } else {
@@ -213,11 +213,11 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         .filter(|a| matches!(&a.shape, Shape::Arrow { from, to, .. } if from.line != to.line))
         .collect();
 
-    // Las filas se construyen antes de asignar carriles (los carriles dependen de filas).
-    // Pero el ancho del margen depende del número de carriles, y las filas "Under"
-    // dependen del margen. Aproximamos: carriles = cota superior (todas se solapan).
-    // Estimar carriles en espacio de líneas (las filas virtuales conservan el orden,
-    // así que el solapamiento es el mismo que en espacio de filas).
+    // Rows are built before lanes are assigned (lanes depend on rows).
+    // But the margin width depends on the number of lanes, and "Under" rows
+    // depend on the margin. We approximate: lanes = upper bound (all overlap).
+    // Estimate lanes in line space (virtual rows preserve the order, so the
+    // overlap is the same as in row space).
     let lane_bound = {
         let mut spans: Vec<(u32, u32)> = multi_arrows
             .iter()
@@ -249,10 +249,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let margin_est = width.saturating_sub(code_x_est + code_w + 1 + box_depth + 1);
     let labels_in_margin = margin_est >= 14;
 
-    // ---- filas ----
+    // ---- rows ----
     let mut rows: Vec<Row> = Vec::new();
     let mut row_of_line = BTreeMap::new();
-    // Textos "debajo": índice en `unders` referenciado por Row::Under
+    // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
     for line in doc.source.first_line..=doc.last_line() {
         let mut tops: Vec<usize> = (0..boxes.len())
@@ -331,7 +331,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         rows.extend(bottoms.into_iter().map(Row::BoxBottom));
     }
 
-    // ---- carriles de flechas (en espacio de filas) ----
+    // ---- arrow lanes (in row space) ----
     let mut arrows: Vec<ArrowInfo> = Vec::new();
     {
         let mut spans: Vec<(usize, usize, &Annotation)> = multi_arrows
@@ -345,7 +345,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 (r1.min(r2), r1.max(r2), *a)
             })
             .collect();
-        // Las más largas primero → carril 0 (el más alejado del código).
+        // Longest first → lane 0 (the farthest from the code).
         spans.sort_by_key(|(a, b, _)| (std::cmp::Reverse(b - a), *a));
         let mut lanes: Vec<Vec<(usize, usize)>> = Vec::new();
         for (a, b, ann) in spans {
@@ -363,14 +363,14 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let lane_count = arrows.iter().map(|a| a.lane + 1).max().unwrap_or(0);
     let arrow_w = lane_count * 2;
 
-    // ---- posiciones finales ----
+    // ---- final positions ----
     let arrow_x0 = num_w;
     let box_x0 = arrow_x0 + arrow_w;
     let code_x = box_x0 + box_depth + 2;
     let code_w = code_full_w
         .min(width.saturating_sub(code_x + box_depth + 1))
         .max(10);
-    let rbox_x0 = code_x + code_w + 1; // riel derecho: el más interno aquí
+    let rbox_x0 = code_x + code_w + 1; // right rail: the innermost one here
     let margin_x = rbox_x0 + box_depth + 1;
     let margin_w = width.saturating_sub(margin_x);
 
@@ -378,10 +378,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let mut canvas = Canvas::new_filled(width, rows.len(), base);
     let segments = highlight(&doc.code, &doc.source.language, theme.syntax);
 
-    // Etiquetas de margen por fila.
+    // Margin labels per row.
     let mut margin: Vec<Vec<Label>> = vec![Vec::new(); rows.len()];
 
-    // ---- 1. código ----
+    // ---- 1. code ----
     for (y, row) in rows.iter().enumerate() {
         let Row::Code(line) = row else { continue };
         let text = doc.line_text(*line).unwrap_or("");
@@ -406,7 +406,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         );
     }
 
-    // ---- 2. resaltes y marcas ----
+    // ---- 2. highlights and marks ----
     for a in &vis {
         let (span, fg, bg, label) = match &a.shape {
             Shape::Highlight { span, label } if ann_dimmed(a) => (
@@ -462,7 +462,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
     }
 
-    // ---- 3. cajas ----
+    // ---- 3. boxes ----
     for (bi, b) in boxes.iter().enumerate() {
         let box_color = color_of(b.ann);
         let box_style = base.fg(box_color);
@@ -479,7 +479,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         for y in top + 1..bottom {
             canvas.put_line(lx, y, "│", box_style);
             canvas.put_line(rx, y, "│", box_style);
-            // tinte sutil dentro de la caja
+            // subtle tint inside the box
             canvas.restyle(
                 lx + 1,
                 y,
@@ -506,7 +506,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
     }
 
-    // ---- 4. flechas entre líneas ----
+    // ---- 4. arrows between lines ----
     for a in &arrows {
         let Shape::Arrow { from, to, label } = &a.ann.shape else {
             continue;
@@ -530,7 +530,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             canvas.put_line(x, yt, "─", arrow_style);
         }
         canvas.put(code_x - 2, yt, "▶", arrow_style);
-        // Marcar los puntos de origen y destino en el código.
+        // Mark the source and target points in the code.
         mark_anchor(
             &mut canvas,
             doc,
@@ -562,7 +562,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
     }
 
-    // ---- 5. flechas en la misma línea ----
+    // ---- 5. arrows on the same line ----
     for (y, row) in rows.iter().enumerate() {
         let Row::ArrowUnder(i) = row else { continue };
         let Shape::Arrow { from, to, label } = &vis[*i].shape else {
@@ -620,7 +620,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         );
     }
 
-    // ---- 6. notas ----
+    // ---- 6. notes ----
     if labels_in_margin {
         for a in &vis {
             if let Shape::Note { line, text } = &a.shape
@@ -649,11 +649,11 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         );
     }
 
-    // ---- 7. margen ----
-    // Cada etiqueta ocupa su propia fila del margen. Si una línea tiene varias,
-    // las siguientes bajan a las filas libres de abajo; si una etiqueta no cabe,
-    // se parte en palabras y continúa en la fila siguiente. Solo se recorta
-    // cuando ya no quedan filas libres antes de la próxima etiqueta.
+    // ---- 7. margin ----
+    // Each label takes its own margin row. If a line has several, the next
+    // ones move down to the free rows below; if a label does not fit, it is
+    // split into words and continues on the next row. It is only clipped
+    // when no free rows remain before the next label.
     if labels_in_margin && margin_w > 0 {
         let height = canvas.height;
         let mut occupied = vec![false; height];
@@ -677,7 +677,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 let mut first = true;
                 for piece in pieces {
                     if r >= height || occupied[r] {
-                        // Sin sitio: recortar lo que queda en la fila anterior.
+                        // No room: clip what remains onto the previous row.
                         if r > 0 && r - 1 < height {
                             let px = margin_x + display_width(prefix, 4);
                             canvas.put_str_clipped(px, r - 1, &l.text, text_w, style);
@@ -708,8 +708,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
 }
 
-/// Parte `text` en trozos de a lo sumo `width` celdas, cortando por palabras
-/// (y por grafemas si una palabra sola no cabe).
+/// Splits `text` into chunks of at most `width` cells, breaking on words
+/// (and on graphemes if a single word does not fit).
 fn wrap_words(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let mut out = Vec::new();
@@ -718,7 +718,7 @@ fn wrap_words(text: &str, width: usize) -> Vec<String> {
     for word in text.split_whitespace() {
         let w = display_width(word, 4);
         if w > width {
-            // Palabra más larga que el ancho: partir por grafemas.
+            // Word longer than the width: split by graphemes.
             if !line.is_empty() {
                 out.push(std::mem::take(&mut line));
             }
@@ -755,7 +755,7 @@ fn wrap_words(text: &str, width: usize) -> Vec<String> {
     out
 }
 
-/// Columna de pantalla (relativa al inicio del código) del grafema `col` de `text`.
+/// Screen column (relative to the start of the code) of grapheme `col` of `text`.
 fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     let mut w = 0;
     for (i, g) in text.graphemes(true).enumerate() {
@@ -843,7 +843,7 @@ fn mark_anchor(
     let text = doc.line_text(line).unwrap_or("");
     let x = col_to_x(text, col, tab_width);
     if x < code_w {
-        // Subrayamos el token que empieza en el ancla (hasta el siguiente separador).
+        // Underline the token that starts at the anchor (up to the next separator).
         let rest = crate::model::grapheme_slice(text, col, u32::MAX);
         let token_len = rest
             .graphemes(true)
@@ -897,7 +897,7 @@ mod tests {
                     col: s.start + 4,
                 },
                 to: Anchor { line: 7, col: 9 },
-                label: Some("s se mueve a t".into()),
+                label: Some("s moves into t".into()),
             },
         })
         .unwrap();
@@ -918,7 +918,7 @@ mod tests {
             color: None,
             shape: Shape::Note {
                 line: 4,
-                text: "error: s ya no es dueña".into(),
+                text: "error: s is no longer the owner".into(),
             },
         })
         .unwrap();
@@ -940,18 +940,18 @@ mod tests {
         );
         let text = l.canvas.to_plain_text();
         println!("{text}");
-        // 9 líneas + 2 filas de caja
+        // 9 lines + 2 box rows
         assert_eq!(l.rows.len(), 11);
         assert!(text.contains("╭─ takes"));
         assert!(
             text.contains("┼"),
-            "la flecha cruza el riel de la caja con una unión"
+            "the arrow crosses the box rail with a junction"
         );
         assert!(text.contains("╰─"));
         assert!(text.contains("▶"));
         assert!(text.contains("━▶ move"));
-        assert!(text.contains("┆ error: s ya no es dueña"));
-        // Nada se sale del ancho.
+        assert!(text.contains("┆ error: s is no longer the owner"));
+        // Nothing exceeds the width.
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 90);
         }
@@ -998,11 +998,19 @@ mod tests {
         assert_eq!(
             fg_at(&on, 2),
             Some(th.dimmed),
-            "fuera del spotlight se atenúa"
+            "outside the spotlight is dimmed"
         );
-        assert_ne!(fg_at(&on, 7), Some(th.dimmed), "dentro del spotlight no");
-        assert_ne!(fg_at(&off, 2), Some(th.dimmed), "en el paso 4 ya no aplica");
-        // La nota a4 (no incluida en ids) se dibuja atenuada; la caja a3 conserva su color.
+        assert_ne!(
+            fg_at(&on, 7),
+            Some(th.dimmed),
+            "inside the spotlight is not"
+        );
+        assert_ne!(
+            fg_at(&off, 2),
+            Some(th.dimmed),
+            "at step 4 it no longer applies"
+        );
+        // Note a4 (not included in ids) is drawn dimmed; box a3 keeps its color.
         let text = on.canvas.to_plain_text();
         assert!(text.contains("takes"));
         let y_note = on.row_of_line[&4];
@@ -1017,14 +1025,14 @@ mod tests {
     #[test]
     fn margin_labels_wrap_and_stack_instead_of_clipping() {
         let mut d = doc();
-        // Dos etiquetas en la misma línea y una nota larga.
+        // Two labels on the same line and a long note.
         d.add(Annotation {
             id: "n1".into(),
             step: 1,
             color: None,
             shape: Shape::Note {
                 line: 2,
-                text: "aquí nace s con String::from y vive hasta que se mueve".into(),
+                text: "s is born here with String::from and lives until it is moved".into(),
             },
         })
         .unwrap();
@@ -1034,7 +1042,7 @@ mod tests {
             color: None,
             shape: Shape::Note {
                 line: 2,
-                text: "segunda nota".into(),
+                text: "second note".into(),
             },
         })
         .unwrap();
@@ -1052,16 +1060,16 @@ mod tests {
         println!("{text}");
         assert!(
             !text.contains('…'),
-            "no debe recortar si hay filas libres debajo"
+            "must not clip when there are free rows below"
         );
-        assert!(text.contains("segunda nota"));
-        assert!(text.contains("aquí nace s"));
+        assert!(text.contains("second note"));
+        assert!(text.contains("s is born here"));
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
         }
         assert_eq!(
-            wrap_words("hola mundo cruel", 10),
-            vec!["hola mundo", "cruel"]
+            wrap_words("hello cruel world", 11),
+            vec!["hello cruel", "world"]
         );
         assert_eq!(
             wrap_words("supercalifragilistico", 8),
@@ -1082,7 +1090,7 @@ mod tests {
                 ..Default::default()
             },
         );
-        assert_eq!(l.rows.len(), 9, "en el paso 1 no hay caja todavía");
+        assert_eq!(l.rows.len(), 9, "at step 1 there is no box yet");
         assert!(!l.canvas.to_plain_text().contains("takes\n") || true);
     }
 

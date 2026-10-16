@@ -1,5 +1,5 @@
-//! Lienzo de celdas independiente del backend. La TUI lo copia a un `Buffer`
-//! de ratatui; el CLI lo vuelca a texto plano o ANSI.
+//! Backend-independent cell canvas. The TUI copies it into a ratatui `Buffer`;
+//! the CLI dumps it as plain text or ANSI.
 
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
@@ -56,7 +56,7 @@ impl CellStyle {
         self.italic = true;
         self
     }
-    /// Combina: lo que `over` define gana; lo demás se conserva.
+    /// Merges: whatever `over` defines wins; the rest is kept.
     pub fn merge(self, over: CellStyle) -> CellStyle {
         CellStyle {
             fg: over.fg.or(self.fg),
@@ -70,7 +70,7 @@ impl CellStyle {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
-    /// Grafema que ocupa la celda; vacío si la celda es la segunda mitad de un carácter ancho.
+    /// Grapheme occupying the cell; empty if the cell is the second half of a wide character.
     pub sym: String,
     pub style: CellStyle,
 }
@@ -120,12 +120,12 @@ impl Canvas {
         self.idx(x, y).map(|i| &self.cells[i])
     }
 
-    /// Escribe un grafema (ancho 1 o 2) en (x, y). Devuelve el ancho ocupado.
+    /// Writes a grapheme (width 1 or 2) at (x, y). Returns the width used.
     pub fn put(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) -> usize {
         let w = UnicodeWidthStr::width(sym).max(1);
         let Some(i) = self.idx(x, y) else { return w };
         if w == 2 && x + 1 >= self.width {
-            // No cabe entero: dejamos un espacio.
+            // Does not fit whole: leave a space.
             self.cells[i] = Cell {
                 sym: " ".into(),
                 style,
@@ -145,8 +145,8 @@ impl Canvas {
         w
     }
 
-    /// Dibuja un trazo de línea (`─`, `│`, esquinas) respetando lo que ya hay:
-    /// si cruza un trazo perpendicular, pone una unión `┼` en lugar de taparlo.
+    /// Draws a line stroke (`─`, `│`, corners) respecting what is already there:
+    /// if it crosses a perpendicular stroke, it places a `┼` junction instead of covering it.
     pub fn put_line(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) {
         let existing = self.get(x, y).map(|c| c.sym.as_str()).unwrap_or(" ");
         let horizontal = |g: &str| matches!(g, "─" | "━" | "┄" | "╌" | "═");
@@ -158,7 +158,7 @@ impl Canvas {
         self.put(x, y, merged, style);
     }
 
-    /// Escribe una cadena a partir de (x, y), grafema a grafema. Devuelve el ancho total.
+    /// Writes a string starting at (x, y), grapheme by grapheme. Returns the total width.
     pub fn put_str(&mut self, x: usize, y: usize, s: &str, style: CellStyle) -> usize {
         let mut cx = x;
         for g in s.graphemes(true) {
@@ -170,7 +170,7 @@ impl Canvas {
         cx - x
     }
 
-    /// Escribe `s` recortado a `max_w` celdas, con `…` si no cabe.
+    /// Writes `s` clipped to `max_w` cells, with `…` if it does not fit.
     pub fn put_str_clipped(
         &mut self,
         x: usize,
@@ -198,7 +198,7 @@ impl Canvas {
         cx - x
     }
 
-    /// Aplica `style` (merge) a las celdas x..x+w de la fila y.
+    /// Applies `style` (merge) to cells x..x+w of row y.
     pub fn restyle(&mut self, x: usize, y: usize, w: usize, style: CellStyle) {
         for cx in x..x + w {
             if let Some(i) = self.idx(cx, y) {
@@ -217,7 +217,7 @@ impl Canvas {
         s
     }
 
-    /// Texto plano, sin estilos, sin espacios finales.
+    /// Plain text, no styles, no trailing spaces.
     pub fn to_plain_text(&self) -> String {
         (0..self.height)
             .map(|y| self.row_text(y).trim_end().to_string())
@@ -225,7 +225,7 @@ impl Canvas {
             .join("\n")
     }
 
-    /// Texto con secuencias ANSI (24 bits).
+    /// Text with ANSI sequences (24-bit).
     pub fn to_ansi(&self) -> String {
         let mut out = String::new();
         for y in 0..self.height {
@@ -269,7 +269,7 @@ impl Canvas {
     }
 }
 
-/// Ancho en celdas de una cadena (tabs expandidos a `tab_width`).
+/// Width in cells of a string (tabs expanded to `tab_width`).
 pub fn display_width(s: &str, tab_width: usize) -> usize {
     let mut w = 0;
     for g in s.graphemes(true) {

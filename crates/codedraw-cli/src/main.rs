@@ -1,7 +1,7 @@
-//! `codedraw`: para humanos y agentes. Sin subcomando abre la TUI; `render`
-//! dibuja sin abrir la TUI; `mcp` arranca el servidor MCP; `scene`/`api`
-//! hablan con la instancia viva. JSON por defecto en la salida de máquina,
-//! `-` para stdin/stdout, avisos a stderr y exit 1 en error.
+//! `codedraw`: for humans and agents. Without a subcommand it opens the TUI;
+//! `render` draws without opening the TUI; `mcp` starts the MCP server;
+//! `scene`/`api` talk to the live instance. JSON by default for machine
+//! output, `-` for stdin/stdout, notices on stderr and exit 1 on error.
 
 use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
@@ -14,35 +14,35 @@ use codedraw_core::socket;
 use codedraw_core::{Theme, ThemeName};
 
 #[derive(Parser)]
-#[command(name = "codedraw", version, about = "Dibuja encima de código en la terminal para explicarlo en video.", long_about = None)]
+#[command(name = "codedraw", version, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
-    after_help = "Ejemplos:\n  codedraw src/main.rs:12-48        abre un rango de líneas\n  pbpaste | codedraw --lang rs       código desde el portapapeles\n  codedraw demo.codedraw --present   abre en modo presentación\n  codedraw render demo.codedraw --out - --step 2\n  codedraw mcp                       servidor MCP para agentes"
+    after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw mcp                       MCP server for agents"
 )]
 struct Cli {
-    /// Archivo fuente (`main.rs`, `main.rs:12-48`) o documento `.codedraw`. Sin él, lee stdin.
+    /// Source file (`main.rs`, `main.rs:12-48`) or `.codedraw` document. Without it, reads stdin.
     file: Option<String>,
-    /// Lenguaje cuando no se puede deducir (rs, ts, py, go…)
+    /// Language when it cannot be inferred (rs, ts, py, go…)
     #[arg(long)]
     lang: Option<String>,
-    /// Paso inicial de la presentación
+    /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
-    /// Tema
+    /// Theme
     #[arg(long, value_enum)]
     theme: Option<ThemeArg>,
-    /// Arrancar en modo presentación (sin UI)
+    /// Start in presentation mode (no UI)
     #[arg(long)]
     present: bool,
-    /// Enfocar un rango de líneas al abrir (A-B)
+    /// Focus a range of lines on open (A-B)
     #[arg(long)]
     focus: Option<String>,
-    /// Ruta del socket de la API local (por defecto $CODEDRAW_SOCKET o la sesión)
+    /// Path of the local API socket (defaults to $CODEDRAW_SOCKET or the session)
     #[arg(long, global = true)]
     socket: Option<PathBuf>,
-    /// Nombre de sesión: permite varias instancias (por defecto "default")
+    /// Session name: allows several instances (defaults to "default")
     #[arg(long, global = true)]
     session: Option<String>,
-    /// No exponer la API local
+    /// Do not expose the local API
     #[arg(long)]
     no_socket: bool,
     #[command(subcommand)]
@@ -72,11 +72,11 @@ enum Format {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Renderiza un documento sin abrir la TUI (texto plano o ANSI)
+    /// Render a document without opening the TUI (plain text or ANSI)
     Render {
-        /// Documento `.codedraw` (o fuente) a dibujar
+        /// `.codedraw` document (or source file) to draw
         file: String,
-        /// Salida: ruta o `-` para stdout
+        /// Output: a path or `-` for stdout
         #[arg(long, default_value = "-")]
         out: String,
         #[arg(long)]
@@ -87,37 +87,37 @@ enum Cmd {
         format: Format,
         #[arg(long, value_enum)]
         theme: Option<ThemeArg>,
-        /// Sin números de línea
+        /// No line numbers
         #[arg(long)]
         no_numbers: bool,
     },
-    /// Arranca el servidor MCP (stdio) que controla la instancia viva
+    /// Start the MCP server (stdio) that controls the live instance
     Mcp,
-    /// Lee o cambia la escena de la instancia viva
+    /// Read or change the scene of the live instance
     Scene {
         #[command(subcommand)]
         cmd: SceneCmd,
     },
-    /// Llama a un método crudo de la API local: `codedraw api status`, `codedraw api annotation.add '{...}'`
+    /// Call a raw local API method: `codedraw api status`, `codedraw api annotation.add '{...}'`
     Api {
         method: String,
-        /// Parámetros JSON (o `-` para leerlos de stdin)
+        /// JSON parameters (or `-` to read them from stdin)
         params: Option<String>,
     },
 }
 
 #[derive(Subcommand)]
 enum SceneCmd {
-    /// Imprime el documento completo (JSON)
+    /// Print the full document (JSON)
     Get,
-    /// Lista las anotaciones
+    /// List the annotations
     List,
-    /// Muestra lo que se ve en pantalla como texto
+    /// Show what is on screen as text
     Text {
         #[arg(long)]
         width: Option<u32>,
     },
-    /// Estado de la instancia
+    /// Instance status
     Status,
 }
 
@@ -143,7 +143,7 @@ fn real_main() -> anyhow::Result<()> {
             theme,
             no_numbers,
         }) => {
-            let opened = fs::open(&file).with_context(|| format!("no se pudo abrir {file}"))?;
+            let opened = fs::open(&file).with_context(|| format!("could not open {file}"))?;
             let doc = opened.document;
             let theme = Theme::from_name(
                 theme
@@ -169,8 +169,8 @@ fn real_main() -> anyhow::Result<()> {
             if out == "-" {
                 std::io::stdout().write_all(text.as_bytes())?;
             } else {
-                std::fs::write(&out, text).with_context(|| format!("no se pudo escribir {out}"))?;
-                eprintln!("escrito {out}");
+                std::fs::write(&out, text).with_context(|| format!("could not write {out}"))?;
+                eprintln!("wrote {out}");
             }
             Ok(())
         }
@@ -207,9 +207,9 @@ fn real_main() -> anyhow::Result<()> {
                     let mut s = String::new();
                     std::io::stdin().read_to_string(&mut s)?;
                     serde_json::from_str(&s)
-                        .context("los parámetros de stdin no son JSON válido")?
+                        .context("the parameters from stdin are not valid JSON")?
                 }
-                Some(p) => serde_json::from_str(p).context("los parámetros no son JSON válido")?,
+                Some(p) => serde_json::from_str(p).context("the parameters are not valid JSON")?,
             };
             let resp = call(&socket_path, &method, params)?;
             println!("{}", serde_json::to_string_pretty(&resp)?);
@@ -224,7 +224,7 @@ fn call(
     params: serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
     let resp = codedraw_tui::ipc::call(path, method, params).with_context(|| {
-        format!("no hay una instancia de CodeDraw escuchando en {} (abre `codedraw <archivo>` o pasa --socket/--session)", path.display())
+        format!("no CodeDraw instance is listening on {} (open `codedraw <file>` or pass --socket/--session)", path.display())
     })?;
     if let Some(e) = resp.error {
         bail!("{} ({})", e.message, e.code);
@@ -234,17 +234,17 @@ fn call(
 
 fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     let opened = match &cli.file {
-        Some(f) => fs::open(f).with_context(|| format!("no se pudo abrir {f}"))?,
+        Some(f) => fs::open(f).with_context(|| format!("could not open {f}"))?,
         None => {
             if std::io::stdin().is_terminal() {
                 bail!(
-                    "indica un archivo (codedraw src/main.rs:12-48) o pasa código por stdin (pbpaste | codedraw --lang rs)"
+                    "give a file (codedraw src/main.rs:12-48) or pipe code through stdin (pbpaste | codedraw --lang rs)"
                 );
             }
             let mut text = String::new();
             std::io::stdin().read_to_string(&mut text)?;
             if text.trim().is_empty() {
-                bail!("stdin vacío");
+                bail!("empty stdin");
             }
             let lang = cli
                 .lang
@@ -263,7 +263,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
         None => None,
     };
     if !std::io::stdout().is_terminal() {
-        bail!("la TUI necesita una terminal en stdout; usa `codedraw render` para salida de texto");
+        bail!("the TUI needs a terminal on stdout; use `codedraw render` for text output");
     }
     codedraw_tui::run(
         opened,

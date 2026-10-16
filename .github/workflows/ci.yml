@@ -30,7 +30,7 @@ jobs:
         run: cargo run -q -- render examples/ownership.rs.codedraw --width 100 --step 5
 
   deny:
-    name: cargo-deny (licencias, advisories, duplicados)
+    name: cargo-deny (licenses, advisories, duplicates)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

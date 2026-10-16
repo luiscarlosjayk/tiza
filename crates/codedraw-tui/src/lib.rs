@@ -1,4 +1,4 @@
-//! `codedraw-tui`: la interfaz de terminal de CodeDraw y el servidor de su API local.
+//! `codedraw-tui`: the CodeDraw terminal interface and its local API server.
 
 pub mod app;
 pub mod ipc;
@@ -20,12 +20,12 @@ pub struct RunOptions {
     pub step: Option<u32>,
     pub theme: Option<codedraw_core::ThemeName>,
     pub present: bool,
-    /// `None` = sin servidor de API local.
+    /// `None` = no local API server.
     pub socket: Option<PathBuf>,
     pub focus: Option<(u32, u32)>,
 }
 
-/// Arranca la TUI con un documento abierto. Devuelve al cerrar.
+/// Starts the TUI with an opened document. Returns when it closes.
 pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let mut app = App::new(opened.document, opened.save_path);
     if let Some(t) = opts.theme {
@@ -44,7 +44,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
                 Some(s)
             }
             Err(e) => {
-                app.error(format!("API local desactivada: {e}"));
+                app.error(format!("local API disabled: {e}"));
                 None
             }
         },
@@ -89,7 +89,7 @@ fn event_loop(
                 }
                 Event::Paste(text) => {
                     match app.replace_code(&text) {
-                        Ok(()) => app.info(format!("{} líneas pegadas", app.doc.code.len())),
+                        Ok(()) => app.info(format!("{} lines pasted", app.doc.code.len())),
                         Err(e) => app.error(e.to_string()),
                     }
                     needs_draw = true;
@@ -105,7 +105,7 @@ fn event_loop(
 }
 
 fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
-    // Superposiciones: cualquier tecla las cierra.
+    // Overlays: any of these keys closes them.
     if app.overlay != Overlay::None {
         if matches!(
             code,

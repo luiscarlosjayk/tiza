@@ -1,4 +1,4 @@
-//! Deshacer/rehacer por instantáneas de las anotaciones (los documentos son pequeños).
+//! Undo/redo via snapshots of the annotations (documents are small).
 
 use crate::model::{Annotation, Document};
 
@@ -11,7 +11,7 @@ pub struct History {
 impl History {
     const MAX: usize = 200;
 
-    /// Llamar ANTES de mutar `doc.annotations`.
+    /// Call BEFORE mutating `doc.annotations`.
     pub fn record(&mut self, doc: &Document) {
         self.undo.push(doc.annotations.clone());
         if self.undo.len() > Self::MAX {

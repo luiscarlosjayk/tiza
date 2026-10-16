@@ -1,55 +1,55 @@
-# Guía para agentes
+# Agent guide
 
-Esta página es para un agente (Claude Code, Zed, cualquier cliente MCP) que vaya a dibujar sobre el código que un presentador tiene abierto en CodeDraw.
+This page is for an agent (Claude Code, Zed, any MCP client) that is going to draw on the code a presenter has open in CodeDraw.
 
-## Modelo mental
+## Mental model
 
-- La **TUI es la única dueña del documento**. Tú hablas con ella; no editas el `.codedraw` a mano mientras está abierta.
-- Un documento tiene **código** (líneas numeradas, numeración absoluta aunque se abra un rango) y **anotaciones**. Cada anotación tiene un **id** corto y estable (`a1`, `a2`… o el que tú pases) y un **paso** (1-based). Se muestran las anotaciones con `step <= paso actual`.
-- Las **anclas** son posiciones en el texto: `{line, col}` o, mejor, `{find: "texto exacto", line?: N, occurrence?: K}`. `find` busca el texto en la línea indicada (si la das) y después en todo el documento. Si no existe, la herramienta falla con `text_not_found`: no adivines columnas.
+- The **TUI is the sole owner of the document**. You talk to it; you do not edit the `.codedraw` by hand while it is open.
+- A document has **code** (numbered lines, absolute numbering even when a range is opened) and **annotations**. Each annotation has a short, stable **id** (`a1`, `a2`… or the one you pass) and a **step** (1-based). Annotations with `step <= current step` are shown.
+- **Anchors** are positions in the text: `{line, col}` or, better, `{find: "exact text", line?: N, occurrence?: K}`. `find` searches for the text on the given line (if you pass one) and then in the whole document. If it does not exist, the tool fails with `text_not_found`: do not guess columns.
 
-## Flujo recomendado
+## Recommended flow
 
-1. `status` — confirma que hay una instancia y mira `cols`/`rows` (si `cols < 100`, las etiquetas van debajo de la línea: hazlas cortas).
-2. `get_code` — lee el código con números de línea. Elige textos exactos.
-3. Anota en orden de explicación, asignando `step` creciente:
-   - `add_mark` para semántica de Rust (`move`, `borrow`, `borrow_mut`, `drop`, `lifetime`): cada tipo tiene color y glifo fijos y muestra su leyenda.
-   - `add_arrow` para relaciones (de donde nace un valor a donde se consume).
-   - `add_box` para delimitar una función o un bloque.
-   - `add_note` para una frase corta; `highlight` para un fragmento sin semántica.
-   - `add_spotlight` para un paso de "mira aquí": atenúa el código fuera de `from_line..to_line` y/o las anotaciones fuera de `ids` (y enfoca el código de esas anotaciones). No dibuja nada; dirige la atención. Activo de `step` a `until`.
-4. `set_step 0` deja solo el código (buen punto de partida para la toma); luego `next_step` conforme el presentador avanza (o déjalo en sus manos: `n`/`p`).
-5. `render_text` para ver exactamente lo que ve la audiencia y corregir.
+1. `status` — confirm there is an instance and look at `cols`/`rows` (if `cols < 100`, labels go below the line: keep them short).
+2. `get_code` — read the code with line numbers. Pick exact texts.
+3. Annotate in the order of the explanation, assigning an increasing `step`:
+   - `add_mark` for Rust semantics (`move`, `borrow`, `borrow_mut`, `drop`, `lifetime`): each kind has a fixed color and glyph and shows its legend.
+   - `add_arrow` for relationships (from where a value is born to where it is consumed).
+   - `add_box` to delimit a function or a block.
+   - `add_note` for a short sentence; `highlight` for a fragment without semantics.
+   - `add_spotlight` for a "look here" step: dims the code outside `from_line..to_line` and/or the annotations outside `ids` (and focuses the code of those annotations). It draws nothing; it directs attention. Active from `step` to `until`.
+4. `set_step 0` leaves only the code (a good starting point for the take); then `next_step` as the presenter advances (or leave it in their hands: `n`/`p`).
+5. `render_text` to see exactly what the audience sees and fix things.
 
-## Ejemplo (ownership)
+## Example (ownership)
 
 ```json
-{"name":"add_mark","arguments":{"kind":"move","at":{"line":3,"find":"s"},"label":"s pasa a takes","step":1}}
+{"name":"add_mark","arguments":{"kind":"move","at":{"line":3,"find":"s"},"label":"s moves into takes","step":1}}
 {"name":"add_arrow","arguments":{"from":{"line":2,"find":"s"},"to":{"line":15,"find":"s: String"},"label":"move","step":1,"color":"orange"}}
-{"name":"add_note","arguments":{"line":4,"text":"s ya no es dueña: usarla aquí no compila","step":2}}
-{"name":"add_box","arguments":{"from_line":15,"to_line":17,"label":"takes es dueña de s y la libera al final","step":2}}
+{"name":"add_note","arguments":{"line":4,"text":"s no longer owns it: using it here does not compile","step":2}}
+{"name":"add_box","arguments":{"from_line":15,"to_line":17,"label":"takes owns s and frees it at the end","step":2}}
 ```
 
 ## Color
 
-Cada anotación acepta `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (también en español: `azul`, `verde`…) o `#rrggbb`. Úsalo para contar una historia por valor: todo lo que le pasa a `s` en un color, todo lo de `t` en otro. Las flechas sin color rotan una paleta automática; cajas, notas y resaltes sin color usan el del tema. `update_annotation` con `color: ""` vuelve al automático.
+Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (Spanish aliases such as `azul`, `verde`… also work) or `#rrggbb`. Use it to tell a story per value: everything that happens to `s` in one color, everything about `t` in another. Arrows without a color rotate through an automatic palette; boxes, notes and highlights without a color use the theme's. `update_annotation` with `color: ""` returns to automatic.
 
-## Entre tomas
+## Between takes
 
-`clear_annotations` vacía el lienzo de golpe (o solo un paso con `step`). El presentador puede deshacerlo con `u`, así que no es destructivo en vivo.
+`clear_annotations` empties the canvas at once (or only one step with `step`). The presenter can undo it with `u`, so it is not destructive live.
 
-## Idempotencia
+## Idempotency
 
-Pasa tu propio `id` (`"id": "move-s"`) para que un reintento no duplique la anotación: el segundo intento falla con `duplicate_id` y puedes seguir.
+Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
 
-## Sin MCP: socket y CLI
+## Without MCP: socket and CLI
 
-Mismo contrato, una petición JSON por línea sobre el socket Unix:
+Same contract, one JSON request per line over the Unix socket:
 
 ```sh
-printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":4,"text":"hola"}}' | nc -U "$TMPDIR/codedraw/default.sock"
-codedraw api annotation.add '{"type":"note","line":4,"text":"hola"}'
+printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":4,"text":"hello"}}' | nc -U "$TMPDIR/codedraw/default.sock"
+codedraw api annotation.add '{"type":"note","line":4,"text":"hello"}'
 codedraw api api.methods
 ```
 
-Respuesta: `{"id":1,"result":{...}}` o `{"id":1,"error":{"code":"text_not_found","message":"..."}}`. Códigos: `out_of_range`, `not_found`, `duplicate_id`, `text_not_found`, `invalid_argument`, `invalid_json`, `unavailable`.
+Response: `{"id":1,"result":{...}}` or `{"id":1,"error":{"code":"text_not_found","message":"..."}}`. Codes: `out_of_range`, `not_found`, `duplicate_id`, `text_not_found`, `invalid_argument`, `invalid_json`, `unavailable`.

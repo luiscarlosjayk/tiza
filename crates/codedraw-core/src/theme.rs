@@ -1,6 +1,6 @@
-//! Temas oscuro y claro (como Excalidraw), con colores RGB explícitos pensados
-//! para verse bien en video a 1080p. Las marcas semánticas usan cromas que la
-//! sintaxis no usa, y además se distinguen por forma (ver `MarkKind::glyph`).
+//! Dark and light themes (like Excalidraw), with explicit RGB colors meant to
+//! look good on 1080p video. Semantic marks use hues the syntax highlighting
+//! does not, and are also told apart by shape (see `MarkKind::glyph`).
 
 use crate::canvas::{CellStyle, Rgb};
 use crate::model::{MarkKind, ThemeName};
@@ -10,9 +10,9 @@ pub struct Theme {
     pub name: ThemeName,
     pub bg: Rgb,
     pub fg: Rgb,
-    /// Texto secundario (números de línea, leyendas).
+    /// Secondary text (line numbers, legends).
     pub muted: Rgb,
-    /// Código atenuado fuera del enfoque.
+    /// Dimmed code outside the focus.
     pub dimmed: Rgb,
     pub accent: Rgb,
     pub rail: Rgb,
@@ -30,7 +30,7 @@ pub struct Theme {
     pub mark_borrow_mut: Rgb,
     pub mark_drop: Rgb,
     pub mark_lifetime: Rgb,
-    /// Tema de sintaxis de two-face que acompaña.
+    /// Matching two-face syntax theme.
     pub syntax: two_face::theme::EmbeddedThemeName,
 }
 
@@ -115,7 +115,7 @@ impl Theme {
         }
     }
 
-    /// Fondo tenue para el span de una marca: mezcla del color de la marca con el fondo.
+    /// Faint background for a mark's span: the mark color blended with the background.
     pub fn mark_bg(&self, kind: MarkKind) -> Rgb {
         blend(self.mark_color(kind), self.bg, 0.22)
     }
@@ -125,7 +125,7 @@ impl Theme {
     }
 }
 
-/// Mezcla `a` sobre `b` con opacidad `t` (0..1).
+/// Blends `a` over `b` with opacity `t` (0..1).
 pub fn blend(a: Rgb, b: Rgb, t: f32) -> Rgb {
     let f = |x: u8, y: u8| {
         ((x as f32) * t + (y as f32) * (1.0 - t))
@@ -135,14 +135,14 @@ pub fn blend(a: Rgb, b: Rgb, t: f32) -> Rgb {
     Rgb(f(a.0, b.0), f(a.1, b.1), f(a.2, b.2))
 }
 
-/// Nombres de color que acepta `color` en una anotación (y su hex por tema).
-/// También se acepta `#rrggbb`.
+/// Color names accepted by `color` on an annotation (with a hex per theme).
+/// `#rrggbb` is accepted too.
 pub const PALETTE: &[&str] = &[
     "orange", "blue", "green", "purple", "pink", "cyan", "yellow", "red", "gray",
 ];
 
 impl Theme {
-    /// Resuelve un color de anotación: nombre de la paleta, alias en español o `#rrggbb`.
+    /// Resolves an annotation color: palette name, Spanish alias or `#rrggbb`.
     pub fn named_color(&self, name: &str) -> Option<Rgb> {
         let n = name.trim().to_ascii_lowercase();
         if let Some(hex) = n.strip_prefix('#')
@@ -167,7 +167,7 @@ impl Theme {
         }
     }
 
-    /// Paleta que rotan las flechas sin color explícito, para que se distingan entre sí.
+    /// Palette that arrows without an explicit color rotate through, so they can be told apart.
     pub fn auto_palette(&self) -> Vec<Rgb> {
         [
             "orange", "blue", "green", "purple", "cyan", "pink", "yellow",

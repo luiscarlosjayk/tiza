@@ -1,19 +1,19 @@
-# 0005 · Formato `.codedraw`
+# 0005 · `.codedraw` format
 
-**Estado:** aceptada (2026-10-15)
+**Status:** accepted (2026-10-15)
 
-## Decisión
+## Decision
 
-- JSON legible, con `schema` (entero) desde el día uno. Esta versión escribe `schema: 1` y rechaza esquemas mayores con un error claro.
-- `code` admite dos modos:
-  - **referencia** (por defecto en los sidecars): `{"file": "src/main.rs", "lines": "12-48"}`. `file` puede ser absoluta o relativa al directorio del `.codedraw`; `lines` es opcional. El documento siempre muestra el archivo actual; `source.first_line` y el lenguaje se deducen al cargar.
-  - **embebido**: `code: ["línea", …]`. Portable y congelado (útil para ejemplos y para compartir). `:embed` congela; `:link ruta[:A-B]` vuelve a referenciar.
-- `source.path`, `source.language` y `source.first_line` acompañan en ambos modos para conservar la numeración real.
-- Anotaciones con `id`, `step` y la forma aplanada con `type` (`highlight`, `mark`, `box`, `arrow`, `note`).
-- **Sidecar**: al abrir `src/main.rs` se guarda en `src/main.rs.codedraw`; con rango, `src/main.rs.12-48.codedraw`. Si el sidecar existe, se abre él (conserva anotaciones).
-- Guardado **automático y atómico** (tmp + rename) tras cada cambio; `:w [ruta]` para elegir otro destino.
+- Readable JSON, with `schema` (integer) from day one. This version writes `schema: 1` and rejects higher schemas with a clear error.
+- `code` supports two modes:
+  - **reference** (default for sidecars): `{"file": "src/main.rs", "lines": "12-48"}`. `file` may be absolute or relative to the `.codedraw` directory; `lines` is optional. The document always shows the current file; `source.first_line` and the language are inferred on load.
+  - **embedded**: `code: ["line", …]`. Portable and frozen (useful for examples and for sharing). `:embed` freezes; `:link path[:A-B]` references a file again.
+- `source.path`, `source.language` and `source.first_line` accompany both modes to preserve the real numbering.
+- Annotations with `id`, `step` and the flattened shape with `type` (`highlight`, `mark`, `box`, `arrow`, `note`).
+- **Sidecar**: opening `src/main.rs` saves to `src/main.rs.codedraw`; with a range, `src/main.rs.12-48.codedraw`. If the sidecar exists, it is the one opened (it keeps the annotations).
+- **Automatic, atomic** saving (tmp + rename) after every change; `:w [path]` to pick another destination.
 
-## Consecuencias
+## Consequences
 
-- Migraciones: cuando cambie el esquema, `fs::parse_document` aplicará transformaciones por versión; fixtures por versión en los tests (t-073).
-- El `find` original de un ancla se guardará en una versión futura para re-anclar tras ediciones del fuente (t-011/t-043).
+- Migrations: when the schema changes, `fs::parse_document` will apply per-version transformations; per-version fixtures in the tests (t-073).
+- The original `find` of an anchor will be stored in a future version to re-anchor after source edits (t-011/t-043).

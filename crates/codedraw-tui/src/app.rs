@@ -1,6 +1,6 @@
-//! Estado y lógica de la aplicación, sin dependencias de dibujo. Tanto el
-//! teclado como la API local pasan por aquí, así un agente y el presentador
-//! hacen exactamente lo mismo.
+//! Application state and logic, with no drawing dependencies. Both the
+//! keyboard and the local API go through here, so an agent and the presenter
+//! do exactly the same thing.
 
 use std::path::PathBuf;
 
@@ -95,7 +95,7 @@ impl App {
         )
     }
 
-    // ---------- mutaciones ----------
+    // ---------- mutations ----------
 
     fn touch(&mut self) {
         self.revision += 1;
@@ -103,7 +103,7 @@ impl App {
         if self.autosave
             && let Err(e) = self.save()
         {
-            self.error(format!("no se pudo guardar: {e}"));
+            self.error(format!("could not save: {e}"));
         }
     }
 
@@ -134,7 +134,7 @@ impl App {
             && self.theme.named_color(c).is_none()
         {
             return Err(Error::Invalid(format!(
-                "color desconocido: {c} (usa {} o #rrggbb)",
+                "unknown color: {c} (use {} or #rrggbb)",
                 codedraw_core::theme::PALETTE.join(", ")
             )));
         }
@@ -172,7 +172,7 @@ impl App {
         }
     }
 
-    /// Vacía todas las anotaciones (o solo las de un paso). Se puede deshacer con `u`.
+    /// Removes every annotation (or only those of one step). Undo with `u`.
     pub fn clear_annotations(&mut self, step: Option<u32>) -> usize {
         let before = self.doc.annotations.len();
         if before == 0 {
@@ -211,7 +211,7 @@ impl App {
                 ann.color = Some(c.trim().to_string());
             } else {
                 return Err(Error::Invalid(format!(
-                    "color desconocido: {c} (usa {} o #rrggbb)",
+                    "unknown color: {c} (use {} or #rrggbb)",
                     codedraw_core::theme::PALETTE.join(", ")
                 )));
             }
@@ -251,7 +251,7 @@ impl App {
         }
     }
 
-    /// Cambia el paso actual. El paso 0 es "solo el código": no se dibuja ninguna anotación.
+    /// Changes the current step. Step 0 is "code only": no annotation is drawn.
     pub fn set_step(&mut self, step: u32) {
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
@@ -264,18 +264,18 @@ impl App {
     pub fn undo(&mut self) {
         if self.history.undo(&mut self.doc) {
             self.touch();
-            self.info("deshecho");
+            self.info("undone");
         } else {
-            self.info("nada que deshacer");
+            self.info("nothing to undo");
         }
     }
 
     pub fn redo(&mut self) {
         if self.history.redo(&mut self.doc) {
             self.touch();
-            self.info("rehecho");
+            self.info("redone");
         } else {
-            self.info("nada que rehacer");
+            self.info("nothing to redo");
         }
     }
 
@@ -285,12 +285,11 @@ impl App {
         self.revision += 1;
     }
 
-    /// Reemplaza el código (pegar, stdin). Solo si no hay anotaciones que se perderían.
+    /// Replaces the code (paste, stdin). Only when there are no annotations that would be lost.
     pub fn replace_code(&mut self, text: &str) -> Result<(), Error> {
         if !self.doc.annotations.is_empty() {
             return Err(Error::Invalid(
-                "el documento ya tiene anotaciones; abre otro archivo para pegar código nuevo"
-                    .into(),
+                "the document already has annotations; open another file to paste new code".into(),
             ));
         }
         let lang = self.doc.source.language.clone();
@@ -303,7 +302,7 @@ impl App {
         Ok(())
     }
 
-    // ---------- navegación ----------
+    // ---------- navigation ----------
 
     pub fn move_cursor(&mut self, delta: i64) {
         let first = self.doc.source.first_line as i64;
@@ -311,7 +310,7 @@ impl App {
         self.cursor_line = (self.cursor_line as i64 + delta).clamp(first, last) as u32;
     }
 
-    // ---------- comandos ':' ----------
+    // ---------- ':' commands ----------
 
     pub fn run_command(&mut self, input: &str) {
         let input = input.trim();
@@ -333,7 +332,7 @@ impl App {
                         self.save_path = PathBuf::from(rest);
                     }
                     self.save()
-                        .map(|_| format!("guardado en {}", self.save_path.display()))
+                        .map(|_| format!("saved to {}", self.save_path.display()))
                 }
                 "wq" => {
                     self.quit = true;
@@ -347,13 +346,13 @@ impl App {
                 "embed" => {
                     self.doc.embed_code();
                     self.touch();
-                    Ok("código congelado dentro del .codedraw".into())
+                    Ok("code frozen inside the .codedraw".into())
                 }
                 "link" => {
                     let (file, range) = if rest.is_empty() {
                         let Some(f) = self.doc.source.path.clone() else {
                             return Err(Error::Invalid(
-                                "uso: :link ruta[:A-B]   (sin ruta usa el archivo de origen)"
+                                "usage: :link path[:A-B]   (without a path, uses the source file)"
                                     .into(),
                             ));
                         };
@@ -366,14 +365,14 @@ impl App {
                     };
                     self.doc.reference_file(file.clone(), range);
                     self.touch();
-                    Ok(format!("el .codedraw ahora referencia {file}"))
+                    Ok(format!("the .codedraw now references {file}"))
                 }
                 "spot" | "spotlight" => self.cmd_spot(rest),
                 "until" => {
                     let (id, n) = split_first(rest);
                     let n: u32 = n.parse().map_err(|_| {
                         Error::Invalid(
-                            "uso: :until ID N   (último paso en que el spotlight sigue activo)"
+                            "usage: :until ID N   (last step in which the spotlight stays active)"
                                 .into(),
                         )
                     })?;
@@ -383,27 +382,27 @@ impl App {
                         .cloned()
                         .ok_or_else(|| Error::NotFound(id.to_string()))?;
                     let Shape::Spotlight { until, .. } = &mut ann.shape else {
-                        return Err(Error::Invalid(format!("{id} no es un spotlight")));
+                        return Err(Error::Invalid(format!("{id} is not a spotlight")));
                     };
                     *until = Some(n.max(ann.step));
                     self.history.record(&self.doc);
                     self.doc.update(ann)?;
                     self.touch();
-                    Ok(format!("{id} activo hasta el paso {n}"))
+                    Ok(format!("{id} active until step {n}"))
                 }
                 "clear" => {
                     let step = match rest.trim() {
                         "" => None,
                         "." => Some(self.doc.step),
                         n => Some(n.parse::<u32>().map_err(|_| {
-                            Error::Invalid("uso: :clear  |  :clear N  |  :clear .  (todo, un paso, el paso actual)".into())
+                            Error::Invalid("usage: :clear  |  :clear N  |  :clear .  (all, one step, the current step)".into())
                         })?),
                     };
                     let n = self.clear_annotations(step);
                     Ok(if n == 0 {
-                        "nada que borrar".into()
+                        "nothing to clear".into()
                     } else {
-                        format!("{n} anotación(es) borradas (u para deshacer)")
+                        format!("{n} annotation(s) cleared (u to undo)")
                     })
                 }
                 "del" | "delete" | "rm" => {
@@ -413,16 +412,16 @@ impl App {
                         n += 1;
                     }
                     if n == 0 {
-                        Err(Error::Invalid("uso: :del ID [ID…]".into()))
+                        Err(Error::Invalid("usage: :del ID [ID…]".into()))
                     } else {
-                        Ok(format!("{n} eliminada(s)"))
+                        Ok(format!("{n} deleted"))
                     }
                 }
                 "color" | "col" => {
                     let (id, c) = split_first(rest);
                     if id.is_empty() {
                         return Err(Error::Invalid(format!(
-                            "uso: :color ID nombre|#rrggbb|auto   (nombres: {})",
+                            "usage: :color ID name|#rrggbb|auto   (names: {})",
                             codedraw_core::theme::PALETTE.join(", ")
                         )));
                     }
@@ -434,17 +433,12 @@ impl App {
                         label: None,
                         shape: None,
                     })
-                    .map(|_| {
-                        format!(
-                            "{id}: color {}",
-                            if c.is_empty() { "automático" } else { c }
-                        )
-                    })
+                    .map(|_| format!("{id}: color {}", if c.is_empty() { "auto" } else { c }))
                 }
                 "label" => {
                     let (id, text) = rest
                         .split_once(char::is_whitespace)
-                        .ok_or_else(|| Error::Invalid("uso: :label ID texto".into()))?;
+                        .ok_or_else(|| Error::Invalid("usage: :label ID text".into()))?;
                     self.update_annotation(&UpdateParams {
                         id: id.into(),
                         step: None,
@@ -452,22 +446,22 @@ impl App {
                         label: Some(text.trim().into()),
                         shape: None,
                     })
-                    .map(|_| format!("{id} actualizada"))
+                    .map(|_| format!("{id} updated"))
                 }
                 "step" | "s" => {
                     let parts: Vec<&str> = rest.split_whitespace().collect();
                     match parts.as_slice() {
                         [n] => {
                             let n: u32 = n.parse().map_err(|_| {
-                                Error::Invalid("uso: :step N  |  :step ID N".into())
+                                Error::Invalid("usage: :step N  |  :step ID N".into())
                             })?;
                             self.set_step(n);
-                            Ok(format!("paso {}/{}", self.doc.step, self.doc.max_step()))
+                            Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
                         }
                         [id, n] => {
                             let n: u32 = n
                                 .parse()
-                                .map_err(|_| Error::Invalid("uso: :step ID N".into()))?;
+                                .map_err(|_| Error::Invalid("usage: :step ID N".into()))?;
                             self.update_annotation(&UpdateParams {
                                 id: id.to_string(),
                                 step: Some(n),
@@ -475,27 +469,27 @@ impl App {
                                 label: None,
                                 shape: None,
                             })
-                            .map(|_| format!("{id} ahora aparece en el paso {n}"))
+                            .map(|_| format!("{id} now appears at step {n}"))
                         }
-                        _ => Err(Error::Invalid("uso: :step N  |  :step ID N".into())),
+                        _ => Err(Error::Invalid("usage: :step N  |  :step ID N".into())),
                     }
                 }
                 "next" => {
                     self.set_step(self.doc.step + 1);
-                    Ok(format!("paso {}/{}", self.doc.step, self.doc.max_step()))
+                    Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
                 }
                 "prev" => {
                     self.set_step(self.doc.step.saturating_sub(1));
-                    Ok(format!("paso {}/{}", self.doc.step, self.doc.max_step()))
+                    Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
                 }
                 "focus" | "f" => {
                     if rest.is_empty() {
                         self.focus = None;
-                        Ok("enfoque quitado".into())
+                        Ok("focus cleared".into())
                     } else {
                         let (a, b) = parse_range(rest)?;
                         self.focus = Some((a, b));
-                        Ok(format!("enfoque en {a}-{b}"))
+                        Ok(format!("focus on {a}-{b}"))
                     }
                 }
                 "theme" | "t" => {
@@ -506,24 +500,24 @@ impl App {
                     }
                     self.doc.theme = Some(self.theme.name);
                     self.revision += 1;
-                    Ok(format!("tema {}", theme_label(self.theme.name)))
+                    Ok(format!("theme {}", theme_label(self.theme.name)))
                 }
                 "present" | "p" => {
                     self.present = !self.present;
                     Ok(if self.present {
-                        "modo presentación (P para salir)".into()
+                        "presentation mode (P to exit)".into()
                     } else {
                         String::new()
                     })
                 }
                 "lang" => {
                     if rest.is_empty() {
-                        Ok(format!("lenguaje: {}", self.doc.source.language))
+                        Ok(format!("language: {}", self.doc.source.language))
                     } else {
                         self.doc.source.language =
                             codedraw_core::highlight::normalize_language(rest);
                         self.touch();
-                        Ok(format!("lenguaje: {}", self.doc.source.language))
+                        Ok(format!("language: {}", self.doc.source.language))
                     }
                 }
                 "title" => {
@@ -533,7 +527,7 @@ impl App {
                         Some(rest.into())
                     };
                     self.touch();
-                    Ok("título actualizado".into())
+                    Ok("title updated".into())
                 }
                 "ls" | "list" => {
                     self.overlay = Overlay::List;
@@ -554,16 +548,12 @@ impl App {
                 "autosave" => {
                     self.autosave = !matches!(rest, "off" | "no");
                     Ok(format!(
-                        "autoguardado {}",
-                        if self.autosave {
-                            "activado"
-                        } else {
-                            "desactivado"
-                        }
+                        "autosave {}",
+                        if self.autosave { "on" } else { "off" }
                     ))
                 }
                 other => Err(Error::Invalid(format!(
-                    "comando desconocido: {other} (prueba :help)"
+                    "unknown command: {other} (try :help)"
                 ))),
             }
         };
@@ -578,7 +568,7 @@ impl App {
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
         let (range, label) = split_first(rest);
         let (a, b) =
-            parse_range(range).map_err(|_| Error::Invalid("uso: :box A-B [etiqueta]".into()))?;
+            parse_range(range).map_err(|_| Error::Invalid("usage: :box A-B [label]".into()))?;
         let id = self.add_annotation(
             None,
             None,
@@ -588,7 +578,7 @@ impl App {
                 label: opt(label),
             },
         )?;
-        Ok(format!("{id}: caja {a}-{b}"))
+        Ok(format!("{id}: box {a}-{b}"))
     }
 
     fn cmd_arrow(&mut self, rest: &str) -> Result<String, Error> {
@@ -596,7 +586,7 @@ impl App {
         let (to, label) = split_first(rest);
         if from.is_empty() || to.is_empty() {
             return Err(Error::Invalid(
-                "uso: :arrow L:texto L:texto [etiqueta]   (ej. :arrow 2:s 7:takes move)".into(),
+                "usage: :arrow L:text L:text [label]   (e.g. :arrow 2:s 7:takes move)".into(),
             ));
         }
         let f = parse_where(from, self.cursor_line)?.resolve_anchor(&self.doc)?;
@@ -610,13 +600,13 @@ impl App {
                 label: opt(label),
             },
         )?;
-        Ok(format!("{id}: flecha L{} → L{}", f.line, t.line))
+        Ok(format!("{id}: arrow L{} → L{}", f.line, t.line))
     }
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
         let (at, label) = split_first(rest);
         if at.is_empty() {
-            return Err(Error::Invalid("uso: :hl L:texto [etiqueta]".into()));
+            return Err(Error::Invalid("usage: :hl L:text [label]".into()));
         }
         let span = parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?;
         let id = self.add_annotation(
@@ -627,18 +617,18 @@ impl App {
                 label: opt(label),
             },
         )?;
-        Ok(format!("{id}: resalte en L{}", span.line))
+        Ok(format!("{id}: highlight at L{}", span.line))
     }
 
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
         let (kind, rest) = split_first(rest);
         let (at, label) = split_first(rest);
         let kind = MarkKind::parse(kind).ok_or_else(|| {
-            Error::Invalid("uso: :mark move|borrow|mut|drop|life L:texto [etiqueta]".into())
+            Error::Invalid("usage: :mark move|borrow|mut|drop|life L:text [label]".into())
         })?;
         if at.is_empty() {
             return Err(Error::Invalid(
-                "uso: :mark move|borrow|mut|drop|life L:texto [etiqueta]".into(),
+                "usage: :mark move|borrow|mut|drop|life L:text [label]".into(),
             ));
         }
         let span = parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?;
@@ -651,11 +641,11 @@ impl App {
                 label: opt(label),
             },
         )?;
-        Ok(format!("{id}: {} en L{}", kind.legend(), span.line))
+        Ok(format!("{id}: {} at L{}", kind.legend(), span.line))
     }
 
-    /// `:spot 7-12`, `:spot a2 a3`, `:spot 7-12 a2 a3`. Activo solo en el paso actual
-    /// (`:until ID N` lo extiende).
+    /// `:spot 7-12`, `:spot a2 a3`, `:spot 7-12 a2 a3`. Active only in the current step
+    /// (`:until ID N` extends it).
     fn cmd_spot(&mut self, rest: &str) -> Result<String, Error> {
         let mut range: Option<(u32, u32)> = None;
         let mut ids = Vec::new();
@@ -667,7 +657,9 @@ impl App {
             }
         }
         if range.is_none() && ids.is_empty() {
-            return Err(Error::Invalid("uso: :spot A-B [ID…]  |  :spot ID…".into()));
+            return Err(Error::Invalid(
+                "usage: :spot A-B [ID…]  |  :spot ID…".into(),
+            ));
         }
         let id = self.add_annotation(
             None,
@@ -679,10 +671,7 @@ impl App {
                 until: None,
             },
         )?;
-        Ok(format!(
-            "{id}: spotlight en el paso {}",
-            self.doc.step.max(1)
-        ))
+        Ok(format!("{id}: spotlight at step {}", self.doc.step.max(1)))
     }
 
     fn cmd_note(&mut self, rest: &str) -> Result<String, Error> {
@@ -691,13 +680,11 @@ impl App {
             self.cursor_line
         } else {
             line.parse().map_err(|_| {
-                Error::Invalid(
-                    "uso: :note L texto  (L puede ser . para la línea del cursor)".into(),
-                )
+                Error::Invalid("usage: :note L text  (L may be . for the cursor line)".into())
             })?
         };
         if text.is_empty() {
-            return Err(Error::Invalid("la nota está vacía".into()));
+            return Err(Error::Invalid("the note is empty".into()));
         }
         let id = self.add_annotation(
             None,
@@ -707,10 +694,10 @@ impl App {
                 text: text.into(),
             },
         )?;
-        Ok(format!("{id}: nota en L{line}"))
+        Ok(format!("{id}: note at L{line}"))
     }
 
-    // ---------- API local ----------
+    // ---------- local API ----------
 
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
@@ -723,7 +710,7 @@ impl App {
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, Error> {
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
             serde_json::from_value(v)
-                .map_err(|e| Error::Invalid(format!("parámetros inválidos: {e}")))
+                .map_err(|e| Error::Invalid(format!("invalid parameters: {e}")))
         }
         Ok(match method {
             "ping" => {
@@ -840,7 +827,7 @@ impl App {
                 self.revision += 1;
                 json!({"theme": self.theme.name, "revision": self.revision})
             }
-            other => return Err(Error::Invalid(format!("método desconocido: {other}"))),
+            other => return Err(Error::Invalid(format!("unknown method: {other}"))),
         })
     }
 
@@ -863,8 +850,8 @@ impl App {
 
 pub fn theme_label(t: ThemeName) -> &'static str {
     match t {
-        ThemeName::Dark => "oscuro",
-        ThemeName::Light => "claro",
+        ThemeName::Dark => "dark",
+        ThemeName::Light => "light",
     }
 }
 
@@ -885,7 +872,7 @@ fn split_first(s: &str) -> (&str, &str) {
     }
 }
 
-/// `A-B`, `A..B`, `A:B` o `A` → (A, B).
+/// `A-B`, `A..B`, `A:B` or `A` → (A, B).
 pub fn parse_range(s: &str) -> Result<(u32, u32), Error> {
     let s = s.trim();
     let parts: Vec<&str> = s.split(['-', ':']).filter(|p| !p.is_empty()).collect();
@@ -896,20 +883,20 @@ pub fn parse_range(s: &str) -> Result<(u32, u32), Error> {
     };
     let nums: Result<Vec<u32>, _> = parts.iter().map(|p| p.trim().parse::<u32>()).collect();
     match nums
-        .map_err(|_| Error::Invalid(format!("rango inválido: {s}")))?
+        .map_err(|_| Error::Invalid(format!("invalid range: {s}")))?
         .as_slice()
     {
         [a] => Ok((*a, *a)),
         [a, b] => Ok((*a.min(b), *a.max(b))),
-        _ => Err(Error::Invalid(format!("rango inválido: {s}"))),
+        _ => Err(Error::Invalid(format!("invalid range: {s}"))),
     }
 }
 
-/// `L:texto[/N]`, `L`, `.:texto` (línea del cursor) o `texto` (buscar en todo el documento).
+/// `L:text[/N]`, `L`, `.:text` (cursor line) or `text` (search the whole document).
 pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
     let s = s.trim();
     if s.is_empty() {
-        return Err(Error::Invalid("ancla vacía".into()));
+        return Err(Error::Invalid("empty anchor".into()));
     }
     let (head, find) = match s.split_once(':') {
         Some((h, f)) if (h == "." || h.chars().all(|c| c.is_ascii_digit())) && !h.is_empty() => {
@@ -922,7 +909,7 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
         Some(".") => Some(cursor_line),
         Some(h) => Some(
             h.parse::<u32>()
-                .map_err(|_| Error::Invalid(format!("línea inválida: {h}")))?,
+                .map_err(|_| Error::Invalid(format!("invalid line: {h}")))?,
         ),
         None => None,
     };
@@ -933,7 +920,7 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
         _ => (find, None),
     };
     if find.is_empty() && line.is_none() {
-        return Err(Error::Invalid(format!("ancla inválida: {s}")));
+        return Err(Error::Invalid(format!("invalid anchor: {s}")));
     }
     Ok(Where {
         line,
@@ -988,7 +975,7 @@ mod tests {
         a.run_command("arrow 2:s 5:t move");
         a.run_command("mark move 3:s");
         a.run_command("box 5-5 takes");
-        a.run_command("note . aquí empieza");
+        a.run_command("note . starts here");
         assert_eq!(a.doc.annotations.len(), 4);
         assert!(matches!(a.message, Some((_, false))));
         a.run_command("spot 2-3 a1");
@@ -1000,7 +987,7 @@ mod tests {
         a.run_command("spot zz9");
         assert!(
             matches!(a.message, Some((_, true))),
-            "id inexistente debe fallar"
+            "a nonexistent id must fail"
         );
         a.run_command("del a5");
         a.run_command("color a2 blue");
@@ -1008,7 +995,7 @@ mod tests {
         a.run_command("color a2 fucsia");
         assert!(
             matches!(a.message, Some((_, true))),
-            "color desconocido debe dar error"
+            "an unknown color must be an error"
         );
         a.run_command("color a2 auto");
         assert_eq!(a.doc.annotations[1].color, None);
@@ -1026,15 +1013,15 @@ mod tests {
         a.run_command("arrow 2:zzz 5:t");
         assert!(
             matches!(a.message, Some((_, true))),
-            "texto inexistente debe dar error"
+            "nonexistent text must be an error"
         );
         assert_eq!(
             a.doc.annotations.len(),
             3,
-            "un error no debe tocar el documento"
+            "an error must not touch the document"
         );
-        a.undo(); // deshace el :step a2 2
-        a.undo(); // deshace el :del a1
+        a.undo(); // undoes :step a2 2
+        a.undo(); // undoes :del a1
         assert_eq!(a.doc.annotations.len(), 4);
     }
 
@@ -1056,12 +1043,12 @@ mod tests {
         });
         assert_eq!(resp.result.unwrap()["step"], 2);
         a.set_step(0);
-        assert_eq!(a.doc.step, 0, "el paso 0 (solo código) es válido");
+        assert_eq!(a.doc.step, 0, "step 0 (code only) is valid");
         assert!(
             a.layout(80).rows.len() == a.doc.code.len(),
-            "en el paso 0 no hay filas virtuales"
+            "step 0 has no virtual rows"
         );
-        a.run_command("note . en el paso 0 se crea en el 1");
+        a.run_command("note . created at step 1 while on step 0");
         assert_eq!(a.doc.annotations.last().unwrap().step, 1);
         let resp = a.handle_request(Request {
             id: json!("y"),

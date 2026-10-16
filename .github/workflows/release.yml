@@ -1,8 +1,8 @@
 name: Release
 
-# Cada tag vX.Y.Z publica un GitHub Release con binarios para macOS (arm64, x86_64)
-# y Linux (x86_64), checksums y notas generadas desde los commits.
-# Los tags con sufijo (-alpha.1, -rc.1) se marcan como prerelease.
+# Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
+# and Linux (x86_64), checksums and notes generated from the commits.
+# Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
 
 on:
   push:
@@ -61,16 +61,16 @@ jobs:
         with:
           path: dist
           merge-multiple: true
-      - name: notas de la versión
+      - name: release notes
         id: notes
         run: |
           prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
             echo "## CodeDraw ${GITHUB_REF_NAME}"
             echo
-            echo "Instalación: descarga el tar.gz de tu plataforma, verifica el .sha256 y copia \`codedraw\` a tu PATH, o \`cargo install --git https://github.com/${GITHUB_REPOSITORY} codedraw-cli --tag ${GITHUB_REF_NAME}\`."
+            echo "Installation: download the tar.gz for your platform, verify the .sha256 and copy \`codedraw\` into your PATH, or \`cargo install --git https://github.com/${GITHUB_REPOSITORY} codedraw-cli --tag ${GITHUB_REF_NAME}\`."
             echo
-            echo "### Cambios"
+            echo "### Changes"
             if [ -n "$prev" ]; then git log --no-merges --pretty='- %s (%h)' "$prev..${GITHUB_REF_NAME}"; else git log --no-merges --pretty='- %s (%h)'; fi
           } > notes.md
       - uses: softprops/action-gh-release@v2

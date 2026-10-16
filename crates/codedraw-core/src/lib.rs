@@ -1,11 +1,11 @@
-//! `codedraw-core`: el núcleo de CodeDraw sin dependencias de terminal.
+//! `codedraw-core`: the CodeDraw core, with no terminal dependencies.
 //!
-//! - [`model`][]: documento, anclas y anotaciones (serializables a `.codedraw`).
-//! - [`layout`][]: de documento + tema + ancho a un [`canvas::Canvas`] de celdas.
-//! - [`highlight`][]: resaltado de sintaxis (syntect + two-face).
-//! - [`protocol`][]: tipos de la API local NDJSON que comparten TUI, CLI y MCP.
-//! - [`fs`][]: abrir fuentes/`.codedraw` y guardar.
-//! - [`history`][]: deshacer/rehacer.
+//! - [`model`][]: document, anchors and annotations (serializable to `.codedraw`).
+//! - [`layout`][]: from document + theme + width to a [`canvas::Canvas`] of cells.
+//! - [`highlight`][]: syntax highlighting (syntect + two-face).
+//! - [`protocol`][]: types of the local NDJSON API shared by the TUI, CLI and MCP.
+//! - [`fs`][]: open sources/`.codedraw` files and save.
+//! - [`history`][]: undo/redo.
 
 pub mod canvas;
 pub mod error;
@@ -25,5 +25,5 @@ pub use theme::Theme;
 pub const APP_NAME: &str = "codedraw";
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Logotipo en texto (una celda de ancho mínimo: `╭▶`).
+/// Text logo (minimum one-cell-wide form: `╭▶`).
 pub const WORDMARK: &str = "╭─ CodeDraw ─▶";

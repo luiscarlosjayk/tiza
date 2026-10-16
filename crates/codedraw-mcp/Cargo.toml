@@ -1,6 +1,6 @@
 [package]
 name = "codedraw-mcp"
-description = "Servidor MCP (stdio) que permite a agentes dibujar sobre el código en una instancia viva de CodeDraw"
+description = "MCP server (stdio) that lets agents draw on the code in a live CodeDraw instance"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

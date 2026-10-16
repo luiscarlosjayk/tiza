@@ -1,4 +1,4 @@
-//! Resaltado de sintaxis con syntect + two-face (gramáticas de bat, incluye TypeScript y TOML).
+//! Syntax highlighting with syntect + two-face (bat's grammars, including TypeScript and TOML).
 
 use std::sync::OnceLock;
 
@@ -18,7 +18,7 @@ fn theme_set() -> &'static EmbeddedLazyThemeSet {
     TS.get_or_init(two_face::theme::extra)
 }
 
-/// Un fragmento de una línea con su color.
+/// A fragment of a line with its color.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Segment {
     pub text: String,
@@ -27,7 +27,7 @@ pub struct Segment {
     pub italic: bool,
 }
 
-/// Lenguajes conocidos, para normalizar lo que el usuario escribe (`rust`, `rs`, `ts`…).
+/// Known languages, to normalize what the user types (`rust`, `rs`, `ts`…).
 pub fn normalize_language(lang: &str) -> String {
     let l = lang.trim().trim_start_matches('.').to_ascii_lowercase();
     match l.as_str() {
@@ -43,7 +43,7 @@ pub fn normalize_language(lang: &str) -> String {
     }
 }
 
-/// Detecta el lenguaje por extensión del archivo.
+/// Detects the language from the file extension.
 pub fn language_from_path(path: &str) -> String {
     std::path::Path::new(path)
         .extension()
@@ -52,7 +52,7 @@ pub fn language_from_path(path: &str) -> String {
         .unwrap_or_else(|| "txt".into())
 }
 
-/// Resalta todas las líneas. Si el lenguaje no se conoce, devuelve texto plano.
+/// Highlights every line. If the language is unknown, returns plain text.
 pub fn highlight(code: &[String], language: &str, theme: EmbeddedThemeName) -> Vec<Vec<Segment>> {
     let ss = syntax_set();
     let syntax = ss

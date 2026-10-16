@@ -1,6 +1,6 @@
 [package]
 name = "codedraw-core"
-description = "Modelo de documento, anclas, layout y render de CodeDraw (sin dependencias de terminal)"
+description = "CodeDraw document model, anchors, layout and rendering (no terminal dependencies)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

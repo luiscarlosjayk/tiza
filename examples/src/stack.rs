@@ -1,4 +1,4 @@
-//! Una pila mínima para explicar &self vs &mut self y Option.
+//! A minimal stack to explain &self vs &mut self and Option.
 
 pub struct Stack<T> {
     items: Vec<T>,

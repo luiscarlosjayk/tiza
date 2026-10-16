@@ -1,4 +1,4 @@
-//! Humo del binario: `render` del ejemplo incluido, en varios anchos y pasos.
+//! Binary smoke test: `render` of the bundled example at several widths and steps.
 
 use std::process::Command;
 
@@ -25,13 +25,13 @@ fn renders_example_at_full_step() {
         String::from_utf8_lossy(&out.stderr)
     );
     let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("╭─ takes es dueña de s"));
+    assert!(text.contains("╭─ takes owns s"));
     assert!(text.contains("━▶ move"));
     assert!(text.contains("╳ drop"));
     for line in text.lines() {
         assert!(
             unicode_width::UnicodeWidthStr::width(line) <= 100,
-            "fila demasiado ancha: {line}"
+            "row too wide: {line}"
         );
     }
 }
@@ -58,7 +58,7 @@ fn narrow_width_never_overflows() {
     for line in text.lines() {
         assert!(
             unicode_width::UnicodeWidthStr::width(line) <= 60,
-            "fila demasiado ancha: {line}"
+            "row too wide: {line}"
         );
     }
 }
@@ -67,7 +67,7 @@ fn narrow_width_never_overflows() {
 fn missing_file_exits_one_with_message() {
     let out = bin().args(["render", "/no/existe.rs"]).output().unwrap();
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("no se pudo abrir"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("could not open"));
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn scene_without_instance_explains() {
         .output()
         .unwrap();
     assert_eq!(out.status.code(), Some(1));
-    assert!(String::from_utf8_lossy(&out.stderr).contains("no hay una instancia"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no CodeDraw instance"));
 }
 
 #[test]
@@ -106,6 +106,6 @@ fn file_reference_with_subdir_and_range_resolves_relative_to_document() {
         text.contains(" 7 ") && text.contains("impl<T> Stack<T> {"),
         "{text}"
     );
-    assert!(!text.contains(" 6 "), "el rango 7-30 excluye la línea 6");
+    assert!(!text.contains(" 6 "), "the 7-30 range excludes line 6");
     assert!(text.contains("╭─ impl<T> Stack<T>"));
 }

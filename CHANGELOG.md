@@ -1,27 +1,30 @@
 # Changelog
 
-Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/); versiones [SemVer](https://semver.org/lang/es/).
+Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [SemVer](https://semver.org/).
 
 ## [Unreleased]
 
-### Añadido
-- Anotación `spotlight`: un paso que dirige la atención atenuando el código fuera de un rango y/o las anotaciones fuera de un grupo (`:spot`, `:until`, `add_spotlight`, `annotation.add` con `type: spotlight`). El ejemplo de ownership intercala dos.
-- `code` como objeto `{"file", "lines"}` con rutas absolutas o relativas al `.codedraw`; los sidecars referencian al fuente por defecto. `:embed` y `:link`.
-- Paso 0 = solo el código: `p` desde el paso 1, `:step 0`, `--step 0` o `set_step 0` muestran el código sin anotaciones. El ejemplo de ownership arranca así.
-- Vaciar anotaciones de golpe: `:clear [N|.]`, método `scene.clear` y herramienta MCP `clear_annotations`; reversible con `u`.
-- Color por anotación (`color`: nombre de la paleta o `#rrggbb`) en el modelo, `:color ID …`, API y MCP. Las flechas sin color rotan una paleta para distinguirse; el ejemplo de ownership usa un color por valor.
+### Changed
+- All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
+
+### Added
+- `spotlight` annotation: a step that directs attention by dimming the code outside a range and/or the annotations outside a group (`:spot`, `:until`, `add_spotlight`, `annotation.add` with `type: spotlight`). The ownership example interleaves two.
+- `code` as an object `{"file", "lines"}` with absolute paths or paths relative to the `.codedraw`; sidecars reference the source by default. `:embed` and `:link`.
+- Step 0 = code only: `p` from step 1, `:step 0`, `--step 0` or `set_step 0` show the code without annotations. The ownership example starts that way.
+- Clear annotations at once: `:clear [N|.]`, the `scene.clear` method and the `clear_annotations` MCP tool; reversible with `u`.
+- Color per annotation (`color`: palette name or `#rrggbb`) in the model, `:color ID …`, API and MCP. Arrows without a color rotate through a palette so they can be told apart; the ownership example uses one color per value.
 
 ## [0.0.1] - 2026-10-16
 
-Primer demo funcional.
+First working demo.
 
-### Añadido
-- TUI (ratatui + crossterm): código con resaltado de sintaxis (syntect + two-face), cursor de línea, scroll, tema oscuro/claro conmutable, modo presentación, pasos, deshacer/rehacer, lista de anotaciones y ayuda.
-- Anotaciones ancladas al texto: resaltes, marcas de Rust (move, borrow, &mut, drop, lifetime), cajas con filas virtuales, flechas por carril izquierdo y en la misma línea, notas en margen o debajo.
-- Línea de comandos `:` (`:mark`, `:arrow`, `:box`, `:hl`, `:note`, `:step`, `:del`, `:label`, `:focus`, `:theme`, `:lang`, `:w`, `:q`…).
-- Entrada: archivo, archivo con rango `a.rs:12-48`, stdin, pegado (bracketed paste).
-- Formato `.codedraw` (JSON, `schema: 1`) con guardado automático atómico y sidecar junto al fuente.
-- API local por socket Unix (NDJSON, estilo herdr) y CLI `codedraw scene|api|render`.
-- Servidor MCP (`codedraw mcp`) con 16 herramientas, anclas por texto (`find`).
-- Ejemplo `examples/ownership.rs.codedraw` (5 pasos), guía para agentes, integración con Zed, ADRs 0001–0005.
-- CI (fmt, clippy, test en macOS y Linux, cargo-deny) y releases con binarios desde tags.
+### Added
+- TUI (ratatui + crossterm): code with syntax highlighting (syntect + two-face), line cursor, scrolling, switchable dark/light theme, presentation mode, steps, undo/redo, annotation list and help.
+- Annotations anchored to the text: highlights, Rust marks (move, borrow, &mut, drop, lifetime), boxes with virtual rows, arrows along a left lane and on the same line, notes in the margin or below.
+- `:` command line (`:mark`, `:arrow`, `:box`, `:hl`, `:note`, `:step`, `:del`, `:label`, `:focus`, `:theme`, `:lang`, `:w`, `:q`…).
+- Input: file, file with range `a.rs:12-48`, stdin, paste (bracketed paste).
+- `.codedraw` format (JSON, `schema: 1`) with atomic autosave and a sidecar next to the source.
+- Local API over a Unix socket (NDJSON, herdr style) and `codedraw scene|api|render` CLI.
+- MCP server (`codedraw mcp`) with 16 tools, text anchors (`find`).
+- `examples/ownership.rs.codedraw` example (5 steps), agent guide, Zed integration, ADRs 0001–0005.
+- CI (fmt, clippy, tests on macOS and Linux, cargo-deny) and releases with binaries from tags.

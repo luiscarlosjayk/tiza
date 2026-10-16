@@ -1,6 +1,6 @@
-//! Servidor de la API local: socket Unix, una petición JSON por línea.
-//! Cada conexión corre en su hilo y reenvía las peticiones al hilo de la TUI
-//! por un canal; la respuesta vuelve por un canal de un solo uso.
+//! Local API server: Unix socket, one JSON request per line.
+//! Each connection runs on its own thread and forwards requests to the TUI
+//! thread over a channel; the response comes back over a one-shot channel.
 
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -17,7 +17,7 @@ pub struct IpcRequest {
     pub reply: Sender<Response>,
 }
 
-/// Mantiene el socket vivo y lo borra al soltarse.
+/// Keeps the socket alive and removes it on drop.
 pub struct IpcServer {
     pub path: PathBuf,
     pub rx: Receiver<IpcRequest>,
@@ -32,12 +32,12 @@ impl Drop for IpcServer {
 pub fn start(path: &Path) -> std::io::Result<IpcServer> {
     socket::prepare_dir(path)?;
     if path.exists() {
-        // ¿Hay alguien escuchando? Si no, es un socket huérfano.
+        // Is anyone listening? If not, it is an orphaned socket.
         if UnixStream::connect(path).is_ok() {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::AddrInUse,
                 format!(
-                    "ya hay una instancia escuchando en {} (usa --session para otra)",
+                    "an instance is already listening on {} (use --session for another one)",
                     path.display()
                 ),
             ));
@@ -82,16 +82,16 @@ fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {
                     .ok()
                     .and_then(|v| v.get("id").cloned())
                     .unwrap_or(Value::Null);
-                Response::err(id, "invalid_json", format!("petición inválida: {e}"))
+                Response::err(id, "invalid_json", format!("invalid request: {e}"))
             }
             Ok(req) => {
                 let (rtx, rrx) = channel();
                 let id = req.id.clone();
                 if tx.send(IpcRequest { req, reply: rtx }).is_err() {
-                    Response::err(id, "unavailable", "la aplicación se está cerrando")
+                    Response::err(id, "unavailable", "the application is shutting down")
                 } else {
                     rrx.recv().unwrap_or_else(|_| {
-                        Response::err(id, "unavailable", "sin respuesta de la aplicación")
+                        Response::err(id, "unavailable", "no response from the application")
                     })
                 }
             }
@@ -102,7 +102,7 @@ fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {
     Ok(())
 }
 
-/// Cliente mínimo: una petición, una respuesta. Lo usan el CLI y el puente MCP.
+/// Minimal client: one request, one response. Used by the CLI and the MCP bridge.
 pub fn call(path: &Path, method: &str, params: Value) -> std::io::Result<Response> {
     let mut stream = UnixStream::connect(path)?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;

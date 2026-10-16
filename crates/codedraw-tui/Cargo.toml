@@ -1,6 +1,6 @@
 [package]
 name = "codedraw-tui"
-description = "Interfaz de terminal de CodeDraw (ratatui + crossterm) y servidor de la API local"
+description = "CodeDraw terminal interface (ratatui + crossterm) and local API server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

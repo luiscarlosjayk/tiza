@@ -1,21 +1,21 @@
-# 0003 · API local NDJSON por socket Unix; el MCP es un puente delgado
+# 0003 · Local NDJSON API over a Unix socket; the MCP is a thin bridge
 
-**Estado:** aceptada (2026-10-15)
+**Status:** accepted (2026-10-15)
 
-## Contexto
+## Context
 
-Requisito: agentes (Claude Code, Zed) deben poder crear, editar y borrar anotaciones en la instancia viva mientras el presentador comparte pantalla. herdr resuelve el mismo problema con un servidor headless, un socket Unix con JSON por líneas y un CLI delgado encima; excalidraw/cli muestra el estilo de CLI "para humanos y agentes" (JSON por defecto, `-` para stdin/stdout).
+Requirement: agents (Claude Code, Zed) must be able to create, edit and delete annotations in the live instance while the presenter shares the screen. herdr solves the same problem with a headless server, a Unix socket with line-delimited JSON and a thin CLI on top; excalidraw/cli shows the "for humans and agents" CLI style (JSON by default, `-` for stdin/stdout).
 
-## Decisión
+## Decision
 
-- La **TUI es la única dueña del documento** y expone una API local: socket Unix, **una petición JSON por línea** `{id, method, params}` → `{id, result}` o `{id, error: {code, message}}`; métodos con puntos (`annotation.add`, `step.set`, `render.text`); `ping` y `status` para descubrimiento; los clientes ignoran campos desconocidos. Códigos de error estables (`out_of_range`, `not_found`, `duplicate_id`, `text_not_found`, `invalid_argument`…).
-- **Resolución del socket**: `--socket` > `$CODEDRAW_SOCKET` > sesión (`--session`/`$CODEDRAW_SESSION`, por defecto `default`) en `$XDG_RUNTIME_DIR` o `$TMPDIR` como `codedraw/<sesión>.sock`. Directorio 0700, socket 0600, **nunca TCP**. Sockets huérfanos se limpian al arrancar; una instancia viva en la misma ruta es un error claro (usa `--session`).
-- **MCP** (`codedraw mcp`, stdio, crate `rmcp` 3.x): cada herramienta es exactamente un método del socket. Si no hay instancia, la herramienta devuelve un error que explica cómo abrirla. Tipos de parámetros con `schemars` para que el agente reciba un JSON Schema real.
-- El **CLI** usa el mismo socket (`codedraw scene …`, `codedraw api <método> <json>`) y `codedraw render` dibuja sin instancia, con el mismo motor de `core`.
-- Implementación con `std` (hilo por conexión + canal al hilo de la TUI); sin tokio en core ni en la TUI. tokio solo en el puente MCP, porque `rmcp` lo requiere.
+- The **TUI is the sole owner of the document** and exposes a local API: Unix socket, **one JSON request per line** `{id, method, params}` → `{id, result}` or `{id, error: {code, message}}`; dotted method names (`annotation.add`, `step.set`, `render.text`); `ping` and `status` for discovery; clients ignore unknown fields. Stable error codes (`out_of_range`, `not_found`, `duplicate_id`, `text_not_found`, `invalid_argument`…).
+- **Socket resolution**: `--socket` > `$CODEDRAW_SOCKET` > session (`--session`/`$CODEDRAW_SESSION`, default `default`) in `$XDG_RUNTIME_DIR` or `$TMPDIR` as `codedraw/<session>.sock`. Directory 0700, socket 0600, **never TCP**. Orphaned sockets are cleaned up on start; a live instance on the same path is a clear error (use `--session`).
+- **MCP** (`codedraw mcp`, stdio, `rmcp` 3.x crate): each tool is exactly one socket method. If there is no instance, the tool returns an error explaining how to open one. Parameter types with `schemars` so the agent receives a real JSON Schema.
+- The **CLI** uses the same socket (`codedraw scene …`, `codedraw api <method> <json>`) and `codedraw render` draws without an instance, with the same `core` engine.
+- Implemented with `std` (thread per connection + channel to the TUI thread); no tokio in core or in the TUI. tokio only in the MCP bridge, because `rmcp` requires it.
 
-## Consecuencias
+## Consequences
 
-- Una sola instancia por sesión; varias sesiones con `--session`.
-- No hay autenticación más allá de los permisos del socket: suficiente para una herramienta local de un solo usuario; documentado en el README (cero telemetría).
-- `codedraw api schema --json` (JSON Schema del protocolo) queda como seguimiento (t-040).
+- One instance per session; several sessions with `--session`.
+- No authentication beyond the socket permissions: enough for a local, single-user tool; documented in the README (zero telemetry).
+- `codedraw api schema --json` (JSON Schema of the protocol) remains a follow-up (t-040).

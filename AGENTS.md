@@ -1,8 +1,9 @@
-# Para agentes que trabajan en este repo
+# For agents working in this repo
 
-- Workspace Cargo con 4 crates: `codedraw-core` (modelo/layout, sin terminal), `codedraw-tui`, `codedraw-mcp`, `codedraw-cli` (binario `codedraw`).
-- Antes de proponer un cambio: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
-- Decisiones de diseño en `docs/adr/`. Si cambias el protocolo del socket, actualiza `docs/agent-guide.md` y las herramientas MCP a la vez.
-- Nuevas dependencias: sigue `docs/adr/0004-dependencias.md` y añade la fila al registro.
-- Commits en español, imperativo, con el id de tarea del board cuando aplique (`t-022`).
-- Para probar la TUI sin terminal interactiva usa un pseudo-terminal (Python `pty`) y la API: `codedraw api status --socket /tmp/x.sock`.
+- Cargo workspace with 4 crates: `codedraw-core` (model/layout, no terminal), `codedraw-tui`, `codedraw-mcp`, `codedraw-cli` (the `codedraw` binary).
+- Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
+- Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
+- New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry.
+- Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
+- Commits in Spanish, imperative mood, with the board task id when applicable (`t-022`).
+- To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `codedraw api status --socket /tmp/x.sock`.

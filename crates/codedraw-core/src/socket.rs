@@ -1,6 +1,6 @@
-//! Resolución de la ruta del socket Unix de la API local (mismo orden que herdr):
-//! `--socket` explícito > `$CODEDRAW_SOCKET` > sesión (`--session` o `$CODEDRAW_SESSION`)
-//! dentro de `$XDG_RUNTIME_DIR` o `$TMPDIR` o `/tmp`, como `codedraw/<sesión>.sock`.
+//! Resolution of the local API's Unix socket path (same order as herdr):
+//! explicit `--socket` > `$CODEDRAW_SOCKET` > session (`--session` or `$CODEDRAW_SESSION`)
+//! inside `$XDG_RUNTIME_DIR` or `$TMPDIR` or `/tmp`, as `codedraw/<session>.sock`.
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +43,7 @@ fn sanitize(s: &str) -> String {
         .collect()
 }
 
-/// Crea el directorio del socket con permisos 0700 (solo el usuario).
+/// Creates the socket directory with 0700 permissions (owner only).
 pub fn prepare_dir(path: &Path) -> std::io::Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir)?;

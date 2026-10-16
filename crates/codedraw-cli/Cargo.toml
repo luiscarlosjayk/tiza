@@ -1,6 +1,6 @@
 [package]
 name = "codedraw-cli"
-description = "CodeDraw: dibuja encima de código en la terminal para explicarlo en video (TUI, CLI y servidor MCP)"
+description = "CodeDraw: draw on top of code in the terminal to explain it on video (TUI, CLI and MCP server)"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

@@ -1,5 +1,5 @@
-//! Dibujo con ratatui: copia el `Canvas` del núcleo al buffer, y añade la
-//! línea de estado, la línea de comandos y las superposiciones.
+//! Drawing with ratatui: copies the core `Canvas` into the buffer and adds the
+//! status line, the command line and the overlays.
 
 use codedraw_core::canvas::{Canvas, CellStyle, Rgb};
 use codedraw_core::protocol::describe;
@@ -37,7 +37,7 @@ fn style(s: CellStyle) -> Style {
     st
 }
 
-/// Copia las filas `rows` del lienzo a `area` del buffer.
+/// Copies the canvas rows `rows` into `area` of the buffer.
 fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buffer) {
     for (dy, y) in rows.enumerate() {
         if dy as u16 >= area.height || y >= canvas.height {
@@ -50,7 +50,7 @@ fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buf
                 x += 1;
                 continue;
             }
-            // Agrupar celdas consecutivas con el mismo estilo.
+            // Group consecutive cells with the same style.
             let st = cell.style;
             let mut run = String::new();
             let start = x;
@@ -94,7 +94,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
-    // Mantener el cursor visible.
+    // Keep the cursor visible.
     if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {
         if row < app.scroll {
             app.scroll = row;
@@ -111,7 +111,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         frame.buffer_mut(),
     );
 
-    // Indicador de línea del cursor (solo fuera de presentación).
+    // Cursor line indicator (only outside presentation mode).
     if !app.present {
         if let Some(&row) = layout.row_of_line.get(&app.cursor_line)
             && row >= app.scroll
@@ -126,7 +126,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             );
         }
     } else if app.doc.max_step() > 1 || app.doc.step == 0 {
-        // Contador de paso discreto en presentación.
+        // Discreet step counter in presentation mode.
         let txt = format!(" {}/{} ", app.doc.step, app.doc.max_step());
         let w = txt.width() as u16;
         if area.width > w {
@@ -153,13 +153,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 
     match app.overlay {
-        Overlay::Help => draw_overlay(frame, app, "Atajos y comandos", help_lines()),
+        Overlay::Help => draw_overlay(frame, app, "Keys and commands", help_lines()),
         Overlay::List => {
             let mut lines: Vec<String> = app.doc.annotations.iter().map(describe).collect();
             if lines.is_empty() {
-                lines.push("(sin anotaciones todavía; prueba :mark move 3:s)".into());
+                lines.push("(no annotations yet; try :mark move 3:s)".into());
             }
-            draw_overlay(frame, app, "Anotaciones", lines)
+            draw_overlay(frame, app, "Annotations", lines)
         }
         Overlay::None => {}
     }
@@ -204,14 +204,14 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         Span::styled(" ╭▶ ", accent),
         Span::styled(mode, accent),
         Span::styled(
-            format!("  paso {}/{}", app.doc.step, app.doc.max_step()),
+            format!("  step {}/{}", app.doc.step, app.doc.max_step()),
             bar,
         ),
         Span::styled(format!("  {}×{}", app.size.0, app.size.1), muted),
         Span::styled(format!("  {}", theme_label(th.name)), muted),
         Span::styled(format!("  {file}"), bar),
         Span::styled(format!("  L{}", app.cursor_line), muted),
-        Span::styled(format!("  {} anot.", app.doc.annotations.len()), muted),
+        Span::styled(format!("  {} ann.", app.doc.annotations.len()), muted),
     ];
     if app.dirty {
         left.push(Span::styled(" •", accent));
@@ -229,7 +229,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             },
         )],
         None => vec![Span::styled(
-            ":cmd  ?ayuda  l lista  n/p pasos  t tema  P presentar  q salir ",
+            ":cmd  ?help  l list  n/p steps  t theme  P present  q quit ",
             muted,
         )],
     };
@@ -237,7 +237,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     let mut right = right;
     let mut rw: usize = right.iter().map(|s| s.content.width()).sum();
     if lw + rw > area.width as usize && app.message.is_none() {
-        right = vec![Span::styled("?ayuda ", muted)];
+        right = vec![Span::styled("?help ", muted)];
         rw = right.iter().map(|s| s.content.width()).sum();
     }
     if lw + rw > area.width as usize {
@@ -276,7 +276,7 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
         ))
         .title_bottom(
             Line::from(Span::styled(
-                " Esc cierra ",
+                " Esc closes ",
                 Style::default().fg(rgb(th.muted)),
             ))
             .right_aligned(),
@@ -291,23 +291,23 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
 
 fn help_lines() -> Vec<String> {
     [
-        "j/k ↑/↓  mover cursor      g/G  inicio/fin      J/K  página",
-        "n/p      paso siguiente/anterior (0 = solo código)   u / U  deshacer / rehacer",
-        "t        tema oscuro/claro           P      modo presentación",
-        "l        lista de anotaciones        :      línea de comandos",
+        "j/k ↑/↓  move cursor       g/G  start/end       J/K  page",
+        "n/p      next/previous step (0 = code only)   u / U  undo / redo",
+        "t        dark/light theme            P      presentation mode",
+        "l        annotation list             :      command line",
         "",
-        "Comandos (L = número de línea, texto = fragmento a buscar en esa línea):",
-        "  :mark move|borrow|mut|drop|life L:texto [etiqueta]",
-        "  :arrow L:texto L:texto [etiqueta]        :hl L:texto [etiqueta]",
-        "  :box A-B [etiqueta]                      :note L texto   (L puede ser .)",
-        "  :spot A-B [ID…] | :spot ID…   atenúa todo lo demás en este paso   :until ID N",
-        "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID texto",
+        "Commands (L = line number, text = fragment to find on that line):",
+        "  :mark move|borrow|mut|drop|life L:text [label]",
+        "  :arrow L:text L:text [label]             :hl L:text [label]",
+        "  :box A-B [label]                         :note L text   (L may be .)",
+        "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
+        "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
-        "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [ruta]   :q",
-        "  :embed  congela el código en el .codedraw   :link [ruta]  referencia un archivo",
+        "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [path]   :q",
+        "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
         "",
-        "Las anotaciones nuevas aparecen en el paso actual. La API local (socket) y",
-        "el servidor MCP (`codedraw mcp`) hacen exactamente lo mismo que estos comandos.",
+        "New annotations appear at the current step. The local API (socket) and the",
+        "MCP server (`codedraw mcp`) do exactly the same thing as these commands.",
     ]
     .into_iter()
     .map(String::from)

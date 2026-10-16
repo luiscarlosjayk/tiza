@@ -1,6 +1,6 @@
-//! Puente MCP → API local. Cada herramienta es exactamente un método del
-//! socket; así un agente y el presentador hacen lo mismo y la TUI es la única
-//! que toca el documento.
+//! MCP → local API bridge. Each tool is exactly one socket method; that way
+//! an agent and the presenter do the same thing and the TUI is the only one
+//! that touches the document.
 
 use std::path::PathBuf;
 
@@ -13,23 +13,23 @@ use rmcp::{
 };
 use serde_json::{Value, json};
 
-/// Dónde anclar algo en el código. Lo más robusto para un agente es `find`:
-/// el texto exacto a buscar (opcionalmente acotado a `line` y a la `occurrence`-ésima aparición).
+/// Where to anchor something in the code. The most robust option for an agent is `find`:
+/// the exact text to search for (optionally narrowed to `line` and to the `occurrence`-th match).
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, schemars::JsonSchema)]
 pub struct At {
     #[schemars(
-        description = "Número de línea absoluto (1-based), como se ve en la TUI. Opcional si usas `find`."
+        description = "Absolute line number (1-based), as shown in the TUI. Optional when using `find`."
     )]
     pub line: Option<u32>,
     #[schemars(
-        description = "Offset de grafema dentro de la línea (0-based). Rara vez necesario; prefiere `find`."
+        description = "Grapheme offset within the line (0-based). Rarely needed; prefer `find`."
     )]
     pub col: Option<u32>,
     #[schemars(
-        description = "Texto exacto a buscar en el código (p. ej. \"takes(s)\"). Con `line`, busca primero en esa línea."
+        description = "Exact text to search for in the code (e.g. \"takes(s)\"). With `line`, that line is searched first."
     )]
     pub find: Option<String>,
-    #[schemars(description = "Qué aparición de `find` usar (1-based). Por defecto la primera.")]
+    #[schemars(description = "Which match of `find` to use (1-based). Defaults to the first.")]
     pub occurrence: Option<u32>,
 }
 
@@ -38,21 +38,21 @@ pub struct Empty {}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct BoxParams {
-    #[schemars(description = "Primera línea que encierra la caja (1-based)")]
+    #[schemars(description = "First line enclosed by the box (1-based)")]
     pub from_line: u32,
-    #[schemars(description = "Última línea que encierra la caja (inclusive)")]
+    #[schemars(description = "Last line enclosed by the box (inclusive)")]
     pub to_line: u32,
-    #[schemars(description = "Etiqueta que se dibuja en el borde superior")]
+    #[schemars(description = "Label drawn on the top edge")]
     pub label: Option<String>,
     #[schemars(
-        description = "Paso de la presentación en que aparece (1-based). Por defecto, el paso actual."
+        description = "Presentation step at which it appears (1-based). Defaults to the current step."
     )]
     pub step: Option<u32>,
     #[schemars(
-        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
-    #[schemars(description = "Id propio (p. ej. \"caja-takes\"); si se omite se asigna a1, a2…")]
+    #[schemars(description = "Custom id (e.g. \"box-takes\"); if omitted, a1, a2… is assigned")]
     pub id: Option<String>,
 }
 
@@ -60,11 +60,11 @@ pub struct BoxParams {
 pub struct ArrowParams {
     pub from: At,
     pub to: At,
-    #[schemars(description = "Texto junto a la punta de la flecha (p. ej. \"move\")")]
+    #[schemars(description = "Text next to the arrow head (e.g. \"move\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
     #[schemars(
-        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
     pub id: Option<String>,
@@ -72,15 +72,15 @@ pub struct ArrowParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct NoteParams {
-    #[schemars(description = "Línea a la que se ancla la nota")]
+    #[schemars(description = "Line the note is anchored to")]
     pub line: u32,
     #[schemars(
-        description = "Texto de la nota (una frase corta: va al margen derecho o debajo de la línea)"
+        description = "Note text (a short sentence: goes in the right margin or below the line)"
     )]
     pub text: String,
     pub step: Option<u32>,
     #[schemars(
-        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
     pub id: Option<String>,
@@ -92,7 +92,7 @@ pub struct HighlightParams {
     pub label: Option<String>,
     pub step: Option<u32>,
     #[schemars(
-        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
     pub id: Option<String>,
@@ -101,15 +101,15 @@ pub struct HighlightParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct MarkParams {
     #[schemars(
-        description = "Tipo de marca semántica de Rust: move, borrow, borrow_mut, drop o lifetime"
+        description = "Kind of Rust semantic mark: move, borrow, borrow_mut, drop or lifetime"
     )]
     pub kind: String,
     pub at: At,
-    #[schemars(description = "Texto adicional tras la leyenda (p. ej. \"s pasa a t\")")]
+    #[schemars(description = "Extra text after the legend (e.g. \"s goes into t\")")]
     pub label: Option<String>,
     pub step: Option<u32>,
     #[schemars(
-        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray o #rrggbb. Las flechas sin color rotan la paleta."
+        description = "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette."
     )]
     pub color: Option<String>,
     pub id: Option<String>,
@@ -118,38 +118,40 @@ pub struct MarkParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct UpdateParams {
     pub id: String,
-    #[schemars(description = "Nuevo paso en el que aparece")]
+    #[schemars(description = "New step at which it appears")]
     pub step: Option<u32>,
     #[schemars(
-        description = "Nuevo color (nombre de la paleta o #rrggbb); cadena vacía vuelve al automático"
+        description = "New color (palette name or #rrggbb); an empty string returns to automatic"
     )]
     pub color: Option<String>,
     #[schemars(
-        description = "Nueva etiqueta (o nuevo texto si es una nota). Cadena vacía la quita."
+        description = "New label (or new text if it is a note). An empty string removes it."
     )]
     pub label: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SpotlightParams {
-    #[schemars(description = "Primera línea a destacar (el resto del código se atenúa)")]
+    #[schemars(description = "First line to highlight (the rest of the code is dimmed)")]
     pub from_line: Option<u32>,
-    #[schemars(description = "Última línea a destacar; por defecto igual a from_line")]
+    #[schemars(description = "Last line to highlight; defaults to from_line")]
     pub to_line: Option<u32>,
     #[schemars(
-        description = "Ids de anotaciones a destacar; las demás se atenúan y su código queda enfocado"
+        description = "Ids of annotations to highlight; the others are dimmed and their code stays in focus"
     )]
     pub ids: Option<Vec<String>>,
-    #[schemars(description = "Paso en que se activa (por defecto el actual)")]
+    #[schemars(description = "Step at which it activates (defaults to the current one)")]
     pub step: Option<u32>,
-    #[schemars(description = "Último paso en que sigue activo; por defecto solo `step`")]
+    #[schemars(description = "Last step at which it stays active; defaults to `step` only")]
     pub until: Option<u32>,
     pub id: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ClearParams {
-    #[schemars(description = "Si se da, borra solo las anotaciones de ese paso; si no, todas")]
+    #[schemars(
+        description = "If given, removes only the annotations of that step; otherwise all of them"
+    )]
     pub step: Option<u32>,
 }
 
@@ -160,28 +162,26 @@ pub struct IdParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct StepParams {
-    #[schemars(description = "Paso a mostrar (1-based). Se recorta al rango válido.")]
+    #[schemars(description = "Step to show (1-based). Clamped to the valid range.")]
     pub step: u32,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct FocusParams {
-    #[schemars(description = "Primera línea enfocada; omite ambas para quitar el enfoque")]
+    #[schemars(description = "First focused line; omit both to clear the focus")]
     pub from_line: Option<u32>,
     pub to_line: Option<u32>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ThemeParams {
-    #[schemars(description = "dark, light o toggle")]
+    #[schemars(description = "dark, light or toggle")]
     pub theme: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct RenderParams {
-    #[schemars(
-        description = "Ancho en columnas; por defecto, el de la terminal donde corre la TUI"
-    )]
+    #[schemars(description = "Width in columns; defaults to that of the terminal running the TUI")]
     pub width: Option<u32>,
 }
 
@@ -211,9 +211,7 @@ fn mark_kind(s: &str) -> Result<&'static str, McpError> {
         })
         .ok_or_else(|| {
             McpError::invalid_params(
-                format!(
-                    "tipo de marca desconocido: {s} (move, borrow, borrow_mut, drop, lifetime)"
-                ),
+                format!("unknown mark kind: {s} (move, borrow, borrow_mut, drop, lifetime)"),
                 None,
             )
         })
@@ -228,7 +226,7 @@ impl CodeDrawServer {
         }
     }
 
-    /// Llama a la instancia viva. Convierte errores de conexión en mensajes útiles para el agente.
+    /// Calls the live instance. Turns connection errors into messages useful to the agent.
     async fn call(&self, method: &str, params: Value) -> Result<Value, McpError> {
         let path = self.socket.clone();
         let method_owned = method.to_string();
@@ -238,7 +236,7 @@ impl CodeDrawServer {
             .map_err(|e| {
                 McpError::internal_error(
                     format!(
-                        "No hay una instancia de CodeDraw escuchando en {} ({e}). Pide al usuario que abra `codedraw <archivo>` en una terminal, o pasa --socket/--session al servidor MCP.",
+                        "No CodeDraw instance is listening on {} ({e}). Ask the user to open `codedraw <file>` in a terminal, or pass --socket/--session to the MCP server.",
                         self.socket.display()
                     ),
                     None,
@@ -254,14 +252,14 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Estado de la instancia viva de CodeDraw: archivo abierto, líneas, anotaciones, paso actual y tamaño de la terminal. Úsala primero para saber si hay una instancia."
+        description = "State of the live CodeDraw instance: open file, lines, annotations, current step and terminal size. Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         Ok(text(pretty(&self.call("status", json!({})).await?)))
     }
 
     #[tool(
-        description = "Devuelve el código que se está mostrando, con números de línea. Léelo antes de anotar para elegir líneas y textos exactos."
+        description = "Returns the code currently shown, with line numbers. Read it before annotating to pick exact lines and texts."
     )]
     async fn get_code(
         &self,
@@ -276,7 +274,7 @@ impl CodeDrawServer {
         ))
     }
 
-    #[tool(description = "Lista las anotaciones existentes (id, paso, tipo y dónde están).")]
+    #[tool(description = "Lists the existing annotations (id, step, kind and where they are).")]
     async fn list_annotations(
         &self,
         Parameters(_p): Parameters<Empty>,
@@ -291,14 +289,14 @@ impl CodeDrawServer {
             })
             .unwrap_or_default();
         Ok(text(if lines.is_empty() {
-            "(sin anotaciones)".to_string()
+            "(no annotations)".to_string()
         } else {
             lines.join("\n")
         }))
     }
 
     #[tool(
-        description = "Dibuja una caja alrededor de un rango de líneas, con etiqueta opcional en el borde superior."
+        description = "Draws a box around a range of lines, with an optional label on the top edge."
     )]
     async fn add_box(
         &self,
@@ -311,7 +309,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Dibuja una flecha de un punto del código a otro (p. ej. de `let s` a `takes(s)`), con etiqueta opcional. Usa `find` para anclar por texto."
+        description = "Draws an arrow from one point of the code to another (e.g. from `let s` to `takes(s)`), with an optional label. Use `find` to anchor by text."
     )]
     async fn add_arrow(
         &self,
@@ -324,7 +322,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Añade una nota de texto anclada a una línea (aparece en el margen derecho o debajo)."
+        description = "Adds a text note anchored to a line (appears in the right margin or below it)."
     )]
     async fn add_note(
         &self,
@@ -340,7 +338,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Resalta un fragmento de texto (una variable, una expresión) con etiqueta opcional."
+        description = "Highlights a text fragment (a variable, an expression) with an optional label."
     )]
     async fn highlight(
         &self,
@@ -351,7 +349,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Marca semántica de Rust sobre un fragmento: move, borrow (&), borrow_mut (&mut), drop o lifetime. Cada tipo tiene color y glifo fijos y muestra su leyenda."
+        description = "Rust semantic mark on a fragment: move, borrow (&), borrow_mut (&mut), drop or lifetime. Each kind has a fixed color and glyph and shows its legend."
     )]
     async fn add_mark(
         &self,
@@ -364,7 +362,7 @@ impl CodeDrawServer {
         Ok(text(pretty(&v)))
     }
 
-    #[tool(description = "Cambia el paso o la etiqueta de una anotación existente.")]
+    #[tool(description = "Changes the step or label of an existing annotation.")]
     async fn update_annotation(
         &self,
         Parameters(p): Parameters<UpdateParams>,
@@ -379,7 +377,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Vacía todas las anotaciones de golpe (o solo las de un paso con `step`). Útil entre tomas. El presentador puede deshacerlo con `u`."
+        description = "Removes every annotation at once (or only those of one step with `step`). Useful between takes. The presenter can undo it with `u`."
     )]
     async fn clear_annotations(
         &self,
@@ -391,7 +389,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Dirige la atención en un paso: atenúa el código fuera de un rango de líneas y/o las anotaciones fuera de `ids`. Úsalo como paso de 'mira aquí' entre revelaciones. Activo de `step` a `until`."
+        description = "Directs attention in a step: dims the code outside a line range and/or the annotations outside `ids`. Use it as a 'look here' step between reveals. Active from `step` to `until`."
     )]
     async fn add_spotlight(
         &self,
@@ -406,7 +404,7 @@ impl CodeDrawServer {
         Ok(text(pretty(&v)))
     }
 
-    #[tool(description = "Elimina una anotación por id.")]
+    #[tool(description = "Deletes an annotation by id.")]
     async fn delete_annotation(
         &self,
         Parameters(p): Parameters<IdParams>,
@@ -416,7 +414,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Cambia el paso actual de la presentación (se muestran las anotaciones con step <= paso)."
+        description = "Sets the current presentation step (annotations with step <= the step are shown)."
     )]
     async fn set_step(
         &self,
@@ -427,7 +425,7 @@ impl CodeDrawServer {
         )))
     }
 
-    #[tool(description = "Avanza un paso en la presentación.")]
+    #[tool(description = "Advances one step in the presentation.")]
     async fn next_step(
         &self,
         Parameters(_p): Parameters<Empty>,
@@ -435,7 +433,7 @@ impl CodeDrawServer {
         Ok(text(pretty(&self.call("step.next", json!({})).await?)))
     }
 
-    #[tool(description = "Retrocede un paso en la presentación.")]
+    #[tool(description = "Goes back one step in the presentation.")]
     async fn prev_step(
         &self,
         Parameters(_p): Parameters<Empty>,
@@ -444,7 +442,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Enfoca un rango de líneas (el resto se atenúa). Sin parámetros, quita el enfoque."
+        description = "Focuses a range of lines (the rest is dimmed). Without parameters, clears the focus."
     )]
     async fn set_focus(
         &self,
@@ -460,7 +458,7 @@ impl CodeDrawServer {
         )))
     }
 
-    #[tool(description = "Cambia el tema: dark, light o toggle.")]
+    #[tool(description = "Changes the theme: dark, light or toggle.")]
     async fn set_theme(
         &self,
         Parameters(p): Parameters<ThemeParams>,
@@ -471,7 +469,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Devuelve lo que se ve en pantalla como texto plano (código + anotaciones del paso actual). Úsala para comprobar el resultado de lo que dibujaste."
+        description = "Returns what is on screen as plain text (code + annotations of the current step). Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
@@ -493,17 +491,17 @@ impl ServerHandler for CodeDrawServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("codedraw", codedraw_core::VERSION))
             .with_instructions(
-                "CodeDraw es una TUI que muestra código y permite dibujar encima (cajas, flechas, resaltes, notas y marcas \
-                 de Rust: move, borrow, borrow_mut, drop, lifetime) para explicarlo en video. Flujo recomendado: \
-                 1) `status` para confirmar que hay una instancia; 2) `get_code` para ver líneas y texto exactos; \
-                 3) anota con `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, usando `find` con el texto exacto; \
-                 4) agrupa en pasos con `step` y avanza con `next_step`; 5) `render_text` para verificar. \
-                 Mantén las etiquetas cortas: se dibujan en una terminal de ~100 columnas.",
+                "CodeDraw is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes and Rust \
+                 marks: move, borrow, borrow_mut, drop, lifetime) to explain it on video. Recommended flow: \
+                 1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
+                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, using `find` with the exact text; \
+                 4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify. \
+                 Keep labels short: they are drawn in a ~100-column terminal.",
             )
     }
 }
 
-/// Arranca el servidor MCP por stdio (bloquea hasta que el cliente cierra).
+/// Starts the MCP server over stdio (blocks until the client closes).
 pub async fn serve(socket: PathBuf) -> anyhow::Result<()> {
     let service = CodeDrawServer::new(socket).serve(stdio()).await?;
     service.waiting().await?;

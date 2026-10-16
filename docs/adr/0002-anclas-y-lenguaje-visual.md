@@ -1,26 +1,26 @@
-# 0002 · Anclas por (línea, grafema) y lenguaje visual
+# 0002 · Anchors by (line, grapheme) and visual language
 
-**Estado:** aceptada (2026-10-15), revisable tras el primer video
+**Status:** accepted (2026-10-15), to be revisited after the first video
 
-## Contexto
+## Context
 
-Las anotaciones deben sobrevivir al scroll, al cambio de tamaño del terminal y al cambio de tema. Las terminales y `unicode-width` no siempre coinciden en el ancho de emojis; las tabulaciones dependen de la configuración. En un terminal de ~75 columnas no hay margen derecho.
+Annotations must survive scrolling, terminal resizing and theme changes. Terminals and `unicode-width` do not always agree on the width of emojis; tabs depend on configuration. In a ~75-column terminal there is no right margin.
 
-## Decisión
+## Decision
 
-- El **modelo** ancla en coordenadas del texto: línea absoluta (1-based, se conserva al abrir `archivo.rs:12-48`) y **offset de grafema** (0-based, `unicode-segmentation`). La conversión a celdas ocurre solo al renderizar (`unicode-width`, tabs a 4).
-- Para agentes y comandos, las anclas se dan por **texto** (`find`, con línea y ocurrencia opcionales) y se resuelven a grafemas al crear; el `find` original se guarda en el `.codedraw` para re-anclar en el futuro.
-- Lenguaje visual de la v0:
-  - **Cajas** rodean de verdad el rango: filas virtuales sin número arriba y abajo (`╭─ etiqueta ──╮` … `╰──╯`) y rieles `│` a ambos lados. Las cajas anidan.
-  - **Flechas entre líneas** van por un carril a la izquierda del código: `╭──` sale de la línea origen, `╰──▶` entra en la destino; las más largas ocupan el carril más alejado.
-  - **Flechas en la misma línea** usan una fila virtual debajo (`╰───▶`).
-  - **Resaltes y marcas** tiñen el fondo del span. Las marcas de Rust (`move ━▶`, `borrow ╌▶`, `&mut ═▶`, `drop ╳`, `lifetime ┆`) tienen color y glifo fijos: se distinguen por forma, no solo por color.
-  - **Notas y leyendas** van al margen derecho si quedan ≥ 14 celdas; si no, en una fila virtual debajo de la línea (`┆ nota`, `· leyenda`).
-- Los **pasos** son un entero por anotación; se muestran las anotaciones con `step <= paso actual`.
-- Un **spotlight** es una anotación que no dibuja: mientras está activa (`step..=until`) atenúa el código fuera de sus líneas y las anotaciones fuera de sus `ids`. Permite pasos de "mira aquí" sin añadir trazos.
+- The **model** anchors in text coordinates: absolute line (1-based, preserved when opening `file.rs:12-48`) and **grapheme offset** (0-based, `unicode-segmentation`). The conversion to cells happens only when rendering (`unicode-width`, tabs at 4).
+- For agents and commands, anchors are given by **text** (`find`, with optional line and occurrence) and resolved to graphemes on creation; the original `find` is saved in the `.codedraw` for future re-anchoring.
+- Visual language of v0:
+  - **Boxes** truly surround the range: unnumbered virtual rows above and below (`╭─ label ──╮` … `╰──╯`) and `│` rails on both sides. Boxes nest.
+  - **Arrows between lines** run along a lane to the left of the code: `╭──` leaves the source line, `╰──▶` enters the target line; the longest ones take the farthest lane.
+  - **Arrows on the same line** use a virtual row below (`╰───▶`).
+  - **Highlights and marks** tint the span background. Rust marks (`move ━▶`, `borrow ╌▶`, `&mut ═▶`, `drop ╳`, `lifetime ┆`) have a fixed color and glyph: they are told apart by shape, not only by color.
+  - **Notes and legends** go in the right margin when ≥ 14 cells remain; otherwise in a virtual row below the line (`┆ note`, `· legend`).
+- **Steps** are an integer per annotation; annotations with `step <= current step` are shown.
+- A **spotlight** is an annotation that draws nothing: while active (`step..=until`) it dims the code outside its lines and the annotations outside its `ids`. It allows "look here" steps without adding strokes.
 
-## Consecuencias
+## Consequences
 
-- Las filas virtuales cambian la correspondencia fila↔línea; `Layout::row_of_line` es la única fuente de verdad para scroll y cursor.
-- El ruteo de flechas no esquiva texto: cruza los rieles de caja con `─`. Suficiente para el demo; el ruteo fino es seguimiento (t-022).
-- Evitamos emojis en los temas por defecto (ancho ambiguo).
+- Virtual rows change the row↔line mapping; `Layout::row_of_line` is the single source of truth for scrolling and the cursor.
+- Arrow routing does not avoid text: it crosses box rails with `─`. Enough for the demo; fine routing is a follow-up (t-022).
+- We avoid emojis in the default themes (ambiguous width).

@@ -1,25 +1,25 @@
-# Ejemplos
+# Examples
 
-Ábrelos con `codedraw examples/<archivo>.codedraw` y avanza con `n`. Los dos arrancan en el paso 0 (solo el código).
+Open them with `codedraw examples/<file>.codedraw` and advance with `n`. Both start at step 0 (code only).
 
-| Archivo | Qué muestra | Modo de `code` |
+| File | What it shows | `code` mode |
 |---|---|---|
-| `ownership.rs.codedraw` | move, borrow `&`, `&mut` y drop en 5 pasos, con un color por valor | referencia relativa: `{"file": "ownership.rs"}` |
-| `stack-impl.codedraw` | `&self` vs `&mut self` en un `impl`, `Option<&T>` | referencia con subdirectorio y rango: `{"file": "src/stack.rs", "lines": "7-30"}` |
+| `ownership.rs.codedraw` | move, borrow `&`, `&mut` and drop in 6 steps (two of them spotlights), with one color per value | relative reference: `{"file": "ownership.rs"}` |
+| `stack-impl.codedraw` | `&self` vs `&mut self` in an `impl`, `Option<&T>` | reference with a subdirectory and a range: `{"file": "src/stack.rs", "lines": "7-30"}` |
 
-## Los tres modos de `code`
+## The three `code` modes
 
 ```jsonc
-// 1. Referencia relativa al directorio del .codedraw (lo que crean los sidecars)
+// 1. Reference relative to the .codedraw directory (what sidecars create)
 "code": { "file": "src/stack.rs", "lines": "7-30" }
 
-// 2. Referencia absoluta
-"code": { "file": "/Users/luis/proyectos/app/src/main.rs" }
+// 2. Absolute reference
+"code": { "file": "/Users/luis/projects/app/src/main.rs" }
 
-// 3. Embebido: portable, congelado (`:embed` dentro de la TUI)
-"code": ["fn main() {", "    println!(\"hola\");", "}"]
+// 3. Embedded: portable, frozen (`:embed` inside the TUI)
+"code": ["fn main() {", "    println!(\"hello\");", "}"]
 ```
 
-`lines` es opcional y acepta `"12-48"`, `"12..48"` o `"7"`. Con referencia, el documento muestra siempre el archivo actual y la numeración es la real del archivo (empieza en `lines`), así que puedes decir "mira la línea 20" y coincidir con el editor.
+`lines` is optional and accepts `"12-48"`, `"12..48"` or `"7"`. With a reference, the document always shows the current file and the numbering is the file's real one (it starts at `lines`), so you can say "look at line 20" and match the editor.
 
-Para generar un sidecar desde cualquier fuente: `codedraw src/main.rs:12-48` crea `src/main.rs.12-48.codedraw` en modo referencia.
+To generate a sidecar from any source: `codedraw src/main.rs:12-48` creates `src/main.rs.12-48.codedraw` in reference mode.

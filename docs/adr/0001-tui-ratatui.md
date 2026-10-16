@@ -1,18 +1,18 @@
-# 0001 · CodeDraw es una TUI con ratatui
+# 0001 · CodeDraw is a TUI built with ratatui
 
-**Estado:** aceptada (2026-10-15)
+**Status:** accepted (2026-10-15)
 
-## Contexto
+## Context
 
-El caso de uso es explicar código en video mientras se comparte pantalla con el editor (Zed). La herramienta debe convivir con el editor en una terminal (la integrada de Zed, Ghostty, WezTerm), arrancar al instante y poder recibir código por stdin o portapapeles. Se consideró una app de escritorio nativa con `gpui`.
+The use case is explaining code on video while sharing the screen with the editor (Zed). The tool has to live alongside the editor in a terminal (Zed's integrated one, Ghostty, WezTerm), start instantly and accept code from stdin or the clipboard. A native desktop app with `gpui` was considered.
 
-## Decisión
+## Decision
 
-Una TUI en Rust con **ratatui 0.30** + **crossterm 0.29**. El núcleo (`codedraw-core`) no depende de ratatui: produce un lienzo de celdas propio que la TUI copia a su buffer y que el CLI vuelca a texto/ANSI. Teclado primero, con línea de comandos `:` (estilo vim); el ratón será opt-in.
+A Rust TUI with **ratatui 0.30** + **crossterm 0.29**. The core (`codedraw-core`) does not depend on ratatui: it produces its own cell canvas, which the TUI copies into its buffer and the CLI dumps as text/ANSI. Keyboard first, with a `:` command line (vim style); the mouse will be opt-in.
 
-## Consecuencias
+## Consequences
 
-- Se hereda la fuente y el tamaño del terminal del usuario: la legibilidad en video depende de su configuración, no de la nuestra. Documentamos un perfil de grabación.
-- Ancho real a 1080p con fuente grande: ~75–100 columnas. El layout debe degradar bien (ADR 0002).
-- Nada de dibujo libre: el lenguaje visual es el de los caracteres de caja y las flechas Unicode.
-- Inspiración declarada: Excalidraw (concepto), excalidraw/cli (CLI para humanos y agentes), herdr (API por socket), tuios (modal vim + ratón).
+- We inherit the user's terminal font and size: legibility on video depends on their configuration, not ours. We document a recording profile.
+- Real width at 1080p with a large font: ~75–100 columns. The layout must degrade gracefully (ADR 0002).
+- No freehand drawing: the visual language is that of box-drawing characters and Unicode arrows.
+- Declared inspiration: Excalidraw (concept), excalidraw/cli (CLI for humans and agents), herdr (socket API), tuios (vim modal + mouse).

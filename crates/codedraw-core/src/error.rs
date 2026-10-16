@@ -2,24 +2,24 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("la línea {line} no existe (el documento va de {first} a {last})")]
+    #[error("line {line} does not exist (the document spans {first} to {last})")]
     LineOutOfRange { line: u32, first: u32, last: u32 },
-    #[error("el rango {start}..{end} no cabe en la línea {line} (tiene {len} grafemas)")]
+    #[error("range {start}..{end} does not fit on line {line} (it has {len} graphemes)")]
     SpanOutOfRange {
         line: u32,
         start: u32,
         end: u32,
         len: u32,
     },
-    #[error("no existe la anotación {0}")]
+    #[error("annotation {0} does not exist")]
     NotFound(String),
-    #[error("ya existe una anotación con id {0}")]
+    #[error("an annotation with id {0} already exists")]
     DuplicateId(String),
-    #[error("no se encontró el texto {0:?} en el código")]
+    #[error("text {0:?} not found in the code")]
     TextNotFound(String),
     #[error("{0}")]
     Invalid(String),
-    #[error("archivo .codedraw con schema {found}; esta versión entiende hasta {supported}")]
+    #[error(".codedraw file with schema {found}; this version understands up to {supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
     #[error(transparent)]
     Io(#[from] std::io::Error),
@@ -28,7 +28,7 @@ pub enum Error {
 }
 
 impl Error {
-    /// Código estable para la API (socket/MCP): los clientes ramifican por él, no por el mensaje.
+    /// Stable code for the API (socket/MCP): clients branch on it, not on the message.
     pub fn code(&self) -> &'static str {
         match self {
             Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
