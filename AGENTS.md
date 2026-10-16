@@ -1,6 +1,6 @@
 # For agents working in this repo
 
-- Cargo workspace with 4 crates: `codedraw-core` (model/layout, no terminal), `codedraw-tui`, `codedraw-mcp`, `codedraw-cli` (the `codedraw` binary).
+- Cargo workspace with 5 crates: `codedraw-core` (model/layout, no terminal), `codedraw-tui`, `codedraw-mcp`, `codedraw-export` (SVG/PNG, the only one linking resvg), `codedraw-cli` (the `codedraw` binary).
 - Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
 - Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
 - New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry.

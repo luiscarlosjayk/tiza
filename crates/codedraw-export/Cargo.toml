@@ -1,0 +1,15 @@
+[package]
+name = "codedraw-export"
+description = "SVG and PNG export of CodeDraw canvases with embedded fonts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+codedraw-core = { workspace = true }
+thiserror = { workspace = true }
+base64 = { workspace = true }
+resvg = { workspace = true }

@@ -87,6 +87,18 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 
 New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
 
+## Export to SVG or PNG
+
+```sh
+codedraw render demo.codedraw --out thumb.png --step 3          # PNG at 2× (thumbnails, posts)
+codedraw render demo.codedraw --out figure.svg --theme light     # SVG with the fonts embedded
+codedraw render --out shot.png                                   # what the live instance shows right now
+```
+
+Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL) and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool.
+
+![ownership example, step 7](docs/img/ownership-step7.png)
+
 ## For agents: MCP and local API
 
 With the TUI open, start the MCP server in another process:
@@ -101,7 +113,7 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
+Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`, `export_image`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
 The same API is available as a Unix socket with line-delimited JSON (design borrowed from herdr) and from the CLI:
 
@@ -131,7 +143,7 @@ cargo clippy --all-targets -- -D warnings
 cargo run -- examples/ownership.rs
 ```
 
-Crates: `codedraw-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `codedraw-tui` (ratatui + crossterm + socket server), `codedraw-mcp` (MCP bridge with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `codedraw-cli` (the `codedraw` binary). Decisions in [docs/adr](docs/adr). Dependency policy (maintained crates only, `cargo-deny` in CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).
+Crates: `codedraw-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `codedraw-tui` (ratatui + crossterm + socket server), `codedraw-mcp` (MCP bridge with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `codedraw-export` (SVG/PNG with [resvg](https://github.com/linebender/resvg) and embedded fonts), `codedraw-cli` (the `codedraw` binary). Decisions in [docs/adr](docs/adr). Dependency policy (maintained crates only, `cargo-deny` in CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).
 
 ## Name
 

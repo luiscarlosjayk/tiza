@@ -1435,12 +1435,19 @@ impl App {
                 }
                 json!({"language": self.doc.source.language, "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
             }
-            "scene.get" => serde_json::to_value(Scene {
-                revision: self.revision,
-                step: self.doc.step,
-                max_step: self.doc.max_step(),
-                document: self.doc.clone(),
-            })?,
+            "scene.get" => {
+                // On the wire the code travels embedded: a client in another
+                // directory could not resolve a relative file reference.
+                let mut document = self.doc.clone();
+                document.code_src =
+                    codedraw_core::model::CodeSource::Embedded(document.code.clone());
+                serde_json::to_value(Scene {
+                    revision: self.revision,
+                    step: self.doc.step,
+                    max_step: self.doc.max_step(),
+                    document,
+                })?
+            }
             "scene.list" => json!(
                 self.doc
                     .annotations

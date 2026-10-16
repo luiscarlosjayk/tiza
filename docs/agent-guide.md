@@ -19,7 +19,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
    - `add_note` for a short sentence (one line, in the margin); `add_callout` for a paragraph of two or three sentences about a range of lines: it is a bordered block with an optional `title`, it does not displace the other labels, and `placement` is `margin` (default), `below` (own rows under `to_line`, inside any box) or `auto`. Use `add_box` when you want to *delimit* code, `add_note` to tag a line, `add_callout` to *explain*; `highlight` for a fragment without semantics.
    - `add_spotlight` for a "look here" step: dims the code outside `from_line..to_line` and/or the annotations outside `ids` (and focuses the code of those annotations). It draws nothing; it directs attention. Active from `step` to `until`.
 4. `set_step 0` leaves only the code (a good starting point for the take); then `next_step` as the presenter advances (or leave it in their hands: `n`/`p`).
-5. `render_text` to see exactly what the audience sees and fix things.
+5. `render_text` to see exactly what the audience sees and fix things. `export_image` with a `.png` or `.svg` path saves the scene as an image (fonts embedded; `step`, `width`, `theme`, `scale` optional) for thumbnails and docs.
 
 ## Example (ownership)
 

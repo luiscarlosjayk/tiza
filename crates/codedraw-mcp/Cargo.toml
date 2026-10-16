@@ -11,6 +11,7 @@ authors.workspace = true
 [dependencies]
 codedraw-core.workspace = true
 codedraw-tui.workspace = true
+codedraw-export.workspace = true
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true

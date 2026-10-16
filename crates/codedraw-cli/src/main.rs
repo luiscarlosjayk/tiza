@@ -16,7 +16,7 @@ use codedraw_core::{Theme, ThemeName};
 #[derive(Parser)]
 #[command(name = "codedraw", version, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
-    after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw mcp                       MCP server for agents"
+    after_help = "Examples:\n  codedraw src/main.rs:12-48        open a range of lines\n  pbpaste | codedraw --lang rs       code from the clipboard\n  codedraw demo.codedraw --present   open in presentation mode\n  codedraw render demo.codedraw --out - --step 2\n  codedraw render demo.codedraw --out demo.png --step 3   PNG (or .svg) of a step\n  codedraw render --out shot.png   PNG of what the live instance shows\n  codedraw mcp                       MCP server for agents"
 )]
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`) or `.codedraw` document. Without it, reads stdin.
@@ -67,32 +67,55 @@ impl From<ThemeArg> for ThemeName {
     }
 }
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum, PartialEq)]
 enum Format {
     Txt,
     Ansi,
+    Svg,
+    Png,
 }
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Render a document without opening the TUI (plain text or ANSI)
+    /// Render a document without opening the TUI: text, ANSI, SVG or PNG.
+    /// Without FILE it exports what the live instance is showing.
     Render {
-        /// `.codedraw` document (or source file) to draw
-        file: String,
-        /// Output: a path or `-` for stdout
+        /// `.codedraw` document (or source file) to draw; omit it to use the live instance
+        file: Option<String>,
+        /// Output: a path or `-` for stdout. The extension picks the format (`.svg`, `.png`) unless --format is given.
         #[arg(long, default_value = "-")]
         out: String,
+        /// Step to show (default: the document's current step, or all of them for a file)
         #[arg(long)]
         step: Option<u32>,
-        #[arg(long, default_value_t = 100)]
-        width: usize,
-        #[arg(long, value_enum, default_value_t = Format::Txt)]
-        format: Format,
+        /// Width in columns (default: 100, or the live terminal's width)
+        #[arg(long)]
+        width: Option<usize>,
+        #[arg(long, value_enum)]
+        format: Option<Format>,
         #[arg(long, value_enum)]
         theme: Option<ThemeArg>,
         /// No line numbers
         #[arg(long)]
         no_numbers: bool,
+        /// SVG/PNG: font size in px (cells are 0.6 × 1.32 em)
+        #[arg(long, default_value_t = 16.0)]
+        font_size: f32,
+        /// SVG/PNG: blank margin around the drawing, in cells
+        #[arg(long, default_value_t = 1.5)]
+        margin: f32,
+        /// SVG/PNG: corner radius of the background in px (0 = square)
+        #[arg(long, default_value_t = 12.0)]
+        radius: f32,
+        /// PNG: device scale (2 = HiDPI / video)
+        #[arg(long, default_value_t = 2.0)]
+        scale: f32,
+        /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
+        #[arg(long)]
+        no_embed_fonts: bool,
+        /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
+        #[arg(long)]
+        system_fonts: bool,
     },
     /// Start the MCP server (stdio) that controls the live instance
     Mcp,
@@ -145,9 +168,58 @@ fn real_main() -> anyhow::Result<()> {
             format,
             theme,
             no_numbers,
+            font_size,
+            margin,
+            radius,
+            scale,
+            no_embed_fonts,
+            system_fonts,
         }) => {
-            let opened = fs::open(&file).with_context(|| format!("could not open {file}"))?;
-            let doc = opened.document;
+            let format = format.unwrap_or_else(|| {
+                match std::path::Path::new(&out)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(str::to_ascii_lowercase)
+                    .as_deref()
+                {
+                    Some("svg") => Format::Svg,
+                    Some("png") => Format::Png,
+                    Some("ansi") => Format::Ansi,
+                    _ => Format::Txt,
+                }
+            });
+            // The document: a file, or the live instance's scene.
+            let (doc, step, width) =
+                match &file {
+                    Some(f) => {
+                        let opened = fs::open(f).with_context(|| format!("could not open {f}"))?;
+                        (
+                            opened.document,
+                            step.unwrap_or(u32::MAX),
+                            width.unwrap_or(100),
+                        )
+                    }
+                    None => {
+                        let mut scene: codedraw_core::protocol::Scene = serde_json::from_value(
+                            call(&socket_path, "scene.get", serde_json::json!({}))?,
+                        )
+                        .context("unexpected scene.get response")?;
+                        fs::resolve_code(&mut scene.document, None)
+                            .context("the live document has no code")?;
+                        let status: codedraw_core::protocol::Status = serde_json::from_value(call(
+                            &socket_path,
+                            "status",
+                            serde_json::json!({}),
+                        )?)
+                        .context("unexpected status response")?;
+                        let live_w = (status.cols as usize).saturating_sub(2).max(40);
+                        (
+                            scene.document,
+                            step.unwrap_or(scene.step),
+                            width.unwrap_or(live_w),
+                        )
+                    }
+                };
             let theme = Theme::from_name(
                 theme
                     .map(Into::into)
@@ -159,21 +231,46 @@ fn real_main() -> anyhow::Result<()> {
                 &theme,
                 &LayoutOptions {
                     width,
-                    step: step.unwrap_or(u32::MAX),
+                    step,
                     focus: None,
                     line_numbers: !no_numbers,
                     tab_width: 4,
                 },
             );
-            let text = match format {
-                Format::Txt => l.canvas.to_plain_text() + "\n",
-                Format::Ansi => l.canvas.to_ansi(),
+            let bytes: Vec<u8> = match format {
+                Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
+                Format::Ansi => l.canvas.to_ansi().into_bytes(),
+                Format::Svg | Format::Png => {
+                    let svg_opts = codedraw_export::SvgOptions {
+                        font_size,
+                        margin_cells: margin,
+                        radius,
+                        embed_fonts: format == Format::Svg && !no_embed_fonts,
+                        title: doc.title.clone(),
+                    };
+                    let svg = codedraw_export::to_svg(&l.canvas, &theme, &svg_opts);
+                    if format == Format::Svg {
+                        svg.into_bytes()
+                    } else {
+                        codedraw_export::to_png(
+                            &svg,
+                            &codedraw_export::PngOptions {
+                                scale,
+                                system_fonts,
+                            },
+                        )
+                        .context("could not rasterize the PNG")?
+                    }
+                }
             };
             if out == "-" {
-                std::io::stdout().write_all(text.as_bytes())?;
+                if format == Format::Png && std::io::stdout().is_terminal() {
+                    bail!("refusing to write PNG bytes to the terminal; pass --out file.png");
+                }
+                std::io::stdout().write_all(&bytes)?;
             } else {
-                std::fs::write(&out, text).with_context(|| format!("could not write {out}"))?;
-                eprintln!("wrote {out}");
+                std::fs::write(&out, &bytes).with_context(|| format!("could not write {out}"))?;
+                eprintln!("wrote {out} ({} bytes)", bytes.len());
             }
             Ok(())
         }

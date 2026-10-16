@@ -167,6 +167,24 @@ pub struct UpdateParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ExportParams {
+    #[schemars(
+        description = "Where to write the image. The extension picks the format: .png or .svg"
+    )]
+    pub path: String,
+    #[schemars(description = "Step to show; defaults to the current one")]
+    pub step: Option<u32>,
+    #[schemars(description = "Width in columns; defaults to the live terminal's width")]
+    pub width: Option<usize>,
+    #[schemars(description = "dark or light; defaults to the document's theme")]
+    pub theme: Option<String>,
+    #[schemars(description = "PNG device scale (default 2)")]
+    pub scale: Option<f32>,
+    #[schemars(description = "Font size in px (default 16)")]
+    pub font_size: Option<f32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CalloutParams {
     #[schemars(description = "First line the callout explains (1-based)")]
     pub from_line: u32,
@@ -589,6 +607,95 @@ impl CodeDrawServer {
                 .to_string(),
         ))
     }
+
+    #[tool(
+        description = "Exports the scene as an image file (.png or .svg) with embedded fonts, for thumbnails, posts and docs. Renders from the live document without touching the TUI."
+    )]
+    async fn export_image(
+        &self,
+        Parameters(p): Parameters<ExportParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let ext = std::path::Path::new(&p.path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        let is_png = match ext.as_deref() {
+            Some("png") => true,
+            Some("svg") => false,
+            _ => {
+                return Err(McpError::invalid_params(
+                    "path must end in .png or .svg",
+                    None,
+                ));
+            }
+        };
+        let mut scene: codedraw_core::protocol::Scene =
+            serde_json::from_value(self.call("scene.get", json!({})).await?)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        codedraw_core::fs::resolve_code(&mut scene.document, None)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let status: codedraw_core::protocol::Status =
+            serde_json::from_value(self.call("status", json!({})).await?)
+                .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        let theme_name = match p.theme.as_deref() {
+            Some(t) => match t.trim().to_ascii_lowercase().as_str() {
+                "dark" | "oscuro" => codedraw_core::ThemeName::Dark,
+                "light" | "claro" => codedraw_core::ThemeName::Light,
+                _ => {
+                    return Err(McpError::invalid_params(
+                        format!("unknown theme: {t} (dark, light)"),
+                        None,
+                    ));
+                }
+            },
+            None => scene
+                .document
+                .theme
+                .unwrap_or(codedraw_core::ThemeName::Dark),
+        };
+        let theme = codedraw_core::Theme::from_name(theme_name);
+        let layout = codedraw_core::layout::layout(
+            &scene.document,
+            &theme,
+            &codedraw_core::layout::LayoutOptions {
+                width: p
+                    .width
+                    .unwrap_or((status.cols as usize).saturating_sub(2).max(40)),
+                step: p.step.unwrap_or(scene.step),
+                focus: None,
+                line_numbers: true,
+                tab_width: 4,
+            },
+        );
+        let svg_opts = codedraw_export::SvgOptions {
+            font_size: p.font_size.unwrap_or(16.0),
+            embed_fonts: !is_png,
+            title: scene.document.title.clone(),
+            ..Default::default()
+        };
+        let svg = codedraw_export::to_svg(&layout.canvas, &theme, &svg_opts);
+        let bytes = if is_png {
+            codedraw_export::to_png(
+                &svg,
+                &codedraw_export::PngOptions {
+                    scale: p.scale.unwrap_or(2.0),
+                    system_fonts: false,
+                },
+            )
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?
+        } else {
+            svg.into_bytes()
+        };
+        std::fs::write(&p.path, &bytes).map_err(|e| {
+            McpError::internal_error(format!("could not write {}: {e}", p.path), None)
+        })?;
+        Ok(text(pretty(&json!({
+            "path": p.path,
+            "bytes": bytes.len(),
+            "format": if is_png { "png" } else { "svg" },
+            "step": p.step.unwrap_or(scene.step),
+        }))))
+    }
 }
 
 #[tool_handler]
@@ -597,11 +704,11 @@ impl ServerHandler for CodeDrawServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new("codedraw", codedraw_core::VERSION))
             .with_instructions(
-                "CodeDraw is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes and Rust \
-                 marks: move, borrow, borrow_mut, drop, lifetime) to explain it on video. Recommended flow: \
+                "CodeDraw is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes, callouts and \
+                 language-agnostic marks such as move, read, write, drop, scope) to explain it on video. Recommended flow: \
                  1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
                  3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text; \
-                 4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify. \
+                 4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
                  Keep labels short: they are drawn in a ~100-column terminal.",
             )
     }

@@ -5,6 +5,7 @@ members = [
     "crates/codedraw-tui",
     "crates/codedraw-mcp",
     "crates/codedraw-cli",
+    "crates/codedraw-export",
 ]
 
 [workspace.package]
@@ -19,6 +20,7 @@ authors = ["Luis Carlos Osorio <luiscarlosjayk@gmail.com>", "Claude <noreply@ant
 codedraw-core = { path = "crates/codedraw-core", version = "0.0.1" }
 codedraw-tui = { path = "crates/codedraw-tui", version = "0.0.1" }
 codedraw-mcp = { path = "crates/codedraw-mcp", version = "0.0.1" }
+codedraw-export = { path = "crates/codedraw-export", version = "0.0.1" }
 
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -37,6 +39,12 @@ tokio = { version = "1.53", features = ["macros", "rt-multi-thread"] }
 anyhow = "1"
 
 clap = { version = "4.6.7", features = ["derive"] }
+
+base64 = "0.23.1"
+# SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
+# `system-fonts` only adds the optional fallback for emoji/CJK.
+resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+
 
 [profile.release]
 lto = "thin"

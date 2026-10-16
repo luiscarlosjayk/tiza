@@ -9,3 +9,4 @@ One decision per file, kept short. Format: context, decision, consequences, stat
 | [0003](0003-api-socket-y-mcp.md) | Local NDJSON API over a Unix socket; the MCP is a thin bridge |
 | [0004](0004-dependencias.md) | Dependency policy: maintained crates only, audited in CI |
 | [0005](0005-formato-codedraw.md) | `.codedraw` format: versioned JSON, sidecar next to the source |
+| [0006](0006-exportacion-svg-png.md) | SVG and PNG export: Canvas → SVG text grid, rasterized with resvg, fonts embedded |
