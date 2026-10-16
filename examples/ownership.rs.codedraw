@@ -38,7 +38,7 @@
     },
     {
       "id": "a3",
-      "step": 2,
+      "step": 3,
       "type": "note",
       "line": 4,
       "text": "s ya no es dueña: usarla aquí no compila",
@@ -46,7 +46,7 @@
     },
     {
       "id": "a4",
-      "step": 2,
+      "step": 3,
       "type": "box",
       "from_line": 15,
       "to_line": 17,
@@ -55,7 +55,7 @@
     },
     {
       "id": "a5",
-      "step": 2,
+      "step": 3,
       "type": "mark",
       "kind": "drop",
       "span": {
@@ -67,7 +67,7 @@
     },
     {
       "id": "a6",
-      "step": 3,
+      "step": 4,
       "type": "mark",
       "kind": "borrow",
       "span": {
@@ -80,7 +80,7 @@
     },
     {
       "id": "a7",
-      "step": 3,
+      "step": 4,
       "type": "arrow",
       "from": {
         "line": 7,
@@ -95,7 +95,7 @@
     },
     {
       "id": "a8",
-      "step": 3,
+      "step": 4,
       "type": "note",
       "line": 8,
       "text": "t sigue siendo válida",
@@ -103,7 +103,7 @@
     },
     {
       "id": "a9",
-      "step": 4,
+      "step": 5,
       "type": "mark",
       "kind": "borrow_mut",
       "span": {
@@ -114,7 +114,7 @@
     },
     {
       "id": "a10",
-      "step": 4,
+      "step": 5,
       "type": "arrow",
       "from": {
         "line": 11,
@@ -129,7 +129,7 @@
     },
     {
       "id": "a11",
-      "step": 4,
+      "step": 5,
       "type": "box",
       "from_line": 23,
       "to_line": 25,
@@ -138,7 +138,7 @@
     },
     {
       "id": "a12",
-      "step": 5,
+      "step": 6,
       "type": "note",
       "line": 12,
       "text": "u ahora vale «hey!»",
@@ -158,6 +158,27 @@
       },
       "label": "nace s",
       "color": "purple"
+    },
+    {
+      "id": "s1",
+      "step": 2,
+      "type": "spotlight",
+      "from_line": 15,
+      "to_line": 17,
+      "ids": [
+        "a1",
+        "a2"
+      ]
+    },
+    {
+      "id": "s2",
+      "step": 4,
+      "type": "spotlight",
+      "ids": [
+        "a6",
+        "a7",
+        "a8"
+      ]
     }
   ],
   "step": 0,

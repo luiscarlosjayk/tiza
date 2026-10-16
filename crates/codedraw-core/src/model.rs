@@ -170,6 +170,41 @@ pub enum Shape {
     },
     /// Nota de texto anclada a una línea.
     Note { line: u32, text: String },
+    /// Dirige la atención: mientras está activo (de `step` hasta `until`, o solo en
+    /// `step`), atenúa el código fuera de `lines` y las anotaciones fuera de `ids`.
+    /// Si solo hay `ids`, el código enfocado es el de esas anotaciones.
+    Spotlight {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        from_line: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to_line: Option<u32>,
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        ids: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        until: Option<u32>,
+    },
+}
+
+impl Shape {
+    /// Rangos de líneas que ocupa la forma (para enfocar el código de una
+    /// anotación). Una flecha ocupa solo sus dos extremos, no el tramo entre ellos.
+    pub fn line_ranges(&self) -> Vec<(u32, u32)> {
+        match self {
+            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+                vec![(span.line, span.line)]
+            }
+            Shape::Box {
+                from_line, to_line, ..
+            } => vec![(*from_line, *to_line)],
+            Shape::Arrow { from, to, .. } => vec![(from.line, from.line), (to.line, to.line)],
+            Shape::Note { line, .. } => vec![(*line, *line)],
+            Shape::Spotlight {
+                from_line, to_line, ..
+            } => from_line
+                .map(|f| vec![(f, to_line.unwrap_or(f))])
+                .unwrap_or_default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -353,6 +388,35 @@ impl Document {
                 check_line(*line)?;
                 if text.trim().is_empty() {
                     return Err(Error::Invalid("la nota está vacía".into()));
+                }
+                Ok(())
+            }
+            Shape::Spotlight {
+                from_line,
+                to_line,
+                ids,
+                ..
+            } => {
+                if from_line.is_none() && ids.is_empty() {
+                    return Err(Error::Invalid(
+                        "un spotlight necesita un rango de líneas, ids de anotaciones, o ambos"
+                            .into(),
+                    ));
+                }
+                if let Some(a) = from_line {
+                    check_line(*a)?;
+                    let b = to_line.unwrap_or(*a);
+                    check_line(b)?;
+                    if *a > b {
+                        return Err(Error::Invalid(format!(
+                            "el spotlight empieza en {a} y termina antes, en {b}"
+                        )));
+                    }
+                }
+                for id in ids {
+                    if self.find_annotation(id).is_none() {
+                        return Err(Error::NotFound(id.clone()));
+                    }
                 }
                 Ok(())
             }

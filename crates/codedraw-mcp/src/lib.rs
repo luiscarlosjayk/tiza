@@ -131,6 +131,23 @@ pub struct UpdateParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct SpotlightParams {
+    #[schemars(description = "Primera línea a destacar (el resto del código se atenúa)")]
+    pub from_line: Option<u32>,
+    #[schemars(description = "Última línea a destacar; por defecto igual a from_line")]
+    pub to_line: Option<u32>,
+    #[schemars(
+        description = "Ids de anotaciones a destacar; las demás se atenúan y su código queda enfocado"
+    )]
+    pub ids: Option<Vec<String>>,
+    #[schemars(description = "Paso en que se activa (por defecto el actual)")]
+    pub step: Option<u32>,
+    #[schemars(description = "Último paso en que sigue activo; por defecto solo `step`")]
+    pub until: Option<u32>,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ClearParams {
     #[schemars(description = "Si se da, borra solo las anotaciones de ese paso; si no, todas")]
     pub step: Option<u32>,
@@ -371,6 +388,22 @@ impl CodeDrawServer {
         Ok(text(pretty(
             &self.call("scene.clear", json!({"step": p.step})).await?,
         )))
+    }
+
+    #[tool(
+        description = "Dirige la atención en un paso: atenúa el código fuera de un rango de líneas y/o las anotaciones fuera de `ids`. Úsalo como paso de 'mira aquí' entre revelaciones. Activo de `step` a `until`."
+    )]
+    async fn add_spotlight(
+        &self,
+        Parameters(p): Parameters<SpotlightParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let v = self
+            .call(
+                "annotation.add",
+                json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id}),
+            )
+            .await?;
+        Ok(text(pretty(&v)))
     }
 
     #[tool(description = "Elimina una anotación por id.")]

@@ -17,6 +17,7 @@ Las anotaciones deben sobrevivir al scroll, al cambio de tamaño del terminal y 
   - **Resaltes y marcas** tiñen el fondo del span. Las marcas de Rust (`move ━▶`, `borrow ╌▶`, `&mut ═▶`, `drop ╳`, `lifetime ┆`) tienen color y glifo fijos: se distinguen por forma, no solo por color.
   - **Notas y leyendas** van al margen derecho si quedan ≥ 14 celdas; si no, en una fila virtual debajo de la línea (`┆ nota`, `· leyenda`).
 - Los **pasos** son un entero por anotación; se muestran las anotaciones con `step <= paso actual`.
+- Un **spotlight** es una anotación que no dibuja: mientras está activa (`step..=until`) atenúa el código fuera de sus líneas y las anotaciones fuera de sus `ids`. Permite pasos de "mira aquí" sin añadir trazos.
 
 ## Consecuencias
 

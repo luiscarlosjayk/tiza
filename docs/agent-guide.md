@@ -17,6 +17,7 @@ Esta página es para un agente (Claude Code, Zed, cualquier cliente MCP) que vay
    - `add_arrow` para relaciones (de donde nace un valor a donde se consume).
    - `add_box` para delimitar una función o un bloque.
    - `add_note` para una frase corta; `highlight` para un fragmento sin semántica.
+   - `add_spotlight` para un paso de "mira aquí": atenúa el código fuera de `from_line..to_line` y/o las anotaciones fuera de `ids` (y enfoca el código de esas anotaciones). No dibuja nada; dirige la atención. Activo de `step` a `until`.
 4. `set_step 0` deja solo el código (buen punto de partida para la toma); luego `next_step` conforme el presentador avanza (o déjalo en sus manos: `n`/`p`).
 5. `render_text` para ver exactamente lo que ve la audiencia y corregir.
 

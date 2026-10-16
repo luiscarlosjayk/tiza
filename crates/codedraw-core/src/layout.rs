@@ -113,10 +113,59 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             (Shape::Note { .. }, None) => theme.note,
             (Shape::Mark { kind, .. }, None) => theme.mark_color(*kind),
             (Shape::Highlight { .. }, None) => theme.accent,
+            (Shape::Spotlight { .. }, None) => theme.accent,
         };
         colors.insert(a.id.as_str(), c);
     }
     let color_of = |a: &Annotation| colors.get(a.id.as_str()).copied().unwrap_or(theme.accent);
+
+    // ---- spotlights activos en este paso ----
+    let mut spot_lines: Vec<(u32, u32)> = Vec::new();
+    let mut spot_ids: Vec<&str> = Vec::new();
+    let mut spot_any = false;
+    for a in &vis {
+        if let Shape::Spotlight {
+            from_line,
+            to_line,
+            ids,
+            until,
+        } = &a.shape
+            && opts.step >= a.step
+            && opts.step <= until.unwrap_or(a.step)
+        {
+            spot_any = true;
+            if let Some(f) = from_line {
+                spot_lines.push((*f, to_line.unwrap_or(*f)));
+            }
+            for id in ids {
+                spot_ids.push(id.as_str());
+                if let Some(target) = doc.find_annotation(id) {
+                    spot_lines.extend(target.shape.line_ranges());
+                }
+            }
+        }
+    }
+    let line_in_spot =
+        |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
+    // Una anotación se atenúa si hay spotlights con ids y no está entre ellos.
+    let ann_dimmed = |a: &Annotation| {
+        spot_any
+            && !spot_ids.is_empty()
+            && !spot_ids.contains(&a.id.as_str())
+            && !matches!(a.shape, Shape::Spotlight { .. })
+    };
+    let color_of = |a: &Annotation| {
+        if ann_dimmed(a) {
+            theme.dimmed
+        } else {
+            color_of(a)
+        }
+    };
+    // Los spotlights no se dibujan; solo filtran.
+    let vis: Vec<&Annotation> = vis
+        .into_iter()
+        .filter(|a| !matches!(a.shape, Shape::Spotlight { .. }))
+        .collect();
 
     // ---- cajas y su anidamiento ----
     let mut boxes: Vec<BoxInfo> = vis
@@ -247,7 +296,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                             kind.legend(),
                             label.as_ref().map(|l| format!(": {l}")).unwrap_or_default()
                         ),
-                        theme.mark_color(*kind),
+                        color_of(a),
                         false,
                     )),
                     Shape::Highlight {
@@ -336,7 +385,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     for (y, row) in rows.iter().enumerate() {
         let Row::Code(line) = row else { continue };
         let text = doc.line_text(*line).unwrap_or("");
-        let in_focus = opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b);
+        let in_focus =
+            opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line);
         if opts.line_numbers {
             let n = format!("{:>w$}", line, w = num_w - 1);
             canvas.put_str(0, y, &n, base.fg(theme.muted));
@@ -359,6 +409,12 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // ---- 2. resaltes y marcas ----
     for a in &vis {
         let (span, fg, bg, label) = match &a.shape {
+            Shape::Highlight { span, label } if ann_dimmed(a) => (
+                span,
+                theme.dimmed,
+                crate::theme::blend(theme.dimmed, theme.bg, 0.12),
+                label.clone(),
+            ),
             Shape::Highlight { span, label } => {
                 let c = color_of(a);
                 let (fg, bg) = if a.color.is_some() {
@@ -368,6 +424,12 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 };
                 (span, fg, bg, label.clone())
             }
+            Shape::Mark { kind, span, .. } if ann_dimmed(a) => (
+                span,
+                theme.dimmed,
+                crate::theme::blend(theme.dimmed, theme.bg, 0.12),
+                Some(format!("{} {}", kind.glyph(), kind.legend())),
+            ),
             Shape::Mark { kind, span, label } => (
                 span,
                 theme.mark_color(*kind),
@@ -823,6 +885,63 @@ mod tests {
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 90);
         }
+    }
+
+    #[test]
+    fn spotlight_dims_code_and_other_annotations() {
+        let mut d = doc();
+        d.add(Annotation {
+            id: "s1".into(),
+            step: 3,
+            color: None,
+            shape: Shape::Spotlight {
+                from_line: Some(7),
+                to_line: Some(9),
+                ids: vec!["a3".into()],
+                until: None,
+            },
+        })
+        .unwrap();
+        let th = Theme::dark();
+        let on = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 90,
+                step: 3,
+                ..Default::default()
+            },
+        );
+        let off = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 90,
+                step: 4,
+                ..Default::default()
+            },
+        );
+        let fg_at = |l: &Layout, line: u32| {
+            let y = l.row_of_line[&line];
+            l.canvas.get(l.code_x + 4, y).unwrap().style.fg
+        };
+        assert_eq!(
+            fg_at(&on, 2),
+            Some(th.dimmed),
+            "fuera del spotlight se atenúa"
+        );
+        assert_ne!(fg_at(&on, 7), Some(th.dimmed), "dentro del spotlight no");
+        assert_ne!(fg_at(&off, 2), Some(th.dimmed), "en el paso 4 ya no aplica");
+        // La nota a4 (no incluida en ids) se dibuja atenuada; la caja a3 conserva su color.
+        let text = on.canvas.to_plain_text();
+        assert!(text.contains("takes"));
+        let y_note = on.row_of_line[&4];
+        let note_cell = (0..on.canvas.width)
+            .rev()
+            .filter_map(|x| on.canvas.get(x, y_note))
+            .find(|c| c.sym == "┆")
+            .unwrap();
+        assert_eq!(note_cell.style.fg, Some(th.dimmed));
     }
 
     #[test]

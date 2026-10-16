@@ -5,6 +5,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/); vers
 ## [Unreleased]
 
 ### Añadido
+- Anotación `spotlight`: un paso que dirige la atención atenuando el código fuera de un rango y/o las anotaciones fuera de un grupo (`:spot`, `:until`, `add_spotlight`, `annotation.add` con `type: spotlight`). El ejemplo de ownership intercala dos.
 - `code` como objeto `{"file", "lines"}` con rutas absolutas o relativas al `.codedraw`; los sidecars referencian al fuente por defecto. `:embed` y `:link`.
 - Paso 0 = solo el código: `p` desde el paso 1, `:step 0`, `--step 0` o `set_step 0` muestran el código sin anotaciones. El ejemplo de ownership arranca así.
 - Vaciar anotaciones de golpe: `:clear [N|.]`, método `scene.clear` y herramienta MCP `clear_annotations`; reversible con `u`.

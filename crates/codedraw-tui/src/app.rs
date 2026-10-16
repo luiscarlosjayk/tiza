@@ -235,6 +235,7 @@ impl App {
                         *text = l;
                     }
                 }
+                Shape::Spotlight { .. } => {}
             }
         }
         self.history.record(&self.doc);
@@ -366,6 +367,29 @@ impl App {
                     self.doc.reference_file(file.clone(), range);
                     self.touch();
                     Ok(format!("el .codedraw ahora referencia {file}"))
+                }
+                "spot" | "spotlight" => self.cmd_spot(rest),
+                "until" => {
+                    let (id, n) = split_first(rest);
+                    let n: u32 = n.parse().map_err(|_| {
+                        Error::Invalid(
+                            "uso: :until ID N   (último paso en que el spotlight sigue activo)"
+                                .into(),
+                        )
+                    })?;
+                    let mut ann = self
+                        .doc
+                        .find_annotation(id)
+                        .cloned()
+                        .ok_or_else(|| Error::NotFound(id.to_string()))?;
+                    let Shape::Spotlight { until, .. } = &mut ann.shape else {
+                        return Err(Error::Invalid(format!("{id} no es un spotlight")));
+                    };
+                    *until = Some(n.max(ann.step));
+                    self.history.record(&self.doc);
+                    self.doc.update(ann)?;
+                    self.touch();
+                    Ok(format!("{id} activo hasta el paso {n}"))
                 }
                 "clear" => {
                     let step = match rest.trim() {
@@ -628,6 +652,37 @@ impl App {
             },
         )?;
         Ok(format!("{id}: {} en L{}", kind.legend(), span.line))
+    }
+
+    /// `:spot 7-12`, `:spot a2 a3`, `:spot 7-12 a2 a3`. Activo solo en el paso actual
+    /// (`:until ID N` lo extiende).
+    fn cmd_spot(&mut self, rest: &str) -> Result<String, Error> {
+        let mut range: Option<(u32, u32)> = None;
+        let mut ids = Vec::new();
+        for tok in rest.split_whitespace() {
+            if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                range = Some(parse_range(tok)?);
+            } else {
+                ids.push(tok.to_string());
+            }
+        }
+        if range.is_none() && ids.is_empty() {
+            return Err(Error::Invalid("uso: :spot A-B [ID…]  |  :spot ID…".into()));
+        }
+        let id = self.add_annotation(
+            None,
+            None,
+            Shape::Spotlight {
+                from_line: range.map(|r| r.0),
+                to_line: range.map(|r| r.1),
+                ids,
+                until: None,
+            },
+        )?;
+        Ok(format!(
+            "{id}: spotlight en el paso {}",
+            self.doc.step.max(1)
+        ))
     }
 
     fn cmd_note(&mut self, rest: &str) -> Result<String, Error> {
@@ -936,6 +991,18 @@ mod tests {
         a.run_command("note . aquí empieza");
         assert_eq!(a.doc.annotations.len(), 4);
         assert!(matches!(a.message, Some((_, false))));
+        a.run_command("spot 2-3 a1");
+        assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
+        assert!(matches!(
+            a.doc.annotations.last().unwrap().shape,
+            Shape::Spotlight { .. }
+        ));
+        a.run_command("spot zz9");
+        assert!(
+            matches!(a.message, Some((_, true))),
+            "id inexistente debe fallar"
+        );
+        a.run_command("del a5");
         a.run_command("color a2 blue");
         assert_eq!(a.doc.annotations[1].color.as_deref(), Some("blue"));
         a.run_command("color a2 fucsia");

@@ -138,6 +138,16 @@ pub enum ShapeSpec {
         line: u32,
         text: String,
     },
+    Spotlight {
+        #[serde(default)]
+        from_line: Option<u32>,
+        #[serde(default)]
+        to_line: Option<u32>,
+        #[serde(default)]
+        ids: Vec<String>,
+        #[serde(default)]
+        until: Option<u32>,
+    },
 }
 
 impl ShapeSpec {
@@ -169,6 +179,17 @@ impl ShapeSpec {
             ShapeSpec::Note { line, text } => Shape::Note {
                 line: *line,
                 text: text.clone(),
+            },
+            ShapeSpec::Spotlight {
+                from_line,
+                to_line,
+                ids,
+                until,
+            } => Shape::Spotlight {
+                from_line: *from_line,
+                to_line: to_line.or(*from_line),
+                ids: ids.clone(),
+                until: *until,
             },
         })
     }
@@ -334,5 +355,24 @@ pub fn describe(a: &Annotation) -> String {
         Shape::Note { line, text } => {
             format!("{} [paso {}] note L{} «{}»", a.id, a.step, line, text)
         }
+        Shape::Spotlight {
+            from_line,
+            to_line,
+            ids,
+            until,
+        } => format!(
+            "{} [paso {}{}] spotlight{}{}",
+            a.id,
+            a.step,
+            until.map(|u| format!("-{u}")).unwrap_or_default(),
+            from_line
+                .map(|f| format!(" L{}-{}", f, to_line.unwrap_or(f)))
+                .unwrap_or_default(),
+            if ids.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", ids.join(" "))
+            }
+        ),
     }
 }
