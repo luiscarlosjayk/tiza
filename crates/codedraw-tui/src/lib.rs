@@ -3,6 +3,7 @@
 pub mod app;
 pub mod follow;
 pub mod ipc;
+pub mod reanchor;
 pub mod ui;
 
 use std::io;

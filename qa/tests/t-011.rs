@@ -21,7 +21,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use codedraw_core::Document;
-use codedraw_qa::{Live, McpClient, scratch};
+use codedraw_core::model::Shape;
+use codedraw_qa::{Live, McpClient, fixture, scratch};
 use crossterm::event::KeyCode;
 use serde_json::json;
 
@@ -435,4 +436,214 @@ fn corner_editing_one_edge_line_of_a_box_keeps_it() {
     save_like_zed(&src, "fn other() {}\n");
     wait_reloads(&live, 2);
     assert_eq!(live.with(|app| app.doc.annotations.len()), 0);
+}
+
+// ---------- repeated lines: the nearest copy, never the first ----------
+
+fn repeated_fixture(name: &str) -> (Live, PathBuf, String) {
+    let code = std::fs::read_to_string(fixture("t-011/repeated.rs")).unwrap();
+    let (live, src) = followed(name, &code);
+    (live, src, code)
+}
+
+/// Lines (1-based) of the annotation `id`, whatever its kind.
+fn lines_of(live: &Live, id: &str) -> Option<(u32, u32)> {
+    let id = id.to_string();
+    live.with(move |app| {
+        app.doc
+            .annotations
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| match &a.shape {
+                Shape::Box {
+                    from_line, to_line, ..
+                } => (*from_line, *to_line),
+                Shape::Note { line, .. } => (*line, *line),
+                Shape::Highlight { span, .. } | Shape::Mark { span, .. } => (span.line, span.line),
+                Shape::Arrow { from, to, .. } => (from.line, to.line),
+                Shape::Callout {
+                    from_line, to_line, ..
+                } => (*from_line, to_line.unwrap_or(*from_line)),
+                Shape::Spotlight {
+                    from_line, to_line, ..
+                } => (from_line.unwrap_or(0), to_line.unwrap_or(0)),
+            })
+    })
+}
+
+#[test]
+fn step10_second_brace_and_second_fn_new_stay_on_their_copy() {
+    let (live, src, code) = repeated_fixture("t011-repeated");
+    // Line 9 is the second `}` (closing `impl Stack`); line 16 the second `fn new`.
+    assert_eq!(code.lines().nth(8).unwrap(), "}");
+    assert_eq!(code.lines().nth(15).unwrap(), "    fn new() -> Self {");
+    live.command("note 9 end of impl Stack");
+    live.command("hl 16:new second new");
+    live.command("box 15-18 queue ctor");
+    live.command("follow on");
+
+    save_like_zed(&src, &format!("// 1\n// 2\n// 3\n// 4\n{code}"));
+    wait_reloads(&live, 1);
+    assert_eq!(
+        lines_of(&live, "a1"),
+        Some((13, 13)),
+        "{:?}",
+        live.message()
+    );
+    assert_eq!(
+        lines_of(&live, "a2"),
+        Some((20, 20)),
+        "{:?}",
+        live.message()
+    );
+    assert_eq!(
+        lines_of(&live, "a3"),
+        Some((19, 22)),
+        "{:?}",
+        live.message()
+    );
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "main.rs reloaded (#1): 3 annotations kept");
+}
+
+#[test]
+fn step11_deleting_a_neighbour_keeps_the_copy_deleting_the_copy_drops_it() {
+    let (live, src, code) = repeated_fixture("t011-repeated2");
+    live.command("note 9 end of impl Stack");
+    live.command("follow on");
+
+    // Delete line 8 (the `}` closing `fn new`): the note is still on the brace
+    // that closes `impl Stack`, now line 8 — not on line 3 or line 17.
+    let mut lines: Vec<&str> = code.lines().collect();
+    lines.remove(7);
+    save_like_zed(&src, &(lines.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    assert_eq!(lines_of(&live, "a1"), Some((8, 8)), "{:?}", live.message());
+
+    // Delete the annotated copy itself (the whole `impl Stack` block): dropped.
+    let without: Vec<&str> = code
+        .lines()
+        .enumerate()
+        .filter(|(i, _)| !(4..9).contains(i))
+        .map(|(_, l)| l)
+        .collect();
+    save_like_zed(&src, &(without.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("1 dropped"), "{msg}");
+    assert_eq!(lines_of(&live, "a1"), None);
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(lines_of(&live, "a1"), Some((8, 8)), "u restores the note");
+}
+
+#[test]
+fn corner_same_word_twice_in_a_line_keeps_the_occurrence() {
+    let (live, src) = followed(
+        "t011-occurrence",
+        "fn f(s: &str) {\n    takes(s, s.len());\n}\n",
+    );
+    live.command("hl 2:s second s");
+    // The second `s` is at column 13: `hl L:text` finds the first one, so move it.
+    live.with(|app| {
+        app.run_command("set a1 label=second");
+        let a = app
+            .doc
+            .annotations
+            .iter_mut()
+            .find(|a| a.id == "a1")
+            .unwrap();
+        if let Shape::Highlight { span, .. } = &mut a.shape {
+            span.start = 13;
+            span.end = 14;
+        }
+    });
+    live.command("follow on");
+    // The line is edited in place; the second `s` is still there (col 21).
+    save_like_zed(&src, "fn f(s: &str) {\n    takes(s.clone(), s.len());\n}\n");
+    wait_reloads(&live, 1);
+    let span = live.with(|app| match &app.doc.annotations[0].shape {
+        Shape::Highlight { span, .. } => *span,
+        _ => unreachable!(),
+    });
+    assert_eq!((span.line, span.start, span.end), (2, 21, 22));
+    // The occurrence disappears: dropped, never moved to the remaining `s`.
+    save_like_zed(&src, "fn f(s: &str) {\n    takes(s.clone());\n}\n");
+    wait_reloads(&live, 2);
+    assert_eq!(live.with(|app| app.doc.annotations.len()), 0);
+    assert!(live.message().unwrap().0.contains("1 dropped"));
+}
+
+#[test]
+fn corner_far_copy_counts_as_gone() {
+    // A `}` at the top and the annotated `}` 60 lines below; the second is
+    // deleted. The first is beyond MAX_DISTANCE (50) → dropped, not moved.
+    let filler: String = (0..60).map(|i| format!("// line {i}\n")).collect();
+    let code = format!("}}\n{filler}}}\n// end\n");
+    let (live, src) = followed("t011-far", &code);
+    live.command("note 62 closes");
+    live.command("follow on");
+    save_like_zed(&src, &format!("}}\n{filler}// end\n"));
+    wait_reloads(&live, 1);
+    assert_eq!(
+        live.with(|app| app.doc.annotations.len()),
+        0,
+        "{:?}",
+        live.message()
+    );
+    assert_eq!(codedraw_tui::reanchor::MAX_DISTANCE, 50, "documented value");
+}
+
+#[test]
+fn step12_random_edits_above_keep_a_unique_line_and_never_panic() {
+    use codedraw_tui::reanchor::Remap;
+    use proptest::prelude::*;
+
+    let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig {
+        cases: 300,
+        ..ProptestConfig::default()
+    });
+    let strategy = (
+        proptest::collection::vec("[a-c }]{0,6}", 1..30),
+        proptest::collection::vec(any::<bool>(), 0..30),
+        1u32..30,
+    );
+    runner
+        .run(&strategy, |(lines, ops, pick)| {
+            let old = Document::from_code(&(lines.join("\n") + "\n"), "rs", None);
+            let target = (pick % lines.len() as u32) + 1;
+            // Random insertions/deletions strictly above the target line.
+            let mut new_lines: Vec<String> = lines.clone();
+            let mut shift: i64 = 0;
+            for (i, op) in ops.iter().enumerate() {
+                let at = i % (target as usize);
+                if at >= (target as i64 + shift - 1).max(0) as usize {
+                    continue;
+                }
+                if *op {
+                    new_lines.insert(at, format!("// inserted {i}"));
+                    shift += 1;
+                } else if new_lines.len() > 1 && (new_lines.len() as i64) > target as i64 + shift {
+                    new_lines.remove(at);
+                    shift -= 1;
+                }
+            }
+            let new = Document::from_code(&(new_lines.join("\n") + "\n"), "rs", None);
+            let mut r = Remap::new(&old, &new);
+            let got = r.line(target);
+            let text = lines[target as usize - 1].trim();
+            let unique = !text.is_empty() && lines.iter().filter(|l| l.trim() == text).count() == 1;
+            if unique && shift.unsigned_abs() <= 50 {
+                let expected = (target as i64 + shift) as u32;
+                prop_assert_eq!(
+                    got,
+                    Some(expected),
+                    "unique line follows the edits above it"
+                );
+            }
+            if let Some(l) = got {
+                prop_assert!(new.has_line(l));
+            }
+            Ok(())
+        })
+        .unwrap();
 }

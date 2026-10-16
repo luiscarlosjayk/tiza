@@ -420,19 +420,21 @@ impl App {
         }
         let lang = self.doc.source.language.clone();
         let d = Document::from_code(text, lang, None);
-        let (kept, dropped) = self.apply_new_code(d.code, d.code_src, d.source.first_line);
+        let out = self.apply_new_code(d.code, d.code_src, d.source.first_line);
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
-        if dropped > 0 {
+        if out.dropped > 0 {
             self.info(format!(
-                "{} lines pasted; {dropped} annotation{} dropped (their text is gone; u undoes)",
+                "{} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
                 self.doc.code.len(),
-                if dropped == 1 { "" } else { "s" }
+                out.dropped,
+                if out.dropped == 1 { "" } else { "s" }
             ));
         } else {
             self.info(format!(
-                "{} lines pasted ({kept} annotations kept)",
-                self.doc.code.len()
+                "{} lines pasted ({} annotations kept)",
+                self.doc.code.len(),
+                out.kept
             ));
         }
         Ok(())
@@ -445,7 +447,7 @@ impl App {
         code: Vec<String>,
         code_src: codedraw_core::model::CodeSource,
         first_line: u32,
-    ) -> (usize, usize) {
+    ) -> crate::reanchor::Outcome {
         self.history.record(&self.doc);
         let mut d = self.doc.clone();
         d.annotations.clear();
@@ -454,8 +456,14 @@ impl App {
         d.source.first_line = first_line;
         let before = self.doc.annotations.len();
         let old = self.doc.clone();
-        for a in &old.annotations {
-            if let Some(shape) = reanchor(&old, &d, &a.shape)
+        let mut remap = crate::reanchor::Remap::new(&old, &d);
+        let shapes: Vec<Option<Shape>> = old
+            .annotations
+            .iter()
+            .map(|a| remap.shape(&a.shape))
+            .collect();
+        for (a, shape) in old.annotations.iter().zip(shapes) {
+            if let Some(shape) = shape
                 && d.validate_shape(&shape).is_ok()
             {
                 let _ = d.add(Annotation { shape, ..a.clone() });
@@ -466,7 +474,10 @@ impl App {
         self.selected = None;
         self.clamp_cursor();
         self.touch();
-        (kept, before - kept)
+        crate::reanchor::Outcome {
+            kept,
+            dropped: before - kept,
+        }
     }
 
     fn clamp_cursor(&mut self) {
@@ -574,12 +585,13 @@ impl App {
         let reloads = f.reloads;
         let code_src = self.doc.code_src.clone();
         let first = self.doc.source.first_line;
-        let (kept, dropped) = self.apply_new_code(new, code_src, first);
+        let out = self.apply_new_code(new, code_src, first);
         self.info(format!(
-            "{name} reloaded (#{reloads}): {kept} annotation{} kept{}",
-            if kept == 1 { "" } else { "s" },
-            if dropped > 0 {
-                format!(", {dropped} dropped (text gone; u undoes)")
+            "{name} reloaded (#{reloads}): {} annotation{} kept{}",
+            out.kept,
+            if out.kept == 1 { "" } else { "s" },
+            if out.dropped > 0 {
+                format!(", {} dropped (text gone; u undoes)", out.dropped)
             } else {
                 String::new()
             }
@@ -632,7 +644,7 @@ impl App {
     }
 
     /// Word classes for `w`/`b`/`e`: identifier chars, punctuation runs, whitespace.
-    fn word_class(g: &str) -> u8 {
+    pub(crate) fn word_class(g: &str) -> u8 {
         let c = g.chars().next().unwrap_or(' ');
         if c.is_alphanumeric() || c == '_' {
             1
@@ -2133,199 +2145,6 @@ fn opt(s: &str) -> Option<String> {
     } else {
         Some(s.to_string())
     }
-}
-
-/// `key=value key2="value with spaces"` → pairs. Unquoted values end at whitespace.
-/// The word (same character class) around grapheme `col` of `line`.
-fn word_span(doc: &Document, line: u32, col: u32) -> Option<codedraw_core::model::TextSpan> {
-    use unicode_segmentation::UnicodeSegmentation;
-    let text = doc.line_text(line)?;
-    let gs: Vec<&str> = text.graphemes(true).collect();
-    if gs.is_empty() {
-        return None;
-    }
-    let i = (col as usize).min(gs.len() - 1);
-    let cls = App::word_class(gs[i]);
-    let mut a = i;
-    while a > 0 && App::word_class(gs[a - 1]) == cls {
-        a -= 1;
-    }
-    let mut b = i;
-    while b + 1 < gs.len() && App::word_class(gs[b + 1]) == cls {
-        b += 1;
-    }
-    Some(codedraw_core::model::TextSpan {
-        line,
-        start: a as u32,
-        end: b as u32 + 1,
-    })
-}
-
-/// Text of `span` in `doc` (graphemes `start..end` of its line).
-fn span_text(doc: &Document, span: &codedraw_core::model::TextSpan) -> Option<String> {
-    use unicode_segmentation::UnicodeSegmentation;
-    let line = doc.line_text(span.line)?;
-    let g: Vec<&str> = line.graphemes(true).collect();
-    let end = (span.end as usize).min(g.len());
-    let start = (span.start as usize).min(end);
-    Some(g[start..end].concat())
-}
-
-/// Finds `text` in `new`, preferring `line`, then the first occurrence anywhere.
-fn find_in(new: &Document, text: &str, line: u32) -> Option<codedraw_core::model::TextSpan> {
-    if text.trim().is_empty() {
-        return None;
-    }
-    new.find_text(text, 1, Some(line))
-        .or_else(|| new.find_text(text, 1, None))
-}
-
-/// Re-anchors a line (by its full trimmed text) from `old` into `new`.
-fn find_line(old: &Document, new: &Document, line: u32) -> Option<u32> {
-    let text = old.line_text(line)?.trim();
-    if text.is_empty() {
-        return new.has_line(line).then_some(line);
-    }
-    // Whole-line match only (same line first, then anywhere): a substring
-    // match would send a note on `}` to the first line with a brace.
-    (new.line_text(line).map(str::trim) == Some(text))
-        .then_some(line)
-        .or_else(|| {
-            (new.source.first_line..=new.last_line())
-                .find(|&l| new.line_text(l).map(str::trim) == Some(text))
-        })
-}
-
-/// Re-anchors a line range: both edges by text when possible; when only one
-/// edge survives (the presenter edited the other line while the box was
-/// drawn), the range keeps its height from the surviving edge, clamped to
-/// the code. `None` when both edge lines are gone.
-fn find_range(old: &Document, new: &Document, from: u32, to: u32) -> Option<(u32, u32)> {
-    let height = to.saturating_sub(from);
-    let last = new.last_line();
-    let first = new.source.first_line;
-    match (find_line(old, new, from), find_line(old, new, to)) {
-        (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
-        (Some(a), None) => Some((a, (a + height).min(last))),
-        (None, Some(b)) => Some((b.saturating_sub(height).max(first), b)),
-        (None, None) => None,
-    }
-}
-
-/// Re-anchors `shape` from `old` into `new` by the text it pointed at.
-/// `None` when that text no longer exists.
-fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
-    let anchor = |a: &codedraw_core::model::Anchor| -> Option<codedraw_core::model::Anchor> {
-        // The word at the anchor identifies it.
-        let span = word_span(old, a.line, a.col)?;
-        let text = span_text(old, &span)?;
-        let found = find_in(new, &text, a.line)?;
-        Some(codedraw_core::model::Anchor {
-            line: found.line,
-            col: found.start + (a.col.saturating_sub(span.start)),
-        })
-    };
-    Some(match shape {
-        Shape::Highlight { span, label } => Shape::Highlight {
-            span: find_in(new, &span_text(old, span)?, span.line)?,
-            label: label.clone(),
-        },
-        Shape::Mark {
-            kind,
-            span,
-            label,
-            style,
-        } => Shape::Mark {
-            kind: kind.clone(),
-            span: find_in(new, &span_text(old, span)?, span.line)?,
-            label: label.clone(),
-            style: style.clone(),
-        },
-        Shape::Box {
-            from_line,
-            to_line,
-            label,
-            frame,
-        } => {
-            let (a, b) = find_range(old, new, *from_line, *to_line)?;
-            Shape::Box {
-                from_line: a,
-                to_line: b,
-                label: label.clone(),
-                frame: *frame,
-            }
-        }
-        Shape::Arrow {
-            from,
-            to,
-            label,
-            line,
-        } => {
-            let (f, t) = (anchor(from)?, anchor(to)?);
-            // Both ends landing on the same cell means one of them lost its
-            // text and matched the other's: the arrow has nothing to point at.
-            if f == t && from != to {
-                return None;
-            }
-            Shape::Arrow {
-                from: f,
-                to: t,
-                label: label.clone(),
-                line: *line,
-            }
-        }
-        Shape::Note { line, text } => Shape::Note {
-            line: find_line(old, new, *line)?,
-            text: text.clone(),
-        },
-        Shape::Callout {
-            from_line,
-            to_line,
-            text,
-            title,
-            placement,
-            width,
-            frame,
-        } => {
-            let (a, b) = match to_line {
-                Some(t) => {
-                    let (a, b) = find_range(old, new, *from_line, *t)?;
-                    (a, Some(b))
-                }
-                None => (find_line(old, new, *from_line)?, None),
-            };
-            Shape::Callout {
-                from_line: a,
-                to_line: b,
-                text: text.clone(),
-                title: title.clone(),
-                placement: *placement,
-                width: *width,
-                frame: *frame,
-            }
-        }
-        Shape::Spotlight {
-            from_line,
-            to_line,
-            ids,
-            until,
-        } => {
-            let a = match from_line {
-                Some(f) => Some(find_line(old, new, *f)?),
-                None => None,
-            };
-            let b = match to_line {
-                Some(t) => Some(find_line(old, new, *t)?),
-                None => None,
-            };
-            Shape::Spotlight {
-                from_line: a,
-                to_line: b,
-                ids: ids.clone(),
-                until: *until,
-            }
-        }
-    })
 }
 
 /// Splits trailing `key=value` tokens off a free-text argument:
