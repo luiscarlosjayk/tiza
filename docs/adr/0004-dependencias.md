@@ -32,6 +32,7 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | anyhow | 1 | — | MIT/Apache-2.0 | Only in binaries |
 | resvg / usvg / tiny-skia / fontdb | 0.48.1 / 0.48.1 / 0.12 / 0.24 | 2026-10 | MIT/Apache-2.0, BSD-3-Clause (tiny-skia) | Only in `codedraw-export`; `text` + `system-fonts` features, no `raster-images` |
 | schemars | 1.2 | 2026-10 | MIT | JSON Schema of the document and the API (`codedraw-core`), shared with rmcp |
+| jsonschema | 0.59.0 | 2026-10 | MIT | dev-dependency of `codedraw-qa` (validates socket replies against `schema/`) |
 | insta | 1.49.0 | 2026-09 | Apache-2.0 | dev-dependency of `codedraw-qa` (render snapshots) |
 | proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |

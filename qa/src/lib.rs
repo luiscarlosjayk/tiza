@@ -285,3 +285,117 @@ impl Drop for Live {
         }
     }
 }
+
+/// A minimal MCP client over stdio: spawns `codedraw mcp`, performs the
+/// initialize handshake and lets a test call tools one request at a time,
+/// reading each JSON-RPC reply as it arrives (so reconnection and errors can
+/// be observed in order, unlike a one-shot pipe).
+pub struct McpClient {
+    child: std::process::Child,
+    stdin: std::process::ChildStdin,
+    reader: std::io::BufReader<std::process::ChildStdout>,
+    next_id: u64,
+}
+
+impl McpClient {
+    /// Starts `codedraw mcp --socket <socket>` and completes `initialize`.
+    pub fn start(socket: &Path) -> McpClient {
+        use std::io::{BufRead, Write};
+        let mut child = Command::new(bin())
+            .args(["mcp", "--socket", socket.to_str().unwrap()])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn codedraw mcp");
+        let stdin = child.stdin.take().unwrap();
+        let reader = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut c = McpClient {
+            child,
+            stdin,
+            reader,
+            next_id: 1,
+        };
+        let init = c.request(
+            "initialize",
+            serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "codedraw-qa", "version": "0"}}),
+        );
+        assert!(init["result"]["serverInfo"]["name"] == "codedraw", "{init}");
+        c.stdin
+            .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
+            .unwrap();
+        c.stdin.flush().unwrap();
+        let _ = &mut c.reader as &mut dyn BufRead;
+        c
+    }
+
+    /// Sends one JSON-RPC request and returns its reply (notifications are skipped).
+    pub fn request(&mut self, method: &str, params: serde_json::Value) -> serde_json::Value {
+        use std::io::{BufRead, Write};
+        let id = self.next_id;
+        self.next_id += 1;
+        let msg =
+            serde_json::json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params});
+        self.stdin.write_all(msg.to_string().as_bytes()).unwrap();
+        self.stdin.write_all(b"\n").unwrap();
+        self.stdin.flush().unwrap();
+        loop {
+            let mut line = String::new();
+            let n = self
+                .reader
+                .read_line(&mut line)
+                .expect("read from codedraw mcp");
+            assert!(
+                n > 0,
+                "codedraw mcp closed its stdout before answering {method}"
+            );
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
+                && v["id"] == id
+            {
+                return v;
+            }
+        }
+    }
+
+    /// `tools/list` → tool names.
+    pub fn tool_names(&mut self) -> Vec<String> {
+        let v = self.request("tools/list", serde_json::json!({}));
+        v["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect()
+    }
+
+    /// The `tools/list` result in full (names, descriptions, input schemas).
+    pub fn tools(&mut self) -> serde_json::Value {
+        self.request("tools/list", serde_json::json!({}))["result"]["tools"].clone()
+    }
+
+    /// `tools/call` → (is_error, text of the first content block, raw reply).
+    pub fn call(
+        &mut self,
+        name: &str,
+        args: serde_json::Value,
+    ) -> (bool, String, serde_json::Value) {
+        let v = self.request(
+            "tools/call",
+            serde_json::json!({"name": name, "arguments": args}),
+        );
+        let is_error = v["result"]["isError"] == true || !v["error"].is_null();
+        let text = v["result"]["content"][0]["text"]
+            .as_str()
+            .map(str::to_string)
+            .or_else(|| v["error"]["message"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        (is_error, text, v)
+    }
+}
+
+impl Drop for McpClient {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
