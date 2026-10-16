@@ -125,7 +125,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 Style::default().fg(rgb(th.accent)).bg(rgb(th.bg)),
             );
         }
-    } else if app.doc.max_step() > 1 {
+    } else if app.doc.max_step() > 1 || app.doc.step == 0 {
         // Contador de paso discreto en presentación.
         let txt = format!(" {}/{} ", app.doc.step, app.doc.max_step());
         let w = txt.width() as u16;
@@ -292,7 +292,7 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
 fn help_lines() -> Vec<String> {
     [
         "j/k ↑/↓  mover cursor      g/G  inicio/fin      J/K  página",
-        "n/p      paso siguiente/anterior     u / U  deshacer / rehacer",
+        "n/p      paso siguiente/anterior (0 = solo código)   u / U  deshacer / rehacer",
         "t        tema oscuro/claro           P      modo presentación",
         "l        lista de anotaciones        :      línea de comandos",
         "",

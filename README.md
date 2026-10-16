@@ -43,14 +43,14 @@ pbpaste | codedraw --lang rs    # código desde el portapapeles (macOS)
 codedraw examples/ownership.rs.codedraw --present   # abre el demo en modo presentación
 ```
 
-Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` y avanza con `n`.
+Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` arranca con el código limpio; avanza con `n`.
 
 ### Teclas
 
 | Tecla | Acción |
 |---|---|
 | `j`/`k`, `↑`/`↓`, `g`/`G` | mover el cursor de línea |
-| `n` / `p` (o `→`/`←`) | paso siguiente / anterior |
+| `n` / `p` (o `→`/`←`) | paso siguiente / anterior; el paso 0 muestra solo el código |
 | `u` / `U` | deshacer / rehacer |
 | `t` | tema oscuro ⇄ claro (como Excalidraw) |
 | `P` | modo presentación (oculta la UI) |

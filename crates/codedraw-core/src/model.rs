@@ -22,7 +22,8 @@ pub struct Document {
     pub code: Vec<String>,
     #[serde(default)]
     pub annotations: Vec<Annotation>,
-    /// Paso actual de la presentación (1-based).
+    /// Paso actual de la presentación. 0 = solo el código, sin anotaciones;
+    /// las anotaciones van en pasos ≥ 1.
     #[serde(default = "one")]
     pub step: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]

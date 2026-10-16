@@ -250,9 +250,10 @@ impl App {
         }
     }
 
+    /// Cambia el paso actual. El paso 0 es "solo el código": no se dibuja ninguna anotación.
     pub fn set_step(&mut self, step: u32) {
         let max = self.doc.max_step();
-        let s = step.clamp(1, max.max(1));
+        let s = step.min(max.max(1));
         if s != self.doc.step {
             self.doc.step = s;
             self.revision += 1;
@@ -936,7 +937,11 @@ mod tests {
             matches!(a.message, Some((_, true))),
             "texto inexistente debe dar error"
         );
-        assert_eq!(a.doc.annotations.len(), 3, "un error no debe tocar el documento");
+        assert_eq!(
+            a.doc.annotations.len(),
+            3,
+            "un error no debe tocar el documento"
+        );
         a.undo(); // deshace el :step a2 2
         a.undo(); // deshace el :del a1
         assert_eq!(a.doc.annotations.len(), 4);
@@ -959,6 +964,14 @@ mod tests {
             params: Value::Null,
         });
         assert_eq!(resp.result.unwrap()["step"], 2);
+        a.set_step(0);
+        assert_eq!(a.doc.step, 0, "el paso 0 (solo código) es válido");
+        assert!(
+            a.layout(80).rows.len() == a.doc.code.len(),
+            "en el paso 0 no hay filas virtuales"
+        );
+        a.run_command("note . en el paso 0 se crea en el 1");
+        assert_eq!(a.doc.annotations.last().unwrap().step, 1);
         let resp = a.handle_request(Request {
             id: json!("y"),
             method: "annotation.delete".into(),
