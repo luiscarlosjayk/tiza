@@ -434,7 +434,15 @@ impl App {
         }
         let lang = self.doc.source.language.clone();
         let d = Document::from_code(text, lang, None);
+        // Code that was never given a language: a shebang or modeline in
+        // the pasted text picks one. An explicit `:lang`/`--lang` sticks.
+        let detected = (self.doc.source.language == "txt" || self.doc.source.language.is_empty())
+            .then(|| codedraw_core::highlight::language_from_content(&d.code))
+            .flatten();
         let out = self.apply_new_code(d.code, d.code_src, d.source.first_line);
+        if let Some(det) = detected {
+            self.doc.source.language = det.language;
+        }
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
         if out.dropped > 0 {
@@ -1388,13 +1396,36 @@ impl App {
                     })
                 }
                 "lang" => {
+                    use codedraw_core::highlight::{
+                        detect_language, has_grammar, normalize_language,
+                    };
                     if rest.is_empty() {
-                        Ok(format!("language: {}", self.doc.source.language))
-                    } else {
-                        self.doc.source.language =
-                            codedraw_core::highlight::normalize_language(rest);
+                        let l = &self.doc.source.language;
+                        return Ok(if has_grammar(l) {
+                            format!("language: {l} (:lang auto re-detects, :lang <id> overrides)")
+                        } else {
+                            format!("language: {l} (plain text; :lang <id> to set one)")
+                        });
+                    }
+                    if rest == "auto" {
+                        let d = detect_language(self.doc.source.path.as_deref(), &self.doc.code);
+                        self.doc.source.language = d.language;
                         self.touch();
-                        Ok(format!("language: {}", self.doc.source.language))
+                        return Ok(format!(
+                            "language: {} ({})",
+                            self.doc.source.language,
+                            d.via.label()
+                        ));
+                    }
+                    let lang = normalize_language(rest);
+                    self.doc.source.language = lang.clone();
+                    self.touch();
+                    if lang == "txt" || has_grammar(&lang) {
+                        Ok(format!("language: {lang}"))
+                    } else {
+                        Ok(format!(
+                            "language: {lang} (no grammar: shown as plain text; try rs, ts, py, go, toml…)"
+                        ))
                     }
                 }
                 "title" => {

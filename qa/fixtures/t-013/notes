@@ -1,0 +1,6 @@
+alpha = 1
+beta = "two"
+
+[section]
+gamma = true
+# vim: set ft=toml:

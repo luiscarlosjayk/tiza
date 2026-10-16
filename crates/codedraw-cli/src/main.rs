@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand, ValueEnum};
 use codedraw_core::fs;
+use codedraw_core::highlight::{has_grammar, normalize_language};
 use codedraw_core::layout::{LayoutOptions, layout};
 use codedraw_core::socket;
 use codedraw_core::{Theme, ThemeName};
@@ -21,7 +22,7 @@ use codedraw_core::{Theme, ThemeName};
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`), `.codedraw` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
     file: Option<String>,
-    /// Language when it cannot be inferred (rs, ts, py, go…)
+    /// Language override (rs, ts, py, go…); otherwise detected from the extension, file name, shebang or modeline
     #[arg(long)]
     lang: Option<String>,
     /// Initial presentation step
@@ -101,7 +102,7 @@ enum Cmd {
         /// No line numbers
         #[arg(long)]
         no_numbers: bool,
-        /// Language of code read from stdin (`render -`)
+        /// Language override (otherwise detected from the file or its content)
         #[arg(long)]
         lang: Option<String>,
         /// SVG/PNG: font size in px (cells are 0.6 × 1.32 em)
@@ -210,48 +211,51 @@ fn real_main() -> anyhow::Result<()> {
                 }
             });
             // The document: a file, or the live instance's scene.
-            let (doc, step, width) = match &file {
-                Some(f) => {
-                    let opened = if f == "-" {
-                        let mut text = String::new();
-                        std::io::stdin().read_to_string(&mut text)?;
-                        fs::from_stdin(&text, &lang_or_txt(lang.as_deref().or(cli.lang.as_deref())))
-                            .context("could not read the document from stdin")?
-                    } else {
-                        fs::open(f).with_context(|| format!("could not open {f}"))?
-                    };
-                    if let Some(n) = &opened.notice {
-                        eprintln!("codedraw: {n}");
+            let (doc, step, width) =
+                match &file {
+                    Some(f) => {
+                        let mut opened = if f == "-" {
+                            let mut text = String::new();
+                            std::io::stdin().read_to_string(&mut text)?;
+                            fs::from_stdin(&text, None)
+                                .context("could not read the document from stdin")?
+                        } else {
+                            fs::open(f).with_context(|| format!("could not open {f}"))?
+                        };
+                        if let Some(n) = &opened.notice {
+                            eprintln!("codedraw: {n}");
+                        }
+                        override_language(
+                            &mut opened.document,
+                            lang.as_deref().or(cli.lang.as_deref()),
+                        );
+                        (
+                            opened.document,
+                            step.unwrap_or(u32::MAX),
+                            width.unwrap_or(100),
+                        )
                     }
-                    (
-                        opened.document,
-                        step.unwrap_or(u32::MAX),
-                        width.unwrap_or(100),
-                    )
-                }
-                None => {
-                    let mut scene: codedraw_core::protocol::Scene = serde_json::from_value(call(
-                        &socket_path,
-                        "scene.get",
-                        serde_json::json!({}),
-                    )?)
-                    .context("unexpected scene.get response")?;
-                    fs::resolve_code(&mut scene.document, None)
-                        .context("the live document has no code")?;
-                    let status: codedraw_core::protocol::Status = serde_json::from_value(call(
-                        &socket_path,
-                        "status",
-                        serde_json::json!({}),
-                    )?)
-                    .context("unexpected status response")?;
-                    let live_w = (status.cols as usize).saturating_sub(2).max(40);
-                    (
-                        scene.document,
-                        step.unwrap_or(scene.step),
-                        width.unwrap_or(live_w),
-                    )
-                }
-            };
+                    None => {
+                        let mut scene: codedraw_core::protocol::Scene = serde_json::from_value(
+                            call(&socket_path, "scene.get", serde_json::json!({}))?,
+                        )
+                        .context("unexpected scene.get response")?;
+                        fs::resolve_code(&mut scene.document, None)
+                            .context("the live document has no code")?;
+                        let status: codedraw_core::protocol::Status = serde_json::from_value(call(
+                            &socket_path,
+                            "status",
+                            serde_json::json!({}),
+                        )?)
+                        .context("unexpected status response")?;
+                        let live_w = (status.cols as usize).saturating_sub(2).max(40);
+                        (
+                            scene.document,
+                            step.unwrap_or(scene.step),
+                            width.unwrap_or(live_w),
+                        )
+                    }
+                };
             let theme = Theme::from_name(
                 theme
                     .map(Into::into)
@@ -378,9 +382,22 @@ fn call(
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
 }
 
-fn lang_or_txt(lang: Option<&str>) -> String {
-    lang.map(codedraw_core::highlight::normalize_language)
-        .unwrap_or_else(|| "txt".into())
+/// `--lang`: replaces the detected language; warns when no grammar exists.
+fn override_language(doc: &mut codedraw_core::Document, lang: Option<&str>) {
+    if let Some(l) = lang {
+        // A path (`--lang "${ZED_FILE##*.}"` on a file without extension
+        // expands to the whole path): detect from its name and the code.
+        if l.contains('/') || l.contains('\\') {
+            doc.source.language =
+                codedraw_core::highlight::detect_language(Some(l), &doc.code).language;
+            return;
+        }
+        let lang = normalize_language(l);
+        if !has_grammar(&lang) && lang != "txt" {
+            eprintln!("codedraw: no grammar for `{lang}`; the code is shown as plain text");
+        }
+        doc.source.language = lang;
+    }
 }
 
 fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
@@ -394,14 +411,11 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             }
             let mut text = String::new();
             std::io::stdin().read_to_string(&mut text)?;
-            fs::from_stdin(&text, &lang_or_txt(cli.lang.as_deref()))
-                .map_err(|e| anyhow::anyhow!("{e}"))?
+            fs::from_stdin(&text, None).map_err(|e| anyhow::anyhow!("{e}"))?
         }
     };
     let mut opened = opened;
-    if let Some(l) = &cli.lang {
-        opened.document.source.language = codedraw_core::highlight::normalize_language(l);
-    }
+    override_language(&mut opened.document, cli.lang.as_deref());
     // `--padding` is for this session: it is not written into the document.
     let padding = match &cli.padding {
         Some(pad) => {

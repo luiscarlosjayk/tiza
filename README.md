@@ -44,7 +44,7 @@ cargo install --git https://github.com/luiscarlosjayk/codedraw codedraw-cli
 codedraw src/main.rs            # open a file
 codedraw src/main.rs:12-48      # only a range of lines (numbering is preserved)
 codedraw src/main.rs --follow   # reload when the file is saved in the editor; annotations follow their text
-pbpaste | codedraw --lang rs    # code from the clipboard (macOS)
+pbpaste | codedraw              # code from the clipboard (macOS); --lang rs when it cannot be guessed
 codedraw examples/ownership.rs.codedraw --present   # open the demo in presentation mode
 ```
 
@@ -89,9 +89,11 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :spot 15-17 a2 a3   :spot a6 a7      spotlight: in this step everything but those lines/annotations is dimmed
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
-:theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
+:theme light   :lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
 ```
+
+The language is detected from the file extension, then well-known names (`Makefile`, `Dockerfile`, `Cargo.lock`, `.bashrc`…), then a `#!` line, then a Vim/Emacs modeline in the first or last five lines; pasted or piped code uses the same shebang/modeline rule. `--lang` and `:lang <id>` override it (saved in the document); `:lang auto` re-detects and says how; an id without a grammar is shown as plain text with a warning.
 
 New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Arrow strokes and heads are yours too: dashed for a shared borrow, thick for a move, `heads=none,none` for a plain connector — the ownership example does exactly that. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
 

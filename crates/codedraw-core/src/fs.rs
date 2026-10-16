@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::error::Error;
-use crate::highlight::language_from_path;
+use crate::highlight::detect_language;
 use crate::model::{CodeSource, Document, SCHEMA_VERSION};
 
 pub const EXT: &str = "codedraw";
@@ -127,11 +127,9 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         });
     }
     let text = std::fs::read_to_string(&path)?;
-    let mut document = Document::from_code(
-        &text,
-        language_from_path(&path.to_string_lossy()),
-        Some(path.to_string_lossy().into_owned()),
-    );
+    let mut document = Document::from_code(&text, "", Some(path.to_string_lossy().into_owned()));
+    document.source.language =
+        detect_language(Some(&path.to_string_lossy()), &document.code).language;
     let mut notice = None;
     let range = range.map(|(a, b)| {
         let last = document.code.len() as u32;
@@ -172,10 +170,10 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
     })
 }
 
-/// Creates a document from text read on stdin (no path).
 /// Opens what came through stdin (`-`): a `.codedraw` document when the text
-/// is JSON with a `schema` field, otherwise code in `language`.
-pub fn from_stdin(text: &str, language: &str) -> Result<Opened, Error> {
+/// is JSON with a `schema` field, otherwise code in `language` (`None`:
+/// detected from a shebang or modeline, else plain text).
+pub fn from_stdin(text: &str, language: Option<&str>) -> Result<Opened, Error> {
     let trimmed = text.trim_start_matches('\u{feff}').trim_start();
     if trimmed.starts_with('{') && trimmed.contains("\"schema\"") {
         let document = parse_document(text, std::env::current_dir().ok().as_deref())?;
@@ -193,8 +191,12 @@ pub fn from_stdin(text: &str, language: &str) -> Result<Opened, Error> {
     Ok(from_stdin_text(text, language))
 }
 
-pub fn from_stdin_text(text: &str, language: &str) -> Opened {
-    let document = Document::from_code(text, language, None);
+/// Creates a document from text read on stdin (no path).
+pub fn from_stdin_text(text: &str, language: Option<&str>) -> Opened {
+    let mut document = Document::from_code(text, language.unwrap_or(""), None);
+    if language.is_none() {
+        document.source.language = detect_language(None, &document.code).language;
+    }
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -322,7 +324,8 @@ fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(),
                 doc.source.path = Some(full.to_string_lossy().into_owned());
             }
             if doc.source.language.is_empty() {
-                doc.source.language = language_from_path(&full.to_string_lossy());
+                doc.source.language =
+                    detect_language(Some(&full.to_string_lossy()), &doc.code).language;
             }
         }
     }

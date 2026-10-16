@@ -606,7 +606,7 @@ fn help_lines() -> Vec<String> {
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
-        "  :focus A-B | :focus     :theme dark|light     :lang rs     :title text",
+        "  :focus A-B | :focus     :theme dark|light     :lang rs | :lang auto     :title text",
         "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
         "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
