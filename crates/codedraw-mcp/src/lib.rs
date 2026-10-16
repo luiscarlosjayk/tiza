@@ -197,7 +197,7 @@ pub struct CalloutParams {
     #[schemars(description = "Short title embedded in the top border")]
     pub title: Option<String>,
     #[schemars(
-        description = "margin (default: right margin, aligned with from_line), below (own rows under to_line) or auto"
+        description = "margin (default: right margin, aligned with from_line), below (own rows under to_line; drawn inside a box only when the box contains the whole range, otherwise after its bottom border) or auto"
     )]
     pub placement: Option<String>,
     #[schemars(

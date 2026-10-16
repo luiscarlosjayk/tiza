@@ -7,6 +7,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Changed
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
+### Fixed
+- A callout placed below is drawn inside a box only when the box contains its whole range; a callout wider than the box (e.g. one that sums up several functions) now goes after the box's bottom border, without the box's rail or background. The ownership example's `move` mark on line 3 points at the argument `s` instead of the `s` in `takes`.
+
 ### Added
 - SVG and PNG export (`codedraw render FILE --out x.svg|x.png`, `--step`, `--theme`, `--scale`, `--font-size`, `--margin`, `--radius`, `--no-embed-fonts`, `--system-fonts`). Without FILE it exports what the live instance is showing. MCP tool `export_image`. Fonts (JetBrains Mono + a symbols fallback) are embedded in the binary and in the SVG, so the image looks the same everywhere. New crate `codedraw-export`.
 - `scene.get` sends the code embedded, so clients in another directory can render the live document.

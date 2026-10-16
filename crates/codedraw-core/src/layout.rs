@@ -396,26 +396,37 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             }
         }
 
-        for (ci, c) in callouts.iter().enumerate() {
-            if !c.below {
-                continue;
-            }
-            let Shape::Callout {
-                from_line, to_line, ..
-            } = &vis[c.idx].shape
-            else {
-                continue;
-            };
-            if to_line.unwrap_or(*from_line) == line {
-                for k in 0..c.lines.len() + 2 {
-                    rows.push(Row::Callout(ci, k));
-                }
-            }
-        }
-
+        // Callouts placed below end their range on this line. A box absorbs
+        // the callout's rows only when the box contains the callout's whole
+        // range; otherwise the rows go after that box's bottom border, so the
+        // callout is not read as belonging to the box. Nested boxes ending
+        // here follow the same rule one by one (innermost first).
         let mut bottoms: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].to == line).collect();
         bottoms.sort_by_key(|&i| std::cmp::Reverse(boxes[i].depth));
-        rows.extend(bottoms.into_iter().map(Row::BoxBottom));
+        let mut here: Vec<(u32, usize)> = callouts
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| c.below)
+            .filter_map(|(ci, c)| match &vis[c.idx].shape {
+                Shape::Callout {
+                    from_line, to_line, ..
+                } if to_line.unwrap_or(*from_line) == line => Some((*from_line, ci)),
+                _ => None,
+            })
+            .collect();
+        // Narrowest range first: it sits inside more boxes.
+        here.sort_by_key(|&(from, _)| std::cmp::Reverse(from));
+        let mut emitted = 0;
+        for (from, ci) in here {
+            while emitted < bottoms.len() && boxes[bottoms[emitted]].from > from {
+                rows.push(Row::BoxBottom(bottoms[emitted]));
+                emitted += 1;
+            }
+            for k in 0..callouts[ci].lines.len() + 2 {
+                rows.push(Row::Callout(ci, k));
+            }
+        }
+        rows.extend(bottoms[emitted..].iter().map(|&i| Row::BoxBottom(i)));
     }
 
     // ---- arrow lanes (in row space) ----
@@ -1438,6 +1449,93 @@ mod tests {
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
         }
+    }
+
+    #[test]
+    fn callout_wider_than_the_box_is_drawn_after_its_bottom_border() {
+        // Box L2-3, callout L1-3: the callout explains more than the box.
+        let mut d = callout_doc(Placement::Below);
+        d.update(Annotation {
+            id: "c1".into(),
+            step: 1,
+            color: Some("cyan".into()),
+            shape: Shape::Callout {
+                from_line: 1,
+                to_line: Some(3),
+                text: "main as a whole: s is created and then moved.".into(),
+                title: Some("whole main".into()),
+                placement: Placement::Below,
+                width: None,
+            },
+        })
+        .unwrap();
+        let th = Theme::dark();
+        let l = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        let callout_rows: Vec<usize> = l
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| matches!(r, Row::Callout(..)))
+            .map(|(y, _)| y)
+            .collect();
+        let box_bottom = l
+            .rows
+            .iter()
+            .position(|r| matches!(r, Row::BoxBottom(_)))
+            .unwrap();
+        assert!(
+            box_bottom < callout_rows[0],
+            "box closes before the callout: bottom at {box_bottom}, callout at {callout_rows:?}"
+        );
+        assert!(*callout_rows.last().unwrap() < l.row_of_line[&4]);
+        // No box rail on the callout rows: the block itself is the first thing drawn.
+        let (first, last) = (callout_rows[0], *callout_rows.last().unwrap());
+        for &y in &callout_rows {
+            let row = l.canvas.row_text(y);
+            let want = if y == first {
+                '╭'
+            } else if y == last {
+                '╰'
+            } else {
+                '│'
+            };
+            assert_eq!(
+                row.trim_start().chars().next(),
+                Some(want),
+                "row {y}: {row}"
+            );
+            assert!(!row.contains("│  ╭"), "row {y} carries a box rail: {row}");
+        }
+        // The narrower case (t-092's test) is unchanged: callout inside the box.
+        let inside = layout(
+            &callout_doc(Placement::Below),
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let bb = inside
+            .rows
+            .iter()
+            .position(|r| matches!(r, Row::BoxBottom(_)))
+            .unwrap();
+        assert!(
+            inside.rows[..bb]
+                .iter()
+                .any(|r| matches!(r, Row::Callout(..)))
+        );
     }
 
     #[test]
