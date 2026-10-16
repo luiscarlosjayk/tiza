@@ -244,6 +244,17 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             Span::styled(input.as_str(), cmd),
         ]);
         frame.render_widget(Paragraph::new(line), area);
+        if let Some((m, _)) = &app.message {
+            let w = m.width() as u16;
+            if area.width > input.width() as u16 + 4 + w {
+                frame.buffer_mut().set_string(
+                    area.x + area.width - w - 1,
+                    area.y,
+                    m,
+                    Style::default().fg(rgb(th.muted)).bg(rgb(th.cmd_bg)),
+                );
+            }
+        }
         frame.set_cursor_position((area.x + 1 + input.width() as u16, area.y));
         return;
     }
@@ -298,6 +309,13 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             } else {
                 bar
             },
+        )],
+        None if app.selected.is_some() => vec![Span::styled(
+            format!(
+                "▸ {}   Enter label  x delete  c color  +/- step  Tab next  Esc ",
+                app.selected_text().unwrap_or_default()
+            ),
+            accent,
         )],
         None => vec![Span::styled(
             if matches!(app.mode, Mode::Select { .. }) {
@@ -368,6 +386,7 @@ fn help_lines() -> Vec<String> {
     [
         "j/k ↑/↓ line   h/l ←/→ column   w/b/e words   0/$ line start/end   g/G   J/K page",
         "v  select text   V  select lines   i  select the word under the cursor   Esc  cancel",
+        "Tab/Shift-Tab  select an annotation: Enter edit label  x delete  c color  +/- move step  Esc",
         "  with a selection:  h highlight   m mark (then type KIND [label])   n note   b box",
         "                     a arrow (select source, a, select target, a)   s spotlight",
         "n/p      next/previous step (0 = code only)   u / U  undo / redo",

@@ -55,8 +55,13 @@ pub struct App {
     pub cursor_col: u32,
     /// Selection captured when a `v`/`V` action opened the command line; commands may use it.
     pub pending_sel: Option<Selection>,
+    /// Command-line history (most recent last) and the index while browsing it.
+    pub history_cmds: Vec<String>,
+    pub history_pos: Option<usize>,
     /// First end of an arrow being built with `a` (select → a → select → a).
     pub arrow_from: Option<codedraw_core::Anchor>,
+    /// Annotation selected with Tab (its id), for quick edits.
+    pub selected: Option<String>,
     pub scroll: usize,
     pub message: Option<(String, bool)>,
     pub revision: u64,
@@ -83,7 +88,10 @@ impl App {
             cursor_line,
             cursor_col: 0,
             pending_sel: None,
+            history_cmds: Vec::new(),
+            history_pos: None,
             arrow_from: None,
+            selected: None,
             scroll: 0,
             message: None,
             revision: 1,
@@ -577,6 +585,197 @@ impl App {
         true
     }
 
+    /// Visible annotations in reading order (first line, then id).
+    fn visible_ids(&self) -> Vec<String> {
+        let mut v: Vec<(u32, String)> = self
+            .doc
+            .annotations
+            .iter()
+            .filter(|a| a.step <= self.doc.step.max(1))
+            .map(|a| {
+                let first = a.shape.line_ranges().first().map(|r| r.0).unwrap_or(0);
+                (first, a.id.clone())
+            })
+            .collect();
+        v.sort();
+        v.into_iter().map(|(_, id)| id).collect()
+    }
+
+    /// Tab / Shift-Tab: select the next/previous visible annotation and move the cursor to it.
+    pub fn select_annotation(&mut self, dir: i32) {
+        let ids = self.visible_ids();
+        if ids.is_empty() {
+            self.selected = None;
+            self.info("no annotations in this step");
+            return;
+        }
+        let cur = self
+            .selected
+            .as_ref()
+            .and_then(|s| ids.iter().position(|i| i == s));
+        let next = match (cur, dir) {
+            (None, d) if d >= 0 => 0,
+            (None, _) => ids.len() - 1,
+            (Some(i), d) => ((i as i64 + d as i64).rem_euclid(ids.len() as i64)) as usize,
+        };
+        let id = ids[next].clone();
+        if let Some(a) = self.doc.find_annotation(&id)
+            && let Some((line, _)) = a.shape.line_ranges().first()
+            && self.doc.has_line(*line)
+        {
+            self.cursor_line = *line;
+        }
+        self.selected = Some(id);
+    }
+
+    /// Describes the selected annotation for the status bar.
+    pub fn selected_text(&self) -> Option<String> {
+        let id = self.selected.as_ref()?;
+        let a = self.doc.find_annotation(id)?;
+        Some(codedraw_core::protocol::describe(a))
+    }
+
+    /// Quick edits on the selected annotation. Returns false if `key` is not one.
+    pub fn selected_action(&mut self, key: char) -> bool {
+        let Some(id) = self.selected.clone() else {
+            return false;
+        };
+        let Some(a) = self.doc.find_annotation(&id).cloned() else {
+            self.selected = None;
+            return false;
+        };
+        match key {
+            '\n' => {
+                let current = match &a.shape {
+                    Shape::Highlight { label, .. }
+                    | Shape::Mark { label, .. }
+                    | Shape::Box { label, .. }
+                    | Shape::Arrow { label, .. } => label.clone().unwrap_or_default(),
+                    Shape::Note { text, .. } => text.clone(),
+                    Shape::Spotlight { .. } => String::new(),
+                };
+                self.mode = Mode::Command(format!("label {id} {current}"));
+            }
+            'x' => {
+                match self.delete_annotation(&id) {
+                    Ok(()) => self.info(format!("{id} deleted (u to undo)")),
+                    Err(e) => self.error(e.to_string()),
+                }
+                self.selected = None;
+            }
+            'c' => self.mode = Mode::Command(format!("color {id} ")),
+            '+' | '-' => {
+                let step = if key == '+' {
+                    a.step + 1
+                } else {
+                    a.step.saturating_sub(1).max(1)
+                };
+                match self.update_annotation(&UpdateParams {
+                    id: id.clone(),
+                    step: Some(step),
+                    color: None,
+                    label: None,
+                    shape: None,
+                }) {
+                    Ok(()) => self.info(format!("{id} → step {step}")),
+                    Err(e) => self.error(e.to_string()),
+                }
+            }
+            _ => return false,
+        }
+        true
+    }
+
+    /// Every `:` command name, for completion and help.
+    pub const COMMANDS: &'static [&'static str] = &[
+        "arrow", "autosave", "box", "clear", "color", "del", "embed", "focus", "help", "hl",
+        "label", "lang", "link", "list", "mark", "next", "note", "pad", "present", "prev", "q",
+        "redo", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
+    ];
+
+    /// Tab completion for the command line: the command name on the first word, then
+    /// mark kinds after `mark`/`style`, annotation ids after `del`/`label`/`color`/`step`/`until`/`spot`,
+    /// and `dark|light` after `theme`. Returns the completed input, or the candidates when ambiguous.
+    pub fn complete(&self, input: &str) -> (String, Vec<String>) {
+        let trailing_space = input.ends_with(' ');
+        let words: Vec<&str> = input.split_whitespace().collect();
+        let (prefix, candidates): (&str, Vec<String>) = match (words.len(), trailing_space) {
+            (0, _) | (1, false) => (
+                words.first().copied().unwrap_or(""),
+                Self::COMMANDS.iter().map(|c| c.to_string()).collect(),
+            ),
+            _ => {
+                let cmd = words[0];
+                let cur = if trailing_space {
+                    ""
+                } else {
+                    words[words.len() - 1]
+                };
+                let pool: Vec<String> = match cmd {
+                    "mark" | "m" if words.len() <= 2 => self.doc.kind_names(),
+                    "style" | "kinds" => self.doc.styles.keys().cloned().collect(),
+                    "del" | "delete" | "rm" | "label" | "color" | "col" | "until" | "spot"
+                    | "spotlight" => self.doc.annotations.iter().map(|a| a.id.clone()).collect(),
+                    "step" | "s" if words.len() <= 2 => {
+                        self.doc.annotations.iter().map(|a| a.id.clone()).collect()
+                    }
+                    "theme" | "t" => vec!["dark".into(), "light".into()],
+                    "focus" | "f" => vec![],
+                    _ => vec![],
+                };
+                (cur, pool)
+            }
+        };
+        let matches: Vec<String> = candidates
+            .into_iter()
+            .filter(|c| c.starts_with(prefix))
+            .collect();
+        match matches.as_slice() {
+            [] => (input.to_string(), vec![]),
+            [one] => {
+                let base = if prefix.is_empty() {
+                    input
+                } else {
+                    &input[..input.len() - prefix.len()]
+                };
+                (format!("{base}{one} "), vec![])
+            }
+            many => {
+                // Longest common prefix.
+                let mut lcp = many[0].clone();
+                for m in &many[1..] {
+                    while !m.starts_with(&lcp) {
+                        lcp.pop();
+                    }
+                }
+                let base = if prefix.is_empty() {
+                    input
+                } else {
+                    &input[..input.len() - prefix.len()]
+                };
+                (format!("{base}{lcp}"), many.to_vec())
+            }
+        }
+    }
+
+    pub fn history_step(&mut self, dir: i32) -> Option<String> {
+        if self.history_cmds.is_empty() {
+            return None;
+        }
+        let n = self.history_cmds.len() as i64;
+        let next = match self.history_pos {
+            None if dir < 0 => n - 1,
+            None => return None,
+            Some(p) => (p as i64 + dir as i64).clamp(-1, n),
+        };
+        if next < 0 || next >= n {
+            self.history_pos = None;
+            return Some(String::new());
+        }
+        self.history_pos = Some(next as usize);
+        Some(self.history_cmds[next as usize].clone())
+    }
+
     // ---------- ':' commands ----------
 
     pub fn run_command(&mut self, input: &str) {
@@ -584,6 +783,13 @@ impl App {
         if input.is_empty() {
             return;
         }
+        if self.history_cmds.last().map(String::as_str) != Some(input) {
+            self.history_cmds.push(input.to_string());
+            if self.history_cmds.len() > 100 {
+                self.history_cmds.remove(0);
+            }
+        }
+        self.history_pos = None;
         let (cmd, rest) = match input.split_once(char::is_whitespace) {
             Some((c, r)) => (c, r.trim()),
             None => (input, ""),
@@ -822,7 +1028,10 @@ impl App {
                         .map_err(|_| Error::Invalid("usage: :pad V [H]   (blank cells around the drawing; :pad 0 removes it)".into()))?;
                     let (v, h) = match nums.as_slice() {
                         [] => {
-                            return Ok(format!("padding: {:?}", self.doc.padding.unwrap_or((0, 0))));
+                            return Ok(format!(
+                                "padding: {:?}",
+                                self.doc.padding.unwrap_or((0, 0))
+                            ));
                         }
                         [v] => (*v, *v * 2),
                         [v, h, ..] => (*v, *h),
@@ -1653,6 +1862,51 @@ mod tests {
         assert_eq!(a.cursor_col, 10, "s → =");
         a.word_backward();
         assert_eq!(a.cursor_col, 8);
+    }
+
+    #[test]
+    fn tab_selects_and_edits_annotations() {
+        let mut a = app();
+        a.run_command("note 5 five");
+        a.run_command("note 2 two");
+        a.select_annotation(1);
+        assert_eq!(
+            a.selected.as_deref(),
+            Some("a2"),
+            "reading order: line 2 first"
+        );
+        assert_eq!(a.cursor_line, 2);
+        a.select_annotation(1);
+        assert_eq!(a.selected.as_deref(), Some("a1"));
+        a.select_annotation(1);
+        assert_eq!(a.selected.as_deref(), Some("a2"), "wraps around");
+        assert!(a.selected_action('\n'));
+        assert_eq!(a.mode, Mode::Command("label a2 two".into()));
+        a.mode = Mode::Normal;
+        assert!(a.selected_action('+'));
+        assert_eq!(a.doc.find_annotation("a2").unwrap().step, 2);
+        assert!(a.selected_action('x'));
+        assert!(a.doc.find_annotation("a2").is_none());
+        assert_eq!(a.selected, None);
+    }
+
+    #[test]
+    fn command_completion_and_history() {
+        let mut a = app();
+        assert_eq!(a.complete("ma").0, "mark ");
+        let (text, many) = a.complete("s");
+        assert_eq!(text, "s");
+        assert!(many.contains(&"spot".to_string()) && many.contains(&"step".to_string()));
+        assert_eq!(a.complete("mark wa").0, "mark warn ");
+        a.run_command("note 1 x");
+        a.run_command("note 2 y");
+        assert_eq!(a.complete("del a").1.len(), 2);
+        assert_eq!(a.complete("del a1").0, "del a1 ");
+        assert_eq!(a.complete("theme d").0, "theme dark ");
+        assert_eq!(a.history_step(-1).as_deref(), Some("note 2 y"));
+        assert_eq!(a.history_step(-1).as_deref(), Some("note 1 x"));
+        assert_eq!(a.history_step(1).as_deref(), Some("note 2 y"));
+        assert_eq!(a.history_step(1).as_deref(), Some(""));
     }
 
     #[test]

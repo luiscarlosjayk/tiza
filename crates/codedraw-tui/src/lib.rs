@@ -134,6 +134,30 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             }
             KeyCode::Char('u') if mods.contains(KeyModifiers::CONTROL) => input.clear(),
             KeyCode::Char(c) => input.push(c),
+            KeyCode::Tab => {
+                let current = input.clone();
+                let (text, many) = app.complete(&current);
+                if let Mode::Command(input) = &mut app.mode {
+                    *input = text;
+                }
+                if !many.is_empty() {
+                    app.info(many.join("  "));
+                }
+            }
+            KeyCode::Up => {
+                if let Some(h) = app.history_step(-1)
+                    && let Mode::Command(input) = &mut app.mode
+                {
+                    *input = h;
+                }
+            }
+            KeyCode::Down => {
+                if let Some(h) = app.history_step(1)
+                    && let Mode::Command(input) = &mut app.mode
+                {
+                    *input = h;
+                }
+            }
             _ => {}
         }
         return;
@@ -170,8 +194,21 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
         return;
     }
+    // ---- quick edits on the annotation selected with Tab ----
+    if app.selected.is_some() {
+        let handled = match code {
+            KeyCode::Enter => app.selected_action('\n'),
+            KeyCode::Char(c @ ('x' | 'c' | '+' | '-')) if !ctrl => app.selected_action(c),
+            _ => false,
+        };
+        if handled {
+            return;
+        }
+    }
     match code {
         KeyCode::Char('c') if ctrl => app.quit = true,
+        KeyCode::Tab => app.select_annotation(1),
+        KeyCode::BackTab => app.select_annotation(-1),
         KeyCode::Char('v') => app.start_select(false),
         KeyCode::Char('V') => app.start_select(true),
         KeyCode::Char('i') => app.select_word(),
@@ -202,6 +239,8 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Esc => {
             if app.present {
                 app.present = false;
+            } else if app.selected.is_some() {
+                app.selected = None;
             } else if app.arrow_from.is_some() {
                 app.arrow_from = None;
                 app.info("arrow cancelled");
