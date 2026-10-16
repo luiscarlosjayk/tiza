@@ -113,7 +113,7 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 | KeyCode::Enter
                 | KeyCode::Char('q')
                 | KeyCode::Char('?')
-                | KeyCode::Char('l')
+                | KeyCode::Char('L')
         ) {
             app.overlay = Overlay::None;
         }
@@ -140,20 +140,60 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
     app.message = None;
     let ctrl = mods.contains(KeyModifiers::CONTROL);
+    // ---- selection mode: motions extend, action keys consume ----
+    if matches!(app.mode, Mode::Select { .. }) {
+        match code {
+            KeyCode::Esc => {
+                app.mode = Mode::Normal;
+                app.arrow_from = None;
+            }
+            KeyCode::Char('v') | KeyCode::Char('V') => app.mode = Mode::Normal,
+            KeyCode::Char('h') if mods.is_empty() && app.selection().is_some() => {
+                // `h` is both "move left" and "highlight": left needs Shift-less motion via arrows;
+                // in selection mode `h` acts, `←` moves.
+                app.select_action('h');
+            }
+            KeyCode::Char(c) if "mnbsa".contains(c) => {
+                app.select_action(c);
+            }
+            KeyCode::Left => app.move_col(-1),
+            KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
+            KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
+            KeyCode::Char('k') | KeyCode::Up => app.move_cursor(-1),
+            KeyCode::Char('w') => app.word_forward(),
+            KeyCode::Char('e') => app.word_end(),
+            KeyCode::Char('B') => app.word_backward(),
+            KeyCode::Char('0') | KeyCode::Home => app.line_start(),
+            KeyCode::Char('$') | KeyCode::End => app.line_end(),
+            KeyCode::Char('i') => app.select_word(),
+            _ => {}
+        }
+        return;
+    }
     match code {
         KeyCode::Char('c') if ctrl => app.quit = true,
+        KeyCode::Char('v') => app.start_select(false),
+        KeyCode::Char('V') => app.start_select(true),
+        KeyCode::Char('i') => app.select_word(),
+        KeyCode::Char('h') | KeyCode::Left => app.move_col(-1),
+        KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
+        KeyCode::Char('w') => app.word_forward(),
+        KeyCode::Char('e') => app.word_end(),
+        KeyCode::Char('b') => app.word_backward(),
+        KeyCode::Char('0') => app.line_start(),
+        KeyCode::Char('$') => app.line_end(),
+        KeyCode::Char('L') => app.overlay = Overlay::List,
         KeyCode::Char('q') => app.quit = true,
         KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
         KeyCode::Char('?') => app.overlay = Overlay::Help,
-        KeyCode::Char('l') => app.overlay = Overlay::List,
         KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
         KeyCode::Char('k') | KeyCode::Up => app.move_cursor(-1),
-        KeyCode::Char('J') | KeyCode::PageDown => app.move_cursor(app.size.1 as i64 / 2),
-        KeyCode::Char('K') | KeyCode::PageUp => app.move_cursor(-(app.size.1 as i64) / 2),
+        KeyCode::Char('J') => app.move_cursor(app.size.1 as i64 / 2),
+        KeyCode::Char('K') => app.move_cursor(-(app.size.1 as i64) / 2),
         KeyCode::Char('g') | KeyCode::Home => app.cursor_line = app.doc.source.first_line,
         KeyCode::Char('G') | KeyCode::End => app.cursor_line = app.doc.last_line(),
-        KeyCode::Char('n') | KeyCode::Right => app.set_step(app.doc.step + 1),
-        KeyCode::Char('p') | KeyCode::Left => app.set_step(app.doc.step.saturating_sub(1)),
+        KeyCode::Char('n') | KeyCode::PageDown => app.set_step(app.doc.step + 1),
+        KeyCode::Char('p') | KeyCode::PageUp => app.set_step(app.doc.step.saturating_sub(1)),
         KeyCode::Char('u') => app.undo(),
         KeyCode::Char('U') => app.redo(),
         KeyCode::Char('r') if ctrl => app.redo(),
@@ -162,6 +202,9 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Esc => {
             if app.present {
                 app.present = false;
+            } else if app.arrow_from.is_some() {
+                app.arrow_from = None;
+                app.info("arrow cancelled");
             } else {
                 app.focus = None;
             }

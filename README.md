@@ -52,6 +52,9 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 | Key | Action |
 |---|---|
 | `j`/`k`, `↑`/`↓`, `g`/`G` | move the line cursor |
+| `h`/`l`, `w`/`b`/`e`, `0`/`$` | move the column cursor (word motions) |
+| `v` / `V` / `i` | select text / select lines / select the word under the cursor |
+| with a selection: `h` `m` `n` `b` `a` `s` | highlight · mark (then type `KIND [label]`) · note · box · arrow (source `a`, target `a`) · spotlight |
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo |
 | `t` | dark ⇄ light theme (like Excalidraw) |

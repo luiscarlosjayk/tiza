@@ -19,6 +19,19 @@ use serde_json::{Value, json};
 pub enum Mode {
     Normal,
     Command(String),
+    /// Visual selection: `anchor` is where `v`/`V` was pressed; the cursor is the other end.
+    Select {
+        anchor_line: u32,
+        anchor_col: u32,
+        linewise: bool,
+    },
+}
+
+/// What the last selection was, so a command typed right after can use it as its anchor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Selection {
+    Span(codedraw_core::TextSpan),
+    Lines(u32, u32),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +51,12 @@ pub struct App {
     pub present: bool,
     pub focus: Option<(u32, u32)>,
     pub cursor_line: u32,
+    /// Cursor column, in graphemes (0-based).
+    pub cursor_col: u32,
+    /// Selection captured when a `v`/`V` action opened the command line; commands may use it.
+    pub pending_sel: Option<Selection>,
+    /// First end of an arrow being built with `a` (select → a → select → a).
+    pub arrow_from: Option<codedraw_core::Anchor>,
     pub scroll: usize,
     pub message: Option<(String, bool)>,
     pub revision: u64,
@@ -62,6 +81,9 @@ impl App {
             present: false,
             focus: None,
             cursor_line,
+            cursor_col: 0,
+            pending_sel: None,
+            arrow_from: None,
             scroll: 0,
             message: None,
             revision: 1,
@@ -308,6 +330,251 @@ impl App {
         let first = self.doc.source.first_line as i64;
         let last = self.doc.last_line() as i64;
         self.cursor_line = (self.cursor_line as i64 + delta).clamp(first, last) as u32;
+    }
+
+    fn clamp_col(&mut self) {
+        let len = self.doc.line_len(self.cursor_line);
+        self.cursor_col = self.cursor_col.min(len.saturating_sub(1));
+    }
+
+    pub fn move_col(&mut self, delta: i64) {
+        let len = self.doc.line_len(self.cursor_line) as i64;
+        self.cursor_col = (self.cursor_col as i64 + delta).clamp(0, (len - 1).max(0)) as u32;
+    }
+
+    pub fn line_start(&mut self) {
+        let text = self.doc.line_text(self.cursor_line).unwrap_or("");
+        self.cursor_col = text.chars().take_while(|c| c.is_whitespace()).count() as u32;
+        self.clamp_col();
+    }
+
+    pub fn line_end(&mut self) {
+        self.cursor_col = self.doc.line_len(self.cursor_line).saturating_sub(1);
+    }
+
+    /// Word classes for `w`/`b`/`e`: identifier chars, punctuation runs, whitespace.
+    fn word_class(g: &str) -> u8 {
+        let c = g.chars().next().unwrap_or(' ');
+        if c.is_alphanumeric() || c == '_' {
+            1
+        } else if c.is_whitespace() {
+            0
+        } else {
+            2
+        }
+    }
+
+    fn graphemes_of(&self, line: u32) -> Vec<String> {
+        use unicode_segmentation::UnicodeSegmentation;
+        self.doc
+            .line_text(line)
+            .unwrap_or("")
+            .graphemes(true)
+            .map(str::to_string)
+            .collect()
+    }
+
+    pub fn word_forward(&mut self) {
+        let gs = self.graphemes_of(self.cursor_line);
+        if gs.is_empty() {
+            return;
+        }
+        let mut i = self.cursor_col as usize;
+        let cls = Self::word_class(&gs[i.min(gs.len() - 1)]);
+        while i < gs.len() && Self::word_class(&gs[i]) == cls {
+            i += 1;
+        }
+        while i < gs.len() && Self::word_class(&gs[i]) == 0 {
+            i += 1;
+        }
+        self.cursor_col = i.min(gs.len() - 1) as u32;
+    }
+
+    pub fn word_backward(&mut self) {
+        let gs = self.graphemes_of(self.cursor_line);
+        if gs.is_empty() || self.cursor_col == 0 {
+            return;
+        }
+        let mut i = self.cursor_col as usize;
+        i -= 1;
+        while i > 0 && Self::word_class(&gs[i]) == 0 {
+            i -= 1;
+        }
+        let cls = Self::word_class(&gs[i]);
+        while i > 0 && Self::word_class(&gs[i - 1]) == cls {
+            i -= 1;
+        }
+        self.cursor_col = i as u32;
+    }
+
+    pub fn word_end(&mut self) {
+        let gs = self.graphemes_of(self.cursor_line);
+        if gs.is_empty() {
+            return;
+        }
+        let mut i = (self.cursor_col as usize + 1).min(gs.len() - 1);
+        while i < gs.len() - 1 && Self::word_class(&gs[i]) == 0 {
+            i += 1;
+        }
+        let cls = Self::word_class(&gs[i]);
+        while i + 1 < gs.len() && Self::word_class(&gs[i + 1]) == cls {
+            i += 1;
+        }
+        self.cursor_col = i as u32;
+    }
+
+    /// Selects the identifier under the cursor (`iw`).
+    pub fn select_word(&mut self) {
+        let gs = self.graphemes_of(self.cursor_line);
+        if gs.is_empty() {
+            return;
+        }
+        let i = (self.cursor_col as usize).min(gs.len() - 1);
+        let cls = Self::word_class(&gs[i]);
+        let mut a = i;
+        while a > 0 && Self::word_class(&gs[a - 1]) == cls {
+            a -= 1;
+        }
+        let mut b = i;
+        while b + 1 < gs.len() && Self::word_class(&gs[b + 1]) == cls {
+            b += 1;
+        }
+        self.mode = Mode::Select {
+            anchor_line: self.cursor_line,
+            anchor_col: a as u32,
+            linewise: false,
+        };
+        self.cursor_col = b as u32;
+    }
+
+    pub fn start_select(&mut self, linewise: bool) {
+        self.clamp_col();
+        self.mode = Mode::Select {
+            anchor_line: self.cursor_line,
+            anchor_col: self.cursor_col,
+            linewise,
+        };
+    }
+
+    /// The current selection as a span (single line, end exclusive) or a line range.
+    pub fn selection(&self) -> Option<Selection> {
+        let Mode::Select {
+            anchor_line,
+            anchor_col,
+            linewise,
+        } = self.mode
+        else {
+            return None;
+        };
+        if linewise || anchor_line != self.cursor_line {
+            let (a, b) = (
+                anchor_line.min(self.cursor_line),
+                anchor_line.max(self.cursor_line),
+            );
+            return Some(Selection::Lines(a, b));
+        }
+        let (a, b) = (
+            anchor_col.min(self.cursor_col),
+            anchor_col.max(self.cursor_col),
+        );
+        let len = self.doc.line_len(self.cursor_line);
+        Some(Selection::Span(codedraw_core::TextSpan {
+            line: self.cursor_line,
+            start: a.min(len),
+            end: (b + 1).min(len),
+        }))
+    }
+
+    /// Leaves selection mode, remembering the selection for the next command.
+    pub fn end_select(&mut self) -> Option<Selection> {
+        let sel = self.selection();
+        self.mode = Mode::Normal;
+        self.pending_sel = sel;
+        sel
+    }
+
+    /// Opens the command line pre-filled, with the selection as the pending anchor.
+    pub fn command_with_selection(&mut self, prefix: &str) {
+        self.end_select();
+        self.mode = Mode::Command(prefix.to_string());
+    }
+
+    /// Applies an action key to the current selection. Returns false if the key is not one.
+    pub fn select_action(&mut self, key: char) -> bool {
+        let Some(sel) = self.selection() else {
+            return false;
+        };
+        match (key, sel) {
+            ('h', Selection::Span(span)) => {
+                self.mode = Mode::Normal;
+                match self.add_annotation(None, None, Shape::Highlight { span, label: None }) {
+                    Ok(id) => self.info(format!("{id}: highlight (:label {id} text to name it)")),
+                    Err(e) => self.error(e.to_string()),
+                }
+            }
+            ('h', Selection::Lines(a, b)) => {
+                self.mode = Mode::Normal;
+                self.focus = Some((a, b));
+                self.info(format!("focus {a}-{b} (Esc clears)"));
+            }
+            ('m', _) => self.command_with_selection("mark "),
+            ('n', Selection::Span(sp)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("note {} ", sp.line));
+            }
+            ('n', Selection::Lines(a, _)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("note {a} "));
+            }
+            ('b', Selection::Lines(a, b)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("box {a}-{b} "));
+            }
+            ('b', Selection::Span(sp)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("box {}-{} ", sp.line, sp.line));
+            }
+            ('s', Selection::Lines(a, b)) => {
+                self.mode = Mode::Normal;
+                self.run_command(&format!("spot {a}-{b}"));
+            }
+            ('s', Selection::Span(sp)) => {
+                self.mode = Mode::Normal;
+                self.run_command(&format!("spot {}-{}", sp.line, sp.line));
+            }
+            ('a', Selection::Span(sp)) => {
+                self.mode = Mode::Normal;
+                let anchor = codedraw_core::Anchor {
+                    line: sp.line,
+                    col: sp.start,
+                };
+                match self.arrow_from.take() {
+                    None => {
+                        self.arrow_from = Some(anchor);
+                        self.info("arrow: now select the target and press a (Esc cancels)");
+                    }
+                    Some(from) => {
+                        self.pending_sel = None;
+                        match self.add_annotation(
+                            None,
+                            None,
+                            Shape::Arrow {
+                                from,
+                                to: anchor,
+                                label: None,
+                            },
+                        ) {
+                            Ok(id) => {
+                                self.info(format!("{id}: arrow (:label {id} text to name it)"))
+                            }
+                            Err(e) => self.error(e.to_string()),
+                        }
+                    }
+                }
+            }
+            _ => return false,
+        }
+        true
     }
 
     // ---------- ':' commands ----------
@@ -606,10 +873,18 @@ impl App {
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
         let (at, label) = split_first(rest);
-        if at.is_empty() {
-            return Err(Error::Invalid("usage: :hl L:text [label]".into()));
-        }
-        let span = parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?;
+        let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
+            (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
+            _ => {
+                if at.is_empty() {
+                    return Err(Error::Invalid("usage: :hl L:text [label]".into()));
+                }
+                (
+                    parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?,
+                    label,
+                )
+            }
+        };
         let id = self.add_annotation(
             None,
             None,
@@ -627,7 +902,7 @@ impl App {
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
         let (kind_tok, rest) = split_first(rest);
         let (at, label) = split_first(rest);
-        if kind_tok.is_empty() || at.is_empty() {
+        if kind_tok.is_empty() || (at.is_empty() && self.pending_sel.is_none()) {
             return Err(Error::Invalid(format!(
                 "usage: :mark KIND[@COLOR] L:text [label]   KIND: {} | a :style name | a glyph",
                 self.doc.kind_names().join(" ")
@@ -671,7 +946,16 @@ impl App {
             style.color = Some(c);
         }
         let inline = !known;
-        let span = parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?;
+        let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
+            (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
+            _ => (
+                parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?,
+                label,
+            ),
+        };
+        if inline {
+            style.legend = opt(label);
+        }
         let legend = self
             .doc
             .resolve_style(&kind, &style)
@@ -1044,6 +1328,16 @@ pub fn parse_kv(s: &str) -> Vec<(String, String)> {
     out
 }
 
+/// True if `tok` looks like an explicit anchor (`7:text`, `7@3..9`, `.:x`, `7`).
+pub fn looks_like_anchor(tok: &str) -> bool {
+    let t = tok.trim();
+    if t.is_empty() {
+        return false;
+    }
+    let head = t.split([':', '@']).next().unwrap_or("");
+    (head == "." || head.chars().all(|c| c.is_ascii_digit())) && !head.is_empty()
+}
+
 fn split_first(s: &str) -> (&str, &str) {
     let s = s.trim();
     match s.split_once(char::is_whitespace) {
@@ -1078,6 +1372,32 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
     if s.is_empty() {
         return Err(Error::Invalid("empty anchor".into()));
     }
+    // `L@S..E` (grapheme span) or `L@C` (grapheme column), as written by the selection keys.
+    if let Some((h, rest)) = s.split_once('@')
+        && (h == "." || h.chars().all(|c| c.is_ascii_digit()))
+        && !h.is_empty()
+    {
+        let line = if h == "." {
+            cursor_line
+        } else {
+            h.parse::<u32>()
+                .map_err(|_| Error::Invalid(format!("invalid line: {h}")))?
+        };
+        let (start, end) = match rest.split_once("..") {
+            Some((a, b)) => (a.parse::<u32>().ok(), b.parse::<u32>().ok()),
+            None => (rest.parse::<u32>().ok(), None),
+        };
+        let Some(start) = start else {
+            return Err(Error::Invalid(format!("invalid anchor: {s}")));
+        };
+        return Ok(Where {
+            line: Some(line),
+            col: Some(start),
+            find: None,
+            occurrence: None,
+            end,
+        });
+    }
     let (head, find) = match s.split_once(':') {
         Some((h, f)) if (h == "." || h.chars().all(|c| c.is_ascii_digit())) && !h.is_empty() => {
             (Some(h), f)
@@ -1111,6 +1431,7 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
             Some(find.to_string())
         },
         occurrence,
+        end: None,
     })
 }
 
@@ -1233,6 +1554,87 @@ mod tests {
         a.undo(); // undoes :step a2 2
         a.undo(); // undoes :del a1
         assert_eq!(a.doc.annotations.len(), 4);
+    }
+
+    #[test]
+    fn keyboard_selection_feeds_commands() {
+        let mut a = app();
+        // line 3: "    takes(s);" → cursor on `takes`
+        a.cursor_line = 3;
+        a.line_start();
+        assert_eq!(a.cursor_col, 4);
+        a.select_word();
+        assert_eq!(
+            a.selection(),
+            Some(Selection::Span(codedraw_core::TextSpan {
+                line: 3,
+                start: 4,
+                end: 9
+            }))
+        );
+        assert!(a.select_action('h'));
+        assert!(
+            matches!(a.doc.annotations.last().unwrap().shape, Shape::Highlight { span, .. } if span.start == 4 && span.end == 9)
+        );
+        // mark via pre-filled command line using the pending selection
+        a.cursor_col = 10; // `s` inside takes(s)
+        a.start_select(false);
+        assert!(a.select_action('m'));
+        assert_eq!(a.mode, Mode::Command("mark ".into()));
+        a.mode = Mode::Normal;
+        a.run_command("mark move moves here");
+        match &a.doc.annotations.last().unwrap().shape {
+            Shape::Mark {
+                kind, span, label, ..
+            } => {
+                assert_eq!(kind, "move");
+                assert_eq!((span.line, span.start, span.end), (3, 10, 11));
+                assert_eq!(label.as_deref(), Some("moves here"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // arrow: select → a → select → a
+        a.cursor_line = 2;
+        a.line_start();
+        a.start_select(false);
+        assert!(a.select_action('a'));
+        assert!(a.arrow_from.is_some());
+        a.cursor_line = 5;
+        a.cursor_col = 3;
+        a.start_select(false);
+        assert!(a.select_action('a'));
+        assert!(
+            matches!(a.doc.annotations.last().unwrap().shape, Shape::Arrow { from, to, .. } if from.line == 2 && to.line == 5)
+        );
+        // linewise selection → box prefill
+        a.cursor_line = 5;
+        a.start_select(true);
+        a.cursor_line = 4;
+        assert!(a.select_action('b'));
+        assert_eq!(a.mode, Mode::Command("box 4-5 ".into()));
+        // explicit anchors still win over a pending selection
+        a.pending_sel = Some(Selection::Span(codedraw_core::TextSpan {
+            line: 1,
+            start: 0,
+            end: 2,
+        }));
+        a.run_command("hl 2@4..5 by coords");
+        match &a.doc.annotations.last().unwrap().shape {
+            Shape::Highlight { span, label } => {
+                assert_eq!((span.line, span.start, span.end), (2, 4, 5));
+                assert_eq!(label.as_deref(), Some("by coords"));
+            }
+            other => panic!("{other:?}"),
+        }
+        // word motions
+        a.cursor_line = 2;
+        a.line_start();
+        a.word_forward();
+        assert_eq!(a.cursor_col, 8, "let → s");
+        a.word_forward();
+        assert_eq!(a.cursor_col, 10, "s → =");
+        a.word_backward();
+        assert_eq!(a.cursor_col, 8);
     }
 
     #[test]

@@ -786,7 +786,7 @@ fn wrap_words(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Screen column (relative to the start of the code) of grapheme `col` of `text`.
-fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
+pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     let mut w = 0;
     for (i, g) in text.graphemes(true).enumerate() {
         if i as u32 >= col {

@@ -11,7 +11,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, Mode, Overlay, theme_label};
+use crate::app::{App, Mode, Overlay, Selection, theme_label};
 
 fn rgb(c: Rgb) -> Color {
     Color::Rgb(c.0, c.1, c.2)
@@ -111,8 +111,31 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         frame.buffer_mut(),
     );
 
-    // Cursor line indicator (only outside presentation mode).
+    // Cursor line indicator, selection and cursor cell (only outside presentation mode).
     if !app.present {
+        let sel = app.selection();
+        let sel_bg = rgb(codedraw_core::theme::blend(th.accent, th.bg, 0.35));
+        if let Some(Selection::Lines(a, b)) = sel {
+            for line in a..=b {
+                if let Some(&row) = layout.row_of_line.get(&line)
+                    && row >= app.scroll
+                    && row < end
+                {
+                    let y = canvas_area.y + (row - app.scroll) as u16;
+                    let x0 = canvas_area.x + layout.code_x as u16;
+                    let w = canvas_area.width.saturating_sub(layout.code_x as u16);
+                    frame.buffer_mut().set_style(
+                        Rect {
+                            x: x0,
+                            y,
+                            width: w,
+                            height: 1,
+                        },
+                        Style::default().bg(sel_bg),
+                    );
+                }
+            }
+        }
         if let Some(&row) = layout.row_of_line.get(&app.cursor_line)
             && row >= app.scroll
             && row < end
@@ -124,6 +147,38 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 "▍",
                 Style::default().fg(rgb(th.accent)).bg(rgb(th.bg)),
             );
+            let text = app.doc.line_text(app.cursor_line).unwrap_or("");
+            if let Some(Selection::Span(sp)) = sel {
+                let x0 = layout.code_x + codedraw_core::layout::col_to_x(text, sp.start, 4);
+                let x1 = layout.code_x + codedraw_core::layout::col_to_x(text, sp.end, 4);
+                if x1 > x0 && (x0 as u16) < canvas_area.width {
+                    let w = (x1 - x0).min(canvas_area.width as usize - x0) as u16;
+                    frame.buffer_mut().set_style(
+                        Rect {
+                            x: canvas_area.x + x0 as u16,
+                            y,
+                            width: w,
+                            height: 1,
+                        },
+                        Style::default().bg(sel_bg),
+                    );
+                }
+            }
+            let col = app
+                .cursor_col
+                .min(app.doc.line_len(app.cursor_line).saturating_sub(1));
+            let cx = layout.code_x + codedraw_core::layout::col_to_x(text, col, 4);
+            if (cx as u16) < canvas_area.width {
+                frame.buffer_mut().set_style(
+                    Rect {
+                        x: canvas_area.x + cx as u16,
+                        y,
+                        width: 1,
+                        height: 1,
+                    },
+                    Style::default().add_modifier(Modifier::REVERSED),
+                );
+            }
         }
     } else if app.doc.max_step() > 1 || app.doc.step == 0 {
         // Discreet step counter in presentation mode.
@@ -187,7 +242,17 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let mode = "NORMAL";
+    let mode = match app.mode {
+        Mode::Select { linewise: true, .. } => "V-LINE",
+        Mode::Select { .. } => "SELECT",
+        _ => {
+            if app.arrow_from.is_some() {
+                "ARROW→"
+            } else {
+                "NORMAL"
+            }
+        }
+    };
     let file = app
         .doc
         .source
@@ -229,7 +294,11 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             },
         )],
         None => vec![Span::styled(
-            ":cmd  ?help  l list  n/p steps  t theme  P present  q quit ",
+            if matches!(app.mode, Mode::Select { .. }) {
+                "h highlight  m mark  n note  b box  a arrow  s spotlight  i word  Esc cancel "
+            } else {
+                "v select  i word  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
+            },
             muted,
         )],
     };
@@ -291,7 +360,10 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
 
 fn help_lines() -> Vec<String> {
     [
-        "j/k ↑/↓  move cursor       g/G  start/end       J/K  page",
+        "j/k ↑/↓ line   h/l ←/→ column   w/b/e words   0/$ line start/end   g/G   J/K page",
+        "v  select text   V  select lines   i  select the word under the cursor   Esc  cancel",
+        "  with a selection:  h highlight   m mark (then type KIND [label])   n note   b box",
+        "                     a arrow (select source, a, select target, a)   s spotlight",
         "n/p      next/previous step (0 = code only)   u / U  undo / redo",
         "t        dark/light theme            P      presentation mode",
         "l        annotation list             :      command line",

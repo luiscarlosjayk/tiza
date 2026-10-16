@@ -67,6 +67,9 @@ pub struct Where {
     pub find: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurrence: Option<u32>,
+    /// With `line` and `col`: end of the span (exclusive). Without it the span runs to the end of the line.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<u32>,
 }
 
 impl Where {
@@ -83,7 +86,7 @@ impl Where {
         Ok(TextSpan {
             line,
             start,
-            end: doc.line_len(line),
+            end: self.end.unwrap_or_else(|| doc.line_len(line)),
         })
     }
 
