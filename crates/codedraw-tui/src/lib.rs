@@ -32,6 +32,9 @@ pub struct RunOptions {
     /// Renders a canvas as SVG/PNG for `:export`; the TUI crate does not link
     /// the image stack, so the binary provides it (`None`: text formats only).
     pub image_exporter: Option<app::ImageExporter>,
+    /// `--smoke`: draw one frame and exit (CI check that the terminal setup,
+    /// `/dev/tty` with piped stdin included, starts and restores cleanly).
+    pub smoke: bool,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -72,7 +75,17 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
 
     let mut terminal = ratatui::init();
     execute!(io::stdout(), EnableBracketedPaste)?;
-    let result = event_loop(&mut terminal, &mut app, ipc.as_ref());
+    let result = if opts.smoke {
+        // One frame, then one poll of the input source: with stdin piped the
+        // events come from /dev/tty (crossterm `use-dev-tty`), which is what
+        // the smoke test is there to prove.
+        terminal
+            .draw(|f| ui::draw(f, &mut app))
+            .and_then(|_| event::poll(Duration::from_millis(100)))
+            .map(|_| ())
+    } else {
+        event_loop(&mut terminal, &mut app, ipc.as_ref())
+    };
     let _ = execute!(io::stdout(), DisableBracketedPaste);
     ratatui::restore();
     if app.dirty && app.save().is_err() {

@@ -742,6 +742,10 @@ impl Document {
     /// Tidies a document that came from a file: single-line texts (control
     /// characters become spaces), `step` within range, unique ids.
     pub fn normalize_loaded(&mut self) -> Result<(), Error> {
+        if self.code.is_empty() {
+            // Every layout assumes at least one row (see `from_code`).
+            self.code.push(String::new());
+        }
         let mut seen = std::collections::BTreeSet::new();
         for a in &mut self.annotations {
             if !seen.insert(a.id.clone()) {

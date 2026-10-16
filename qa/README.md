@@ -15,3 +15,5 @@ Test data lives in `qa/fixtures/t-XXX/` (never in `examples/`, which are the dem
 Render snapshots (t-053) live in `qa/tests/snapshots/` (insta): one `-symbols` and one `-styles` file per case. When a render changes on purpose, run `INSTA_UPDATE=always cargo test -p codedraw-qa --test t-053` (or `cargo insta review`) and commit the updated `.snap` files with the change.
 
 When a ticket is done, its card gets: acceptance criteria, manual test steps, corner cases and the path of this file (`qa_test`). Keep the three in sync: if a corner case is added to the card, add the test here.
+
+Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-regressions`; commit that file when proptest adds a seed so the case is replayed first on every run.

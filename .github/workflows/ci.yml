@@ -28,6 +28,17 @@ jobs:
       - run: cargo test --all-features
       - name: smoke render
         run: cargo run -q -- render examples/ownership.rs.codedraw --width 100 --step 5
+      - name: smoke TUI (stdin piped, keys from /dev/tty)
+        # `script` gives the job a pseudo-terminal; stdin stays a pipe, so
+        # crossterm has to open /dev/tty (feature use-dev-tty). One frame, exit 0.
+        shell: bash
+        run: |
+          cargo build -q
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            script -q /dev/null bash -c 'cat examples/ownership.rs | ./target/debug/codedraw --smoke --no-socket'
+          else
+            script -qec 'cat examples/ownership.rs | ./target/debug/codedraw --smoke --no-socket' /dev/null
+          fi
 
   schema:
     name: JSON Schema validates examples and fixtures

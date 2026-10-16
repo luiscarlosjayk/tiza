@@ -25,6 +25,9 @@ struct Cli {
     /// Language override (rs, ts, py, go…); otherwise detected from the extension, file name, shebang or modeline
     #[arg(long)]
     lang: Option<String>,
+    /// Draw one frame and exit without touching the document (CI smoke test)
+    #[arg(long, hide = true)]
+    smoke: bool,
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
@@ -481,6 +484,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             focus,
             padding,
             image_exporter: Some(Box::new(image_exporter)),
+            smoke: cli.smoke,
             follow: cli.follow,
         },
     )?;

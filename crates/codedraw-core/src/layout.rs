@@ -99,10 +99,19 @@ struct Label {
 
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let width = opts.width.max(20);
+    // Annotations outside the code (a document whose file shrank, or a
+    // hand-edited one) are reported when it opens; here they are simply not
+    // drawn, so a stale line number can never break the layout.
     let vis: Vec<&Annotation> = doc
         .annotations
         .iter()
         .filter(|a| a.step <= opts.step)
+        .filter(|a| {
+            a.shape
+                .line_ranges()
+                .iter()
+                .all(|(f, t)| doc.has_line(*f) && doc.has_line(*t))
+        })
         .collect();
     // Color per annotation: the one chosen by the user; otherwise arrows rotate through the
     // automatic palette (in order of appearance) and the rest use the theme color.
