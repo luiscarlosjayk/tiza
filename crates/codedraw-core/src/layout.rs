@@ -206,8 +206,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let box_depth = boxes.iter().map(|b| b.depth + 1).max().unwrap_or(0);
 
     // ---- column widths ----
+    // One cell for the cursor/selection marker, the digits, one blank.
     let num_w = if opts.line_numbers {
-        doc.last_line().to_string().len() + 1
+        doc.last_line().to_string().len() + 2
     } else {
         0
     };

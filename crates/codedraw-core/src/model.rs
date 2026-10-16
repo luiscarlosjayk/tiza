@@ -480,6 +480,38 @@ pub struct Annotation {
     pub shape: Shape,
 }
 
+/// Control characters (tabs, newlines, escapes) become spaces: labels are one line.
+pub fn single_line(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
+}
+
+/// Applies [`single_line`] to the texts of a shape (callout bodies keep newlines).
+pub fn sanitize_texts(shape: &mut Shape) {
+    match shape {
+        Shape::Highlight { label, .. }
+        | Shape::Mark { label, .. }
+        | Shape::Box { label, .. }
+        | Shape::Arrow { label, .. } => {
+            if let Some(l) = label {
+                *l = single_line(l);
+            }
+        }
+        Shape::Note { text, .. } => *text = single_line(text),
+        Shape::Callout { title, text, .. } => {
+            if let Some(t) = title {
+                *t = single_line(t);
+            }
+            *text = text
+                .chars()
+                .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+                .collect();
+        }
+        Shape::Spotlight { .. } => {}
+    }
+}
+
 fn one() -> u32 {
     1
 }
@@ -623,6 +655,22 @@ impl Document {
     }
 
     /// Validates that a shape points to existing lines/columns.
+    /// Tidies a document that came from a file: single-line texts (control
+    /// characters become spaces), `step` within range, unique ids.
+    pub fn normalize_loaded(&mut self) -> Result<(), Error> {
+        let mut seen = std::collections::BTreeSet::new();
+        for a in &mut self.annotations {
+            if !seen.insert(a.id.clone()) {
+                return Err(Error::DuplicateId(a.id.clone()));
+            }
+            sanitize_texts(&mut a.shape);
+        }
+        if self.step > self.max_step() {
+            self.step = self.max_step();
+        }
+        Ok(())
+    }
+
     pub fn validate_shape(&self, shape: &Shape) -> Result<(), Error> {
         let check_line = |l: u32| {
             if self.has_line(l) {
@@ -755,6 +803,7 @@ impl Document {
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
         self.validate_shape(&ann.shape)?;
+        sanitize_texts(&mut ann.shape);
         if ann.id.trim().is_empty() {
             ann.id = self.next_id();
         } else if self.find_annotation(&ann.id).is_some() {
@@ -768,8 +817,9 @@ impl Document {
         Ok(id)
     }
 
-    pub fn update(&mut self, ann: Annotation) -> Result<(), Error> {
+    pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
         self.validate_shape(&ann.shape)?;
+        sanitize_texts(&mut ann.shape);
         let slot = self
             .annotations
             .iter_mut()

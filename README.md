@@ -54,13 +54,13 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 | `j`/`k`, `↑`/`↓`, `g`/`G` | move the line cursor |
 | `h`/`l`, `w`/`b`/`e`, `0`/`$` | move the column cursor (word motions) |
 | `v` / `V` / `i` | select text / select lines / select the word under the cursor |
-| with a selection: `h` `m` `n` `C` `b` `a` `s` | highlight · mark (then type `KIND [label]`) · note · callout (then type the text) · box · arrow (source `a`, target `a`) · spotlight |
+| with a selection: `h` `m` `n` `C` `b` `a` `s` | highlight (text selection; a line selection makes a focus) · mark (then type `KIND [label]`) · note · callout (then type the text) · box · arrow (source `a`, target `a`) · spotlight |
 | `Tab` / `Shift-Tab` | select an annotation; then `Enter` edit label · `e` set properties · `x` delete · `c` color · `+`/`-` move step |
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo |
 | `t` | dark ⇄ light theme (like Excalidraw) |
 | `P` | presentation mode (hides the UI) |
-| `l` | annotation list · `?` help · `:` commands · `q` quit |
+| `L` | annotation list · `?` help · `:` commands · `q` quit (`:q!` if the last save failed) |
 
 ### `:` commands
 

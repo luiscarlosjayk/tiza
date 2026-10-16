@@ -392,9 +392,9 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             ),
             (None, None) => (
                 if matches!(app.mode, Mode::Select { .. }) {
-                    "h highlight  m mark  n note  C callout  b box  a arrow  s spotlight  Esc "
+                    "h hl  m mark  n note  C callout  b box  a arrow  s spot  Esc "
                 } else {
-                    "v select  i word  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
+                    "v select  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
                 }
                 .to_string(),
                 muted,
@@ -452,13 +452,36 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
 
+/// Number of overlay rows a set of lines takes at `inner_w` columns (wrapped).
+pub fn overlay_rows(lines: &[String], inner_w: usize) -> usize {
+    lines
+        .iter()
+        .map(|l| {
+            let w = l.width();
+            if w == 0 {
+                1
+            } else {
+                w.div_ceil(inner_w.max(1))
+            }
+        })
+        .sum()
+}
+
 fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
     let th = &app.theme;
     let area = frame.area();
-    let w = (area.width.saturating_sub(4)).clamp(20, 96);
-    let h = (lines.len() as u16 + 2)
-        .min(area.height.saturating_sub(2))
-        .max(3);
+    if area.width < 8 || area.height < 4 {
+        // Too small for a bordered box: nothing to draw (and no arithmetic to fail).
+        return;
+    }
+    let w = (area.width.saturating_sub(4)).clamp(4, 96);
+    let inner_w = w.saturating_sub(2) as usize;
+    let total = overlay_rows(&lines, inner_w);
+    let h = (total as u16 + 2).min(area.height.saturating_sub(2)).max(3);
+    let inner_h = h.saturating_sub(2) as usize;
+    // Scroll in wrapped rows; j/k, ↑/↓ and PgDn/PgUp move it.
+    let max_scroll = total.saturating_sub(inner_h);
+    let scroll = app.overlay_scroll.min(max_scroll);
     let rect = Rect {
         x: area.x + (area.width - w) / 2,
         y: area.y + (area.height.saturating_sub(h)) / 2,
@@ -477,7 +500,15 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
         ))
         .title_bottom(
             Line::from(Span::styled(
-                " Esc closes ",
+                if max_scroll > 0 {
+                    format!(
+                        " j/k scroll ({}/{})  Esc closes ",
+                        scroll + inner_h.min(total),
+                        total
+                    )
+                } else {
+                    " Esc closes ".to_string()
+                },
                 Style::default().fg(rgb(th.muted)),
             ))
             .right_aligned(),
@@ -485,7 +516,10 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
         .style(Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg)));
     let text: Vec<Line> = lines.into_iter().map(Line::from).collect();
     frame.render_widget(
-        Paragraph::new(text).block(block).wrap(Wrap { trim: false }),
+        Paragraph::new(text)
+            .block(block)
+            .wrap(Wrap { trim: false })
+            .scroll((scroll as u16, 0)),
         rect,
     );
 }

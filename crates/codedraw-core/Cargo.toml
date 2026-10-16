@@ -16,3 +16,6 @@ unicode-width.workspace = true
 unicode-segmentation.workspace = true
 syntect.workspace = true
 two-face.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true

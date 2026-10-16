@@ -31,6 +31,7 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | unicode-width / unicode-segmentation | 0.2.2 / 1.13.3 | 2025-10 / 2026-06 | MIT/Apache-2.0 | Anchors per grapheme, width per cell |
 | anyhow | 1 | — | MIT/Apache-2.0 | Only in binaries |
 | resvg / usvg / tiny-skia / fontdb | 0.48.1 / 0.48.1 / 0.12 / 0.24 | 2026-10 | MIT/Apache-2.0, BSD-3-Clause (tiny-skia) | Only in `codedraw-export`; `text` + `system-fonts` features, no `raster-images` |
+| proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |
 
 Evaluated and **postponed**: `notify` 8 (file watching; Zed saves with tmp+rename, watch the directory), `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS), `resvg` (PNG; requires embedding fonts), `insta`/`proptest` (will come with the snapshot tests).

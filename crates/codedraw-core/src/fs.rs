@@ -171,6 +171,7 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
         });
     }
     resolve_code(&mut doc, base_dir)?;
+    doc.normalize_loaded()?;
     Ok(doc)
 }
 

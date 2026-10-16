@@ -75,6 +75,8 @@ pub struct App {
     /// `--padding` for this session only: shown instead of the document's
     /// value but never written to it (`:pad` sets the document and clears this).
     pub padding_override: Option<(u16, u16)>,
+    /// Scroll offset (wrapped rows) of the help / list overlay.
+    pub overlay_scroll: usize,
 }
 
 impl App {
@@ -107,6 +109,7 @@ impl App {
             autosave: true,
             save_error: None,
             padding_override: None,
+            overlay_scroll: 0,
         }
     }
 
@@ -380,11 +383,16 @@ impl App {
         self.revision += 1;
     }
 
-    /// Replaces the code (paste, stdin). Only when there are no annotations that would be lost.
-    /// Replaces the code with pasted text. Annotations whose lines (and
-    /// columns) still exist are kept; the others are dropped, and `u` brings
-    /// everything back. Re-anchoring by text is the job of moves (ADR 0007).
+    /// Replaces the code (paste, stdin). Annotations are re-anchored by the
+    /// text they pointed at: the old text of each anchor is searched in the
+    /// new code (same line first, then anywhere); what cannot be found is
+    /// dropped with a message, and `u` brings everything back.
     pub fn replace_code(&mut self, text: &str) -> Result<(), Error> {
+        if text.trim().is_empty() {
+            return Err(Error::Invalid(
+                "nothing to paste: the clipboard text is empty".into(),
+            ));
+        }
         self.history.record(&self.doc);
         let lang = self.doc.source.language.clone();
         let mut d = Document::from_code(text, lang, None);
@@ -394,9 +402,12 @@ impl App {
         d.padding = self.doc.padding;
         d.title = self.doc.title.clone();
         let before = self.doc.annotations.len();
-        for a in &self.doc.annotations {
-            if d.validate_shape(&a.shape).is_ok() {
-                let _ = d.add(a.clone());
+        let old = self.doc.clone();
+        for a in &old.annotations {
+            if let Some(shape) = reanchor(&old, &d, &a.shape)
+                && d.validate_shape(&shape).is_ok()
+            {
+                let _ = d.add(Annotation { shape, ..a.clone() });
             }
         }
         let kept = d.annotations.len();
@@ -408,7 +419,7 @@ impl App {
         let dropped = before - kept;
         if dropped > 0 {
             self.info(format!(
-                "{} lines pasted; {dropped} annotation{} dropped (outside the new code; u undoes)",
+                "{} lines pasted; {dropped} annotation{} dropped (their text is gone; u undoes)",
                 self.doc.code.len(),
                 if dropped == 1 { "" } else { "s" }
             ));
@@ -686,7 +697,7 @@ impl App {
             .doc
             .annotations
             .iter()
-            .filter(|a| a.step <= self.doc.step.max(1))
+            .filter(|a| a.step <= self.doc.step)
             .map(|a| {
                 let first = a.shape.line_ranges().first().map(|r| r.0).unwrap_or(0);
                 (first, a.id.clone())
@@ -701,7 +712,11 @@ impl App {
         let ids = self.visible_ids();
         if ids.is_empty() {
             self.selected = None;
-            self.info("no annotations in this step");
+            self.info(if self.doc.step == 0 {
+                "step 0 shows only the code: press n to see the annotations"
+            } else {
+                "no annotations in this step"
+            });
             return;
         }
         let cur = self
@@ -1768,6 +1783,11 @@ impl App {
                 json!({"focus": self.focus, "revision": self.revision})
             }
             "theme.set" => {
+                if params.get("theme").is_some_and(|t| !t.is_string()) {
+                    return Err(Error::Invalid(
+                        "`theme` must be a string: dark, light or toggle".into(),
+                    ));
+                }
                 match params
                     .get("theme")
                     .and_then(|t| t.as_str())
@@ -1821,7 +1841,7 @@ impl App {
             return Vec::new();
         }
         let mut out = Vec::new();
-        let (_, pad_h) = self.doc.padding.unwrap_or(crate::ui::DEFAULT_PADDING);
+        let (_, pad_h) = self.effective_padding();
         let width = (cols as usize).saturating_sub(2 * pad_h as usize);
         let l = self.layout(width.max(1));
         if let Some(w) = l.clipped_code {
@@ -1859,6 +1879,169 @@ fn opt(s: &str) -> Option<String> {
 }
 
 /// `key=value key2="value with spaces"` → pairs. Unquoted values end at whitespace.
+/// The word (same character class) around grapheme `col` of `line`.
+fn word_span(doc: &Document, line: u32, col: u32) -> Option<codedraw_core::model::TextSpan> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let text = doc.line_text(line)?;
+    let gs: Vec<&str> = text.graphemes(true).collect();
+    if gs.is_empty() {
+        return None;
+    }
+    let i = (col as usize).min(gs.len() - 1);
+    let cls = App::word_class(gs[i]);
+    let mut a = i;
+    while a > 0 && App::word_class(gs[a - 1]) == cls {
+        a -= 1;
+    }
+    let mut b = i;
+    while b + 1 < gs.len() && App::word_class(gs[b + 1]) == cls {
+        b += 1;
+    }
+    Some(codedraw_core::model::TextSpan {
+        line,
+        start: a as u32,
+        end: b as u32 + 1,
+    })
+}
+
+/// Text of `span` in `doc` (graphemes `start..end` of its line).
+fn span_text(doc: &Document, span: &codedraw_core::model::TextSpan) -> Option<String> {
+    use unicode_segmentation::UnicodeSegmentation;
+    let line = doc.line_text(span.line)?;
+    let g: Vec<&str> = line.graphemes(true).collect();
+    let end = (span.end as usize).min(g.len());
+    let start = (span.start as usize).min(end);
+    Some(g[start..end].concat())
+}
+
+/// Finds `text` in `new`, preferring `line`, then the first occurrence anywhere.
+fn find_in(new: &Document, text: &str, line: u32) -> Option<codedraw_core::model::TextSpan> {
+    if text.trim().is_empty() {
+        return None;
+    }
+    new.find_text(text, 1, Some(line))
+        .or_else(|| new.find_text(text, 1, None))
+}
+
+/// Re-anchors a line (by its full trimmed text) from `old` into `new`.
+fn find_line(old: &Document, new: &Document, line: u32) -> Option<u32> {
+    let text = old.line_text(line)?.trim();
+    if text.is_empty() {
+        return new.has_line(line).then_some(line);
+    }
+    // Whole-line match only (same line first, then anywhere): a substring
+    // match would send a note on `}` to the first line with a brace.
+    (new.line_text(line).map(str::trim) == Some(text))
+        .then_some(line)
+        .or_else(|| {
+            (new.source.first_line..=new.last_line())
+                .find(|&l| new.line_text(l).map(str::trim) == Some(text))
+        })
+}
+
+/// Re-anchors `shape` from `old` into `new` by the text it pointed at.
+/// `None` when that text no longer exists.
+fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
+    let anchor = |a: &codedraw_core::model::Anchor| -> Option<codedraw_core::model::Anchor> {
+        // The word at the anchor identifies it.
+        let span = word_span(old, a.line, a.col)?;
+        let text = span_text(old, &span)?;
+        let found = find_in(new, &text, a.line)?;
+        Some(codedraw_core::model::Anchor {
+            line: found.line,
+            col: found.start + (a.col.saturating_sub(span.start)),
+        })
+    };
+    Some(match shape {
+        Shape::Highlight { span, label } => Shape::Highlight {
+            span: find_in(new, &span_text(old, span)?, span.line)?,
+            label: label.clone(),
+        },
+        Shape::Mark {
+            kind,
+            span,
+            label,
+            style,
+        } => Shape::Mark {
+            kind: kind.clone(),
+            span: find_in(new, &span_text(old, span)?, span.line)?,
+            label: label.clone(),
+            style: style.clone(),
+        },
+        Shape::Box {
+            from_line,
+            to_line,
+            label,
+        } => {
+            let a = find_line(old, new, *from_line)?;
+            let b = find_line(old, new, *to_line)?;
+            Shape::Box {
+                from_line: a.min(b),
+                to_line: a.max(b),
+                label: label.clone(),
+            }
+        }
+        Shape::Arrow {
+            from,
+            to,
+            label,
+            line,
+        } => Shape::Arrow {
+            from: anchor(from)?,
+            to: anchor(to)?,
+            label: label.clone(),
+            line: *line,
+        },
+        Shape::Note { line, text } => Shape::Note {
+            line: find_line(old, new, *line)?,
+            text: text.clone(),
+        },
+        Shape::Callout {
+            from_line,
+            to_line,
+            text,
+            title,
+            placement,
+            width,
+        } => {
+            let a = find_line(old, new, *from_line)?;
+            let b = match to_line {
+                Some(t) => Some(find_line(old, new, *t)?),
+                None => None,
+            };
+            Shape::Callout {
+                from_line: a,
+                to_line: b.map(|b| b.max(a)),
+                text: text.clone(),
+                title: title.clone(),
+                placement: *placement,
+                width: *width,
+            }
+        }
+        Shape::Spotlight {
+            from_line,
+            to_line,
+            ids,
+            until,
+        } => {
+            let a = match from_line {
+                Some(f) => Some(find_line(old, new, *f)?),
+                None => None,
+            };
+            let b = match to_line {
+                Some(t) => Some(find_line(old, new, *t)?),
+                None => None,
+            };
+            Shape::Spotlight {
+                from_line: a,
+                to_line: b,
+                ids: ids.clone(),
+                until: *until,
+            }
+        }
+    })
+}
+
 /// Splits trailing `key=value` tokens off a free-text argument:
 /// `"move stroke=dashed heads=none,arrow"` → (`"move"`, [(stroke, dashed), (heads, "none,arrow")]).
 pub fn split_trailing_kv(s: &str) -> (&str, Vec<(String, String)>) {

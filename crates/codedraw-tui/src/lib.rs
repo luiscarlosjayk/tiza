@@ -100,9 +100,11 @@ fn event_loop(
                     needs_draw = true;
                 }
                 Event::Paste(text) => {
-                    match app.replace_code(&text) {
-                        Ok(()) => app.info(format!("{} lines pasted", app.doc.code.len())),
-                        Err(e) => app.error(e.to_string()),
+                    if let Mode::Command(input) = &mut app.mode {
+                        // Pasting into the command line: text, not a new document.
+                        input.push_str(text.lines().next().unwrap_or("").trim_end());
+                    } else if let Err(e) = app.replace_code(&text) {
+                        app.error(e.to_string());
                     }
                     needs_draw = true;
                 }
@@ -121,15 +123,20 @@ fn event_loop(
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // Overlays: any of these keys closes them.
     if app.overlay != Overlay::None {
-        if matches!(
-            code,
-            KeyCode::Esc
-                | KeyCode::Enter
-                | KeyCode::Char('q')
-                | KeyCode::Char('?')
-                | KeyCode::Char('L')
-        ) {
-            app.overlay = Overlay::None;
+        match code {
+            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?' | 'L') => {
+                app.overlay = Overlay::None;
+                app.overlay_scroll = 0;
+            }
+            KeyCode::Char('j') | KeyCode::Down => app.overlay_scroll += 1,
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.overlay_scroll = app.overlay_scroll.saturating_sub(1)
+            }
+            KeyCode::PageDown | KeyCode::Char(' ') => app.overlay_scroll += 10,
+            KeyCode::PageUp => app.overlay_scroll = app.overlay_scroll.saturating_sub(10),
+            KeyCode::Char('g') | KeyCode::Home => app.overlay_scroll = 0,
+            KeyCode::Char('G') | KeyCode::End => app.overlay_scroll = usize::MAX / 2,
+            _ => {}
         }
         return;
     }
@@ -194,6 +201,10 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             KeyCode::Char(c) if "mnbsaC".contains(c) => {
                 app.select_action(c);
             }
+            // The command line and the help stay reachable with a selection.
+            KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
+            KeyCode::Char('?') => app.overlay = Overlay::Help,
+            KeyCode::Char('L') => app.overlay = Overlay::List,
             KeyCode::Left => app.move_col(-1),
             KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
             KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),

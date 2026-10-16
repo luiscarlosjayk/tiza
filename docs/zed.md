@@ -24,9 +24,9 @@ In `~/.config/zed/tasks.json` (or the project's `.zed/tasks.json`):
     "reveal": "always"
   },
   {
-    "label": "CodeDraw: from the current line",
-    "command": "codedraw",
-    "args": ["$ZED_FILE:$ZED_ROW"],
+    "label": "CodeDraw: from the current line (40 lines)",
+    "command": "sh",
+    "args": ["-c", "codedraw \"$ZED_FILE:$ZED_ROW-$((ZED_ROW + 39))\""],
     "use_new_terminal": true,
     "reveal": "always"
   }
@@ -44,6 +44,7 @@ Shortcut in `~/.config/zed/keymap.json`:
 Notes:
 
 - Tasks that use `$ZED_SELECTED_TEXT` only appear when there is selected text.
+- `${ZED_FILE##*.}` is the file extension; for a file without one (a `Makefile`, a script with a shebang) it expands to the whole path and CodeDraw falls back to plain text — pass the language by hand instead (`--lang sh`). A range past the end of the file is clamped with a notice, so the 40-line window is safe near the bottom.
 - `codedraw file.rs:A-B` keeps the real line numbering, so you can say "look at line 42" and match the editor.
 - In Zed's terminal, use `line_height: "standard"` in the terminal settings so the box-drawing characters fit without gaps.
 - Theme: `t` toggles dark/light so CodeDraw matches the Zed theme you are using in the video.
