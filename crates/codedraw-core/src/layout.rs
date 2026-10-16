@@ -59,6 +59,11 @@ pub struct Layout {
     pub rows: Vec<Row>,
     pub row_of_line: BTreeMap<u32, usize>,
     pub code_x: usize,
+    /// Width in cells of the widest code line when it did not fit and was
+    /// clipped (`None` when every line fits).
+    pub clipped_code: Option<usize>,
+    /// Whether labels and notes go to the right margin (false: under the line).
+    pub labels_in_margin: bool,
 }
 
 impl Layout {
@@ -888,6 +893,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         rows,
         row_of_line,
         code_x,
+        clipped_code: (code_full_w > code_w).then_some(code_full_w),
+        labels_in_margin,
     }
 }
 

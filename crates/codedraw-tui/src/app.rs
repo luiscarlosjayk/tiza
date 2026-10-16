@@ -1603,7 +1603,41 @@ impl App {
             max_step: self.doc.max_step(),
             cols: self.size.0,
             rows: self.size.1,
+            warnings: self.viewport_warnings(),
         }
+    }
+
+    /// Minimum terminal size for the recommended recording profile.
+    pub const MIN_COLS: u16 = 100;
+    pub const MIN_ROWS: u16 = 30;
+
+    /// Warnings about the current viewport: too small for the recording
+    /// profile (labels go under the lines) or code lines being clipped.
+    /// Empty when the size is unknown (0×0) or everything fits.
+    pub fn viewport_warnings(&self) -> Vec<String> {
+        let (cols, rows) = self.size;
+        if cols == 0 || rows == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
+        let (_, pad_h) = self.doc.padding.unwrap_or(crate::ui::DEFAULT_PADDING);
+        let width = (cols as usize).saturating_sub(2 * pad_h as usize);
+        let l = self.layout(width.max(1));
+        if let Some(w) = l.clipped_code {
+            out.push(format!("code clipped ({w} cols)"));
+        }
+        if cols < Self::MIN_COLS || rows < Self::MIN_ROWS {
+            let mut w = format!(
+                "small terminal {cols}×{rows} < {}×{}",
+                Self::MIN_COLS,
+                Self::MIN_ROWS
+            );
+            if !l.labels_in_margin {
+                w.push_str(": labels go under the lines");
+            }
+            out.push(w);
+        }
+        out
     }
 }
 

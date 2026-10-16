@@ -307,6 +307,16 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     if app.dirty {
         left.push(Span::styled(" •", accent));
     }
+    let warnings = app.viewport_warnings();
+    if let Some(w) = warnings.first() {
+        left.push(Span::styled(
+            format!("  ⚠ {w}"),
+            Style::default()
+                .fg(rgb(th.error))
+                .bg(rgb(th.status_bg))
+                .add_modifier(Modifier::BOLD),
+        ));
+    }
     let right: Vec<Span> = match &app.message {
         Some((m, is_err)) => vec![Span::styled(
             format!("{m} "),
@@ -335,6 +345,20 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
             muted,
         )],
     };
+    // On a narrow bar, drop the least useful segments (theme, cursor line,
+    // annotation count, file) so a warning never gets cut off.
+    let mut left = left;
+    if warnings.first().is_some() {
+        for drop_idx in [4usize, 6, 7, 5] {
+            let lw: usize = left.iter().map(|s| s.content.width()).sum();
+            if lw <= area.width as usize {
+                break;
+            }
+            if drop_idx < left.len() {
+                left[drop_idx] = Span::styled("", bar);
+            }
+        }
+    }
     let lw: usize = left.iter().map(|s| s.content.width()).sum();
     let mut right = right;
     let mut rw: usize = right.iter().map(|s| s.content.width()).sum();

@@ -10,7 +10,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 
 ## Recommended flow
 
-1. `status` — confirm there is an instance and look at `cols`/`rows` (if `cols < 100`, labels go below the line: keep them short).
+1. `status` — confirm there is an instance and look at `cols`/`rows` and `warnings` (`small terminal …: labels go under the lines` → keep labels short; `code clipped (N cols)` → the presenter should widen the terminal or open a narrower range).
 2. `get_code` — read the code with line numbers. Pick exact texts.
 3. Annotate in the order of the explanation, assigning an increasing `step`:
    - `add_mark` for semantic marks. Built-in, language-agnostic kinds: `info`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo` (Rust habits work as aliases: `borrow`→`read`, `borrow_mut`→`write`, `lifetime`→`scope`). Each shows glyph + legend; `label` is appended. For something the author will reuse, `define_style` once (`{name, glyph, legend, color}`) and then use `name` as `kind`; for a one-off, pass `style: {glyph, legend, color}` inline. Emoji are allowed as glyphs. `list_kinds` shows what exists.

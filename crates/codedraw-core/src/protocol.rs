@@ -426,6 +426,9 @@ pub struct Status {
     pub max_step: u32,
     pub cols: u16,
     pub rows: u16,
+    /// Human-readable warnings about the viewport (small terminal, clipped code).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// Result of a mutation.
