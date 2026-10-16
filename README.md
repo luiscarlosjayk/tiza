@@ -54,7 +54,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 | `j`/`k`, `↑`/`↓`, `g`/`G` | move the line cursor |
 | `h`/`l`, `w`/`b`/`e`, `0`/`$` | move the column cursor (word motions) |
 | `v` / `V` / `i` | select text / select lines / select the word under the cursor |
-| with a selection: `h` `m` `n` `b` `a` `s` | highlight · mark (then type `KIND [label]`) · note · box · arrow (source `a`, target `a`) · spotlight |
+| with a selection: `h` `m` `n` `C` `b` `a` `s` | highlight · mark (then type `KIND [label]`) · note · callout (then type the text) · box · arrow (source `a`, target `a`) · spotlight |
 | `Tab` / `Shift-Tab` | select an annotation; then `Enter` edit label · `x` delete · `c` color · `+`/`-` move step |
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo |
@@ -74,6 +74,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :box 15-17 takes owns s               box around a range of lines
 :hl 7:&t shared borrow                highlight
 :note 4 s no longer owns it           note anchored to a line
+:callout 15-25 @auto title="why" two or three sentences…   bordered paragraph; @margin (default) | @below | @auto
 :step 2        :step a3 2             change step · move annotation a3 to step 2
 :del a1        :clear | :clear 2       delete one · clear everything or only one step (u undoes)
 :label a2 new text                     change the label
@@ -100,7 +101,7 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
+Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
 The same API is available as a Unix socket with line-delimited JSON (design borrowed from herdr) and from the CLI:
 
@@ -120,7 +121,7 @@ A task that sends the current selection to CodeDraw in the integrated terminal: 
 
 ## Recommended recording profile
 
-Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows`; below ~100 columns, notes are drawn under the line instead of in the margin. Both themes use explicit RGB colors designed for 1080p.
+Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows`; below ~100 columns, notes are drawn under the line instead of in the margin, and callouts with `placement: auto` move below their lines. One blank column is kept at each side by default (`:pad V H` to change it). Both themes use explicit RGB colors designed for 1080p.
 
 ## Development
 

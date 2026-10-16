@@ -75,15 +75,24 @@ fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buf
     }
 }
 
+/// Blank cells kept between the terminal edge and the drawing when the
+/// document does not set `padding` (`:pad V H`).
+pub const DEFAULT_PADDING: (u16, u16) = (0, 1);
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     app.size = (area.width, area.height);
+    if area.width == 0 || area.height == 0 {
+        // A terminal that has not reported its size yet (first frame in a
+        // pty, a collapsed pane): nothing to draw, and no arithmetic to fail.
+        return;
+    }
     let th = app.theme.clone();
     let base = Style::default().fg(rgb(th.fg)).bg(rgb(th.bg));
     frame.buffer_mut().set_style(area, base);
 
     let status_h = if app.present { 0 } else { 1 };
-    let (pad_v, pad_h) = app.doc.padding.unwrap_or((0, 0));
+    let (pad_v, pad_h) = app.doc.padding.unwrap_or(DEFAULT_PADDING);
     let pad_h = pad_h.min(area.width.saturating_sub(20) / 2);
     let pad_v = pad_v.min(area.height.saturating_sub(status_h + 3) / 2);
     let canvas_area = Rect {
@@ -319,7 +328,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         )],
         None => vec![Span::styled(
             if matches!(app.mode, Mode::Select { .. }) {
-                "h highlight  m mark  n note  b box  a arrow  s spotlight  i word  Esc cancel "
+                "h highlight  m mark  n note  C callout  b box  a arrow  s spotlight  Esc "
             } else {
                 "v select  i word  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
             },
@@ -400,6 +409,7 @@ fn help_lines() -> Vec<String> {
         "  :arrow L:text L:text [label]             :hl L:text [label]",
         "  :box A-B [label]                         :note L text   (L may be .)",
         "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
+        "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
         "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [path]   :q",

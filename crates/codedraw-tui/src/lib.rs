@@ -177,7 +177,7 @@ fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 // in selection mode `h` acts, `←` moves.
                 app.select_action('h');
             }
-            KeyCode::Char(c) if "mnbsa".contains(c) => {
+            KeyCode::Char(c) if "mnbsaC".contains(c) => {
                 app.select_action(c);
             }
             KeyCode::Left => app.move_col(-1),

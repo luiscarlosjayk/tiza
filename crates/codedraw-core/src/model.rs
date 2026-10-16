@@ -235,6 +235,21 @@ pub enum Shape {
     },
     /// Text note anchored to a line.
     Note { line: u32, text: String },
+    /// Bordered multi-line text block explaining a range of lines. Laid out as a
+    /// block (reserving its rows), not as a per-line label, so a paragraph does
+    /// not push every other label down.
+    Callout {
+        from_line: u32,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        to_line: Option<u32>,
+        text: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "Placement::is_default")]
+        placement: Placement,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        width: Option<usize>,
+    },
     /// Directs attention: while active (from `step` to `until`, or only at
     /// `step`), dims the code outside `lines` and the annotations outside `ids`.
     /// With only `ids`, the focused code is that of those annotations.
@@ -250,6 +265,38 @@ pub enum Shape {
     },
 }
 
+/// Where a callout is drawn.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Placement {
+    /// In the right margin, aligned with `from_line` (default).
+    #[default]
+    Margin,
+    /// As its own rows between `to_line` and the next code line.
+    Below,
+    /// Margin when the terminal has room, below otherwise.
+    Auto,
+}
+
+impl Placement {
+    pub fn is_default(&self) -> bool {
+        *self == Placement::Margin
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        match s
+            .trim()
+            .trim_start_matches('@')
+            .to_ascii_lowercase()
+            .as_str()
+        {
+            "margin" | "right" => Some(Self::Margin),
+            "below" | "under" => Some(Self::Below),
+            "auto" => Some(Self::Auto),
+            _ => None,
+        }
+    }
+}
+
 impl Shape {
     /// Line ranges the shape occupies (to focus the code of an annotation).
     /// An arrow occupies only its two endpoints, not the stretch between them.
@@ -263,6 +310,9 @@ impl Shape {
             } => vec![(*from_line, *to_line)],
             Shape::Arrow { from, to, .. } => vec![(from.line, from.line), (to.line, to.line)],
             Shape::Note { line, .. } => vec![(*line, *line)],
+            Shape::Callout {
+                from_line, to_line, ..
+            } => vec![(*from_line, to_line.unwrap_or(*from_line))],
             Shape::Spotlight {
                 from_line, to_line, ..
             } => from_line
@@ -500,6 +550,25 @@ impl Document {
                 check_line(*line)?;
                 if text.trim().is_empty() {
                     return Err(Error::Invalid("the note is empty".into()));
+                }
+                Ok(())
+            }
+            Shape::Callout {
+                from_line,
+                to_line,
+                text,
+                ..
+            } => {
+                check_line(*from_line)?;
+                let b = to_line.unwrap_or(*from_line);
+                check_line(b)?;
+                if *from_line > b {
+                    return Err(Error::Invalid(format!(
+                        "the callout starts at {from_line} and ends before, at {b}"
+                    )));
+                }
+                if text.trim().is_empty() {
+                    return Err(Error::Invalid("the callout text is empty".into()));
                 }
                 Ok(())
             }

@@ -154,6 +154,31 @@ pub struct UpdateParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CalloutParams {
+    #[schemars(description = "First line the callout explains (1-based)")]
+    pub from_line: u32,
+    #[schemars(description = "Last line it explains; defaults to from_line")]
+    pub to_line: Option<u32>,
+    #[schemars(
+        description = "Body: two or three sentences, wrapped by words. Newlines start new paragraphs."
+    )]
+    pub text: String,
+    #[schemars(description = "Short title embedded in the top border")]
+    pub title: Option<String>,
+    #[schemars(
+        description = "margin (default: right margin, aligned with from_line), below (own rows under to_line) or auto"
+    )]
+    pub placement: Option<String>,
+    #[schemars(
+        description = "Max text width in columns (default ~34 in the margin, full code width below)"
+    )]
+    pub width: Option<usize>,
+    pub step: Option<u32>,
+    pub color: Option<String>,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SpotlightParams {
     #[schemars(description = "First line to highlight (the rest of the code is dimmed)")]
     pub from_line: Option<u32>,
@@ -394,6 +419,38 @@ impl CodeDrawServer {
     }
 
     #[tool(
+        description = "Adds a bordered multi-line text block (callout) explaining a range of lines: use it for two or three sentences instead of a note. Placement margin (default), below or auto."
+    )]
+    async fn add_callout(
+        &self,
+        Parameters(p): Parameters<CalloutParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let placement = match p
+            .placement
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            None | Some("margin") => "margin",
+            Some("below") => "below",
+            Some("auto") => "auto",
+            Some(other) => {
+                return Err(McpError::invalid_params(
+                    format!("unknown placement: {other} (margin, below, auto)"),
+                    None,
+                ));
+            }
+        };
+        let v = self
+            .call(
+                "annotation.add",
+                json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id}),
+            )
+            .await?;
+        Ok(text(pretty(&v)))
+    }
+
+    #[tool(
         description = "Directs attention in a step: dims the code outside a line range and/or the annotations outside `ids`. Use it as a 'look here' step between reveals. Active from `step` to `until`."
     )]
     async fn add_spotlight(
@@ -525,7 +582,7 @@ impl ServerHandler for CodeDrawServer {
                 "CodeDraw is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes and Rust \
                  marks: move, borrow, borrow_mut, drop, lifetime) to explain it on video. Recommended flow: \
                  1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
-                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, using `find` with the exact text; \
+                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text; \
                  4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify. \
                  Keep labels short: they are drawn in a ~100-column terminal.",
             )

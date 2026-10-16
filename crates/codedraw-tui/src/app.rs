@@ -265,6 +265,7 @@ impl App {
                         *text = l;
                     }
                 }
+                Shape::Callout { title, .. } => *title = l,
                 Shape::Spotlight { .. } => {}
             }
         }
@@ -526,6 +527,14 @@ impl App {
                 self.info(format!("focus {a}-{b} (Esc clears)"));
             }
             ('m', _) => self.command_with_selection("mark "),
+            ('C', Selection::Lines(a, b)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("callout {a}-{b} "));
+            }
+            ('C', Selection::Span(sp)) => {
+                self.end_select();
+                self.mode = Mode::Command(format!("callout {} ", sp.line));
+            }
             ('n', Selection::Span(sp)) => {
                 self.end_select();
                 self.mode = Mode::Command(format!("note {} ", sp.line));
@@ -652,6 +661,7 @@ impl App {
                     | Shape::Box { label, .. }
                     | Shape::Arrow { label, .. } => label.clone().unwrap_or_default(),
                     Shape::Note { text, .. } => text.clone(),
+                    Shape::Callout { title, .. } => title.clone().unwrap_or_default(),
                     Shape::Spotlight { .. } => String::new(),
                 };
                 self.mode = Mode::Command(format!("label {id} {current}"));
@@ -688,9 +698,9 @@ impl App {
 
     /// Every `:` command name, for completion and help.
     pub const COMMANDS: &'static [&'static str] = &[
-        "arrow", "autosave", "box", "clear", "color", "del", "embed", "focus", "help", "hl",
-        "label", "lang", "link", "list", "mark", "next", "note", "pad", "present", "prev", "q",
-        "redo", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
+        "arrow", "autosave", "box", "callout", "clear", "color", "del", "embed", "focus", "help",
+        "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad", "present", "prev",
+        "q", "redo", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
     ];
 
     /// Tab completion for the command line: the command name on the first word, then
@@ -842,6 +852,7 @@ impl App {
                     Ok(format!("the .codedraw now references {file}"))
                 }
                 "spot" | "spotlight" => self.cmd_spot(rest),
+                "callout" | "co" => self.cmd_callout(rest),
                 "until" => {
                     let (id, n) = split_first(rest);
                     let n: u32 = n.parse().map_err(|_| {
@@ -1298,6 +1309,64 @@ impl App {
             },
         )?;
         Ok(format!("{id}: spotlight at step {}", self.doc.step.max(1)))
+    }
+
+    /// `:callout A[-B] [@below|@margin|@auto] [title="…"] text…`
+    fn cmd_callout(&mut self, rest: &str) -> Result<String, Error> {
+        let (range, mut rest) = split_first(rest);
+        let (a, b) = if range == "." {
+            (self.cursor_line, self.cursor_line)
+        } else {
+            parse_range(range).map_err(|_| {
+                Error::Invalid(
+                    "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text".into(),
+                )
+            })?
+        };
+        let mut placement = codedraw_core::model::Placement::Margin;
+        let mut title = None;
+        loop {
+            let (tok, after) = split_first(rest);
+            if let Some(pl) = tok
+                .strip_prefix('@')
+                .and_then(codedraw_core::model::Placement::parse)
+            {
+                placement = pl;
+                rest = after;
+            } else if tok.starts_with("title=") {
+                let kv = parse_kv(rest);
+                let (_, v) = kv.first().cloned().unwrap_or_default();
+                title = opt(&v);
+                // consume `title=…` (quoted or not) from rest
+                let consumed = if rest.trim_start().starts_with("title=\"") {
+                    rest.trim_start()
+                        .find("\" ")
+                        .map(|i| i + 2)
+                        .unwrap_or(rest.len())
+                } else {
+                    rest.trim_start().find(' ').unwrap_or(rest.len())
+                };
+                rest = rest.trim_start()[consumed.min(rest.trim_start().len())..].trim_start();
+            } else {
+                break;
+            }
+        }
+        if rest.trim().is_empty() {
+            return Err(Error::Invalid("the callout text is empty".into()));
+        }
+        let id = self.add_annotation(
+            None,
+            None,
+            Shape::Callout {
+                from_line: a,
+                to_line: if b == a { None } else { Some(b) },
+                text: rest.trim().to_string(),
+                title,
+                placement,
+                width: None,
+            },
+        )?;
+        Ok(format!("{id}: callout at L{a}-{b}"))
     }
 
     fn cmd_note(&mut self, rest: &str) -> Result<String, Error> {
@@ -1907,6 +1976,31 @@ mod tests {
         assert_eq!(a.history_step(-1).as_deref(), Some("note 1 x"));
         assert_eq!(a.history_step(1).as_deref(), Some("note 2 y"));
         assert_eq!(a.history_step(1).as_deref(), Some(""));
+    }
+
+    #[test]
+    fn callout_command_parses_placement_and_title() {
+        let mut a = app();
+        a.run_command("callout 2-3 @below title=\"why\" because s is moved");
+        assert!(matches!(a.message, Some((_, false))), "{:?}", a.message);
+        match &a.doc.annotations.last().unwrap().shape {
+            Shape::Callout {
+                from_line,
+                to_line,
+                text,
+                title,
+                placement,
+                ..
+            } => {
+                assert_eq!((*from_line, *to_line), (2, Some(3)));
+                assert_eq!(text, "because s is moved");
+                assert_eq!(title.as_deref(), Some("why"));
+                assert_eq!(*placement, codedraw_core::model::Placement::Below);
+            }
+            other => panic!("{other:?}"),
+        }
+        a.run_command("callout 2");
+        assert!(matches!(a.message, Some((_, true))), "empty text must fail");
     }
 
     #[test]

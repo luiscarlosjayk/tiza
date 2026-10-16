@@ -49,6 +49,8 @@ pub enum Row {
     ArrowUnder(usize),
     /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
+    /// One row of a callout drawn below its range: (callout index in `vis`, row within the block).
+    Callout(usize, usize),
 }
 
 #[derive(Debug, Clone)]
@@ -111,6 +113,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             }
             (Shape::Box { .. }, None) => theme.box_line,
             (Shape::Note { .. }, None) => theme.note,
+            (Shape::Callout { .. }, None) => theme.note,
             (Shape::Mark { kind, style, .. }, None) => doc
                 .resolve_style(kind, style)
                 .map(|st| theme.mark_color(&st))
@@ -252,6 +255,69 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let margin_est = width.saturating_sub(code_x_est + code_w + 1 + box_depth + 1);
     let labels_in_margin = margin_est >= 14;
 
+    // ---- callouts: decide placement and pre-wrap their text ----
+    struct CalloutPlan {
+        idx: usize,
+        below: bool,
+        title: Option<String>,
+        lines: Vec<String>,
+        /// Outer block width (borders included).
+        width: usize,
+    }
+    let mut callouts: Vec<CalloutPlan> = Vec::new();
+    for (i, a) in vis.iter().enumerate() {
+        let Shape::Callout {
+            text,
+            title,
+            placement,
+            width: want,
+            ..
+        } = &a.shape
+        else {
+            continue;
+        };
+        let below = match placement {
+            crate::model::Placement::Below => true,
+            crate::model::Placement::Margin => !labels_in_margin || margin_est < 12,
+            // Auto: the margin must hold the block *and* leave room for
+            // the labels of the lines it covers, beside it.
+            crate::model::Placement::Auto => {
+                !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
+            }
+        };
+        let text_w = if below {
+            // Stays inside the code column, so a Box around the range can
+            // still draw its right rail.
+            let max_text = code_w.saturating_sub(4).max(8);
+            want.unwrap_or(max_text).clamp(8, max_text)
+        } else {
+            want.unwrap_or(34)
+                .clamp(8, margin_est.saturating_sub(5).max(8))
+        };
+        let mut lines: Vec<String> = Vec::new();
+        for para in text.split('\n') {
+            if para.trim().is_empty() {
+                lines.push(String::new());
+            } else {
+                lines.extend(wrap_words(para, text_w));
+            }
+        }
+        let inner = lines
+            .iter()
+            .map(|l| display_width(l, 4))
+            .max()
+            .unwrap_or(0)
+            .max(title.as_ref().map(|t| display_width(t, 4) + 4).unwrap_or(0))
+            .max(4);
+        callouts.push(CalloutPlan {
+            idx: i,
+            below,
+            title: title.clone(),
+            lines,
+            width: inner + 4, // "│ " + text + " │"
+        });
+    }
+
     // ---- rows ----
     let mut rows: Vec<Row> = Vec::new();
     let mut row_of_line = BTreeMap::new();
@@ -326,6 +392,23 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         is_note,
                     ));
                     rows.push(Row::Under(unders.len() - 1));
+                }
+            }
+        }
+
+        for (ci, c) in callouts.iter().enumerate() {
+            if !c.below {
+                continue;
+            }
+            let Shape::Callout {
+                from_line, to_line, ..
+            } = &vis[c.idx].shape
+            else {
+                continue;
+            };
+            if to_line.unwrap_or(*from_line) == line {
+                for k in 0..c.lines.len() + 2 {
+                    rows.push(Row::Callout(ci, k));
                 }
             }
         }
@@ -658,6 +741,86 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         );
     }
 
+    // ---- 6b. callouts ----
+    let mut occupied = vec![false; canvas.height];
+    // Columns of the margin taken by a callout block on each row; labels of
+    // those rows are drawn to the right of the block when there is room.
+    let mut shift = vec![0usize; canvas.height];
+    let draw_block = |canvas: &mut Canvas, c: &CalloutPlan, x: usize, y0: usize, color: Rgb| {
+        let w = c.width;
+        let border = base.fg(color);
+        let text_style = base.fg(color).italic();
+        canvas.put(x, y0, "╭", border);
+        for xx in x + 1..x + w - 1 {
+            canvas.put(xx, y0, "─", border);
+        }
+        canvas.put(x + w - 1, y0, "╮", border);
+        if let Some(t) = &c.title {
+            canvas.put(x + 2, y0, " ", border);
+            let tw = canvas.put_str_clipped(x + 3, y0, t, w.saturating_sub(6), border.bold());
+            canvas.put(x + 3 + tw, y0, " ", border);
+        }
+        for (k, l) in c.lines.iter().enumerate() {
+            let y = y0 + 1 + k;
+            canvas.put(x, y, "│", border);
+            for xx in x + 1..x + w - 1 {
+                canvas.put(xx, y, " ", base);
+            }
+            canvas.put_str(x + 2, y, l, text_style);
+            canvas.put(x + w - 1, y, "│", border);
+        }
+        let yb = y0 + 1 + c.lines.len();
+        canvas.put(x, yb, "╰", border);
+        for xx in x + 1..x + w - 1 {
+            canvas.put(xx, yb, "─", border);
+        }
+        canvas.put(x + w - 1, yb, "╯", border);
+    };
+    // Below: their rows already exist.
+    for c in &callouts {
+        if !c.below {
+            continue;
+        }
+        if let Some(y0) = rows.iter().position(|r| {
+            *r == Row::Callout(callouts.iter().position(|x| std::ptr::eq(x, c)).unwrap(), 0)
+        }) {
+            draw_block(&mut canvas, c, code_x, y0, color_of(vis[c.idx]));
+        }
+    }
+    // Margin: reserve rows from the callout's first line.
+    if labels_in_margin && margin_w > 0 {
+        for c in &callouts {
+            if c.below {
+                continue;
+            }
+            let Shape::Callout { from_line, .. } = &vis[c.idx].shape else {
+                continue;
+            };
+            let Some(&y0) = row_of_line.get(from_line) else {
+                continue;
+            };
+            let h = c.lines.len() + 2;
+            if y0 + h > canvas.height || c.width > margin_w {
+                // Does not fit: fall back to a clipped single label.
+                let Shape::Callout { text, .. } = &vis[c.idx].shape else {
+                    continue;
+                };
+                margin[y0].push(Label {
+                    text: text.clone(),
+                    color: color_of(vis[c.idx]),
+                    note: true,
+                });
+                continue;
+            }
+            draw_block(&mut canvas, c, margin_x, y0, color_of(vis[c.idx]));
+            if margin_w.saturating_sub(c.width + 1) >= 14 {
+                shift[y0..y0 + h].fill(c.width + 1);
+            } else {
+                occupied[y0..y0 + h].fill(true);
+            }
+        }
+    }
+
     // ---- 7. margin ----
     // Each label takes its own margin row. If a line has several, the next
     // ones move down to the free rows below; if a label does not fit, it is
@@ -665,7 +828,6 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // when no free rows remain before the next label.
     if labels_in_margin && margin_w > 0 {
         let height = canvas.height;
-        let mut occupied = vec![false; height];
         for (y, labels) in margin.iter().enumerate() {
             let mut next_row = y;
             for l in labels {
@@ -675,25 +837,26 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 } else {
                     base.fg(l.color)
                 };
-                let text_w = margin_w.saturating_sub(display_width(prefix, 4));
-                if text_w < 4 {
-                    break;
-                }
                 let Some(mut r) = (next_row..height).find(|&r| !occupied[r]) else {
                     break;
                 };
+                let x0 = margin_x + shift[r];
+                let text_w = margin_w.saturating_sub(shift[r] + display_width(prefix, 4) + 1);
+                if text_w < 4 {
+                    break;
+                }
                 let pieces = wrap_words(&l.text, text_w);
                 let mut first = true;
                 for piece in pieces {
-                    if r >= height || occupied[r] {
+                    if r >= height || occupied[r] || shift[r] > x0 - margin_x {
                         // No room: clip what remains onto the previous row.
                         if r > 0 && r - 1 < height {
-                            let px = margin_x + display_width(prefix, 4);
+                            let px = x0 + display_width(prefix, 4);
                             canvas.put_str_clipped(px, r - 1, &l.text, text_w, style);
                         }
                         break;
                     }
-                    let mut x = margin_x;
+                    let mut x = x0;
                     if first {
                         x += canvas.put_str(x, r, prefix, style);
                     } else {
@@ -893,7 +1056,7 @@ fn mark_anchor(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{Anchor, TextSpan};
+    use crate::model::{Anchor, Placement, TextSpan};
 
     fn doc() -> Document {
         let mut d = Document::from_code(
@@ -1144,5 +1307,161 @@ mod tests {
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 48);
         }
+    }
+
+    /// Code without annotations, plus a callout over L2-3 and a note on L4
+    /// (the "following line" of the spec).
+    fn callout_doc(placement: Placement) -> Document {
+        let mut d = Document::from_code(
+            "fn main() {\n    let s = String::from(\"hola\");\n    takes(s);\n    println!(\"{s}\");\n}\n\nfn takes(t: String) {\n    println!(\"{t}\");\n}\n",
+            "rs",
+            None,
+        );
+        d.add(Annotation {
+            id: "c1".into(),
+            step: 1,
+            color: Some("cyan".into()),
+            shape: Shape::Callout {
+                from_line: 2,
+                to_line: Some(3),
+                text: "s owns the String. Passing it to takes moves the value, so after line 3 main cannot use s any more: the compiler rejects line 4.".into(),
+                title: Some("move".into()),
+                placement,
+                width: None,
+            },
+        })
+        .unwrap();
+        d.add(Annotation {
+            id: "n1".into(),
+            step: 1,
+            color: None,
+            shape: Shape::Note {
+                line: 4,
+                text: "does not compile".into(),
+            },
+        })
+        .unwrap();
+        d.add(Annotation {
+            id: "b1".into(),
+            step: 1,
+            color: None,
+            shape: Shape::Box {
+                from_line: 2,
+                to_line: 3,
+                label: Some("moved here".into()),
+            },
+        })
+        .unwrap();
+        d
+    }
+
+    fn row_with(text: &str, l: &Layout) -> usize {
+        (0..l.canvas.height)
+            .find(|&y| l.canvas.row_text(y).contains(text))
+            .unwrap_or_else(|| panic!("{text:?} not rendered:\n{}", l.canvas.to_plain_text()))
+    }
+
+    #[test]
+    fn callout_in_margin_reserves_rows_and_next_label_stays_on_its_line() {
+        let d = callout_doc(Placement::Margin);
+        let th = Theme::dark();
+        let l = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 114,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        // Block is a bordered box with its title, aligned with L2.
+        let top = row_with("╭─ move ─", &l);
+        assert_eq!(top, l.row_of_line[&2], "callout top aligns with from_line");
+        assert!(text.contains("│ s owns the String."));
+        // The note on L4 is drawn on its own line, not pushed below the block…
+        let note_row = row_with("┆ does not compile", &l);
+        assert_eq!(note_row, l.row_of_line[&4]);
+        // …which means the block only occupies the margin to the right.
+        assert!(l.canvas.row_text(note_row).contains("println!"));
+        // No row exceeds the width and the code block is contiguous (no Callout rows).
+        assert!(!l.rows.iter().any(|r| matches!(r, Row::Callout(..))));
+        for y in 0..l.canvas.height {
+            assert!(display_width(&l.canvas.row_text(y), 4) <= 114);
+        }
+    }
+
+    #[test]
+    fn callout_below_inserts_rows_inside_the_box() {
+        let d = callout_doc(Placement::Below);
+        let th = Theme::dark();
+        let l = layout(
+            &d,
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        let callout_rows: Vec<usize> = l
+            .rows
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| matches!(r, Row::Callout(..)))
+            .map(|(y, _)| y)
+            .collect();
+        assert!(!callout_rows.is_empty(), "below placement inserts rows");
+        // Rows sit after L3 and before L4.
+        assert!(callout_rows[0] > l.row_of_line[&3]);
+        assert!(*callout_rows.last().unwrap() < l.row_of_line[&4]);
+        // The Box around L2-3 is extended: its bottom border comes after the callout.
+        let box_top = row_with("╭─ moved here ─", &l);
+        let box_bottom = l
+            .rows
+            .iter()
+            .position(|r| matches!(r, Row::BoxBottom(_)))
+            .unwrap();
+        assert!(box_top < callout_rows[0] && box_bottom > *callout_rows.last().unwrap());
+        // Every callout row carries the box rail on the left.
+        for &y in &callout_rows {
+            assert!(
+                l.canvas.row_text(y).contains('│'),
+                "row {y}: {}",
+                l.canvas.row_text(y)
+            );
+        }
+        assert!(text.contains("│ s owns the String."));
+        for y in 0..l.canvas.height {
+            assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
+        }
+    }
+
+    #[test]
+    fn callout_auto_follows_the_margin_threshold() {
+        let th = Theme::dark();
+        let wide = layout(
+            &callout_doc(Placement::Auto),
+            &th,
+            &LayoutOptions {
+                width: 114,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        assert!(!wide.rows.iter().any(|r| matches!(r, Row::Callout(..))));
+        let narrow = layout(
+            &callout_doc(Placement::Auto),
+            &th,
+            &LayoutOptions {
+                width: 80,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        assert!(narrow.rows.iter().any(|r| matches!(r, Row::Callout(..))));
     }
 }

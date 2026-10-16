@@ -17,6 +17,7 @@
   },
   "step": 0,
   "theme": "dark",
+  "padding": [1, 2],
   "annotations": [
     {
       "id": "a1",
@@ -179,6 +180,17 @@
         "a1",
         "a2"
       ]
+    },
+    {
+      "id": "c1",
+      "step": 7,
+      "type": "callout",
+      "from_line": 15,
+      "to_line": 25,
+      "title": "three ways to pass a value",
+      "text": "takes(s) moves the String: main loses it. len(&s) borrows it read-only, so main keeps using t afterwards. push(&mut s) borrows it mutably: only one such borrow may exist at a time, and the caller sees the change.",
+      "placement": "auto",
+      "color": "cyan"
     },
     {
       "id": "s2",

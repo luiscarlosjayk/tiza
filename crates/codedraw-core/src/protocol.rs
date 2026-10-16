@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model::{Anchor, Annotation, Document, MarkStyle, Shape, TextSpan};
+use crate::model::{Anchor, Annotation, Document, MarkStyle, Placement, Shape, TextSpan};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -143,6 +143,18 @@ pub enum ShapeSpec {
         line: u32,
         text: String,
     },
+    Callout {
+        from_line: u32,
+        #[serde(default)]
+        to_line: Option<u32>,
+        text: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        placement: Placement,
+        #[serde(default)]
+        width: Option<usize>,
+    },
     Spotlight {
         #[serde(default)]
         from_line: Option<u32>,
@@ -190,6 +202,21 @@ impl ShapeSpec {
             ShapeSpec::Note { line, text } => Shape::Note {
                 line: *line,
                 text: text.clone(),
+            },
+            ShapeSpec::Callout {
+                from_line,
+                to_line,
+                text,
+                title,
+                placement,
+                width,
+            } => Shape::Callout {
+                from_line: *from_line,
+                to_line: *to_line,
+                text: text.clone(),
+                title: title.clone(),
+                placement: *placement,
+                width: *width,
             },
             ShapeSpec::Spotlight {
                 from_line,
@@ -290,7 +317,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.add",
-        "Adds an annotation (highlight, mark, box, arrow, note, spotlight)",
+        "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight)",
     ),
     (
         "annotation.update",
@@ -376,6 +403,32 @@ pub fn describe(a: &Annotation) -> String {
         Shape::Note { line, text } => {
             format!("{} [step {}] note L{} «{}»", a.id, a.step, line, text)
         }
+        Shape::Callout {
+            from_line,
+            to_line,
+            text,
+            title,
+            ..
+        } => format!(
+            "{} [step {}] callout L{}-{}{} «{}»",
+            a.id,
+            a.step,
+            from_line,
+            to_line.unwrap_or(*from_line),
+            title.as_ref().map(|t| format!(" {t}:")).unwrap_or_default(),
+            if text.len() > 40 {
+                format!(
+                    "{}…",
+                    &text[..text
+                        .char_indices()
+                        .nth(40)
+                        .map(|(i, _)| i)
+                        .unwrap_or(text.len())]
+                )
+            } else {
+                text.clone()
+            }
+        ),
         Shape::Spotlight {
             from_line,
             to_line,

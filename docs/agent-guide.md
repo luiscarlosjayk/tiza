@@ -16,7 +16,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
    - `add_mark` for semantic marks. Built-in, language-agnostic kinds: `info`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo` (Rust habits work as aliases: `borrow`→`read`, `borrow_mut`→`write`, `lifetime`→`scope`). Each shows glyph + legend; `label` is appended. For something the author will reuse, `define_style` once (`{name, glyph, legend, color}`) and then use `name` as `kind`; for a one-off, pass `style: {glyph, legend, color}` inline. Emoji are allowed as glyphs. `list_kinds` shows what exists.
    - `add_arrow` for relationships (from where a value is born to where it is consumed).
    - `add_box` to delimit a function or a block.
-   - `add_note` for a short sentence; `highlight` for a fragment without semantics.
+   - `add_note` for a short sentence (one line, in the margin); `add_callout` for a paragraph of two or three sentences about a range of lines: it is a bordered block with an optional `title`, it does not displace the other labels, and `placement` is `margin` (default), `below` (own rows under `to_line`, inside any box) or `auto`. Use `add_box` when you want to *delimit* code, `add_note` to tag a line, `add_callout` to *explain*; `highlight` for a fragment without semantics.
    - `add_spotlight` for a "look here" step: dims the code outside `from_line..to_line` and/or the annotations outside `ids` (and focuses the code of those annotations). It draws nothing; it directs attention. Active from `step` to `until`.
 4. `set_step 0` leaves only the code (a good starting point for the take); then `next_step` as the presenter advances (or leave it in their hands: `n`/`p`).
 5. `render_text` to see exactly what the audience sees and fix things.
@@ -28,6 +28,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 {"name":"add_arrow","arguments":{"from":{"line":2,"find":"s"},"to":{"line":15,"find":"s: String"},"label":"move","step":1,"color":"orange"}}
 {"name":"add_note","arguments":{"line":4,"text":"s no longer owns it: using it here does not compile","step":2}}
 {"name":"add_box","arguments":{"from_line":15,"to_line":17,"label":"takes owns s and frees it at the end","step":2}}
+{"name":"add_callout","arguments":{"from_line":15,"to_line":25,"title":"three ways to pass a value","text":"takes(s) moves the String. len(&s) borrows it read-only. push(&mut s) borrows it mutably.","placement":"auto","step":3,"color":"cyan"}}
 ```
 
 ## Color
