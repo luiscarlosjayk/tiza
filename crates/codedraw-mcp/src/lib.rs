@@ -379,6 +379,14 @@ pub struct ThemeParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct FollowParams {
+    #[schemars(
+        description = "true to reload the code whenever the source file is saved (annotations are re-anchored to their text), false to stop"
+    )]
+    pub enabled: bool,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct RenderParams {
     #[schemars(description = "Width in columns; defaults to that of the terminal running the TUI")]
     pub width: Option<u32>,
@@ -728,6 +736,20 @@ impl CodeDrawServer {
     ) -> Result<CallToolResult, McpError> {
         Ok(text(pretty(
             &self.call("theme.set", json!({"theme": p.theme})).await?,
+        )))
+    }
+
+    #[tool(
+        description = "Turns follow mode on or off: with it on, saving the source file in the editor reloads the code in the TUI and the annotations follow their text. Fails when the code is embedded (no file to follow). Returns the follow status (enabled, path, reloads, last_reload)."
+    )]
+    async fn set_follow(
+        &self,
+        Parameters(p): Parameters<FollowParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(
+            &self
+                .call("follow.set", json!({"enabled": p.enabled}))
+                .await?,
         )))
     }
 

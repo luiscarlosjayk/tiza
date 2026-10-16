@@ -105,6 +105,7 @@ impl Live {
                     let resp = app.handle_request(r.req);
                     let _ = r.reply.send(resp);
                 }
+                app.follow_tick();
                 match rx.recv_timeout(std::time::Duration::from_millis(10)) {
                     Ok(job) => job(&mut app),
                     Err(mpsc::RecvTimeoutError::Timeout) => {}

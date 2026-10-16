@@ -540,6 +540,14 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     ("theme.set", "Switches the theme: `dark` or `light`"),
     ("render.text", "Returns the current canvas as plain text"),
+    (
+        "follow.set",
+        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
+    ),
+    (
+        "follow.status",
+        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing",
+    ),
 ];
 
 /// Renders an annotation in the `scene.list` format.

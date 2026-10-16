@@ -2267,6 +2267,135 @@
         },
         "type": "object"
       }
+    },
+    {
+      "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
+      "method": "follow.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `follow.set`.",
+        "properties": {
+          "enabled": {
+            "description": "`true` to reload when the source file is saved, `false` to stop.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "FollowParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `follow.status` and `follow.set`.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_reload": {
+            "description": "Time of the last reload, `HH:MM:SSZ`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "What `follow.set` did, in words.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing": {
+            "description": "The file is currently missing on disk (waiting for it to come back).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Absolute path of the followed (or followable) file; null when embedded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reloads": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "FollowStatus",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing",
+      "method": "follow.status",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `follow.status` and `follow.set`.",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "last_reload": {
+            "description": "Time of the last reload, `HH:MM:SSZ`.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "description": "What `follow.set` did, in words.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "missing": {
+            "description": "The file is currently missing on disk (waiting for it to come back).",
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "path": {
+            "description": "Absolute path of the followed (or followable) file; null when embedded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reloads": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "FollowStatus",
+        "type": "object"
+      }
     }
   ],
   "protocol": 1,

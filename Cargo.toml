@@ -42,6 +42,8 @@ anyhow = "1"
 clap = { version = "4.6.7", features = ["derive"] }
 
 base64 = "0.23.1"
+# File watching for follow mode (t-011): notify 8.x stable (9 is still rc).
+notify = "8.2.0"
 proptest = "1.12.0"
 insta = "1.49.0"
 jsonschema = { version = "0.59.0", default-features = false }

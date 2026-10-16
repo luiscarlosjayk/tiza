@@ -45,6 +45,10 @@ Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `
 
 `clear_annotations` empties the canvas at once (or only one step with `step`). The presenter can undo it with `u`, so it is not destructive live.
 
+## While the presenter edits
+
+`set_follow {"enabled": true}` makes the TUI reload the code every time the source file is saved (the presenter can also type `:follow on`). Annotations stay anchored to their text; the ones whose text disappears are dropped, and the reply (same as `follow.status`) reports `reloads` and `last_reload`, so after a save you can call `list_annotations` to see what survived and re-add what matters. It fails with `invalid_argument` when the code is embedded in the document.
+
 ## Idempotency
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.

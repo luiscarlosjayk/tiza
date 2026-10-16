@@ -39,6 +39,9 @@ struct Cli {
     /// Blank cells around the drawing for this session: `V` or `V,H` (`:pad` saves it in the document)
     #[arg(long)]
     padding: Option<String>,
+    /// Reload the code when the source file is saved (Zed, any editor); annotations are re-anchored by text
+    #[arg(long)]
+    follow: bool,
     /// Path of the local API socket (defaults to $CODEDRAW_SOCKET or the session)
     #[arg(long, global = true)]
     socket: Option<PathBuf>,
@@ -435,6 +438,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             },
             focus,
             padding,
+            follow: cli.follow,
         },
     )?;
     Ok(())

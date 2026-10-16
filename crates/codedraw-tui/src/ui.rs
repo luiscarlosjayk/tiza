@@ -349,6 +349,14 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     if app.dirty {
         left.push(Span::styled(" •", accent));
     }
+    if let Some(f) = &app.follow {
+        let text = match (&f.missing, &f.last_reload_clock) {
+            (true, _) => "  ⟳ following (file removed; waiting)".to_string(),
+            (false, Some(at)) => format!("  ⟳ following · last {at}"),
+            (false, None) => "  ⟳ following".to_string(),
+        };
+        left.push(Span::styled(text, accent));
+    }
     let warnings = app.viewport_warnings();
     if let Some(w) = warnings.first() {
         // Short form on the bar; the full text is in `status.warnings`.
@@ -551,6 +559,7 @@ fn help_lines() -> Vec<String> {
         "  :focus A-B | :focus     :theme dark|light     :lang rs     :title text",
         "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
         "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
+        "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",

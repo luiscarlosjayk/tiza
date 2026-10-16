@@ -52,6 +52,33 @@ pub struct ThemeParams {
     pub theme: Option<String>,
 }
 
+/// Parameters of `follow.set`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FollowParams {
+    /// `true` to reload when the source file is saved, `false` to stop.
+    pub enabled: bool,
+}
+
+/// Result of `follow.status` and `follow.set`.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct FollowStatus {
+    pub enabled: bool,
+    /// Absolute path of the followed (or followable) file; null when embedded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reloads: Option<u64>,
+    /// Time of the last reload, `HH:MM:SSZ`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_reload: Option<String>,
+    /// The file is currently missing on disk (waiting for it to come back).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub missing: Option<bool>,
+    /// What `follow.set` did, in words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
 /// Parameters of `code.get` (none).
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct NoParams {}
@@ -124,6 +151,8 @@ pub fn api_schema() -> ApiSchema {
                 "focus.set" => (schema::<FocusParams>(), serde_json::json!({"type": "object", "properties": {"focus": {}, "revision": {"type": "integer"}}})),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
                 "render.text" => (schema::<RenderParams>(), text()),
+                "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),
+                "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),
                 _ => (Value::Object(Default::default()), Value::Object(Default::default())),
             };
             MethodSchema {

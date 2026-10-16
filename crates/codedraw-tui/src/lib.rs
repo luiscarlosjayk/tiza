@@ -1,6 +1,7 @@
 //! `codedraw-tui`: the CodeDraw terminal interface and its local API server.
 
 pub mod app;
+pub mod follow;
 pub mod ipc;
 pub mod ui;
 
@@ -25,6 +26,8 @@ pub struct RunOptions {
     pub focus: Option<(u32, u32)>,
     /// `--padding`: shown this session, never saved into the document.
     pub padding: Option<(u16, u16)>,
+    /// `--follow`: reload when the source file changes on disk.
+    pub follow: bool,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -41,6 +44,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.padding_override = opts.padding;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
+    }
+    if opts.follow
+        && let Err(e) = app.set_follow(true)
+    {
+        app.error(e.to_string());
     }
 
     let ipc = match &opts.socket {
@@ -92,6 +100,9 @@ fn event_loop(
                 let _ = r.reply.send(resp);
                 needs_draw = true;
             }
+        }
+        if app.follow_tick() {
+            needs_draw = true;
         }
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {

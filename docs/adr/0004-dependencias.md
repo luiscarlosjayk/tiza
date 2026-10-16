@@ -36,8 +36,9 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | insta | 1.49.0 | 2026-09 | Apache-2.0 | dev-dependency of `codedraw-qa` (render snapshots) |
 | proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |
+| notify | 8.2.0 | 2026-02 | CC0-1.0 (inotify: ISC) | Only in `codedraw-tui`, follow mode (t-011): watches the source file's directory, debounce in our code (no `notify-debouncer-*`) |
 
-Evaluated and **postponed**: `notify` 8 (file watching; Zed saves with tmp+rename, watch the directory), `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS), `resvg`, `proptest` and `insta` were adopted later (rows above).
+Evaluated and **postponed**: `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS). `notify` (adopted for follow mode: Zed and most editors save with tmp+rename, so the *directory* is watched and events are matched by file name; the 120 ms debounce and the empty-write deferral live in `codedraw-tui/src/follow.rs`, so no debouncer crate is needed), `resvg`, `proptest` and `insta` were adopted later (rows above).
 
 ### Recorded exceptions
 

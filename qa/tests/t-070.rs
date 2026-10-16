@@ -3,7 +3,7 @@
 //!
 //! Acceptance criteria:
 //! - AC1 A real JSON-RPC client over stdio completes `initialize`, lists the
-//!   22 tools (each with a description and an input schema that is a valid
+//!   23 tools (each with a description and an input schema that is a valid
 //!   JSON Schema) and calls them; every tool's call reaches the live instance.
 //! - AC2 Without a live instance every tool answers an explicit error naming
 //!   the socket and how to start CodeDraw — it never hangs. When the TUI starts
@@ -44,7 +44,7 @@ fn ac1_handshake_tools_and_calls() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 22, "{names:?}");
+    assert_eq!(names.len(), 23, "{names:?}");
     for t in tools.as_array().unwrap() {
         assert!(
             !t["description"].as_str().unwrap_or("").is_empty(),

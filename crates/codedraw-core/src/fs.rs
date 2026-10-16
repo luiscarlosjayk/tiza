@@ -212,6 +212,36 @@ pub const MIGRATIONS: &[(u32, Migration)] = &[];
 /// A function that rewrites a raw document of one schema into the next.
 pub type Migration = fn(&mut serde_json::Value);
 
+/// Absolute path of the file a document's code comes from, when it is a
+/// file reference (`code: {file, lines}`); `None` for embedded code.
+/// Relative references resolve against `base_dir` (the document's directory).
+pub fn source_file(doc: &Document, base_dir: Option<&Path>) -> Option<PathBuf> {
+    match &doc.code_src {
+        CodeSource::Embedded(_) => None,
+        CodeSource::File { file, .. } => {
+            let raw = Path::new(file);
+            let full = if raw.is_absolute() {
+                raw.to_path_buf()
+            } else {
+                base_dir
+                    .filter(|d| !d.as_os_str().is_empty())
+                    .map(|d| d.join(raw))
+                    .unwrap_or_else(|| raw.to_path_buf())
+            };
+            Some(std::path::absolute(&full).unwrap_or(full))
+        }
+    }
+}
+
+/// Re-reads the referenced code of `doc` (honouring its line range) and
+/// returns the new lines without touching `doc`. Errors say what happened
+/// (missing file, not UTF-8, permission) in one sentence.
+pub fn reread_code(doc: &Document, base_dir: Option<&Path>) -> Result<Vec<String>, Error> {
+    let mut copy = doc.clone();
+    resolve_code(&mut copy, base_dir)?;
+    Ok(copy.code)
+}
+
 /// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
 pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
     resolve_code_inner(doc, base_dir)?;

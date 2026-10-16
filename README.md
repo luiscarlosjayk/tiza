@@ -43,6 +43,7 @@ cargo install --git https://github.com/luiscarlosjayk/codedraw codedraw-cli
 ```sh
 codedraw src/main.rs            # open a file
 codedraw src/main.rs:12-48      # only a range of lines (numbering is preserved)
+codedraw src/main.rs --follow   # reload when the file is saved in the editor; annotations follow their text
 pbpaste | codedraw --lang rs    # code from the clipboard (macOS)
 codedraw examples/ownership.rs.codedraw --present   # open the demo in presentation mode
 ```
@@ -88,9 +89,12 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
 :theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
+:follow on | :follow off | :follow        reload the code when the source file is saved · state
 ```
 
 New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Arrow strokes and heads are yours too: dashed for a shared borrow, thick for a move, `heads=none,none` for a plain connector — the ownership example does exactly that. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
+
+**Follow mode** (`--follow` or `:follow on`) watches the source file's folder (Zed saves with a temp file + rename) and reloads the code about 120 ms after the last write, so you can edit in the editor while the TUI shows the result. Annotations are re-anchored by the text they point at, like a paste: moved lines keep theirs, a box or callout whose edge line you edited keeps its height, and the ones whose text is gone are dropped with a message — `u` undoes the whole reload. The status line shows `⟳ following · last HH:MM:SSZ`; a removed file shows `waiting` until it comes back, an empty intermediate write is skipped, and embedded documents have nothing to follow (`:link path` first). Agents get the same through `follow.set` / `follow.status` and the MCP tool `set_follow`.
 
 ## Export to SVG or PNG
 
@@ -120,7 +124,7 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`, `export_image`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
+Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `set_follow`, `render_text`, `export_image`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. Full guide: [docs/agent-guide.md](docs/agent-guide.md).
 
 The contract is published as JSON Schema: [`schema/codedraw.schema.json`](schema/codedraw.schema.json) (the document) and [`schema/api.schema.json`](schema/api.schema.json) (every socket method, params and result), regenerated with `codedraw schema document|api` and checked in CI; the live instance also answers `api.schema`. `-` means stdin everywhere: `cat demo.codedraw | codedraw render - --out -`, `pbpaste | codedraw render - --lang rs --out shot.png`, `codedraw api annotation.add -`.
 

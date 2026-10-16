@@ -2,7 +2,7 @@
 //! keyboard and the local API go through here, so an agent and the presenter
 //! do exactly the same thing.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use codedraw_core::history::History;
 use codedraw_core::layout::{Layout, LayoutOptions, layout};
@@ -77,6 +77,8 @@ pub struct App {
     pub padding_override: Option<(u16, u16)>,
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
+    /// Follow mode: the watched source file, when enabled.
+    pub follow: Option<crate::follow::Follow>,
 }
 
 impl App {
@@ -110,6 +112,7 @@ impl App {
             save_error: None,
             padding_override: None,
             overlay_scroll: 0,
+            follow: None,
         }
     }
 
@@ -415,14 +418,40 @@ impl App {
                 "nothing to paste: the clipboard text is empty".into(),
             ));
         }
-        self.history.record(&self.doc);
         let lang = self.doc.source.language.clone();
-        let mut d = Document::from_code(text, lang, None);
-        d.theme = Some(self.theme.name);
-        d.styles = self.doc.styles.clone();
-        d.step = self.doc.step;
-        d.padding = self.doc.padding;
-        d.title = self.doc.title.clone();
+        let d = Document::from_code(text, lang, None);
+        let (kept, dropped) = self.apply_new_code(d.code, d.code_src, d.source.first_line);
+        self.cursor_line = self.doc.source.first_line;
+        self.scroll = 0;
+        if dropped > 0 {
+            self.info(format!(
+                "{} lines pasted; {dropped} annotation{} dropped (their text is gone; u undoes)",
+                self.doc.code.len(),
+                if dropped == 1 { "" } else { "s" }
+            ));
+        } else {
+            self.info(format!(
+                "{} lines pasted ({kept} annotations kept)",
+                self.doc.code.len()
+            ));
+        }
+        Ok(())
+    }
+
+    /// Replaces the code lines (and where they come from), re-anchoring the
+    /// annotations by text. One undoable step. Returns (kept, dropped).
+    fn apply_new_code(
+        &mut self,
+        code: Vec<String>,
+        code_src: codedraw_core::model::CodeSource,
+        first_line: u32,
+    ) -> (usize, usize) {
+        self.history.record(&self.doc);
+        let mut d = self.doc.clone();
+        d.annotations.clear();
+        d.code = code;
+        d.code_src = code_src;
+        d.source.first_line = first_line;
         let before = self.doc.annotations.len();
         let old = self.doc.clone();
         for a in &old.annotations {
@@ -434,21 +463,144 @@ impl App {
         }
         let kept = d.annotations.len();
         self.doc = d;
-        self.cursor_line = self.doc.source.first_line;
-        self.scroll = 0;
         self.selected = None;
+        self.clamp_cursor();
         self.touch();
-        let dropped = before - kept;
-        if dropped > 0 {
-            self.info(format!(
-                "{} lines pasted; {dropped} annotation{} dropped (their text is gone; u undoes)",
-                self.doc.code.len(),
-                if dropped == 1 { "" } else { "s" }
-            ));
-        } else {
-            self.info(format!("{} lines pasted", self.doc.code.len()));
+        (kept, before - kept)
+    }
+
+    fn clamp_cursor(&mut self) {
+        let first = self.doc.source.first_line;
+        let last = self.doc.last_line();
+        self.cursor_line = self.cursor_line.clamp(first, last);
+        if matches!(self.mode, Mode::Select { .. }) {
+            self.mode = Mode::Normal;
         }
-        Ok(())
+    }
+
+    // ---------- follow mode ----------
+
+    /// Absolute path of the followed (or followable) source file.
+    pub fn source_file(&self) -> Option<PathBuf> {
+        fs::source_file(&self.doc, self.save_path.parent())
+    }
+
+    /// Enables or disables follow mode. Enabling needs a file reference
+    /// (`:link` first when the code is embedded).
+    pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
+        if !enabled {
+            if let Some(f) = &mut self.follow {
+                f.stop();
+            }
+            self.follow = None;
+            return Ok("follow off".into());
+        }
+        if let Some(f) = &self.follow {
+            return Ok(format!("already following {}", f.file_name()));
+        }
+        let path = self.source_file().ok_or_else(|| {
+            Error::Invalid(
+                "nothing to follow: the code is embedded (use :link path to reference a file)"
+                    .into(),
+            )
+        })?;
+        let f =
+            crate::follow::Follow::start(path, self.doc.code.clone()).map_err(Error::Invalid)?;
+        let name = f.file_name();
+        self.follow = Some(f);
+        // Pick up anything that changed before we started watching.
+        let _ = self.reload_from_disk();
+        Ok(format!("following {name}"))
+    }
+
+    /// Called every loop iteration: reloads when the watcher says so.
+    /// Returns true when something changed on screen.
+    pub fn follow_tick(&mut self) -> bool {
+        let Some(f) = &mut self.follow else {
+            return false;
+        };
+        if !f.poll() {
+            return false;
+        }
+        self.reload_from_disk()
+    }
+
+    /// Re-reads the followed file and applies it. Returns true when the
+    /// screen changed (content, or a message).
+    fn reload_from_disk(&mut self) -> bool {
+        let Some(f) = &mut self.follow else {
+            return false;
+        };
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        let read = fs::reread_code(&self.doc, base.as_deref());
+        let name = f.file_name();
+        let new = match read {
+            Ok(lines) => lines,
+            Err(e) => {
+                let msg = e.to_string();
+                if !f.path.exists() {
+                    if !f.missing {
+                        f.missing = true;
+                        self.error(format!("{name} removed; waiting for it to come back"));
+                        return true;
+                    }
+                    return false;
+                }
+                self.error(
+                    if msg.contains("stream did not contain valid UTF-8")
+                        || msg.contains("invalid utf-8")
+                    {
+                        format!(
+                            "cannot follow {name}: not valid UTF-8 (keeping the previous content)"
+                        )
+                    } else {
+                        format!("cannot reload {name}: {msg}")
+                    },
+                );
+                return true;
+            }
+        };
+        let was_missing = std::mem::replace(&mut f.missing, false);
+        // An editor that truncates and then writes: give the second write a chance.
+        let empty = new.iter().all(|l| l.trim().is_empty());
+        if empty && !f.last_content.iter().all(|l| l.trim().is_empty()) && !f.take_deferred() {
+            f.defer();
+            return false;
+        }
+        if new == f.last_content && !was_missing {
+            return false;
+        }
+        f.mark_reloaded(new.clone());
+        let reloads = f.reloads;
+        let code_src = self.doc.code_src.clone();
+        let first = self.doc.source.first_line;
+        let (kept, dropped) = self.apply_new_code(new, code_src, first);
+        self.info(format!(
+            "{name} reloaded (#{reloads}): {kept} annotation{} kept{}",
+            if kept == 1 { "" } else { "s" },
+            if dropped > 0 {
+                format!(", {dropped} dropped (text gone; u undoes)")
+            } else {
+                String::new()
+            }
+        ));
+        true
+    }
+
+    /// `follow.status` payload.
+    pub fn follow_status(&self) -> Value {
+        match &self.follow {
+            Some(f) => json!({
+                "enabled": true,
+                "path": f.path.display().to_string(),
+                "reloads": f.reloads,
+                "last_reload": f.last_reload_clock,
+                "missing": f.missing,
+            }),
+            None => {
+                json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())})
+            }
+        }
     }
 
     // ---------- navigation ----------
@@ -829,9 +981,10 @@ impl App {
 
     /// Every `:` command name, for completion and help.
     pub const COMMANDS: &'static [&'static str] = &[
-        "arrow", "autosave", "box", "callout", "clear", "color", "del", "embed", "focus", "help",
-        "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad", "present", "prev",
-        "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
+        "arrow", "autosave", "box", "callout", "clear", "follow", "color", "del", "embed", "focus",
+        "help", "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad", "present",
+        "prev", "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo", "until",
+        "w", "wq",
     ];
 
     /// Tab completion for the command line: the command name on the first word, then
@@ -989,6 +1142,26 @@ impl App {
                 "spot" | "spotlight" => self.cmd_spot(rest),
                 "callout" | "co" => self.cmd_callout(rest),
                 "set" => self.cmd_set(rest),
+                "follow" => match rest.trim() {
+                    "" => Ok(match &self.follow {
+                        Some(f) => format!(
+                            "following {} ({} reload{}{})",
+                            f.file_name(),
+                            f.reloads,
+                            if f.reloads == 1 { "" } else { "s" },
+                            f.last_reload_clock
+                                .as_ref()
+                                .map(|t| format!(", last at {t}"))
+                                .unwrap_or_default()
+                        ),
+                        None => "follow off (:follow on to reload when the file is saved)".into(),
+                    }),
+                    "on" | "yes" | "start" => self.set_follow(true),
+                    "off" | "no" | "stop" => self.set_follow(false),
+                    other => Err(Error::Invalid(format!(
+                        "usage: :follow [on|off], got {other}"
+                    ))),
+                },
                 "until" => {
                     let (id, n) = split_first(rest);
                     let n: u32 = n.parse().map_err(|_| {
@@ -1708,6 +1881,19 @@ impl App {
             }
             "status" => serde_json::to_value(self.status())?,
             "api.schema" => serde_json::to_value(codedraw_core::schema::api_schema())?,
+            "follow.status" => self.follow_status(),
+            "follow.set" => {
+                let enabled = params
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| {
+                        Error::Invalid("follow.set needs `enabled`: true|false".into())
+                    })?;
+                let msg = self.set_follow(enabled)?;
+                let mut st = self.follow_status();
+                st["message"] = json!(msg);
+                st
+            }
             "api.methods" => json!(
                 METHODS
                     .iter()
@@ -2010,6 +2196,22 @@ fn find_line(old: &Document, new: &Document, line: u32) -> Option<u32> {
         })
 }
 
+/// Re-anchors a line range: both edges by text when possible; when only one
+/// edge survives (the presenter edited the other line while the box was
+/// drawn), the range keeps its height from the surviving edge, clamped to
+/// the code. `None` when both edge lines are gone.
+fn find_range(old: &Document, new: &Document, from: u32, to: u32) -> Option<(u32, u32)> {
+    let height = to.saturating_sub(from);
+    let last = new.last_line();
+    let first = new.source.first_line;
+    match (find_line(old, new, from), find_line(old, new, to)) {
+        (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
+        (Some(a), None) => Some((a, (a + height).min(last))),
+        (None, Some(b)) => Some((b.saturating_sub(height).max(first), b)),
+        (None, None) => None,
+    }
+}
+
 /// Re-anchors `shape` from `old` into `new` by the text it pointed at.
 /// `None` when that text no longer exists.
 fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
@@ -2045,11 +2247,10 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
             label,
             frame,
         } => {
-            let a = find_line(old, new, *from_line)?;
-            let b = find_line(old, new, *to_line)?;
+            let (a, b) = find_range(old, new, *from_line, *to_line)?;
             Shape::Box {
-                from_line: a.min(b),
-                to_line: a.max(b),
+                from_line: a,
+                to_line: b,
                 label: label.clone(),
                 frame: *frame,
             }
@@ -2086,14 +2287,16 @@ fn reanchor(old: &Document, new: &Document, shape: &Shape) -> Option<Shape> {
             width,
             frame,
         } => {
-            let a = find_line(old, new, *from_line)?;
-            let b = match to_line {
-                Some(t) => Some(find_line(old, new, *t)?),
-                None => None,
+            let (a, b) = match to_line {
+                Some(t) => {
+                    let (a, b) = find_range(old, new, *from_line, *t)?;
+                    (a, Some(b))
+                }
+                None => (find_line(old, new, *from_line)?, None),
             };
             Shape::Callout {
                 from_line: a,
-                to_line: b.map(|b| b.max(a)),
+                to_line: b,
                 text: text.clone(),
                 title: title.clone(),
                 placement: *placement,
