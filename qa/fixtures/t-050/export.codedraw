@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "title": "t-050 export: symbols, emoji, wide glyphs, every annotation kind",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"héllo wörld\");",
+    "    takes(s);   // ★ ✎ ⇄ symbols the main font lacks",
+    "    let 名前 = 1; // wide glyphs",
+    "}",
+    "fn takes(s: String) {}"
+  ],
+  "step": 2,
+  "styles": { "hot": { "glyph": "🔥", "legend": "hot path", "color": "red" } },
+  "annotations": [
+    { "id": "m1", "step": 1, "type": "mark", "kind": "important", "span": { "line": 2, "start": 8, "end": 9 }, "label": "owner" },
+    { "id": "m2", "step": 1, "type": "mark", "kind": "hot", "span": { "line": 3, "start": 4, "end": 9 } },
+    { "id": "a1", "step": 1, "type": "arrow", "from": { "line": 2, "col": 8 }, "to": { "line": 6, "col": 9 }, "label": "move", "color": "orange" },
+    { "id": "b1", "step": 1, "type": "box", "from_line": 6, "to_line": 6, "label": "takes" },
+    { "id": "h1", "step": 1, "type": "highlight", "span": { "line": 4, "start": 8, "end": 10 }, "label": "two cells each" },
+    { "id": "n1", "step": 2, "type": "note", "line": 3, "text": "a note in the margin" },
+    { "id": "c1", "step": 2, "type": "callout", "from_line": 1, "to_line": 5, "title": "callout", "text": "Exported with the fonts embedded, so it looks the same everywhere.", "placement": "below", "color": "cyan" },
+    { "id": "s1", "step": 2, "type": "spotlight", "from_line": 2, "to_line": 3 }
+  ]
+}

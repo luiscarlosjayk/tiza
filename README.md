@@ -82,7 +82,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :spot 15-17 a2 a3   :spot a6 a7      spotlight: in this step everything but those lines/annotations is dimmed
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
-:theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document)
+:theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 ```
 
 New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
@@ -133,12 +133,12 @@ A task that sends the current selection to CodeDraw in the integrated terminal: 
 
 ## Recommended recording profile
 
-Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows`; below ~100 columns, notes are drawn under the line instead of in the margin, and callouts with `placement: auto` move below their lines. One blank column is kept at each side by default (`:pad V H` to change it). Both themes use explicit RGB colors designed for 1080p.
+Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows`; below ~100 columns, notes are drawn under the line instead of in the margin, and callouts with `placement: auto` move below their lines. One blank column is kept at each side by default (`:pad V H` to change it, `:pad 0 0` to remove it, `:pad default` to go back). Both themes use explicit RGB colors designed for 1080p.
 
 ## Development
 
 ```sh
-cargo test                                   # core, TUI (incl. socket) and commands
+cargo test                                   # core, TUI (incl. socket), commands and the per-ticket QA tests (qa/)
 cargo clippy --all-targets -- -D warnings
 cargo run -- examples/ownership.rs
 ```

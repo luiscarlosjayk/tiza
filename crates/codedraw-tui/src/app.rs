@@ -1037,24 +1037,36 @@ impl App {
                     self.redo();
                     Ok(String::new())
                 }
+                "pad" | "padding" if matches!(rest.trim(), "default" | "reset") => {
+                    self.doc.padding = None;
+                    self.touch();
+                    let (v, h) = crate::ui::DEFAULT_PADDING;
+                    Ok(format!("padding {v} {h} (default)"))
+                }
                 "pad" | "padding" => {
                     let nums: Vec<u16> = rest
                         .split([' ', ','])
                         .filter(|t| !t.is_empty())
                         .map(|t| t.parse::<u16>())
                         .collect::<Result<_, _>>()
-                        .map_err(|_| Error::Invalid("usage: :pad V [H]   (blank cells around the drawing; :pad 0 removes it)".into()))?;
+                        .map_err(|_| Error::Invalid("usage: :pad V [H] | :pad default   (blank cells around the drawing; :pad 0 0 removes it)".into()))?;
                     let (v, h) = match nums.as_slice() {
                         [] => {
+                            let (v, h) = self.doc.padding.unwrap_or(crate::ui::DEFAULT_PADDING);
                             return Ok(format!(
-                                "padding: {:?}",
-                                self.doc.padding.unwrap_or((0, 0))
+                                "padding {v} {h}{}",
+                                if self.doc.padding.is_none() {
+                                    " (default; :pad V H to set, :pad default to reset)"
+                                } else {
+                                    ""
+                                }
                             ));
                         }
                         [v] => (*v, *v * 2),
                         [v, h, ..] => (*v, *h),
                     };
-                    self.doc.padding = if (v, h) == (0, 0) { None } else { Some((v, h)) };
+                    // `:pad 0 0` is a real value (no padding); `:pad default` returns to the theme default.
+                    self.doc.padding = Some((v, h));
                     self.touch();
                     Ok(format!("padding {v} {h}"))
                 }

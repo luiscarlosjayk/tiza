@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "title": "t-093 moving annotations",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hola\");",
+    "    takes(s);",
+    "}",
+    "",
+    "fn takes(s: String) {",
+    "    println!(\"{s}\");",
+    "}"
+  ],
+  "step": 1,
+  "annotations": [
+    { "id": "m1", "step": 1, "type": "mark", "kind": "move", "span": { "line": 3, "start": 4, "end": 9 }, "label": "wrong: points at takes", "style": { "glyph": "🔥" } },
+    { "id": "a1", "step": 1, "type": "arrow", "from": { "line": 2, "col": 8 }, "to": { "line": 6, "col": 9 }, "label": "move" },
+    { "id": "b1", "step": 1, "type": "box", "from_line": 6, "to_line": 8, "label": "takes" },
+    { "id": "n1", "step": 1, "type": "note", "line": 3, "text": "s is gone" }
+  ]
+}

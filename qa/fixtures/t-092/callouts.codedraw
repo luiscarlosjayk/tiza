@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "title": "t-092 callouts: margin, below inside a box, below wider than a box",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hola\");",
+    "    takes(s);",
+    "    println!(\"{s}\");",
+    "}",
+    "",
+    "fn takes(t: String) {",
+    "    println!(\"{t}\");",
+    "}"
+  ],
+  "step": 3,
+  "annotations": [
+    { "id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 3, "label": "moved here" },
+    { "id": "n1", "step": 1, "type": "note", "line": 4, "text": "does not compile" },
+    { "id": "c-margin", "step": 1, "type": "callout", "from_line": 2, "to_line": 3, "title": "move",
+      "text": "s owns the String. Passing it to takes moves the value, so after line 3 main cannot use s any more.", "color": "cyan" },
+    { "id": "c-inside", "step": 2, "type": "callout", "from_line": 2, "to_line": 3, "title": "inside the box", "placement": "below",
+      "text": "This callout explains exactly the boxed lines, so it is drawn inside the box.", "color": "green" },
+    { "id": "c-wider", "step": 3, "type": "callout", "from_line": 1, "to_line": 3, "title": "whole main", "placement": "below",
+      "text": "This callout explains more than the box, so it goes after the box's bottom border.", "color": "purple" }
+  ]
+}

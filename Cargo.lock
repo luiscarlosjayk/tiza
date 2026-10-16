@@ -371,6 +371,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "codedraw-qa"
+version = "0.0.1"
+dependencies = [
+ "codedraw-core",
+ "codedraw-export",
+ "codedraw-tui",
+ "crossterm",
+ "ratatui",
+ "serde_json",
+]
+
+[[package]]
 name = "codedraw-tui"
 version = "0.0.1"
 dependencies = [

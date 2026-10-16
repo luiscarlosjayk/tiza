@@ -49,12 +49,14 @@ pub fn geometry(canvas: &Canvas, o: &SvgOptions) -> Geometry {
     let cell_w = o.font_size * fonts::CELL_WIDTH_EM;
     let cell_h = o.font_size * fonts::CELL_HEIGHT_EM;
     let margin = (o.margin_cells * cell_h).round();
+    // Round to 1/1000 px before ceil so 50 × 9.6 is 480, not 481.
+    let px = |v: f32| ((v * 1000.0).round() / 1000.0).ceil();
     Geometry {
         cell_w,
         cell_h,
         margin,
-        width: (canvas.width as f32 * cell_w + 2.0 * margin).ceil(),
-        height: (canvas.height as f32 * cell_h + 2.0 * margin).ceil(),
+        width: px(canvas.width as f32 * cell_w + 2.0 * margin),
+        height: px(canvas.height as f32 * cell_h + 2.0 * margin),
     }
 }
 

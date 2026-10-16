@@ -1,0 +1,21 @@
+[package]
+name = "codedraw-qa"
+description = "Per-ticket QA tests: each tests/t-XXX.rs is an independent crate that exercises one board task"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+codedraw-core.workspace = true
+codedraw-tui.workspace = true
+codedraw-export.workspace = true
+serde_json.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true

@@ -104,7 +104,9 @@ fn event_loop(
     }
 }
 
-fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+/// Handles one key press exactly as the event loop does (public so QA tests
+/// can drive the real keyboard logic without a terminal).
+pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // Overlays: any of these keys closes them.
     if app.overlay != Overlay::None {
         if matches!(

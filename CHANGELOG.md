@@ -8,14 +8,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Fixed
+- `:pad 0 0` really removes the padding (it used to fall back to the default); `:pad default` restores it. SVG/PNG size no longer gains a pixel from float rounding (50 cols → 480 px).
 - A callout placed below is drawn inside a box only when the box contains its whole range; a callout wider than the box (e.g. one that sums up several functions) now goes after the box's bottom border, without the box's rail or background. The ownership example's `move` mark on line 3 points at the argument `s` instead of the `s` in `takes`.
 
 ### Added
+- `qa/`: one integration-test crate per board ticket (`qa/tests/t-XXX.rs`, fixtures in `qa/fixtures/`), with a headless `Live` instance (real `App` + socket) to drive keys, commands and the API without a terminal.
 - SVG and PNG export (`codedraw render FILE --out x.svg|x.png`, `--step`, `--theme`, `--scale`, `--font-size`, `--margin`, `--radius`, `--no-embed-fonts`, `--system-fonts`). Without FILE it exports what the live instance is showing. MCP tool `export_image`. Fonts (JetBrains Mono + a symbols fallback) are embedded in the binary and in the SVG, so the image looks the same everywhere. New crate `codedraw-export`.
 - `scene.get` sends the code embedded, so clients in another directory can render the live document.
 - `update_annotation` (MCP) and `annotation.update` (socket, `move`) can move an annotation keeping its type, kind, style and label: `at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes. Fields that do not apply to the type fail with `invalid_argument`; the MCP tool rejects unknown fields instead of ignoring them.
 - `callout` annotation: a bordered multi-line paragraph explaining a range of lines, with optional title, `placement` (`margin`, `below`, `auto`) and `width`. `:callout A[-B] [@below|@margin|@auto] [title="…"] text`, `C` on a selection, `annotation.add` with `type: callout`, MCP `add_callout`. In the margin it reserves its rows and the neighbouring labels are drawn beside it instead of being pushed down; below, boxes extend around it. The ownership example closes with one (step 7).
-- Default padding of one column at the left and right edges when the document sets none (`:pad 0 0` removes it).
+- Default padding of one column at the left and right edges when the document sets none (`:pad 0 0` removes it, `:pad default` restores the default).
 - `Tab`/`Shift-Tab` select an annotation in reading order; on it, `Enter` edits the label, `x` deletes, `c` changes the color, `+`/`-` move it between steps.
 - Command line: `Tab` completes commands, mark kinds, annotation ids and themes; `↑`/`↓` browse the history.
 - Padding around the drawing: `--padding V[,H]` when opening and `:pad V [H]` live; stored in the document (`padding: [v, h]`).

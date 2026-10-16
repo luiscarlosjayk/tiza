@@ -6,6 +6,7 @@ members = [
     "crates/codedraw-mcp",
     "crates/codedraw-cli",
     "crates/codedraw-export",
+    "qa",
 ]
 
 [workspace.package]
