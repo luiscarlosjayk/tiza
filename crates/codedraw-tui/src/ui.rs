@@ -347,8 +347,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
     };
     // On a narrow bar, drop the least useful segments (theme, cursor line,
     // annotation count, file) so a warning never gets cut off.
-    let mut left = left;
-    if warnings.first().is_some() {
+    if !warnings.is_empty() {
         for drop_idx in [4usize, 6, 7, 5] {
             let lw: usize = left.iter().map(|s| s.content.width()).sum();
             if lw <= area.width as usize {
