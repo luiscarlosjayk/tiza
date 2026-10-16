@@ -151,14 +151,10 @@ impl Canvas {
         let existing = self.get(x, y).map(|c| c.sym.as_str()).unwrap_or(" ");
         let horizontal = |g: &str| matches!(g, "─" | "━" | "┄" | "╌" | "═");
         let vertical = |g: &str| matches!(g, "│" | "┃" | "┆" | "║");
-        let merged =
-            if (horizontal(sym) && vertical(existing)) || (vertical(sym) && horizontal(existing)) {
-                "┼"
-            } else if existing == "┼" && (horizontal(sym) || vertical(sym)) {
-                "┼"
-            } else {
-                sym
-            };
+        let crosses = (horizontal(sym) && vertical(existing))
+            || (vertical(sym) && horizontal(existing))
+            || (existing == "┼" && (horizontal(sym) || vertical(sym)));
+        let merged = if crosses { "┼" } else { sym };
         self.put(x, y, merged, style);
     }
 
