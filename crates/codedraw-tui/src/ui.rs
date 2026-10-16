@@ -83,11 +83,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     frame.buffer_mut().set_style(area, base);
 
     let status_h = if app.present { 0 } else { 1 };
+    let (pad_v, pad_h) = app.doc.padding.unwrap_or((0, 0));
+    let pad_h = pad_h.min(area.width.saturating_sub(20) / 2);
+    let pad_v = pad_v.min(area.height.saturating_sub(status_h + 3) / 2);
     let canvas_area = Rect {
-        x: area.x,
-        y: area.y,
-        width: area.width,
-        height: area.height.saturating_sub(status_h),
+        x: area.x + pad_h,
+        y: area.y + pad_v,
+        width: area.width.saturating_sub(pad_h * 2),
+        height: area
+            .height
+            .saturating_sub(status_h)
+            .saturating_sub(pad_v * 2),
     };
 
     let layout = app.layout(canvas_area.width as usize);

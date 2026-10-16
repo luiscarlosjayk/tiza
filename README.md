@@ -80,7 +80,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :spot 15-17 a2 a3   :spot a6 a7      spotlight: in this step everything but those lines/annotations is dimmed
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
-:theme light   :lang ts   :w   :q
+:theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document)
 ```
 
 New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).

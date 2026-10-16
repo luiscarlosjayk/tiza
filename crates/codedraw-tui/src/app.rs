@@ -813,6 +813,24 @@ impl App {
                     self.redo();
                     Ok(String::new())
                 }
+                "pad" | "padding" => {
+                    let nums: Vec<u16> = rest
+                        .split([' ', ','])
+                        .filter(|t| !t.is_empty())
+                        .map(|t| t.parse::<u16>())
+                        .collect::<Result<_, _>>()
+                        .map_err(|_| Error::Invalid("usage: :pad V [H]   (blank cells around the drawing; :pad 0 removes it)".into()))?;
+                    let (v, h) = match nums.as_slice() {
+                        [] => {
+                            return Ok(format!("padding: {:?}", self.doc.padding.unwrap_or((0, 0))));
+                        }
+                        [v] => (*v, *v * 2),
+                        [v, h, ..] => (*v, *h),
+                    };
+                    self.doc.padding = if (v, h) == (0, 0) { None } else { Some((v, h)) };
+                    self.touch();
+                    Ok(format!("padding {v} {h}"))
+                }
                 "autosave" => {
                     self.autosave = !matches!(rest, "off" | "no");
                     Ok(format!(

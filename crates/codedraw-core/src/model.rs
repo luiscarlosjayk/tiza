@@ -39,6 +39,9 @@ pub struct Document {
     pub step: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ThemeName>,
+    /// Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub padding: Option<(u16, u16)>,
 }
 
 /// Where the code of a `.codedraw` comes from.
@@ -305,6 +308,7 @@ impl Document {
             annotations: Vec::new(),
             step: 1,
             theme: None,
+            padding: None,
         }
     }
 

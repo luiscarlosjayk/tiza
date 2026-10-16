@@ -36,6 +36,9 @@ struct Cli {
     /// Focus a range of lines on open (A-B)
     #[arg(long)]
     focus: Option<String>,
+    /// Blank cells around the drawing: `V` or `V,H` (saved in the document)
+    #[arg(long)]
+    padding: Option<String>,
     /// Path of the local API socket (defaults to $CODEDRAW_SOCKET or the session)
     #[arg(long, global = true)]
     socket: Option<PathBuf>,
@@ -257,6 +260,18 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     let mut opened = opened;
     if let Some(l) = &cli.lang {
         opened.document.source.language = codedraw_core::highlight::normalize_language(l);
+    }
+    if let Some(pad) = &cli.padding {
+        let nums: Vec<u16> = pad
+            .split(',')
+            .map(|t| t.trim().parse::<u16>())
+            .collect::<Result<_, _>>()
+            .context("--padding expects V or V,H")?;
+        opened.document.padding = match nums.as_slice() {
+            [v] => Some((*v, *v * 2)),
+            [v, h, ..] => Some((*v, *h)),
+            [] => None,
+        };
     }
     let focus = match &cli.focus {
         Some(f) => Some(codedraw_tui::app::parse_range(f).map_err(|e| anyhow::anyhow!("{e}"))?),

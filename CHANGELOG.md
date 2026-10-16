@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Added
+- Padding around the drawing: `--padding V[,H]` when opening and `:pad V [H]` live; stored in the document (`padding: [v, h]`).
 - Keyboard selection, vim style: column cursor with `h`/`l`/`w`/`b`/`e`/`0`/`$`, `v`/`V`/`i` selections, and selection actions `h` (highlight), `m` (mark, command line pre-filled), `n` (note), `b` (box), `a` (arrow in two selections), `s` (spotlight). Explicit anchors `L@S..E` and `L@C`. The annotation list moves to `L`.
 - Generic, language-agnostic mark kinds (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo) replacing the Rust-only set; Rust names remain as aliases. Custom styles in two modes: inline per annotation (`style: {glyph, legend, color}`, emoji allowed) and reusable document `styles` (`:style NAME …`, MCP `define_style`, `list_kinds`). `:mark 🔥 L:text legend` creates a one-off mark.
 - `spotlight` annotation: a step that directs attention by dimming the code outside a range and/or the annotations outside a group (`:spot`, `:until`, `add_spotlight`, `annotation.add` with `type: spotlight`). The ownership example interleaves two.
