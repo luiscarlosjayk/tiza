@@ -139,6 +139,24 @@ fn border_style_json(
     Ok(m)
 }
 
+/// Validates an emphasis name for highlights and marks.
+fn emphasis_json(e: &Option<String>) -> Result<Option<Value>, McpError> {
+    match e {
+        None => Ok(None),
+        Some(e) => codedraw_core::model::Emphasis::parse(e)
+            .map(|v| Some(serde_json::to_value(v).unwrap()))
+            .ok_or_else(|| {
+                McpError::invalid_params(
+                    format!(
+                        "unknown emphasis: {e} (use {})",
+                        codedraw_core::model::Emphasis::NAMES.join(", ")
+                    ),
+                    None,
+                )
+            }),
+    }
+}
+
 /// Validates the arrow style strings and returns the protocol fields
 /// (`stroke`, `route`, `heads{start?,end?}`).
 fn line_style_json(
@@ -211,6 +229,10 @@ pub struct HighlightParams {
     )]
     pub color: Option<String>,
     pub id: Option<String>,
+    #[schemars(
+        description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
+    )]
+    pub emphasis: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -232,6 +254,10 @@ pub struct MarkParams {
     )]
     pub color: Option<String>,
     pub id: Option<String>,
+    #[schemars(
+        description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
+    )]
+    pub emphasis: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -276,6 +302,10 @@ pub struct UpdateParams {
     pub corners: Option<String>,
     #[schemars(description = "Boxes/callouts: tint the inside (true/false)")]
     pub fill: Option<bool>,
+    #[schemars(
+        description = "Highlights/marks: how the span is drawn (fill, underline, brackets, strike)"
+    )]
+    pub emphasis: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -542,13 +572,17 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Highlights a text fragment (a variable, an expression) with an optional label."
+        description = "Highlights a text fragment (a variable, an expression) with an optional label; emphasis picks fill (tint, default), underline, brackets or strike."
     )]
     async fn highlight(
         &self,
         Parameters(p): Parameters<HighlightParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self.call("annotation.add", json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color})).await?;
+        let mut params = json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        if let Some(e) = emphasis_json(&p.emphasis)? {
+            params["emphasis"] = e;
+        }
+        let v = self.call("annotation.add", params).await?;
         Ok(text(pretty(&v)))
     }
 
@@ -559,14 +593,16 @@ impl CodeDrawServer {
         &self,
         Parameters(p): Parameters<MarkParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self
-            .call("annotation.add", json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
-            .await?;
+        let mut params = json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        if let Some(e) = emphasis_json(&p.emphasis)? {
+            params["emphasis"] = e;
+        }
+        let v = self.call("annotation.add", params).await?;
         Ok(text(pretty(&v)))
     }
 
     #[tool(
-        description = "Changes the step, color, label, arrow style (stroke, route, head_start, head_end) or box/callout border (border, corners, fill) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
+        description = "Changes the step, color, label, arrow style (stroke, route, head_start, head_end), box/callout border (border, corners, fill) or highlight/mark emphasis (fill, underline, brackets, strike) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
     )]
     async fn update_annotation(
         &self,
@@ -585,6 +621,9 @@ impl CodeDrawServer {
         }
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
+        }
+        if let Some(e) = emphasis_json(&p.emphasis)? {
+            params["emphasis"] = e;
         }
         let v = self.call("annotation.update", params).await?;
         Ok(text(pretty(&v)))

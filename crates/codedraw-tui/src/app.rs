@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 
 use codedraw_core::history::History;
 use codedraw_core::layout::{Layout, LayoutOptions, layout};
-use codedraw_core::model::{Annotation, BUILTIN_KINDS, Document, MarkStyle, Shape, ThemeName};
+use codedraw_core::model::{
+    Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
+};
 use codedraw_core::protocol::{
     AddParams, IdParams, METHODS, Mutated, Request, Response, Scene, Status, StepParams,
     UpdateParams, Where,
@@ -308,6 +310,18 @@ impl App {
                 other => {
                     return Err(Error::Invalid(format!(
                         "border/corners/fill apply to boxes and callouts only; {} is a {}",
+                        p.id,
+                        other.kind_name()
+                    )));
+                }
+            }
+        }
+        if let Some(e) = p.emphasis {
+            match &mut ann.shape {
+                Shape::Highlight { emphasis, .. } | Shape::Mark { emphasis, .. } => *emphasis = e,
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "emphasis applies to highlights and marks only; {} is a {}",
                         p.id,
                         other.kind_name()
                     )));
@@ -798,7 +812,15 @@ impl App {
         match (key, sel) {
             ('h', Selection::Span(span)) => {
                 self.mode = Mode::Normal;
-                match self.add_annotation(None, None, Shape::Highlight { span, label: None }) {
+                match self.add_annotation(
+                    None,
+                    None,
+                    Shape::Highlight {
+                        span,
+                        label: None,
+                        emphasis: Emphasis::default(),
+                    },
+                ) {
                     Ok(id) => self.info(format!("{id}: highlight (:label {id} text to name it)")),
                     Err(e) => self.error(e.to_string()),
                 }
@@ -981,6 +1003,7 @@ impl App {
                     border: None,
                     corners: None,
                     fill: None,
+                    emphasis: None,
                 }) {
                     Ok(()) => self.info(format!("{id} → step {step}")),
                     Err(e) => self.error(e.to_string()),
@@ -1248,6 +1271,7 @@ impl App {
                         border: None,
                         corners: None,
                         fill: None,
+                        emphasis: None,
                     })
                     .map(|_| format!("{id}: color {}", if c.is_empty() { "auto" } else { c }))
                 }
@@ -1268,6 +1292,7 @@ impl App {
                         border: None,
                         corners: None,
                         fill: None,
+                        emphasis: None,
                     })
                     .map(|_| format!("{id} updated"))
                 }
@@ -1314,6 +1339,7 @@ impl App {
                                 border: None,
                                 corners: None,
                                 fill: None,
+                                emphasis: None,
                             })
                             .map(|_| format!("{id} now appears at step {n}"))
                         }
@@ -1522,7 +1548,7 @@ impl App {
         let kv = parse_kv(rest);
         if id.is_empty() || kv.is_empty() {
             return Err(Error::Invalid(
-                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill)"
+                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
                     .into(),
             ));
         }
@@ -1533,6 +1559,14 @@ impl App {
         let is_framed = matches!(
             self.doc.find_annotation(id).map(|a| &a.shape),
             Some(Shape::Box { .. } | Shape::Callout { .. })
+        );
+        let is_span = matches!(
+            self.doc.find_annotation(id).map(|a| &a.shape),
+            Some(Shape::Highlight { .. } | Shape::Mark { .. })
+        );
+        let is_mark = matches!(
+            self.doc.find_annotation(id).map(|a| &a.shape),
+            Some(Shape::Mark { .. })
         );
         let mut p = UpdateParams {
             id: id.to_string(),
@@ -1547,6 +1581,7 @@ impl App {
             border: None,
             corners: None,
             fill: None,
+            emphasis: None,
         };
         let mut heads = codedraw_core::protocol::HeadsPatch::default();
         for (k, v) in &kv {
@@ -1564,6 +1599,13 @@ impl App {
                         "`{k}` applies to arrows only ({id} is not an arrow)"
                     )));
                 }
+                "emphasis" if !is_span => {
+                    return Err(Error::Invalid(format!(
+                        "`emphasis` applies to highlights and marks only ({id} is not one)"
+                    )));
+                }
+                "emphasis" => p.emphasis = Some(parse_emphasis(v)?),
+                "style" if is_span && !is_mark => p.emphasis = Some(parse_emphasis(v)?),
                 "border" | "corners" | "fill" if !is_framed => {
                     return Err(Error::Invalid(format!(
                         "`{k}` applies to boxes and callouts only ({id} is not one)"
@@ -1603,6 +1645,19 @@ impl App {
     }
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
+        // `emphasis=underline` (or `style=`) may trail the label.
+        let (rest, kv) = split_trailing_kv(rest);
+        let mut emphasis = Emphasis::default();
+        for (k, v) in &kv {
+            match k.as_str() {
+                "emphasis" | "style" => emphasis = parse_emphasis(v)?,
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "unknown key `{other}` for :hl (emphasis=fill|underline|brackets|strike)"
+                    )));
+                }
+            }
+        }
         let (at, label) = split_first(rest);
         let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
             (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
@@ -1622,6 +1677,7 @@ impl App {
             Shape::Highlight {
                 span,
                 label: opt(label),
+                emphasis,
             },
         )?;
         Ok(format!("{id}: highlight at L{}", span.line))
@@ -1631,6 +1687,18 @@ impl App {
     /// an alias (`borrow`), a style defined with `:style`, or a bare glyph/emoji for a
     /// one-off inline style (`:mark 🔥 7:&t hot path`). `KIND@COLOR` sets the color.
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
+        let (rest, kv) = split_trailing_kv(rest);
+        let mut emphasis = Emphasis::default();
+        for (k, v) in &kv {
+            match k.as_str() {
+                "emphasis" => emphasis = parse_emphasis(v)?,
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "unknown key `{other}` for :mark (emphasis=fill|underline|brackets|strike)"
+                    )));
+                }
+            }
+        }
         let (kind_tok, rest) = split_first(rest);
         let (at, label) = split_first(rest);
         if kind_tok.is_empty() || (at.is_empty() && self.pending_sel.is_none()) {
@@ -1700,6 +1768,7 @@ impl App {
                 span,
                 label: if inline { None } else { opt(label) },
                 style,
+                emphasis,
             },
         )?;
         Ok(format!("{id}: {legend} at L{}", span.line))
@@ -2166,6 +2235,15 @@ fn opt(s: &str) -> Option<String> {
     }
 }
 
+/// `fill|underline|brackets|strike` → [`Emphasis`], with the options on error.
+fn parse_emphasis(v: &str) -> Result<Emphasis, Error> {
+    Emphasis::parse(v).ok_or_else(|| {
+        Error::Invalid(format!(
+            "unknown emphasis: {v} (fill, underline, brackets, strike)"
+        ))
+    })
+}
+
 /// Splits trailing `key=value` tokens off a free-text argument:
 /// `"move stroke=dashed heads=none,arrow"` → (`"move"`, [(stroke, dashed), (heads, "none,arrow")]).
 pub fn split_trailing_kv(s: &str) -> (&str, Vec<(String, String)>) {
@@ -2615,7 +2693,7 @@ mod tests {
         }));
         a.run_command("hl 2@4..5 by coords");
         match &a.doc.annotations.last().unwrap().shape {
-            Shape::Highlight { span, label } => {
+            Shape::Highlight { span, label, .. } => {
                 assert_eq!((span.line, span.start, span.end), (2, 4, 5));
                 assert_eq!(label.as_deref(), Some("by coords"));
             }
@@ -2732,6 +2810,7 @@ mod tests {
                 span,
                 label,
                 style,
+                ..
             } => {
                 assert_eq!(kind, "move");
                 assert_eq!(*span, want);

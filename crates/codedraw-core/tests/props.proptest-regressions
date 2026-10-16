@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 23debfb696b2a74304026c7c488751ad0cc022a3bf897061f34e32f5ea3d1dd5 # shrinks to d = Document { schema: 1, title: None, source: Source { path: None, language: "rs", first_line: 1 }, code_src: Embedded(["", "", "2{jS} 2<F'_8},emi_eH<名前", "", "🔥🔥", "שלום\t", "名前名前שלוםOB;,Ck=LJ5'W*-.BI &_", "", "שלוםשלוםx*,.7aPg'\"2", "AZ,MP{w{._5\"'O)<שלום9'()_Q5\"P__B W2;\"&_LxS,&", "🔥3=<&!\"I_'y!\"&9{U\"_L<}C", "🔥", "\t名前שלום"]), code: ["", "", "2{jS} 2<F'_8},emi_eH<名前", "", "🔥🔥", "שלום\t", "名前名前שלוםOB;,Ck=LJ5'W*-.BI &_", "", "שלוםשלוםx*,.7aPg'\"2", "AZ,MP{w{._5\"'O)<שלום9'()_Q5\"P__B W2;\"&_LxS,&", "🔥3=<&!\"I_'y!\"&9{U\"_L<}C", "🔥", "\t名前שלום"], styles: {}, annotations: [Annotation { id: "p0", step: 1, color: None, shape: Highlight { span: TextSpan { line: 7, start: 1, end: 2 }, label: None, emphasis: Brackets } }], step: 1, theme: None, padding: None }, width = 95, step = 5

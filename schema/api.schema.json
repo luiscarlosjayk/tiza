@@ -260,6 +260,9 @@
               {
                 "description": "Highlights a text range.",
                 "properties": {
+                  "emphasis": {
+                    "$ref": "#/$defs/Emphasis"
+                  },
                   "label": {
                     "type": [
                       "string",
@@ -283,6 +286,9 @@
               {
                 "description": "Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),\nan alias, or a reusable style from `Document::styles`; `style` overrides any\nfield inline for this one annotation.",
                 "properties": {
+                  "emphasis": {
+                    "$ref": "#/$defs/Emphasis"
+                  },
                   "kind": {
                     "type": "string"
                   },
@@ -653,6 +659,31 @@
             ],
             "type": "object"
           },
+          "Emphasis": {
+            "description": "How a highlighted or marked span is drawn (t-096).",
+            "oneOf": [
+              {
+                "const": "fill",
+                "description": "Background tint (the default).",
+                "type": "string"
+              },
+              {
+                "const": "underline",
+                "description": "A row under the line with ▔ under the span.",
+                "type": "string"
+              },
+              {
+                "const": "brackets",
+                "description": "⌈ ⌉ in the cells beside the span (a glued side goes to the row below).",
+                "type": "string"
+              },
+              {
+                "const": "strike",
+                "description": "A long stroke through every character.",
+                "type": "string"
+              }
+            ]
+          },
           "Head": {
             "description": "What is drawn at an end of a line.",
             "enum": [
@@ -855,6 +886,31 @@
       "method": "annotation.add",
       "params": {
         "$defs": {
+          "Emphasis": {
+            "description": "How a highlighted or marked span is drawn (t-096).",
+            "oneOf": [
+              {
+                "const": "fill",
+                "description": "Background tint (the default).",
+                "type": "string"
+              },
+              {
+                "const": "underline",
+                "description": "A row under the line with ▔ under the span.",
+                "type": "string"
+              },
+              {
+                "const": "brackets",
+                "description": "⌈ ⌉ in the cells beside the span (a glued side goes to the row below).",
+                "type": "string"
+              },
+              {
+                "const": "strike",
+                "description": "A long stroke through every character.",
+                "type": "string"
+              }
+            ]
+          },
           "Head": {
             "description": "What is drawn at an end of a line.",
             "enum": [
@@ -1001,6 +1057,10 @@
               "at": {
                 "$ref": "#/$defs/Where"
               },
+              "emphasis": {
+                "$ref": "#/$defs/Emphasis",
+                "default": "fill"
+              },
               "label": {
                 "default": null,
                 "type": [
@@ -1023,6 +1083,10 @@
             "properties": {
               "at": {
                 "$ref": "#/$defs/Where"
+              },
+              "emphasis": {
+                "$ref": "#/$defs/Emphasis",
+                "default": "fill"
               },
               "kind": {
                 "type": "string"
@@ -1319,6 +1383,31 @@
       "method": "annotation.update",
       "params": {
         "$defs": {
+          "Emphasis": {
+            "description": "How a highlighted or marked span is drawn (t-096).",
+            "oneOf": [
+              {
+                "const": "fill",
+                "description": "Background tint (the default).",
+                "type": "string"
+              },
+              {
+                "const": "underline",
+                "description": "A row under the line with ▔ under the span.",
+                "type": "string"
+              },
+              {
+                "const": "brackets",
+                "description": "⌈ ⌉ in the cells beside the span (a glued side goes to the row below).",
+                "type": "string"
+              },
+              {
+                "const": "strike",
+                "description": "A long stroke through every character.",
+                "type": "string"
+              }
+            ]
+          },
           "Head": {
             "description": "What is drawn at an end of a line.",
             "enum": [
@@ -1484,6 +1573,10 @@
                   "at": {
                     "$ref": "#/$defs/Where"
                   },
+                  "emphasis": {
+                    "$ref": "#/$defs/Emphasis",
+                    "default": "fill"
+                  },
                   "label": {
                     "default": null,
                     "type": [
@@ -1506,6 +1599,10 @@
                 "properties": {
                   "at": {
                     "$ref": "#/$defs/Where"
+                  },
+                  "emphasis": {
+                    "$ref": "#/$defs/Emphasis",
+                    "default": "fill"
                   },
                   "kind": {
                     "type": "string"
@@ -1837,6 +1934,17 @@
               }
             ],
             "description": "Boxes and callouts: new corners."
+          },
+          "emphasis": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Emphasis"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Highlights and marks: how the span is drawn (fill, underline, brackets, strike)."
           },
           "fill": {
             "description": "Boxes and callouts: tint the inside (`true`), do not (`false`).",

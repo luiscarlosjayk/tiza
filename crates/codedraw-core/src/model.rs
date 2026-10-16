@@ -359,6 +359,45 @@ pub fn builtin_style(name: &str) -> Option<MarkStyle> {
         .map(|(_, g, l, c)| MarkStyle::new(g, l, c))
 }
 
+/// How a highlighted or marked span is drawn (t-096).
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum Emphasis {
+    /// Background tint (the default).
+    #[default]
+    Fill,
+    /// A row under the line with ▔ under the span.
+    Underline,
+    /// ⌈ ⌉ in the cells beside the span (a glued side goes to the row below).
+    Brackets,
+    /// A long stroke through every character.
+    Strike,
+}
+
+impl Emphasis {
+    pub const NAMES: [&str; 4] = ["fill", "underline", "brackets", "strike"];
+
+    pub fn parse(s: &str) -> Option<Emphasis> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "fill" | "tint" | "bg" => Some(Emphasis::Fill),
+            "underline" | "under" => Some(Emphasis::Underline),
+            "brackets" | "bracket" | "outline" => Some(Emphasis::Brackets),
+            "strike" | "strikethrough" | "del" => Some(Emphasis::Strike),
+            _ => None,
+        }
+    }
+
+    pub fn is_default(&self) -> bool {
+        *self == Emphasis::Fill
+    }
+
+    pub fn name(&self) -> &'static str {
+        Self::NAMES[*self as usize]
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Shape {
@@ -367,6 +406,8 @@ pub enum Shape {
         span: TextSpan,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        #[serde(default, skip_serializing_if = "Emphasis::is_default")]
+        emphasis: Emphasis,
     },
     /// Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),
     /// an alias, or a reusable style from `Document::styles`; `style` overrides any
@@ -378,6 +419,8 @@ pub enum Shape {
         label: Option<String>,
         #[serde(default, skip_serializing_if = "MarkStyle::is_empty")]
         style: MarkStyle,
+        #[serde(default, skip_serializing_if = "Emphasis::is_default")]
+        emphasis: Emphasis,
     },
     /// Box around a range of lines.
     Box {

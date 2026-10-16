@@ -15,7 +15,7 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::canvas::{Canvas, CellStyle, Rgb, display_width};
 use crate::highlight::{Segment, highlight};
-use crate::model::{Annotation, Document, Shape};
+use crate::model::{Annotation, Document, Emphasis, Shape, TextSpan};
 use crate::theme::Theme;
 
 #[derive(Debug, Clone)]
@@ -47,6 +47,8 @@ pub enum Row {
     BoxTop(usize),
     BoxBottom(usize),
     ArrowUnder(usize),
+    /// Row under a code line with ▔ / ⌊ ⌋ for underline/bracket emphases (t-096).
+    Emphasis(u32),
     /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
     /// One row of a callout drawn below its range: (callout index in `vis`, row within the block).
@@ -348,6 +350,14 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 
         row_of_line.insert(line, rows.len());
         rows.push(Row::Code(line));
+        if vis.iter().any(|a| match &a.shape {
+            Shape::Highlight { span, emphasis, .. } | Shape::Mark { span, emphasis, .. } => {
+                span.line == line && emphasis_needs_row(doc, span, *emphasis)
+            }
+            _ => false,
+        }) {
+            rows.push(Row::Emphasis(line));
+        }
 
         for (i, a) in vis.iter().enumerate() {
             if let Shape::Arrow {
@@ -390,6 +400,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     Shape::Highlight {
                         span,
                         label: Some(l),
+                        ..
                     } if span.line == line => Some((l.clone(), color_of(a), false)),
                     Shape::Arrow {
                         from,
@@ -524,36 +535,59 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
 
     // ---- 2. highlights and marks ----
+    let emphasis_row: BTreeMap<u32, usize> = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(y, r)| match r {
+            Row::Emphasis(l) => Some((*l, y)),
+            _ => None,
+        })
+        .collect();
     for a in &vis {
-        let (span, fg, bg, label) = match &a.shape {
-            Shape::Highlight { span, label } if ann_dimmed(a) => (
+        let (span, fg, bg, label, emphasis) = match &a.shape {
+            Shape::Highlight {
+                span,
+                label,
+                emphasis,
+            } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
                 crate::theme::blend(theme.dimmed, theme.bg, 0.12),
                 label.clone(),
+                *emphasis,
             ),
-            Shape::Highlight { span, label } => {
+            Shape::Highlight {
+                span,
+                label,
+                emphasis,
+            } => {
                 let c = color_of(a);
                 let (fg, bg) = if a.color.is_some() {
                     (c, crate::theme::blend(c, theme.bg, 0.22))
                 } else {
                     (theme.fg, theme.highlight_bg)
                 };
-                (span, fg, bg, label.clone())
+                (span, fg, bg, label.clone(), *emphasis)
             }
             Shape::Mark {
-                kind, span, style, ..
+                kind,
+                span,
+                style,
+                emphasis,
+                ..
             } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
                 crate::theme::blend(theme.dimmed, theme.bg, 0.12),
                 Some(mark_text(doc, kind, style, None)),
+                *emphasis,
             ),
             Shape::Mark {
                 kind,
                 span,
                 label,
                 style,
+                emphasis,
             } => {
                 let st = doc.resolve_style(kind, style).unwrap_or_default();
                 (
@@ -561,6 +595,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     theme.mark_color(&st),
                     theme.mark_bg(&st),
                     Some(mark_text(doc, kind, style, label.as_deref())),
+                    *emphasis,
                 )
             }
             _ => continue,
@@ -573,7 +608,66 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let x1 = code_x + col_to_x(text, span.end, opts.tab_width);
         let x1 = x1.min(code_x + code_w);
         if x1 > x0 {
-            canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(fg).bg(bg).bold());
+            // Without a tint, the span's own color is the annotation's (a
+            // plain highlight keeps the theme text color + the accent).
+            let ink = if a.color.is_some() || matches!(a.shape, Shape::Mark { .. }) || ann_dimmed(a)
+            {
+                fg
+            } else {
+                theme.accent
+            };
+            match emphasis {
+                Emphasis::Fill => {
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(fg).bg(bg).bold());
+                }
+                Emphasis::Underline => {
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
+                    if let Some(&uy) = emphasis_row.get(&span.line) {
+                        for x in x0..x1 {
+                            canvas.put(x, uy, "▔", base.fg(ink));
+                        }
+                    }
+                }
+                Emphasis::Brackets => {
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
+                    // A real space: the empty continuation cell of a wide
+                    // character (名, emoji) is not room.
+                    let blank_before =
+                        x0 > code_x && canvas.get(x0 - 1, y).is_some_and(|c| c.sym == " ");
+                    let blank_after =
+                        x1 < code_x + code_w && canvas.get(x1, y).is_some_and(|c| c.sym == " ");
+                    let under = emphasis_row.get(&span.line).copied();
+                    if blank_before {
+                        canvas.put(x0 - 1, y, "⌈", base.fg(ink).bold());
+                    } else if let Some(uy) = under {
+                        canvas.put(x0, uy, "⌊", base.fg(ink));
+                    }
+                    if blank_after {
+                        canvas.put(x1, y, "⌉", base.fg(ink).bold());
+                    } else if let Some(uy) = under {
+                        // A one-cell span glued on both sides: ⌊ and ⌋ would
+                        // share the cell, so it gets a plain underline.
+                        let sym = if x1 - x0 == 1 && !blank_before {
+                            "▔"
+                        } else {
+                            "⌋"
+                        };
+                        canvas.put(x1 - 1, uy, sym, base.fg(ink));
+                    }
+                }
+                Emphasis::Strike => {
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
+                    for x in x0..x1 {
+                        let cell = canvas.get(x, y).map(|c| (c.sym.clone(), c.style));
+                        if let Some((sym, st)) = cell
+                            && !sym.trim().is_empty()
+                            && !sym.ends_with('\u{336}')
+                        {
+                            canvas.put(x, y, &format!("{sym}\u{336}"), st);
+                        }
+                    }
+                }
+            }
         }
         if labels_in_margin && let Some(l) = label {
             margin[y].push(Label {
@@ -1123,6 +1217,29 @@ fn wrap_words(text: &str, width: usize) -> Vec<String> {
 }
 
 /// Screen column (relative to the start of the code) of grapheme `col` of `text`.
+/// Whether a span's emphasis needs the row under its line: underlines always,
+/// brackets only when a side has no blank cell beside the span.
+fn emphasis_needs_row(doc: &Document, span: &TextSpan, e: Emphasis) -> bool {
+    use unicode_segmentation::UnicodeSegmentation;
+    match e {
+        Emphasis::Underline => true,
+        Emphasis::Brackets => {
+            let Some(text) = doc.line_text(span.line) else {
+                return false;
+            };
+            let g: Vec<&str> = text.graphemes(true).collect();
+            let before = span
+                .start
+                .checked_sub(1)
+                .and_then(|i| g.get(i as usize))
+                .is_some_and(|c| c.trim().is_empty());
+            let after = g.get(span.end as usize).is_none_or(|c| c.trim().is_empty());
+            !(before && after)
+        }
+        _ => false,
+    }
+}
+
 pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     let mut w = 0;
     for (i, g) in text.graphemes(true).enumerate() {
@@ -1252,6 +1369,7 @@ mod tests {
                     end: 11,
                 },
                 label: None,
+                emphasis: Default::default(),
             },
         })
         .unwrap();

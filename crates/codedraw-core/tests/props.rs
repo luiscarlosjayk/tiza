@@ -24,21 +24,32 @@ fn code_strategy() -> impl Strategy<Value = String> {
     .prop_map(|lines| lines.join("\n"))
 }
 
+fn emphasis_of(e: u8) -> codedraw_core::model::Emphasis {
+    use codedraw_core::model::Emphasis::*;
+    [Fill, Underline, Brackets, Strike][e as usize % 4]
+}
+
 fn shape_strategy(lines: u32) -> impl Strategy<Value = Shape> {
     let line = 1..=lines.max(1);
     let col = 0u32..80;
     prop_oneof![
-        (line.clone(), col.clone(), col.clone(), any::<bool>()).prop_map(|(l, a, b, lbl)| {
-            Shape::Highlight {
+        (
+            line.clone(),
+            col.clone(),
+            col.clone(),
+            any::<bool>(),
+            0u8..4
+        )
+            .prop_map(|(l, a, b, lbl, e)| Shape::Highlight {
                 span: TextSpan {
                     line: l,
                     start: a.min(b),
                     end: a.max(b) + 1,
                 },
                 label: lbl.then(|| "hl label".to_string()),
-            }
-        }),
-        (line.clone(), col.clone()).prop_map(|(l, c)| Shape::Mark {
+                emphasis: emphasis_of(e),
+            }),
+        (line.clone(), col.clone(), 0u8..4).prop_map(|(l, c, e)| Shape::Mark {
             kind: "move".into(),
             style: Default::default(),
             span: TextSpan {
@@ -47,6 +58,7 @@ fn shape_strategy(lines: u32) -> impl Strategy<Value = Shape> {
                 end: c + 1,
             },
             label: Some("moves here".into()),
+            emphasis: emphasis_of(e),
         }),
         (line.clone(), line.clone()).prop_map(|(a, b)| Shape::Box {
             from_line: a.min(b),
@@ -119,6 +131,7 @@ proptest! {
         let _ = d.validate_shape(&Shape::Highlight {
             span: TextSpan { line, start: col, end: col + 3 },
             label: None,
+            emphasis: Default::default(),
         });
         prop_assert!(!d.code.is_empty(), "a document always has a line");
     }

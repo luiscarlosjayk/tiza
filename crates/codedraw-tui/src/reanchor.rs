@@ -210,20 +210,27 @@ impl<'a> Remap<'a> {
     /// Re-anchors `shape`; `None` when the text it pointed at no longer exists.
     pub fn shape(&mut self, shape: &Shape) -> Option<Shape> {
         Some(match shape {
-            Shape::Highlight { span, label } => Shape::Highlight {
+            Shape::Highlight {
+                span,
+                label,
+                emphasis,
+            } => Shape::Highlight {
                 span: self.span(span)?,
                 label: label.clone(),
+                emphasis: *emphasis,
             },
             Shape::Mark {
                 kind,
                 span,
                 label,
                 style,
+                emphasis,
             } => Shape::Mark {
                 kind: kind.clone(),
                 span: self.span(span)?,
                 label: label.clone(),
                 style: style.clone(),
+                emphasis: *emphasis,
             },
             Shape::Box {
                 from_line,

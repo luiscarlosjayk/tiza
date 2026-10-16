@@ -33,6 +33,10 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 {"name":"add_callout","arguments":{"from_line":15,"to_line":25,"title":"three ways to pass a value","text":"takes(s) moves the String. len(&s) borrows it read-only. push(&mut s) borrows it mutably.","placement":"auto","step":3,"color":"cyan"}}
 ```
 
+## Emphasis
+
+`highlight` and `add_mark` take `emphasis`: `fill` (the default tint), `underline` (a ▔ row under the span, good for "look here" without hiding the syntax colors), `brackets` (⌈ ⌉ beside the span; a side glued to other text goes to the row below, code is never covered) and `strike` (struck through, for "this line is gone"). `update_annotation {"id", "emphasis": "strike"}` changes it later. Omitted means fill, and fill is not written to the file.
+
 ## Color
 
 Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (Spanish aliases such as `azul`, `verde`… also work) or `#rrggbb`. Use it to tell a story per value: everything that happens to `s` in one color, everything about `t` in another. Arrows without a color rotate through an automatic palette; boxes, notes and highlights without a color use the theme's. `update_annotation` with `color: ""` returns to automatic.

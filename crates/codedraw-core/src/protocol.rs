@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::model::{
-    Anchor, Annotation, BorderStyle, Document, Head, LineStyle, MarkStyle, Placement, Route, Shape,
-    Stroke, TextSpan,
+    Anchor, Annotation, BorderStyle, Document, Emphasis, Head, LineStyle, MarkStyle, Placement,
+    Route, Shape, Stroke, TextSpan,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -121,6 +121,8 @@ pub enum ShapeSpec {
         at: Where,
         #[serde(default)]
         label: Option<String>,
+        #[serde(default)]
+        emphasis: Emphasis,
     },
     Mark {
         kind: String,
@@ -129,6 +131,8 @@ pub enum ShapeSpec {
         label: Option<String>,
         #[serde(default)]
         style: MarkStyle,
+        #[serde(default)]
+        emphasis: Emphasis,
     },
     Box {
         from_line: u32,
@@ -179,20 +183,27 @@ pub enum ShapeSpec {
 impl ShapeSpec {
     pub fn resolve(&self, doc: &Document) -> Result<Shape, crate::Error> {
         Ok(match self {
-            ShapeSpec::Highlight { at, label } => Shape::Highlight {
+            ShapeSpec::Highlight {
+                at,
+                label,
+                emphasis,
+            } => Shape::Highlight {
                 span: at.resolve_span(doc)?,
                 label: label.clone(),
+                emphasis: *emphasis,
             },
             ShapeSpec::Mark {
                 kind,
                 at,
                 label,
                 style,
+                emphasis,
             } => Shape::Mark {
                 kind: kind.clone(),
                 style: style.clone(),
                 span: at.resolve_span(doc)?,
                 label: label.clone(),
+                emphasis: *emphasis,
             },
             ShapeSpec::Box {
                 from_line,
@@ -299,6 +310,9 @@ pub struct UpdateParams {
     /// Boxes and callouts: tint the inside (`true`), do not (`false`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fill: Option<bool>,
+    /// Highlights and marks: how the span is drawn (fill, underline, brackets, strike).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emphasis: Option<Emphasis>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -553,10 +567,19 @@ pub const METHODS: &[(&str, &str)] = &[
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
     match &a.shape {
-        Shape::Highlight { span, label } => format!(
-            "{} [step {}] highlight L{} {}..{}{}",
+        Shape::Highlight {
+            span,
+            label,
+            emphasis,
+        } => format!(
+            "{} [step {}] highlight{} L{} {}..{}{}",
             a.id,
             a.step,
+            if emphasis.is_default() {
+                String::new()
+            } else {
+                format!(" ({})", emphasis.name())
+            },
             span.line,
             span.start,
             span.end,

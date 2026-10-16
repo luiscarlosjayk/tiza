@@ -79,6 +79,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :box 15-17 takes owns s               box around a range of lines
 :box 15-17 takes border=double corners=sharp fill=no   borders: border=solid|dashed|dotted|thick|double  corners=rounded|sharp  fill=yes|no (callouts take the same keys)
 :hl 7:&t shared borrow                highlight
+:hl 7:&t shared emphasis=underline      how the span is drawn: fill (tint, default) · underline (▔ under it) · brackets (⌈ ⌉) · strike
 :note 4 s no longer owns it           note anchored to a line
 :callout 15-25 @auto title="why" two or three sentences…   bordered paragraph; @margin (default) | @below | @auto
 :step 2        :step a3 2             change step · move annotation a3 to step 2
