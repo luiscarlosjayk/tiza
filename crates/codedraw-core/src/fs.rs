@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Error;
 use crate::highlight::language_from_path;
-use crate::model::{Document, SCHEMA_VERSION};
+use crate::model::{CodeSource, Document, SCHEMA_VERSION};
 
 pub const EXT: &str = "codedraw";
 
@@ -75,13 +75,22 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         language_from_path(&path.to_string_lossy()),
         Some(path.to_string_lossy().into_owned()),
     );
-    if let Some((a, b)) = range {
+    let range = range.map(|(a, b)| {
         let last = document.code.len() as u32;
         let a = a.clamp(1, last.max(1));
-        let b = b.clamp(a, last.max(1));
+        (a, b.clamp(a, last.max(1)))
+    });
+    if let Some((a, b)) = range {
         document.code = document.code[(a - 1) as usize..b as usize].to_vec();
         document.source.first_line = a;
     }
+    // El sidecar vive junto al fuente: lo referencia por nombre, así siempre
+    // muestra el archivo actual y no una copia congelada (`:embed` lo congela).
+    let file_name = path
+        .file_name()
+        .map(|f| f.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.to_string_lossy().into_owned());
+    document.reference_file(file_name, range);
     let save_path = match range {
         Some((a, b)) => {
             let mut s = path.as_os_str().to_owned();
@@ -113,23 +122,94 @@ pub fn from_stdin_text(text: &str, language: &str) -> Opened {
 
 pub fn load_document(path: &Path) -> Result<Document, Error> {
     let text = std::fs::read_to_string(path)?;
-    parse_document(&text)
+    parse_document(&text, path.parent())
 }
 
-pub fn parse_document(text: &str) -> Result<Document, Error> {
-    let doc: Document = serde_json::from_str(text)?;
+/// Parsea un `.codedraw` y resuelve su código. `base_dir` es el directorio del
+/// documento, contra el que se resuelven las rutas relativas de `code.file`.
+pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, Error> {
+    let mut doc: Document = serde_json::from_str(text)?;
     if doc.schema > SCHEMA_VERSION {
         return Err(Error::UnsupportedSchema {
             found: doc.schema,
             supported: SCHEMA_VERSION,
         });
     }
+    resolve_code(&mut doc, base_dir)?;
     Ok(doc)
+}
+
+/// Rellena `doc.code` a partir de `doc.code_src`.
+pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
+    match &doc.code_src {
+        CodeSource::Embedded(lines) => {
+            doc.code = lines.clone();
+        }
+        CodeSource::File { file, lines } => {
+            let raw = Path::new(file);
+            let full = if raw.is_absolute() {
+                raw.to_path_buf()
+            } else {
+                base_dir
+                    .filter(|d| !d.as_os_str().is_empty())
+                    .map(|d| d.join(raw))
+                    .unwrap_or_else(|| raw.to_path_buf())
+            };
+            let text = std::fs::read_to_string(&full).map_err(|e| {
+                Error::Invalid(format!(
+                    "no se pudo leer el código referenciado en {} ({e})",
+                    full.display()
+                ))
+            })?;
+            let mut all: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+            let mut first = 1;
+            if let Some(spec) = lines {
+                let (a, b) = parse_lines(spec)?;
+                let last = all.len() as u32;
+                let a = a.clamp(1, last.max(1));
+                let b = b.clamp(a, last.max(1));
+                all = all[(a - 1) as usize..b as usize].to_vec();
+                first = a;
+            }
+            doc.code = all;
+            doc.source.first_line = first;
+            if doc.source.path.is_none() {
+                doc.source.path = Some(full.to_string_lossy().into_owned());
+            }
+            if doc.source.language.is_empty() {
+                doc.source.language = language_from_path(&full.to_string_lossy());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `"12-48"`, `"12..48"` o `"7"` → (12, 48).
+fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
+    let s = spec.trim();
+    let parts: Vec<&str> = if s.contains("..") {
+        s.split("..").collect()
+    } else {
+        s.split('-').collect()
+    };
+    let nums: Result<Vec<u32>, _> = parts.iter().map(|p| p.trim().parse::<u32>()).collect();
+    match nums
+        .map_err(|_| Error::Invalid(format!("rango de líneas inválido en code.lines: {spec}")))?
+        .as_slice()
+    {
+        [a] => Ok((*a, *a)),
+        [a, b] => Ok((*a.min(b), *a.max(b))),
+        _ => Err(Error::Invalid(format!(
+            "rango de líneas inválido en code.lines: {spec}"
+        ))),
+    }
 }
 
 /// Guarda de forma atómica (tmp + rename), como hacen los editores.
 pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
-    let json = serde_json::to_string_pretty(doc)?;
+    let mut doc = doc.clone();
+    doc.sync_code_src();
+    let json = serde_json::to_string_pretty(&doc)?;
     let tmp = path.with_extension(format!("{EXT}.tmp"));
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
@@ -181,8 +261,65 @@ mod tests {
         assert_eq!(o.document.source.first_line, 2);
         assert!(o.save_path.to_string_lossy().ends_with("x.rs.2-3.codedraw"));
         save_document(&o.document, &o.save_path).unwrap();
+        let json = std::fs::read_to_string(&o.save_path).unwrap();
+        assert!(
+            json.contains("\"file\": \"x.rs\""),
+            "el sidecar referencia al fuente: {json}"
+        );
+        assert!(json.contains("\"lines\": \"2-3\""));
         let back = load_document(&o.save_path).unwrap();
         assert_eq!(back, o.document);
+        // Si el fuente cambia, el documento referenciado lo refleja.
+        std::fs::write(&src, "l1\nL2 nueva\nl3\nl4\n").unwrap();
+        let again = load_document(&o.save_path).unwrap();
+        assert_eq!(again.code, vec!["L2 nueva", "l3"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn code_object_absolute_relative_and_embed() {
+        let dir = std::env::temp_dir().join(format!("codedraw-ref-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let src = dir.join("src/lib.rs");
+        std::fs::write(&src, "a\nb\nc\n").unwrap();
+        // relativa al .codedraw
+        let doc_path = dir.join("notas.codedraw");
+        std::fs::write(
+            &doc_path,
+            r#"{"schema":1,"source":{"language":""},"code":{"file":"src/lib.rs","lines":"2-3"}}"#,
+        )
+        .unwrap();
+        let d = load_document(&doc_path).unwrap();
+        assert_eq!(d.code, vec!["b", "c"]);
+        assert_eq!(d.source.first_line, 2);
+        assert_eq!(d.source.language, "rs");
+        // absoluta, sin rango
+        let json = format!(
+            r#"{{"schema":1,"source":{{"language":"rs"}},"code":{{"file":"{}"}}}}"#,
+            src.display()
+        );
+        let d = parse_document(&json, None).unwrap();
+        assert_eq!(d.code.len(), 3);
+        // embebido sigue funcionando y embed_code congela
+        let mut d = parse_document(
+            r#"{"schema":1,"source":{"language":"rs"},"code":["x","y"]}"#,
+            None,
+        )
+        .unwrap();
+        assert_eq!(d.code, vec!["x", "y"]);
+        d.reference_file("nope.rs", None);
+        d.embed_code();
+        assert!(d.is_embedded());
+        // archivo inexistente → error claro
+        let err = parse_document(
+            r#"{"schema":1,"source":{"language":""},"code":{"file":"/no/existe.rs"}}"#,
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("no se pudo leer el código referenciado")
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

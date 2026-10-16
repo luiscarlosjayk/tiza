@@ -343,6 +343,30 @@ impl App {
                 "hl" | "highlight" => self.cmd_highlight(rest),
                 "mark" | "m" => self.cmd_mark(rest),
                 "note" | "n" => self.cmd_note(rest),
+                "embed" => {
+                    self.doc.embed_code();
+                    self.touch();
+                    Ok("código congelado dentro del .codedraw".into())
+                }
+                "link" => {
+                    let (file, range) = if rest.is_empty() {
+                        let Some(f) = self.doc.source.path.clone() else {
+                            return Err(Error::Invalid(
+                                "uso: :link ruta[:A-B]   (sin ruta usa el archivo de origen)"
+                                    .into(),
+                            ));
+                        };
+                        let r = (self.doc.source.first_line > 1)
+                            .then(|| (self.doc.source.first_line, self.doc.last_line()));
+                        (f, r)
+                    } else {
+                        let (p, r) = fs::parse_target(rest);
+                        (p.to_string_lossy().into_owned(), r)
+                    };
+                    self.doc.reference_file(file.clone(), range);
+                    self.touch();
+                    Ok(format!("el .codedraw ahora referencia {file}"))
+                }
                 "clear" => {
                     let step = match rest.trim() {
                         "" => None,

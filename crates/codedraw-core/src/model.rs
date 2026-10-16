@@ -18,7 +18,13 @@ pub struct Document {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
     pub source: Source,
-    /// Líneas de código sin el salto de línea final.
+    /// Cómo se guarda el código en el archivo: embebido (array de líneas) o
+    /// referencia a un archivo (`{"file": "src/main.rs", "lines": "12-48"}`).
+    #[serde(rename = "code")]
+    pub code_src: CodeSource,
+    /// Líneas de código en memoria, sin el salto de línea final. Se rellenan
+    /// al cargar (ver `fs::load_document`) y nunca se serializan directamente.
+    #[serde(skip)]
     pub code: Vec<String>,
     #[serde(default)]
     pub annotations: Vec<Annotation>,
@@ -28,6 +34,27 @@ pub struct Document {
     pub step: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<ThemeName>,
+}
+
+/// Origen del código dentro de un `.codedraw`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum CodeSource {
+    /// Copia del código dentro del documento: portable, pero congelada.
+    Embedded(Vec<String>),
+    /// Referencia a un archivo existente. `file` puede ser absoluta o relativa al
+    /// directorio del `.codedraw`; `lines` es un rango opcional `"12-48"` o `"7"`.
+    File {
+        file: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        lines: Option<String>,
+    },
+}
+
+impl Default for CodeSource {
+    fn default() -> Self {
+        CodeSource::Embedded(Vec::new())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
@@ -175,10 +202,41 @@ impl Document {
                 language: language.into(),
                 first_line: 1,
             },
+            code_src: CodeSource::Embedded(lines.clone()),
             code: lines,
             annotations: Vec::new(),
             step: 1,
             theme: None,
+        }
+    }
+
+    /// Cambia el origen a referencia de archivo (el código en memoria no cambia).
+    pub fn reference_file(&mut self, file: impl Into<String>, lines: Option<(u32, u32)>) {
+        self.code_src = CodeSource::File {
+            file: file.into(),
+            lines: lines.map(|(a, b)| {
+                if a == b {
+                    a.to_string()
+                } else {
+                    format!("{a}-{b}")
+                }
+            }),
+        };
+    }
+
+    /// Congela el código dentro del documento (deja de depender del archivo).
+    pub fn embed_code(&mut self) {
+        self.code_src = CodeSource::Embedded(self.code.clone());
+    }
+
+    pub fn is_embedded(&self) -> bool {
+        matches!(self.code_src, CodeSource::Embedded(_))
+    }
+
+    /// Deja `code_src` coherente con `code` antes de serializar.
+    pub fn sync_code_src(&mut self) {
+        if let CodeSource::Embedded(lines) = &mut self.code_src {
+            *lines = self.code.clone();
         }
     }
 
@@ -492,7 +550,10 @@ mod tests {
         })
         .unwrap();
         let json = serde_json::to_string_pretty(&d).unwrap();
-        let back: Document = serde_json::from_str(&json).unwrap();
+        let mut back: Document = serde_json::from_str(&json).unwrap();
+        if let CodeSource::Embedded(lines) = &back.code_src {
+            back.code = lines.clone();
+        }
         assert_eq!(d, back);
         assert!(json.contains("\"type\": \"arrow\""));
     }

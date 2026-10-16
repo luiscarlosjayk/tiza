@@ -74,7 +74,7 @@ Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` arranca con e
 :theme light   :lang ts   :w   :q
 ```
 
-Las anotaciones nuevas aparecen en el paso actual. El color es tuyo, como en Excalidraw: cada anotación acepta `color` (nombre o `#rrggbb`); las flechas sin color rotan una paleta para distinguirse entre sí. Todo se guarda automáticamente en un `.codedraw` (JSON) junto al archivo fuente (`src/main.rs.codedraw`).
+Las anotaciones nuevas aparecen en el paso actual. El `.codedraw` referencia al archivo fuente por ruta (`"code": {"file": "main.rs", "lines": "12-48"}`, absoluta o relativa al `.codedraw`), así siempre muestra el código actual; `:embed` congela una copia dentro del documento y `:link ruta[:A-B]` vuelve a referenciar. El color es tuyo, como en Excalidraw: cada anotación acepta `color` (nombre o `#rrggbb`); las flechas sin color rotan una paleta para distinguirse entre sí. Todo se guarda automáticamente en un `.codedraw` (JSON) junto al archivo fuente (`src/main.rs.codedraw`).
 
 ## Para agentes: MCP y API local
 

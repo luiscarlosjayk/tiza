@@ -5,6 +5,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.1.0/); vers
 ## [Unreleased]
 
 ### Añadido
+- `code` como objeto `{"file", "lines"}` con rutas absolutas o relativas al `.codedraw`; los sidecars referencian al fuente por defecto. `:embed` y `:link`.
 - Paso 0 = solo el código: `p` desde el paso 1, `:step 0`, `--step 0` o `set_step 0` muestran el código sin anotaciones. El ejemplo de ownership arranca así.
 - Vaciar anotaciones de golpe: `:clear [N|.]`, método `scene.clear` y herramienta MCP `clear_annotations`; reversible con `u`.
 - Color por anotación (`color`: nombre de la paleta o `#rrggbb`) en el modelo, `:color ID …`, API y MCP. Las flechas sin color rotan una paleta para distinguirse; el ejemplo de ownership usa un color por valor.

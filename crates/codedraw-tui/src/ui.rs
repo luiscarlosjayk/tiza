@@ -303,6 +303,7 @@ fn help_lines() -> Vec<String> {
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID texto",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
         "  :focus A-B | :focus     :theme dark|light     :lang rs     :w [ruta]   :q",
+        "  :embed  congela el código en el .codedraw   :link [ruta]  referencia un archivo",
         "",
         "Las anotaciones nuevas aparecen en el paso actual. La API local (socket) y",
         "el servidor MCP (`codedraw mcp`) hacen exactamente lo mismo que estos comandos.",
