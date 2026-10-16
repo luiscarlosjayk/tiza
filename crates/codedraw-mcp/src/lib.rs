@@ -131,6 +131,12 @@ pub struct UpdateParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct ClearParams {
+    #[schemars(description = "Si se da, borra solo las anotaciones de ese paso; si no, todas")]
+    pub step: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct IdParams {
     pub id: String,
 }
@@ -353,6 +359,18 @@ impl CodeDrawServer {
             )
             .await?;
         Ok(text(pretty(&v)))
+    }
+
+    #[tool(
+        description = "Vacía todas las anotaciones de golpe (o solo las de un paso con `step`). Útil entre tomas. El presentador puede deshacerlo con `u`."
+    )]
+    async fn clear_annotations(
+        &self,
+        Parameters(p): Parameters<ClearParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(
+            &self.call("scene.clear", json!({"step": p.step})).await?,
+        )))
     }
 
     #[tool(description = "Elimina una anotación por id.")]

@@ -172,6 +172,29 @@ impl App {
         }
     }
 
+    /// Vacía todas las anotaciones (o solo las de un paso). Se puede deshacer con `u`.
+    pub fn clear_annotations(&mut self, step: Option<u32>) -> usize {
+        let before = self.doc.annotations.len();
+        if before == 0 {
+            return 0;
+        }
+        self.history.record(&self.doc);
+        match step {
+            Some(st) => self.doc.annotations.retain(|a| a.step != st),
+            None => self.doc.annotations.clear(),
+        }
+        let removed = before - self.doc.annotations.len();
+        if removed == 0 {
+            self.history.undo(&mut self.doc);
+            return 0;
+        }
+        if self.doc.step > self.doc.max_step() {
+            self.doc.step = self.doc.max_step();
+        }
+        self.touch();
+        removed
+    }
+
     pub fn update_annotation(&mut self, p: &UpdateParams) -> Result<(), Error> {
         let mut ann = self
             .doc
@@ -319,6 +342,21 @@ impl App {
                 "hl" | "highlight" => self.cmd_highlight(rest),
                 "mark" | "m" => self.cmd_mark(rest),
                 "note" | "n" => self.cmd_note(rest),
+                "clear" => {
+                    let step = match rest.trim() {
+                        "" => None,
+                        "." => Some(self.doc.step),
+                        n => Some(n.parse::<u32>().map_err(|_| {
+                            Error::Invalid("uso: :clear  |  :clear N  |  :clear .  (todo, un paso, el paso actual)".into())
+                        })?),
+                    };
+                    let n = self.clear_annotations(step);
+                    Ok(if n == 0 {
+                        "nada que borrar".into()
+                    } else {
+                        format!("{n} anotación(es) borradas (u para deshacer)")
+                    })
+                }
                 "del" | "delete" | "rm" => {
                     let mut n = 0;
                     for id in rest.split_whitespace() {
@@ -658,6 +696,14 @@ impl App {
                     revision: self.revision,
                 })?
             }
+            "scene.clear" => {
+                let step = params
+                    .get("step")
+                    .and_then(|v| v.as_u64())
+                    .map(|v| v as u32);
+                let removed = self.clear_annotations(step);
+                json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision})
+            }
             "annotation.delete" => {
                 let p: IdParams = parse(params)?;
                 self.delete_annotation(&p.id)?;
@@ -876,12 +922,23 @@ mod tests {
         assert_eq!(a.doc.annotations[1].color, None);
         a.run_command("del a1");
         assert_eq!(a.doc.annotations.len(), 3);
+        a.run_command("clear");
+        assert_eq!(a.doc.annotations.len(), 0);
+        a.undo();
+        assert_eq!(a.doc.annotations.len(), 3);
+        a.run_command("step a2 2");
+        a.run_command("clear 2");
+        assert_eq!(a.doc.annotations.len(), 2);
+        a.undo();
+        assert_eq!(a.doc.annotations.len(), 3);
         a.run_command("arrow 2:zzz 5:t");
         assert!(
             matches!(a.message, Some((_, true))),
             "texto inexistente debe dar error"
         );
-        a.undo();
+        assert_eq!(a.doc.annotations.len(), 3, "un error no debe tocar el documento");
+        a.undo(); // deshace el :step a2 2
+        a.undo(); // deshace el :del a1
         assert_eq!(a.doc.annotations.len(), 4);
     }
 

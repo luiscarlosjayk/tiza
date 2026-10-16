@@ -67,7 +67,8 @@ Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` y avanza con 
 :hl 7:&t préstamo                     resalte
 :note 4 s ya no es dueña              nota anclada a una línea
 :step 2        :step a3 2             cambiar de paso · mover la anotación a3 al paso 2
-:del a1        :label a2 nuevo texto  borrar · cambiar etiqueta
+:del a1        :clear | :clear 2       borrar una · vaciar todo o solo un paso (u deshace)
+:label a2 nuevo texto                  cambiar etiqueta
 :color a2 blue   :color a3 #ff8800   color por anotación (orange blue green purple pink cyan yellow red gray · auto)
 :focus 15-17   :focus                 atenuar todo salvo un rango · quitar el enfoque
 :theme light   :lang ts   :w   :q
@@ -89,7 +90,7 @@ Configuración para Claude Code (`.mcp.json` del proyecto o `claude mcp add code
 { "mcpServers": { "codedraw": { "command": "codedraw", "args": ["mcp"] } } }
 ```
 
-Herramientas: `status`, `get_code`, `list_annotations`, `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, `update_annotation`, `delete_annotation`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Las anclas aceptan `{"find": "takes(s)"}` además de línea y columna, porque un agente rara vez conoce la columna exacta. Guía completa: [docs/agent-guide.md](docs/agent-guide.md).
+Herramientas: `status`, `get_code`, `list_annotations`, `add_mark`, `add_arrow`, `add_box`, `add_note`, `highlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `render_text`. Las anclas aceptan `{"find": "takes(s)"}` además de línea y columna, porque un agente rara vez conoce la columna exacta. Guía completa: [docs/agent-guide.md](docs/agent-guide.md).
 
 La misma API está disponible como socket Unix con JSON por líneas (diseño tomado de herdr) y desde el CLI:
 

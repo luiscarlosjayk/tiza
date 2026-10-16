@@ -265,6 +265,10 @@ pub const METHODS: &[(&str, &str)] = &[
         "Cambia paso, etiqueta o forma de una anotación",
     ),
     ("annotation.delete", "Elimina una anotación por id"),
+    (
+        "scene.clear",
+        "Vacía todas las anotaciones (o solo las de `step`); se puede deshacer en la TUI",
+    ),
     ("step.set", "Cambia el paso actual de la presentación"),
     ("step.next", "Avanza un paso"),
     ("step.prev", "Retrocede un paso"),

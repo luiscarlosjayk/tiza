@@ -33,6 +33,10 @@ Esta página es para un agente (Claude Code, Zed, cualquier cliente MCP) que vay
 
 Cada anotación acepta `color`: `orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray` (también en español: `azul`, `verde`…) o `#rrggbb`. Úsalo para contar una historia por valor: todo lo que le pasa a `s` en un color, todo lo de `t` en otro. Las flechas sin color rotan una paleta automática; cajas, notas y resaltes sin color usan el del tema. `update_annotation` con `color: ""` vuelve al automático.
 
+## Entre tomas
+
+`clear_annotations` vacía el lienzo de golpe (o solo un paso con `step`). El presentador puede deshacerlo con `u`, así que no es destructivo en vivo.
+
 ## Idempotencia
 
 Pasa tu propio `id` (`"id": "move-s"`) para que un reintento no duplique la anotación: el segundo intento falla con `duplicate_id` y puedes seguir.
