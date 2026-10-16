@@ -84,3 +84,28 @@ fn scene_without_instance_explains() {
     assert_eq!(out.status.code(), Some(1));
     assert!(String::from_utf8_lossy(&out.stderr).contains("no hay una instancia"));
 }
+
+#[test]
+fn file_reference_with_subdir_and_range_resolves_relative_to_document() {
+    let doc = format!(
+        "{}/../../examples/stack-impl.codedraw",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let out = bin()
+        .current_dir(std::env::temp_dir())
+        .args(["render", &doc, "--width", "100", "--step", "5"])
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(
+        text.contains(" 7 ") && text.contains("impl<T> Stack<T> {"),
+        "{text}"
+    );
+    assert!(!text.contains(" 6 "), "el rango 7-30 excluye la línea 6");
+    assert!(text.contains("╭─ impl<T> Stack<T>"));
+}

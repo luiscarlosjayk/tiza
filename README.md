@@ -43,7 +43,7 @@ pbpaste | codedraw --lang rs    # código desde el portapapeles (macOS)
 codedraw examples/ownership.rs.codedraw --present   # abre el demo en modo presentación
 ```
 
-Prueba el demo incluido: `codedraw examples/ownership.rs.codedraw` arranca con el código limpio; avanza con `n`.
+Prueba los demos incluidos (ver [examples/README.md](examples/README.md)): `codedraw examples/ownership.rs.codedraw` arranca con el código limpio; avanza con `n`.
 
 ### Teclas
 
