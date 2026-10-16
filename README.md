@@ -74,8 +74,9 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :style io glyph=⇄ legend="network I/O" color=cyan   reusable style, then :mark io 2:fetch
 :arrow 2:s 15:s: String move          arrow between two points, with a label
 :arrow 7:&t 19:s borrow stroke=dashed  arrow styles: stroke=solid|dashed|dotted|thick|double  route=rounded|sharp  heads=START,END (none arrow dot bar open)
-:set a2 stroke=thick end=bar          change properties of an annotation (label, color, step; arrows: stroke, route, heads, start, end)
+:set a2 stroke=thick end=bar          change properties of an annotation (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill)
 :box 15-17 takes owns s               box around a range of lines
+:box 15-17 takes border=double corners=sharp fill=no   borders: border=solid|dashed|dotted|thick|double  corners=rounded|sharp  fill=yes|no (callouts take the same keys)
 :hl 7:&t shared borrow                highlight
 :note 4 s no longer owns it           note anchored to a line
 :callout 15-25 @auto title="why" two or three sentences…   bordered paragraph; @margin (default) | @below | @auto

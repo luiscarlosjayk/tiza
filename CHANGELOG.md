@@ -13,6 +13,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - A callout placed below is drawn inside a box only when the box contains its whole range; a callout wider than the box (e.g. one that sums up several functions) now goes after the box's bottom border, without the box's rail or background. The ownership example's `move` mark on line 3 points at the argument `s` instead of the `s` in `takes`.
 
 ### Added
+- Box and callout border styles: `border` (solid, dashed, dotted, thick, double), `corners` (rounded, sharp) and `fill` (boxes tinted by default, callouts not). `:box … border=double corners=sharp fill=no`, `:callout … border=…`, `:set ID border|corners|fill=…`, socket fields, MCP `add_box` / `add_callout` / `update_annotation`. A callout below the code never grows past the code column.
 - README: an animated GIF of the ownership example, generated from the PNG export of each step (`docs/img/ownership.gif`).
 - Property tests (proptest) in `codedraw-core`: anchors never panic on arbitrary code, the layout never overflows the width (20..=240 columns, tabs/emoji/CJK/RTL) and documents round-trip through JSON.
 - Paste re-anchors annotations by the text they pointed at (same line first, then anywhere); the ones whose text is gone are dropped with a message and `u` restores them. Pasting while typing a `:` command appends to the command; an empty paste is refused.
