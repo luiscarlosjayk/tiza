@@ -207,7 +207,10 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
 /// JSON value into schema `from + 1`. Applied in order on load; files are
 /// written in the current schema. Every bump of `SCHEMA_VERSION` adds one
 /// entry here and a fixture under `qa/fixtures/compat/` (t-073 checks both).
-pub const MIGRATIONS: &[(u32, fn(&mut serde_json::Value))] = &[];
+pub const MIGRATIONS: &[(u32, Migration)] = &[];
+
+/// A function that rewrites a raw document of one schema into the next.
+pub type Migration = fn(&mut serde_json::Value);
 
 /// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
 pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
