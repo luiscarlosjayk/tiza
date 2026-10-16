@@ -85,6 +85,133 @@ pub enum ThemeName {
     Light,
 }
 
+/// How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Stroke {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+    Thick,
+    Double,
+}
+
+/// Corner shape of a routed line: `╭╰` (rounded, the cell-grid "curve") or `┌└` (sharp).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Route {
+    #[default]
+    Rounded,
+    Sharp,
+}
+
+/// What is drawn at an end of a line.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Head {
+    #[default]
+    None,
+    Arrow,
+    Dot,
+    Bar,
+    Open,
+}
+
+/// Heads at both ends. Default: nothing at the start, `▶` at the end.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Heads {
+    #[serde(default)]
+    pub start: Head,
+    #[serde(default = "Head::arrow")]
+    pub end: Head,
+}
+
+impl Default for Heads {
+    fn default() -> Self {
+        Self {
+            start: Head::None,
+            end: Head::Arrow,
+        }
+    }
+}
+
+impl Head {
+    fn arrow() -> Self {
+        Head::Arrow
+    }
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "none" | "no" | "-" => Head::None,
+            "arrow" | "triangle" => Head::Arrow,
+            "dot" | "circle" => Head::Dot,
+            "bar" | "flat" => Head::Bar,
+            "open" | "chevron" => Head::Open,
+            _ => return None,
+        })
+    }
+    pub const NAMES: &[&str] = &["none", "arrow", "dot", "bar", "open"];
+}
+
+impl Stroke {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "solid" | "line" => Stroke::Solid,
+            "dashed" | "dash" => Stroke::Dashed,
+            "dotted" | "dot" | "dots" => Stroke::Dotted,
+            "thick" | "bold" | "heavy" => Stroke::Thick,
+            "double" => Stroke::Double,
+            _ => return None,
+        })
+    }
+    pub const NAMES: &[&str] = &["solid", "dashed", "dotted", "thick", "double"];
+}
+
+impl Route {
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s.trim().to_ascii_lowercase().as_str() {
+            "rounded" | "round" | "curved" | "curve" => Route::Rounded,
+            "sharp" | "square" | "elbow" => Route::Sharp,
+            _ => return None,
+        })
+    }
+    pub const NAMES: &[&str] = &["rounded", "sharp"];
+}
+
+/// Stroke, corners and heads of a line-like annotation. Every field defaults
+/// to today's look, so documents without them are unchanged.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineStyle {
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub stroke: Stroke,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub route: Route,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub heads: Heads,
+}
+
+fn is_default<T: Default + PartialEq>(v: &T) -> bool {
+    *v == T::default()
+}
+
+impl Heads {
+    /// Parses `END`, `START,END` or `START END`.
+    pub fn parse(s: &str) -> Option<Self> {
+        let parts: Vec<&str> = s.split([',', ' ', '/']).filter(|t| !t.is_empty()).collect();
+        match parts.as_slice() {
+            [end] => Some(Heads {
+                start: Head::None,
+                end: Head::parse(end)?,
+            }),
+            [start, end] => Some(Heads {
+                start: Head::parse(start)?,
+                end: Head::parse(end)?,
+            }),
+            _ => None,
+        }
+    }
+}
+
 /// A point in the code: absolute line (1-based) and grapheme (0-based).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct Anchor {
@@ -232,6 +359,9 @@ pub enum Shape {
         to: Anchor,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        /// Stroke, corners and heads (all optional; defaults draw `╭──▶`).
+        #[serde(flatten, default)]
+        line: LineStyle,
     },
     /// Text note anchored to a line.
     Note { line: u32, text: String },
@@ -803,6 +933,7 @@ mod tests {
                 from: Anchor { line: 2, col: 8 },
                 to: Anchor { line: 3, col: 10 },
                 label: Some("move".into()),
+                line: Default::default(),
             },
         })
         .unwrap();

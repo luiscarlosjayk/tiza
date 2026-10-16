@@ -14,7 +14,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 2. `get_code` — read the code with line numbers. Pick exact texts.
 3. Annotate in the order of the explanation, assigning an increasing `step`:
    - `add_mark` for semantic marks. Built-in, language-agnostic kinds: `info`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo` (Rust habits work as aliases: `borrow`→`read`, `borrow_mut`→`write`, `lifetime`→`scope`). Each shows glyph + legend; `label` is appended. For something the author will reuse, `define_style` once (`{name, glyph, legend, color}`) and then use `name` as `kind`; for a one-off, pass `style: {glyph, legend, color}` inline. Emoji are allowed as glyphs. `list_kinds` shows what exists.
-   - `add_arrow` for relationships (from where a value is born to where it is consumed).
+   - `add_arrow` for relationships (from where a value is born to where it is consumed). Style is the author's: `stroke` solid | dashed | dotted | thick | double, `route` rounded | sharp (a cell grid has no curves: rounded corners are the "curved" arrow), `head_start` / `head_end` none | arrow | dot | bar | open (default none → arrow; none + none is a plain connector). A convention that reads well: solid for a move, dashed for a shared borrow, thick for a mutable borrow. `update_annotation` changes them later (`stroke`, `route`, `head_start`, `head_end`); crossings pick the right junction (┼ ╂ ╋ ╫ …) automatically.
    - `add_box` to delimit a function or a block.
    - `add_note` for a short sentence (one line, in the margin); `add_callout` for a paragraph of two or three sentences about a range of lines: it is a bordered block with an optional `title`, it does not displace the other labels, and `placement` is `margin` (default), `below` (own rows under `to_line`; inside a box only when the box contains the callout's whole range, otherwise after the box's bottom border) or `auto`. Use `add_box` when you want to *delimit* code, `add_note` to tag a line, `add_callout` to *explain*; `highlight` for a fragment without semantics.
    - `add_spotlight` for a "look here" step: dims the code outside `from_line..to_line` and/or the annotations outside `ids` (and focuses the code of those annotations). It draws nothing; it directs attention. Active from `step` to `until`.
@@ -26,6 +26,8 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 ```json
 {"name":"add_mark","arguments":{"kind":"move","at":{"line":3,"find":"s"},"label":"s moves into takes","step":1}}
 {"name":"add_arrow","arguments":{"from":{"line":2,"find":"s"},"to":{"line":15,"find":"s: String"},"label":"move","step":1,"color":"orange"}}
+{"name":"add_arrow","arguments":{"from":{"line":7,"find":"&t"},"to":{"line":19,"find":"s: &String"},"label":"shared borrow","stroke":"dashed","step":3}}
+{"name":"update_annotation","arguments":{"id":"a2","stroke":"thick","head_end":"bar"}}
 {"name":"add_note","arguments":{"line":4,"text":"s no longer owns it: using it here does not compile","step":2}}
 {"name":"add_box","arguments":{"from_line":15,"to_line":17,"label":"takes owns s and frees it at the end","step":2}}
 {"name":"add_callout","arguments":{"from_line":15,"to_line":25,"title":"three ways to pass a value","text":"takes(s) moves the String. len(&s) borrows it read-only. push(&mut s) borrows it mutably.","placement":"auto","step":3,"color":"cyan"}}

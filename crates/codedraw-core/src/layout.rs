@@ -339,7 +339,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         rows.push(Row::Code(line));
 
         for (i, a) in vis.iter().enumerate() {
-            if let Shape::Arrow { from, to, label } = &a.shape
+            if let Shape::Arrow {
+                from, to, label, ..
+            } = &a.shape
                 && from.line == to.line
                 && from.line == line
             {
@@ -382,6 +384,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         from,
                         to,
                         label: Some(l),
+                        ..
                     } if from.line != to.line && to.line == line => {
                         Some((l.clone(), color_of(a), false))
                     }
@@ -616,9 +619,16 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 
     // ---- 4. arrows between lines ----
     for a in &arrows {
-        let Shape::Arrow { from, to, label } = &a.ann.shape else {
+        let Shape::Arrow {
+            from,
+            to,
+            label,
+            line: ls,
+        } = &a.ann.shape
+        else {
             continue;
         };
+        let g = Glyphs::for_style(ls);
         let arrow_color = color_of(a.ann);
         let arrow_style = base.fg(arrow_color).bold();
         let lane_x = arrow_x0 + a.lane * 2;
@@ -626,18 +636,32 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let yt = row_of_line[&to.line];
         let (top, bottom) = (ys.min(yt), ys.max(yt));
         for y in top + 1..bottom {
-            canvas.put_line(lane_x, y, "│", arrow_style);
+            canvas.put_line(lane_x, y, g.v, arrow_style);
         }
         let down = yt > ys;
-        canvas.put(lane_x, ys, if down { "╭" } else { "╰" }, arrow_style);
-        canvas.put(lane_x, yt, if down { "╰" } else { "╭" }, arrow_style);
-        for x in lane_x + 1..code_x - 1 {
-            canvas.put_line(x, ys, "─", arrow_style);
-        }
+        // The lane turns toward the code at both ends: ╭─ at the top row, ╰─ at the bottom.
+        canvas.put(lane_x, ys, if down { g.tl } else { g.bl }, arrow_style);
+        canvas.put(lane_x, yt, if down { g.bl } else { g.tl }, arrow_style);
+        // Source row: line up to the code, with the start head in the last cell.
         for x in lane_x + 1..code_x - 2 {
-            canvas.put_line(x, yt, "─", arrow_style);
+            canvas.put_line(x, ys, g.h, arrow_style);
         }
-        canvas.put(code_x - 2, yt, "▶", arrow_style);
+        match head_glyph(ls.heads.start, true, g.h) {
+            Some(h) => {
+                canvas.put(code_x - 2, ys, h, arrow_style);
+            }
+            None => canvas.put_line(code_x - 2, ys, g.h, arrow_style),
+        }
+        // Target row: same, with the end head.
+        for x in lane_x + 1..code_x - 2 {
+            canvas.put_line(x, yt, g.h, arrow_style);
+        }
+        match head_glyph(ls.heads.end, true, g.h) {
+            Some(h) => {
+                canvas.put(code_x - 2, yt, h, arrow_style);
+            }
+            None => canvas.put_line(code_x - 2, yt, g.h, arrow_style),
+        }
         // Mark the source and target points in the code.
         mark_anchor(
             &mut canvas,
@@ -673,28 +697,67 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // ---- 5. arrows on the same line ----
     for (y, row) in rows.iter().enumerate() {
         let Row::ArrowUnder(i) = row else { continue };
-        let Shape::Arrow { from, to, label } = &vis[*i].shape else {
+        let Shape::Arrow {
+            from,
+            to,
+            label,
+            line: ls,
+        } = &vis[*i].shape
+        else {
             continue;
         };
+        let g = Glyphs::for_style(ls);
         let arrow_color = color_of(vis[*i]);
         let arrow_style = base.fg(arrow_color).bold();
         let text = doc.line_text(from.line).unwrap_or("");
         let fx = code_x + col_to_x(text, from.col, opts.tab_width).min(code_w.saturating_sub(1));
         let tx = code_x + col_to_x(text, to.col, opts.tab_width).min(code_w.saturating_sub(1));
         if tx > fx {
-            canvas.put(fx, y, "╰", arrow_style);
+            // Leaves the source downward (╰), runs right, head points right.
+            canvas.put(
+                fx,
+                y,
+                head_glyph(ls.heads.start, false, g.bl).unwrap_or(g.bl),
+                arrow_style,
+            );
             for x in fx + 1..tx {
-                canvas.put_line(x, y, "─", arrow_style);
+                canvas.put_line(x, y, g.h, arrow_style);
             }
-            canvas.put(tx, y, "▶", arrow_style);
+            canvas.put(
+                tx,
+                y,
+                head_glyph(ls.heads.end, true, g.h).unwrap_or(g.h),
+                arrow_style,
+            );
         } else if fx > tx {
-            canvas.put(tx, y, "◀", arrow_style);
+            canvas.put(
+                tx,
+                y,
+                head_glyph(ls.heads.end, false, g.h).unwrap_or(g.h),
+                arrow_style,
+            );
             for x in tx + 1..fx {
-                canvas.put_line(x, y, "─", arrow_style);
+                canvas.put_line(x, y, g.h, arrow_style);
             }
-            canvas.put(fx, y, "╯", arrow_style);
+            canvas.put(
+                fx,
+                y,
+                head_glyph(ls.heads.start, true, g.br).unwrap_or(g.br),
+                arrow_style,
+            );
         } else {
-            canvas.put(fx, y, "▲", arrow_style);
+            canvas.put(
+                fx,
+                y,
+                match ls.heads.end {
+                    crate::model::Head::None => g.v,
+                    crate::model::Head::Dot => "●",
+                    crate::model::Head::Bar => "┴",
+                    crate::model::Head::Open => "^",
+                    crate::model::Head::Arrow => "▲",
+                },
+                arrow_style,
+            );
         }
         if labels_in_margin && let Some(l) = label {
             margin[y].push(Label {
@@ -900,6 +963,55 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 
 /// Splits `text` into chunks of at most `width` cells, breaking on words
 /// `glyph legend[: label]` for a mark, from its resolved style.
+/// Box-drawing glyphs for one stroke + corner style.
+struct Glyphs {
+    h: &'static str,
+    v: &'static str,
+    /// Corner at the top of a vertical run that turns right (`╭`).
+    tl: &'static str,
+    /// Corner at the bottom of a vertical run that turns right (`╰`).
+    bl: &'static str,
+    /// Corner at the bottom of a vertical run coming from the left (`╯`).
+    br: &'static str,
+}
+
+impl Glyphs {
+    fn for_style(ls: &crate::model::LineStyle) -> Glyphs {
+        use crate::model::{Route, Stroke};
+        let (h, v) = match ls.stroke {
+            Stroke::Solid => ("─", "│"),
+            Stroke::Dashed => ("╌", "╎"),
+            Stroke::Dotted => ("┄", "┆"),
+            Stroke::Thick => ("━", "┃"),
+            Stroke::Double => ("═", "║"),
+        };
+        // Thick and double have no rounded corners in Unicode.
+        let (tl, bl, br) = match (ls.stroke, ls.route) {
+            (Stroke::Thick, _) => ("┏", "┗", "┛"),
+            (Stroke::Double, _) => ("╔", "╚", "╝"),
+            (_, Route::Rounded) => ("╭", "╰", "╯"),
+            (_, Route::Sharp) => ("┌", "└", "┘"),
+        };
+        Glyphs { h, v, tl, bl, br }
+    }
+}
+
+/// Glyph for a head at a line end, or `None` to continue the line.
+/// `points_right` is the direction the line travels into that end.
+fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Option<&'static str> {
+    use crate::model::Head;
+    Some(match (head, points_right) {
+        (Head::None, _) => return None,
+        (Head::Arrow, true) => "▶",
+        (Head::Arrow, false) => "◀",
+        (Head::Dot, _) => "●",
+        (Head::Bar, true) => "┤",
+        (Head::Bar, false) => "├",
+        (Head::Open, true) => ">",
+        (Head::Open, false) => "<",
+    })
+}
+
 fn mark_text(
     doc: &Document,
     kind: &str,
@@ -1110,6 +1222,7 @@ mod tests {
                 },
                 to: Anchor { line: 7, col: 9 },
                 label: Some("s moves into t".into()),
+                line: Default::default(),
             },
         })
         .unwrap();

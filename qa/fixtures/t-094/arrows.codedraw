@@ -1,0 +1,174 @@
+{
+  "schema": 1,
+  "title": "t-094 arrow styles",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "fn main() {",
+    "    let a = 1;",
+    "    let b = 2;",
+    "    let c = 3;",
+    "    let d = 4;",
+    "    let e = 5;",
+    "    let f = 6;",
+    "    let g = 7;",
+    "    let h = 8;",
+    "    let i = 9;",
+    "    let j = 10;",
+    "    let k = 11;",
+    "    let l = 12;",
+    "    let m = 13;",
+    "    let n = 14;",
+    "    let o = 15;",
+    "    let p = 16;",
+    "    println!(\"{a} {b} {c} {d} {e} {f}\");",
+    "}"
+  ],
+  "step": 1,
+  "annotations": [
+    {
+      "id": "solid",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 8
+      },
+      "to": {
+        "line": 4,
+        "col": 8
+      },
+      "label": "solid rounded ▶ (default)"
+    },
+    {
+      "id": "dashed",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 5,
+        "col": 8
+      },
+      "to": {
+        "line": 7,
+        "col": 8
+      },
+      "label": "dashed",
+      "stroke": "dashed",
+      "color": "blue"
+    },
+    {
+      "id": "dotted",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 8,
+        "col": 8
+      },
+      "to": {
+        "line": 10,
+        "col": 8
+      },
+      "label": "dotted sharp",
+      "stroke": "dotted",
+      "route": "sharp",
+      "color": "green"
+    },
+    {
+      "id": "thick",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 11,
+        "col": 8
+      },
+      "to": {
+        "line": 13,
+        "col": 8
+      },
+      "label": "thick, dot→bar",
+      "stroke": "thick",
+      "heads": {
+        "start": "dot",
+        "end": "bar"
+      },
+      "color": "orange"
+    },
+    {
+      "id": "double",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 14,
+        "col": 8
+      },
+      "to": {
+        "line": 16,
+        "col": 8
+      },
+      "label": "double, open heads",
+      "stroke": "double",
+      "heads": {
+        "start": "open",
+        "end": "open"
+      },
+      "color": "purple"
+    },
+    {
+      "id": "plain",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 3,
+        "col": 8
+      },
+      "to": {
+        "line": 18,
+        "col": 4
+      },
+      "label": "no heads: connector",
+      "heads": {
+        "start": "none",
+        "end": "none"
+      },
+      "color": "gray"
+    },
+    {
+      "id": "cross",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 12,
+        "col": 8
+      },
+      "to": {
+        "line": 1,
+        "col": 3
+      },
+      "label": "thick, crossed by the connector at L3",
+      "stroke": "thick",
+      "color": "red"
+    },
+    {
+      "id": "same",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 18,
+        "col": 14
+      },
+      "to": {
+        "line": 18,
+        "col": 30
+      },
+      "label": "same line dashed ◀ … ●",
+      "stroke": "dashed",
+      "heads": {
+        "start": "arrow",
+        "end": "dot"
+      },
+      "color": "cyan"
+    }
+  ]
+}

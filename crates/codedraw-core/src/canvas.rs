@@ -146,15 +146,11 @@ impl Canvas {
     }
 
     /// Draws a line stroke (`─`, `│`, corners) respecting what is already there:
-    /// if it crosses a perpendicular stroke, it places a `┼` junction instead of covering it.
+    /// if it crosses a perpendicular stroke, it places a junction (`┼`, `╂`, `╋`,
+    /// `╪`, `╫`, `╬`… chosen by the two strokes) instead of covering it.
     pub fn put_line(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) {
         let existing = self.get(x, y).map(|c| c.sym.as_str()).unwrap_or(" ");
-        let horizontal = |g: &str| matches!(g, "─" | "━" | "┄" | "╌" | "═");
-        let vertical = |g: &str| matches!(g, "│" | "┃" | "┆" | "║");
-        let crosses = (horizontal(sym) && vertical(existing))
-            || (vertical(sym) && horizontal(existing))
-            || (existing == "┼" && (horizontal(sym) || vertical(sym)));
-        let merged = if crosses { "┼" } else { sym };
+        let merged = junction(sym, existing).unwrap_or(sym);
         self.put(x, y, merged, style);
     }
 
@@ -282,6 +278,52 @@ pub fn display_width(s: &str, tab_width: usize) -> usize {
     w
 }
 
+/// Weight of a line glyph: light, thick or double; `None` for anything else.
+fn weight(g: &str) -> Option<(bool, u8)> {
+    // (horizontal?, weight) with weight 0 light, 1 thick, 2 double
+    Some(match g {
+        "─" | "╌" | "┄" | "┈" | "╍" | "┅" => (true, 0),
+        "━" => (true, 1),
+        "═" => (true, 2),
+        "│" | "╎" | "┆" | "┊" | "╏" | "┇" => (false, 0),
+        "┃" => (false, 1),
+        "║" => (false, 2),
+        _ => return None,
+    })
+}
+
+/// The junction glyph when `new` is drawn over `existing`, if they cross.
+fn junction(new: &str, existing: &str) -> Option<&'static str> {
+    // An existing junction keeps its shape when a line passes through again.
+    if matches!(existing, "┼" | "╂" | "┿" | "╋" | "╪" | "╫" | "╬") && weight(new).is_some()
+    {
+        return Some(match existing {
+            "┼" => "┼",
+            "╂" => "╂",
+            "┿" => "┿",
+            "╋" => "╋",
+            "╪" => "╪",
+            "╫" => "╫",
+            _ => "╬",
+        });
+    }
+    let (nh, nw) = weight(new)?;
+    let (eh, ew) = weight(existing)?;
+    if nh == eh {
+        return None;
+    }
+    let (hw, vw) = if nh { (nw, ew) } else { (ew, nw) };
+    Some(match (hw, vw) {
+        (0, 0) => "┼",
+        (1, 0) => "┿",
+        (0, 1) => "╂",
+        (1, 1) => "╋",
+        (2, 0) | (2, 1) => "╪",
+        (0, 2) | (1, 2) => "╫",
+        _ => "╬",
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -320,5 +362,24 @@ mod tests {
         let mut c = Canvas::new(5, 2);
         c.put_str(0, 1, "hi", CellStyle::new());
         assert_eq!(c.to_plain_text(), "\nhi");
+    }
+
+    #[test]
+    fn junctions_follow_both_strokes() {
+        assert_eq!(junction("─", "│"), Some("┼"));
+        assert_eq!(junction("━", "│"), Some("┿"));
+        assert_eq!(junction("─", "┃"), Some("╂"));
+        assert_eq!(junction("━", "┃"), Some("╋"));
+        assert_eq!(junction("═", "│"), Some("╪"));
+        assert_eq!(junction("─", "║"), Some("╫"));
+        assert_eq!(junction("═", "║"), Some("╬"));
+        assert_eq!(
+            junction("╌", "┆"),
+            Some("┼"),
+            "dashed and dotted count as light"
+        );
+        assert_eq!(junction("─", "─"), None, "parallel lines overwrite");
+        assert_eq!(junction("│", "┼"), Some("┼"));
+        assert_eq!(junction("a", "│"), None);
     }
 }

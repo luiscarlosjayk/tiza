@@ -200,7 +200,7 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     if app.selected.is_some() {
         let handled = match code {
             KeyCode::Enter => app.selected_action('\n'),
-            KeyCode::Char(c @ ('x' | 'c' | '+' | '-')) if !ctrl => app.selected_action(c),
+            KeyCode::Char(c @ ('x' | 'c' | 'e' | '+' | '-')) if !ctrl => app.selected_action(c),
             _ => false,
         };
         if handled {

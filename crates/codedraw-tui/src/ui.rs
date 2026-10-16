@@ -331,7 +331,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         )],
         None if app.selected.is_some() => vec![Span::styled(
             format!(
-                "▸ {}   Enter label  x delete  c color  +/- step  Tab next  Esc ",
+                "▸ {}   Enter label  e set  x delete  c color  +/- step  Tab next  Esc ",
                 app.selected_text().unwrap_or_default()
             ),
             accent,
@@ -430,6 +430,8 @@ fn help_lines() -> Vec<String> {
         "        …or a :style name, or a bare glyph/emoji for a one-off mark (:mark 🔥 7:&t hot path)",
         "  :style NAME glyph=G legend=\"text\" color=C   define a reusable style   :style  lists them",
         "  :arrow L:text L:text [label]             :hl L:text [label]",
+        "  :arrow … [label] stroke=dashed|dotted|thick|double heads=START,END route=sharp   (heads: none arrow dot bar open)",
+        "  :set ID key=value…   label, color, step; arrows: stroke, route, heads, start, end   (selection: e)",
         "  :box A-B [label]                         :note L text   (L may be .)",
         "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",

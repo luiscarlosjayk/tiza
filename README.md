@@ -55,7 +55,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 | `h`/`l`, `w`/`b`/`e`, `0`/`$` | move the column cursor (word motions) |
 | `v` / `V` / `i` | select text / select lines / select the word under the cursor |
 | with a selection: `h` `m` `n` `C` `b` `a` `s` | highlight · mark (then type `KIND [label]`) · note · callout (then type the text) · box · arrow (source `a`, target `a`) · spotlight |
-| `Tab` / `Shift-Tab` | select an annotation; then `Enter` edit label · `x` delete · `c` color · `+`/`-` move step |
+| `Tab` / `Shift-Tab` | select an annotation; then `Enter` edit label · `e` set properties · `x` delete · `c` color · `+`/`-` move step |
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo |
 | `t` | dark ⇄ light theme (like Excalidraw) |
@@ -71,6 +71,8 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :mark 🔥 4:res.json hot path          one-off mark: any glyph/emoji + your legend
 :style io glyph=⇄ legend="network I/O" color=cyan   reusable style, then :mark io 2:fetch
 :arrow 2:s 15:s: String move          arrow between two points, with a label
+:arrow 7:&t 19:s borrow stroke=dashed  arrow styles: stroke=solid|dashed|dotted|thick|double  route=rounded|sharp  heads=START,END (none arrow dot bar open)
+:set a2 stroke=thick end=bar          change properties of an annotation (label, color, step; arrows: stroke, route, heads, start, end)
 :box 15-17 takes owns s               box around a range of lines
 :hl 7:&t shared borrow                highlight
 :note 4 s no longer owns it           note anchored to a line
@@ -85,7 +87,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :theme light   :lang ts   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 ```
 
-New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
+New annotations appear at the current step. The `.codedraw` references the source file by path (`"code": {"file": "main.rs", "lines": "12-48"}`, absolute or relative to the `.codedraw`), so it always shows the current code; `:embed` freezes a copy inside the document and `:link path[:A-B]` references a file again. Color is yours, as in Excalidraw: every annotation accepts `color` (a name or `#rrggbb`); arrows without a color rotate through a palette so they can be told apart. Arrow strokes and heads are yours too: dashed for a shared borrow, thick for a move, `heads=none,none` for a plain connector — the ownership example does exactly that. Everything is saved automatically to a `.codedraw` (JSON) next to the source file (`src/main.rs.codedraw`).
 
 ## Export to SVG or PNG
 

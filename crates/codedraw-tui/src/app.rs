@@ -252,6 +252,33 @@ impl App {
         if let Some(mv) = &p.mv {
             mv.apply(&mut ann.shape, &self.doc)?;
         }
+        if p.has_line_style() {
+            match &mut ann.shape {
+                Shape::Arrow { line, .. } => {
+                    if let Some(s) = p.stroke {
+                        line.stroke = s;
+                    }
+                    if let Some(r) = p.route {
+                        line.route = r;
+                    }
+                    if let Some(h) = &p.heads {
+                        if let Some(st) = h.start {
+                            line.heads.start = st;
+                        }
+                        if let Some(en) = h.end {
+                            line.heads.end = en;
+                        }
+                    }
+                }
+                other => {
+                    return Err(Error::Invalid(format!(
+                        "stroke/route/heads apply to arrows only; {} is a {}",
+                        p.id,
+                        other.kind_name()
+                    )));
+                }
+            }
+        }
         if let Some(l) = &p.label {
             let l = if l.trim().is_empty() {
                 None
@@ -582,6 +609,7 @@ impl App {
                                 from,
                                 to: anchor,
                                 label: None,
+                                line: Default::default(),
                             },
                         ) {
                             Ok(id) => {
@@ -677,6 +705,7 @@ impl App {
                 self.selected = None;
             }
             'c' => self.mode = Mode::Command(format!("color {id} ")),
+            'e' => self.mode = Mode::Command(format!("set {id} ")),
             '+' | '-' => {
                 let step = if key == '+' {
                     a.step + 1
@@ -690,6 +719,9 @@ impl App {
                     label: None,
                     shape: None,
                     mv: None,
+                    stroke: None,
+                    route: None,
+                    heads: None,
                 }) {
                     Ok(()) => self.info(format!("{id} → step {step}")),
                     Err(e) => self.error(e.to_string()),
@@ -704,7 +736,7 @@ impl App {
     pub const COMMANDS: &'static [&'static str] = &[
         "arrow", "autosave", "box", "callout", "clear", "color", "del", "embed", "focus", "help",
         "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad", "present", "prev",
-        "q", "redo", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
+        "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo", "until", "w", "wq",
     ];
 
     /// Tab completion for the command line: the command name on the first word, then
@@ -857,6 +889,7 @@ impl App {
                 }
                 "spot" | "spotlight" => self.cmd_spot(rest),
                 "callout" | "co" => self.cmd_callout(rest),
+                "set" => self.cmd_set(rest),
                 "until" => {
                     let (id, n) = split_first(rest);
                     let n: u32 = n.parse().map_err(|_| {
@@ -922,6 +955,9 @@ impl App {
                         label: None,
                         shape: None,
                         mv: None,
+                        stroke: None,
+                        route: None,
+                        heads: None,
                     })
                     .map(|_| format!("{id}: color {}", if c.is_empty() { "auto" } else { c }))
                 }
@@ -936,6 +972,9 @@ impl App {
                         label: Some(text.trim().into()),
                         shape: None,
                         mv: None,
+                        stroke: None,
+                        route: None,
+                        heads: None,
                     })
                     .map(|_| format!("{id} updated"))
                 }
@@ -960,6 +999,9 @@ impl App {
                                 label: None,
                                 shape: None,
                                 mv: None,
+                                stroke: None,
+                                route: None,
+                                heads: None,
                             })
                             .map(|_| format!("{id} now appears at step {n}"))
                         }
@@ -1108,11 +1150,17 @@ impl App {
 
     fn cmd_arrow(&mut self, rest: &str) -> Result<String, Error> {
         let (from, rest) = split_first(rest);
-        let (to, label) = split_first(rest);
+        let (to, rest) = split_first(rest);
         if from.is_empty() || to.is_empty() {
             return Err(Error::Invalid(
-                "usage: :arrow L:text L:text [label]   (e.g. :arrow 2:s 7:takes move)".into(),
+                "usage: :arrow L:text L:text [label] [stroke=dashed] [heads=none,arrow] [route=sharp]"
+                    .into(),
             ));
+        }
+        let (label, kv) = split_trailing_kv(rest);
+        let mut line = codedraw_core::model::LineStyle::default();
+        for (k, v) in &kv {
+            apply_line_kv(&mut line, k, v)?;
         }
         let f = parse_where(from, self.cursor_line)?.resolve_anchor(&self.doc)?;
         let t = parse_where(to, self.cursor_line)?.resolve_anchor(&self.doc)?;
@@ -1123,9 +1171,77 @@ impl App {
                 from: f,
                 to: t,
                 label: opt(label),
+                line,
             },
         )?;
         Ok(format!("{id}: arrow L{} → L{}", f.line, t.line))
+    }
+
+    /// `:set ID key=value…` — changes properties of an existing annotation:
+    /// `label`, `color`, `step` for any; `stroke`, `route`, `heads`, `start`,
+    /// `end` for arrows.
+    fn cmd_set(&mut self, rest: &str) -> Result<String, Error> {
+        let (id, rest) = split_first(rest);
+        let kv = parse_kv(rest);
+        if id.is_empty() || kv.is_empty() {
+            return Err(Error::Invalid(
+                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end)"
+                    .into(),
+            ));
+        }
+        let is_arrow = matches!(
+            self.doc.find_annotation(id).map(|a| &a.shape),
+            Some(Shape::Arrow { .. })
+        );
+        let mut p = UpdateParams {
+            id: id.to_string(),
+            step: None,
+            color: None,
+            label: None,
+            shape: None,
+            mv: None,
+            stroke: None,
+            route: None,
+            heads: None,
+        };
+        let mut heads = codedraw_core::protocol::HeadsPatch::default();
+        for (k, v) in &kv {
+            match k.as_str() {
+                "label" | "text" | "title" => p.label = Some(v.clone()),
+                "color" => p.color = Some(v.clone()),
+                "step" => {
+                    p.step =
+                        Some(v.parse().map_err(|_| {
+                            Error::Invalid(format!("step must be a number, got {v}"))
+                        })?)
+                }
+                "stroke" | "route" | "heads" | "start" | "end" if !is_arrow => {
+                    return Err(Error::Invalid(format!(
+                        "`{k}` applies to arrows only ({id} is not an arrow)"
+                    )));
+                }
+                _ => {
+                    let mut ls = codedraw_core::model::LineStyle::default();
+                    apply_line_kv(&mut ls, k, v)?;
+                    match k.as_str() {
+                        "stroke" => p.stroke = Some(ls.stroke),
+                        "route" => p.route = Some(ls.route),
+                        "heads" => {
+                            heads.start = Some(ls.heads.start);
+                            heads.end = Some(ls.heads.end);
+                        }
+                        "start" => heads.start = Some(ls.heads.start),
+                        "end" => heads.end = Some(ls.heads.end),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+        }
+        if heads.start.is_some() || heads.end.is_some() {
+            p.heads = Some(heads);
+        }
+        self.update_annotation(&p)?;
+        Ok(format!("{id}: updated"))
     }
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
@@ -1658,6 +1774,99 @@ fn opt(s: &str) -> Option<String> {
 }
 
 /// `key=value key2="value with spaces"` → pairs. Unquoted values end at whitespace.
+/// Splits trailing `key=value` tokens off a free-text argument:
+/// `"move stroke=dashed heads=none,arrow"` → (`"move"`, [(stroke, dashed), (heads, "none,arrow")]).
+pub fn split_trailing_kv(s: &str) -> (&str, Vec<(String, String)>) {
+    let mut text = s.trim_end();
+    let mut kv = Vec::new();
+    loop {
+        let Some(space) = text.rfind(' ') else {
+            if is_kv_token(text) {
+                kv.push(split_token(text));
+                text = "";
+            }
+            break;
+        };
+        let tok = &text[space + 1..];
+        if is_kv_token(tok) {
+            kv.push(split_token(tok));
+            text = text[..space].trim_end();
+        } else {
+            break;
+        }
+    }
+    kv.reverse();
+    (text, kv)
+}
+
+fn is_kv_token(t: &str) -> bool {
+    t.split_once('=').is_some_and(|(k, v)| {
+        !k.is_empty() && !v.is_empty() && k.chars().all(|c| c.is_ascii_alphabetic())
+    })
+}
+
+fn split_token(t: &str) -> (String, String) {
+    let (k, v) = t.split_once('=').unwrap_or((t, ""));
+    (k.to_string(), v.to_string())
+}
+
+/// Applies one `key=value` to a line style; errors list the valid values.
+pub fn apply_line_kv(
+    ls: &mut codedraw_core::model::LineStyle,
+    k: &str,
+    v: &str,
+) -> Result<(), Error> {
+    use codedraw_core::model::{Head, Heads, Route, Stroke};
+    match k {
+        "stroke" => {
+            ls.stroke = Stroke::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown stroke: {v} (use {})",
+                    Stroke::NAMES.join(", ")
+                ))
+            })?
+        }
+        "route" => {
+            ls.route = Route::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown route: {v} (use {})",
+                    Route::NAMES.join(", ")
+                ))
+            })?
+        }
+        "heads" => {
+            ls.heads = Heads::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "heads must be END or START,END (each one of {})",
+                    Head::NAMES.join(", ")
+                ))
+            })?
+        }
+        "start" => {
+            ls.heads.start = Head::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown head: {v} (use {})",
+                    Head::NAMES.join(", ")
+                ))
+            })?
+        }
+        "end" => {
+            ls.heads.end = Head::parse(v).ok_or_else(|| {
+                Error::Invalid(format!(
+                    "unknown head: {v} (use {})",
+                    Head::NAMES.join(", ")
+                ))
+            })?
+        }
+        other => {
+            return Err(Error::Invalid(format!(
+                "unknown key: {other} (stroke, route, heads, start, end)"
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_kv(s: &str) -> Vec<(String, String)> {
     let mut out = Vec::new();
     let mut rest = s.trim();

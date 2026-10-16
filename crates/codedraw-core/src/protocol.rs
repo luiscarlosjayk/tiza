@@ -7,7 +7,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::model::{Anchor, Annotation, Document, MarkStyle, Placement, Shape, TextSpan};
+use crate::model::{
+    Anchor, Annotation, Document, Head, LineStyle, MarkStyle, Placement, Route, Shape, Stroke,
+    TextSpan,
+};
 
 pub const PROTOCOL_VERSION: u32 = 1;
 
@@ -138,6 +141,8 @@ pub enum ShapeSpec {
         to: Where,
         #[serde(default)]
         label: Option<String>,
+        #[serde(flatten, default)]
+        line: LineStyle,
     },
     Note {
         line: u32,
@@ -194,10 +199,16 @@ impl ShapeSpec {
                 to_line: *to_line,
                 label: label.clone(),
             },
-            ShapeSpec::Arrow { from, to, label } => Shape::Arrow {
+            ShapeSpec::Arrow {
+                from,
+                to,
+                label,
+                line,
+            } => Shape::Arrow {
                 from: from.resolve_anchor(doc)?,
                 to: to.resolve_anchor(doc)?,
                 label: label.clone(),
+                line: *line,
             },
             ShapeSpec::Note { line, text } => Shape::Note {
                 line: *line,
@@ -262,6 +273,29 @@ pub struct UpdateParams {
     /// Moves the annotation, keeping its type, kind and style (`move`).
     #[serde(default, rename = "move", skip_serializing_if = "Option::is_none")]
     pub mv: Option<MoveSpec>,
+    /// Arrows: new stroke (solid, dashed, dotted, thick, double).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stroke: Option<Stroke>,
+    /// Arrows: new corner style (rounded, sharp).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route: Option<Route>,
+    /// Arrows: new heads; each end optional (`{"start": "dot"}` keeps the other).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heads: Option<HeadsPatch>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct HeadsPatch {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Head>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<Head>,
+}
+
+impl UpdateParams {
+    pub fn has_line_style(&self) -> bool {
+        self.stroke.is_some() || self.route.is_some() || self.heads.is_some()
+    }
 }
 
 /// Partial re-anchoring of an existing annotation. Which fields apply depends
@@ -452,11 +486,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.add",
-        "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight)",
+        "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
     ),
     (
         "annotation.update",
-        "Changes the step, color, label or shape of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style",
+        "Changes the step, color, label, shape, arrow style (stroke, route, heads) of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style",
     ),
     ("annotation.delete", "Deletes an annotation by id"),
     (
@@ -522,7 +556,9 @@ pub fn describe(a: &Annotation) -> String {
                 .map(|l| format!(" «{l}»"))
                 .unwrap_or_default()
         ),
-        Shape::Arrow { from, to, label } => format!(
+        Shape::Arrow {
+            from, to, label, ..
+        } => format!(
             "{} [step {}] arrow L{}:{} → L{}:{}{}",
             a.id,
             a.step,

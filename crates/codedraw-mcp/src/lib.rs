@@ -87,6 +87,62 @@ pub struct ArrowParams {
     )]
     pub color: Option<String>,
     pub id: Option<String>,
+    #[schemars(description = "Line stroke: solid (default), dashed, dotted, thick, double")]
+    pub stroke: Option<String>,
+    #[schemars(description = "Corners: rounded (default) or sharp")]
+    pub route: Option<String>,
+    #[schemars(description = "Head at the source: none (default), arrow, dot, bar, open")]
+    pub head_start: Option<String>,
+    #[schemars(
+        description = "Head at the target: arrow (default), none, dot, bar, open. none+none draws a plain connector."
+    )]
+    pub head_end: Option<String>,
+}
+
+/// Validates the arrow style strings and returns the protocol fields
+/// (`stroke`, `route`, `heads{start?,end?}`).
+fn line_style_json(
+    stroke: &Option<String>,
+    route: &Option<String>,
+    start: &Option<String>,
+    end: &Option<String>,
+) -> Result<serde_json::Map<String, Value>, McpError> {
+    use codedraw_core::model::{Head, Route, Stroke};
+    let mut m = serde_json::Map::new();
+    if let Some(s) = stroke {
+        let v = Stroke::parse(s).ok_or_else(|| {
+            McpError::invalid_params(
+                format!("unknown stroke: {s} (use {})", Stroke::NAMES.join(", ")),
+                None,
+            )
+        })?;
+        m.insert("stroke".into(), serde_json::to_value(v).unwrap());
+    }
+    if let Some(r) = route {
+        let v = Route::parse(r).ok_or_else(|| {
+            McpError::invalid_params(
+                format!("unknown route: {r} (use {})", Route::NAMES.join(", ")),
+                None,
+            )
+        })?;
+        m.insert("route".into(), serde_json::to_value(v).unwrap());
+    }
+    if start.is_some() || end.is_some() {
+        let mut h = serde_json::Map::new();
+        for (key, val) in [("start", start), ("end", end)] {
+            if let Some(v) = val {
+                let hv = Head::parse(v).ok_or_else(|| {
+                    McpError::invalid_params(
+                        format!("unknown head: {v} (use {})", Head::NAMES.join(", ")),
+                        None,
+                    )
+                })?;
+                h.insert(key.into(), serde_json::to_value(hv).unwrap());
+            }
+        }
+        m.insert("heads".into(), Value::Object(h));
+    }
+    Ok(m)
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -164,6 +220,14 @@ pub struct UpdateParams {
     pub from_line: Option<u32>,
     #[schemars(description = "Boxes, callouts and spotlights: new last line")]
     pub to_line: Option<u32>,
+    #[schemars(description = "Arrows: new stroke (solid, dashed, dotted, thick, double)")]
+    pub stroke: Option<String>,
+    #[schemars(description = "Arrows: new corners (rounded, sharp)")]
+    pub route: Option<String>,
+    #[schemars(description = "Arrows: head at the source (none, arrow, dot, bar, open)")]
+    pub head_start: Option<String>,
+    #[schemars(description = "Arrows: head at the target (none, arrow, dot, bar, open)")]
+    pub head_end: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -371,15 +435,27 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Draws an arrow from one point of the code to another (e.g. from `let s` to `takes(s)`), with an optional label. Use `find` to anchor by text."
+        description = "Draws an arrow from one point of the code to another (e.g. from `let s` to `takes(s)`), with an optional label. Use `find` to anchor by text. Stroke, corners and heads are the author's choice: dashed for a borrow, thick for a move, head_end none + head_start none for a plain connector."
     )]
     async fn add_arrow(
         &self,
         Parameters(p): Parameters<ArrowParams>,
     ) -> Result<CallToolResult, McpError> {
-        let v = self
-            .call("annotation.add", json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color}))
-            .await?;
+        let mut params = json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let style = line_style_json(&p.stroke, &p.route, &p.head_start, &p.head_end)?;
+        for (k, v) in style {
+            if k == "heads" {
+                // annotation.add takes the whole heads object: fill the other end with its default.
+                let mut heads = json!({"start": "none", "end": "arrow"});
+                for (hk, hv) in v.as_object().unwrap() {
+                    heads[hk] = hv.clone();
+                }
+                params["heads"] = heads;
+            } else {
+                params[k] = v;
+            }
+        }
+        let v = self.call("annotation.add", params).await?;
         Ok(text(pretty(&v)))
     }
 
@@ -424,7 +500,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Changes the step, color or label of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
+        description = "Changes the step, color, label or arrow style (stroke, route, head_start, head_end) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
     )]
     async fn update_annotation(
         &self,
@@ -437,6 +513,9 @@ impl CodeDrawServer {
             .is_some_and(|m| m.values().any(|v| !v.is_null()))
         {
             params["move"] = mv;
+        }
+        for (k, v) in line_style_json(&p.stroke, &p.route, &p.head_start, &p.head_end)? {
+            params[k] = v;
         }
         let v = self.call("annotation.update", params).await?;
         Ok(text(pretty(&v)))
