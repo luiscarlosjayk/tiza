@@ -10,3 +10,4 @@ One decision per file, kept short. Format: context, decision, consequences, stat
 | [0004](0004-dependencias.md) | Dependency policy: maintained crates only, audited in CI |
 | [0005](0005-formato-codedraw.md) | `.codedraw` format: versioned JSON, sidecar next to the source |
 | [0006](0006-exportacion-svg-png.md) | SVG and PNG export: Canvas → SVG text grid, rasterized with resvg, fonts embedded |
+| [0007](0007-moves-y-pasos-con-nombre.md) | Moves (code.patch, code.link, cursor, select, wait) and named steps: scripted demos without an editor (proposed) |
