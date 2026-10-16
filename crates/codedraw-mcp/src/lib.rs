@@ -311,7 +311,7 @@ pub struct UpdateParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExportParams {
     #[schemars(
-        description = "Where to write the image. The extension picks the format: .png or .svg"
+        description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi or .md"
     )]
     pub path: String,
     #[schemars(description = "Step to show; defaults to the current one")]
@@ -809,7 +809,7 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Exports the scene as an image file (.png or .svg) with embedded fonts, for thumbnails, posts and docs. Renders from the live document without touching the TUI."
+        description = "Exports the scene to a file: .png or .svg (embedded fonts) for thumbnails and posts, .txt (plain box-drawing text), .ansi (24-bit colors, for `cat`) or .md (fenced block for a README, an issue or a chat). Renders from the live document without touching the TUI."
     )]
     async fn export_image(
         &self,
@@ -819,16 +819,20 @@ impl CodeDrawServer {
             .extension()
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase);
-        let is_png = match ext.as_deref() {
-            Some("png") => true,
-            Some("svg") => false,
+        let format = match ext.as_deref() {
+            Some("png") => "png",
+            Some("svg") => "svg",
+            Some("txt") => "txt",
+            Some("ansi") | Some("ans") => "ansi",
+            Some("md") | Some("markdown") => "md",
             _ => {
                 return Err(McpError::invalid_params(
-                    "path must end in .png or .svg",
+                    "path must end in .png, .svg, .txt, .ansi or .md",
                     None,
                 ));
             }
         };
+        let is_png = format == "png";
         let mut scene: codedraw_core::protocol::Scene =
             serde_json::from_value(self.call("scene.get", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -867,14 +871,27 @@ impl CodeDrawServer {
                 tab_width: 4,
             },
         );
+        let bytes = match format {
+            "txt" => Some((layout.canvas.to_plain_text() + "\n").into_bytes()),
+            "ansi" => Some(layout.canvas.to_ansi().into_bytes()),
+            "md" => Some(
+                layout
+                    .canvas
+                    .to_markdown(scene.document.title.as_deref())
+                    .into_bytes(),
+            ),
+            _ => None,
+        };
         let svg_opts = codedraw_export::SvgOptions {
             font_size: p.font_size.unwrap_or(16.0),
             embed_fonts: !is_png,
             title: scene.document.title.clone(),
             ..Default::default()
         };
-        let svg = codedraw_export::to_svg(&layout.canvas, &theme, &svg_opts);
-        let bytes = if is_png {
+        let bytes = if let Some(b) = bytes {
+            b
+        } else if is_png {
+            let svg = codedraw_export::to_svg(&layout.canvas, &theme, &svg_opts);
             codedraw_export::to_png(
                 &svg,
                 &codedraw_export::PngOptions {
@@ -884,7 +901,7 @@ impl CodeDrawServer {
             )
             .map_err(|e| McpError::internal_error(e.to_string(), None))?
         } else {
-            svg.into_bytes()
+            codedraw_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes()
         };
         std::fs::write(&p.path, &bytes).map_err(|e| {
             McpError::internal_error(format!("could not write {}: {e}", p.path), None)
@@ -892,7 +909,7 @@ impl CodeDrawServer {
         Ok(text(pretty(&json!({
             "path": p.path,
             "bytes": bytes.len(),
-            "format": if is_png { "png" } else { "svg" },
+            "format": format,
             "step": p.step.unwrap_or(scene.step),
         }))))
     }

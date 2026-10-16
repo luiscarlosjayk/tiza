@@ -213,12 +213,29 @@ impl Canvas {
         s
     }
 
-    /// Plain text, no styles, no trailing spaces.
+    /// Plain text, no styles, no trailing spaces, no trailing blank rows
+    /// (the padding at the bottom would only add noise in a README).
     pub fn to_plain_text(&self) -> String {
-        (0..self.height)
+        let mut rows: Vec<String> = (0..self.height)
             .map(|y| self.row_text(y).trim_end().to_string())
-            .collect::<Vec<_>>()
-            .join("\n")
+            .collect();
+        while rows.last().is_some_and(|r| r.is_empty()) {
+            rows.pop();
+        }
+        rows.join("\n")
+    }
+
+    /// Plain text inside a fenced code block, ready to paste into a README,
+    /// an issue or a chat: `title` becomes a bold line above the block.
+    pub fn to_markdown(&self, title: Option<&str>) -> String {
+        let mut out = String::new();
+        if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
+            out.push_str(&format!("**{t}**\n\n"));
+        }
+        out.push_str("```text\n");
+        out.push_str(&self.to_plain_text());
+        out.push_str("\n```\n");
+        out
     }
 
     /// Text with ANSI sequences (24-bit).

@@ -91,6 +91,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :focus 15-17   :focus                 dim everything but a range · clear the focus
 :theme light   :lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
+:export shot.txt | :export shot.md | :export shot.png [step=N] [width=N] [theme=light]   export what a step shows (.txt .ansi .md .svg .png)
 ```
 
 The language is detected from the file extension, then well-known names (`Makefile`, `Dockerfile`, `Cargo.lock`, `.bashrc`…), then a `#!` line, then a Vim/Emacs modeline in the first or last five lines; pasted or piped code uses the same shebang/modeline rule. `--lang` and `:lang <id>` override it (saved in the document); `:lang auto` re-detects and says how; an id without a grammar is shown as plain text with a warning.
@@ -99,15 +100,19 @@ New annotations appear at the current step. The `.codedraw` references the sourc
 
 **Follow mode** (`--follow` or `:follow on`) watches the source file's folder (Zed saves with a temp file + rename) and reloads the code about 120 ms after the last write, so you can edit in the editor while the TUI shows the result. Annotations are re-anchored by the text they point at, like a paste: a line diff matches the two versions in order (so a note on the second `}` stays on the second `}`), then the same occurrence of the span inside the line; a block moved elsewhere is followed when its line is unique and within 50 lines, a box or callout whose edge line you edited keeps its height, and the ones whose text is gone are dropped with a message — never moved to another copy — and `u` undoes the whole reload. The status line shows `⟳ following · last HH:MM:SSZ`; a removed file shows `waiting` until it comes back, an empty intermediate write is skipped, and embedded documents have nothing to follow (`:link path` first). Agents get the same through `follow.set` / `follow.status` and the MCP tool `set_follow`.
 
-## Export to SVG or PNG
+## Export to text, Markdown, ANSI, SVG or PNG
 
 ```sh
 codedraw render demo.codedraw --out thumb.png --step 3          # PNG at 2× (thumbnails, posts)
 codedraw render demo.codedraw --out figure.svg --theme light     # SVG with the fonts embedded
 codedraw render --out shot.png                                   # what the live instance shows right now
+codedraw render demo.codedraw --out notes.md --step 2            # fenced code block for a README, an issue or a chat
+codedraw render demo.codedraw --out - --format ansi | less -R    # 24-bit ANSI, no trailing spaces
 ```
 
-Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL) and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool.
+The text formats keep the box-drawing characters as they are on screen (`.txt`: plain, no trailing spaces or blank rows; `.md`: the same inside a ```` ```text ```` block with the document title above; `.ansi`: 24-bit colors with a reset per line, for `cat`, `less -R` or a terminal-recording tool). Inside the TUI, `:export shot.md` (or `.txt`, `.ansi`, `.svg`, `.png`, with `step=`, `width=`, `theme=`) writes the same next to the document.
+
+Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL) and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool (which also writes `.txt`, `.ansi` and `.md`).
 
 ![ownership example, step 7](docs/img/ownership-step7.png)
 

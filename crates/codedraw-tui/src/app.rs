@@ -77,6 +77,8 @@ pub struct App {
     /// `--padding` for this session only: shown instead of the document's
     /// value but never written to it (`:pad` sets the document and clears this).
     pub padding_override: Option<(u16, u16)>,
+    /// SVG/PNG renderer for `:export`, installed by the binary.
+    pub image_exporter: Option<ImageExporter>,
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
@@ -113,6 +115,7 @@ impl App {
             autosave: true,
             save_error: None,
             padding_override: None,
+            image_exporter: None,
             overlay_scroll: 0,
             follow: None,
         }
@@ -1025,9 +1028,9 @@ impl App {
     /// Every `:` command name, for completion and help.
     pub const COMMANDS: &'static [&'static str] = &[
         "arrow", "autosave", "box", "callout", "clear", "follow", "color", "del", "embed", "focus",
-        "help", "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad", "present",
-        "prev", "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo", "until",
-        "w", "wq",
+        "export", "help", "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad",
+        "present", "prev", "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo",
+        "until", "w", "wq",
     ];
 
     /// Tab completion for the command line: the command name on the first word, then
@@ -1149,6 +1152,7 @@ impl App {
                     self.save()
                         .map(|_| format!("saved to {}", self.save_path.display()))
                 }
+                "export" => self.export_command(rest),
                 "wq" => {
                     // Quit only when the write succeeded (`:q!` leaves anyway).
                     self.save()?;
@@ -1569,6 +1573,100 @@ impl App {
             },
         )?;
         Ok(format!("{id}: arrow L{} → L{}", f.line, t.line))
+    }
+
+    /// `:export [path] [step=N] [width=N] [theme=dark|light]` — writes what
+    /// the current step shows as text (`.txt`), ANSI (`.ansi`), Markdown
+    /// (`.md`, fenced block), SVG or PNG. Without a path: `<doc>-stepN.txt`
+    /// next to the document.
+    fn export_command(&mut self, rest: &str) -> Result<String, Error> {
+        let (path, kv) = split_trailing_kv(rest);
+        let mut step = self.doc.step;
+        let mut width = (self.size.0 as usize).saturating_sub(2).max(40);
+        let mut theme = self.theme.clone();
+        for (k, v) in kv {
+            match k.as_str() {
+                "step" => {
+                    step = v
+                        .parse()
+                        .map_err(|_| Error::Invalid(format!("step={v}: not a number")))?;
+                }
+                "width" => {
+                    width = v
+                        .parse::<usize>()
+                        .ok()
+                        .filter(|w| *w >= 20)
+                        .ok_or_else(|| Error::Invalid(format!("width={v}: use a number ≥ 20")))?;
+                }
+                "theme" => {
+                    theme = Theme::from_name(match v.to_ascii_lowercase().as_str() {
+                        "dark" | "oscuro" => ThemeName::Dark,
+                        "light" | "claro" => ThemeName::Light,
+                        _ => return Err(Error::Invalid(format!("theme={v}: dark or light"))),
+                    });
+                }
+                _ => {
+                    return Err(Error::Invalid(format!(
+                        "unknown option {k}= (step, width, theme)"
+                    )));
+                }
+            }
+        }
+        let path = if path.is_empty() {
+            let stem = self
+                .save_path
+                .file_name()
+                .map(|f| f.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "codedraw".into());
+            let stem = stem.strip_suffix(".codedraw").unwrap_or(&stem).to_string();
+            self.save_path
+                .with_file_name(format!("{stem}-step{step}.txt"))
+        } else {
+            PathBuf::from(path)
+        };
+        let format = ExportFormat::from_path(&path).ok_or_else(|| {
+            Error::Invalid(format!(
+                "{}: the extension picks the format (.txt .ansi .md .svg .png)",
+                path.display()
+            ))
+        })?;
+        let l = layout(
+            &self.doc,
+            &theme,
+            &LayoutOptions {
+                width,
+                step,
+                focus: self.focus,
+                line_numbers: true,
+                tab_width: 4,
+            },
+        );
+        let bytes = match format {
+            ExportFormat::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
+            ExportFormat::Ansi => l.canvas.to_ansi().into_bytes(),
+            ExportFormat::Md => l.canvas.to_markdown(self.doc.title.as_deref()).into_bytes(),
+            ExportFormat::Svg | ExportFormat::Png => {
+                let f = if format == ExportFormat::Svg {
+                    ImageFormat::Svg
+                } else {
+                    ImageFormat::Png
+                };
+                let exporter = self.image_exporter.as_ref().ok_or_else(|| {
+                    Error::Invalid(
+                        "SVG/PNG export is not available in this build; use `codedraw render`"
+                            .into(),
+                    )
+                })?;
+                exporter(&l.canvas, &theme, f, self.doc.title.as_deref()).map_err(Error::Invalid)?
+            }
+        };
+        std::fs::write(&path, &bytes)
+            .map_err(|e| Error::Invalid(format!("could not write {}: {e}", path.display())))?;
+        Ok(format!(
+            "exported step {step} to {} ({} bytes)",
+            path.display(),
+            bytes.len()
+        ))
     }
 
     /// `:set ID key=value…` — changes properties of an existing annotation:
@@ -2273,6 +2371,52 @@ fn parse_emphasis(v: &str) -> Result<Emphasis, Error> {
             "unknown emphasis: {v} (fill, underline, brackets, strike)"
         ))
     })
+}
+
+/// Image formats `:export` can ask the binary for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ImageFormat {
+    Svg,
+    Png,
+}
+
+/// Renders a canvas to SVG or PNG bytes (`title` goes into the SVG metadata).
+pub type ImageExporter = Box<
+    dyn Fn(
+            &codedraw_core::canvas::Canvas,
+            &Theme,
+            ImageFormat,
+            Option<&str>,
+        ) -> Result<Vec<u8>, String>
+        + Send,
+>;
+
+/// Export formats, picked by the file extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExportFormat {
+    Txt,
+    Ansi,
+    Md,
+    Svg,
+    Png,
+}
+
+impl ExportFormat {
+    pub fn from_path(path: &std::path::Path) -> Option<ExportFormat> {
+        match path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .as_deref()
+        {
+            Some("txt") => Some(ExportFormat::Txt),
+            Some("ansi") | Some("ans") => Some(ExportFormat::Ansi),
+            Some("md") | Some("markdown") => Some(ExportFormat::Md),
+            Some("svg") => Some(ExportFormat::Svg),
+            Some("png") => Some(ExportFormat::Png),
+            _ => None,
+        }
+    }
 }
 
 /// Splits trailing `key=value` tokens off a free-text argument:

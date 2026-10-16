@@ -10,7 +10,7 @@
 //! - AC4 Symbols the main font lacks (★ ✎ ⇄), wide glyphs and box drawing render
 //!   with the bundled fonts; emoji need `--system-fonts`.
 //! - AC5 PNG bytes are refused on a terminal stdout but written to a pipe.
-//! - AC6 The MCP `export_image` tool writes .png/.svg and rejects other extensions.
+//! - AC6 The MCP `export_image` tool writes .png/.svg (and, since t-049, .txt/.ansi/.md) and rejects other extensions.
 //! - AC7 Dark and light themes both export; `--theme` overrides the document's.
 
 use codedraw_qa::{Live, codedraw, codedraw_ok, fixture, scratch};
@@ -266,7 +266,7 @@ fn ac6_mcp_export_image_tool() {
         r3["error"]["message"]
             .as_str()
             .unwrap_or("")
-            .contains(".png or .svg"),
+            .contains(".png, .svg, .txt, .ansi or .md"),
         "{r3}"
     );
 }

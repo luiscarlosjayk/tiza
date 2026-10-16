@@ -75,6 +75,8 @@ impl From<ThemeArg> for ThemeName {
 enum Format {
     Txt,
     Ansi,
+    /// Plain text inside a fenced code block (README, issues, chat)
+    Md,
     Svg,
     Png,
 }
@@ -86,7 +88,7 @@ enum Cmd {
     Render {
         /// `.codedraw` document (or source file) to draw; omit it to use the live instance
         file: Option<String>,
-        /// Output: a path or `-` for stdout. The extension picks the format (`.svg`, `.png`) unless --format is given.
+        /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`) unless --format is given.
         #[arg(long, default_value = "-")]
         out: String,
         /// Step to show (default: the document's current step, or all of them for a file)
@@ -206,7 +208,8 @@ fn real_main() -> anyhow::Result<()> {
                 {
                     Some("svg") => Format::Svg,
                     Some("png") => Format::Png,
-                    Some("ansi") => Format::Ansi,
+                    Some("ansi") | Some("ans") => Format::Ansi,
+                    Some("md") | Some("markdown") => Format::Md,
                     _ => Format::Txt,
                 }
             });
@@ -276,6 +279,7 @@ fn real_main() -> anyhow::Result<()> {
             let bytes: Vec<u8> = match format {
                 Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
                 Format::Ansi => l.canvas.to_ansi().into_bytes(),
+                Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
                 Format::Svg | Format::Png => {
                     let svg_opts = codedraw_export::SvgOptions {
                         font_size,
@@ -382,6 +386,30 @@ fn call(
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
 }
 
+/// `:export file.svg|png` inside the TUI: the image stack lives in this binary.
+fn image_exporter(
+    canvas: &codedraw_core::canvas::Canvas,
+    theme: &Theme,
+    format: codedraw_tui::app::ImageFormat,
+    title: Option<&str>,
+) -> Result<Vec<u8>, String> {
+    let is_svg = format == codedraw_tui::app::ImageFormat::Svg;
+    let svg = codedraw_export::to_svg(
+        canvas,
+        theme,
+        &codedraw_export::SvgOptions {
+            embed_fonts: is_svg,
+            title: title.map(str::to_string),
+            ..Default::default()
+        },
+    );
+    if is_svg {
+        return Ok(svg.into_bytes());
+    }
+    codedraw_export::to_png(&svg, &codedraw_export::PngOptions::default())
+        .map_err(|e| format!("could not rasterize the PNG: {e}"))
+}
+
 /// `--lang`: replaces the detected language; warns when no grammar exists.
 fn override_language(doc: &mut codedraw_core::Document, lang: Option<&str>) {
     if let Some(l) = lang {
@@ -452,6 +480,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             },
             focus,
             padding,
+            image_exporter: Some(Box::new(image_exporter)),
             follow: cli.follow,
         },
     )?;

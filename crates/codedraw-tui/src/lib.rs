@@ -29,6 +29,9 @@ pub struct RunOptions {
     pub padding: Option<(u16, u16)>,
     /// `--follow`: reload when the source file changes on disk.
     pub follow: bool,
+    /// Renders a canvas as SVG/PNG for `:export`; the TUI crate does not link
+    /// the image stack, so the binary provides it (`None`: text formats only).
+    pub image_exporter: Option<app::ImageExporter>,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -43,6 +46,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.present = opts.present;
     app.focus = opts.focus;
     app.padding_override = opts.padding;
+    app.image_exporter = opts.image_exporter;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }

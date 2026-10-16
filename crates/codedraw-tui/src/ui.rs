@@ -609,6 +609,7 @@ fn help_lines() -> Vec<String> {
         "  :focus A-B | :focus     :theme dark|light     :lang rs | :lang auto     :title text",
         "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
         "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
+        "  :export [file.txt|.ansi|.md|.svg|.png] [step=N] [width=N] [theme=dark|light]   what this step shows, as a file (default <doc>-stepN.txt)",
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
         "",
