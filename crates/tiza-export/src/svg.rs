@@ -24,8 +24,10 @@ pub struct SvgOptions {
     /// Optional `<title>`.
     pub title: Option<String>,
     /// Set notes, labels and legends in the brand serif (Tiza Serif, a
-    /// Libron subset) instead of the monospace grid font. Code, boxes and
-    /// arrows stay monospace. Off: everything monospace, as in the terminal.
+    /// Libron subset, with a little letter-spacing) instead of the
+    /// monospace grid font. Code, boxes and arrows stay monospace. Off (the
+    /// default since t-068's review: the monospace reads better at 1080p):
+    /// everything monospace, as in the terminal.
     pub brand_font: bool,
 }
 
@@ -37,7 +39,7 @@ impl Default for SvgOptions {
             radius: 12.0,
             embed_fonts: true,
             title: None,
-            brand_font: true,
+            brand_font: false,
         }
     }
 }
@@ -230,14 +232,17 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     if o.brand_font {
         // Prose keeps its natural width (no textLength): the serif is
         // narrower than the grid and the margin has room to the right.
-        // Font size slightly up so the x-height matches the monospace.
+        // Font size slightly up so the x-height matches the monospace, and
+        // some letter-spacing: Libron is tight at this size and the
+        // italics clump without it.
         let _ = writeln!(
             s,
-            ".p{{font-family:\"{}\",\"{}\",\"{}\",Georgia,\"Times New Roman\",serif;font-size:{:.2}px}}",
+            ".p{{font-family:\"{}\",\"{}\",\"{}\",Georgia,\"Times New Roman\",serif;font-size:{:.2}px;letter-spacing:{:.3}em}}",
             fonts::PROSE_FAMILY,
             fonts::FAMILY,
             fonts::SYMBOLS_FAMILY,
-            o.font_size * fonts::PROSE_SCALE
+            o.font_size * fonts::PROSE_SCALE,
+            fonts::PROSE_TRACKING
         );
     }
     s.push_str("</style>\n");

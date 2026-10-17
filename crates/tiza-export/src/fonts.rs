@@ -16,6 +16,8 @@ pub const CELL_HEIGHT_EM: f32 = 1.32;
 pub const ASCENT_EM: f32 = 1.02;
 /// Prose font size relative to the grid font: the serif's x-height is lower
 /// than JetBrains Mono's, so it is set a little larger to read as the same size.
+/// Letter-spacing of prose runs in the serif, in em (Libron is tight).
+pub const PROSE_TRACKING: f32 = 0.035;
 pub const PROSE_SCALE: f32 = 1.08;
 
 pub struct Face {

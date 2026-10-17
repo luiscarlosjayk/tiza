@@ -12,7 +12,10 @@
 //! - AC2 A mark label's glyphs (`━▶`, `╳`, `✎▶`) stay a monospace run on the
 //!   grid; only the words after them are prose (resvg would otherwise set
 //!   the whole run in the monospace).
-//! - AC3 `--mono-labels` (SvgOptions.brand_font = false) restores the
+//! - AC3 (flipped on Luis's review, 2026-10-17) the monospace is the
+//!   default (SvgOptions.brand_font = false); `--brand-font` opts into the
+//!   serif, with letter-spacing; `--mono-labels` is a hidden no-op; the
+//!   terminal and the text exports are byte-identical either way. Formerly:
 //!   all-monospace export; the terminal is unaffected (CellStyle.prose is
 //!   ignored by the TUI).
 //! - AC4 PNG rasterization finds the serif in the embedded font database
@@ -48,7 +51,7 @@ fn texts(svg: &str) -> Vec<&str> {
 
 #[test]
 fn ac1_serif_faces_and_prose_runs() {
-    let s = svg(&[]);
+    let s = svg(&["--brand-font"]);
     for face in [
         "font-weight:400;font-style:normal",
         "font-weight:700;font-style:normal",
@@ -93,7 +96,7 @@ fn ac1_serif_faces_and_prose_runs() {
 
 #[test]
 fn ac2_mark_glyphs_stay_mono_words_go_serif() {
-    let s = svg(&[]);
+    let s = svg(&["--brand-font"]);
     let runs = texts(&s);
     let glyph = runs
         .iter()
@@ -136,17 +139,26 @@ fn ac2_mark_glyphs_stay_mono_words_go_serif() {
 }
 
 #[test]
-fn ac3_mono_labels_flag_and_terminal_unaffected() {
-    let s = svg(&["--mono-labels"]);
-    assert!(!s.contains("class=\"p"), "no prose runs");
-    assert!(!s.contains(".p{"), "no prose style");
-    assert!(
-        s.contains("@font-face{font-family:\"Tiza Serif\""),
-        "faces still embedded (same binary)"
-    );
-    let runs = texts(&s);
-    let born = runs.iter().find(|t| t.contains(">s is born<")).unwrap();
-    assert!(born.contains("textLength"));
+fn ac3_monospace_is_the_default_and_the_serif_is_opt_in() {
+    for args in [&[][..], &["--mono-labels"][..]] {
+        let s = svg(args);
+        assert!(
+            !s.contains("class=\"p"),
+            "no prose runs by default ({args:?})"
+        );
+        assert!(!s.contains(".p{"), "no prose style by default");
+        assert!(
+            s.contains("@font-face{font-family:\"Tiza Serif\""),
+            "faces still embedded (same binary)"
+        );
+        let runs = texts(&s);
+        let born = runs.iter().find(|t| t.contains(">s is born<")).unwrap();
+        assert!(born.contains("textLength"), "on the grid: {born}");
+    }
+    // Opt-in: prose runs, and the serif gets letter-spacing.
+    let s = svg(&["--brand-font"]);
+    assert!(s.contains("class=\"p"), "{s}");
+    assert!(s.contains("letter-spacing:0.035em"), "{s}");
     // The text export is byte-identical with or without the brand font.
     let f = example("ownership.rs.tiza");
     let a = tiza_ok(&[
@@ -168,13 +180,13 @@ fn ac3_mono_labels_flag_and_terminal_unaffected() {
         "7",
         "--width",
         "100",
-        "--mono-labels",
+        "--brand-font",
     ]);
     assert_eq!(a, b);
 }
 
 #[test]
-fn ac4_png_uses_the_serif() {
+fn ac4_png_uses_the_serif_when_asked() {
     let dir = scratch("t068-png");
     let f = fixture("t-050/export.tiza");
     let serif = dir.join("serif.png");
@@ -188,6 +200,7 @@ fn ac4_png_uses_the_serif() {
         "100",
         "--scale",
         "1",
+        "--brand-font",
     ]);
     tiza_ok(&[
         "render",
@@ -198,7 +211,6 @@ fn ac4_png_uses_the_serif() {
         "100",
         "--scale",
         "1",
-        "--mono-labels",
     ]);
     let a = std::fs::read(&serif).unwrap();
     let b = std::fs::read(&mono).unwrap();
@@ -211,11 +223,17 @@ fn ac5_docs_record_license_and_pairing() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let fonts = std::fs::read_to_string(root.join("crates/tiza-export/fonts/README.md")).unwrap();
+    let fonts =
+        std::fs::read_to_string(root.join("crates/tiza-export/assets/fonts/README.md")).unwrap();
     assert!(
         fonts.contains("Tiza Serif")
             && fonts.contains("Libron")
             && fonts.contains("Reserved Font Name")
+            && fonts.contains("pyftsubset")
+    );
+    assert!(
+        !root.join("crates/tiza-export/fonts").exists(),
+        "the duplicate font directory is gone"
     );
     assert!(
         root.join("crates/tiza-export/assets/fonts/LICENSE-TizaSerif-Libron-OFL.txt")
@@ -226,5 +244,6 @@ fn ac5_docs_record_license_and_pairing() {
     let adr = std::fs::read_to_string(root.join("docs/adr/0006-exportacion-svg-png.md")).unwrap();
     assert!(adr.contains("CodeDraw Serif") && adr.contains("ADR 0008"));
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(readme.contains("--mono-labels"));
+    assert!(readme.contains("--brand-font"));
+    assert!(!adr.contains("is not used yet"));
 }

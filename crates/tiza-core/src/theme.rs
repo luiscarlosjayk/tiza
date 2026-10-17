@@ -189,7 +189,7 @@ impl Theme {
             "pink" | "rosa" | "magenta" => pick(0xE85DD0, 0xC0188F),
             "cyan" | "cian" | "teal" => pick(0x3DD6CF, 0x007A7A),
             "yellow" | "amarillo" => pick(0xF2D98D, 0x8A5A00),
-            "red" | "rojo" => pick(0xFF3D5A, 0xD1203A),
+            "red" | "rojo" => pick(0xFF4A66, 0xD1203A),
             "gray" | "grey" | "gris" => Some(self.muted),
             _ => None,
         }

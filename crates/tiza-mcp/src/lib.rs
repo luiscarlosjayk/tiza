@@ -340,6 +340,10 @@ pub struct ExportParams {
     pub scale: Option<f32>,
     #[schemars(description = "Font size in px (default 16)")]
     pub font_size: Option<f32>,
+    #[schemars(
+        description = "SVG/PNG: set notes, labels and legends in the brand serif (Tiza Serif) instead of the monospace font (default false)"
+    )]
+    pub brand_font: Option<bool>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -1084,6 +1088,7 @@ impl TizaServer {
         let svg_opts = tiza_export::SvgOptions {
             font_size,
             embed_fonts: !is_png,
+            brand_font: p.brand_font.unwrap_or(false),
             title: scene.document.title.clone(),
             ..Default::default()
         };

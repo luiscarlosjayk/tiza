@@ -136,8 +136,11 @@ enum Cmd {
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
         #[arg(long)]
         no_embed_fonts: bool,
-        /// SVG/PNG: keep notes and labels in the monospace font (default: Tiza Serif, a Libron subset)
+        /// SVG/PNG: set notes, labels and legends in the brand serif (Tiza Serif, a Libron subset); default: the monospace font, as in the terminal
         #[arg(long)]
+        brand_font: bool,
+        /// Former default (no-op now: the monospace is the default)
+        #[arg(long, hide = true)]
         mono_labels: bool,
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
@@ -236,7 +239,8 @@ fn real_main() -> anyhow::Result<()> {
             radius,
             scale,
             no_embed_fonts,
-            mono_labels,
+            brand_font,
+            mono_labels: _,
             system_fonts,
             interval,
             skip_zero,
@@ -380,7 +384,7 @@ fn real_main() -> anyhow::Result<()> {
                         radius,
                         embed_fonts: format == Format::Svg && !no_embed_fonts,
                         title: doc.title.clone(),
-                        brand_font: !mono_labels,
+                        brand_font,
                     };
                     let svg = tiza_export::to_svg(&l.canvas, &theme, &svg_opts);
                     if format == Format::Svg {
