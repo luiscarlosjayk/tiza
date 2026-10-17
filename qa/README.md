@@ -17,3 +17,5 @@ Render snapshots (t-053) live in `qa/tests/snapshots/` (insta): one `-symbols` a
 When a ticket is done, its card gets: acceptance criteria, manual test steps, corner cases and the path of this file (`qa_test`). Keep the three in sync: if a corner case is added to the card, add the test here.
 
 Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-regressions`; commit that file when proptest adds a seed so the case is replayed first on every run.
+
+`scripts/legibility.py` (t-072) is the YouTube-compression check: it renders a step, scales it to 1080p, round-trips it through H.264 with ffmpeg and measures the contrast every text color keeps. `qa/tests/t-072.rs` runs it when python3 + Pillow + numpy + ffmpeg are installed and CI runs it in the `legibility` job (report and compressed frames as an artifact).

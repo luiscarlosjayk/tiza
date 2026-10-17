@@ -85,3 +85,29 @@ jobs:
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+
+  legibility:
+    name: legibility at 1080p after YouTube-like compression (t-072)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install pillow numpy
+      - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
+      - run: cargo build -q
+      - name: dark theme, step 7
+        run: python3 scripts/legibility.py examples/ownership.rs.codedraw --step 7 --theme dark --json legibility-dark.json --keep frames-dark
+      - name: light theme, step 7
+        run: python3 scripts/legibility.py examples/ownership.rs.codedraw --step 7 --theme light --json legibility-light.json --keep frames-light
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: legibility-report
+          path: |
+            legibility-*.json
+            frames-*/after.png
+          retention-days: 14
