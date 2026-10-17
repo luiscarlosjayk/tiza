@@ -4,7 +4,7 @@
 - Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
 - Every feature ticket ends with: acceptance criteria, manual test steps and corner cases on its board card, and `qa/tests/t-XXX.rs` (one independent crate per ticket, fixtures in `qa/fixtures/t-XXX/`; see `qa/README.md`). `examples/` holds demos only, never test data.
 - Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
-- New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry.
+- New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry. A dependency with network access (HTTP, TLS, sockets beyond the local Unix one) goes only in the crate `docs/adr/0009-politica-de-red.md` names (`tiza-net`), with an amendment to that ADR; `deny.toml` bans it everywhere else and CI fails.
 - Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Commits in Spanish, imperative mood, with the board task id when applicable (`t-022`).
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `tiza api status --socket /tmp/x.sock`.

@@ -31,6 +31,41 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# Network policy (docs/adr/0009-politica-de-red.md): the `tiza` binary and
+# the core crates never open a connection, so no crate that speaks HTTP/TLS
+# may enter the workspace. When `tiza-net` exists, exempt it here with
+# `wrappers = ["tiza-net"]` on each entry — the core crates stay banned.
+deny = [
+  { crate = "reqwest", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "hyper", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "hyper-util", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "ureq", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "curl", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "curl-sys", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "isahc", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "attohttpc", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "minreq", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "native-tls", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "openssl", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "openssl-sys", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "rustls", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "tokio-rustls", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "tokio-native-tls", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "tungstenite", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "tokio-tungstenite", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "async-std", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "smol", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "axum", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "warp", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "actix-web", reason = "network: ADR 0009 — only in tiza-net" },
+  { crate = "tiny_http", reason = "network: ADR 0009 — only in tiza-net" },
+]
+# `tokio` may only be built without its `net` feature (stdio for the MCP
+# server). cargo-deny cannot ban a feature on a crate directly; `features`
+# below does: it fails when a banned feature is enabled anywhere.
+features = [
+  { crate = "tokio", deny = ["net"], reason = "network: ADR 0009 — only in tiza-net" },
+]
 
 [sources]
 unknown-registry = "deny"
