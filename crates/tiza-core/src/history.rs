@@ -10,6 +10,9 @@ use crate::moves::Move;
 
 #[derive(Debug, Clone)]
 struct Snapshot {
+    /// What the edit after this snapshot did (`note a3`, `reload #54`…),
+    /// so `u` can say what it undid.
+    label: String,
     code: Vec<String>,
     base_code: Vec<String>,
     moves: Vec<Move>,
@@ -21,8 +24,9 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn take(doc: &Document) -> Self {
+    fn take(doc: &Document, label: String) -> Self {
         Self {
+            label,
             code: doc.code.clone(),
             base_code: doc.base_code.clone(),
             moves: doc.moves.clone(),
@@ -36,7 +40,7 @@ impl Snapshot {
 
     /// Puts the snapshot into `doc` and returns what was there.
     fn swap(self, doc: &mut Document) -> Self {
-        let current = Self::take(doc);
+        let current = Self::take(doc, self.label.clone());
         doc.code = self.code;
         doc.base_code = self.base_code;
         doc.moves = self.moves;
@@ -61,29 +65,44 @@ pub struct History {
 impl History {
     const MAX: usize = 200;
 
-    /// Call BEFORE mutating the document.
-    pub fn record(&mut self, doc: &Document) {
-        self.undo.push(Snapshot::take(doc));
+    /// Call BEFORE mutating the document. `label` names the edit that
+    /// follows (`note a3`, `reload #54`), for the undo/redo message.
+    pub fn record(&mut self, doc: &Document, label: impl Into<String>) {
+        self.undo.push(Snapshot::take(doc, label.into()));
         if self.undo.len() > Self::MAX {
             self.undo.remove(0);
         }
         self.redo.clear();
     }
 
-    pub fn undo(&mut self, doc: &mut Document) -> bool {
-        let Some(prev) = self.undo.pop() else {
-            return false;
-        };
-        self.redo.push(prev.swap(doc));
-        true
+    /// Renames the last recorded edit (when its name is only known after
+    /// the mutation, like the id an `add` assigns).
+    pub fn label_last(&mut self, label: impl Into<String>) {
+        if let Some(last) = self.undo.last_mut() {
+            last.label = label.into();
+        }
     }
 
-    pub fn redo(&mut self, doc: &mut Document) -> bool {
-        let Some(next) = self.redo.pop() else {
-            return false;
-        };
+    /// Drops the last recorded snapshot without touching the document: the
+    /// mutation it was taken for failed and changed nothing.
+    pub fn discard_last(&mut self) {
+        self.undo.pop();
+    }
+
+    /// Undoes the last edit; returns its label.
+    pub fn undo(&mut self, doc: &mut Document) -> Option<String> {
+        let prev = self.undo.pop()?;
+        let label = prev.label.clone();
+        self.redo.push(prev.swap(doc));
+        Some(label)
+    }
+
+    /// Redoes the last undone edit; returns its label.
+    pub fn redo(&mut self, doc: &mut Document) -> Option<String> {
+        let next = self.redo.pop()?;
+        let label = next.label.clone();
         self.undo.push(next.swap(doc));
-        true
+        Some(label)
     }
 
     pub fn can_undo(&self) -> bool {
@@ -104,7 +123,7 @@ mod tests {
     fn undo_redo_roundtrip() {
         let mut d = Document::from_code("a\nb\n", "txt", None);
         let mut h = History::default();
-        h.record(&d);
+        h.record(&d, "note a1");
         d.add(Annotation {
             id: "a1".into(),
             step: 1,
@@ -117,10 +136,10 @@ mod tests {
         })
         .unwrap();
         assert_eq!(d.annotations.len(), 1);
-        assert!(h.undo(&mut d));
+        assert_eq!(h.undo(&mut d).as_deref(), Some("note a1"));
         assert_eq!(d.annotations.len(), 0);
-        assert!(h.redo(&mut d));
+        assert!(h.redo(&mut d).is_some());
         assert_eq!(d.annotations.len(), 1);
-        assert!(!h.redo(&mut d));
+        assert!(h.redo(&mut d).is_none());
     }
 }

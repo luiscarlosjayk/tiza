@@ -308,8 +308,9 @@ impl App {
                 tiza_core::theme::PALETTE.join(", ")
             )));
         }
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, "add");
         let step = step.unwrap_or(self.doc.step).max(1);
+        let kind = shape.kind_name();
         let res = self.doc.add(Annotation {
             id: id.unwrap_or_default(),
             step,
@@ -319,25 +320,26 @@ impl App {
         });
         match res {
             Ok(id) => {
+                self.history.label_last(format!("{kind} {id}"));
                 self.touch();
                 Ok(id)
             }
             Err(e) => {
-                self.history.undo(&mut self.doc);
+                self.history.discard_last();
                 Err(e)
             }
         }
     }
 
     pub fn delete_annotation(&mut self, id: &str) -> Result<(), Error> {
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, format!("delete {id}"));
         match self.doc.delete(id) {
             Ok(_) => {
                 self.touch();
                 Ok(())
             }
             Err(e) => {
-                self.history.undo(&mut self.doc);
+                self.history.discard_last();
                 Err(e)
             }
         }
@@ -349,16 +351,20 @@ impl App {
         if before == 0 {
             return 0;
         }
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, "clear");
         match step {
             Some(st) => self.doc.annotations.retain(|a| a.step != st),
             None => self.doc.annotations.clear(),
         }
         let removed = before - self.doc.annotations.len();
         if removed == 0 {
-            self.history.undo(&mut self.doc);
+            self.history.discard_last();
             return 0;
         }
+        self.history.label_last(format!(
+            "{removed} annotation{} cleared",
+            if removed == 1 { "" } else { "s" }
+        ));
         if self.doc.step > self.doc.max_step() {
             self.doc.step = self.doc.max_step();
         }
@@ -480,14 +486,14 @@ impl App {
                 Shape::Spotlight { .. } => {}
             }
         }
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, format!("update {}", p.id));
         match self.doc.update(ann) {
             Ok(()) => {
                 self.touch();
                 Ok(())
             }
             Err(e) => {
-                self.history.undo(&mut self.doc);
+                self.history.discard_last();
                 Err(e)
             }
         }
@@ -513,7 +519,7 @@ impl App {
             doc.validate_shape_at(&a.shape, a.step)?;
         }
         self.finish_typing();
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, "scene.put");
         self.doc = doc;
         if let Some(t) = self.doc.theme {
             self.theme = Theme::from_name(t);
@@ -584,7 +590,7 @@ impl App {
         } else if d.step > d.max_step() {
             d.step = d.max_step();
         }
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, "scene.patch");
         self.doc = d;
         if let Some(t) = self.doc.theme {
             self.theme = Theme::from_name(t);
@@ -756,9 +762,10 @@ impl App {
     /// Adds a move (validated against the code at its step). Undoable.
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         self.finish_typing();
-        self.history.record(&self.doc);
+        self.history.record(&self.doc, "move added");
         match self.doc.add_move(m) {
             Ok(i) => {
+                self.history.label_last(format!("move #{} added", i + 1));
                 self.clamp_cursor();
                 self.touch();
                 Ok(i)
@@ -777,7 +784,8 @@ impl App {
             .checked_sub(1)
             .filter(|i| *i < self.doc.moves.len())
             .ok_or_else(|| Error::NotFound(format!("move #{index}")))?;
-        self.history.record(&self.doc);
+        self.history
+            .record(&self.doc, format!("move #{index} deleted"));
         let m = self.doc.delete_move(i)?;
         if self.doc.step > self.doc.max_step() {
             self.doc.step = self.doc.max_step();
@@ -849,9 +857,9 @@ impl App {
 
     pub fn undo(&mut self) {
         self.finish_typing();
-        if self.history.undo(&mut self.doc) {
+        if let Some(what) = self.history.undo(&mut self.doc) {
             self.touch();
-            self.info("undone");
+            self.info(format!("undone: {what}"));
         } else {
             self.info("nothing to undo");
         }
@@ -859,9 +867,9 @@ impl App {
 
     pub fn redo(&mut self) {
         self.finish_typing();
-        if self.history.redo(&mut self.doc) {
+        if let Some(what) = self.history.redo(&mut self.doc) {
             self.touch();
-            self.info("redone");
+            self.info(format!("redone: {what}"));
         } else {
             self.info("nothing to redo");
         }
@@ -893,7 +901,12 @@ impl App {
         let detected = (self.doc.source.language == "txt" || self.doc.source.language.is_empty())
             .then(|| tiza_core::highlight::language_from_content(&d.code))
             .flatten();
-        let out = self.apply_new_code(d.code, d.code_src, d.source.first_line, true);
+        let out = self.apply_new_code(
+            d.code,
+            d.code_src,
+            d.source.first_line,
+            Some("paste".into()),
+        );
         if let Some(det) = detected {
             self.doc.source.language = det.language;
         }
@@ -917,17 +930,17 @@ impl App {
     }
 
     /// Replaces the code lines (and where they come from), re-anchoring the
-    /// annotations by text. One undoable step — unless `always_record` is
-    /// false and the reload touched no annotation (nothing dropped, nothing
-    /// shifted): then it leaves no step, so that after an editor undo that
-    /// restores dropped text, one `u` reaches the reload that dropped it.
-    /// Returns (kept, dropped).
+    /// annotations by text. One undoable step labelled `always` — or, with
+    /// `None` (a follow reload), only when the reload touched an annotation
+    /// (something dropped or shifted): a harmless reload leaves no step, so
+    /// that after an editor undo that restores dropped text, one `u` reaches
+    /// the reload that dropped it. Returns (kept, dropped, recorded).
     fn apply_new_code(
         &mut self,
         code: Vec<String>,
         code_src: tiza_core::model::CodeSource,
         first_line: u32,
-        always_record: bool,
+        always: Option<String>,
     ) -> crate::reanchor::Outcome {
         let snapshot = self.doc.clone();
         let mut d = self.doc.clone();
@@ -984,8 +997,10 @@ impl App {
         }
         let kept = d.annotations.len();
         let harmless = kept == before && d.annotations == snapshot.annotations;
-        if always_record || !harmless {
-            self.history.record(&snapshot);
+        let recorded = always.is_some() || !harmless;
+        if recorded {
+            self.history
+                .record(&snapshot, always.unwrap_or_else(|| "reload".into()));
         }
         self.doc = d;
         self.selected = None;
@@ -994,6 +1009,7 @@ impl App {
         crate::reanchor::Outcome {
             kept,
             dropped: before - kept,
+            recorded,
         }
     }
 
@@ -1114,7 +1130,10 @@ impl App {
         let reloads = f.reloads;
         let code_src = self.doc.code_src.clone();
         let first = self.doc.source.first_line;
-        let out = self.apply_new_code(new, code_src, first, false);
+        let out = self.apply_new_code(new, code_src, first, None);
+        if out.recorded {
+            self.history.label_last(format!("reload #{reloads}"));
+        }
         self.info(format!(
             "{name} reloaded (#{reloads}): {} annotation{} kept{}",
             out.kept,
@@ -1792,7 +1811,7 @@ impl App {
                         return Err(Error::Invalid(format!("{id} is not a spotlight")));
                     };
                     *until = Some(n.max(ann.step));
-                    self.history.record(&self.doc);
+                    self.history.record(&self.doc, format!("{id} until {n}"));
                     self.doc.update(ann)?;
                     self.touch();
                     Ok(format!("{id} active until step {n}"))
@@ -1994,7 +2013,7 @@ impl App {
                     }
                 }
                 "title" => {
-                    self.history.record(&self.doc);
+                    self.history.record(&self.doc, "title");
                     self.doc.title = if rest.is_empty() {
                         None
                     } else {
@@ -2020,7 +2039,7 @@ impl App {
                     Ok(String::new())
                 }
                 "pad" | "padding" if matches!(rest.trim(), "default" | "reset") => {
-                    self.history.record(&self.doc);
+                    self.history.record(&self.doc, "padding");
                     self.doc.padding = None;
                     self.padding_override = None;
                     self.touch();
@@ -2052,7 +2071,7 @@ impl App {
                         [v, h, ..] => (*v, *h),
                     };
                     // `:pad 0 0` is a real value (no padding); `:pad default` returns to the theme default.
-                    self.history.record(&self.doc);
+                    self.history.record(&self.doc, "padding");
                     self.doc.padding = Some((v, h));
                     self.padding_override = None;
                     self.touch();

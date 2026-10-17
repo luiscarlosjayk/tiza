@@ -24,8 +24,9 @@
 //! counts as a different place and the annotation is dropped.
 //!
 //! Lines the diff did not match are judged by their *hunk* (the gap between
-//! the matched lines around them): a line replaced in place (1↔1 hunk) keeps
-//! its position — a note on it survives, like a box edge; a span whose line
+//! the matched lines around them): a line replaced in place (1↔1 hunk, or
+//! line i of an N↔N hunk) keeps its position — a note on it survives, like a
+//! box edge, and a span stays when its text is still there; a span whose line
 //! was split or joined by a formatter (1→N, N→1) follows its text when exactly
 //! one line of the hunk's new side holds it. A range (box, callout,
 //! spotlight) never stretches after an edge that moved away with a block: it
@@ -47,6 +48,8 @@ const LCS_BUDGET: usize = 4_000_000;
 /// Outcome of re-anchoring a document's annotations.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Outcome {
+    /// Whether the reload pushed an undo step.
+    pub recorded: bool,
     pub kept: usize,
     pub dropped: usize,
 }
@@ -181,8 +184,11 @@ impl<'a> Remap<'a> {
         let (ho, hn) = self.hunk(old_line);
         // Replaced in place: the line is still there, with other text. A
         // note on it (or a range edge) stays; spans check their text later.
-        if ho.len() == 1 && hn.len() == 1 {
-            return Some((hn.start, Found::InPlace));
+        // An N↔N hunk (a parameter renamed on the signature line and on the
+        // line that uses it) pairs its lines i↔i the same way; only when
+        // the counts differ does the reflow search of `span` apply.
+        if !ho.is_empty() && ho.len() == hn.len() {
+            return Some((hn.start + (old_line - ho.start), Found::InPlace));
         }
         // Repeated text (one `}` among many): the only survivor is a run of
         // identical lines that shrank (`}` `}` → `}`); the annotations of the
@@ -684,6 +690,41 @@ mod tests {
         let new2 = doc("struct S {\n    return;\n}\n");
         let mut r = Remap::new(&old, &new2);
         assert_eq!(r.locate(2), Some((2, Found::InPlace)));
+    }
+
+    #[test]
+    fn n_to_n_hunk_pairs_its_lines_in_place() {
+        // A parameter renamed on the signature line and on the line that
+        // uses it: a 2↔2 hunk, paired i↔i like a 1↔1 edit.
+        let old = doc(
+            "impl S {\n    fn push(&mut self, item: T) {\n        self.items.push(item);\n    }\n}\n",
+        );
+        let new = doc(
+            "impl S {\n    fn push(&mut self, value: T) {\n        self.items.push(value);\n    }\n}\n",
+        );
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.locate(2), Some((2, Found::InPlace)));
+        assert_eq!(r.locate(3), Some((3, Found::InPlace)));
+        let push = TextSpan {
+            line: 3,
+            start: 19,
+            end: 23,
+        }; // `push` on the call line
+        assert_eq!(r.span(&push).map(|s| (s.line, s.start)), Some((3, 19)));
+        assert_eq!(r.range(2, 4), Some((2, 4)));
+        // Lines 2, 3 and 4 edited (3↔3): the same.
+        let new3 = doc(
+            "impl S {\n    fn push(&mut self, value: T) {\n        self.items.push(value);\n    } // end\n}\n",
+        );
+        let mut r = Remap::new(&old, &new3);
+        assert_eq!(r.span(&push).map(|s| (s.line, s.start)), Some((3, 19)));
+        assert_eq!(r.range(2, 4), Some((2, 4)));
+        // Its text gone from the paired line: dropped, not moved elsewhere.
+        let new4 = doc(
+            "impl S {\n    fn put(&mut self, value: T) {\n        self.items.insert(0, value);\n    }\n}\n",
+        );
+        let mut r = Remap::new(&old, &new4);
+        assert_eq!(r.span(&push), None);
     }
 
     #[test]

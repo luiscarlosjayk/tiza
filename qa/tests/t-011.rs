@@ -848,3 +848,78 @@ fn step17_one_u_after_the_editor_undo_brings_the_dropped_annotation_back() {
     live.keys(&[KeyCode::Char('u')]);
     assert_eq!(count(&live), 2, "{:?}", live.message());
 }
+
+#[test]
+fn step18_n_to_n_hunk_keeps_the_mark_and_the_box_in_place() {
+    let (live, src, lines) = stack_fixture("t011-step18");
+    live.command("mark write 13:push moved");
+    live.command("box 12-14 push");
+    assert_eq!(count(&live), 2, "{:?}", live.message());
+    live.command("follow on");
+    // `item` → `value` on lines 12 AND 13: a 2↔2 hunk, paired in place.
+    let mut e = lines.clone();
+    e[11] = "    pub fn push(&mut self, value: T) {".into();
+    e[12] = "        self.items.push(value);".into();
+    save_like_zed(&src, &(e.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("2 annotations kept"), "{msg}");
+    assert_eq!(
+        lines_of(&live, "a1"),
+        Some((13, 13)),
+        "the mark stays on `push`"
+    );
+    assert_eq!(lines_of(&live, "a2"), Some((12, 14)));
+    // Lines 12, 13 and 14 edited (3↔3): the same.
+    let mut e3 = e.clone();
+    e3[13] = "    } // push".into();
+    save_like_zed(&src, &(e3.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("2 annotations kept"), "{msg}");
+    assert_eq!(lines_of(&live, "a1"), Some((13, 13)));
+    assert_eq!(lines_of(&live, "a2"), Some((12, 14)));
+    // Lines 13 and 14 edited: still both.
+    let mut e2 = lines.clone();
+    e2[12] = "        self.items.push(item); // owned".into();
+    e2[13] = "    } // push".into();
+    save_like_zed(&src, &(e2.join("\n") + "\n"));
+    wait_reloads(&live, 3);
+    assert_eq!(count(&live), 2, "{:?}", live.message());
+    assert_eq!(lines_of(&live, "a1"), Some((13, 13)));
+}
+
+#[test]
+fn step19_u_says_what_it_undid() {
+    let (live, src, lines) = stack_fixture("t011-step19");
+    live.command("note 4 owned");
+    live.command("follow on");
+    // A harmless save pushes no undo step; `u` then names the note it undoes.
+    let mut e = lines.clone();
+    e[20] = "        self.items.last().copied()".into();
+    save_like_zed(&src, &(e.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    assert_eq!(count(&live), 1);
+    live.keys(&[KeyCode::Char('u')]);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "undone: note a1");
+    assert_eq!(count(&live), 0);
+    live.keys(&[KeyCode::Char('U')]);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "redone: note a1");
+    // A reload that dropped something is named by its number.
+    let mut e2 = e.clone();
+    e2[3] = "    items: VecDeque<T>, // changed".into();
+    live.command("hl 4:Vec<T> y");
+    save_like_zed(&src, &(e2.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    assert_eq!(count(&live), 1, "{:?}", live.message());
+    live.keys(&[KeyCode::Char('u')]);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "undone: reload #2");
+    assert_eq!(count(&live), 2);
+    live.command("clear");
+    live.keys(&[KeyCode::Char('u')]);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "undone: 2 annotations cleared");
+}
