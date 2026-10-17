@@ -623,6 +623,15 @@ pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
             style: style.clone(),
             emphasis: *emphasis,
         },
+        Shape::Redact {
+            span: s,
+            keep,
+            label,
+        } => Shape::Redact {
+            span: span(s)?,
+            keep: *keep,
+            label: label.clone(),
+        },
         Shape::Box {
             from_line,
             to_line,

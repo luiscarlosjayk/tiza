@@ -30,6 +30,9 @@ pub struct LayoutOptions {
     /// A typing animation of `step` is running: the code is drawn as it is
     /// but the annotations of `step` wait until it ends (t-098).
     pub typing: bool,
+    /// Apply the redact masks (t-117). Every output path passes `true`; only
+    /// the author's own screen may pass `false` after `:redact off`.
+    pub redact: bool,
 }
 
 impl Default for LayoutOptions {
@@ -41,6 +44,7 @@ impl Default for LayoutOptions {
             line_numbers: true,
             tab_width: 4,
             typing: false,
+            redact: true,
         }
     }
 }
@@ -174,6 +178,15 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         projected = doc.view_at(opts.step).doc;
         &projected
     };
+    // Redaction (t-117): the one place every rendered surface goes through.
+    // From here on the code holds the masks and nothing under them.
+    let masked_doc;
+    let doc = if opts.redact && crate::redact::has_redacts(doc) {
+        masked_doc = crate::redact::masked(doc, opts.step);
+        &masked_doc
+    } else {
+        doc
+    };
     // Annotations outside the code (a document whose file shrank, or a
     // hand-edited one) are reported when it opens; here they are simply not
     // drawn, so a stale line number can never break the layout.
@@ -211,6 +224,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 .unwrap_or(theme.accent),
             (Shape::Highlight { .. }, None) => theme.accent,
             (Shape::Spotlight { .. }, None) => theme.accent,
+            (Shape::Redact { .. }, None) => theme.muted,
         };
         colors.insert(a.id.as_str(), c);
     }
@@ -766,6 +780,50 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 color: color_of(a),
                 note: false,
             });
+        }
+    }
+
+    // ---- 2b. redact masks: muted, no syntax colour, no tint, on top of
+    // whatever else touched those cells (the redact wins). Active from step
+    // 0 whatever the annotation's step (unless `redact_from_step`), so they
+    // are taken from the document, not from `vis`.
+    if opts.redact {
+        for a in &doc.annotations {
+            let Shape::Redact { span, label, .. } = &a.shape else {
+                continue;
+            };
+            if !crate::redact::active(doc, a, opts.step) {
+                continue;
+            }
+            let Some(&y) = row_of_line.get(&span.line) else {
+                continue;
+            };
+            let text = doc.line_text(span.line).unwrap_or("");
+            let x0 = code_x + col_to_x(text, span.start, opts.tab_width);
+            let x1 = (code_x + col_to_x(text, span.end, opts.tab_width)).min(code_x + code_w);
+            if x1 > x0 {
+                let ink = if ann_dimmed(a) {
+                    theme.dimmed
+                } else if let Some(c) = colors.get(a.id.as_str()) {
+                    *c
+                } else {
+                    a.color
+                        .as_deref()
+                        .and_then(|c| theme.named_color(c))
+                        .unwrap_or(theme.muted)
+                };
+                canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink));
+            }
+            if labels_in_margin
+                && let Some(l) = label
+                && vis.iter().any(|v| v.id == a.id)
+            {
+                margin[y].push(Label {
+                    text: l.clone(),
+                    color: color_of(a),
+                    note: false,
+                });
+            }
         }
     }
 

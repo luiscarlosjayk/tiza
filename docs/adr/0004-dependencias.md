@@ -24,6 +24,7 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | crossterm | 0.29.0 | 2025-04 | MIT | Active repo; `bracketed-paste`, `use-dev-tty` features |
 | syntect | 5.3.0 | 2025-09 | MIT | `default-fancy` (pure Rust) |
 | two-face | 0.5.2 | 2025-12 | MIT/Apache-2.0 | bat's grammars (TypeScript, TOML…) |
+| regex | 1.13 | 2026-09 | MIT/Apache-2.0 | Already in the tree through syntect; direct dependency of `tiza-core` since t-117 (redact patterns, 2026-10-18) |
 | rmcp | 3.5.1 | 2026-10 | Apache-2.0 | Official MCP SDK; frequent releases; 3.x API |
 | schemars | 1.2 | 2026-10 | MIT | Required by rmcp 3.x |
 | tokio | 1.53 | 2026-10 | MIT | Only in `codedraw-mcp` |

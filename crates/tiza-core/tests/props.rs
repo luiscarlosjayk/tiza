@@ -140,7 +140,7 @@ proptest! {
     #[test]
     fn layout_never_overflows_or_panics(d in doc_strategy(), width in 20usize..=240, step in 0u32..6) {
         let th = Theme::dark();
-        let l = layout(&d, &th, &LayoutOptions { width, step, focus: None, line_numbers: true, tab_width: 4, typing: false });
+        let l = layout(&d, &th, &LayoutOptions { width, step, focus: None, line_numbers: true, tab_width: 4, typing: false, redact: true });
         for y in 0..l.canvas.height {
             let w = display_width(&l.canvas.row_text(y), 4);
             prop_assert!(w <= width, "row {y} is {w} cells wide at width {width}:\n{}", l.canvas.to_plain_text());

@@ -325,6 +325,11 @@ impl<'a> Remap<'a> {
                 style: style.clone(),
                 emphasis: *emphasis,
             },
+            Shape::Redact { span, keep, label } => Shape::Redact {
+                span: self.span(span)?,
+                keep: *keep,
+                label: label.clone(),
+            },
             Shape::Box {
                 from_line,
                 to_line,

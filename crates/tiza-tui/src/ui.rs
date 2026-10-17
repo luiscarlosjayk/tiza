@@ -135,7 +135,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             .saturating_sub(pad_v * 2),
     };
 
-    let layout = app.layout(canvas_area.width as usize);
+    let layout = app.screen_layout(canvas_area.width as usize);
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
@@ -447,6 +447,21 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.dirty {
         left.push(Span::styled(" •", accent));
     }
+    if app.has_redacts() {
+        // `◆ redacted` while the masks are on; a loud `◆ UNMASKED` while the
+        // author looks at the real text (never in presentation mode).
+        if app.redact_shown || app.present {
+            left.push(Span::styled("  ◆ redacted", muted));
+        } else {
+            left.push(Span::styled(
+                "  ◆ UNMASKED (:redact on)",
+                Style::default()
+                    .fg(rgb(th.error))
+                    .bg(rgb(th.status_bg))
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+    }
     if !app.autosave {
         let text = if app.dirty {
             "  unsaved (:w)"
@@ -693,6 +708,7 @@ fn help_lines() -> Vec<String> {
         "  :box … border=double corners=sharp fill=no   box/callout borders (solid dashed dotted thick double; rounded sharp)",
         "  :box A-B [label]                         :note L text   (L may be .)",
         "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
+        "  :redact L | :redact L:ANCHOR [keep=N] | select + r   mask a secret everywhere (••••••••); :redact off|on (author only); :redact auto [--dry]",
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",

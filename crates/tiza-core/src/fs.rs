@@ -357,6 +357,11 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
 pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     let mut doc = doc.clone();
     doc.sync_code_src();
+    // A sidecar never carries a secret: embedded code is written with the
+    // redact masks applied (t-117). A file reference stays a reference.
+    if matches!(doc.code_src, CodeSource::Embedded(_)) && crate::redact::has_redacts(&doc) {
+        doc.code_src = CodeSource::Embedded(crate::redact::masked_base(&doc));
+    }
     let json = serde_json::to_string_pretty(&doc)?;
     // The save is an atomic replace (temp file + rename), which would walk
     // over a file the user made read-only: honour the bit instead.

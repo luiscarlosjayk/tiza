@@ -28,6 +28,7 @@ serde_json = "1.0.154"
 thiserror = "2"
 unicode-width = "0.2.2"
 unicode-segmentation = "1.13.3"
+regex = "1.13"
 syntect = { version = "5.3.0", default-features = false, features = ["parsing", "dump-load", "regex-fancy"] }
 two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
 

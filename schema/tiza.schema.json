@@ -244,6 +244,36 @@
           "type": "object"
         },
         {
+          "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). Active from\nstep 0 whatever its `step`, unless `Document::redact_from_step`.\nOnly the columns are stored: never the text under them.",
+          "properties": {
+            "keep": {
+              "description": "Characters left visible at the end of the span (0..=8).",
+              "format": "uint8",
+              "maximum": 255,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "span": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "type": {
+              "const": "redact",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "span"
+          ],
+          "type": "object"
+        },
+        {
           "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
           "properties": {
             "from_line": {
@@ -827,6 +857,10 @@
         "array",
         "null"
       ]
+    },
+    "redact_from_step": {
+      "description": "Redact masks follow their annotation's `step` instead of being active\nfrom step 0 (off by default: a secret is never shown at an earlier step).",
+      "type": "boolean"
     },
     "schema": {
       "format": "uint32",

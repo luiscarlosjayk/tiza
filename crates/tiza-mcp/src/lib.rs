@@ -236,6 +236,21 @@ pub struct NoteParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct RedactParams {
+    #[schemars(
+        description = "Where the secret is. `{line, col, end}` masks those columns; `{line, find}` masks what FOLLOWS the found text to the end of the line (`find` is the anchor before the secret — KEY=, Bearer, password: — never the secret itself, which is refused)."
+    )]
+    pub at: At,
+    #[schemars(
+        description = "Trailing characters left visible after the bullets (0-8, default 0)"
+    )]
+    pub keep: Option<u8>,
+    pub label: Option<String>,
+    pub step: Option<u32>,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct HighlightParams {
     pub at: At,
     pub label: Option<String>,
@@ -737,6 +752,18 @@ impl TizaServer {
     }
 
     #[tool(
+        description = "Masks a secret (a token, a password, a URL with credentials) with eight bullets on every surface at once — the screen, every export, the recordings and what get_code / the resources return — without touching the file on disk. Only the columns are stored, never the text. `at.find` is the text BEFORE the secret (`API_KEY=`, `Bearer`); the mask runs from there to the end of the line. Active from step 0 whatever `step`. Several per line allowed."
+    )]
+    async fn redact(
+        &self,
+        Parameters(p): Parameters<RedactParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let params = json!({"type": "redact", "at": p.at, "keep": p.keep.unwrap_or(0), "label": p.label, "step": p.step, "id": p.id});
+        let v = self.call("annotation.add", params).await?;
+        Ok(text(pretty(&v)))
+    }
+
+    #[tool(
         description = "Semantic mark on a fragment: a built-in kind (warn, error, ok, read, write, move, drop, scope…), a reusable style from define_style, or a one-off inline style. Each shows glyph + legend; language-agnostic."
     )]
     async fn add_mark(
@@ -1068,6 +1095,7 @@ impl TizaServer {
                 line_numbers: true,
                 tab_width: 4,
                 typing: false,
+                redact: true,
             },
         );
         let bytes = match format {

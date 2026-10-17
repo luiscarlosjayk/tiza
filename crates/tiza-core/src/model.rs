@@ -52,6 +52,10 @@ pub struct Document {
     /// projection at `step`). Empty when there are no moves: `code` is the base.
     #[serde(skip)]
     pub base_code: Vec<String>,
+    /// Redact masks follow their annotation's `step` instead of being active
+    /// from step 0 (off by default: a secret is never shown at an earlier step).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub redact_from_step: bool,
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -472,6 +476,19 @@ pub enum Shape {
         #[serde(flatten, default)]
         frame: BorderStyle,
     },
+    /// Masks a span of code (a token, a password, a URL with credentials):
+    /// on every surface the span shows as eight `•` plus the last `keep`
+    /// characters, never the real text or its length (t-117). Active from
+    /// step 0 whatever its `step`, unless `Document::redact_from_step`.
+    /// Only the columns are stored: never the text under them.
+    Redact {
+        span: TextSpan,
+        /// Characters left visible at the end of the span (0..=8).
+        #[serde(default, skip_serializing_if = "is_zero_u8")]
+        keep: u8,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        label: Option<String>,
+    },
     /// Directs attention: while active (from `step` to `until`, or only at
     /// `step`), dims the code outside `lines` and the annotations outside `ids`.
     /// With only `ids`, the focused code is that of those annotations.
@@ -532,6 +549,7 @@ impl Shape {
             Shape::Note { .. } => "note",
             Shape::Callout { .. } => "callout",
             Shape::Spotlight { .. } => "spotlight",
+            Shape::Redact { .. } => "redact",
         }
     }
 
@@ -539,7 +557,9 @@ impl Shape {
     /// An arrow occupies only its two endpoints, not the stretch between them.
     pub fn line_ranges(&self) -> Vec<(u32, u32)> {
         match self {
-            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+            Shape::Highlight { span, .. }
+            | Shape::Mark { span, .. }
+            | Shape::Redact { span, .. } => {
                 vec![(span.line, span.line)]
             }
             Shape::Box {
@@ -600,7 +620,8 @@ pub fn sanitize_texts(shape: &mut Shape) {
         Shape::Highlight { label, .. }
         | Shape::Mark { label, .. }
         | Shape::Box { label, .. }
-        | Shape::Arrow { label, .. } => {
+        | Shape::Arrow { label, .. }
+        | Shape::Redact { label, .. } => {
             if let Some(l) = label {
                 *l = single_line(l);
             }
@@ -621,6 +642,10 @@ pub fn sanitize_texts(shape: &mut Shape) {
 
 fn one() -> u32 {
     1
+}
+
+fn is_zero_u8(n: &u8) -> bool {
+    *n == 0
 }
 
 /// A document projected to one step (see `Document::view_at`).
@@ -657,6 +682,7 @@ impl Document {
             padding: None,
             moves: Vec::new(),
             base_code: Vec::new(),
+            redact_from_step: false,
         }
     }
 
@@ -675,8 +701,10 @@ impl Document {
     }
 
     /// Freezes the code inside the document (no longer depends on the file).
+    /// Freezes the code inside the document. With redacts, what is frozen is
+    /// the masked code: a `.tiza` never carries the text under a mask.
     pub fn embed_code(&mut self) {
-        self.code_src = CodeSource::Embedded(self.base().to_vec());
+        self.code_src = CodeSource::Embedded(crate::redact::masked_base(self));
     }
 
     pub fn is_embedded(&self) -> bool {
@@ -766,11 +794,17 @@ impl Document {
     /// the `rebind` ids against the annotations.
     pub fn validate_moves(&self) -> Result<(), Error> {
         moves::validate(
-            self.base(),
+            &self.matching_base(),
             self.source.first_line,
             &self.moves,
             &self.annotations,
         )
+    }
+
+    /// The step-0 code as text targets are matched against: with the
+    /// redact masks applied, so a move's `find` can never probe a secret.
+    fn matching_base(&self) -> Vec<String> {
+        crate::redact::mask_lines(self.base(), self.source.first_line, &self.annotations)
     }
 
     /// Adds a move (validated against the code at its step). Returns its index.
@@ -778,7 +812,7 @@ impl Document {
         let mut trial = self.moves.clone();
         trial.push(m);
         moves::validate(
-            self.base(),
+            &self.matching_base(),
             self.source.first_line,
             &trial,
             &self.annotations,
@@ -1070,6 +1104,15 @@ impl Document {
         };
         match shape {
             Shape::Highlight { span, .. } => check_span(span),
+            Shape::Redact { span, keep, .. } => {
+                check_span(span)?;
+                if *keep > 8 {
+                    return Err(Error::Invalid(format!(
+                        "keep={keep}: a redact shows at most 8 trailing characters"
+                    )));
+                }
+                Ok(())
+            }
             Shape::Mark {
                 span, kind, style, ..
             } => {
@@ -1256,13 +1299,18 @@ impl Document {
             let mut from = 0;
             while let Some(pos) = t[from..].find(text) {
                 let byte_start = from + pos;
+                let start = grapheme_index(t, byte_start);
+                let end = grapheme_index(t, byte_start + text.len());
+                from = byte_start + text.len().max(1);
+                // A hit under a redact mask does not exist (t-117): a search
+                // must never confirm what the mask hides.
+                if crate::redact::overlaps_mask(&self.annotations, line, start, end) {
+                    continue;
+                }
                 *seen += 1;
                 if *seen == occurrence {
-                    let start = grapheme_index(t, byte_start);
-                    let end = grapheme_index(t, byte_start + text.len());
                     return Some(TextSpan { line, start, end });
                 }
-                from = byte_start + text.len().max(1);
             }
             None
         };

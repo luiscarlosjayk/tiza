@@ -461,7 +461,9 @@ fn lines_of(live: &Live, id: &str) -> Option<(u32, u32)> {
                     from_line, to_line, ..
                 } => (*from_line, *to_line),
                 Shape::Note { line, .. } => (*line, *line),
-                Shape::Highlight { span, .. } | Shape::Mark { span, .. } => (span.line, span.line),
+                Shape::Highlight { span, .. }
+                | Shape::Mark { span, .. }
+                | Shape::Redact { span, .. } => (span.line, span.line),
                 Shape::Arrow { from, to, .. } => (from.line, to.line),
                 Shape::Callout {
                     from_line, to_line, ..

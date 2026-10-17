@@ -346,6 +346,7 @@ fn real_main() -> anyhow::Result<()> {
                     line_numbers: !no_numbers,
                     tab_width: 4,
                     typing: false,
+                    redact: true,
                 },
             );
             let bytes: Vec<u8> = match format {

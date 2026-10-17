@@ -360,7 +360,7 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 // in selection mode `h` acts, `←` moves.
                 app.select_action('h');
             }
-            KeyCode::Char(c) if "mnbsaC".contains(c) => {
+            KeyCode::Char(c) if "mnbsaCr".contains(c) => {
                 app.select_action(c);
             }
             // The command line and the help stay reachable with a selection.
