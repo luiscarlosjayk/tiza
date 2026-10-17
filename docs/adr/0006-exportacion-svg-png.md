@@ -21,3 +21,7 @@ The same drawing that is shown on video is wanted as a still image: YouTube thum
 - Emoji in user styles render only with `--system-fonts` (and depend on the machine). Documented limitation.
 - Libron (the brand font) is not used yet: proportional text would break the cell grid. t-068 will evaluate it for notes and callouts with per-run `textLength`.
 - Licenses: `tiny-skia` is BSD-3-Clause, now allowed in `deny.toml`. Font licenses ship next to the fonts in `crates/codedraw-export/assets/fonts/`.
+
+## Amendment (t-068): brand serif for prose
+
+Exports set prose cells — margin notes, labels, mark legends, under-line labels — in **CodeDraw Serif**, a Latin subset of [Libron](https://github.com/nicoverbruggen/libron) (OFL 1.1; renamed because *Libron* is a Reserved Font Name), at 1.08× the grid font size so its x-height matches JetBrains Mono. Code, line numbers, box borders and box/callout titles stay monospace, because they must sit on the cell grid. Prose runs are emitted without `textLength` (natural width; the serif is narrower than the grid and the margin has room to the right), and a mark's leading glyphs (`━▶`, `╳`) are split into their own monospace run, because resvg sets a whole run in one font when some family has every glyph. The layout still wraps and clips labels by cell count (what the terminal shows), so a clipped label stays clipped in the export even when the serif would have had room. `--mono-labels` (`SvgOptions.brand_font = false`) restores the all-monospace export; the terminal never sees the flag.

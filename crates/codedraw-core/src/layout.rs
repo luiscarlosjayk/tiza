@@ -935,7 +935,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             y,
             &lbl.text,
             width.saturating_sub(code_x + 2),
-            style,
+            style.prose(),
         );
     }
 
@@ -1064,7 +1064,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         // rest of the text, clipped with an ellipsis.
                         if i > 0 {
                             let rest = pieces[i - 1..].join(" ");
-                            canvas.put_str_clipped(px, r - 1, &rest, text_w, style);
+                            canvas.put_str_clipped(px, r - 1, &rest, text_w, style.prose());
                         }
                         break;
                     }
@@ -1074,7 +1074,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     } else {
                         x += canvas.put_str(x, r, &" ".repeat(display_width(prefix, 4)), style);
                     }
-                    canvas.put_str(x, r, piece, style);
+                    canvas.put_str(x, r, piece, style.prose());
                     occupied[r] = true;
                     r += 1;
                 }

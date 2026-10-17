@@ -117,7 +117,7 @@ Two more outputs record every step as an animation, generated without a pty or a
 
 The text formats keep the box-drawing characters as they are on screen (`.txt`: plain, no trailing spaces or blank rows; `.md`: the same inside a ```` ```text ```` block with the document title above; `.ansi`: 24-bit colors with a reset per line, for `cat`, `less -R` or a terminal-recording tool). Inside the TUI, `:export shot.md` (or `.txt`, `.ansi`, `.svg`, `.png`, with `step=`, `width=`, `theme=`) writes the same next to the document.
 
-Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL) and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool (which also writes `.txt`, `.ansi` and `.md`).
+Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts), `--system-fonts` (PNG fallback for emoji/CJK), `--mono-labels` (notes and labels in the monospace font too). The fonts ship inside the binary — JetBrains Mono (OFL) for the grid, a symbols subset of DejaVu Sans Mono, and *CodeDraw Serif*, a Latin subset of [Libron](https://github.com/nicoverbruggen/libron) (OFL) that sets notes, labels and legends in the brand typeface — so the output is identical on every machine. Agents get the same through the `export_image` MCP tool (which also writes `.txt`, `.ansi` and `.md`).
 
 ![ownership example, step 7](docs/img/ownership-step7.png)
 
@@ -165,7 +165,7 @@ A task that sends the current selection to CodeDraw in the integrated terminal: 
 
 ## Recommended recording profile
 
-Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows` and a ⚠ badge when the terminal is under 100×30 or a code line is clipped (`status` over the socket lists the same `warnings`); below ~100 columns, notes are drawn under the line instead of in the margin, and callouts with `placement: auto` move below their lines. One blank column is kept at each side by default (`:pad V H` to change it, `:pad 0 0` to remove it, `:pad default` to go back). Both themes use explicit RGB colors designed for 1080p.
+Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 columns. The status line shows `cols×rows` and a ⚠ badge when the terminal is under 100×30 or a code line is clipped (`status` over the socket lists the same `warnings`); below ~100 columns, notes are drawn under the line instead of in the margin, and callouts with `placement: auto` move below their lines. One blank column is kept at each side by default (`:pad V H` to change it, `:pad 0 0` to remove it, `:pad default` to go back). Both themes use explicit RGB colors designed for 1080p. The terminal font is yours: JetBrains Mono (the font the exports use for code) or any humanist monospace pairs well with the serif notes of the exported stills.
 
 ## Development
 

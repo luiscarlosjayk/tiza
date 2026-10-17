@@ -9,6 +9,8 @@ repository.workspace = true
 authors.workspace = true
 
 [dependencies]
+unicode-width.workspace = true
+unicode-segmentation.workspace = true
 codedraw-core = { workspace = true }
 thiserror = { workspace = true }
 base64 = { workspace = true }

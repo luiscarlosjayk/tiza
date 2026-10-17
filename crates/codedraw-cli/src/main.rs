@@ -129,6 +129,9 @@ enum Cmd {
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
         #[arg(long)]
         no_embed_fonts: bool,
+        /// SVG/PNG: keep notes and labels in the monospace font (default: CodeDraw Serif, a Libron subset)
+        #[arg(long)]
+        mono_labels: bool,
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
@@ -219,6 +222,7 @@ fn real_main() -> anyhow::Result<()> {
             radius,
             scale,
             no_embed_fonts,
+            mono_labels,
             system_fonts,
             interval,
             skip_zero,
@@ -339,6 +343,7 @@ fn real_main() -> anyhow::Result<()> {
                         radius,
                         embed_fonts: format == Format::Svg && !no_embed_fonts,
                         title: doc.title.clone(),
+                        brand_font: !mono_labels,
                     };
                     let svg = codedraw_export::to_svg(&l.canvas, &theme, &svg_opts);
                     if format == Format::Svg {

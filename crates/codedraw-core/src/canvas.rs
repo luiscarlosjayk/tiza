@@ -24,6 +24,9 @@ pub struct CellStyle {
     pub bold: bool,
     pub dim: bool,
     pub italic: bool,
+    /// Prose (notes, labels, legends): exporters may set it in the brand
+    /// serif instead of the monospace grid font. Terminals ignore it.
+    pub prose: bool,
 }
 
 impl CellStyle {
@@ -34,7 +37,12 @@ impl CellStyle {
             bold: false,
             dim: false,
             italic: false,
+            prose: false,
         }
+    }
+    pub const fn prose(mut self) -> Self {
+        self.prose = true;
+        self
     }
     pub const fn fg(mut self, c: Rgb) -> Self {
         self.fg = Some(c);
@@ -64,6 +72,7 @@ impl CellStyle {
             bold: self.bold || over.bold,
             dim: self.dim || over.dim,
             italic: self.italic || over.italic,
+            prose: self.prose || over.prose,
         }
     }
 }

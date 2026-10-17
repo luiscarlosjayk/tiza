@@ -1,0 +1,233 @@
+//! t-068 — Brand typography in SVG/PNG exports: CodeDraw Serif (a Libron
+//! subset, OFL) for notes, labels and legends; monospace for code, boxes and
+//! arrows.
+//!
+//! Acceptance criteria:
+//! - AC1 The SVG embeds four CodeDraw Serif faces (Regular, Bold, Italic,
+//!   Bold Italic) next to JetBrains Mono and the symbols font; prose runs
+//!   (margin labels, notes, legends, under-line labels) carry class `p`, no
+//!   `textLength` (natural width) and the serif family first; code, line
+//!   numbers, box borders and titles keep the monospace grid with
+//!   `textLength`.
+//! - AC2 A mark label's glyphs (`━▶`, `╳`, `✎▶`) stay a monospace run on the
+//!   grid; only the words after them are prose (resvg would otherwise set
+//!   the whole run in the monospace).
+//! - AC3 `--mono-labels` (SvgOptions.brand_font = false) restores the
+//!   all-monospace export; the terminal is unaffected (CellStyle.prose is
+//!   ignored by the TUI).
+//! - AC4 PNG rasterization finds the serif in the embedded font database
+//!   (pixels differ from the mono export in the margin, not in the code).
+//! - AC5 Fonts README and ADR 0006 record the subset, the OFL renaming
+//!   ("Libron" is a Reserved Font Name) and the recommended terminal pairing.
+
+use codedraw_qa::{codedraw_ok, example, fixture, scratch};
+
+fn svg(args: &[&str]) -> String {
+    let f = example("ownership.rs.codedraw");
+    let mut full = vec![
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        "-",
+        "--format",
+        "svg",
+        "--step",
+        "7",
+        "--width",
+        "100",
+    ];
+    full.extend_from_slice(args);
+    codedraw_ok(&full)
+}
+
+fn texts(svg: &str) -> Vec<&str> {
+    svg.match_indices("<text ")
+        .map(|(i, _)| &svg[i..svg[i..].find("</text>").map(|e| i + e + 7).unwrap()])
+        .collect()
+}
+
+#[test]
+fn ac1_serif_faces_and_prose_runs() {
+    let s = svg(&[]);
+    for face in [
+        "font-weight:400;font-style:normal",
+        "font-weight:700;font-style:normal",
+        "font-weight:400;font-style:italic",
+        "font-weight:700;font-style:italic",
+    ] {
+        assert!(
+            s.contains(&format!(
+                "@font-face{{font-family:\"CodeDraw Serif\";{face}"
+            )),
+            "{face}"
+        );
+    }
+    assert!(
+        s.contains(".p{font-family:\"CodeDraw Serif\",\"JetBrains Mono\",\"CodeDraw Symbols\"")
+    );
+    let runs = texts(&s);
+    let born = runs
+        .iter()
+        .find(|t| t.contains(">s is born<"))
+        .expect("note run");
+    assert!(born.contains("class=\"p\""), "{born}");
+    assert!(!born.contains("textLength"), "natural width: {born}");
+    let code = runs
+        .iter()
+        .find(|t| t.ends_with(">takes</text>") && t.contains("#61afef"))
+        .expect("code run (syntax colors split the line into runs)");
+    assert!(
+        !code.contains("class=\"p") && code.contains("textLength"),
+        "{code}"
+    );
+    let title = runs
+        .iter()
+        .find(|t| t.contains("takes owns s"))
+        .expect("box title");
+    assert!(
+        !title.contains(" p") && title.contains("textLength"),
+        "box titles stay on the grid: {title}"
+    );
+    let number = runs
+        .iter()
+        .find(|t| t.contains(">15<") || t.contains("> 15<") || t.contains(">  15<"))
+        .expect("line number");
+    assert!(!number.contains("class=\"p"), "{number}");
+}
+
+#[test]
+fn ac2_mark_glyphs_stay_mono_words_go_serif() {
+    let s = svg(&[]);
+    let runs = texts(&s);
+    let glyph = runs
+        .iter()
+        .find(|t| t.ends_with(">━▶</text>"))
+        .expect("glyph run");
+    assert!(
+        glyph.contains("textLength") && !glyph.contains("class=\"p"),
+        "{glyph}"
+    );
+    let words = runs
+        .iter()
+        .find(|t| t.contains("> move: s moves"))
+        .expect("words run");
+    assert!(
+        words.contains("class=\"p\"") && !words.contains("textLength"),
+        "{words}"
+    );
+    // The words start right after the glyph cells (2 cells = 2 × 9.6 px at 16 px).
+    let x = |t: &str| {
+        t.split("x=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse::<f32>()
+            .unwrap()
+    };
+    assert!(
+        (x(words) - x(glyph) - 2.0 * 9.6).abs() < 0.01,
+        "{} vs {}",
+        x(words),
+        x(glyph)
+    );
+    let drop = runs
+        .iter()
+        .find(|t| t.ends_with(">╳</text>"))
+        .expect("drop glyph");
+    assert!(!drop.contains("class=\"p"));
+}
+
+#[test]
+fn ac3_mono_labels_flag_and_terminal_unaffected() {
+    let s = svg(&["--mono-labels"]);
+    assert!(!s.contains("class=\"p"), "no prose runs");
+    assert!(!s.contains(".p{"), "no prose style");
+    assert!(
+        s.contains("@font-face{font-family:\"CodeDraw Serif\""),
+        "faces still embedded (same binary)"
+    );
+    let runs = texts(&s);
+    let born = runs.iter().find(|t| t.contains(">s is born<")).unwrap();
+    assert!(born.contains("textLength"));
+    // The text export is byte-identical with or without the brand font.
+    let f = example("ownership.rs.codedraw");
+    let a = codedraw_ok(&[
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        "-",
+        "--step",
+        "7",
+        "--width",
+        "100",
+    ]);
+    let b = codedraw_ok(&[
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        "-",
+        "--step",
+        "7",
+        "--width",
+        "100",
+        "--mono-labels",
+    ]);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn ac4_png_uses_the_serif() {
+    let dir = scratch("t068-png");
+    let f = fixture("t-050/export.codedraw");
+    let serif = dir.join("serif.png");
+    let mono = dir.join("mono.png");
+    codedraw_ok(&[
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        serif.to_str().unwrap(),
+        "--width",
+        "100",
+        "--scale",
+        "1",
+    ]);
+    codedraw_ok(&[
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        mono.to_str().unwrap(),
+        "--width",
+        "100",
+        "--scale",
+        "1",
+        "--mono-labels",
+    ]);
+    let a = std::fs::read(&serif).unwrap();
+    let b = std::fs::read(&mono).unwrap();
+    assert_ne!(a, b, "the margin renders differently");
+    assert_eq!(&a[16..24], &b[16..24], "same size");
+}
+
+#[test]
+fn ac5_docs_record_license_and_pairing() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    let fonts =
+        std::fs::read_to_string(root.join("crates/codedraw-export/fonts/README.md")).unwrap();
+    assert!(
+        fonts.contains("CodeDraw Serif")
+            && fonts.contains("Libron")
+            && fonts.contains("Reserved Font Name")
+    );
+    assert!(
+        root.join("crates/codedraw-export/assets/fonts/LICENSE-CodeDrawSerif-Libron-OFL.txt")
+            .exists()
+    );
+    let adr = std::fs::read_to_string(root.join("docs/adr/0006-exportacion-svg-png.md")).unwrap();
+    assert!(adr.contains("CodeDraw Serif"));
+    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
+    assert!(readme.contains("--mono-labels"));
+}

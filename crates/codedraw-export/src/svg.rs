@@ -5,6 +5,8 @@ use std::fmt::Write as _;
 use base64::Engine as _;
 use codedraw_core::canvas::{Canvas, CellStyle, Rgb};
 use codedraw_core::theme::Theme;
+use unicode_segmentation::UnicodeSegmentation;
+use unicode_width::UnicodeWidthStr;
 
 use crate::fonts;
 
@@ -21,6 +23,10 @@ pub struct SvgOptions {
     pub embed_fonts: bool,
     /// Optional `<title>`.
     pub title: Option<String>,
+    /// Set notes, labels and legends in the brand serif (CodeDraw Serif, a
+    /// Libron subset) instead of the monospace grid font. Code, boxes and
+    /// arrows stay monospace. Off: everything monospace, as in the terminal.
+    pub brand_font: bool,
 }
 
 impl Default for SvgOptions {
@@ -31,6 +37,7 @@ impl Default for SvgOptions {
             radius: 12.0,
             embed_fonts: true,
             title: None,
+            brand_font: true,
         }
     }
 }
@@ -122,6 +129,65 @@ fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
     out
 }
 
+/// A prose run that starts with symbol glyphs (a mark's `━▶`, `╳`, `✎▶`)
+/// is split: the glyphs stay a monospace run on the grid, the words become
+/// the prose run. resvg picks one font for a whole run when some family has
+/// every glyph, so leaving `━▶ move` together would set the words in the
+/// monospace too.
+fn split_prose(runs: Vec<Run>) -> Vec<Run> {
+    let mut out = Vec::with_capacity(runs.len());
+    for r in runs {
+        if !r.style.prose {
+            out.push(r);
+            continue;
+        }
+        let prefix_len: usize = r
+            .text
+            .graphemes(true)
+            .take_while(|g| !g.chars().next().is_some_and(is_prose_char))
+            .map(|g| UnicodeWidthStr::width(g).max(1))
+            .sum();
+        let prefix_graphemes: usize = r
+            .text
+            .graphemes(true)
+            .take_while(|g| !g.chars().next().is_some_and(is_prose_char))
+            .count();
+        if prefix_len == 0 || prefix_len >= r.cells {
+            out.push(r);
+            continue;
+        }
+        let split_at: usize = r
+            .text
+            .graphemes(true)
+            .take(prefix_graphemes)
+            .map(str::len)
+            .sum();
+        let (glyphs, words) = r.text.split_at(split_at);
+        let mono = CellStyle {
+            prose: false,
+            ..r.style
+        };
+        out.push(Run {
+            x: r.x,
+            cells: prefix_len,
+            text: glyphs.to_string(),
+            style: mono,
+        });
+        out.push(Run {
+            x: r.x + prefix_len,
+            cells: r.cells - prefix_len,
+            text: words.to_string(),
+            style: r.style,
+        });
+    }
+    out
+}
+
+/// Letters, digits, spaces and ASCII punctuation: what the serif sets.
+fn is_prose_char(c: char) -> bool {
+    c.is_alphanumeric() || c == ' ' || (c.is_ascii_punctuation() && c != '|')
+}
+
 /// Renders the canvas as a standalone SVG document.
 pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let g = geometry(canvas, o);
@@ -160,7 +226,21 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         fonts::SYMBOLS_FAMILY,
         o.font_size
     );
-    s.push_str(".b{font-weight:700}.i{font-style:italic}.d{opacity:.55}\n</style>\n");
+    s.push_str(".b{font-weight:700}.i{font-style:italic}.d{opacity:.55}\n");
+    if o.brand_font {
+        // Prose keeps its natural width (no textLength): the serif is
+        // narrower than the grid and the margin has room to the right.
+        // Font size slightly up so the x-height matches the monospace.
+        let _ = writeln!(
+            s,
+            ".p{{font-family:\"{}\",\"{}\",\"{}\",Georgia,\"Times New Roman\",serif;font-size:{:.2}px}}",
+            fonts::PROSE_FAMILY,
+            fonts::FAMILY,
+            fonts::SYMBOLS_FAMILY,
+            o.font_size * fonts::PROSE_SCALE
+        );
+    }
+    s.push_str("</style>\n");
     // Background.
     let _ = writeln!(
         s,
@@ -192,7 +272,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let ascent = o.font_size * fonts::ASCENT_EM;
     for y in 0..canvas.height {
         let base_y = g.margin + y as f32 * g.cell_h + ascent;
-        for r in runs(canvas, y) {
+        for r in split_prose(runs(canvas, y)) {
             if r.text.trim().is_empty() {
                 continue;
             }
@@ -206,14 +286,28 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
             if r.style.dim {
                 class.push_str("d ");
             }
-            let _ = write!(
-                s,
-                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
-                g.margin + r.x as f32 * g.cell_w,
-                base_y,
-                r.cells as f32 * g.cell_w,
-                hex(r.style.fg.unwrap_or(theme.fg))
-            );
+            let prose = o.brand_font && r.style.prose;
+            if prose {
+                class.push_str("p ");
+            }
+            if prose {
+                let _ = write!(
+                    s,
+                    r#"<text x="{:.2}" y="{:.2}" fill="{}""#,
+                    g.margin + r.x as f32 * g.cell_w,
+                    base_y,
+                    hex(r.style.fg.unwrap_or(theme.fg))
+                );
+            } else {
+                let _ = write!(
+                    s,
+                    r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
+                    g.margin + r.x as f32 * g.cell_w,
+                    base_y,
+                    r.cells as f32 * g.cell_w,
+                    hex(r.style.fg.unwrap_or(theme.fg))
+                );
+            }
             if !class.is_empty() {
                 let _ = write!(s, r#" class="{}""#, class.trim_end());
             }
