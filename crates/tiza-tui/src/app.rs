@@ -131,6 +131,9 @@ pub struct App {
     pub autosave: bool,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
+    /// The first failed autosave just set `message`; the next `info` of the
+    /// action that triggered it must not replace it.
+    save_warning_pending: bool,
     /// `--padding` for this session only: shown instead of the document's
     /// value but never written to it (`:pad` sets the document and clears this).
     pub padding_override: Option<(u16, u16)>,
@@ -187,6 +190,7 @@ impl App {
             socket_path: None,
             autosave: true,
             save_error: None,
+            save_warning_pending: false,
             padding_override: None,
             image_exporter: None,
             mouse: false,
@@ -210,10 +214,17 @@ impl App {
     }
 
     pub fn info(&mut self, msg: impl Into<String>) {
+        // The one-time "not saved" warning set by the autosave that ran
+        // inside this very action wins over the action's own message.
+        if self.save_warning_pending {
+            self.save_warning_pending = false;
+            return;
+        }
         self.message = Some((msg.into(), false));
     }
 
     pub fn error(&mut self, msg: impl Into<String>) {
+        self.save_warning_pending = false;
         self.message = Some((msg.into(), true));
     }
 
@@ -253,20 +264,36 @@ impl App {
                 Ok(())
             }
             Err(e) => {
+                if self.save_error.is_none() {
+                    // Once, not on every autosave: the bar keeps the short
+                    // form on its right until a save succeeds.
+                    self.error(format!(
+                        "read-only: could not save {} ({e}); :w PATH saves elsewhere",
+                        self.save_path.display()
+                    ));
+                    self.save_warning_pending = true;
+                }
                 self.save_error = Some(format!("could not save {}: {e}", self.save_path.display()));
                 Err(e)
             }
         }
     }
 
-    /// Quits unless unsaved changes could not be written (`force` ignores that).
+    /// Quits unless there are unsaved changes: ones that could not be
+    /// written, or ones made with autosave off (`force` ignores both).
     pub fn request_quit(&mut self, force: bool) {
-        if !force && self.dirty && self.save_error.is_some() {
-            self.error(format!(
-                ":q! quits anyway, :w PATH saves elsewhere ({})",
-                self.save_error.clone().unwrap_or_default()
-            ));
-            return;
+        if !force && self.dirty {
+            if let Some(e) = &self.save_error {
+                self.error(format!(":q! quits anyway, :w PATH saves elsewhere ({e})"));
+                return;
+            }
+            if !self.autosave {
+                self.error(format!(
+                    "unsaved changes (autosave off): :w saves to {}, :w PATH saves elsewhere, :q! discards",
+                    self.save_path.display()
+                ));
+                return;
+            }
         }
         self.quit = true;
     }
@@ -519,7 +546,14 @@ impl App {
             doc.validate_shape_at(&a.shape, a.step)?;
         }
         self.finish_typing();
-        self.history.record(&self.doc, "scene.put");
+        // Saving rule (t-039/t-110): a document from another source must
+        // never be autosaved over the file that was open. Autosave stops;
+        // `:w` writes it over that file on purpose, `:w PATH` elsewhere,
+        // `:autosave on` resumes. The same source (an agent re-putting an
+        // edited copy of the open document, `scene get` → `scene put`)
+        // keeps saving as usual.
+        let other = doc.source.path != self.doc.source.path;
+        self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
         if let Some(t) = self.doc.theme {
             self.theme = Theme::from_name(t);
@@ -528,6 +562,13 @@ impl App {
         self.focus = None;
         self.scroll = 0;
         self.clamp_cursor();
+        if other && self.autosave {
+            self.autosave = false;
+            self.info(format!(
+                "another document loaded: autosave off (:w saves over {}, :w PATH saves elsewhere, :autosave on resumes)",
+                self.save_path.display()
+            ));
+        }
         self.touch();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
     }
@@ -590,7 +631,7 @@ impl App {
         } else if d.step > d.max_step() {
             d.step = d.max_step();
         }
-        self.history.record(&self.doc, "scene.patch");
+        self.history.record_with_step(&self.doc, "scene.patch");
         self.doc = d;
         if let Some(t) = self.doc.theme {
             self.theme = Theme::from_name(t);
@@ -2084,13 +2125,34 @@ impl App {
                         format!("padding {v} {h}")
                     })
                 }
-                "autosave" => {
-                    self.autosave = !matches!(rest, "off" | "no");
-                    Ok(format!(
-                        "autosave {}",
-                        if self.autosave { "on" } else { "off" }
-                    ))
-                }
+                "autosave" => match rest.trim() {
+                    "" => Ok(format!(
+                        "autosave {}{}",
+                        if self.autosave { "on" } else { "off" },
+                        if self.dirty && !self.autosave {
+                            " (unsaved changes: :w)"
+                        } else {
+                            ""
+                        }
+                    )),
+                    "on" | "yes" => {
+                        self.autosave = true;
+                        if self.dirty {
+                            self.save()?;
+                            Ok(format!(
+                                "autosave on (saved to {})",
+                                self.save_path.display()
+                            ))
+                        } else {
+                            Ok("autosave on".into())
+                        }
+                    }
+                    "off" | "no" => {
+                        self.autosave = false;
+                        Ok("autosave off (:w saves explicitly)".into())
+                    }
+                    _ => Err(Error::Invalid("usage: :autosave [on|off]".into())),
+                },
                 other => Err(Error::Invalid(format!(
                     "unknown command: {other} (try :help)"
                 ))),
@@ -3132,6 +3194,7 @@ impl App {
             rows: self.size.1,
             warnings: self.viewport_warnings(),
             supervised: self.supervised,
+            autosave: self.autosave,
             pending: self.proposals.len(),
         }
     }

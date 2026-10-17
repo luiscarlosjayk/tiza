@@ -42,6 +42,11 @@
           "app": {
             "type": "string"
           },
+          "autosave": {
+            "default": true,
+            "description": "Whether every change is written to the sidecar as it happens\n(`--no-save`, `:autosave off` and a `scene.put` of another document\nturn it off; `:w` saves explicitly either way).",
+            "type": "boolean"
+          },
           "build": {
             "description": "Git commit the instance was built from (`unknown` outside a checkout).",
             "type": "string"

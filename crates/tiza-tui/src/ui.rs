@@ -425,6 +425,14 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.dirty {
         left.push(Span::styled(" •", accent));
     }
+    if !app.autosave {
+        let text = if app.dirty {
+            "  unsaved (:w)"
+        } else {
+            "  no-save"
+        };
+        left.push(Span::styled(text, if app.dirty { accent } else { muted }));
+    }
     if app.supervised {
         let text = if app.proposals.is_empty() {
             "  ⏸ supervised".to_string()
@@ -673,7 +681,7 @@ fn help_lines() -> Vec<String> {
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
         "  :mouse on|off   click moves the cursor, drag selects, wheel scrolls (off by default: the terminal keeps its own selection)",
-        "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
+        "  :w [path]   :wq   :q   :q! (quit even if unsaved)   :autosave on|off (--no-save at start)   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
         "MCP server (`tiza mcp`) do exactly the same thing as these commands.",

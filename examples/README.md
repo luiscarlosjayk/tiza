@@ -1,6 +1,6 @@
 # Examples
 
-Open them with `tiza examples/<file>.tiza` and advance with `n`. Both start at step 0 (code only).
+Open them with `tiza examples/<file>.tiza --no-save` and advance with `n`. Both start at step 0 (code only). `--no-save` keeps the example untouched while you try things (every change would otherwise be written back to the file, and `git status` would show it); `:w PATH` saves your version elsewhere.
 
 | File | What it shows | `code` mode |
 |---|---|---|

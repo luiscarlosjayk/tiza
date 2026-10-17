@@ -62,6 +62,8 @@ Annotate the new code **at the step where it exists**: after `add_move {at_step:
 
 ## Supervised mode
 
+**Saving rule.** The TUI writes every change to the `.tiza` sidecar of the file that is open — your `add_note` lands on disk at once — unless the presenter opened it with `--no-save` or turned `:autosave off` (`status.autosave` tells you; `:w` is theirs). `scene.put` of a document from **another source** (a different `source.path`, or embedded code with none) is shown but never autosaved over the file that was open: autosave stops with a message, and the presenter decides with `:w` (over the open file), `:w PATH` (elsewhere) or `:autosave on` (resume). A put of the same source — re-putting an edited copy of the open document, `scene get` → `scene put` — keeps saving as before. `u` after a put brings the previous document back, step included. From the CLI, `tiza scene put FILE` takes a `.tiza` or the `scene get` envelope and refuses anything else unless `--as-code` is passed.
+
 The presenter may turn on `:supervise`: then every mutating call (add, update, delete, clear, step, theme, focus, follow, scene put/patch) waits until they press `y` or `n` in the TUI. Accepted calls return their normal result; rejected ones fail with code `rejected` ("the presenter rejected this change"), and so does a proposal left undecided for 60 s. `status` tells you (`supervised`, `pending`). Do not retry a rejected change in a loop; say what you wanted to draw and let the presenter answer. Reads never wait.
 
 ## Resources

@@ -59,6 +59,9 @@ struct Cli {
     /// Do not expose the local API
     #[arg(long)]
     no_socket: bool,
+    /// Never write the sidecar on its own (annotate an example without touching it); `:w` saves explicitly, `:autosave on` resumes
+    #[arg(long)]
+    no_save: bool,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -191,9 +194,16 @@ enum SceneCmd {
     },
     /// Instance status
     Status,
-    /// Replace the live document with a .tiza file (`-` = stdin); code
-    /// references are resolved relative to the file and sent embedded
-    Put { file: String },
+    /// Replace the live document with a .tiza file or a `scene get`
+    /// envelope (`-` = stdin); code references are resolved relative to the
+    /// file and sent embedded
+    Put {
+        file: String,
+        /// Show a file that is not a document as code (a source file, a
+        /// snippet) instead of refusing it
+        #[arg(long)]
+        as_code: bool,
+    },
     /// Partial change: JSON (`-` = stdin, `@file` = a file) with step, theme,
     /// padding, title, styles and/or annotations merged by id
     Patch { json: String },
@@ -396,16 +406,8 @@ fn real_main() -> anyhow::Result<()> {
                 SceneCmd::List => ("scene.list", serde_json::json!({})),
                 SceneCmd::Text { width } => ("render.text", serde_json::json!({"width": width})),
                 SceneCmd::Status => ("status", serde_json::json!({})),
-                SceneCmd::Put { file } => {
-                    let opened = if file == "-" {
-                        let mut text = String::new();
-                        std::io::stdin().read_to_string(&mut text)?;
-                        fs::from_stdin(&text, None)
-                            .context("could not read the document from stdin")?
-                    } else {
-                        fs::open(&file).with_context(|| format!("could not open {file}"))?
-                    };
-                    let mut document = opened.document;
+                SceneCmd::Put { file, as_code } => {
+                    let mut document = document_for_put(&file, as_code)?;
                     // On the wire the code travels embedded: the instance may
                     // run in another directory.
                     document.code_src =
@@ -517,6 +519,54 @@ fn image_exporter(
 }
 
 /// `--lang`: replaces the detected language; warns when no grammar exists.
+/// The document `scene put` sends: a `.tiza` document, a `scene get`
+/// envelope (`{document, step, …}`: `document` is unwrapped and the
+/// envelope's `step` kept), or — only with `--as-code` — any other file
+/// shown as code. Anything else is refused, so a stray JSON file never
+/// lands on screen as 300 lines of JSON.
+fn document_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_core::Document> {
+    let (text, base_dir) = if file == "-" {
+        let mut text = String::new();
+        std::io::stdin().read_to_string(&mut text)?;
+        (text, std::env::current_dir().ok())
+    } else {
+        (
+            std::fs::read_to_string(file).with_context(|| format!("could not read {file}"))?,
+            PathBuf::from(file).parent().map(PathBuf::from),
+        )
+    };
+    let trimmed = text.trim_start_matches('\u{feff}').trim_start();
+    if trimmed.starts_with('{')
+        && let Ok(value) = serde_json::from_str::<serde_json::Value>(trimmed)
+    {
+        if let Some(inner) = value.get("document").filter(|d| d.is_object()) {
+            let mut document = fs::parse_document(&inner.to_string(), base_dir.as_deref())
+                .with_context(|| {
+                    format!("{file}: the `document` of the scene envelope is not a valid document")
+                })?;
+            if let Some(step) = value.get("step").and_then(|s| s.as_u64()) {
+                document.step = step as u32;
+            }
+            return Ok(document);
+        }
+        if value.get("schema").is_some() || value.get("code").is_some() {
+            return fs::parse_document(trimmed, base_dir.as_deref())
+                .with_context(|| format!("{file}: not a valid .tiza document"));
+        }
+    }
+    if !as_code {
+        bail!(
+            "{file} is neither a .tiza document nor a `scene get` envelope; to show it as code, pass --as-code"
+        );
+    }
+    let opened = if file == "-" {
+        fs::from_stdin(&text, None).context("could not read the code from stdin")?
+    } else {
+        fs::open(file).with_context(|| format!("could not open {file}"))?
+    };
+    Ok(opened.document)
+}
+
 fn override_language(doc: &mut tiza_core::Document, lang: Option<&str>) {
     if let Some(l) = lang {
         // A path (`--lang "${ZED_FILE##*.}"` on a file without extension
@@ -590,6 +640,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             smoke: cli.smoke,
             mouse: cli.mouse,
             follow: cli.follow,
+            no_save: cli.no_save,
         },
     )?;
     Ok(())

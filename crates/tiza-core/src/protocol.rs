@@ -689,6 +689,15 @@ pub struct Status {
     /// Proposals waiting for a decision.
     #[serde(default, skip_serializing_if = "is_zero")]
     pub pending: usize,
+    /// Whether every change is written to the sidecar as it happens
+    /// (`--no-save`, `:autosave off` and a `scene.put` of another document
+    /// turn it off; `:w` saves explicitly either way).
+    #[serde(default = "yes")]
+    pub autosave: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 fn is_zero(n: &usize) -> bool {

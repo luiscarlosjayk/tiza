@@ -13,6 +13,10 @@ struct Snapshot {
     /// What the edit after this snapshot did (`note a3`, `reload #54`…),
     /// so `u` can say what it undid.
     label: String,
+    /// The step, for edits that replace the whole document (`scene.put`,
+    /// `scene.patch`): undoing them brings the previous step back too.
+    /// `None` for ordinary edits, whose undo keeps the current step.
+    step: Option<u32>,
     code: Vec<String>,
     base_code: Vec<String>,
     moves: Vec<Move>,
@@ -24,9 +28,10 @@ struct Snapshot {
 }
 
 impl Snapshot {
-    fn take(doc: &Document, label: String) -> Self {
+    fn take(doc: &Document, label: String, with_step: bool) -> Self {
         Self {
             label,
+            step: with_step.then_some(doc.step),
             code: doc.code.clone(),
             base_code: doc.base_code.clone(),
             moves: doc.moves.clone(),
@@ -40,7 +45,7 @@ impl Snapshot {
 
     /// Puts the snapshot into `doc` and returns what was there.
     fn swap(self, doc: &mut Document) -> Self {
-        let current = Self::take(doc, self.label.clone());
+        let current = Self::take(doc, self.label.clone(), self.step.is_some());
         doc.code = self.code;
         doc.base_code = self.base_code;
         doc.moves = self.moves;
@@ -49,6 +54,9 @@ impl Snapshot {
         doc.styles = self.styles;
         doc.title = self.title;
         doc.padding = self.padding;
+        if let Some(step) = self.step {
+            doc.step = step;
+        }
         // The step may have changed since the snapshot: the shown code is
         // always the projection of the base at the current step.
         doc.sync_code_to_step();
@@ -68,7 +76,17 @@ impl History {
     /// Call BEFORE mutating the document. `label` names the edit that
     /// follows (`note a3`, `reload #54`), for the undo/redo message.
     pub fn record(&mut self, doc: &Document, label: impl Into<String>) {
-        self.undo.push(Snapshot::take(doc, label.into()));
+        self.push(Snapshot::take(doc, label.into(), false));
+    }
+
+    /// Like `record`, for an edit that replaces the whole document
+    /// (`scene.put`, `scene.patch`): undo restores the step as well.
+    pub fn record_with_step(&mut self, doc: &Document, label: impl Into<String>) {
+        self.push(Snapshot::take(doc, label.into(), true));
+    }
+
+    fn push(&mut self, snapshot: Snapshot) {
+        self.undo.push(snapshot);
         if self.undo.len() > Self::MAX {
             self.undo.remove(0);
         }

@@ -329,3 +329,131 @@ fn ac4_methods_are_published() {
     );
     let _ = fs::open; // keep the import meaningful for readers of the ACs
 }
+
+// ------------------------------------------------------------ rework (owner QA)
+
+#[test]
+fn rework_undo_after_put_restores_the_step_too() {
+    let live = Live::from_code("fn old() {}\nfn more() {}\n", "rs", "t039-undo-step");
+    live.command("note 1 one");
+    live.command("note 2 two step=3");
+    live.api_ok("step.set", json!({"step": 0}));
+    assert_eq!(live.with(|a| a.doc.step), 0);
+    put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
+    assert_eq!(live.with(|a| a.doc.step), 2, "the put document's step");
+    live.with(|a| a.undo());
+    assert_eq!(live.with(|a| a.doc.code.len()), 2);
+    assert_eq!(
+        live.with(|a| a.doc.step),
+        0,
+        "the whole previous document comes back, step included"
+    );
+    assert_eq!(live.message().unwrap().0, "undone: scene.put");
+    // And forward again.
+    live.with(|a| a.redo());
+    assert_eq!(live.with(|a| a.doc.step), 2);
+    // A patch that moves the step is undone the same way.
+    live.with(|a| a.undo());
+    let out = patch(&live, r#"{"step":1,"theme":"light"}"#);
+    assert!(out.status.success());
+    assert_eq!(live.with(|a| a.doc.step), 1);
+    live.with(|a| a.undo());
+    assert_eq!(live.with(|a| a.doc.step), 0);
+    assert_eq!(live.message().unwrap().0, "undone: scene.patch");
+}
+
+#[test]
+fn rework_cli_put_accepts_the_get_envelope_and_refuses_a_stray_file() {
+    let dir = scratch("t039-envelope");
+    let src = dir.join("stack.rs");
+    std::fs::write(&src, "fn a() {}\nfn b() {}\n").unwrap();
+    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, dir.join("stack.rs.tiza"), dir.join("live.sock"));
+    live.command("note 2 bee");
+    live.api_ok("step.set", json!({"step": 1}));
+    let socket = live.socket.to_str().unwrap().to_string();
+    // `scene get` prints the envelope; `scene put` of that file is a no-op.
+    let envelope = tiza_ok(&["--socket", &socket, "scene", "get"]);
+    let s_json = dir.join("s.json");
+    std::fs::write(&s_json, &envelope).unwrap();
+    let before = live.with(|a| (a.doc.code.clone(), a.doc.annotations.clone(), a.doc.step));
+    let r = put_file(&live, s_json.to_str().unwrap());
+    assert_eq!(r["lines"], json!(2), "{r}");
+    let after = live.with(|a| (a.doc.code.clone(), a.doc.annotations.clone(), a.doc.step));
+    assert_eq!(before, after, "get → put is a content no-op from the CLI");
+    assert!(
+        live.with(|a| a.autosave),
+        "the same source keeps autosaving"
+    );
+    // A file that is neither a document nor an envelope is refused…
+    let notes = dir.join("notes.json");
+    std::fs::write(&notes, r#"{"hello": "world"}"#).unwrap();
+    let out = tiza(&["--socket", &socket, "scene", "put", notes.to_str().unwrap()]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("neither a .tiza document nor a `scene get` envelope")
+            && err.contains("--as-code"),
+        "{err}"
+    );
+    assert_eq!(live.with(|a| a.doc.code.len()), 2, "nothing was sent");
+    // …unless the user asks for it as code.
+    tiza_ok(&[
+        "--socket",
+        &socket,
+        "scene",
+        "put",
+        notes.to_str().unwrap(),
+        "--as-code",
+    ]);
+    assert_eq!(
+        live.with(|a| a.doc.code.clone()),
+        vec![r#"{"hello": "world"}"#]
+    );
+    assert_eq!(live.with(|a| a.doc.source.language.clone()), "json");
+}
+
+#[test]
+fn rework_put_of_another_document_never_autosaves_over_the_open_file() {
+    let dir = scratch("t039-autosave");
+    let src = dir.join("stack.rs");
+    std::fs::write(&src, "fn a() {}\nfn b() {}\n").unwrap();
+    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+    let sidecar = dir.join("stack.rs.tiza");
+    let live = Live::open(doc, sidecar.clone(), dir.join("live.sock"));
+    live.command("note 2 bee");
+    let saved = std::fs::read(&sidecar).unwrap();
+    assert!(live.with(|a| a.autosave));
+    // Another document: shown, but the sidecar on disk is left alone.
+    put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
+    assert_eq!(live.with(|a| a.doc.code.len()), 6);
+    assert!(!live.with(|a| a.autosave), "autosave stops");
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.contains("another document loaded: autosave off"),
+        "{msg}"
+    );
+    live.command("note 1 extra");
+    assert_eq!(std::fs::read(&sidecar).unwrap(), saved, "bytes untouched");
+    let screen = live.screen(120, 20);
+    assert!(screen.contains("unsaved (:w)"), "{screen}");
+    // `:q` refuses while there are unsaved changes; `:w PATH` saves them elsewhere.
+    live.command("q");
+    assert!(!live.with(|a| a.quit));
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("unsaved changes (autosave off)"),
+        "{msg}"
+    );
+    let copy = dir.join("copy.tiza");
+    live.command(&format!("w {}", copy.display()));
+    assert!(copy.exists());
+    assert_eq!(std::fs::read(&sidecar).unwrap(), saved);
+    // Back to the original with `u`: autosave stays off until asked.
+    live.with(|a| a.undo());
+    live.with(|a| a.undo());
+    assert_eq!(live.with(|a| a.doc.code.len()), 2);
+    assert!(!live.with(|a| a.autosave));
+    live.command("autosave on");
+    assert!(live.with(|a| a.autosave));
+}

@@ -38,6 +38,8 @@ pub struct RunOptions {
     pub smoke: bool,
     /// `--mouse`: start with mouse capture on (`:mouse on` toggles it live).
     pub mouse: bool,
+    /// `--no-save`: never autosave the sidecar (`:w` still saves).
+    pub no_save: bool,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -54,6 +56,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.padding_override = opts.padding;
     app.image_exporter = opts.image_exporter;
     app.mouse = opts.mouse;
+    app.autosave = !opts.no_save;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }
