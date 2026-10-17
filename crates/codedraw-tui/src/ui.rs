@@ -275,6 +275,28 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
             draw_overlay(frame, app, "Annotations", lines)
         }
+        Overlay::Review => {
+            let mut lines: Vec<String> = app
+                .proposals
+                .iter()
+                .enumerate()
+                .map(|(i, p)| {
+                    format!(
+                        "{} p{}  {}  ({}s ago)",
+                        if i == 0 { "▶" } else { " " },
+                        p.id,
+                        p.summary,
+                        p.since.elapsed().as_secs()
+                    )
+                })
+                .collect();
+            lines.push(String::new());
+            lines.push(
+                "y accept · n reject · a accept all · d reject all · Esc hide (:review reopens)"
+                    .into(),
+            );
+            draw_overlay(frame, app, "Agent proposals", lines)
+        }
         Overlay::None => {}
     }
 }
@@ -374,6 +396,14 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     ];
     if app.dirty {
         left.push(Span::styled(" •", accent));
+    }
+    if app.supervised {
+        let text = if app.proposals.is_empty() {
+            "  ⏸ supervised".to_string()
+        } else {
+            format!("  ⏸ {} to review (y/n)", app.proposals.len())
+        };
+        left.push(Span::styled(text, accent));
     }
     if let Some(f) = &app.follow {
         let text = match (&f.missing, &f.last_reload_clock) {
@@ -613,6 +643,7 @@ fn help_lines() -> Vec<String> {
         "  :embed  freezes the code inside the .codedraw   :link [path]  references a file",
         "  :export [file.txt|.ansi|.md|.svg|.png] [step=N] [width=N] [theme=dark|light]   what this step shows, as a file (default <doc>-stepN.txt)",
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
+        "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
         "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",

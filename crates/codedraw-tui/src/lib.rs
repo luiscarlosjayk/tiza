@@ -114,12 +114,14 @@ fn event_loop(
         }
         if let Some(server) = ipc {
             while let Ok(r) = server.rx.try_recv() {
-                let resp = app.handle_request(r.req);
-                let _ = r.reply.send(resp);
+                app.handle_ipc(r.req, r.reply);
                 needs_draw = true;
             }
         }
         if app.follow_tick() {
+            needs_draw = true;
+        }
+        if app.expire_proposals() {
             needs_draw = true;
         }
         if event::poll(Duration::from_millis(50))? {
@@ -150,6 +152,37 @@ fn event_loop(
 /// Handles one key press exactly as the event loop does (public so QA tests
 /// can drive the real keyboard logic without a terminal).
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    // The review overlay has its own keys; the rest only scroll or close.
+    if app.overlay == Overlay::Review {
+        let msg = match code {
+            KeyCode::Char('y') | KeyCode::Enter => app.accept_proposal(),
+            KeyCode::Char('n') | KeyCode::Char('x') => app.reject_proposal(),
+            KeyCode::Char('a') => {
+                Some(format!("accepted {} proposals", app.accept_all_proposals()))
+            }
+            KeyCode::Char('d') => {
+                Some(format!("rejected {} proposals", app.reject_all_proposals()))
+            }
+            KeyCode::Esc | KeyCode::Char('q') => {
+                app.overlay = Overlay::None;
+                app.overlay_scroll = 0;
+                None
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                app.overlay_scroll += 1;
+                None
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                app.overlay_scroll = app.overlay_scroll.saturating_sub(1);
+                None
+            }
+            _ => None,
+        };
+        if let Some(m) = msg {
+            app.info(m);
+        }
+        return;
+    }
     // Overlays: any of these keys closes them.
     if app.overlay != Overlay::None {
         match code {

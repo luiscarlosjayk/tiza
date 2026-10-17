@@ -565,6 +565,16 @@ pub struct Status {
     /// Human-readable warnings about the viewport (small terminal, clipped code).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// Supervised mode: mutations wait for the presenter's approval.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub supervised: bool,
+    /// Proposals waiting for a decision.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub pending: usize,
+}
+
+fn is_zero(n: &usize) -> bool {
+    *n == 0
 }
 
 /// Result of a mutation.
@@ -637,6 +647,14 @@ pub const METHODS: &[(&str, &str)] = &[
     (
         "follow.status",
         "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing",
+    ),
+    (
+        "supervise.set",
+        "Turns supervised mode on or off (`enabled`): while on, every mutating request waits for the presenter's y/n in the TUI (60 s, then `rejected`); turning it off rejects what is pending",
+    ),
+    (
+        "supervise.status",
+        "Supervised mode state: enabled, pending proposals, accepted/rejected counts",
     ),
 ];
 

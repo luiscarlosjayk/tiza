@@ -12,6 +12,34 @@ use crate::protocol::{
     StepParams, UpdateParams,
 };
 
+/// Parameters of `supervise.set`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SuperviseParams {
+    /// `true`: every mutating request waits for the presenter's y/n.
+    pub enabled: bool,
+}
+
+/// Result of `supervise.set` / `supervise.status`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SuperviseStatus {
+    pub supervised: bool,
+    /// Proposals waiting for a decision: `{id, method, summary, age_ms}`.
+    pub pending: Vec<PendingProposal>,
+    pub accepted: u64,
+    pub rejected: u64,
+    pub timeout_secs: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PendingProposal {
+    pub id: u64,
+    pub method: String,
+    pub summary: String,
+    pub age_ms: u64,
+}
+
 /// Parameters of `style.set`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct StyleSetParams {
@@ -156,6 +184,8 @@ pub fn api_schema() -> ApiSchema {
                 "render.text" => (schema::<RenderParams>(), text()),
                 "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),
                 "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),
+                "supervise.set" => (schema::<SuperviseParams>(), schema::<SuperviseStatus>()),
+                "supervise.status" => (schema::<NoParams>(), schema::<SuperviseStatus>()),
                 _ => (Value::Object(Default::default()), Value::Object(Default::default())),
             };
             MethodSchema {

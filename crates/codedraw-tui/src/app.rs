@@ -41,7 +41,37 @@ pub enum Overlay {
     None,
     Help,
     List,
+    /// Pending agent proposals (supervised mode, t-045).
+    Review,
 }
+
+/// A mutation an agent asked for while supervised mode is on: it waits for
+/// the presenter's `y`/`n` (or expires) before the socket gets its reply.
+pub struct Proposal {
+    pub id: u64,
+    pub req: Request,
+    pub reply: std::sync::mpsc::Sender<Response>,
+    pub since: std::time::Instant,
+    /// Human description shown in the review overlay.
+    pub summary: String,
+}
+
+/// How long a proposal waits for the presenter before it is rejected.
+pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
+
+/// Methods that never change the document or the view: they bypass supervision.
+pub const READ_ONLY_METHODS: &[&str] = &[
+    "ping",
+    "status",
+    "api.methods",
+    "api.schema",
+    "code.get",
+    "scene.get",
+    "scene.list",
+    "style.list",
+    "render.text",
+    "follow.status",
+];
 
 pub struct App {
     pub doc: Document,
@@ -79,6 +109,12 @@ pub struct App {
     pub padding_override: Option<(u16, u16)>,
     /// SVG/PNG renderer for `:export`, installed by the binary.
     pub image_exporter: Option<ImageExporter>,
+    /// Supervised mode: agent mutations wait for the presenter's approval.
+    pub supervised: bool,
+    pub proposals: Vec<Proposal>,
+    next_proposal: u64,
+    /// Decisions taken (accepted, rejected) since the app started, for `status`.
+    pub decided: (u64, u64),
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
@@ -116,6 +152,10 @@ impl App {
             save_error: None,
             padding_override: None,
             image_exporter: None,
+            supervised: false,
+            proposals: Vec::new(),
+            next_proposal: 1,
+            decided: (0, 0),
             overlay_scroll: 0,
             follow: None,
         }
@@ -1271,6 +1311,25 @@ impl App {
                         .map(|_| format!("saved to {}", self.save_path.display()))
                 }
                 "export" => self.export_command(rest),
+                "supervise" | "supervised" => match rest.trim() {
+                    "" => Ok(format!(
+                        "supervised mode {} ({} pending)",
+                        if self.supervised { "on" } else { "off" },
+                        self.proposals.len()
+                    )),
+                    "on" => Ok(self.set_supervised(true)),
+                    "off" => Ok(self.set_supervised(false)),
+                    _ => Err(Error::Invalid("usage: :supervise [on|off]".into())),
+                },
+                "review" => {
+                    if self.proposals.is_empty() {
+                        Ok("no pending proposals".into())
+                    } else {
+                        self.overlay = Overlay::Review;
+                        self.overlay_scroll = 0;
+                        Ok(String::new())
+                    }
+                }
                 "wq" => {
                     // Quit only when the write succeeded (`:q!` leaves anyway).
                     self.save()?;
@@ -2220,6 +2279,163 @@ impl App {
         }
     }
 
+    /// Entry point of the event loop: answers now, or (supervised mode and a
+    /// mutating method) parks the request as a proposal until the presenter
+    /// decides. `supervise.*` and read-only methods are never parked.
+    pub fn handle_ipc(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
+        let parked = self.supervised
+            && !READ_ONLY_METHODS.contains(&req.method.as_str())
+            && !req.method.starts_with("supervise.");
+        if !parked {
+            let _ = reply.send(self.handle_request(req));
+            return;
+        }
+        let summary = proposal_summary(&req);
+        let id = self.next_proposal;
+        self.next_proposal += 1;
+        self.proposals.push(Proposal {
+            id,
+            req,
+            reply,
+            since: std::time::Instant::now(),
+            summary,
+        });
+        if !self.present && self.overlay == Overlay::None {
+            self.overlay = Overlay::Review;
+            self.overlay_scroll = 0;
+        }
+        self.info(format!(
+            "{} proposal{} waiting for review (y accept, n reject; :review)",
+            self.proposals.len(),
+            if self.proposals.len() == 1 { "" } else { "s" }
+        ));
+    }
+
+    /// Applies the first pending proposal (`y`).
+    pub fn accept_proposal(&mut self) -> Option<String> {
+        if self.proposals.is_empty() {
+            return None;
+        }
+        let p = self.proposals.remove(0);
+        let resp = self.handle_request(p.req);
+        let ok = resp.error.is_none();
+        let _ = p.reply.send(resp);
+        self.decided.0 += 1;
+        self.close_review_if_empty();
+        Some(if ok {
+            format!("accepted p{}: {}", p.id, p.summary)
+        } else {
+            format!("p{} accepted but failed: {}", p.id, p.summary)
+        })
+    }
+
+    /// Rejects the first pending proposal (`n`): the agent gets a `rejected` error.
+    pub fn reject_proposal(&mut self) -> Option<String> {
+        if self.proposals.is_empty() {
+            return None;
+        }
+        let p = self.proposals.remove(0);
+        let _ = p.reply.send(Response::err(
+            p.req.id.clone(),
+            "rejected",
+            "the presenter rejected this change (supervised mode)",
+        ));
+        self.decided.1 += 1;
+        self.close_review_if_empty();
+        Some(format!("rejected p{}: {}", p.id, p.summary))
+    }
+
+    pub fn accept_all_proposals(&mut self) -> usize {
+        let mut n = 0;
+        while self.accept_proposal().is_some() {
+            n += 1;
+        }
+        n
+    }
+
+    pub fn reject_all_proposals(&mut self) -> usize {
+        let mut n = 0;
+        while self.reject_proposal().is_some() {
+            n += 1;
+        }
+        n
+    }
+
+    fn close_review_if_empty(&mut self) {
+        if self.proposals.is_empty() && self.overlay == Overlay::Review {
+            self.overlay = Overlay::None;
+            self.overlay_scroll = 0;
+        }
+    }
+
+    /// Expires proposals older than `PROPOSAL_TIMEOUT` (called every tick).
+    /// Returns true when something changed.
+    pub fn expire_proposals(&mut self) -> bool {
+        let mut expired = Vec::new();
+        self.proposals.retain(|p| {
+            if p.since.elapsed() >= PROPOSAL_TIMEOUT {
+                expired.push((p.id, p.req.id.clone(), p.reply.clone()));
+                false
+            } else {
+                true
+            }
+        });
+        if expired.is_empty() {
+            return false;
+        }
+        for (pid, rid, reply) in &expired {
+            let _ = reply.send(Response::err(
+                rid.clone(),
+                "rejected",
+                format!(
+                    "proposal p{pid} expired after {}s without a decision (supervised mode)",
+                    PROPOSAL_TIMEOUT.as_secs()
+                ),
+            ));
+            self.decided.1 += 1;
+        }
+        self.close_review_if_empty();
+        self.info(format!(
+            "{} proposal{} expired without a decision",
+            expired.len(),
+            if expired.len() == 1 { "" } else { "s" }
+        ));
+        true
+    }
+
+    /// Turns supervised mode on or off. Turning it off applies nothing by
+    /// itself: pending proposals are rejected so no change sneaks in.
+    pub fn set_supervised(&mut self, on: bool) -> String {
+        if self.supervised == on {
+            return format!("supervised mode already {}", if on { "on" } else { "off" });
+        }
+        self.supervised = on;
+        self.revision += 1;
+        if on {
+            "supervised mode on: agent changes wait for y/n (:review lists them)".into()
+        } else {
+            let n = self.reject_all_proposals();
+            if n > 0 {
+                format!(
+                    "supervised mode off; {n} pending proposal{} rejected",
+                    if n == 1 { "" } else { "s" }
+                )
+            } else {
+                "supervised mode off".into()
+            }
+        }
+    }
+
+    pub fn supervise_status(&self) -> Value {
+        json!({
+            "supervised": self.supervised,
+            "pending": self.proposals.iter().map(|p| json!({"id": p.id, "method": p.req.method, "summary": p.summary, "age_ms": p.since.elapsed().as_millis() as u64})).collect::<Vec<_>>(),
+            "accepted": self.decided.0,
+            "rejected": self.decided.1,
+            "timeout_secs": PROPOSAL_TIMEOUT.as_secs(),
+        })
+    }
+
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, Error> {
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
             serde_json::from_value(v)
@@ -2335,6 +2551,17 @@ impl App {
                 "builtin": BUILTIN_KINDS.iter().map(|(k, g, l, c)| json!({"kind": k, "glyph": g, "legend": l, "color": c})).collect::<Vec<_>>(),
                 "aliases": codedraw_core::model::KIND_ALIASES.iter().map(|(a, k)| json!({"alias": a, "kind": k})).collect::<Vec<_>>(),
             }),
+            "supervise.set" => {
+                let on = params
+                    .get("enabled")
+                    .and_then(|v| v.as_bool())
+                    .ok_or_else(|| Error::Invalid("`enabled` (true|false) is required".into()))?;
+                let msg = self.set_supervised(on);
+                let mut st = self.supervise_status();
+                st["message"] = json!(msg);
+                st
+            }
+            "supervise.status" => self.supervise_status(),
             "scene.put" => {
                 let p: PutParams = parse(params)?;
                 serde_json::to_value(self.put_scene(p.document)?)?
@@ -2441,6 +2668,8 @@ impl App {
             cols: self.size.0,
             rows: self.size.1,
             warnings: self.viewport_warnings(),
+            supervised: self.supervised,
+            pending: self.proposals.len(),
         }
     }
 
@@ -2511,6 +2740,71 @@ fn parse_emphasis(v: &str) -> Result<Emphasis, Error> {
             "unknown emphasis: {v} (fill, underline, brackets, strike)"
         ))
     })
+}
+
+/// One line describing an agent request for the review overlay.
+pub fn proposal_summary(req: &Request) -> String {
+    let p = &req.params;
+    let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let n = |k: &str| p.get(k).and_then(|v| v.as_u64());
+    let place = |k: &str| -> String {
+        match p.get(k) {
+            Some(w) if w.is_object() => {
+                if let Some(f) = w.get("find").and_then(|v| v.as_str()) {
+                    format!("«{f}»")
+                } else if let Some(l) = w.get("line").and_then(|v| v.as_u64()) {
+                    format!("L{l}")
+                } else {
+                    "?".into()
+                }
+            }
+            _ => String::new(),
+        }
+    };
+    let text = |k: &str| {
+        let t = s(k);
+        if t.is_empty() {
+            String::new()
+        } else {
+            format!(" «{}»", t.chars().take(40).collect::<String>())
+        }
+    };
+    match req.method.as_str() {
+        "annotation.add" => {
+            let kind = s("type");
+            let at = match kind.as_str() {
+                "box" | "callout" | "spotlight" => match (n("from_line"), n("to_line")) {
+                    (Some(a), Some(b)) => format!("L{a}-{b}"),
+                    (Some(a), None) => format!("L{a}"),
+                    _ => String::new(),
+                },
+                "note" => n("line").map(|l| format!("L{l}")).unwrap_or_default(),
+                "arrow" => format!("{} → {}", place("from"), place("to")),
+                _ => place("at"),
+            };
+            let what = match kind.as_str() {
+                "mark" => format!("mark {}", s("kind")),
+                k => k.to_string(),
+            };
+            format!("add {what} {at}{}", text("label") + &text("text"))
+        }
+        "annotation.update" => format!("update {}{}", s("id"), text("label")),
+        "annotation.delete" => format!("delete {}", s("id")),
+        "scene.clear" => match n("step") {
+            Some(st) => format!("clear step {st}"),
+            None => "clear every annotation".into(),
+        },
+        "scene.put" => "replace the whole document".into(),
+        "scene.patch" => "patch the document".into(),
+        "style.set" => format!("define style {}", s("name")),
+        "step.set" => format!("go to step {}", n("step").unwrap_or(0)),
+        "step.next" => "next step".into(),
+        "step.prev" => "previous step".into(),
+        "focus.set" => "change the focus".into(),
+        "theme.set" => format!("theme {}", s("theme")),
+        "follow.set" => "toggle follow mode".into(),
+        other => other.to_string(),
+    }
 }
 
 /// Image formats `:export` can ask the binary for.

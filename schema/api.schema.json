@@ -68,6 +68,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "pending": {
+            "description": "Proposals waiting for a decision.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
           "protocol": {
             "format": "uint32",
             "minimum": 0,
@@ -88,6 +94,10 @@
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "supervised": {
+            "description": "Supervised mode: mutations wait for the presenter's approval.",
+            "type": "boolean"
           },
           "version": {
             "type": "string"
@@ -3356,6 +3366,185 @@
           "enabled"
         ],
         "title": "FollowStatus",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Turns supervised mode on or off (`enabled`): while on, every mutating request waits for the presenter's y/n in the TUI (60 s, then `rejected`); turning it off rejects what is pending",
+      "method": "supervise.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `supervise.set`.",
+        "properties": {
+          "enabled": {
+            "description": "`true`: every mutating request waits for the presenter's y/n.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "SuperviseParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "PendingProposal": {
+            "properties": {
+              "age_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "method": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "method",
+              "summary",
+              "age_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `supervise.set` / `supervise.status`.",
+        "properties": {
+          "accepted": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending": {
+            "description": "Proposals waiting for a decision: `{id, method, summary, age_ms}`.",
+            "items": {
+              "$ref": "#/$defs/PendingProposal"
+            },
+            "type": "array"
+          },
+          "rejected": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "supervised": {
+            "type": "boolean"
+          },
+          "timeout_secs": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "supervised",
+          "pending",
+          "accepted",
+          "rejected",
+          "timeout_secs"
+        ],
+        "title": "SuperviseStatus",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Supervised mode state: enabled, pending proposals, accepted/rejected counts",
+      "method": "supervise.status",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "PendingProposal": {
+            "properties": {
+              "age_ms": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "id": {
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "method": {
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "method",
+              "summary",
+              "age_ms"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `supervise.set` / `supervise.status`.",
+        "properties": {
+          "accepted": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending": {
+            "description": "Proposals waiting for a decision: `{id, method, summary, age_ms}`.",
+            "items": {
+              "$ref": "#/$defs/PendingProposal"
+            },
+            "type": "array"
+          },
+          "rejected": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "supervised": {
+            "type": "boolean"
+          },
+          "timeout_secs": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "supervised",
+          "pending",
+          "accepted",
+          "rejected",
+          "timeout_secs"
+        ],
+        "title": "SuperviseStatus",
         "type": "object"
       }
     }

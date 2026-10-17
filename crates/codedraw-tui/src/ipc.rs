@@ -105,7 +105,11 @@ fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {
 /// Minimal client: one request, one response. Used by the CLI and the MCP bridge.
 pub fn call(path: &Path, method: &str, params: Value) -> std::io::Result<Response> {
     let mut stream = UnixStream::connect(path)?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+    // Longer than the supervised-mode proposal timeout: a parked request is
+    // answered (accepted, rejected or expired) before the client gives up.
+    stream.set_read_timeout(Some(
+        crate::app::PROPOSAL_TIMEOUT + std::time::Duration::from_secs(15),
+    ))?;
     let req = Request {
         id: Value::from(1),
         method: method.to_string(),
