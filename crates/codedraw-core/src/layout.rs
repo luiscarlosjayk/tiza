@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::canvas::{Canvas, CellStyle, Rgb, display_width};
-use crate::highlight::{Segment, highlight};
+use crate::highlight::{Segment, highlight_cached};
 use crate::model::{Annotation, Document, Emphasis, Shape, TextSpan};
 use crate::theme::Theme;
 
@@ -513,7 +513,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 
     let base = theme.base();
     let mut canvas = Canvas::new_filled(width, rows.len(), base);
-    let segments = highlight(&doc.code, &doc.source.language, theme.syntax);
+    let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
 
     // Margin labels per row.
     let mut margin: Vec<Vec<Label>> = vec![Vec::new(); rows.len()];

@@ -466,6 +466,7 @@ dependencies = [
  "proptest",
  "ratatui",
  "serde_json",
+ "two-face",
 ]
 
 [[package]]

@@ -71,16 +71,111 @@ impl CellStyle {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cell {
     /// Grapheme occupying the cell; empty if the cell is the second half of a wide character.
-    pub sym: String,
+    pub sym: Sym,
     pub style: CellStyle,
 }
 
 impl Default for Cell {
     fn default() -> Self {
         Self {
-            sym: " ".to_string(),
+            sym: Sym::SPACE,
             style: CellStyle::default(),
         }
+    }
+}
+
+/// One grapheme cluster, stored inline (no heap allocation) when it fits in
+/// 22 bytes — every box-drawing glyph, ASCII, CJK and nearly every emoji do. A
+/// 2,000-line document is ~250,000 cells, so a `String` per cell was ~10 ms
+/// of allocation per frame (t-054).
+#[derive(Clone, PartialEq, Eq)]
+pub enum Sym {
+    Inline { len: u8, bytes: [u8; 22] },
+    Heap(Box<str>),
+}
+
+impl Sym {
+    pub const SPACE: Sym = Sym::Inline {
+        len: 1,
+        bytes: [
+            b' ', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        ],
+    };
+    pub const EMPTY: Sym = Sym::Inline {
+        len: 0,
+        bytes: [0; 22],
+    };
+
+    pub fn new(s: &str) -> Sym {
+        if s.len() <= 22 {
+            let mut bytes = [0u8; 22];
+            bytes[..s.len()].copy_from_slice(s.as_bytes());
+            Sym::Inline {
+                len: s.len() as u8,
+                bytes,
+            }
+        } else {
+            Sym::Heap(s.into())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            // The bytes came from a `&str` prefix of exactly `len` bytes.
+            Sym::Inline { len, bytes } => {
+                std::str::from_utf8(&bytes[..*len as usize]).unwrap_or("")
+            }
+            Sym::Heap(s) => s,
+        }
+    }
+}
+
+impl Default for Sym {
+    fn default() -> Self {
+        Sym::SPACE
+    }
+}
+
+impl std::ops::Deref for Sym {
+    type Target = str;
+    fn deref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl From<&str> for Sym {
+    fn from(s: &str) -> Sym {
+        Sym::new(s)
+    }
+}
+
+impl From<String> for Sym {
+    fn from(s: String) -> Sym {
+        Sym::new(&s)
+    }
+}
+
+impl PartialEq<str> for Sym {
+    fn eq(&self, other: &str) -> bool {
+        self.as_str() == other
+    }
+}
+
+impl PartialEq<&str> for Sym {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl std::fmt::Debug for Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self.as_str(), f)
+    }
+}
+
+impl std::fmt::Display for Sym {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -127,18 +222,18 @@ impl Canvas {
         if w == 2 && x + 1 >= self.width {
             // Does not fit whole: leave a space.
             self.cells[i] = Cell {
-                sym: " ".into(),
+                sym: Sym::SPACE,
                 style,
             };
             return w;
         }
         self.cells[i] = Cell {
-            sym: sym.to_string(),
+            sym: Sym::new(sym),
             style,
         };
         if w == 2 {
             self.cells[i + 1] = Cell {
-                sym: String::new(),
+                sym: Sym::EMPTY,
                 style,
             };
         }

@@ -2327,10 +2327,20 @@ impl App {
         if cols == 0 || rows == 0 {
             return Vec::new();
         }
-        let mut out = Vec::new();
         let (_, pad_h) = self.effective_padding();
         let width = (cols as usize).saturating_sub(2 * pad_h as usize);
         let l = self.layout(width.max(1));
+        self.viewport_warnings_for(&l)
+    }
+
+    /// `viewport_warnings` for a layout already computed this frame (the
+    /// status bar must not lay the document out a second time).
+    pub fn viewport_warnings_for(&self, l: &Layout) -> Vec<String> {
+        let (cols, rows) = self.size;
+        if cols == 0 || rows == 0 {
+            return Vec::new();
+        }
+        let mut out = Vec::new();
         if let Some(w) = l.clipped_code {
             out.push(format!("code clipped ({w} cols)"));
         }

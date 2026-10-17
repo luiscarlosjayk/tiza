@@ -2,6 +2,7 @@
 //! status line, the command line and the overlays.
 
 use codedraw_core::canvas::{Canvas, CellStyle, Rgb};
+use codedraw_core::layout::Layout;
 use codedraw_core::protocol::describe;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
@@ -255,6 +256,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         draw_status(
             frame,
             app,
+            &layout,
             Rect {
                 x: area.x,
                 y: area.y + area.height - 1,
@@ -277,7 +279,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
-fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
+fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     let th = &app.theme;
     let bar = Style::default().fg(rgb(th.status_fg)).bg(rgb(th.status_bg));
     let accent = Style::default()
@@ -381,7 +383,7 @@ fn draw_status(frame: &mut Frame, app: &App, area: Rect) {
         };
         left.push(Span::styled(text, accent));
     }
-    let warnings = app.viewport_warnings();
+    let warnings = app.viewport_warnings_for(layout);
     if let Some(w) = warnings.first() {
         // Short form on the bar; the full text is in `status.warnings`.
         let short = if w.starts_with("code clipped") {

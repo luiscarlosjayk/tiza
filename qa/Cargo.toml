@@ -25,3 +25,4 @@ crossterm.workspace = true
 insta.workspace = true
 jsonschema.workspace = true
 proptest.workspace = true
+two-face.workspace = true

@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Changed
+- Render budget (t-054): a frame with 2,000 lines and 200 annotations went from ~220 ms to ~7 ms in release. Syntax highlighting is memoized (`highlight::highlight_cached`, last four results), the status bar reuses the frame's layout instead of computing a second one (`App::viewport_warnings_for`), and canvas cells store their grapheme inline (`canvas::Sym`, no `String` per cell). `qa/tests/t-054.rs` asserts the budget (16 ms release / 250 ms debug).
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 
 ### Fixed

@@ -1,6 +1,6 @@
 //! Syntax highlighting with syntect + two-face (bat's grammars, including TypeScript and TOML).
 
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use syntect::easy::HighlightLines;
 use syntect::parsing::SyntaxSet;
@@ -240,6 +240,36 @@ fn language_from_modeline(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Highlighted lines shared between frames (see `highlight_cached`).
+pub type Highlighted = Arc<Vec<Vec<Segment>>>;
+
+/// `highlight` with a small memo: the TUI lays out the same code on every
+/// frame and syntect costs ~50 µs per line, so re-highlighting 2,000 lines
+/// each frame would eat the whole budget. Keyed by a hash of (code, language,
+/// theme); the last four results are kept (TUI + MCP bridge + exports).
+pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeName) -> Highlighted {
+    use std::hash::{Hash, Hasher};
+    static CACHE: Mutex<Vec<(u64, Highlighted)>> = Mutex::new(Vec::new());
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    code.hash(&mut h);
+    language.hash(&mut h);
+    (theme as u32).hash(&mut h);
+    code.len().hash(&mut h);
+    let key = h.finish();
+    if let Ok(cache) = CACHE.lock()
+        && let Some((_, v)) = cache.iter().find(|(k, _)| *k == key)
+    {
+        return v.clone();
+    }
+    let fresh = Arc::new(highlight(code, language, theme));
+    if let Ok(mut cache) = CACHE.lock() {
+        cache.retain(|(k, _)| *k != key);
+        cache.insert(0, (key, fresh.clone()));
+        cache.truncate(4);
+    }
+    fresh
 }
 
 /// Highlights every line. If the language is unknown, returns plain text.
