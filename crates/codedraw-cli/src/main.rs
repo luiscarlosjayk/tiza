@@ -82,6 +82,10 @@ enum Format {
     Md,
     Svg,
     Png,
+    /// asciicast v3 recording of every step (asciinema, agg → GIF)
+    Cast,
+    /// VHS tape that drives the real binary through every step (vhs → GIF/MP4)
+    Tape,
 }
 
 #[derive(Subcommand)]
@@ -128,6 +132,15 @@ enum Cmd {
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
+        /// .cast/.tape: seconds each step stays on screen
+        #[arg(long, default_value_t = 2.0)]
+        interval: f64,
+        /// .cast/.tape: start at the first annotated step instead of step 0 (code only)
+        #[arg(long)]
+        skip_zero: bool,
+        /// .cast/.tape: recording title (default: the document's)
+        #[arg(long)]
+        title: Option<String>,
     },
     /// Start the MCP server (stdio) that controls the live instance
     Mcp,
@@ -207,6 +220,9 @@ fn real_main() -> anyhow::Result<()> {
             scale,
             no_embed_fonts,
             system_fonts,
+            interval,
+            skip_zero,
+            title,
         }) => {
             let format = format.unwrap_or_else(|| {
                 match std::path::Path::new(&out)
@@ -219,6 +235,8 @@ fn real_main() -> anyhow::Result<()> {
                     Some("png") => Format::Png,
                     Some("ansi") | Some("ans") => Format::Ansi,
                     Some("md") | Some("markdown") => Format::Md,
+                    Some("cast") => Format::Cast,
+                    Some("tape") => Format::Tape,
                     _ => Format::Txt,
                 }
             });
@@ -289,6 +307,31 @@ fn real_main() -> anyhow::Result<()> {
                 Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
                 Format::Ansi => l.canvas.to_ansi().into_bytes(),
                 Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
+                Format::Cast | Format::Tape => {
+                    let opts = codedraw_core::cast::CastOptions {
+                        interval,
+                        width,
+                        rows: None,
+                        line_numbers: !no_numbers,
+                        title: title.clone(),
+                        from_zero: !skip_zero,
+                    };
+                    if format == Format::Cast {
+                        codedraw_core::cast::to_asciicast(&doc, &theme, &opts).into_bytes()
+                    } else {
+                        let document_path = file.clone().unwrap_or_else(|| "scene.codedraw".into());
+                        let gif = if out == "-" {
+                            "demo.gif".to_string()
+                        } else {
+                            std::path::Path::new(&out)
+                                .with_extension("gif")
+                                .to_string_lossy()
+                                .into_owned()
+                        };
+                        codedraw_core::cast::to_vhs_tape(&doc, &document_path, &gif, &opts)
+                            .into_bytes()
+                    }
+                }
                 Format::Svg | Format::Png => {
                     let svg_opts = codedraw_export::SvgOptions {
                         font_size,

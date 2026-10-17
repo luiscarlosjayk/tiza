@@ -8,6 +8,7 @@
 //! - [`history`][]: undo/redo.
 
 pub mod canvas;
+pub mod cast;
 pub mod error;
 pub mod fs;
 pub mod highlight;

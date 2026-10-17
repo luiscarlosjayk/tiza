@@ -101,7 +101,7 @@ New annotations appear at the current step. The `.codedraw` references the sourc
 
 **Follow mode** (`--follow` or `:follow on`) watches the source file's folder (Zed saves with a temp file + rename) and reloads the code about 120 ms after the last write, so you can edit in the editor while the TUI shows the result. Annotations are re-anchored by the text they point at, like a paste: a line diff matches the two versions in order (so a note on the second `}` stays on the second `}`), then the same occurrence of the span inside the line; a block moved elsewhere is followed when its line is unique and within 50 lines, a box or callout whose edge line you edited keeps its height, and the ones whose text is gone are dropped with a message — never moved to another copy — and `u` undoes the whole reload. The status line shows `⟳ following · last HH:MM:SSZ`; a removed file shows `waiting` until it comes back, an empty intermediate write is skipped, and embedded documents have nothing to follow (`:link path` first). Agents get the same through `follow.set` / `follow.status` and the MCP tool `set_follow`.
 
-## Export to text, Markdown, ANSI, SVG or PNG
+## Export to text, Markdown, ANSI, SVG, PNG, asciicast or VHS
 
 ```sh
 codedraw render demo.codedraw --out thumb.png --step 3          # PNG at 2× (thumbnails, posts)
@@ -109,7 +109,11 @@ codedraw render demo.codedraw --out figure.svg --theme light     # SVG with the 
 codedraw render --out shot.png                                   # what the live instance shows right now
 codedraw render demo.codedraw --out notes.md --step 2            # fenced code block for a README, an issue or a chat
 codedraw render demo.codedraw --out - --format ansi | less -R    # 24-bit ANSI, no trailing spaces
+codedraw render demo.codedraw --out demo.cast --interval 3       # asciicast v3 of every step (asciinema, agg)
+codedraw render demo.codedraw --out demo.tape && vhs demo.tape   # VHS tape → demo.gif
 ```
+
+Two more outputs record every step as an animation, generated without a pty or any external tool: `--out demo.cast` writes an [asciicast v3](https://docs.asciinema.org/manual/asciicast/v3/) (play it with `asciinema play demo.cast`, embed it with the asciinema web player, or turn it into a GIF with [agg](https://github.com/asciinema/agg)); `--out demo.tape` writes a [VHS](https://github.com/charmbracelet/vhs) tape that runs the real TUI in presentation mode and presses `n` through the steps (`vhs demo.tape` needs `vhs`, `ttyd` and `ffmpeg` and produces `demo.gif`). Both start at step 0 (code only) and stay `--interval` seconds (2) on each step; `--skip-zero` and `--title` adjust them.
 
 The text formats keep the box-drawing characters as they are on screen (`.txt`: plain, no trailing spaces or blank rows; `.md`: the same inside a ```` ```text ```` block with the document title above; `.ansi`: 24-bit colors with a reset per line, for `cat`, `less -R` or a terminal-recording tool). Inside the TUI, `:export shot.md` (or `.txt`, `.ansi`, `.svg`, `.png`, with `step=`, `width=`, `theme=`) writes the same next to the document.
 
