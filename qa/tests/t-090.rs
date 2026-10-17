@@ -8,8 +8,8 @@
 //! - AC4 Padding is clamped so the code column never shrinks below 20 cells
 //!   and the status line stays visible.
 
-use codedraw_qa::Live;
 use crossterm::event::KeyCode;
+use tiza_qa::Live;
 
 #[test]
 fn ac1_default_padding_is_one_column_and_pad_changes_it() {

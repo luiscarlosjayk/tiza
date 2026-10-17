@@ -53,7 +53,7 @@ jobs:
           path: test.log
           retention-days: 7
       - name: smoke render
-        run: cargo run -q -- render examples/ownership.rs.codedraw --width 100 --step 5
+        run: cargo run -q -- render examples/ownership.rs.tiza --width 100 --step 5
       - name: smoke TUI (stdin piped, keys from /dev/tty)
         # `script` gives the job a pseudo-terminal; stdin stays a pipe, so
         # crossterm has to open /dev/tty (feature use-dev-tty). One frame, exit 0.
@@ -61,9 +61,9 @@ jobs:
         run: |
           cargo build -q
           if [ "$RUNNER_OS" = "macOS" ]; then
-            script -q /dev/null bash -c 'cat examples/ownership.rs | ./target/debug/codedraw --smoke --no-socket'
+            script -q /dev/null bash -c 'cat examples/ownership.rs | ./target/debug/tiza --smoke --no-socket'
           else
-            script -qec 'cat examples/ownership.rs | ./target/debug/codedraw --smoke --no-socket' /dev/null
+            script -qec 'cat examples/ownership.rs | ./target/debug/tiza --smoke --no-socket' /dev/null
           fi
 
   schema:
@@ -100,9 +100,9 @@ jobs:
       - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
       - run: cargo build -q
       - name: dark theme, step 7
-        run: python3 scripts/legibility.py examples/ownership.rs.codedraw --step 7 --theme dark --json legibility-dark.json --keep frames-dark
+        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme dark --json legibility-dark.json --keep frames-dark
       - name: light theme, step 7
-        run: python3 scripts/legibility.py examples/ownership.rs.codedraw --step 7 --theme light --json legibility-light.json --keep frames-light
+        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme light --json legibility-light.json --keep frames-light
       - uses: actions/upload-artifact@v4
         if: always()
         with:

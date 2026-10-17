@@ -2,7 +2,7 @@
 //! document's steps.
 //!
 //! Acceptance criteria:
-//! - AC1 `codedraw render FILE --out x.cast` writes asciicast v3: a JSON
+//! - AC1 `tiza render FILE --out x.cast` writes asciicast v3: a JSON
 //!   header (`version: 3`, `term.cols` = width, `term.rows` = tallest frame,
 //!   title from the document or `--title`), then one `"m"` marker and one
 //!   `"o"` frame per step from 0 (code only) to the last, each frame clearing
@@ -18,13 +18,11 @@
 //! - AC4 Neither format needs a pty, vhs, ttyd or ffmpeg to be *generated*;
 //!   the README says what is needed to *play* them.
 
-use codedraw_qa::{Live, codedraw_ok, example, scratch};
 use serde_json::Value;
+use tiza_qa::{Live, example, scratch, tiza_ok};
 
 fn ownership() -> String {
-    example("ownership.rs.codedraw")
-        .to_string_lossy()
-        .into_owned()
+    example("ownership.rs.tiza").to_string_lossy().into_owned()
 }
 
 fn parse_cast(text: &str) -> (Value, Vec<Value>) {
@@ -38,7 +36,7 @@ fn parse_cast(text: &str) -> (Value, Vec<Value>) {
 fn ac1_cast_has_one_frame_per_step_and_replays_without_scrolling() {
     let dir = scratch("t051-cast");
     let out = dir.join("own.cast");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         &ownership(),
         "--out",
@@ -54,7 +52,7 @@ fn ac1_cast_has_one_frame_per_step_and_replays_without_scrolling() {
     let rows = header["term"]["rows"].as_u64().unwrap() as usize;
     let frames: Vec<&Value> = events.iter().filter(|e| e[1] == "o").collect();
     let markers: Vec<&Value> = events.iter().filter(|e| e[1] == "m").collect();
-    let doc = codedraw_core::fs::open(&ownership()).unwrap().document;
+    let doc = tiza_core::fs::open(&ownership()).unwrap().document;
     let steps = doc.max_step() as usize + 1;
     assert_eq!(frames.len(), steps, "step 0 … {}", doc.max_step());
     assert_eq!(markers.len(), steps);
@@ -92,7 +90,7 @@ fn ac1_cast_has_one_frame_per_step_and_replays_without_scrolling() {
 
     // --interval, --title, --skip-zero, --theme.
     let out2 = dir.join("own2.cast");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         &ownership(),
         "--out",
@@ -157,7 +155,7 @@ print("ALL:" + "|".join(r.rstrip() for r in screen.display))
 fn ac2_tape_drives_the_real_binary() {
     let dir = scratch("t051-tape");
     let out = dir.join("own.tape");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         &ownership(),
         "--out",
@@ -166,14 +164,14 @@ fn ac2_tape_drives_the_real_binary() {
         "1",
     ]);
     let tape = std::fs::read_to_string(&out).unwrap();
-    let doc = codedraw_core::fs::open(&ownership()).unwrap().document;
+    let doc = tiza_core::fs::open(&ownership()).unwrap().document;
     assert!(
         tape.contains(&format!("Output {}", dir.join("own.gif").display())),
         "{tape}"
     );
     assert!(
         tape.contains(&format!(
-            "Type \"codedraw {} --present --no-socket --step 0\"",
+            "Type \"tiza {} --present --no-socket --step 0\"",
             ownership()
         )),
         "{tape}"
@@ -188,10 +186,10 @@ fn ac2_tape_drives_the_real_binary() {
     assert!(tape.trim_end().ends_with("Type \"q\""));
     assert!(tape.contains("# Ownership in Rust"));
     // A path with a space is quoted for the shell.
-    let spaced = dir.join("my demo.codedraw");
+    let spaced = dir.join("my demo.tiza");
     std::fs::copy(ownership(), &spaced).unwrap();
     std::fs::copy(example("ownership.rs"), dir.join("ownership.rs")).unwrap();
-    let t2 = codedraw_ok(&[
+    let t2 = tiza_ok(&[
         "render",
         spaced.to_str().unwrap(),
         "--out",
@@ -200,7 +198,7 @@ fn ac2_tape_drives_the_real_binary() {
         "tape",
     ]);
     assert!(
-        t2.contains(&format!("Type \"codedraw '{}' --present", spaced.display())),
+        t2.contains(&format!("Type \"tiza '{}' --present", spaced.display())),
         "{t2}"
     );
     assert!(t2.contains("Output demo.gif"), "stdout tape names demo.gif");
@@ -208,7 +206,7 @@ fn ac2_tape_drives_the_real_binary() {
 
 #[test]
 fn ac3_format_flag_stdout_and_live_instance() {
-    let cast = codedraw_ok(&[
+    let cast = tiza_ok(&[
         "render",
         &ownership(),
         "--out",
@@ -224,7 +222,7 @@ fn ac3_format_flag_stdout_and_live_instance() {
     // A .cast extension on a path with another case still works.
     let dir = scratch("t051-ext");
     let out = dir.join("X.CAST");
-    codedraw_ok(&["render", &ownership(), "--out", out.to_str().unwrap()]);
+    tiza_ok(&["render", &ownership(), "--out", out.to_str().unwrap()]);
     assert!(
         std::fs::read_to_string(&out)
             .unwrap()
@@ -235,7 +233,7 @@ fn ac3_format_flag_stdout_and_live_instance() {
     live.command("note 1 one");
     live.command("step 2");
     live.command("note 2 two");
-    let text = codedraw_ok(&[
+    let text = tiza_ok(&[
         "--socket",
         live.socket.to_str().unwrap(),
         "render",

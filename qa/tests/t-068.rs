@@ -1,9 +1,9 @@
-//! t-068 — Brand typography in SVG/PNG exports: CodeDraw Serif (a Libron
+//! t-068 — Brand typography in SVG/PNG exports: Tiza Serif (a Libron
 //! subset, OFL) for notes, labels and legends; monospace for code, boxes and
 //! arrows.
 //!
 //! Acceptance criteria:
-//! - AC1 The SVG embeds four CodeDraw Serif faces (Regular, Bold, Italic,
+//! - AC1 The SVG embeds four Tiza Serif faces (Regular, Bold, Italic,
 //!   Bold Italic) next to JetBrains Mono and the symbols font; prose runs
 //!   (margin labels, notes, legends, under-line labels) carry class `p`, no
 //!   `textLength` (natural width) and the serif family first; code, line
@@ -20,10 +20,10 @@
 //! - AC5 Fonts README and ADR 0006 record the subset, the OFL renaming
 //!   ("Libron" is a Reserved Font Name) and the recommended terminal pairing.
 
-use codedraw_qa::{codedraw_ok, example, fixture, scratch};
+use tiza_qa::{example, fixture, scratch, tiza_ok};
 
 fn svg(args: &[&str]) -> String {
-    let f = example("ownership.rs.codedraw");
+    let f = example("ownership.rs.tiza");
     let mut full = vec![
         "render",
         f.to_str().unwrap(),
@@ -37,7 +37,7 @@ fn svg(args: &[&str]) -> String {
         "100",
     ];
     full.extend_from_slice(args);
-    codedraw_ok(&full)
+    tiza_ok(&full)
 }
 
 fn texts(svg: &str) -> Vec<&str> {
@@ -56,15 +56,11 @@ fn ac1_serif_faces_and_prose_runs() {
         "font-weight:700;font-style:italic",
     ] {
         assert!(
-            s.contains(&format!(
-                "@font-face{{font-family:\"CodeDraw Serif\";{face}"
-            )),
+            s.contains(&format!("@font-face{{font-family:\"Tiza Serif\";{face}")),
             "{face}"
         );
     }
-    assert!(
-        s.contains(".p{font-family:\"CodeDraw Serif\",\"JetBrains Mono\",\"CodeDraw Symbols\"")
-    );
+    assert!(s.contains(".p{font-family:\"Tiza Serif\",\"JetBrains Mono\",\"Tiza Symbols\""));
     let runs = texts(&s);
     let born = runs
         .iter()
@@ -145,15 +141,15 @@ fn ac3_mono_labels_flag_and_terminal_unaffected() {
     assert!(!s.contains("class=\"p"), "no prose runs");
     assert!(!s.contains(".p{"), "no prose style");
     assert!(
-        s.contains("@font-face{font-family:\"CodeDraw Serif\""),
+        s.contains("@font-face{font-family:\"Tiza Serif\""),
         "faces still embedded (same binary)"
     );
     let runs = texts(&s);
     let born = runs.iter().find(|t| t.contains(">s is born<")).unwrap();
     assert!(born.contains("textLength"));
     // The text export is byte-identical with or without the brand font.
-    let f = example("ownership.rs.codedraw");
-    let a = codedraw_ok(&[
+    let f = example("ownership.rs.tiza");
+    let a = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -163,7 +159,7 @@ fn ac3_mono_labels_flag_and_terminal_unaffected() {
         "--width",
         "100",
     ]);
-    let b = codedraw_ok(&[
+    let b = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -180,10 +176,10 @@ fn ac3_mono_labels_flag_and_terminal_unaffected() {
 #[test]
 fn ac4_png_uses_the_serif() {
     let dir = scratch("t068-png");
-    let f = fixture("t-050/export.codedraw");
+    let f = fixture("t-050/export.tiza");
     let serif = dir.join("serif.png");
     let mono = dir.join("mono.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -193,7 +189,7 @@ fn ac4_png_uses_the_serif() {
         "--scale",
         "1",
     ]);
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -215,19 +211,20 @@ fn ac5_docs_record_license_and_pairing() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let fonts =
-        std::fs::read_to_string(root.join("crates/codedraw-export/fonts/README.md")).unwrap();
+    let fonts = std::fs::read_to_string(root.join("crates/tiza-export/fonts/README.md")).unwrap();
     assert!(
-        fonts.contains("CodeDraw Serif")
+        fonts.contains("Tiza Serif")
             && fonts.contains("Libron")
             && fonts.contains("Reserved Font Name")
     );
     assert!(
-        root.join("crates/codedraw-export/assets/fonts/LICENSE-CodeDrawSerif-Libron-OFL.txt")
+        root.join("crates/tiza-export/assets/fonts/LICENSE-TizaSerif-Libron-OFL.txt")
             .exists()
     );
+    // ADR 0006 predates the rename to Tiza (ADR 0008): it records the font
+    // under its first name and carries the rename note at the top.
     let adr = std::fs::read_to_string(root.join("docs/adr/0006-exportacion-svg-png.md")).unwrap();
-    assert!(adr.contains("CodeDraw Serif"));
+    assert!(adr.contains("CodeDraw Serif") && adr.contains("ADR 0008"));
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(readme.contains("--mono-labels"));
 }

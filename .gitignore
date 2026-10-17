@@ -1,4 +1,4 @@
 /target
-*.codedraw.tmp
-*.codedraw~
+*.tiza.tmp
+*.tiza~
 .DS_Store

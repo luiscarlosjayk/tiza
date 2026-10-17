@@ -3,14 +3,14 @@
 //! - AC1 The override is shown but never saved; `:pad` sets the document and clears it.
 //! - AC2 `:pad` reports clamping when the terminal is too small.
 
-use codedraw_qa::{Live, scratch};
+use tiza_qa::{Live, scratch};
 
 #[test]
 fn ac1_override_not_saved_and_cleared_by_pad() {
     let dir = scratch("t090b");
-    let save = dir.join("doc.codedraw");
+    let save = dir.join("doc.tiza");
     let live = Live::open(
-        codedraw_core::Document::from_code("fn main() {}\n", "rs", None),
+        tiza_core::Document::from_code("fn main() {}\n", "rs", None),
         save.clone(),
         dir.join("s.sock"),
     );

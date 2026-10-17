@@ -1,7 +1,7 @@
 //! t-050 — SVG and PNG export with embedded fonts.
 //!
 //! Acceptance criteria:
-//! - AC1 `codedraw render FILE --out x.svg` writes a standalone SVG: theme
+//! - AC1 `tiza render FILE --out x.svg` writes a standalone SVG: theme
 //!   background, one text run per style, backgrounds for highlights, fonts
 //!   embedded as `@font-face` unless `--no-embed-fonts`.
 //! - AC2 `--out x.png` writes a PNG of `width × 0.6em + margins` by
@@ -13,8 +13,8 @@
 //! - AC6 The MCP `export_image` tool writes .png/.svg (and, since t-049, .txt/.ansi/.md) and rejects other extensions.
 //! - AC7 Dark and light themes both export; `--theme` overrides the document's.
 
-use codedraw_qa::{Live, codedraw, codedraw_ok, fixture, scratch};
 use serde_json::json;
+use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn png_size(bytes: &[u8]) -> (u32, u32) {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
@@ -27,9 +27,9 @@ fn png_size(bytes: &[u8]) -> (u32, u32) {
 #[test]
 fn ac1_svg_is_standalone_and_fonts_are_optional() {
     let dir = scratch("t050-svg");
-    let f = fixture("t-050/export.codedraw");
+    let f = fixture("t-050/export.tiza");
     let svg = dir.join("a.svg");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -42,14 +42,14 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
     assert_eq!(
         text.matches("@font-face").count(),
         9,
-        "4 JetBrains Mono faces + symbols + 4 CodeDraw Serif faces (t-068)"
+        "4 JetBrains Mono faces + symbols + 4 Tiza Serif faces (t-068)"
     );
     assert!(text.contains("<title>t-050 export"));
     assert!(text.contains("hot path"), "mark legend");
     assert!(text.contains("a note in the margin"));
     assert!(text.contains("<rect x="), "highlight backgrounds");
     let small = dir.join("b.svg");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--out",
@@ -64,8 +64,8 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
 #[test]
 fn ac2_png_size_follows_columns_rows_and_scale() {
     let dir = scratch("t050-png");
-    let f = fixture("t-050/export.codedraw");
-    let txt = codedraw_ok(&[
+    let f = fixture("t-050/export.tiza");
+    let txt = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--width",
@@ -76,7 +76,7 @@ fn ac2_png_size_follows_columns_rows_and_scale() {
     let rows = txt.lines().count() as f32;
     for (scale, expect_w) in [("1", 1024u32), ("2", 2048), ("1.5", 1536)] {
         let png = dir.join(format!("s{scale}.png"));
-        codedraw_ok(&[
+        tiza_ok(&[
             "render",
             f.to_str().unwrap(),
             "--width",
@@ -97,7 +97,7 @@ fn ac2_png_size_follows_columns_rows_and_scale() {
     }
     // Corner: margin 0 and radius 0 give exactly cols × 9.6 px.
     let png = dir.join("tight.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--width",
@@ -117,13 +117,13 @@ fn ac2_png_size_follows_columns_rows_and_scale() {
 #[test]
 fn ac3_live_instance_is_exported_without_a_file() {
     let dir = scratch("t050-live");
-    let doc = codedraw_core::fs::open(fixture("t-050/export.codedraw").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
-    let live = Live::open(doc, dir.join("doc.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 1}));
     let png = dir.join("live.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         "--out",
         png.to_str().unwrap(),
@@ -132,7 +132,7 @@ fn ac3_live_instance_is_exported_without_a_file() {
     ]);
     assert!(std::fs::metadata(&png).unwrap().len() > 10_000);
     let svg = dir.join("live.svg");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         "--out",
         svg.to_str().unwrap(),
@@ -146,7 +146,7 @@ fn ac3_live_instance_is_exported_without_a_file() {
         "step 1 only"
     );
     // Corner: no instance → clear error, exit 1.
-    let out = codedraw(&[
+    let out = tiza(&[
         "render",
         "--out",
         "x.png",
@@ -154,15 +154,15 @@ fn ac3_live_instance_is_exported_without_a_file() {
         dir.join("none.sock").to_str().unwrap(),
     ]);
     assert!(!out.status.success());
-    assert!(String::from_utf8_lossy(&out.stderr).contains("no CodeDraw instance"));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("no Tiza instance"));
 }
 
 #[test]
 fn ac4_symbols_and_wide_glyphs_render_with_bundled_fonts() {
     let dir = scratch("t050-glyphs");
-    let f = fixture("t-050/export.codedraw");
+    let f = fixture("t-050/export.tiza");
     let png = dir.join("g.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--width",
@@ -172,7 +172,7 @@ fn ac4_symbols_and_wide_glyphs_render_with_bundled_fonts() {
         "--out",
         png.to_str().unwrap(),
     ]);
-    let svg = codedraw_ok(&[
+    let svg = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--width",
@@ -183,9 +183,9 @@ fn ac4_symbols_and_wide_glyphs_render_with_bundled_fonts() {
         "--out",
         "-",
     ]);
-    let png_bytes = codedraw_export::to_png(
+    let png_bytes = tiza_export::to_png(
         &svg,
-        &codedraw_export::PngOptions {
+        &tiza_export::PngOptions {
             scale: 1.0,
             system_fonts: false,
         },
@@ -206,8 +206,8 @@ fn resvg_decode(bytes: &[u8]) -> (u32, u32) {
 
 #[test]
 fn ac5_png_to_stdout_only_through_a_pipe() {
-    let f = fixture("t-050/export.codedraw");
-    let out = codedraw(&[
+    let f = fixture("t-050/export.tiza");
+    let out = tiza(&[
         "render",
         f.to_str().unwrap(),
         "--format",
@@ -222,10 +222,10 @@ fn ac5_png_to_stdout_only_through_a_pipe() {
 #[test]
 fn ac6_mcp_export_image_tool() {
     let dir = scratch("t050-mcp");
-    let doc = codedraw_core::fs::open(fixture("t-050/export.codedraw").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
-    let live = Live::open(doc, dir.join("doc.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let png = dir.join("mcp.png");
     let msgs = [
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"qa","version":"0"}}}),
@@ -239,7 +239,7 @@ fn ac6_mcp_export_image_tool() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args(["mcp", "--socket", live.socket.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -274,10 +274,10 @@ fn ac6_mcp_export_image_tool() {
 #[test]
 fn ac7_both_themes_export_and_flag_overrides_document() {
     let dir = scratch("t050-themes");
-    let f = fixture("t-050/export.codedraw");
+    let f = fixture("t-050/export.tiza");
     for theme in ["dark", "light"] {
         let svg = dir.join(format!("{theme}.svg"));
-        codedraw_ok(&[
+        tiza_ok(&[
             "render",
             f.to_str().unwrap(),
             "--theme",
@@ -288,9 +288,9 @@ fn ac7_both_themes_export_and_flag_overrides_document() {
         ]);
         let text = std::fs::read_to_string(&svg).unwrap();
         let bg = if theme == "dark" {
-            codedraw_core::Theme::dark().bg
+            tiza_core::Theme::dark().bg
         } else {
-            codedraw_core::Theme::light().bg
+            tiza_core::Theme::light().bg
         };
         assert!(
             text.contains(&format!("fill=\"#{:02x}{:02x}{:02x}\"", bg.0, bg.1, bg.2)),

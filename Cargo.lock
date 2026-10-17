@@ -398,94 +398,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
-name = "codedraw-cli"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "clap",
- "codedraw-core",
- "codedraw-export",
- "codedraw-mcp",
- "codedraw-tui",
- "serde_json",
- "tokio",
- "unicode-width",
-]
-
-[[package]]
-name = "codedraw-core"
-version = "0.0.1"
-dependencies = [
- "proptest",
- "schemars",
- "serde",
- "serde_json",
- "syntect",
- "thiserror 2.0.21",
- "two-face",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "codedraw-export"
-version = "0.0.1"
-dependencies = [
- "base64 0.23.1",
- "codedraw-core",
- "resvg",
- "thiserror 2.0.21",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
-name = "codedraw-mcp"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "codedraw-core",
- "codedraw-export",
- "codedraw-tui",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "codedraw-qa"
-version = "0.0.1"
-dependencies = [
- "codedraw-core",
- "codedraw-export",
- "codedraw-mcp",
- "codedraw-tui",
- "crossterm",
- "insta",
- "jsonschema",
- "proptest",
- "ratatui",
- "serde_json",
- "two-face",
-]
-
-[[package]]
-name = "codedraw-tui"
-version = "0.0.1"
-dependencies = [
- "codedraw-core",
- "crossterm",
- "notify",
- "ratatui",
- "serde",
- "serde_json",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
 name = "colorchoice"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2806,6 +2718,94 @@ name = "tinyvec"
 version = "1.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
+
+[[package]]
+name = "tiza"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "tiza-core",
+ "tiza-export",
+ "tiza-mcp",
+ "tiza-tui",
+ "tokio",
+ "unicode-width",
+]
+
+[[package]]
+name = "tiza-core"
+version = "0.0.1"
+dependencies = [
+ "proptest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "syntect",
+ "thiserror 2.0.21",
+ "two-face",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "tiza-export"
+version = "0.0.1"
+dependencies = [
+ "base64 0.23.1",
+ "resvg",
+ "thiserror 2.0.21",
+ "tiza-core",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
+name = "tiza-mcp"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "rmcp",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tiza-core",
+ "tiza-export",
+ "tiza-tui",
+ "tokio",
+]
+
+[[package]]
+name = "tiza-qa"
+version = "0.0.1"
+dependencies = [
+ "crossterm",
+ "insta",
+ "jsonschema",
+ "proptest",
+ "ratatui",
+ "serde_json",
+ "tiza-core",
+ "tiza-export",
+ "tiza-mcp",
+ "tiza-tui",
+ "two-face",
+]
+
+[[package]]
+name = "tiza-tui"
+version = "0.0.1"
+dependencies = [
+ "crossterm",
+ "notify",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "tiza-core",
+ "unicode-segmentation",
+ "unicode-width",
+]
 
 [[package]]
 name = "tokio"

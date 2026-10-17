@@ -11,15 +11,15 @@
 //!   rejected and rolled back.
 //! - AC5 The MCP tool rejects unknown fields instead of ignoring them.
 
-use codedraw_qa::{Live, fixture, scratch};
 use serde_json::json;
+use tiza_qa::{Live, fixture, scratch};
 
 fn live(name: &str) -> Live {
     let dir = scratch(name);
-    let doc = codedraw_core::fs::open(fixture("t-093/marks.codedraw").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("t-093/marks.tiza").to_str().unwrap())
         .unwrap()
         .document;
-    Live::open(doc, dir.join("doc.codedraw"), dir.join("live.sock"))
+    Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"))
 }
 
 #[test]
@@ -131,7 +131,7 @@ fn ac5_mcp_rejects_unknown_fields() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args(["mcp", "--socket", l.socket.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

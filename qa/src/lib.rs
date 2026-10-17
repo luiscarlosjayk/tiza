@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, mpsc};
 
-use codedraw_core::Document;
-use codedraw_tui::app::App;
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
+use tiza_core::Document;
+use tiza_tui::app::App;
 
 /// Path of a fixture under `qa/fixtures/`.
 pub fn fixture(rel: &str) -> PathBuf {
@@ -29,18 +29,18 @@ pub fn example(rel: &str) -> PathBuf {
 
 /// A scratch directory unique to this test binary + name, emptied on each call.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("codedraw-qa-{}-{name}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("tiza-qa-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
 
-/// The `codedraw` binary of the current profile, built on first use.
+/// The `tiza` binary of the current profile, built on first use.
 pub fn bin() -> PathBuf {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let status = Command::new(env!("CARGO"))
-            .args(["build", "-p", "codedraw-cli", "--quiet"])
+            .args(["build", "-p", "tiza", "--quiet"])
             .args(if profile_dir().ends_with("release") {
                 vec!["--release"]
             } else {
@@ -48,9 +48,9 @@ pub fn bin() -> PathBuf {
             })
             .status()
             .expect("cargo build");
-        assert!(status.success(), "building codedraw-cli failed");
+        assert!(status.success(), "building tiza failed");
     });
-    profile_dir().join("codedraw")
+    profile_dir().join("tiza")
 }
 
 fn profile_dir() -> PathBuf {
@@ -59,28 +59,25 @@ fn profile_dir() -> PathBuf {
     exe.parent().unwrap().parent().unwrap().to_path_buf()
 }
 
-/// Runs `codedraw <args>` and returns its output.
-pub fn codedraw(args: &[&str]) -> Output {
-    Command::new(bin())
-        .args(args)
-        .output()
-        .expect("run codedraw")
+/// Runs `tiza <args>` and returns its output.
+pub fn tiza(args: &[&str]) -> Output {
+    Command::new(bin()).args(args).output().expect("run tiza")
 }
 
-/// Runs `codedraw <args>`, asserting success, and returns stdout as text.
-pub fn codedraw_ok(args: &[&str]) -> String {
-    let out = codedraw(args);
+/// Runs `tiza <args>`, asserting success, and returns stdout as text.
+pub fn tiza_ok(args: &[&str]) -> String {
+    let out = tiza(args);
     assert!(
         out.status.success(),
-        "codedraw {args:?} failed:\n{}",
+        "tiza {args:?} failed:\n{}",
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).unwrap()
 }
 
-/// A headless CodeDraw instance: the real `App` and the real socket server,
+/// A headless Tiza instance: the real `App` and the real socket server,
 /// driven from a background thread, so a test can talk to it over the socket
-/// (`codedraw api …`, MCP) and press keys as a presenter would.
+/// (`tiza api …`, MCP) and press keys as a presenter would.
 pub struct Live {
     pub socket: PathBuf,
     tx: Mutex<Option<mpsc::Sender<Job>>>,
@@ -97,7 +94,7 @@ impl Live {
         let (ready_tx, ready_rx) = mpsc::channel();
         let join = std::thread::spawn(move || {
             let mut app = App::new(doc, save_path);
-            let server = codedraw_tui::ipc::start(&sock).expect("socket");
+            let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
             ready_tx.send(()).unwrap();
             loop {
@@ -128,7 +125,7 @@ impl Live {
         let dir = scratch(name);
         Live::open(
             Document::from_code(code, lang, None),
-            dir.join("doc.codedraw"),
+            dir.join("doc.tiza"),
             dir.join("live.sock"),
         )
     }
@@ -152,7 +149,7 @@ impl Live {
         let keys: Vec<KeyCode> = keys.to_vec();
         self.with(move |app| {
             for k in keys {
-                codedraw_tui::on_key(app, k, KeyModifiers::NONE);
+                tiza_tui::on_key(app, k, KeyModifiers::NONE);
             }
         });
     }
@@ -169,13 +166,9 @@ impl Live {
         self.with(move |app| app.run_command(&cmd));
     }
 
-    /// Calls the local API over the socket, like `codedraw api` does.
-    pub fn api(
-        &self,
-        method: &str,
-        params: serde_json::Value,
-    ) -> codedraw_core::protocol::Response {
-        codedraw_tui::ipc::call(&self.socket, method, params).expect("socket call")
+    /// Calls the local API over the socket, like `tiza api` does.
+    pub fn api(&self, method: &str, params: serde_json::Value) -> tiza_core::protocol::Response {
+        tiza_tui::ipc::call(&self.socket, method, params).expect("socket call")
     }
 
     /// Calls the API and asserts success, returning the result.
@@ -189,7 +182,7 @@ impl Live {
     pub fn screen(&self, cols: u16, rows: u16) -> String {
         self.with(move |app| {
             let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-            t.draw(|f| codedraw_tui::ui::draw(f, app)).unwrap();
+            t.draw(|f| tiza_tui::ui::draw(f, app)).unwrap();
             let buf = t.backend().buffer().clone();
             (0..rows)
                 .map(|y| {
@@ -211,7 +204,7 @@ impl Live {
     pub fn snapshot(&self, cols: u16, rows: u16) -> (String, String) {
         self.with(move |app| {
             let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
-            t.draw(|f| codedraw_tui::ui::draw(f, app)).unwrap();
+            t.draw(|f| tiza_tui::ui::draw(f, app)).unwrap();
             let buf = t.backend().buffer().clone();
             let symbols = (0..rows)
                 .map(|y| {
@@ -288,7 +281,7 @@ impl Drop for Live {
     }
 }
 
-/// A minimal MCP client over stdio: spawns `codedraw mcp`, performs the
+/// A minimal MCP client over stdio: spawns `tiza mcp`, performs the
 /// initialize handshake and lets a test call tools one request at a time,
 /// reading each JSON-RPC reply as it arrives (so reconnection and errors can
 /// be observed in order, unlike a one-shot pipe).
@@ -302,7 +295,7 @@ pub struct McpClient {
 }
 
 impl McpClient {
-    /// Starts `codedraw mcp --socket <socket>` and completes `initialize`.
+    /// Starts `tiza mcp --socket <socket>` and completes `initialize`.
     pub fn start(socket: &Path) -> McpClient {
         use std::io::{BufRead, Write};
         let mut child = Command::new(bin())
@@ -311,7 +304,7 @@ impl McpClient {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
             .spawn()
-            .expect("spawn codedraw mcp");
+            .expect("spawn tiza mcp");
         let stdin = child.stdin.take().unwrap();
         let reader = std::io::BufReader::new(child.stdout.take().unwrap());
         let mut c = McpClient {
@@ -323,9 +316,9 @@ impl McpClient {
         };
         let init = c.request(
             "initialize",
-            serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "codedraw-qa", "version": "0"}}),
+            serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "tiza-qa", "version": "0"}}),
         );
-        assert!(init["result"]["serverInfo"]["name"] == "codedraw", "{init}");
+        assert!(init["result"]["serverInfo"]["name"] == "tiza", "{init}");
         c.init = init["result"].clone();
         c.stdin
             .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
@@ -355,10 +348,10 @@ impl McpClient {
             let n = self
                 .reader
                 .read_line(&mut line)
-                .expect("read from codedraw mcp");
+                .expect("read from tiza mcp");
             assert!(
                 n > 0,
-                "codedraw mcp closed its stdout before answering {method}"
+                "tiza mcp closed its stdout before answering {method}"
             );
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
                 && v["id"] == id

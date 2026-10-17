@@ -1,31 +1,31 @@
-//! t-047 — `.codedraw` format robustness (QA-agent bugs: empty code, BOM).
+//! t-047 — `.tiza` format robustness (QA-agent bugs: empty code, BOM).
 //!
 //! Acceptance criteria:
 //! - AC1 An empty source file, `"code": []` and an empty stdin never panic: the
 //!   document has one empty line.
-//! - AC2 A BOM at the start of a `.codedraw` or a source file is accepted.
+//! - AC2 A BOM at the start of a `.tiza` or a source file is accepted.
 //! - AC3 A newer `schema` and an unknown annotation `type` are explicit errors.
 //! - AC4 Unknown fields are ignored on load (they are not preserved on save; documented).
 
-use codedraw_qa::{codedraw, codedraw_ok, scratch};
+use tiza_qa::{scratch, tiza, tiza_ok};
 
 #[test]
 fn ac1_empty_code_renders_one_blank_line() {
     let dir = scratch("t047-empty");
     let empty = dir.join("empty.rs");
     std::fs::write(&empty, "").unwrap();
-    let out = codedraw_ok(&["render", empty.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", empty.to_str().unwrap(), "--out", "-"]);
     assert_eq!(out.trim(), "1", "{out:?}");
-    let doc = dir.join("empty.codedraw");
+    let doc = dir.join("empty.tiza");
     std::fs::write(
         &doc,
         r#"{"schema":1,"source":{"language":"rs"},"code":[],"annotations":[]}"#,
     )
     .unwrap();
-    let out = codedraw_ok(&["render", doc.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", doc.to_str().unwrap(), "--out", "-"]);
     assert_eq!(out.trim(), "1");
     let png = dir.join("empty.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         doc.to_str().unwrap(),
         "--out",
@@ -39,13 +39,13 @@ fn ac1_empty_code_renders_one_blank_line() {
 #[test]
 fn ac2_bom_is_accepted() {
     let dir = scratch("t047-bom");
-    let doc = dir.join("bom.codedraw");
+    let doc = dir.join("bom.tiza");
     std::fs::write(&doc, "\u{feff}{\"schema\":1,\"source\":{\"language\":\"rs\"},\"code\":[\"fn a() {}\"],\"annotations\":[]}").unwrap();
-    let out = codedraw_ok(&["render", doc.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", doc.to_str().unwrap(), "--out", "-"]);
     assert!(out.contains("fn a() {}"), "{out}");
     let src = dir.join("bom.rs");
     std::fs::write(&src, "\u{feff}fn b() {}\n").unwrap();
-    let out = codedraw_ok(&["render", src.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", src.to_str().unwrap(), "--out", "-"]);
     assert!(
         out.contains(" 1   fn b() {}") || out.contains("fn b() {}"),
         "{out}"
@@ -56,18 +56,18 @@ fn ac2_bom_is_accepted() {
 #[test]
 fn ac3_newer_schema_and_unknown_type_are_errors() {
     let dir = scratch("t047-errors");
-    let doc = dir.join("new.codedraw");
+    let doc = dir.join("new.tiza");
     std::fs::write(
         &doc,
         r#"{"schema":2,"source":{"language":"rs"},"code":["x"],"annotations":[]}"#,
     )
     .unwrap();
-    let out = codedraw(&["render", doc.to_str().unwrap(), "--out", "-"]);
+    let out = tiza(&["render", doc.to_str().unwrap(), "--out", "-"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("schema"));
-    let doc = dir.join("type.codedraw");
+    let doc = dir.join("type.tiza");
     std::fs::write(&doc, r#"{"schema":1,"source":{"language":"rs"},"code":["x"],"annotations":[{"id":"a","step":1,"type":"blob","line":1}]}"#).unwrap();
-    let out = codedraw(&["render", doc.to_str().unwrap(), "--out", "-"]);
+    let out = tiza(&["render", doc.to_str().unwrap(), "--out", "-"]);
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("blob"));
 }

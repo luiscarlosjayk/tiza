@@ -4,7 +4,7 @@
 //! Acceptance criteria:
 //! - AC1 Model: `moves: [{at_step, action: "code.patch", op, position |
 //!   after/before | find | find_start/find_end, content, typing, speed_ms,
-//!   rebind}]` in the `.codedraw`; `at_step >= 1`; a text target must match
+//!   rebind}]` in the `.tiza`; `at_step >= 1`; a text target must match
 //!   exactly once in the code at that step (load-time error naming the
 //!   move); `rebind` ids must exist.
 //! - AC2 The document is a pure function of the step: reaching step N
@@ -22,7 +22,7 @@
 //!   code saved to disk is always the step-0 code.
 //! - AC5 Paste and follow are refused while moves are applied; `:embed`
 //!   embeds the step-0 code.
-//! - AC6 `examples/ownership-moves.rs.codedraw` renders every step.
+//! - AC6 `examples/ownership-moves.rs.tiza` renders every step.
 //! - AC7 On a line a `replace` overwrites, line-level annotations (note, box,
 //!   callout, spotlight) keep the same-offset line; column anchors
 //!   (highlight, mark, arrow ends) go `(unanchored)` unless `rebind`.
@@ -31,9 +31,9 @@
 //!   and on `rebind` finds; N beyond the matches is a load-time error naming
 //!   the move; without it, several matches are the AC1 error.
 
-use codedraw_qa::{Live, McpClient, codedraw, codedraw_ok, example, scratch};
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::{Live, McpClient, example, scratch, tiza, tiza_ok};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n    println!(\"{a} {b}\");\n}\n";
 
@@ -520,17 +520,17 @@ fn ac3_typing_animation_in_the_tui() {
 #[test]
 fn ac3_render_and_export_apply_moves_instantly() {
     let dir = scratch("t098-render");
-    let path = dir.join("ex.codedraw");
-    std::fs::copy(example("ownership-moves.rs.codedraw"), &path).unwrap();
+    let path = dir.join("ex.tiza");
+    std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
     let p = path.to_str().unwrap();
-    let s1 = codedraw_ok(&["render", p, "--step", "1", "--out", "-", "--width", "80"]);
+    let s1 = tiza_ok(&["render", p, "--step", "1", "--out", "-", "--width", "80"]);
     assert!(!s1.contains("let t = String"), "{s1}");
-    let s2 = codedraw_ok(&["render", p, "--step", "2", "--out", "-", "--width", "80"]);
+    let s2 = tiza_ok(&["render", p, "--step", "2", "--out", "-", "--width", "80"]);
     assert!(
         s2.contains("let t = String::from(\"world\")") && s2.contains("fn len(s: &String)"),
         "{s2}"
     );
-    let s4 = codedraw_ok(&["render", p, "--step", "4", "--out", "-", "--width", "80"]);
+    let s4 = tiza_ok(&["render", p, "--step", "4", "--out", "-", "--width", "80"]);
     assert!(
         s4.contains("let n = t.len();") && !s4.contains("fn len("),
         "{s4}"
@@ -544,14 +544,14 @@ fn ac3_render_and_export_apply_moves_instantly() {
         "the deleted block's box is unanchored:\n{s4}"
     );
     // No stale-annotation warning: a5/a6 are valid at their own step.
-    let out = codedraw(&["render", p, "--step", "1", "--out", "-", "--width", "80"]);
+    let out = tiza(&["render", p, "--step", "1", "--out", "-", "--width", "80"]);
     assert!(
         String::from_utf8_lossy(&out.stderr).trim().is_empty(),
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
     // SVG and the asciicast go through the same projection.
-    let svg = codedraw_ok(&[
+    let svg = tiza_ok(&[
         "render",
         p,
         "--step",
@@ -566,7 +566,7 @@ fn ac3_render_and_export_apply_moves_instantly() {
     ]);
     assert!(svg.contains("t.len()") && !svg.contains("fn len("), "svg");
     let cast = dir.join("ex.cast");
-    codedraw_ok(&["render", p, "--out", cast.to_str().unwrap()]);
+    tiza_ok(&["render", p, "--out", cast.to_str().unwrap()]);
     let frames: Vec<String> = std::fs::read_to_string(cast)
         .unwrap()
         .lines()
@@ -591,8 +591,8 @@ fn ac3_render_and_export_apply_moves_instantly() {
 #[test]
 fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
     let dir = scratch("t098-mcp");
-    let doc = codedraw_core::Document::from_code(CODE, "rs", None);
-    let save = dir.join("doc.codedraw");
+    let doc = tiza_core::Document::from_code(CODE, "rs", None);
+    let save = dir.join("doc.tiza");
     let live = Live::open(doc, save.clone(), dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
     let names = mcp.tool_names();
@@ -620,7 +620,7 @@ fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
     assert_eq!(saved["moves"][0]["at_step"], 2);
     assert_eq!(saved["step"], 2);
     // Reopening lands on the projection at the saved step.
-    let reopened = codedraw_core::fs::load_document(&save).unwrap();
+    let reopened = tiza_core::fs::load_document(&save).unwrap();
     assert_eq!(reopened.code.len(), 6);
     assert_eq!(reopened.base().len(), 5);
     let (err, text, _) = mcp.call("delete_move", json!({"index": 1}));
@@ -637,10 +637,10 @@ fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
 fn ac5_paste_and_follow_are_refused_while_moves_are_applied() {
     let dir = scratch("t098-ac5");
     std::fs::write(dir.join("src.rs"), CODE).unwrap();
-    let doc = codedraw_core::fs::open(dir.join("src.rs").to_str().unwrap())
+    let doc = tiza_core::fs::open(dir.join("src.rs").to_str().unwrap())
         .unwrap()
         .document;
-    let live = Live::open(doc, dir.join("src.rs.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("src.rs.tiza"), dir.join("live.sock"));
     live.api_ok("move.add", insert_after_b(1, "instant"));
     assert_eq!(live.with(|a| a.doc.step), 1);
     let err = live.with(|a| a.replace_code("fn other() {}\n").unwrap_err().to_string());
@@ -701,7 +701,7 @@ fn ac5_paste_and_follow_are_refused_while_moves_are_applied() {
 #[test]
 fn ac1_load_time_errors_name_the_move() {
     let dir = scratch("t098-load");
-    let bad = dir.join("bad.codedraw");
+    let bad = dir.join("bad.tiza");
     std::fs::write(
         &bad,
         json!({
@@ -712,7 +712,7 @@ fn ac1_load_time_errors_name_the_move() {
         .to_string(),
     )
     .unwrap();
-    let out = codedraw(&["render", bad.to_str().unwrap(), "--out", "-"]);
+    let out = tiza(&["render", bad.to_str().unwrap(), "--out", "-"]);
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
@@ -725,7 +725,7 @@ fn ac1_load_time_errors_name_the_move() {
         "code": ["a", "b"],
         "moves": [{"at_step": 1, "action": "code.patch", "op": "insert", "position": "9", "content": "x"}]
     }).to_string()).unwrap();
-    let out = codedraw(&["render", bad.to_str().unwrap(), "--out", "-"]);
+    let out = tiza(&["render", bad.to_str().unwrap(), "--out", "-"]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("line 9 does not exist"), "{err}");
 }

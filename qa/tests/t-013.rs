@@ -6,7 +6,7 @@
 //!   exists for it; otherwise from a well-known file name (`Makefile`,
 //!   `Dockerfile`, `Cargo.lock`, `.bashrc`…), then a `#!` line, then a Vim or
 //!   Emacs modeline in the first or last five lines; else plain text.
-//!   A `.codedraw` that references a file with an empty `source.language`
+//!   A `.tiza` that references a file with an empty `source.language`
 //!   detects the same way.
 //! - AC2 Code from stdin without `--lang` is detected from its content
 //!   (shebang/modeline), not forced to plain text. `--lang` always wins and
@@ -17,8 +17,8 @@
 //! - AC4 Pasting into a document that is still plain text re-detects from the
 //!   pasted text; a document with an explicit language keeps it.
 
-use codedraw_core::fs;
-use codedraw_qa::{Live, codedraw, fixture};
+use tiza_core::fs;
+use tiza_qa::{Live, fixture, tiza};
 
 fn lang_of(rel: &str) -> String {
     fs::open(fixture(rel).to_str().unwrap())
@@ -48,7 +48,7 @@ fn ac1_extension_file_name_shebang_modeline_default() {
 
 #[test]
 fn ac1_document_referencing_a_file_detects_from_its_content() {
-    let opened = fs::open(fixture("t-013/script.ref.codedraw").to_str().unwrap()).unwrap();
+    let opened = fs::open(fixture("t-013/script.ref.tiza").to_str().unwrap()).unwrap();
     assert_eq!(opened.document.source.language, "py");
     assert_eq!(opened.document.annotations.len(), 1);
 }
@@ -62,7 +62,7 @@ fn ac2_stdin_detects_from_content_and_lang_wins() {
     let o = fs::from_stdin("plain words\n", None).unwrap();
     assert_eq!(o.document.source.language, "txt");
     // The binary: `--lang` without a grammar warns on stderr but still renders.
-    let out = codedraw(&[
+    let out = tiza(&[
         "render",
         fixture("t-013/plain").to_str().unwrap(),
         "--lang",
@@ -130,7 +130,7 @@ fn ac4_paste_redetects_only_plain_text_documents() {
 
 #[test]
 fn corner_shebang_variants_and_modeline_positions() {
-    use codedraw_core::highlight::{Via, detect_language};
+    use tiza_core::highlight::{Via, detect_language};
     let d = |lines: &[&str]| {
         let v: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
         detect_language(None, &v)
@@ -161,7 +161,7 @@ fn corner_shebang_variants_and_modeline_positions() {
 
 #[test]
 fn corner_dotfiles_and_dockerfile_variants() {
-    use codedraw_core::highlight::{Via, detect_language};
+    use tiza_core::highlight::{Via, detect_language};
     for (name, want) in [
         (".bashrc", "sh"),
         (".zshrc", "sh"),
@@ -183,7 +183,7 @@ fn corner_dotfiles_and_dockerfile_variants() {
 fn corner_lang_given_a_path_detects_from_it() {
     // Zed's `${ZED_FILE##*.}` expands to the whole path when the file has no
     // extension: `--lang /repo/Makefile` must not become the language id.
-    let out = codedraw(&[
+    let out = tiza(&[
         "render",
         fixture("t-013/plain").to_str().unwrap(),
         "--lang",
@@ -196,7 +196,7 @@ fn corner_lang_given_a_path_detects_from_it() {
     // Through stdin the same path falls back to the content (a shebang).
     use std::io::Write;
     use std::process::{Command, Stdio};
-    let mut child = Command::new(codedraw_qa::bin())
+    let mut child = Command::new(tiza_qa::bin())
         .args(["--lang", "/repo/run", "render", "-", "--out", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

@@ -1,0 +1,876 @@
+{
+  "$defs": {
+    "Anchor": {
+      "description": "A point in the code: absolute line (1-based) and grapheme (0-based).",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "col"
+      ],
+      "type": "object"
+    },
+    "Annotation": {
+      "oneOf": [
+        {
+          "description": "Highlights a text range.",
+          "properties": {
+            "emphasis": {
+              "$ref": "#/$defs/Emphasis"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "span": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "type": {
+              "const": "highlight",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "span"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Highlight with meaning. `kind` names a built-in kind (`read`, `warn`, `move`…),\nan alias, or a reusable style from `Document::styles`; `style` overrides any\nfield inline for this one annotation.",
+          "properties": {
+            "emphasis": {
+              "$ref": "#/$defs/Emphasis"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "span": {
+              "$ref": "#/$defs/TextSpan"
+            },
+            "style": {
+              "$ref": "#/$defs/MarkStyle"
+            },
+            "type": {
+              "const": "mark",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "kind",
+            "span"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Box around a range of lines.",
+          "properties": {
+            "border": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "corners": {
+              "$ref": "#/$defs/Route"
+            },
+            "fill": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "type": {
+              "const": "box",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "from_line",
+            "to_line"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Arrow from one point of the code to another.",
+          "properties": {
+            "from": {
+              "$ref": "#/$defs/Anchor"
+            },
+            "heads": {
+              "$ref": "#/$defs/Heads"
+            },
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "route": {
+              "$ref": "#/$defs/Route"
+            },
+            "stroke": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "to": {
+              "$ref": "#/$defs/Anchor"
+            },
+            "type": {
+              "const": "arrow",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "from",
+            "to"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Text note anchored to a line.",
+          "properties": {
+            "line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "text": {
+              "type": "string"
+            },
+            "type": {
+              "const": "note",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "line",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Bordered multi-line text block explaining a range of lines. Laid out as a\nblock (reserving its rows), not as a per-line label, so a paragraph does\nnot push every other label down.",
+          "properties": {
+            "border": {
+              "$ref": "#/$defs/Stroke"
+            },
+            "corners": {
+              "$ref": "#/$defs/Route"
+            },
+            "fill": {
+              "type": [
+                "boolean",
+                "null"
+              ]
+            },
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "placement": {
+              "$ref": "#/$defs/Placement"
+            },
+            "text": {
+              "type": "string"
+            },
+            "title": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "callout",
+              "type": "string"
+            },
+            "width": {
+              "format": "uint",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type",
+            "from_line",
+            "text"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
+          "properties": {
+            "from_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "ids": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "to_line": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "type": {
+              "const": "spotlight",
+              "type": "string"
+            },
+            "until": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "color": {
+          "description": "Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.\nWithout a color, arrows rotate through a palette and the rest use the theme color.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
+          "type": "string"
+        },
+        "markers": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeMarkers"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
+        },
+        "step": {
+          "default": 1,
+          "description": "Step at which it appears (1-based).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "CodeSource": {
+      "anyOf": [
+        {
+          "description": "Copy of the code inside the document: portable, but frozen.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        {
+          "description": "Reference to an existing file. `file` may be absolute or relative to the\n`.tiza` directory; `lines` is an optional range `\"12-48\"` or `\"7\"`.",
+          "properties": {
+            "file": {
+              "type": "string"
+            },
+            "lines": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "file"
+          ],
+          "type": "object"
+        }
+      ],
+      "description": "Where the code of a `.tiza` comes from."
+    },
+    "Emphasis": {
+      "description": "How a highlighted or marked span is drawn (t-096).",
+      "oneOf": [
+        {
+          "const": "fill",
+          "description": "Background tint (the default).",
+          "type": "string"
+        },
+        {
+          "const": "underline",
+          "description": "A row under the line with ▔ under the span.",
+          "type": "string"
+        },
+        {
+          "const": "brackets",
+          "description": "⌈ ⌉ in the cells beside the span (a glued side goes to the row below).",
+          "type": "string"
+        },
+        {
+          "const": "strike",
+          "description": "A long stroke through every character.",
+          "type": "string"
+        }
+      ]
+    },
+    "Head": {
+      "description": "What is drawn at an end of a line.",
+      "enum": [
+        "none",
+        "arrow",
+        "dot",
+        "bar",
+        "open"
+      ],
+      "type": "string"
+    },
+    "Heads": {
+      "description": "Heads at both ends. Default: nothing at the start, `▶` at the end.",
+      "properties": {
+        "end": {
+          "$ref": "#/$defs/Head",
+          "default": "arrow"
+        },
+        "start": {
+          "$ref": "#/$defs/Head",
+          "default": "none"
+        }
+      },
+      "type": "object"
+    },
+    "MarkStyle": {
+      "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
+      "properties": {
+        "color": {
+          "description": "Palette name (`red`, `cyan`, …) or `#rrggbb`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "glyph": {
+          "description": "One or two cells wide (box-drawing, arrows, emoji…). Measured, never assumed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "legend": {
+          "description": "Text shown after the glyph; the annotation's `label` is appended after `: `.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Move": {
+      "description": "One move of the demo.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Patch",
+          "description": "Insert, replace or delete whole lines.",
+          "properties": {
+            "action": {
+              "const": "code.patch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "at_step": {
+          "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rebind": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MoveSpec"
+          },
+          "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "at_step"
+      ],
+      "type": "object"
+    },
+    "MoveSpec": {
+      "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from_line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to_line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Patch": {
+      "properties": {
+        "after": {
+          "description": "`insert`: text of the line the content goes after / before (exactly one line matches).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "description": "New lines (`insert`, `replace`); `\\n` separates lines, a trailing `\\n` is ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "end_occurrence": {
+          "description": "The same for `find_end`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "`replace`/`delete`: text of the one line to change.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find_start": {
+          "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "occurrence": {
+          "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "op": {
+          "$ref": "#/$defs/PatchOp"
+        },
+        "position": {
+          "description": "`insert`: the line the content goes before (`last + 1` appends).\n`replace`/`delete`: the line range (`\"7\"` or `\"7-9\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speed_ms": {
+          "description": "Milliseconds per line (`typing: line`, default 120) or per character (`char`, default 25).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "typing": {
+          "$ref": "#/$defs/Typing"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "PatchOp": {
+      "enum": [
+        "insert",
+        "replace",
+        "delete"
+      ],
+      "type": "string"
+    },
+    "Placement": {
+      "description": "Where a callout is drawn.",
+      "oneOf": [
+        {
+          "const": "margin",
+          "description": "In the right margin, aligned with `from_line` (default).",
+          "type": "string"
+        },
+        {
+          "const": "below",
+          "description": "As its own rows between `to_line` and the next code line.",
+          "type": "string"
+        },
+        {
+          "const": "auto",
+          "description": "Margin when the terminal has room, below otherwise.",
+          "type": "string"
+        }
+      ]
+    },
+    "RangeMarkers": {
+      "description": "Two texts that delimit a line range: the first occurrence of `start`\nanywhere, then the first occurrence of `end` at or after it.",
+      "properties": {
+        "end": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "Route": {
+      "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
+      "enum": [
+        "rounded",
+        "sharp"
+      ],
+      "type": "string"
+    },
+    "Source": {
+      "properties": {
+        "first_line": {
+          "default": 1,
+          "description": "Number of the first displayed line (allows opening `main.rs:12-48`).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "language": {
+          "default": "",
+          "description": "Language identifier (extension or name): `rs`, `ts`, `py`…",
+          "type": "string"
+        },
+        "path": {
+          "description": "Path of the original file, if there was one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Stroke": {
+      "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
+      "enum": [
+        "solid",
+        "dashed",
+        "dotted",
+        "thick",
+        "double"
+      ],
+      "type": "string"
+    },
+    "TextSpan": {
+      "description": "A range within ONE line, in graphemes, exclusive end.",
+      "properties": {
+        "end": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "start": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line",
+        "start",
+        "end"
+      ],
+      "type": "object"
+    },
+    "ThemeName": {
+      "enum": [
+        "dark",
+        "light"
+      ],
+      "type": "string"
+    },
+    "Typing": {
+      "enum": [
+        "instant",
+        "line",
+        "char"
+      ],
+      "type": "string"
+    },
+    "Where": {
+      "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "end": {
+          "description": "With `line` and `col`: end of the span (exclusive). Without it the span runs to the end of the line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "Text to search for in the code; with `line`, that line is searched first.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "occurrence": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    }
+  },
+  "$id": "https://github.com/luiscarlosjayk/tiza/schema/tiza.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "annotations": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Annotation"
+      },
+      "type": "array"
+    },
+    "code": {
+      "$ref": "#/$defs/CodeSource",
+      "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
+    },
+    "moves": {
+      "description": "Code changes between steps (ADR 0007): applied when the presenter\nreaches `at_step`, reverted when going back. The embedded `code` is\nalways the step-0 code.",
+      "items": {
+        "$ref": "#/$defs/Move"
+      },
+      "type": "array"
+    },
+    "padding": {
+      "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": "integer"
+        }
+      ],
+      "type": [
+        "array",
+        "null"
+      ]
+    },
+    "schema": {
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "source": {
+      "$ref": "#/$defs/Source"
+    },
+    "step": {
+      "default": 1,
+      "description": "Current presentation step. 0 = code only, no annotations;\nannotations live at steps ≥ 1.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "styles": {
+      "additionalProperties": {
+        "$ref": "#/$defs/MarkStyle"
+      },
+      "description": "Reusable mark styles defined by the author, referenced by name in `kind`.",
+      "type": "object"
+    },
+    "theme": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ThemeName"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "source",
+    "code"
+  ],
+  "title": "Tiza document (.tiza)",
+  "type": "object"
+}

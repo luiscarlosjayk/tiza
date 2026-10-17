@@ -14,17 +14,17 @@
 //! - AC5 Corner cases: embedded code → "nothing to follow"; file removed →
 //!   "waiting" and the next write reloads; truncate-then-write is deferred;
 //!   identical content → no reload; non-UTF-8 → message, previous content kept;
-//!   the sidecar `.codedraw` autosave in the same folder never triggers a reload;
+//!   the sidecar `.tiza` autosave in the same folder never triggers a reload;
 //!   ranges `FILE:A-B` reload only their lines.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use codedraw_core::Document;
-use codedraw_core::model::Shape;
-use codedraw_qa::{Live, McpClient, fixture, scratch};
 use crossterm::event::KeyCode;
 use serde_json::json;
+use tiza_core::Document;
+use tiza_core::model::Shape;
+use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const CODE: &str = "fn main() {\n    let s = String::new();\n    takes(s);\n    println!(\"done\");\n}\n\nfn takes(s: String) {}\n";
 
@@ -35,7 +35,7 @@ fn followed(name: &str, code: &str) -> (Live, PathBuf) {
     std::fs::write(&src, code).unwrap();
     let mut doc = Document::from_code(code, "rs", Some(src.display().to_string()));
     doc.reference_file(src.display().to_string(), None);
-    let live = Live::open(doc, dir.join("main.rs.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
     (live, src)
 }
 
@@ -87,7 +87,7 @@ fn box_lines(live: &Live, id: &str) -> Option<(u32, u32)> {
             .iter()
             .find(|a| a.id == id)
             .and_then(|a| match &a.shape {
-                codedraw_core::model::Shape::Box {
+                tiza_core::model::Shape::Box {
                     from_line, to_line, ..
                 } => Some((*from_line, *to_line)),
                 _ => None,
@@ -159,7 +159,7 @@ fn ac2_annotations_follow_their_text_and_u_undoes() {
     );
     let (step, theme, cursor) = live.with(|app| (app.doc.step, app.theme.name, app.cursor_line));
     assert_eq!(step, 2, "step survives");
-    assert_eq!(theme, codedraw_core::ThemeName::Light, "theme survives");
+    assert_eq!(theme, tiza_core::ThemeName::Light, "theme survives");
     assert_eq!(cursor, cursor_before, "cursor survives");
 
     // One undo brings back the previous code and both annotations.
@@ -338,13 +338,13 @@ fn corner_identical_content_and_sidecar_autosave_do_not_reload() {
     assert_eq!(reloads(&live), 0, "same bytes: nothing to do");
     assert!(live.message().is_none_or(|(m, _)| !m.contains("reloaded")));
 
-    // Annotating autosaves `main.rs.codedraw` in the watched folder.
+    // Annotating autosaves `main.rs.tiza` in the watched folder.
     for i in 0..3 {
         live.command(&format!("box {} sidecar", i + 1));
     }
     settle();
     assert_eq!(reloads(&live), 0, "the sidecar write is not the source");
-    assert!(src.with_extension("rs.codedraw").exists());
+    assert!(src.with_extension("rs.tiza").exists());
 }
 
 #[test]
@@ -386,7 +386,7 @@ fn corner_line_range_reloads_only_its_lines() {
     let mut doc = Document::from_code(&all[1..4].join("\n"), "rs", Some(src.display().to_string()));
     doc.source.first_line = 2;
     doc.reference_file(src.display().to_string(), Some((2, 4)));
-    let live = Live::open(doc, dir.join("main.rs.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
     live.command("box 2-3 inner");
     live.command("follow on");
     assert_eq!(code(&live).len(), 3);
@@ -592,13 +592,13 @@ fn corner_far_copy_counts_as_gone() {
         "{:?}",
         live.message()
     );
-    assert_eq!(codedraw_tui::reanchor::MAX_DISTANCE, 50, "documented value");
+    assert_eq!(tiza_tui::reanchor::MAX_DISTANCE, 50, "documented value");
 }
 
 #[test]
 fn step12_random_edits_above_keep_a_unique_line_and_never_panic() {
-    use codedraw_tui::reanchor::Remap;
     use proptest::prelude::*;
+    use tiza_tui::reanchor::Remap;
 
     let mut runner = proptest::test_runner::TestRunner::new(ProptestConfig {
         cases: 300,

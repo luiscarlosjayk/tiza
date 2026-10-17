@@ -1,7 +1,7 @@
 //! t-049 — Export to plain text (box-drawing characters), Markdown and ANSI.
 //!
 //! Acceptance criteria:
-//! - AC1 `codedraw render FILE --out x.txt` writes exactly the screen as text:
+//! - AC1 `tiza render FILE --out x.txt` writes exactly the screen as text:
 //!   box-drawing glyphs kept, no ANSI, no trailing spaces, no trailing blank
 //!   rows, one `\n` at the end. `--format txt` forces it for any path.
 //! - AC2 `--out x.md` (or `--format md`) wraps the same text in a
@@ -17,8 +17,8 @@
 //! - AC5 The MCP `export_image` tool accepts `.txt`, `.ansi` and `.md` and
 //!   reports the format; other extensions are still rejected.
 
-use codedraw_qa::{Live, McpClient, codedraw, codedraw_ok, fixture, scratch};
 use serde_json::json;
+use tiza_qa::{Live, McpClient, fixture, scratch, tiza, tiza_ok};
 
 fn strip_ansi(s: &str) -> String {
     let mut out = String::new();
@@ -42,10 +42,10 @@ fn strip_ansi(s: &str) -> String {
 }
 
 fn render(args: &[&str]) -> String {
-    let f = fixture("t-050/export.codedraw");
+    let f = fixture("t-050/export.tiza");
     let mut full = vec!["render", f.to_str().unwrap(), "--width", "100"];
     full.extend_from_slice(args);
-    codedraw_ok(&full)
+    tiza_ok(&full)
 }
 
 #[test]
@@ -130,10 +130,10 @@ fn ac3_ansi_has_truecolor_resets_and_the_same_text() {
 #[test]
 fn ac4_export_command_formats_defaults_and_errors() {
     let dir = scratch("t049-cmd");
-    let doc = codedraw_core::fs::open(fixture("t-050/export.codedraw").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
-    let live = Live::open(doc, dir.join("demo.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("demo.tiza"), dir.join("live.sock"));
     live.with(|a| a.size = (100, 40));
     live.command("step 2");
     // Default path: <doc>-stepN.txt next to the document.
@@ -192,7 +192,7 @@ fn ac4_export_command_formats_defaults_and_errors() {
     // Headless (no image exporter installed): SVG says how to get one.
     live.command(&format!("export {}", dir.join("a.svg").display()));
     let (msg, err) = live.message().unwrap();
-    assert!(err && msg.contains("codedraw render"), "{msg}");
+    assert!(err && msg.contains("tiza render"), "{msg}");
     // Unwritable path: an error, not a panic.
     live.command("export /nonexistent-dir/x.txt");
     let (msg, err) = live.message().unwrap();
@@ -207,19 +207,19 @@ fn ac4_export_svg_and_png_through_the_binary() {
     let live = Live::from_code("fn a() {}\n", "rs", "t049-img");
     live.with(|a| {
         a.image_exporter = Some(Box::new(|canvas, theme, format, title| {
-            let svg = codedraw_export::to_svg(
+            let svg = tiza_export::to_svg(
                 canvas,
                 theme,
-                &codedraw_export::SvgOptions {
-                    embed_fonts: format == codedraw_tui::app::ImageFormat::Svg,
+                &tiza_export::SvgOptions {
+                    embed_fonts: format == tiza_tui::app::ImageFormat::Svg,
                     title: title.map(str::to_string),
                     ..Default::default()
                 },
             );
-            if format == codedraw_tui::app::ImageFormat::Svg {
+            if format == tiza_tui::app::ImageFormat::Svg {
                 Ok(svg.into_bytes())
             } else {
-                codedraw_export::to_png(&svg, &codedraw_export::PngOptions::default())
+                tiza_export::to_png(&svg, &tiza_export::PngOptions::default())
                     .map_err(|e| e.to_string())
             }
         }));
@@ -238,10 +238,10 @@ fn ac4_export_svg_and_png_through_the_binary() {
 #[test]
 fn ac5_mcp_export_image_writes_text_formats() {
     let dir = scratch("t049-mcp");
-    let doc = codedraw_core::fs::open(fixture("t-050/export.codedraw").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
-    let live = Live::open(doc, dir.join("doc.codedraw"), dir.join("live.sock"));
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
     for (ext, needle) in [
         ("txt", "fn main() {"),
@@ -276,7 +276,7 @@ fn corner_empty_document_and_stdin_render_to_md() {
     assert!(!txt.ends_with("\n\n"), "{txt:?}");
     // `render -` from stdin straight to Markdown on stdout.
     use std::io::Write;
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args([
             "render", "-", "--out", "-", "--format", "md", "--lang", "rs",
         ])
@@ -296,5 +296,5 @@ fn corner_empty_document_and_stdin_render_to_md() {
         md.starts_with("```text\n") && md.contains("fn main() {}"),
         "{md}"
     );
-    assert!(codedraw(&["--version"]).status.success());
+    assert!(tiza(&["--version"]).status.success());
 }

@@ -11,16 +11,16 @@
 //! - AC4 `auto` picks margin only when the margin can hold the block and a label beside it.
 //! - AC5 `:callout`, `C` on a selection, `annotation.add {type: callout}` and the
 //!   MCP `add_callout` create one; `Enter` on a selected callout edits its title.
-//! - AC6 Existing `.codedraw` files load unchanged; `title`, `placement` and `width` are optional.
+//! - AC6 Existing `.tiza` files load unchanged; `title`, `placement` and `width` are optional.
 
-use codedraw_qa::{Live, codedraw_ok, fixture, scratch};
 use crossterm::event::KeyCode;
 use serde_json::json;
+use tiza_qa::{Live, fixture, scratch, tiza_ok};
 
 fn render(step: &str, width: &str) -> String {
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
-        fixture("t-092/callouts.codedraw").to_str().unwrap(),
+        fixture("t-092/callouts.tiza").to_str().unwrap(),
         "--step",
         step,
         "--width",
@@ -156,13 +156,13 @@ fn ac5_command_selection_and_socket_create_callouts() {
 #[test]
 fn ac6_old_documents_load_and_optional_fields_default() {
     let dir = scratch("t092-compat");
-    let path = dir.join("old.codedraw");
+    let path = dir.join("old.tiza");
     std::fs::write(&path, r#"{"schema":1,"source":{"language":"rs"},"code":["fn a() {}"],"annotations":[{"id":"n","step":1,"type":"note","line":1,"text":"old"}]}"#).unwrap();
-    let out = codedraw_ok(&["render", path.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", path.to_str().unwrap(), "--out", "-"]);
     assert!(out.contains("┆ old"));
-    let doc = codedraw_core::fs::parse_document(r#"{"schema":1,"source":{"language":"rs"},"code":["fn a() {}"],"annotations":[{"id":"c","step":1,"type":"callout","from_line":1,"text":"minimal"}]}"#, None).unwrap();
+    let doc = tiza_core::fs::parse_document(r#"{"schema":1,"source":{"language":"rs"},"code":["fn a() {}"],"annotations":[{"id":"c","step":1,"type":"callout","from_line":1,"text":"minimal"}]}"#, None).unwrap();
     match &doc.annotations[0].shape {
-        codedraw_core::model::Shape::Callout {
+        tiza_core::model::Shape::Callout {
             title,
             placement,
             width,
@@ -170,7 +170,7 @@ fn ac6_old_documents_load_and_optional_fields_default() {
             ..
         } => {
             assert!(title.is_none() && width.is_none() && to_line.is_none());
-            assert_eq!(*placement, codedraw_core::model::Placement::Margin);
+            assert_eq!(*placement, tiza_core::model::Placement::Margin);
         }
         other => panic!("{other:?}"),
     }

@@ -1,22 +1,22 @@
 //! t-040 — `-` as stdin everywhere and the published JSON Schema.
 //!
 //! Acceptance criteria:
-//! - AC1 `codedraw schema document` prints the JSON Schema of the `.codedraw`
-//!   format; `codedraw schema api` the schema of every socket method (params and
+//! - AC1 `tiza schema document` prints the JSON Schema of the `.tiza`
+//!   format; `tiza schema api` the schema of every socket method (params and
 //!   result) plus the request/response envelopes. Both are committed under
 //!   `schema/` and a unit test fails when they go stale.
 //! - AC2 `api.schema` over the socket returns the same API schema.
-//! - AC3 `-` reads stdin: `codedraw render -` (code with `--lang`, or a `.codedraw`
-//!   document), `codedraw -` opens stdin in the TUI, `codedraw api METHOD -`
+//! - AC3 `-` reads stdin: `tiza render -` (code with `--lang`, or a `.tiza`
+//!   document), `tiza -` opens stdin in the TUI, `tiza api METHOD -`
 //!   reads the params from stdin; `--out -` writes to stdout.
 //! - AC4 Every bundled example and QA fixture validates against the document
 //!   schema (checked with a JSON Schema validator in CI via Python; here: the
 //!   schema names every shape and the required fields).
 
-use codedraw_qa::{Live, bin, codedraw_ok, fixture};
 use serde_json::json;
 use std::io::Write;
 use std::process::{Command, Stdio};
+use tiza_qa::{Live, bin, fixture, tiza_ok};
 
 fn run_with_stdin(args: &[&str], input: &str) -> std::process::Output {
     let mut child = Command::new(bin())
@@ -37,9 +37,8 @@ fn run_with_stdin(args: &[&str], input: &str) -> std::process::Output {
 
 #[test]
 fn ac1_schemas_are_printed_and_committed() {
-    let doc: serde_json::Value =
-        serde_json::from_str(&codedraw_ok(&["schema", "document"])).unwrap();
-    assert_eq!(doc["title"], "CodeDraw document (.codedraw)");
+    let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();
+    assert_eq!(doc["title"], "Tiza document (.tiza)");
     let s = doc.to_string();
     for t in [
         "highlight",
@@ -52,7 +51,7 @@ fn ac1_schemas_are_printed_and_committed() {
     ] {
         assert!(s.contains(&format!("\"{t}\"")), "{t} missing");
     }
-    let api: serde_json::Value = serde_json::from_str(&codedraw_ok(&["schema", "api"])).unwrap();
+    let api: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "api"])).unwrap();
     assert_eq!(api["protocol"], 1);
     let methods: Vec<&str> = api["methods"]
         .as_array()
@@ -72,11 +71,11 @@ fn ac1_schemas_are_printed_and_committed() {
     // Committed copies are byte-identical in content.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../schema");
     let on_disk: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(root.join("codedraw.schema.json")).unwrap())
+        serde_json::from_str(&std::fs::read_to_string(root.join("tiza.schema.json")).unwrap())
             .unwrap();
     assert_eq!(
         on_disk, doc,
-        "schema/codedraw.schema.json is stale: cargo run -- schema document > schema/codedraw.schema.json"
+        "schema/tiza.schema.json is stale: cargo run -- schema document > schema/tiza.schema.json"
     );
     let on_disk: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(root.join("api.schema.json")).unwrap())
@@ -113,7 +112,7 @@ fn ac3_dash_reads_stdin() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("fn a() {}"));
     // A document through stdin (embedded code).
-    let doc = std::fs::read_to_string(fixture("t-092/callouts.codedraw")).unwrap();
+    let doc = std::fs::read_to_string(fixture("t-092/callouts.tiza")).unwrap();
     let out = run_with_stdin(
         &["render", "-", "--out", "-", "--step", "1", "--width", "114"],
         &doc,
@@ -128,7 +127,7 @@ fn ac3_dash_reads_stdin() {
     let out = run_with_stdin(&["render", "-", "--out", "-"], "   \n");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("empty stdin"));
-    // `codedraw api METHOD -` takes the params from stdin.
+    // `tiza api METHOD -` takes the params from stdin.
     let live = Live::from_code("fn a() {}\n", "rs", "t040-api");
     let out = run_with_stdin(
         &[
@@ -153,8 +152,7 @@ fn ac3_dash_reads_stdin() {
 fn ac4_examples_and_fixtures_match_the_schema_shape() {
     // Structural check without a validator crate: every annotation's `type`
     // is one of the schema's variants and carries the required fields.
-    let doc: serde_json::Value =
-        serde_json::from_str(&codedraw_ok(&["schema", "document"])).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();
     let variants = doc.to_string();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let files = std::fs::read_dir(root.join("../examples")).unwrap().chain(
@@ -165,7 +163,7 @@ fn ac4_examples_and_fixtures_match_the_schema_shape() {
     let mut n = 0;
     for f in files {
         let p = f.unwrap().path();
-        if p.extension().and_then(|e| e.to_str()) != Some("codedraw") {
+        if p.extension().and_then(|e| e.to_str()) != Some("tiza") {
             continue;
         }
         let d: serde_json::Value =

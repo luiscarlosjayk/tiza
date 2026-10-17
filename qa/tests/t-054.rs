@@ -21,10 +21,10 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use codedraw_core::canvas::Sym;
-use codedraw_core::highlight::highlight_cached;
-use codedraw_qa::Live;
 use serde_json::json;
+use tiza_core::canvas::Sym;
+use tiza_core::highlight::highlight_cached;
+use tiza_qa::Live;
 use two_face::theme::EmbeddedThemeName;
 
 fn big_doc() -> String {
@@ -181,7 +181,7 @@ fn ac4_cells_are_inline_and_long_clusters_still_work() {
         "11 bytes"
     );
     // Through a canvas: the long cluster round-trips into plain text.
-    let mut c = codedraw_core::canvas::Canvas::new(10, 1);
-    c.put(0, 0, family, codedraw_core::canvas::CellStyle::default());
+    let mut c = tiza_core::canvas::Canvas::new(10, 1);
+    c.put(0, 0, family, tiza_core::canvas::CellStyle::default());
     assert!(c.to_plain_text().starts_with(family));
 }

@@ -1,20 +1,20 @@
-//! t-073 — Round-trip and backward compatibility of `.codedraw` (versioned fixtures).
+//! t-073 — Round-trip and backward compatibility of `.tiza` (versioned fixtures).
 //!
 //! Acceptance criteria:
 //! - AC1 Every fixture under `qa/fixtures/compat/` (one per producer version,
 //!   never edited) opens with the current code, saves, reopens and compares
 //!   equal (document round-trip); the saved file is in the current schema.
-//! - AC2 `codedraw render FIXTURE` matches the snapshot next to the test, so a
+//! - AC2 `tiza render FIXTURE` matches the snapshot next to the test, so a
 //!   layout change on an old document is a visible diff, not a silent change.
 //! - AC3 Old Rust-only kinds (`borrow`, `borrow_mut`, `lifetime`) still resolve
 //!   through the alias table; old files carry no new fields and get none on save.
 //! - AC4 Bumping `SCHEMA_VERSION` without a fixture for the new version and a
-//!   migration in `codedraw_core::fs::MIGRATIONS` fails this test; a file with
+//!   migration in `tiza_core::fs::MIGRATIONS` fails this test; a file with
 //!   a schema beyond the current one is refused with `unsupported_schema`.
 
-use codedraw_core::fs;
-use codedraw_core::model::SCHEMA_VERSION;
-use codedraw_qa::{codedraw, codedraw_ok, scratch};
+use tiza_core::fs;
+use tiza_core::model::SCHEMA_VERSION;
+use tiza_qa::{scratch, tiza, tiza_ok};
 
 fn compat_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/compat")
@@ -24,7 +24,7 @@ fn fixtures() -> Vec<std::path::PathBuf> {
     let mut v: Vec<_> = std::fs::read_dir(compat_dir())
         .unwrap()
         .map(|e| e.unwrap().path())
-        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("codedraw"))
+        .filter(|p| p.extension().and_then(|e| e.to_str()) == Some("tiza"))
         .collect();
     v.sort();
     assert!(!v.is_empty());
@@ -58,7 +58,7 @@ fn ac1_round_trip_every_fixture() {
             "{}: loaded documents are in the current schema",
             f.display()
         );
-        let saved = dir.join("saved.codedraw");
+        let saved = dir.join("saved.tiza");
         fs::save_document(&doc, &saved).unwrap();
         let back = fs::load_document(&saved).unwrap();
         assert_eq!(
@@ -71,7 +71,7 @@ fn ac1_round_trip_every_fixture() {
             serde_json::from_str(&std::fs::read_to_string(&saved).unwrap()).unwrap();
         assert_eq!(json["schema"], SCHEMA_VERSION);
         // Saving again is byte-stable.
-        let again = dir.join("again.codedraw");
+        let again = dir.join("again.tiza");
         fs::save_document(&back, &again).unwrap();
         assert_eq!(
             std::fs::read_to_string(&saved).unwrap(),
@@ -84,7 +84,7 @@ fn ac1_round_trip_every_fixture() {
 fn ac2_render_matches_the_snapshot() {
     for f in fixtures() {
         let name = f.file_stem().unwrap().to_str().unwrap().to_string();
-        let out = codedraw_ok(&[
+        let out = tiza_ok(&[
             "render",
             f.to_str().unwrap(),
             "--width",
@@ -100,8 +100,8 @@ fn ac2_render_matches_the_snapshot() {
 
 #[test]
 fn ac3_old_kinds_resolve_and_no_new_fields_are_added() {
-    let f = compat_dir().join("v1-0.0.1-rust-kinds.codedraw");
-    let out = codedraw_ok(&[
+    let f = compat_dir().join("v1-0.0.1-rust-kinds.tiza");
+    let out = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
         "--width",
@@ -117,7 +117,7 @@ fn ac3_old_kinds_resolve_and_no_new_fields_are_added() {
     assert!(out.contains("╳ drop"), "{out}");
     let dir = scratch("t073-fields");
     let doc = fs::open(f.to_str().unwrap()).unwrap().document;
-    let saved = dir.join("s.codedraw");
+    let saved = dir.join("s.tiza");
     fs::save_document(&doc, &saved).unwrap();
     let text = std::fs::read_to_string(&saved).unwrap();
     for new_field in [
@@ -148,13 +148,13 @@ fn ac4_schema_bumps_need_a_fixture_and_a_migration() {
     for v in 1..=SCHEMA_VERSION {
         assert!(
             versions.contains(&v),
-            "no compatibility fixture for schema {v}: add qa/fixtures/compat/v{v}-<app>-<what>.codedraw"
+            "no compatibility fixture for schema {v}: add qa/fixtures/compat/v{v}-<app>-<what>.tiza"
         );
     }
     assert_eq!(
         fs::MIGRATIONS.len() as u32,
         SCHEMA_VERSION - 1,
-        "every schema bump needs a migration in codedraw_core::fs::MIGRATIONS"
+        "every schema bump needs a migration in tiza_core::fs::MIGRATIONS"
     );
     let mut froms: Vec<u32> = fs::MIGRATIONS.iter().map(|(from, _)| *from).collect();
     froms.dedup();
@@ -165,7 +165,7 @@ fn ac4_schema_bumps_need_a_fixture_and_a_migration() {
     );
     // A newer schema than this binary knows is refused, not guessed.
     let dir = scratch("t073-future");
-    let future = dir.join("future.codedraw");
+    let future = dir.join("future.tiza");
     std::fs::write(
         &future,
         format!(
@@ -174,7 +174,7 @@ fn ac4_schema_bumps_need_a_fixture_and_a_migration() {
         ),
     )
     .unwrap();
-    let out = codedraw(&["render", future.to_str().unwrap(), "--out", "-"]);
+    let out = tiza(&["render", future.to_str().unwrap(), "--out", "-"]);
     assert!(!out.status.success());
     assert!(
         String::from_utf8_lossy(&out.stderr).contains("schema"),

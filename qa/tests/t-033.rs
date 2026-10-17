@@ -20,9 +20,9 @@
 //!   terminal's native selection (Shift on Ghostty/WezTerm/Linux, Option on
 //!   iTerm2/Terminal.app), and that Zed keeps Cmd+click for links.
 
-use codedraw_qa::Live;
-use codedraw_tui::app::{Mode, MouseKind, MouseOutcome, Overlay};
 use crossterm::event::KeyCode;
+use tiza_qa::Live;
+use tiza_tui::app::{Mode, MouseKind, MouseOutcome, Overlay};
 
 const CODE: &str =
     "fn main() {\n\tlet s = 1;\n    名前 = 2;\n    takes(s);\n}\nfn takes(x: i32) {}\n";
@@ -45,7 +45,7 @@ fn screen_xy(live: &Live, line: u32, col: u32) -> (u16, u16) {
             .expect("line on screen") as u16
             + a.hit.origin.1;
         let text = a.doc.line_text(line).unwrap().to_string();
-        let x = codedraw_core::layout::col_to_x(&text, col, 4) as u16 + a.hit.code_x;
+        let x = tiza_core::layout::col_to_x(&text, col, 4) as u16 + a.hit.code_x;
         (x, row)
     })
 }
@@ -172,7 +172,7 @@ fn ac3_drag_selects_and_actions_apply() {
     let anns = l.with(|a| a.doc.annotations.clone());
     assert_eq!(anns.len(), 1);
     assert_eq!(anns[0].shape.line_ranges(), vec![(4, 4)]);
-    if let codedraw_core::Shape::Highlight { span, .. } = &anns[0].shape {
+    if let tiza_core::Shape::Highlight { span, .. } = &anns[0].shape {
         assert_eq!((span.start, span.end), (4, 9), "takes");
     } else {
         panic!("highlight");
@@ -203,7 +203,7 @@ fn ac3_drag_selects_and_actions_apply() {
     l.with(move |a| a.on_mouse(MouseKind::Up, xa, ya));
     assert_eq!(
         l.with(|a| a.selection()),
-        Some(codedraw_tui::app::Selection::Lines(1, 5))
+        Some(tiza_tui::app::Selection::Lines(1, 5))
     );
     l.keys(&[KeyCode::Esc]);
     assert_eq!(l.with(|a| a.mode.clone()), Mode::Normal);
@@ -334,6 +334,6 @@ fn ac5_docs_and_flag() {
         readme.contains("presentation mode (`P`) ignores clicks"),
         "AC6 wording"
     );
-    let help = codedraw_qa::codedraw_ok(&["--help"]);
+    let help = tiza_qa::tiza_ok(&["--help"]);
     assert!(help.contains("--mouse"), "{help}");
 }

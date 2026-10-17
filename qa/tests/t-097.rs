@@ -21,17 +21,17 @@
 //!   twice resolves to the first occurrence after the start; markers on the
 //!   same line give a single-line range.
 
-use codedraw_qa::{Live, McpClient, fixture};
 use serde_json::{Value, json};
+use tiza_qa::{Live, McpClient, fixture};
 
 fn live(name: &str) -> Live {
-    let dir = codedraw_qa::scratch(name);
+    let dir = tiza_qa::scratch(name);
     // A copy next to the sidecar, so the saved document resolves its code.
     std::fs::copy(fixture("t-097/markers.rs"), dir.join("markers.rs")).unwrap();
-    let doc = codedraw_core::fs::open(dir.join("markers.rs").to_str().unwrap())
+    let doc = tiza_core::fs::open(dir.join("markers.rs").to_str().unwrap())
         .unwrap()
         .document;
-    Live::open(doc, dir.join("markers.rs.codedraw"), dir.join("live.sock"))
+    Live::open(doc, dir.join("markers.rs.tiza"), dir.join("live.sock"))
 }
 
 fn lines_of(live: &Live, id: &str) -> Vec<(u32, u32)> {
@@ -215,7 +215,7 @@ fn ac3_tui_commands() {
     let label = l.with({
         let id = id.clone();
         move |a| match &a.doc.find_annotation(&id).unwrap().shape {
-            codedraw_core::Shape::Box { label, .. } => label.clone(),
+            tiza_core::Shape::Box { label, .. } => label.clone(),
             _ => None,
         }
     });
@@ -271,7 +271,7 @@ fn ac4_scene_list_round_trip_and_move_drops_markers() {
         json!({"start": "// begin", "end": "// end"})
     );
     assert_eq!(saved["annotations"][0]["from_line"], 2);
-    let reopened = codedraw_core::fs::open(path.to_str().unwrap())
+    let reopened = tiza_core::fs::open(path.to_str().unwrap())
         .unwrap()
         .document;
     assert!(reopened.annotations[0].markers.is_some());
@@ -280,7 +280,7 @@ fn ac4_scene_list_round_trip_and_move_drops_markers() {
             std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
                 .parent()
                 .unwrap()
-                .join("schema/codedraw.schema.json"),
+                .join("schema/tiza.schema.json"),
         )
         .unwrap(),
     )

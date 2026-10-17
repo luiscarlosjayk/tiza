@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Changed
+- **Renamed to Tiza** (t-108, [ADR 0008](docs/adr/0008-renombre-a-tiza.md)). Crate and binary `tiza` (libraries `tiza-core`, `tiza-tui`, `tiza-mcp`, `tiza-export`), `TIZA_SOCKET` / `TIZA_SESSION` (sockets under `tiza/`), sidecar `.tiza`, MCP server `tiza` with `tiza://` resources, fonts *Tiza Serif* / *Tiza Symbols*, schemas `schema/tiza.schema.json` and `schema/api.schema.json`, wordmark `╭─ Tiza ─▶`. Old `.codedraw` files are not read (rename them). The v0.0.1 prerelease published as CodeDraw is withdrawn and re-tagged after this change; entries below this line still say `codedraw` where they were written before the rename. MCP clients registered as `codedraw` must be re-added as `tiza` and reconnected (`/mcp`).
 - Render budget (t-054): a frame with 2,000 lines and 200 annotations went from ~220 ms to ~7 ms in release. Syntax highlighting is memoized (`highlight::highlight_cached`, last four results), the status bar reuses the frame's layout instead of computing a second one (`App::viewport_warnings_for`), and canvas cells store their grapheme inline (`canvas::Sym`, no `String` per cell). `qa/tests/t-054.rs` asserts the budget (16 ms release / 250 ms debug).
 - All user-facing text (TUI, CLI, MCP, docs, examples) is now in English. Commands, JSON fields and the Spanish color aliases (`azul`, `verde`…) are unchanged; `:theme` keeps accepting `oscuro`/`claro`.
 

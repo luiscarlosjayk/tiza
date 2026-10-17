@@ -1,5 +1,7 @@
 # ADR 0007: Moves and named steps (scripted demos without an editor)
 
+> Renamed: the project became **Tiza** on 2026-10-17 ([ADR 0008](0008-renombre-a-tiza.md)). Where this record says CodeDraw, read Tiza; `codedraw` → `tiza`, `.codedraw` → `.tiza`, `CODEDRAW_*` → `TIZA_*`.
+
 - Status: accepted (2026-10-16, reviewed by Luis with three changes: deterministic re-anchoring, explicit `step` on named steps, follow/link while moves are applied; 2026-10-17, four corrections: column anchors on replaced lines, `occurrence`, no speaker features, t-106 later)
 - Board: t-084; unblocks t-097 → t-098 → t-105 → t-099 → t-101 → t-106 (see Consequences)
 - Research: [docs/research/demo-time.md](../research/demo-time.md)

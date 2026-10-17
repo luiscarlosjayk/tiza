@@ -6,7 +6,7 @@
 //!   message; `u` restores everything. An empty paste is refused.
 //! - AC2 CRLF is normalized; an empty paste is rejected.
 
-use codedraw_qa::Live;
+use tiza_qa::Live;
 
 #[test]
 fn ac1_paste_reanchors_by_text_and_undo_restores() {

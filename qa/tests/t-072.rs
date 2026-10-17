@@ -19,9 +19,9 @@
 //! - AC4 Here the test runs the script when python3 + Pillow + numpy +
 //!   ffmpeg are present and otherwise only reports that it skipped.
 
-use codedraw_core::theme::{Theme, contrast};
-use codedraw_core::{ThemeName, canvas::Rgb};
-use codedraw_qa::{example, scratch};
+use tiza_core::theme::{Theme, contrast};
+use tiza_core::{ThemeName, canvas::Rgb};
+use tiza_qa::{example, scratch};
 
 fn roles(t: &Theme) -> Vec<(&'static str, Rgb, Rgb)> {
     vec![
@@ -50,11 +50,11 @@ fn ac1_every_theme_role_passes_before_compression() {
         }
         // The syntax colors that reach the canvas went through `legible`.
         let code = ["// a comment\n", "let x = 1;\n", "fn f() {}\n", "\"str\"\n"].concat();
-        let doc = codedraw_core::Document::from_code(&code, "rs", None);
-        let l = codedraw_core::layout::layout(
+        let doc = tiza_core::Document::from_code(&code, "rs", None);
+        let l = tiza_core::layout::layout(
             &doc,
             &t,
-            &codedraw_core::layout::LayoutOptions {
+            &tiza_core::layout::LayoutOptions {
                 width: 60,
                 step: 1,
                 focus: None,
@@ -111,13 +111,13 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                example("ownership.rs.codedraw").to_str().unwrap(),
+                example("ownership.rs.tiza").to_str().unwrap(),
                 "--step",
                 "7",
                 "--theme",
                 theme,
                 "--bin",
-                codedraw_qa::bin().to_str().unwrap(),
+                tiza_qa::bin().to_str().unwrap(),
                 "--json",
                 json.to_str().unwrap(),
                 "--keep",
@@ -143,7 +143,7 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                example("ownership.rs.codedraw").to_str().unwrap(),
+                example("ownership.rs.tiza").to_str().unwrap(),
                 "--step",
                 "7",
                 "--theme",
@@ -151,7 +151,7 @@ fn ac2_ac3_pipeline_passes_both_themes() {
                 "--min",
                 "40",
                 "--bin",
-                codedraw_qa::bin().to_str().unwrap(),
+                tiza_qa::bin().to_str().unwrap(),
             ])
             .output()
             .unwrap();

@@ -8,8 +8,8 @@
 //! - AC3 The Tab selection is always visible: `▸` in the gutter of the
 //!   annotation's first line, and the hint on the bar when it fits.
 
-use codedraw_qa::Live;
 use crossterm::event::KeyCode;
+use tiza_qa::Live;
 
 fn bar(live: &Live, cols: u16) -> String {
     live.screen(cols, 24).lines().last().unwrap().to_string()
@@ -111,7 +111,7 @@ fn qa_command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
     live.command("theme dark");
     live.keys(&[KeyCode::Char(':'), KeyCode::Up, KeyCode::Up, KeyCode::Up]);
     let input = live.with(|app| match &app.mode {
-        codedraw_tui::app::Mode::Command(i) => i.clone(),
+        tiza_tui::app::Mode::Command(i) => i.clone(),
         _ => String::new(),
     });
     assert_eq!(input, "note 1 one", "↑ past the oldest stays on the oldest");

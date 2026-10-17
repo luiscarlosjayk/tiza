@@ -12,9 +12,9 @@
 //! - AC4 PNG/SVG export renders the same canvas.
 //! - AC5 `fill` is not serialized; older documents load unchanged.
 
-use codedraw_core::model::{Emphasis, Shape};
-use codedraw_qa::{Live, McpClient, codedraw_ok, scratch};
 use serde_json::json;
+use tiza_core::model::{Emphasis, Shape};
+use tiza_qa::{Live, McpClient, scratch, tiza_ok};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n    let n = len( &s );\n    println!(\"{n}\");\n}\n";
 
@@ -84,10 +84,10 @@ fn step3_strike_in_text_and_png() {
     );
     assert!(t.contains("(\"{n}\");"), "only the span is struck: {t}");
     let dir = scratch("t096-png");
-    let doc = dir.join("doc.codedraw");
+    let doc = dir.join("doc.tiza");
     live.command(&format!("w {}", doc.display()));
     let png = dir.join("strike.png");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         doc.to_str().unwrap(),
         "--out",
@@ -95,7 +95,7 @@ fn step3_strike_in_text_and_png() {
     ]);
     assert!(std::fs::metadata(&png).unwrap().len() > 1000);
     let svg = dir.join("strike.svg");
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
         doc.to_str().unwrap(),
         "--out",

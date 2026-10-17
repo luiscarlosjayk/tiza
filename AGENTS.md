@@ -1,13 +1,13 @@
 # For agents working in this repo
 
-- Cargo workspace with 5 crates: `codedraw-core` (model/layout, no terminal), `codedraw-tui`, `codedraw-mcp`, `codedraw-export` (SVG/PNG, the only one linking resvg), `codedraw-cli` (the `codedraw` binary).
+- Cargo workspace with 5 crates: `tiza-core` (model/layout, no terminal), `tiza-tui`, `tiza-mcp`, `tiza-export` (SVG/PNG, the only one linking resvg), `tiza` (the binary, in `crates/tiza-cli`).
 - Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
 - Every feature ticket ends with: acceptance criteria, manual test steps and corner cases on its board card, and `qa/tests/t-XXX.rs` (one independent crate per ticket, fixtures in `qa/fixtures/t-XXX/`; see `qa/README.md`). `examples/` holds demos only, never test data.
 - Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
 - New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry.
 - Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Commits in Spanish, imperative mood, with the board task id when applicable (`t-022`).
-- To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `codedraw api status --socket /tmp/x.sock`.
+- To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `tiza api status --socket /tmp/x.sock`.
 
 ## Working the board
 
@@ -19,7 +19,7 @@ The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t
 - When the owner discards a card (`wontdo`), take it out of every candidate list that names it (ADRs, research notes) in your next commit.
 - Every card you touch gets a line in `notes`, newest last: `[AAAA-MM-DD HH:MM claude] …` with the commit hash, the state (what is done, what is missing) and anything the owner must decide or test. Add it with `str_replace` pinned to the card's `if_version` (never resend the whole document), and set `updatedAt`/`updatedBy`.
 - Nothing moves to `done` without the owner's QA APPROVE; cards the owner tests himself (TUI feel, editor integrations, taste calls) are closed by him, not by you.
-- Finishing a card means: AC, manual test steps and corner cases on the card, `qa/tests/t-XXX.rs`, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`codedraw schema api > schema/api.schema.json`, `codedraw schema document > schema/codedraw.schema.json`, `scripts/check-schema.py`).
+- Finishing a card means: AC, manual test steps and corner cases on the card, `qa/tests/t-XXX.rs`, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`tiza schema api > schema/api.schema.json`, `tiza schema document > schema/tiza.schema.json`, `scripts/check-schema.py`).
 
 ## Pushing
 

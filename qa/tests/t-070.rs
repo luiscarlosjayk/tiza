@@ -6,18 +6,18 @@
 //!   23 tools (each with a description and an input schema that is a valid
 //!   JSON Schema) and calls them; every tool's call reaches the live instance.
 //! - AC2 Without a live instance every tool answers an explicit error naming
-//!   the socket and how to start CodeDraw — it never hangs. When the TUI starts
+//!   the socket and how to start Tiza — it never hangs. When the TUI starts
 //!   afterwards, the same MCP process works without a restart (reconnection).
 //! - AC3 Error cases map to tool errors with the socket's code in the text:
 //!   text_not_found, duplicate_id, out_of_range, not_found, invalid_argument,
 //!   plus parameter validation (unknown field, wrong type).
 //! - AC4 Results of `scene.get`-backed tools and the socket replies validate
 //!   against `schema/api.schema.json`; the document returned by the socket
-//!   validates against `schema/codedraw.schema.json`.
+//!   validates against `schema/tiza.schema.json`.
 //! - AC5 Two MCP clients against one instance interleave without mixing replies.
 
-use codedraw_qa::{Live, McpClient, scratch};
 use serde_json::{Value, json};
+use tiza_qa::{Live, McpClient, scratch};
 
 fn root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
@@ -141,15 +141,15 @@ fn ac2_no_instance_then_reconnection() {
     let (err, text, _) = mcp.call("status", json!({}));
     assert!(err, "must fail without an instance");
     assert!(
-        text.contains("No CodeDraw instance")
+        text.contains("No Tiza instance")
             && text.contains("later.sock")
-            && text.contains("codedraw <file>"),
+            && text.contains("tiza <file>"),
         "{text}"
     );
     // The instance appears later: the same MCP process serves it.
     let live = Live::open(
-        codedraw_core::Document::from_code("fn a() {}\n", "rs", None),
-        dir.join("doc.codedraw"),
+        tiza_core::Document::from_code("fn a() {}\n", "rs", None),
+        dir.join("doc.tiza"),
         sock.clone(),
     );
     let (err, text, _) = mcp.call("status", json!({}));
@@ -157,10 +157,10 @@ fn ac2_no_instance_then_reconnection() {
     // The instance goes away: explicit error again, then back when it returns.
     drop(live);
     let (err, text, _) = mcp.call("status", json!({}));
-    assert!(err && text.contains("No CodeDraw instance"), "{text}");
+    assert!(err && text.contains("No Tiza instance"), "{text}");
     let _live = Live::open(
-        codedraw_core::Document::from_code("fn b() {}\n", "rs", None),
-        dir.join("doc2.codedraw"),
+        tiza_core::Document::from_code("fn b() {}\n", "rs", None),
+        dir.join("doc2.tiza"),
         sock,
     );
     let (err, text, _) = mcp.call("get_code", json!({}));
@@ -216,7 +216,7 @@ fn ac4_replies_validate_against_the_published_schemas() {
     mcp.call("add_arrow", json!({"from": {"find": "let s"}, "to": {"find": "s: String"}, "label": "move", "stroke": "thick"}));
     mcp.call("add_callout", json!({"from_line": 1, "to_line": 4, "text": "whole main", "title": "main", "border": "double", "fill": true}));
     // The socket's scene.get → document validates against the document schema.
-    let doc_validator = validator("schema/codedraw.schema.json");
+    let doc_validator = validator("schema/tiza.schema.json");
     let scene = live.api_ok("scene.get", json!({}));
     let errors: Vec<String> = doc_validator
         .iter_errors(&scene["document"])

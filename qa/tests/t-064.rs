@@ -10,9 +10,9 @@
 //! - Corner: exactly 100×30 is not small; a 0×0 frame produces no warning; padding
 //!   reduces the usable width for the clipping check.
 
-use codedraw_qa::Live;
 use crossterm::event::KeyCode;
 use serde_json::json;
+use tiza_qa::Live;
 
 fn status_line(screen: &str) -> String {
     screen.lines().last().unwrap_or("").to_string()

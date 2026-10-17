@@ -14,13 +14,13 @@
 //!   border keys on an arrow or note fail naming the type.
 //! - AC5 Files without the fields load and save unchanged.
 
-use codedraw_qa::{Live, codedraw_ok, fixture};
 use serde_json::json;
+use tiza_qa::{Live, fixture, tiza_ok};
 
 fn render() -> String {
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
-        fixture("t-095/borders.codedraw").to_str().unwrap(),
+        fixture("t-095/borders.tiza").to_str().unwrap(),
         "--width",
         "70",
         "--out",
@@ -52,7 +52,7 @@ fn ac2_fill_is_a_choice() {
     live.command("box 3-4 plain fill=no");
     live.command("callout 1-2 @below title=\"t\" tinted text fill=yes");
     let canvas = live.with(|app| app.layout(60).canvas);
-    let th = codedraw_core::Theme::dark();
+    let th = tiza_core::Theme::dark();
     let bg_of = |text: &str| {
         for y in 0..canvas.height {
             let row = canvas.row_text(y);
@@ -160,7 +160,7 @@ fn ac4_commands_socket_and_mcp() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args(["mcp", "--socket", live.socket.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -205,7 +205,7 @@ fn ac4_commands_socket_and_mcp() {
 
 #[test]
 fn ac5_defaults_are_not_written() {
-    let doc = codedraw_core::fs::parse_document(
+    let doc = tiza_core::fs::parse_document(
         r#"{"schema":1,"source":{"language":"rs"},"code":["a","b"],"annotations":[{"id":"x","step":1,"type":"box","from_line":1,"to_line":2},{"id":"c","step":1,"type":"callout","from_line":1,"text":"t"}]}"#,
         None,
     )

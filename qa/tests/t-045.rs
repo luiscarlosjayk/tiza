@@ -21,20 +21,20 @@
 use std::thread;
 use std::time::Duration;
 
-use codedraw_qa::{Live, McpClient};
-use codedraw_tui::app::Overlay;
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
+use tiza_qa::{Live, McpClient};
+use tiza_tui::app::Overlay;
 
 /// Sends a request from another thread and returns a handle to its reply.
 fn send_async(
     socket: &std::path::Path,
     method: &str,
     params: Value,
-) -> thread::JoinHandle<codedraw_core::protocol::Response> {
+) -> thread::JoinHandle<tiza_core::protocol::Response> {
     let socket = socket.to_path_buf();
     let method = method.to_string();
-    thread::spawn(move || codedraw_tui::ipc::call(&socket, &method, params).expect("socket"))
+    thread::spawn(move || tiza_tui::ipc::call(&socket, &method, params).expect("socket"))
 }
 
 fn wait_pending(live: &Live, n: usize) {
@@ -112,7 +112,7 @@ fn ac1_mutations_wait_and_reads_do_not() {
         1,
         "clear was rejected"
     );
-    assert_eq!(live.with(|a| a.theme.name), codedraw_core::ThemeName::Dark);
+    assert_eq!(live.with(|a| a.theme.name), tiza_core::ThemeName::Dark);
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn ac3_turning_off_rejects_pending_and_timeout_is_published() {
     let sup = live.api_ok("supervise.status", json!({}));
     assert_eq!(sup["supervised"], json!(false));
     assert_eq!(sup["timeout_secs"], json!(60));
-    assert_eq!(codedraw_tui::app::PROPOSAL_TIMEOUT, Duration::from_secs(60));
+    assert_eq!(tiza_tui::app::PROPOSAL_TIMEOUT, Duration::from_secs(60));
     // The expiry path, without waiting a minute: age the proposal by hand.
     live.command("supervise on");
     let h = send_async(

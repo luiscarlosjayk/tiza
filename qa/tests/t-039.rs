@@ -1,12 +1,12 @@
-//! t-039 — `codedraw scene put|patch` against the live instance.
+//! t-039 — `tiza scene put|patch` against the live instance.
 //!
 //! Acceptance criteria:
-//! - AC1 `codedraw scene put FILE` (or `-`) replaces the live document
+//! - AC1 `tiza scene put FILE` (or `-`) replaces the live document
 //!   atomically: code, annotations, step, theme, styles, title, padding. A
-//!   `.codedraw` that references its code by a relative path is resolved
+//!   `.tiza` that references its code by a relative path is resolved
 //!   relative to the file and travels embedded; `u` in the TUI restores the
 //!   previous document in one step. The reply carries the new `revision`.
-//! - AC2 `codedraw scene patch JSON` (`-` = stdin, `@file`) changes only what
+//! - AC2 `tiza scene patch JSON` (`-` = stdin, `@file`) changes only what
 //!   it names: `step`, `theme`, `padding`, `title`, `styles` (merged by name)
 //!   and `annotations` merged by id — same id replaces, new id adds,
 //!   `{"id","deleted":true}` removes. Annotations use the document format
@@ -17,12 +17,12 @@
 //!   with a file reference sent to `scene.put` → `invalid_argument`.
 //! - AC4 Both methods are in `api.methods` and `schema/api.schema.json`.
 
-use codedraw_core::fs;
-use codedraw_qa::{Live, codedraw, codedraw_ok, fixture, scratch};
 use serde_json::{Value, json};
+use tiza_core::fs;
+use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn put_file(live: &Live, path: &str) -> Value {
-    let out = codedraw_ok(&[
+    let out = tiza_ok(&[
         "--socket",
         live.socket.to_str().unwrap(),
         "scene",
@@ -33,7 +33,7 @@ fn put_file(live: &Live, path: &str) -> Value {
 }
 
 fn patch(live: &Live, json: &str) -> std::process::Output {
-    codedraw(&[
+    tiza(&[
         "--socket",
         live.socket.to_str().unwrap(),
         "scene",
@@ -50,9 +50,9 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
         .as_u64()
         .unwrap();
 
-    // The t-050 fixture embeds its code; t-013's `script.ref.codedraw`
+    // The t-050 fixture embeds its code; t-013's `script.ref.tiza`
     // references `script` relatively: both must arrive whole.
-    let r = put_file(&live, fixture("t-050/export.codedraw").to_str().unwrap());
+    let r = put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
     assert!(r["revision"].as_u64().unwrap() > before_rev, "{r}");
     assert_eq!(r["annotations"], json!(8));
     let doc = live.with(|a| a.doc.clone());
@@ -69,19 +69,13 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
         "old note gone"
     );
 
-    let r = put_file(
-        &live,
-        fixture("t-013/script.ref.codedraw").to_str().unwrap(),
-    );
+    let r = put_file(&live, fixture("t-013/script.ref.tiza").to_str().unwrap());
     assert_eq!(r["lines"], json!(7), "{r}");
     assert_eq!(r["annotations"], json!(1));
     let (lang, embedded) = live.with(|a| {
         (
             a.doc.source.language.clone(),
-            matches!(
-                a.doc.code_src,
-                codedraw_core::model::CodeSource::Embedded(_)
-            ),
+            matches!(a.doc.code_src, tiza_core::model::CodeSource::Embedded(_)),
         )
     });
     assert_eq!(lang, "py", "language detected from the referenced file");
@@ -96,7 +90,7 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
 
     // From stdin.
     use std::io::Write;
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args([
             "--socket",
             live.socket.to_str().unwrap(),
@@ -123,7 +117,7 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
     assert_eq!(live.with(|a| a.doc.code.clone()), vec!["fn piped() {}"]);
     assert_eq!(
         live.with(|a| a.theme.name),
-        codedraw_core::ThemeName::Light,
+        tiza_core::ThemeName::Light,
         "theme follows the document"
     );
 }
@@ -173,8 +167,8 @@ fn ac2_patch_merges_by_id_and_changes_only_what_it_names() {
     let doc = live.with(|a| a.doc.clone());
     assert_eq!(doc.title.as_deref(), Some("New title"));
     assert_eq!(doc.padding, Some((2, 3)));
-    assert_eq!(doc.theme, Some(codedraw_core::ThemeName::Light));
-    assert_eq!(live.with(|a| a.theme.name), codedraw_core::ThemeName::Light);
+    assert_eq!(doc.theme, Some(tiza_core::ThemeName::Light));
+    assert_eq!(live.with(|a| a.theme.name), tiza_core::ThemeName::Light);
     assert!(doc.styles.contains_key("hot"));
     let moved = doc.find_annotation(&ids[0]).unwrap();
     assert_eq!(moved.shape.line_ranges(), vec![(3, 3)]);
@@ -268,12 +262,12 @@ fn ac3_errors_leave_the_document_untouched() {
     assert!(r.error.is_some());
     assert_eq!(live.with(|a| a.doc.clone()), snapshot);
     // The CLI reports a missing file without touching the instance.
-    let out = codedraw(&[
+    let out = tiza(&[
         "--socket",
         live.socket.to_str().unwrap(),
         "scene",
         "put",
-        "/nope/none.codedraw",
+        "/nope/none.tiza",
     ]);
     assert!(!out.status.success());
     assert_eq!(live.with(|a| a.doc.clone()), snapshot);

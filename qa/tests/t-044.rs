@@ -3,8 +3,8 @@
 //!
 //! Acceptance criteria:
 //! - AC1 `initialize` advertises the `resources` capability; `resources/list`
-//!   returns `codedraw://scene` (application/json), `codedraw://code`
-//!   (text/plain), `codedraw://render` (text/plain) and `codedraw://render.md`
+//!   returns `tiza://scene` (application/json), `tiza://code`
+//!   (text/plain), `tiza://render` (text/plain) and `tiza://render.md`
 //!   (text/markdown), each with a description.
 //! - AC2 `resources/read` returns the live content: the scene as the same
 //!   JSON `scene.get` gives (code embedded), the code with line numbers, the
@@ -16,8 +16,8 @@
 //! - AC4 The `render_text` tool still returns the frame (regression guard)
 //!   and the server instructions mention the resources.
 
-use codedraw_qa::{Live, McpClient};
 use serde_json::{Value, json};
+use tiza_qa::{Live, McpClient};
 
 #[test]
 fn ac1_resources_are_listed_with_types() {
@@ -32,7 +32,7 @@ fn ac1_resources_are_listed_with_types() {
         init["instructions"]
             .as_str()
             .unwrap_or("")
-            .contains("codedraw://scene")
+            .contains("tiza://scene")
     );
     let list = mcp.request("resources/list", json!({}));
     let res = list["result"]["resources"].as_array().expect("resources");
@@ -43,14 +43,14 @@ fn ac1_resources_are_listed_with_types() {
     assert_eq!(
         by_uri.keys().copied().collect::<Vec<_>>(),
         vec![
-            "codedraw://code",
-            "codedraw://render",
-            "codedraw://render.md",
-            "codedraw://scene"
+            "tiza://code",
+            "tiza://render",
+            "tiza://render.md",
+            "tiza://scene"
         ]
     );
-    assert_eq!(by_uri["codedraw://scene"]["mimeType"], "application/json");
-    assert_eq!(by_uri["codedraw://render.md"]["mimeType"], "text/markdown");
+    assert_eq!(by_uri["tiza://scene"]["mimeType"], "application/json");
+    assert_eq!(by_uri["tiza://render.md"]["mimeType"], "text/markdown");
     for r in res {
         assert!(
             r["description"].as_str().is_some_and(|d| d.len() > 10),
@@ -79,7 +79,7 @@ fn ac2_reads_return_the_live_content() {
             c["text"].as_str().unwrap().to_string(),
         )
     };
-    let (mime, scene) = read(&mut mcp, "codedraw://scene");
+    let (mime, scene) = read(&mut mcp, "tiza://scene");
     assert_eq!(mime, "application/json");
     let scene: Value = serde_json::from_str(&scene).unwrap();
     let direct = live.api_ok("scene.get", json!({}));
@@ -90,16 +90,16 @@ fn ac2_reads_return_the_live_content() {
     );
     assert_eq!(scene["document"]["annotations"][0]["text"], "born");
 
-    let (mime, code) = read(&mut mcp, "codedraw://code");
+    let (mime, code) = read(&mut mcp, "tiza://code");
     assert_eq!(mime, "text/plain");
     assert!(code.contains("   2      let s = 1;"), "{code}");
 
-    let (_, frame) = read(&mut mcp, "codedraw://render");
+    let (_, frame) = read(&mut mcp, "tiza://render");
     assert!(
         frame.contains("born") && frame.contains("takes(s)"),
         "{frame}"
     );
-    let (mime, md) = read(&mut mcp, "codedraw://render.md");
+    let (mime, md) = read(&mut mcp, "tiza://render.md");
     assert_eq!(mime, "text/markdown");
     // Code from stdin has no file: just the fence. A file-backed document
     // puts its name and the step above (see below).
@@ -108,19 +108,19 @@ fn ac2_reads_return_the_live_content() {
 
     // No caching: a change is visible on the next read.
     live.command("note 3 moved");
-    let (_, frame2) = read(&mut mcp, "codedraw://render");
+    let (_, frame2) = read(&mut mcp, "tiza://render");
     assert!(frame2.contains("moved"), "{frame2}");
-    let (_, scene2) = read(&mut mcp, "codedraw://scene");
+    let (_, scene2) = read(&mut mcp, "tiza://scene");
     assert!(scene2.contains("\"moved\""));
 
     // File-backed document: the Markdown view is titled with the file name and step.
-    let doc = codedraw_core::fs::open(codedraw_qa::fixture("t-011/repeated.rs").to_str().unwrap())
+    let doc = tiza_core::fs::open(tiza_qa::fixture("t-011/repeated.rs").to_str().unwrap())
         .unwrap()
         .document;
-    let dir = codedraw_qa::scratch("t044-file");
-    let live2 = Live::open(doc, dir.join("repeated.rs.codedraw"), dir.join("live.sock"));
+    let dir = tiza_qa::scratch("t044-file");
+    let live2 = Live::open(doc, dir.join("repeated.rs.tiza"), dir.join("live.sock"));
     let mut mcp2 = McpClient::start(&live2.socket);
-    let (_, md) = read(&mut mcp2, "codedraw://render.md");
+    let (_, md) = read(&mut mcp2, "tiza://render.md");
     assert!(
         md.starts_with("**repeated.rs** (step 1)\n\n```text\n"),
         "{md}"
@@ -131,10 +131,10 @@ fn ac2_reads_return_the_live_content() {
 fn ac3_unknown_uri_and_no_instance_are_errors() {
     let live = Live::from_code("fn a() {}\n", "rs", "t044-errors");
     let mut mcp = McpClient::start(&live.socket);
-    let v = mcp.request("resources/read", json!({"uri": "codedraw://nope"}));
+    let v = mcp.request("resources/read", json!({"uri": "tiza://nope"}));
     let msg = v["error"]["message"].as_str().unwrap_or("");
     assert!(
-        msg.contains("codedraw://nope") && msg.contains("codedraw://scene"),
+        msg.contains("tiza://nope") && msg.contains("tiza://scene"),
         "{v}"
     );
     assert_eq!(
@@ -144,7 +144,7 @@ fn ac3_unknown_uri_and_no_instance_are_errors() {
     );
     drop(live);
     // The instance is gone: the read reports the connection problem like a tool.
-    let v = mcp.request("resources/read", json!({"uri": "codedraw://code"}));
+    let v = mcp.request("resources/read", json!({"uri": "tiza://code"}));
     assert!(!v["error"].is_null(), "{v}");
     let msg = v["error"]["message"].as_str().unwrap_or("").to_lowercase();
     assert!(msg.contains("instance") || msg.contains("socket"), "{v}");

@@ -33,14 +33,14 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --release --locked --target ${{ matrix.target }} -p codedraw-cli
+      - run: cargo build --release --locked --target ${{ matrix.target }} -p tiza
       - name: package
         shell: bash
         run: |
           set -euo pipefail
-          name="codedraw-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          name="tiza-${GITHUB_REF_NAME}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/codedraw" "dist/$name/"
+          cp "target/${{ matrix.target }}/release/tiza" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
           cp -r examples "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
@@ -68,9 +68,9 @@ jobs:
         run: |
           prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
           {
-            echo "## CodeDraw ${GITHUB_REF_NAME}"
+            echo "## Tiza ${GITHUB_REF_NAME}"
             echo
-            echo "Installation: download the tar.gz for your platform, verify the .sha256 and copy \`codedraw\` into your PATH, or \`cargo install --git https://github.com/${GITHUB_REPOSITORY} codedraw-cli --tag ${GITHUB_REF_NAME}\`."
+            echo "Installation: download the tar.gz for your platform, verify the .sha256 and copy \`tiza\` into your PATH, or \`cargo install --git https://github.com/${GITHUB_REPOSITORY} tiza --tag ${GITHUB_REF_NAME}\`."
             echo
             echo "### Changes"
             if [ -n "$prev" ]; then git log --no-merges --pretty='- %s (%h)' "$prev..${GITHUB_REF_NAME}"; else git log --no-merges --pretty='- %s (%h)'; fi

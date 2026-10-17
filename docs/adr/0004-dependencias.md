@@ -1,5 +1,7 @@
 # 0004 · Dependency policy
 
+> Renamed: the project became **Tiza** on 2026-10-17 ([ADR 0008](0008-renombre-a-tiza.md)). Where this record says CodeDraw, read Tiza; `codedraw` → `tiza`, `.codedraw` → `.tiza`, `CODEDRAW_*` → `TIZA_*`.
+
 **Status:** accepted (2026-10-15)
 
 ## Decision

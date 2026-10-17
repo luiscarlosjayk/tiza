@@ -1,4 +1,4 @@
-//! t-074 — Input fuzzing (`.codedraw` parser, `:` commands, socket NDJSON)
+//! t-074 — Input fuzzing (`.tiza` parser, `:` commands, socket NDJSON)
 //! and the `use-dev-tty` smoke test.
 //!
 //! Acceptance criteria:
@@ -12,7 +12,7 @@
 //!   UTF-8, huge lines, JSON that is not a request, unknown methods, params of
 //!   the wrong type) get an error reply or a closed connection, and the server
 //!   keeps serving the next client.
-//! - AC4 `codedraw --smoke` draws one frame, polls the input once and exits 0
+//! - AC4 `tiza --smoke` draws one frame, polls the input once and exits 0
 //!   with the terminal restored; with stdin piped it reads keys from /dev/tty.
 //!   CI runs it under `script` on Linux and macOS (`.github/workflows/ci.yml`).
 //!
@@ -22,16 +22,16 @@
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::UnixStream;
 
-use codedraw_core::fs;
-use codedraw_core::layout::{LayoutOptions, layout};
-use codedraw_core::{Document, Theme};
-use codedraw_qa::{Live, fixture, scratch};
-use codedraw_tui::app::App;
 use proptest::prelude::*;
 use serde_json::{Value, json};
+use tiza_core::fs;
+use tiza_core::layout::{LayoutOptions, layout};
+use tiza_core::{Document, Theme};
+use tiza_qa::{Live, fixture, scratch};
+use tiza_tui::app::App;
 
 fn layouts_without_panic(doc: &Document) {
-    let theme = Theme::from_name(codedraw_core::ThemeName::Dark);
+    let theme = Theme::from_name(tiza_core::ThemeName::Dark);
     for width in [1usize, 20, 61, 100, 300] {
         let l = layout(
             doc,
@@ -72,7 +72,7 @@ fn json_strategy() -> impl Strategy<Value = Value> {
 
 /// A valid document with one random field replaced by a random value.
 fn mutated_document() -> impl Strategy<Value = String> {
-    let base = std::fs::read_to_string(fixture("t-050/export.codedraw")).unwrap();
+    let base = std::fs::read_to_string(fixture("t-050/export.tiza")).unwrap();
     let base: Value = serde_json::from_str(&base).unwrap();
     let keys = [
         "schema",
@@ -171,11 +171,11 @@ fn command_strategy() -> impl Strategy<Value = String> {
 }
 
 fn fresh_app(name: &str) -> App {
-    let doc = fs::open(fixture("t-050/export.codedraw").to_str().unwrap())
+    let doc = fs::open(fixture("t-050/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let dir = scratch(name);
-    let mut app = App::new(doc, dir.join("doc.codedraw"));
+    let mut app = App::new(doc, dir.join("doc.tiza"));
     app.autosave = false;
     app.size = (100, 40);
     app
@@ -315,7 +315,7 @@ print(text[text.find("EXIT="):].strip())
         .args([
             "-I",
             script.to_str().unwrap(),
-            codedraw_qa::bin().to_str().unwrap(),
+            tiza_qa::bin().to_str().unwrap(),
             fixture("t-011/repeated.rs").to_str().unwrap(),
         ])
         .output()
@@ -329,5 +329,5 @@ print(text[text.find("EXIT="):].strip())
     assert!(stdout.contains("CODE"), "{stdout}");
     assert!(stdout.contains("EXIT=0"), "{stdout}");
     // `--smoke` never writes a sidecar next to the source.
-    assert!(!fixture("t-011/repeated.rs.codedraw").exists());
+    assert!(!fixture("t-011/repeated.rs.tiza").exists());
 }

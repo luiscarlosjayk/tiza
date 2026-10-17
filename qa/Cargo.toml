@@ -1,5 +1,5 @@
 [package]
-name = "codedraw-qa"
+name = "tiza-qa"
 description = "Per-ticket QA tests: each tests/t-XXX.rs is an independent crate that exercises one board task"
 publish = false
 version.workspace = true
@@ -13,10 +13,10 @@ authors.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-codedraw-core.workspace = true
-codedraw-tui.workspace = true
-codedraw-export.workspace = true
-codedraw-mcp.workspace = true
+tiza-core.workspace = true
+tiza-tui.workspace = true
+tiza-export.workspace = true
+tiza-mcp.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true

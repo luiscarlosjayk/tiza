@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Legibility at 1080p after YouTube-like compression (t-072).
 
-Pipeline: `codedraw render` → PNG → scale to 1920×1080 (letterboxed) → H.264
+Pipeline: `tiza render` → PNG → scale to 1920×1080 (letterboxed) → H.264
 at a YouTube-like bitrate (ffmpeg) → decode the frame → for every text color
 the theme uses, compare the pixels that had that color before compression
 with what came back, and report the WCAG contrast against the background.
 
-    python3 scripts/legibility.py examples/ownership.rs.codedraw --step 7
-    python3 scripts/legibility.py doc.codedraw --theme light --min 4.5 --json report.json
+    python3 scripts/legibility.py examples/ownership.rs.tiza --step 7
+    python3 scripts/legibility.py doc.tiza --theme light --min 4.5 --json report.json
 
 Exit code 1 when any measured role falls under --min. Needs python3 with
-Pillow and numpy, ffmpeg on PATH, and the codedraw binary (--bin or
-target/debug/codedraw).
+Pillow and numpy, ffmpeg on PATH, and the tiza binary (--bin or
+target/debug/tiza).
 """
 
 import argparse
@@ -150,14 +150,14 @@ def main():
     ap.add_argument("--width", type=int, default=100)
     ap.add_argument("--bitrate", type=int, default=8000, help="kbit/s (YouTube 1080p30 ≈ 8000)")
     ap.add_argument("--min", type=float, default=4.5, help="minimum contrast after compression")
-    ap.add_argument("--bin", default=os.environ.get("CODEDRAW_BIN", "target/debug/codedraw"))
+    ap.add_argument("--bin", default=os.environ.get("TIZA_BIN", "target/debug/tiza"))
     ap.add_argument("--json")
     ap.add_argument("--keep", help="directory to keep the PNGs in")
     a = ap.parse_args()
     if not shutil.which("ffmpeg"):
         print("ffmpeg not found", file=sys.stderr)
         return 2
-    out_dir = a.keep or tempfile.mkdtemp(prefix="codedraw-legibility-")
+    out_dir = a.keep or tempfile.mkdtemp(prefix="tiza-legibility-")
     os.makedirs(out_dir, exist_ok=True)
     before = os.path.join(out_dir, "before.png")
     after = os.path.join(out_dir, "after.png")

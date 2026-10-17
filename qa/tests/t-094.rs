@@ -12,14 +12,14 @@
 //!   wrong values list the options; style keys on a non-arrow fail naming its type.
 //! - AC6 Documents without the fields load unchanged and are saved without them.
 
-use codedraw_qa::{Live, codedraw_ok, fixture, scratch};
 use crossterm::event::KeyCode;
 use serde_json::json;
+use tiza_qa::{Live, fixture, scratch, tiza_ok};
 
 fn render() -> String {
-    codedraw_ok(&[
+    tiza_ok(&[
         "render",
-        fixture("t-094/arrows.codedraw").to_str().unwrap(),
+        fixture("t-094/arrows.tiza").to_str().unwrap(),
         "--width",
         "90",
         "--out",
@@ -208,7 +208,7 @@ fn ac5_commands_socket_and_mcp_set_styles() {
     live.keys(&[KeyCode::Tab, KeyCode::Char('e')]);
     let mode = live.with(|app| app.mode.clone());
     assert!(
-        matches!(mode, codedraw_tui::app::Mode::Command(ref c) if c.starts_with("set ")),
+        matches!(mode, tiza_tui::app::Mode::Command(ref c) if c.starts_with("set ")),
         "{mode:?}"
     );
     live.keys(&[KeyCode::Esc]);
@@ -225,7 +225,7 @@ fn ac5_commands_socket_and_mcp_set_styles() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let mut child = std::process::Command::new(codedraw_qa::bin())
+    let mut child = std::process::Command::new(tiza_qa::bin())
         .args(["mcp", "--socket", live.socket.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
@@ -270,14 +270,14 @@ fn ac5_commands_socket_and_mcp_set_styles() {
 fn ac6_old_files_unchanged_and_defaults_not_written() {
     let dir = scratch("t094-compat");
     let old = r#"{"schema":1,"source":{"language":"rs"},"code":["a","b"],"annotations":[{"id":"x","step":1,"type":"arrow","from":{"line":1,"col":0},"to":{"line":2,"col":0}}]}"#;
-    let path = dir.join("old.codedraw");
+    let path = dir.join("old.tiza");
     std::fs::write(&path, old).unwrap();
-    let doc = codedraw_core::fs::parse_document(old, None).unwrap();
+    let doc = tiza_core::fs::parse_document(old, None).unwrap();
     let json = serde_json::to_string(&doc).unwrap();
     assert!(
         !json.contains("stroke") && !json.contains("heads") && !json.contains("route"),
         "{json}"
     );
-    let out = codedraw_ok(&["render", path.to_str().unwrap(), "--out", "-"]);
+    let out = tiza_ok(&["render", path.to_str().unwrap(), "--out", "-"]);
     assert!(out.contains("╭─") && out.contains("▶"), "{out}");
 }

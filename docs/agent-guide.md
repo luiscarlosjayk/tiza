@@ -1,10 +1,10 @@
 # Agent guide
 
-This page is for an agent (Claude Code, Zed, any MCP client) that is going to draw on the code a presenter has open in CodeDraw.
+This page is for an agent (Claude Code, Zed, any MCP client) that is going to draw on the code a presenter has open in Tiza.
 
 ## Mental model
 
-- The **TUI is the sole owner of the document**. You talk to it; you do not edit the `.codedraw` by hand while it is open.
+- The **TUI is the sole owner of the document**. You talk to it; you do not edit the `.tiza` by hand while it is open.
 - A document has **code** (numbered lines, absolute numbering even when a range is opened) and **annotations**. Each annotation has a short, stable **id** (`a1`, `a2`… or the one you pass) and a **step** (1-based). Annotations with `step <= current step` are shown.
 - **Anchors** are positions in the text: `{line, col}` or, better, `{find: "exact text", line?: N, occurrence?: K}`. `find` searches for the text on the given line (if you pass one) and then in the whole document. If it does not exist, the tool fails with `text_not_found`: do not guess columns.
 
@@ -66,7 +66,7 @@ The presenter may turn on `:supervise`: then every mutating call (add, update, d
 
 ## Resources
 
-If your client supports MCP resources, `codedraw://scene`, `codedraw://code`, `codedraw://render` and `codedraw://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
+If your client supports MCP resources, `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
 
 ## Idempotency
 
@@ -74,20 +74,20 @@ Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the ann
 
 ## After a rebuild
 
-`status` returns a `bridge` object: `version`, `build` (git commit of this MCP server) and, when the `codedraw` binary on disk is newer than the running server, `binary_rebuilt: true` plus a `hint`. That means the tool list you hold may be stale: tell the user to reconnect the server (Claude Code: `/mcp` → codedraw → reconnect) before relying on a tool you cannot see. `instance_build` appears when the TUI was built from a different commit than the bridge: ask the user to restart the TUI as well.
+`status` returns a `bridge` object: `version`, `build` (git commit of this MCP server) and, when the `tiza` binary on disk is newer than the running server, `binary_rebuilt: true` plus a `hint`. That means the tool list you hold may be stale: tell the user to reconnect the server (Claude Code: `/mcp` → tiza → reconnect) before relying on a tool you cannot see. `instance_build` appears when the TUI was built from a different commit than the bridge: ask the user to restart the TUI as well.
 
 ## Schema
 
-`codedraw schema document` and `codedraw schema api` print the JSON Schemas (also committed under `schema/`); the live instance answers `api.schema` with the params and result of every method, so a client can validate what it sends. Agents without a terminal can pipe documents: `codedraw render - --out shot.png < demo.codedraw`.
+`tiza schema document` and `tiza schema api` print the JSON Schemas (also committed under `schema/`); the live instance answers `api.schema` with the params and result of every method, so a client can validate what it sends. Agents without a terminal can pipe documents: `tiza render - --out shot.png < demo.tiza`.
 
 ## Without MCP: socket and CLI
 
 Same contract, one JSON request per line over the Unix socket:
 
 ```sh
-printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":4,"text":"hello"}}' | nc -U "$TMPDIR/codedraw/default.sock"
-codedraw api annotation.add '{"type":"note","line":4,"text":"hello"}'
-codedraw api api.methods
+printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":4,"text":"hello"}}' | nc -U "$TMPDIR/tiza/default.sock"
+tiza api annotation.add '{"type":"note","line":4,"text":"hello"}'
+tiza api api.methods
 ```
 
 Response: `{"id":1,"result":{...}}` or `{"id":1,"error":{"code":"text_not_found","message":"..."}}`. Codes: `out_of_range`, `not_found`, `duplicate_id`, `text_not_found`, `invalid_argument`, `invalid_json`, `unavailable`.

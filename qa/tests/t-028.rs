@@ -4,8 +4,8 @@
 //! - AC1 `n`/`p`, `→`/`←` and PageDown/PageUp move the step; `h`/`l` move the column.
 //! - AC2 Step 0 shows only the code; the document remembers its step.
 
-use codedraw_qa::Live;
 use crossterm::event::KeyCode;
+use tiza_qa::Live;
 
 #[test]
 fn ac1_arrows_change_the_step_and_hl_the_column() {
