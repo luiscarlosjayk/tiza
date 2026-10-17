@@ -25,7 +25,33 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
-      - run: cargo test --all-features
+      - name: cargo test
+        shell: bash
+        # --no-fail-fast so one red test binary does not hide the others; the
+        # log is kept for the two steps below.
+        run: |
+          set -o pipefail
+          cargo test --all-features --no-fail-fast 2>&1 | tee test.log
+      - name: Report failing tests
+        # Failing test names and panics become annotations (readable from the
+        # API and the PR without downloading logs), and the `failures:` block
+        # is printed in full.
+        if: failure()
+        shell: bash
+        run: |
+          grep -E '^test .* FAILED$|panicked at' test.log | sort -u | head -40 | while IFS= read -r line; do
+            echo "::error title=cargo test (${{ matrix.os }})::${line}"
+          done
+          echo "::group::failures (${{ matrix.os }})"
+          awk '/^failures:$/{p=1} p{print} /^test result:/{p=0}' test.log | head -400
+          echo "::endgroup::"
+      - name: Upload test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log-${{ matrix.os }}
+          path: test.log
+          retention-days: 7
       - name: smoke render
         run: cargo run -q -- render examples/ownership.rs.codedraw --width 100 --step 5
       - name: smoke TUI (stdin piped, keys from /dev/tty)

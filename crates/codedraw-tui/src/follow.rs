@@ -12,8 +12,12 @@ use notify::{RecursiveMode, Watcher};
 pub const DEBOUNCE: Duration = Duration::from_millis(120);
 
 pub struct Follow {
-    /// Absolute path of the followed file.
+    /// Absolute path of the followed file, as given (shown in the status line).
     pub path: PathBuf,
+    /// Canonical parent directory (symlinks resolved). FSEvents on macOS
+    /// reports `/private/var/…` for a watch on `/var/…` (`$TMPDIR`), so event
+    /// paths are compared against this, never against `path.parent()`.
+    dir_canon: PathBuf,
     watcher: Option<notify::RecommendedWatcher>,
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
     /// Time of the last relevant event, while a reload is pending.
@@ -45,8 +49,10 @@ impl Follow {
         watcher
             .watch(&dir, RecursiveMode::NonRecursive)
             .map_err(|e| format!("cannot watch {}: {e}", dir.display()))?;
+        let dir_canon = canonical_dir(&dir);
         Ok(Follow {
             path,
+            dir_canon,
             watcher: Some(watcher),
             rx,
             pending_since: None,
@@ -110,21 +116,37 @@ impl Follow {
         self.missing = false;
     }
 
-    fn same_file(&self, p: &Path) -> bool {
-        p == self.path
-            || p.file_name()
-                .is_some_and(|f| Some(f) == self.path.file_name())
-                && p.parent().is_some_and(|d| {
-                    std::path::absolute(d)
-                        .map(|d| Some(d.as_path()) == self.path.parent())
-                        .unwrap_or(false)
-                })
+    /// Whether an event path names the followed file: same file name and the
+    /// same directory once symlinks are resolved on both sides.
+    pub fn same_file(&self, p: &Path) -> bool {
+        if p == self.path {
+            return true;
+        }
+        if p.file_name() != self.path.file_name() {
+            return false;
+        }
+        p.parent().is_some_and(|d| {
+            let d = if d.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                d
+            };
+            canonical_dir(d) == self.dir_canon
+        })
     }
 
     /// Stops watching (dropping the watcher).
     pub fn stop(&mut self) {
         self.watcher = None;
     }
+}
+
+/// The directory with symlinks resolved; falls back to the absolute form
+/// when it cannot be resolved (removed while the editor replaced it).
+fn canonical_dir(dir: &Path) -> PathBuf {
+    std::fs::canonicalize(dir)
+        .or_else(|_| std::path::absolute(dir))
+        .unwrap_or_else(|_| dir.to_path_buf())
 }
 
 /// `HH:MM:SS` local time, for the status line.
@@ -137,4 +159,52 @@ pub fn clock_now() -> String {
     // approximation (UTC) — the status line says so.
     let s = secs % 86_400;
     format!("{:02}:{:02}:{:02}Z", s / 3600, (s % 3600) / 60, s % 60)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// macOS: `$TMPDIR` is `/var/folders/…` but FSEvents reports
+    /// `/private/var/folders/…`. Reproduced on any OS with a symlinked
+    /// directory: the file is followed through the link, the event names
+    /// the real path (and the other way round).
+    #[test]
+    fn same_file_resolves_symlinked_directories() {
+        let base = std::env::temp_dir().join(format!("codedraw-follow-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let real = base.join("real");
+        std::fs::create_dir_all(&real).unwrap();
+        let link = base.join("link");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        #[cfg(not(unix))]
+        return;
+        std::fs::write(real.join("main.rs"), "fn main() {}\n").unwrap();
+
+        let through_link = Follow::start(link.join("main.rs"), vec![]).unwrap();
+        assert!(
+            through_link.same_file(&real.join("main.rs")),
+            "real path for a linked watch"
+        );
+        assert!(through_link.same_file(&link.join("main.rs")));
+        assert!(!through_link.same_file(&real.join("other.rs")));
+        assert!(
+            !through_link.same_file(&base.join("main.rs")),
+            "same name, other directory"
+        );
+
+        let through_real = Follow::start(real.join("main.rs"), vec![]).unwrap();
+        assert!(
+            through_real.same_file(&link.join("main.rs")),
+            "linked path for a real watch"
+        );
+
+        // A relative event path (some backends) still matches by directory.
+        let cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&real).unwrap();
+        assert!(through_real.same_file(Path::new("main.rs")));
+        std::env::set_current_dir(cwd).unwrap();
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

@@ -52,12 +52,22 @@ fn reloads(live: &Live) -> u64 {
         .unwrap_or(0)
 }
 
-/// Waits (up to 3 s) until the reload counter reaches `n`.
+/// How long a positive wait may take: generous, because macOS FSEvents and
+/// loaded CI runners can deliver an event well after the write.
+const WAIT: Duration = Duration::from_secs(10);
+
+/// Quiet time after which "nothing happened" is believed (several times the
+/// debounce plus the worst event latency seen on CI).
+fn settle() {
+    std::thread::sleep(Duration::from_millis(700));
+}
+
+/// Waits (up to `WAIT`) until the reload counter reaches `n`.
 fn wait_reloads(live: &Live, n: u64) {
     let start = Instant::now();
     while reloads(live) < n {
         assert!(
-            start.elapsed() < Duration::from_secs(3),
+            start.elapsed() < WAIT,
             "timed out waiting for reload #{n} (at {})",
             reloads(live)
         );
@@ -109,7 +119,7 @@ fn ac1_tmp_rename_save_reloads_once_after_debounce() {
         std::thread::sleep(Duration::from_millis(15));
     }
     wait_reloads(&live, 2);
-    std::thread::sleep(Duration::from_millis(400));
+    settle();
     assert_eq!(reloads(&live), 2, "burst must collapse into one reload");
     assert!(code(&live)[3].contains("v4"), "{:?}", code(&live));
 }
@@ -204,7 +214,7 @@ fn ac3_status_line_and_follow_command() {
     let bar = live.screen(120, 12).lines().last().unwrap().to_string();
     assert!(!bar.contains("following"), "{bar}");
     save_like_zed(&src, &CODE.replace("done", "ignored"));
-    std::thread::sleep(Duration::from_millis(400));
+    settle();
     assert!(code(&live)[3].contains("ok"), "no reload after :follow off");
 
     live.command("follow sideways");
@@ -278,11 +288,7 @@ fn corner_removed_file_waits_and_recreation_reloads() {
         {
             break;
         }
-        assert!(
-            start.elapsed() < Duration::from_secs(3),
-            "{:?}",
-            live.message()
-        );
+        assert!(start.elapsed() < WAIT, "{:?}", live.message());
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(live.api_ok("follow.status", json!({}))["missing"], true);
@@ -313,7 +319,7 @@ fn corner_truncate_then_write_is_one_reload() {
     std::thread::sleep(Duration::from_millis(60));
     std::fs::write(&src, CODE.replace("done", "rewritten")).unwrap();
     wait_reloads(&live, 1);
-    std::thread::sleep(Duration::from_millis(400));
+    settle();
     assert_eq!(reloads(&live), 1);
     assert!(code(&live)[3].contains("rewritten"));
     assert_eq!(
@@ -328,7 +334,7 @@ fn corner_identical_content_and_sidecar_autosave_do_not_reload() {
     let (live, src) = followed("t011-same", CODE);
     live.command("follow on");
     save_like_zed(&src, CODE);
-    std::thread::sleep(Duration::from_millis(400));
+    settle();
     assert_eq!(reloads(&live), 0, "same bytes: nothing to do");
     assert!(live.message().is_none_or(|(m, _)| !m.contains("reloaded")));
 
@@ -336,7 +342,7 @@ fn corner_identical_content_and_sidecar_autosave_do_not_reload() {
     for i in 0..3 {
         live.command(&format!("box {} sidecar", i + 1));
     }
-    std::thread::sleep(Duration::from_millis(400));
+    settle();
     assert_eq!(reloads(&live), 0, "the sidecar write is not the source");
     assert!(src.with_extension("rs.codedraw").exists());
 }
@@ -357,11 +363,7 @@ fn corner_non_utf8_keeps_previous_content() {
             );
             break;
         }
-        assert!(
-            start.elapsed() < Duration::from_secs(3),
-            "{:?}",
-            live.message()
-        );
+        assert!(start.elapsed() < WAIT, "{:?}", live.message());
         std::thread::sleep(Duration::from_millis(20));
     }
     assert_eq!(
