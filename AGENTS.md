@@ -8,4 +8,22 @@
 - Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Commits in Spanish, imperative mood, with the board task id when applicable (`t-022`).
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `codedraw api status --socket /tmp/x.sock`.
+
+## Working the board
+
+The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t-NNN` with `ac`, `test_steps`, `corner_cases`, `qa_test`, `notes`, `links`, `status`, `owner`, `blockedBy`, `milestone`, `priority`, `size`, `order`). Columns: `backlog` → `next` → `doing` → `review` → `done`.
+
+- Work only what the owner put in `next` (in order) or asked for explicitly; `backlog` waits, even when a card there is the obvious next step of a chain. The owner's feedback on a card in `review` has priority over starting anything new.
+- Keep `doing` accurate: one card at a time, moved when you start, moved to `review` when the gate is green and the commit is pushed.
+- Every card you touch gets a line in `notes`, newest last: `[AAAA-MM-DD HH:MM claude] …` with the commit hash, the state (what is done, what is missing) and anything the owner must decide or test. Add it with `str_replace` pinned to the card's `if_version` (never resend the whole document), and set `updatedAt`/`updatedBy`.
+- Nothing moves to `done` without the owner's QA APPROVE; cards the owner tests himself (TUI feel, editor integrations, taste calls) are closed by him, not by you.
+- Finishing a card means: AC, manual test steps and corner cases on the card, `qa/tests/t-XXX.rs`, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`codedraw schema api > schema/api.schema.json`, `codedraw schema document > schema/codedraw.schema.json`, `scripts/check-schema.py`).
+
+## Pushing
+
+- Gate before every push: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test` (all green locally). Never push something that leaves CI redder than it was; if CI goes red on your commit, fixing it comes before anything else, and the fix is closed only after three consecutive green runs.
+- No `#[ignore]`, no blind retries, no sleeps as synchronisation: a test that waits on a file event or a background thread waits on a condition with a generous timeout (10 s), and checks a negative with a short settle, not with a fixed sleep that happens to pass.
+- Commit trailers: `Co-Authored-By: <agent>` and the `Claude-Session:` URL the harness gives you, every commit.
+- A stop-hook warning about unpushed commits with no remote is usually a broken `remote.origin.fetch` refspec after a re-clone: fix the refspec and the upstream, do not force-push.
+
 - Releases: a `vX.Y.Z` tag goes on `main` only when every ticket in it is `done` (QA APPROVE on the board); anything with tickets still in `review` ships as `vX.Y.Z-alpha.N` / `-rc.N` (the Release workflow marks suffixed tags as prerelease on its own). Agents never create or delete tags; the owner does, after checking the board.
