@@ -277,6 +277,52 @@ fn ac4_wheel_scrolls_and_overlays_block() {
 }
 
 #[test]
+fn ac6_presentation_mode_ignores_the_mouse() {
+    let l = live("t033-present");
+    l.command("mouse on");
+    let _ = l.screen(80, 20);
+    let (x, y) = screen_xy(&l, 4, 4);
+    l.keys(&[KeyCode::Char('P')]);
+    assert!(l.with(|a| a.present));
+    assert!(l.with(|a| a.mouse), "capture stays on");
+    let before = l.with(|a| (a.cursor_line, a.cursor_col));
+    assert_eq!(
+        l.with(move |a| a.on_mouse(MouseKind::Down, x, y)),
+        MouseOutcome::Ignored
+    );
+    assert_eq!(
+        l.with(|a| (a.cursor_line, a.cursor_col)),
+        before,
+        "a click does not move the cursor"
+    );
+    assert_eq!(
+        l.with(move |a| a.on_mouse(MouseKind::Drag, x + 5, y)),
+        MouseOutcome::Ignored
+    );
+    assert_eq!(
+        l.with(move |a| a.on_mouse(MouseKind::Up, x + 5, y)),
+        MouseOutcome::Ignored
+    );
+    assert!(
+        matches!(l.with(|a| a.mode.clone()), Mode::Normal),
+        "no selection"
+    );
+    assert_eq!(
+        l.with(|a| a.on_mouse(MouseKind::ScrollDown, 10, 5)),
+        MouseOutcome::Ignored
+    );
+    assert_eq!(l.with(|a| (a.cursor_line, a.cursor_col)), before);
+    // Leaving presentation mode: the mouse works again without `:mouse on`.
+    l.keys(&[KeyCode::Char('P')]);
+    assert!(!l.with(|a| a.present));
+    let _ = l.screen(80, 20);
+    assert_eq!(
+        l.with(move |a| a.on_mouse(MouseKind::Down, x, y)),
+        MouseOutcome::Moved(4, 4)
+    );
+}
+
+#[test]
 fn ac5_docs_and_flag() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -284,6 +330,10 @@ fn ac5_docs_and_flag() {
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(readme.contains(":mouse on") && readme.contains("--mouse"));
     assert!(readme.contains("Shift") && readme.contains("Option") && readme.contains("Cmd+click"));
+    assert!(
+        readme.contains("presentation mode (`P`) ignores clicks"),
+        "AC6 wording"
+    );
     let help = codedraw_qa::codedraw_ok(&["--help"]);
     assert!(help.contains("--mouse"), "{help}");
 }

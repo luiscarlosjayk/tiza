@@ -3229,7 +3229,11 @@ impl App {
     /// leaves the selection open for `h`/`b`/`a`/`n`…, the wheel moves the
     /// cursor three lines (which scrolls).
     pub fn on_mouse(&mut self, kind: MouseKind, column: u16, row: u16) -> MouseOutcome {
-        if !self.mouse || self.overlay != Overlay::None {
+        // Presentation mode hides the status bar, the cursor and the
+        // selection, so annotating with the mouse there would be blind: the
+        // capture stays on (back in normal mode it works again) but every
+        // event is ignored (t-033 AC6).
+        if !self.mouse || self.present || self.overlay != Overlay::None {
             return MouseOutcome::Ignored;
         }
         match kind {
