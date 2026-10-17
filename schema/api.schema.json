@@ -797,7 +797,7 @@
                 "additionalProperties": {
                   "$ref": "#/$defs/MoveSpec"
                 },
-                "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+                "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
                 "type": "object"
               }
             },
@@ -807,7 +807,8 @@
             "type": "object"
           },
           "MoveSpec": {
-            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "additionalProperties": false,
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
             "properties": {
               "at": {
                 "anyOf": [
@@ -1826,7 +1827,8 @@
             "type": "object"
           },
           "MoveSpec": {
-            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "additionalProperties": false,
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
             "properties": {
               "at": {
                 "anyOf": [
@@ -3144,7 +3146,7 @@
                 "additionalProperties": {
                   "$ref": "#/$defs/MoveSpec"
                 },
-                "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+                "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
                 "type": "object"
               }
             },
@@ -3154,7 +3156,8 @@
             "type": "object"
           },
           "MoveSpec": {
-            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "additionalProperties": false,
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
             "properties": {
               "at": {
                 "anyOf": [
@@ -3721,7 +3724,8 @@
       "params": {
         "$defs": {
           "MoveSpec": {
-            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "additionalProperties": false,
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
             "properties": {
               "at": {
                 "anyOf": [
@@ -3952,7 +3956,7 @@
             "additionalProperties": {
               "$ref": "#/$defs/MoveSpec"
             },
-            "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+            "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
             "type": "object"
           }
         },
@@ -4094,7 +4098,7 @@
                 "additionalProperties": {
                   "$ref": "#/$defs/MoveSpec"
                 },
-                "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+                "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
                 "type": "object"
               },
               "summary": {
@@ -4109,7 +4113,8 @@
             "type": "object"
           },
           "MoveSpec": {
-            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+            "additionalProperties": false,
+            "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored; so is an unknown key (`{\"find\": …}`\nwithout `at` is rejected, not ignored).",
             "properties": {
               "at": {
                 "anyOf": [

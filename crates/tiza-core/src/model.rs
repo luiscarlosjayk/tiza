@@ -712,6 +712,19 @@ impl Document {
         }
     }
 
+    /// Total typing time of the moves that run at `step`, in milliseconds
+    /// (they are typed one after another; 0 when nothing is typed).
+    pub fn typing_ms_at(&self, step: u32) -> u64 {
+        self.moves
+            .iter()
+            .filter(|m| m.at_step == step)
+            .map(|m| {
+                let moves::MoveAction::CodePatch(p) = &m.action;
+                p.typing_ms()
+            })
+            .sum()
+    }
+
     /// Whether any move is applied at the current step (`at_step <= step`).
     pub fn moves_applied(&self) -> bool {
         self.moves.iter().any(|m| m.at_step <= self.step)
@@ -901,7 +914,9 @@ impl Document {
         let mut d = self.clone();
         d.moves.clear();
         d.base_code.clear();
-        d.code = self.code_at(step)?;
+        // A move that no longer applies leaves the base code shown
+        // (`sync_code_to_step`), so that is what the shape is checked against.
+        d.code = self.code_at(step).unwrap_or_else(|_| self.base().to_vec());
         d.validate_shape(shape)
     }
 

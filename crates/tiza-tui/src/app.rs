@@ -942,16 +942,43 @@ impl App {
         d.source.first_line = first_line;
         let before = self.doc.annotations.len();
         let old = self.doc.clone();
-        let mut remap = crate::reanchor::Remap::new(&old, &d);
-        let shapes: Vec<Option<Shape>> = old
-            .annotations
-            .iter()
-            .map(|a| remap.shape(&a.shape))
-            .collect();
-        for (a, shape) in old.annotations.iter().zip(shapes) {
-            if let Some(shape) = shape
-                && d.validate_shape(&shape).is_ok()
+        // Each annotation is authored against the code at its own step
+        // (ADR 0007 §3d), so it is re-anchored between the old and the new
+        // code *at that step*: the moves are re-applied on the new text and
+        // a step-3 arrow onto a line a move typed in is matched on the
+        // step-3 code, not on the step-0 code where that line does not
+        // exist (AC9). A step whose moves no longer apply on the new text
+        // falls back to the step-0 code (those moves are reported when
+        // the presenter steps onto them).
+        let mut steps: Vec<u32> = old.annotations.iter().map(|a| a.step).collect();
+        steps.sort_unstable();
+        steps.dedup();
+        let at_step = |doc: &Document, step: u32| -> Document {
+            let mut s = doc.clone();
+            if !doc.moves.is_empty()
+                && let Ok(code) = doc.code_at(step)
             {
+                s.code = code;
+            }
+            s.moves.clear();
+            s.base_code.clear();
+            s.step = step;
+            s
+        };
+        let mut shapes: Vec<Option<Shape>> = vec![None; old.annotations.len()];
+        for step in steps {
+            let old_s = at_step(&old, step);
+            let new_s = at_step(&d, step);
+            let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
+            for (a, slot) in old.annotations.iter().zip(shapes.iter_mut()) {
+                if a.step == step {
+                    *slot = remap.shape(&a.shape);
+                }
+            }
+        }
+        for (a, shape) in old.annotations.iter().zip(shapes) {
+            if let Some(shape) = shape {
+                // `add` validates against the code at the annotation's step.
                 let _ = d.add(Annotation { shape, ..a.clone() });
             }
         }

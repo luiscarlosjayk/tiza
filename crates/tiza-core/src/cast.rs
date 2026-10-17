@@ -107,8 +107,25 @@ pub fn to_asciicast(doc: &Document, theme: &Theme, opts: &CastOptions) -> String
     out
 }
 
+/// Margin added after a typing animation before the next `n`, so the tape
+/// never sends a key while the TUI is still typing (that key would only
+/// finish the animation and the step would be lost).
+const TYPING_MARGIN_MS: u64 = 500;
+
+/// How long the tape holds `step`: the interval, or the typing time of the
+/// step's moves plus a margin when that is longer.
+fn step_sleep(doc: &Document, step: u32, interval: f64) -> String {
+    let typing = doc.typing_ms_at(step);
+    if typing == 0 {
+        return format_secs(interval);
+    }
+    let needed = (typing + TYPING_MARGIN_MS) as f64 / 1000.0;
+    format_secs(needed.max(interval))
+}
+
 /// A VHS tape that opens the document in the real TUI (presentation mode)
-/// and advances through the steps with `n`.
+/// and advances through the steps with `n`. A step whose moves are typed
+/// sleeps at least as long as the typing takes (plus a margin).
 pub fn to_vhs_tape(
     doc: &Document,
     document_path: &str,
@@ -155,9 +172,14 @@ pub fn to_vhs_tape(
     let _ = writeln!(out, "# step {first}");
     let _ = writeln!(out, "Sleep {sleep}");
     for step in (first + 1)..=last {
-        let _ = writeln!(out, "# step {step}");
+        let typing = doc.typing_ms_at(step);
+        if typing > 0 {
+            let _ = writeln!(out, "# step {step} (typed: {typing} ms)");
+        } else {
+            let _ = writeln!(out, "# step {step}");
+        }
         let _ = writeln!(out, "Type \"n\"");
-        let _ = writeln!(out, "Sleep {sleep}");
+        let _ = writeln!(out, "Sleep {}", step_sleep(doc, step, opts.interval));
     }
     let _ = writeln!(out);
     let _ = writeln!(out, "Hide");
@@ -264,5 +286,35 @@ mod tests {
         assert!(tape.trim_end().ends_with("Type \"q\""));
         let quoted = to_vhs_tape(&doc(), "my demo's.tiza", "x.gif", &CastOptions::default());
         assert!(quoted.contains("Type \"tiza 'my demo'\\''s.tiza'"));
+    }
+
+    #[test]
+    fn tape_waits_for_a_typed_step() {
+        // 20 lines typed at 160 ms = 3.2 s: the 2 s default would send the
+        // next `n` mid-typing and lose a step (t-098 AC10).
+        let mut d = doc();
+        let content = (0..20)
+            .map(|i| format!("    let x{i} = {i};"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        d.add_move(
+            serde_json::from_value(serde_json::json!({
+                "at_step": 2, "action": "code.patch", "op": "insert",
+                "after": "fn b() {}", "content": content, "typing": "line", "speed_ms": 160
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let tape = to_vhs_tape(&d, "d.tiza", "d.gif", &CastOptions::default());
+        let lines: Vec<&str> = tape.lines().collect();
+        let i = lines
+            .iter()
+            .position(|l| *l == "# step 2 (typed: 3200 ms)")
+            .unwrap();
+        assert_eq!(lines[i + 1], "Type \"n\"");
+        assert_eq!(lines[i + 2], "Sleep 3700ms");
+        // Step 1 has nothing typed: the plain interval.
+        let j = lines.iter().position(|l| *l == "# step 1").unwrap();
+        assert_eq!(lines[j + 2], "Sleep 2s");
     }
 }

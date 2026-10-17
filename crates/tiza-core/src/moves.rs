@@ -21,10 +21,13 @@ pub struct Move {
     pub at_step: u32,
     #[serde(flatten)]
     pub action: MoveAction,
-    /// Where annotations the patch replaces or deletes go afterwards, by id:
-    /// `{"find": "…"}`, `{"line": N, "col": C}`, `{"from_line": A, "to_line": B}`…
-    /// (the same fields as `annotation.update`'s `move`), resolved against the
-    /// code after the patch.
+    /// Where annotations the patch replaces or deletes go afterwards, by id,
+    /// with the same fields as `annotation.update`'s `move`: `{"at": {"find":
+    /// "…", "occurrence": N}}` or `{"at": {"line": N, "col": C}}` for
+    /// highlights, marks and notes; `{"from": {…}, "to": {…}}` for arrows;
+    /// `{"from_line": A, "to_line": B}` for boxes, callouts and spotlights.
+    /// Resolved against the code after the patch. A spec with none of those
+    /// keys (or an unknown one) is a load-time error.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rebind: BTreeMap<String, MoveSpec>,
 }
@@ -121,6 +124,15 @@ impl Patch {
             Typing::Line => 120,
             Typing::Char => 25,
         })
+    }
+
+    /// How long the typing animation of this patch takes, in milliseconds
+    /// (units × speed; 0 for an instant patch).
+    pub fn typing_ms(&self) -> u64 {
+        if self.typing == Typing::Instant {
+            return 0;
+        }
+        typing_units(&self.content_lines(), self.typing) as u64 * self.speed().max(1)
     }
 }
 
@@ -469,13 +481,9 @@ pub fn apply_until(
     order.sort_by_key(|(i, m)| (m.at_step, *i));
     for (i, m) in order {
         let MoveAction::CodePatch(p) = &m.action;
-        let (new_code, map) = p.apply(&code, first_line).map_err(|e| match e {
-            Error::TextNotFound(t) => {
-                Error::TextNotFound(format!("{t} (move #{}, step {})", i + 1, m.at_step))
-            }
-            Error::LineOutOfRange { .. } => e,
-            other => Error::Invalid(format!("move #{} (step {}): {other}", i + 1, m.at_step)),
-        })?;
+        let (new_code, map) = p
+            .apply(&code, first_line)
+            .map_err(|e| name_move(e, i, m.at_step))?;
         code = new_code;
         maps.push((i, m.at_step, map));
     }
@@ -497,10 +505,17 @@ pub fn validate(
                 i + 1
             )));
         }
-        for id in m.rebind.keys() {
+        for (id, spec) in &m.rebind {
             if !annotations.iter().any(|a| &a.id == id) {
                 return Err(Error::Invalid(format!(
                     "move #{} (step {}): rebind names unknown annotation `{id}`",
+                    i + 1,
+                    m.at_step
+                )));
+            }
+            if spec.is_empty() {
+                return Err(Error::Invalid(format!(
+                    "move #{} (step {}): rebind `{id}` says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)",
                     i + 1,
                     m.at_step
                 )));
@@ -514,13 +529,9 @@ pub fn validate(
     order.sort_by_key(|(i, m)| (m.at_step, *i));
     for (i, m) in order {
         let MoveAction::CodePatch(p) = &m.action;
-        let (new_code, _) = p.apply(&code, first_line).map_err(|e| match e {
-            Error::TextNotFound(t) => {
-                Error::TextNotFound(format!("{t} (move #{}, step {})", i + 1, m.at_step))
-            }
-            Error::LineOutOfRange { .. } => e,
-            other => Error::Invalid(format!("move #{} (step {}): {other}", i + 1, m.at_step)),
-        })?;
+        let (new_code, _) = p
+            .apply(&code, first_line)
+            .map_err(|e| name_move(e, i, m.at_step))?;
         code = new_code;
         for (id, spec) in &m.rebind {
             for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
@@ -552,6 +563,18 @@ pub fn validate(
         }
     }
     Ok(())
+}
+
+/// An error from applying a move, naming the move (1-based) and its step,
+/// so an author sees which move stopped applying — also when the move that
+/// failed is a later one than the one just added or edited.
+fn name_move(e: Error, index: usize, at_step: u32) -> Error {
+    match e {
+        Error::TextNotFound(t) => {
+            Error::TextNotFound(format!("{t} (move #{}, step {})", index + 1, at_step))
+        }
+        other => Error::Invalid(format!("move #{} (step {}): {other}", index + 1, at_step)),
+    }
 }
 
 /// Shifts a shape through one patch's line map. `None` = unanchored.

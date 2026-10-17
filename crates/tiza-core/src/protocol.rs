@@ -452,8 +452,10 @@ impl UpdateParams {
 /// on the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;
 /// `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field
 /// that does not apply to the annotation's type is an `invalid_argument`
-/// error, never silently ignored.
+/// error, never silently ignored; so is an unknown key (`{"find": …}`
+/// without `at` is rejected, not ignored).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct MoveSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Where>,

@@ -136,7 +136,7 @@ fn ac1_move_add_validates_against_the_code_at_its_step() {
     );
     assert!(r.error.is_some());
     // rebind must name existing annotations.
-    let r = live.api("move.add", json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "let a", "rebind": {"zz": {"find": "let b"}}}));
+    let r = live.api("move.add", json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "let a", "rebind": {"zz": {"at": {"find": "let b"}}}}));
     assert!(r.error.unwrap().message.contains("unknown annotation `zz`"));
     // Nothing was added by the failures; a valid one lands at index 1.
     assert_eq!(
@@ -921,4 +921,205 @@ fn ac8_rebind_find_must_match_once_or_carry_occurrence() {
         scene["document"]["moves"][0]["rebind"]["h"]["at"]["occurrence"],
         2
     );
+}
+
+// ---------------------------------------------------------------- AC9
+
+#[test]
+fn ac9_paste_at_step_0_reanchors_each_annotation_on_its_own_step() {
+    let dir = scratch("t098-ac9");
+    let path = dir.join("ex.tiza");
+    std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let base = doc.code.join("\n") + "\n";
+    let ids = |live: &Live| -> Vec<String> {
+        let mut v: Vec<String> =
+            live.with(|a| a.doc.annotations.iter().map(|a| a.id.clone()).collect());
+        v.sort();
+        v
+    };
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    let all = ids(&live);
+    assert_eq!(all.len(), 8);
+
+    // Pasting the identical step-0 code drops nothing: a5 (arrow onto the
+    // `len` helper) and a6 (box around it) live on step-3 code that only
+    // exists after the step-2 moves, and are matched there.
+    live.with(move |a| a.replace_code(&base).unwrap());
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        !err && msg.contains("9 lines pasted (8 annotations kept)"),
+        "{msg}"
+    );
+    assert_eq!(ids(&live), all);
+    live.api_ok("step.set", json!({"step": 3}));
+    assert!(live.with(|a| a.doc.unanchored().is_empty()));
+    let screen = strip_ansi(&live.screen(100, 30));
+    assert!(
+        screen.contains("borrow") && screen.contains("len only reads"),
+        "{screen}"
+    );
+    live.api_ok("step.set", json!({"step": 0}));
+
+    // Rewriting the call so the `s` under the step-1 mark is gone drops
+    // only a1; the step-3/4/5 annotations stay, re-anchored on their own step.
+    let renamed = live.with(|a| {
+        a.doc
+            .code
+            .join("\n")
+            .replace("takes(s);", "give(String::new());")
+            + "\n"
+    });
+    live.with(move |a| a.replace_code(&renamed).unwrap());
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("1 annotation dropped"), "{msg}");
+    assert_eq!(ids(&live), ["a2", "a3", "a4", "a5", "a6", "a7", "a8"]);
+    live.api_ok("step.set", json!({"step": 4}));
+    let mut unanchored = live.with(|a| a.doc.unanchored());
+    unanchored.sort();
+    assert_eq!(
+        unanchored,
+        ["a5", "a6"],
+        "a5/a6 unanchored at step 4 as before the paste"
+    );
+    // `u` brings a1 back.
+    live.api_ok("step.set", json!({"step": 0}));
+    live.with(|a| a.undo());
+    assert_eq!(ids(&live), all);
+}
+
+// ---------------------------------------------------------------- AC10
+
+#[test]
+fn ac10_tape_sleeps_through_the_typing() {
+    let dir = scratch("t098-ac10");
+    let path = dir.join("long.tiza");
+    let content = (0..20)
+        .map(|i| format!("    let x{i} = {i};"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    std::fs::write(
+        &path,
+        json!({
+            "schema": 1,
+            "source": {"language": "rs"},
+            "code": ["fn main() {", "    let a = 1;", "}"],
+            "moves": [{
+                "at_step": 2, "action": "code.patch", "op": "insert",
+                "after": "let a = 1;", "content": content, "typing": "line", "speed_ms": 160
+            }],
+            "annotations": [
+                {"id": "a1", "step": 1, "type": "note", "line": 1, "text": "one"},
+                {"id": "a3", "step": 3, "type": "note", "line": 2, "text": "three"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let tape = tiza_ok(&[
+        "render",
+        path.to_str().unwrap(),
+        "--format",
+        "tape",
+        "--out",
+        "-",
+    ]);
+    let lines: Vec<&str> = tape.lines().collect();
+    // Step 2 types 20 lines at 160 ms: the sleep covers 3.2 s plus a margin,
+    // so the `n` of step 3 is not swallowed by the animation.
+    let i = lines
+        .iter()
+        .position(|l| l.starts_with("# step 2"))
+        .unwrap_or_else(|| panic!("{tape}"));
+    assert_eq!(lines[i + 1], "Type \"n\"");
+    let sleep = lines[i + 2].strip_prefix("Sleep ").unwrap();
+    let ms: u64 = sleep.strip_suffix("ms").unwrap().parse().unwrap();
+    assert!(ms >= 20 * 160 + 500, "{sleep}");
+    // The other steps keep the plain interval.
+    let j = lines.iter().position(|l| *l == "# step 3").unwrap();
+    assert_eq!(lines[j + 2], "Sleep 2s");
+    assert_eq!(tape.matches("Type \"n\"").count(), 3, "steps 1, 2 and 3");
+}
+
+// ---------------------------------------------------------------- rework minors
+
+#[test]
+fn rebind_with_no_target_or_an_unknown_key_is_a_load_error() {
+    let dir = scratch("t098-rebind-keys");
+    let doc = |rebind: Value| {
+        json!({
+            "schema": 1, "source": {"language": "rs", "first_line": 1},
+            "code": ["fn a() {", "    takes(s);", "}"],
+            "annotations": [{"id": "m1", "step": 1, "type": "mark", "kind": "move",
+                             "span": {"line": 2, "start": 10, "end": 11}}],
+            "moves": [{"at_step": 2, "action": "code.patch", "op": "replace",
+                       "find": "takes(s);", "content": "    give(s);", "rebind": rebind}]
+        })
+        .to_string()
+    };
+    // The ADR's old spelling, `find` without `at`: an unknown key.
+    let g = dir.join("g.tiza");
+    std::fs::write(&g, doc(json!({"m1": {"find": "give"}}))).unwrap();
+    let out = tiza(&["render", g.to_str().unwrap(), "--out", "-"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("unknown field `find`"), "{err}");
+    // An empty spec says nowhere to go.
+    let e = dir.join("e.tiza");
+    std::fs::write(&e, doc(json!({"m1": {}}))).unwrap();
+    let out = tiza(&["render", e.to_str().unwrap(), "--out", "-"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("move #1 (step 2): rebind `m1` says nowhere to go"),
+        "{err}"
+    );
+    // The right spelling loads and the mark follows.
+    let h = dir.join("h.tiza");
+    std::fs::write(&h, doc(json!({"m1": {"at": {"find": "s);"}}}))).unwrap();
+    let s2 = tiza_ok(&["render", h.to_str().unwrap(), "--out", "-", "--step", "2"]);
+    assert!(s2.contains("give(s);"), "{s2}");
+}
+
+#[test]
+fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_end_warns() {
+    let live = live("t098-minors");
+    // Move #1 at step 2 inserts at the end; move #2 at step 3 deletes line 9.
+    live.api_ok("move.add", insert_after_b(2, "instant"));
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 3, "action": "code.patch", "op": "delete", "position": "7"}),
+    );
+    // A new step-1 move that shortens the code makes move #2 stop applying:
+    // the error names move #2 and its step, not just the line.
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "let a = 1;"}),
+    );
+    let err = r.error.unwrap().message;
+    assert!(
+        err.contains("move #2 (step 3)") && err.contains("line 7 does not exist"),
+        "{err}"
+    );
+    let dir = scratch("t098-render-step");
+    let path = dir.join("ex.tiza");
+    std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
+    let out = tiza(&[
+        "render",
+        path.to_str().unwrap(),
+        "--out",
+        "-",
+        "--step",
+        "9",
+    ]);
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("step 9 does not exist (the document has steps 0 to 5); showing step 5"),
+        "{err}"
+    );
+    let shown = String::from_utf8_lossy(&out.stdout);
+    assert!(shown.contains("The rule"), "step 5 is rendered:\n{shown}");
 }

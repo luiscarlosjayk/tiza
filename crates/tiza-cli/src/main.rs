@@ -295,6 +295,16 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
+            // An explicit step past the last one is probably a typo in a
+            // script: say so (on stderr, so `--out -` stays clean) and show
+            // the last step.
+            if step != u32::MAX && step > doc.max_step() {
+                eprintln!(
+                    "tiza: step {step} does not exist (the document has steps 0 to {}); showing step {}",
+                    doc.max_step(),
+                    doc.max_step()
+                );
+            }
             let theme = Theme::from_name(
                 theme
                     .map(Into::into)
