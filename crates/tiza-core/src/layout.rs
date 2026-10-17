@@ -101,6 +101,48 @@ struct Label {
     note: bool,
 }
 
+/// Narrowest layout a caller may ask for, in columns.
+pub const MIN_WIDTH: usize = 20;
+/// Widest layout a caller may ask for, in columns. The canvas is `width ×
+/// rows` cells and the PNG `width × 9.6 px × scale`, so this is what keeps a
+/// typo (`width=99999`) from asking the allocator for gigabytes; 400 is
+/// already four times a 1080p terminal.
+pub const MAX_WIDTH: usize = 400;
+
+/// Checks a width that came from the user (`:export width=`, `render
+/// --width`, `render.text {width}`, `export_image {width}`).
+pub fn check_width(width: usize) -> Result<usize, crate::Error> {
+    if (MIN_WIDTH..=MAX_WIDTH).contains(&width) {
+        Ok(width)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "width={width}: use a number between {MIN_WIDTH} and {MAX_WIDTH}"
+        )))
+    }
+}
+
+/// Validates a PNG/SVG scale factor from the user.
+pub fn check_scale(scale: f32) -> Result<f32, crate::Error> {
+    if scale.is_finite() && (0.25..=8.0).contains(&scale) {
+        Ok(scale)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "scale={scale}: use a number between 0.25 and 8"
+        )))
+    }
+}
+
+/// Validates a font size (px) from the user.
+pub fn check_font_size(px: f32) -> Result<f32, crate::Error> {
+    if px.is_finite() && (4.0..=96.0).contains(&px) {
+        Ok(px)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "font-size={px}: use a number between 4 and 96"
+        )))
+    }
+}
+
 /// The vertical part of an arrow between lines: drawn after every stub so
 /// it owns its cells (a stub crossing it shows a one-cell gap).
 struct Rail {

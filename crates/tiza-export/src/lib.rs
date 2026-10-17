@@ -12,12 +12,21 @@ pub mod svg;
 pub use png::{PngOptions, to_png};
 pub use svg::{SvgOptions, to_svg};
 
+/// Largest PNG side, in pixels.
+pub const MAX_SIDE_PX: u32 = 16_384;
+/// Largest PNG, in pixels (≈ 100 MP, 400 MB of RGBA).
+pub const MAX_PIXELS: u64 = 100_000_000;
+
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("invalid SVG: {0}")]
     Svg(String),
     #[error("could not allocate a {0}×{1} image")]
     Alloc(u32, u32),
+    #[error(
+        "a {0}×{1} px image is over the limit ({MAX_SIDE_PX} px per side, {MAX_PIXELS} px in all): lower width, scale or font size"
+    )]
+    TooBig(u32, u32),
     #[error("PNG encoding failed: {0}")]
     Png(String),
 }

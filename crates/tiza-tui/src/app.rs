@@ -1861,7 +1861,13 @@ impl App {
                     let Shape::Spotlight { until, .. } = &mut ann.shape else {
                         return Err(Error::Invalid(format!("{id} is not a spotlight")));
                     };
-                    *until = Some(n.max(ann.step));
+                    if n < ann.step {
+                        return Err(Error::Invalid(format!(
+                            "{id} starts at step {}: :until {id} N needs N ≥ {}",
+                            ann.step, ann.step
+                        )));
+                    }
+                    *until = Some(n);
                     self.history.record(&self.doc, format!("{id} until {n}"));
                     self.doc.update(ann)?;
                     self.touch();
@@ -1971,6 +1977,19 @@ impl App {
                             let n: u32 = n
                                 .parse()
                                 .map_err(|_| Error::Invalid("usage: :step ID N".into()))?;
+                            let max = self.doc.max_step();
+                            if n > max + 1 {
+                                return Err(Error::Invalid(format!(
+                                    "step {n} is beyond the last step ({max}): an annotation can go up to step {} (the next empty one)",
+                                    max + 1
+                                )));
+                            }
+                            if n == 0 {
+                                return Err(Error::Invalid(
+                                    "annotations live at steps ≥ 1 (step 0 is the code alone)"
+                                        .into(),
+                                ));
+                            }
                             self.update_annotation(&UpdateParams {
                                 id: id.to_string(),
                                 step: Some(n),
@@ -2004,9 +2023,24 @@ impl App {
                         self.focus = None;
                         Ok("focus cleared".into())
                     } else {
-                        let (a, b) = parse_range(rest)?;
-                        self.focus = Some((a, b));
-                        Ok(format!("focus on {a}-{b}"))
+                        let (a, b) = parse_range(rest).map_err(|_| {
+                            Error::Invalid("usage: :focus A-B  |  :focus   (clear)".into())
+                        })?;
+                        let (first, last) = (self.doc.source.first_line, self.doc.last_line());
+                        if a < first || a > last {
+                            return Err(Error::LineOutOfRange {
+                                line: a,
+                                first,
+                                last,
+                            });
+                        }
+                        let clamped = b.min(last);
+                        self.focus = Some((a, clamped));
+                        Ok(if clamped != b {
+                            format!("focus on {a}-{clamped} ({b} is past the last line, {last})")
+                        } else {
+                            format!("focus on {a}-{b}")
+                        })
                     }
                 }
                 "theme" | "t" => {
@@ -2050,6 +2084,11 @@ impl App {
                             "language: {} ({})",
                             self.doc.source.language,
                             d.via.label()
+                        ));
+                    }
+                    if rest.split_whitespace().count() != 1 {
+                        return Err(Error::Invalid(
+                            "usage: :lang ID  |  :lang auto  |  :lang   (one language id, e.g. rs, ts, py)".into(),
                         ));
                     }
                     let lang = normalize_language(rest);
@@ -2163,9 +2202,24 @@ impl App {
                     }
                     _ => Err(Error::Invalid("usage: :autosave [on|off]".into())),
                 },
-                other => Err(Error::Invalid(format!(
-                    "unknown command: {other} (try :help)"
-                ))),
+                // Only with TIZA_TEST_PANIC set: lets the crash hook be
+                // exercised from a test (t-115 AC2).
+                "panic" if std::env::var_os("TIZA_TEST_PANIC").is_some() => {
+                    panic!("forced by :panic (TIZA_TEST_PANIC)")
+                }
+                other => Err(Error::Invalid(match nearest_commands(other) {
+                    v if v.is_empty() => format!("unknown command: {other} (try :help)"),
+                    v if v.len() == 1 => {
+                        format!("unknown command: {other} — did you mean :{}?", v[0])
+                    }
+                    v => format!(
+                        "unknown command: {other} — did you mean {}?",
+                        v.iter()
+                            .map(|c| format!(":{c}"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                })),
             }
         };
         let result = exec();
@@ -2178,10 +2232,9 @@ impl App {
 
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, rest) = self.parse_range_arg(rest).map_err(|e| match e {
-            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(
-                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]   or   :box @'start'..@'end' [label]"
-                    .into(),
-            ),
+            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
+                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]   or   :box @'start'..@'end' [label]   ({m})"
+            )),
             other => other,
         })?;
         let (label, kv) = split_trailing_kv(rest);
@@ -2234,7 +2287,74 @@ impl App {
             return Ok((self.cursor_line, self.cursor_line, None, rest));
         }
         let (a, b) = parse_range(range)?;
+        // `3 - 5` or `3 -5`: the dash got spaces around it; the rest would
+        // become a label starting with `-`.
+        if rest.starts_with('-')
+            && rest[1..]
+                .trim_start()
+                .starts_with(|c: char| c.is_ascii_digit())
+        {
+            return Err(Error::Invalid(format!(
+                "invalid range: {range} {}: write A-B without spaces",
+                rest.split_whitespace()
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )));
+        }
         Ok((a, b, None, rest))
+    }
+
+    /// `resolve_span_strict` for a point anchor (arrows).
+    fn resolve_anchor_strict(
+        &self,
+        w: &tiza_core::protocol::Where,
+    ) -> Result<tiza_core::model::Anchor, Error> {
+        if w.find.is_some() {
+            let s = self.resolve_span_strict(w)?;
+            return Ok(tiza_core::model::Anchor {
+                line: s.line,
+                col: s.start,
+            });
+        }
+        if let Some(line) = w.line
+            && !self.doc.has_line(line)
+        {
+            return Err(Error::LineOutOfRange {
+                line,
+                first: self.doc.source.first_line,
+                last: self.doc.last_line(),
+            });
+        }
+        w.resolve_anchor(&self.doc)
+    }
+
+    /// Resolves an anchor typed in a command, strictly: `L:text` must find
+    /// the text on line L (not elsewhere), and L must exist. A miss says
+    /// where the text is, so the typo is one edit away from right.
+    fn resolve_span_strict(
+        &self,
+        w: &tiza_core::protocol::Where,
+    ) -> Result<tiza_core::model::TextSpan, Error> {
+        if let Some(line) = w.line
+            && !self.doc.has_line(line)
+        {
+            return Err(Error::LineOutOfRange {
+                line,
+                first: self.doc.source.first_line,
+                last: self.doc.last_line(),
+            });
+        }
+        let span = w.resolve_span(&self.doc)?;
+        if let (Some(line), Some(text)) = (w.line, &w.find)
+            && span.line != line
+        {
+            return Err(Error::Invalid(format!(
+                "«{text}» not on L{line}; found on L{} — use {}:{text}",
+                span.line, span.line
+            )));
+        }
+        Ok(span)
     }
 
     fn cmd_arrow(&mut self, rest: &str) -> Result<String, Error> {
@@ -2251,8 +2371,8 @@ impl App {
         for (k, v) in &kv {
             apply_line_kv(&mut line, k, v)?;
         }
-        let f = parse_where(from, self.cursor_line)?.resolve_anchor(&self.doc)?;
-        let t = parse_where(to, self.cursor_line)?.resolve_anchor(&self.doc)?;
+        let f = self.resolve_anchor_strict(&parse_where(from, self.cursor_line)?)?;
+        let t = self.resolve_anchor_strict(&parse_where(to, self.cursor_line)?)?;
         let id = self.add_annotation(
             None,
             None,
@@ -2283,11 +2403,13 @@ impl App {
                         .map_err(|_| Error::Invalid(format!("step={v}: not a number")))?;
                 }
                 "width" => {
-                    width = v
-                        .parse::<usize>()
-                        .ok()
-                        .filter(|w| *w >= 20)
-                        .ok_or_else(|| Error::Invalid(format!("width={v}: use a number ≥ 20")))?;
+                    width = tiza_core::layout::check_width(v.parse::<usize>().map_err(|_| {
+                        Error::Invalid(format!(
+                            "width={v}: use a number between {} and {}",
+                            tiza_core::layout::MIN_WIDTH,
+                            tiza_core::layout::MAX_WIDTH
+                        ))
+                    })?)?;
                 }
                 "theme" => {
                     theme = Theme::from_name(match v.to_ascii_lowercase().as_str() {
@@ -2372,6 +2494,7 @@ impl App {
                     .into(),
             ));
         }
+        check_kv_shape(&kv, rest)?;
         let is_arrow = matches!(
             self.doc.find_annotation(id).map(|a| &a.shape),
             Some(Shape::Arrow { .. })
@@ -2482,13 +2605,14 @@ impl App {
         let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
             (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
             _ => {
-                if at.is_empty() {
-                    return Err(Error::Invalid("usage: :hl L:text [label]".into()));
+                if !typed_anchor_has_line_and_text(at) {
+                    return Err(Error::Invalid(
+                        "usage: :hl L:text [label]   (L:text = the text on line L; L: alone = the whole line; .:text = the cursor line)"
+                            .into(),
+                    ));
                 }
-                (
-                    parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?,
-                    label,
-                )
+                let w = parse_where(at, self.cursor_line)?;
+                (self.resolve_span_strict(&w)?, label)
             }
         };
         let id = self.add_annotation(
@@ -2567,10 +2691,16 @@ impl App {
         let inline = !known;
         let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
             (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
-            _ => (
-                parse_where(at, self.cursor_line)?.resolve_span(&self.doc)?,
-                label,
-            ),
+            _ => {
+                if !typed_anchor_has_line_and_text(at) {
+                    return Err(Error::Invalid(format!(
+                        "usage: :mark KIND[@COLOR] L:text [label]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
+                        self.doc.kind_names().join(" ")
+                    )));
+                }
+                let w = parse_where(at, self.cursor_line)?;
+                (self.resolve_span_strict(&w)?, label)
+            }
         };
         if inline {
             style.legend = opt(label);
@@ -2638,7 +2768,9 @@ impl App {
             };
         }
         let mut st = self.doc.styles.get(name).cloned().unwrap_or_default();
-        for (k, v) in parse_kv(rest) {
+        let kv = parse_kv(rest);
+        check_kv_shape(&kv, rest)?;
+        for (k, v) in kv {
             match k.as_str() {
                 "glyph" | "g" => st.glyph = Some(v),
                 "legend" | "l" | "text" => st.legend = Some(v),
@@ -2706,21 +2838,21 @@ impl App {
     /// `:callout A[-B] [@below|@margin|@auto] [title="…"] text…`
     fn cmd_callout(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, mut rest) = self.parse_range_arg(rest).map_err(|e| match e {
-            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(
-                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   (or @'start'..@'end')"
-                    .into(),
-            ),
+            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
+                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   (or @'start'..@'end')   ({m})"
+            )),
             other => other,
         })?;
         let mut placement = tiza_core::model::Placement::Margin;
         let mut title = None;
         loop {
             let (tok, after) = split_first(rest);
-            if let Some(pl) = tok
-                .strip_prefix('@')
-                .and_then(tiza_core::model::Placement::parse)
-            {
-                placement = pl;
+            if let Some(name) = tok.strip_prefix('@') {
+                placement = tiza_core::model::Placement::parse(name).ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "unknown placement @{name}: use @below, @margin or @auto"
+                    ))
+                })?;
                 rest = after;
             } else if tok.starts_with("title=") {
                 let kv = parse_kv(rest);
@@ -3134,11 +3266,10 @@ impl App {
                 json!({"step": self.doc.step, "max_step": self.doc.max_step(), "revision": self.revision})
             }
             "render.text" => {
-                let width = params
-                    .get("width")
-                    .and_then(|w| w.as_u64())
-                    .map(|w| w as usize)
-                    .unwrap_or(self.size.0 as usize);
+                let width = match params.get("width").and_then(|w| w.as_u64()) {
+                    Some(w) => tiza_core::layout::check_width(w.min(u64::from(u32::MAX)) as usize)?,
+                    None => self.size.0 as usize,
+                };
                 json!({"text": self.layout(width).canvas.to_plain_text()})
             }
             "focus.set" => {
@@ -3690,6 +3821,66 @@ pub fn parse_kv(s: &str) -> Vec<(String, String)> {
     out
 }
 
+/// Known commands within edit distance 2 of `typed` (up to three, nearest
+/// first), so a typo can be fixed in one keystroke.
+fn nearest_commands(typed: &str) -> Vec<&'static str> {
+    let typed = typed.to_ascii_lowercase();
+    let mut scored: Vec<(usize, &str)> = App::COMMANDS
+        .iter()
+        .filter(|c| c.len() > 1)
+        .map(|c| (edit_distance(&typed, c), *c))
+        .filter(|(d, _)| *d <= 2)
+        .collect();
+    scored.sort_by_key(|(d, c)| (*d, c.len(), *c));
+    scored.dedup_by_key(|(_, c)| *c);
+    if let Some((best, _)) = scored.first() {
+        let best = *best;
+        scored.retain(|(d, _)| *d == best);
+    }
+    scored.into_iter().take(3).map(|(_, c)| c).collect()
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// Every `key=value` must have both halves: `=`, `=red` or `glyph=` are
+/// typos, not an empty key or an empty value.
+fn check_kv_shape(kv: &[(String, String)], raw: &str) -> Result<(), Error> {
+    for (k, v) in kv {
+        if k.is_empty() || v.is_empty() {
+            let shown = raw
+                .split_whitespace()
+                .find(|t| t.contains('='))
+                .unwrap_or(raw.trim());
+            return Err(Error::Invalid(format!("expected key=value, got «{shown}»")));
+        }
+    }
+    Ok(())
+}
+
+/// True if a typed `:hl` / `:mark` anchor names a line *and* has the colon
+/// (`7:text`, `7:` for the whole line, `.:text`, `7@3..9`): `s` alone or
+/// `7` alone (a bare line followed by what was meant as text) is a typo.
+fn typed_anchor_has_line_and_text(tok: &str) -> bool {
+    let t = tok.trim();
+    if !looks_like_anchor(t) {
+        return false;
+    }
+    t.contains(':') || t.contains('@')
+}
+
 /// True if `tok` looks like an explicit anchor (`7:text`, `7@3..9`, `.:x`, `7`).
 pub fn looks_like_anchor(tok: &str) -> bool {
     let t = tok.trim();
@@ -3737,6 +3928,11 @@ fn split_first(s: &str) -> (&str, &str) {
 /// `A-B`, `A..B`, `A:B` or `A` → (A, B).
 pub fn parse_range(s: &str) -> Result<(u32, u32), Error> {
     let s = s.trim();
+    // `-1-3`, `3-` or `-5`: a sign or a dangling dash is a typo, never
+    // silently a valid range.
+    if s.starts_with(['-', ':']) || s.ends_with(['-', ':']) {
+        return Err(Error::Invalid(format!("invalid range: {s}")));
+    }
     let parts: Vec<&str> = s.split(['-', ':']).filter(|p| !p.is_empty()).collect();
     let parts = if parts.len() == 1 {
         s.split("..").collect()

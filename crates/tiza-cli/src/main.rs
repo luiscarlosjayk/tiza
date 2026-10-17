@@ -305,6 +305,17 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
+            // Sizes from the command line are bounded (t-115): a typo must be
+            // an error, never an aborted process.
+            let width =
+                tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
+            if matches!(format, Format::Png | Format::Svg) {
+                tiza_core::layout::check_font_size(font_size)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                if format == Format::Png {
+                    tiza_core::layout::check_scale(scale).map_err(|e| anyhow::anyhow!("{e}"))?;
+                }
+            }
             // An explicit step past the last one is probably a typo in a
             // script: say so (on stderr, so `--out -` stays clean) and show
             // the last step.

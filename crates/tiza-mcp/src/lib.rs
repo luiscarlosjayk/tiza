@@ -1054,9 +1054,11 @@ impl TizaServer {
             &scene.document,
             &theme,
             &tiza_core::layout::LayoutOptions {
-                width: p
-                    .width
-                    .unwrap_or((status.cols as usize).saturating_sub(2).max(40)),
+                width: match p.width {
+                    Some(w) => tiza_core::layout::check_width(w)
+                        .map_err(|e| McpError::invalid_params(e.to_string(), None))?,
+                    None => (status.cols as usize).saturating_sub(2).max(40),
+                },
                 step: p.step.unwrap_or(scene.step),
                 focus: None,
                 line_numbers: true,
@@ -1075,8 +1077,12 @@ impl TizaServer {
             ),
             _ => None,
         };
+        let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
+        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
+        let font_size =
+            tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
         let svg_opts = tiza_export::SvgOptions {
-            font_size: p.font_size.unwrap_or(16.0),
+            font_size,
             embed_fonts: !is_png,
             title: scene.document.title.clone(),
             ..Default::default()
@@ -1088,11 +1094,14 @@ impl TizaServer {
             tiza_export::to_png(
                 &svg,
                 &tiza_export::PngOptions {
-                    scale: p.scale.unwrap_or(2.0),
+                    scale,
                     system_fonts: false,
                 },
             )
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?
+            .map_err(|e| match e {
+                tiza_export::Error::TooBig(..) => McpError::invalid_params(e.to_string(), None),
+                other => McpError::internal_error(other.to_string(), None),
+            })?
         } else {
             tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes()
         };

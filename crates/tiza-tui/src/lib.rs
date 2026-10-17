@@ -80,6 +80,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         None => None,
     };
 
+    install_crash_hook(&app.save_path);
     let mut terminal = ratatui::init();
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
@@ -109,6 +110,52 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     drop(ipc);
     result
+}
+
+/// What the crash hook needs to say where the work is.
+static CRASH_INFO: std::sync::OnceLock<std::sync::Mutex<PathBuf>> = std::sync::OnceLock::new();
+
+/// A panic anywhere in the TUI (a command, the draw loop, a worker) must
+/// never leave the terminal in the alternate screen with raw mode on: the
+/// hook restores it first, then prints one line that says what happened,
+/// where the document is and how to report it. `ratatui::init` installs a
+/// hook of its own that only restores; this one wraps it with the message.
+fn install_crash_hook(save_path: &std::path::Path) {
+    let cell = CRASH_INFO.get_or_init(|| std::sync::Mutex::new(PathBuf::new()));
+    if let Ok(mut g) = cell.lock() {
+        *g = save_path.to_path_buf();
+    }
+    std::panic::set_hook(Box::new(|info| {
+        // Leave the alternate screen, show the cursor, raw mode off, mouse
+        // and bracketed paste off (the sequences a clean `:q` sends).
+        let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
+        ratatui::restore();
+        let reason = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| s.to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "unknown error".into());
+        let at = info
+            .location()
+            .map(|l| format!(" ({}:{})", l.file(), l.line()))
+            .unwrap_or_default();
+        let path = CRASH_INFO
+            .get()
+            .and_then(|c| c.lock().ok().map(|g| g.clone()))
+            .unwrap_or_default();
+        let work = if path.as_os_str().is_empty() {
+            String::new()
+        } else {
+            format!(
+                " Your work is in {} (autosaved on every change, unless autosave was off).",
+                path.display()
+            )
+        };
+        eprintln!(
+            "tiza crashed: {reason}{at}.{work} Please report it with the command you typed: https://github.com/luiscarlosjayk/tiza/issues"
+        );
+    }));
 }
 
 fn event_loop(
