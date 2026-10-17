@@ -462,6 +462,9 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             ));
         }
     }
+    if app.layout_stable && !app.present {
+        left.push(Span::styled("  ⊞ stable", muted));
+    }
     if !app.autosave {
         let text = if app.dirty {
             "  unsaved (:w)"
@@ -719,6 +722,7 @@ fn help_lines() -> Vec<String> {
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
         "  :mouse on|off   click moves the cursor, drag selects, wheel scrolls (off by default: the terminal keeps its own selection)",
+        "  :layout stable|dynamic   rehearse with the take's geometry (presentation mode and exports always use it)",
         "  :w [path]   :wq   :q   :q! (quit even if unsaved)   :autosave on|off (--no-save at start)   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",

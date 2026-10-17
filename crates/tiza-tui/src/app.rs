@@ -132,6 +132,11 @@ pub struct App {
     /// `:redact off` shows the author the real text on their own screen;
     /// presentation mode, exports, recordings and agents keep the masks.
     pub redact_shown: bool,
+    /// `:layout stable`: the authoring screen uses the take's geometry
+    /// (lanes, box band and margin sized for every step at once, t-111) so
+    /// rehearsing looks like presenting. Presentation mode and every
+    /// export are always stable.
+    pub layout_stable: bool,
     /// A reload or paste dropped a redact: shown as an error after the
     /// reload's own message, so it is never missed.
     redact_drop_notice: Option<String>,
@@ -196,6 +201,7 @@ impl App {
             socket_path: None,
             autosave: true,
             redact_shown: true,
+            layout_stable: false,
             redact_drop_notice: None,
             save_error: None,
             save_warning_pending: false,
@@ -259,6 +265,9 @@ impl App {
                 tab_width: 4,
                 typing: self.typing.is_some(),
                 redact,
+                // Presentation mode is a take: one geometry for every step
+                // (t-111). Authoring grows as it goes unless `:layout stable`.
+                stable: self.present || self.layout_stable,
             },
         )
     }
@@ -1687,6 +1696,7 @@ impl App {
     pub const COMMANDS: &'static [&'static str] = &[
         "arrow",
         "autosave",
+        "layout",
         "box",
         "callout",
         "clear",
@@ -2260,6 +2270,32 @@ impl App {
                         format!("padding {v} {h}")
                     })
                 }
+                "layout" => match rest.trim() {
+                    "" => Ok(format!(
+                        "layout {}{}",
+                        if self.layout_stable {
+                            "stable"
+                        } else {
+                            "dynamic"
+                        },
+                        if self.present {
+                            " (presentation mode is always stable)"
+                        } else {
+                            ""
+                        }
+                    )),
+                    "stable" | "take" => {
+                        self.layout_stable = true;
+                        Ok("layout stable: lanes and margin sized for every step, as in presentation mode and exports".into())
+                    }
+                    "dynamic" | "auto" => {
+                        self.layout_stable = false;
+                        Ok("layout dynamic: the authoring screen grows lanes as steps add arrows (exports stay stable)".into())
+                    }
+                    other => Err(Error::Invalid(format!(
+                        "layout {other}: use `:layout stable` or `:layout dynamic`"
+                    ))),
+                },
                 "autosave" => match rest.trim() {
                     "" => Ok(format!(
                         "autosave {}{}",
@@ -2540,6 +2576,7 @@ impl App {
                 tab_width: 4,
                 typing: false,
                 redact: true,
+                stable: true,
             },
         );
         let bytes = match format {

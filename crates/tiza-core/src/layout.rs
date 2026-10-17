@@ -33,6 +33,12 @@ pub struct LayoutOptions {
     /// Apply the redact masks (t-117). Every output path passes `true`; only
     /// the author's own screen may pass `false` after `:redact off`.
     pub redact: bool,
+    /// Stable geometry (t-111): the arrow lanes, the box band, the code
+    /// column and the margin are sized once for the maximum over every step
+    /// of the document, so the code never slides sideways between steps and
+    /// the margin never shrinks mid-take. Presentation mode and every export
+    /// pass `true`; the authoring screen may pass `false` to grow as it goes.
+    pub stable: bool,
 }
 
 impl Default for LayoutOptions {
@@ -45,6 +51,7 @@ impl Default for LayoutOptions {
             tab_width: 4,
             typing: false,
             redact: true,
+            stable: true,
         }
     }
 }
@@ -103,6 +110,137 @@ struct Label {
     text: String,
     color: Rgb,
     note: bool,
+}
+
+/// Nesting depth of a set of line ranges (boxes): the deepest box plus one,
+/// zero without boxes. Two boxes on the same range nest in index order.
+fn nesting_depth(spans: &[(u32, u32)]) -> usize {
+    (0..spans.len())
+        .map(|i| {
+            let (f, t) = spans[i];
+            spans
+                .iter()
+                .enumerate()
+                .filter(|(j, (bf, bt))| {
+                    *j != i && *bf <= f && *bt >= t && ((*bf, *bt) != (f, t) || *j < i)
+                })
+                .count()
+                + 1
+        })
+        .max()
+        .unwrap_or(0)
+}
+
+/// Greedy lane assignment: longest span first, lane 0 farthest from the
+/// code; a span takes the first lane none of whose spans touch it.
+fn assign_lanes<T: Copy + Ord + std::ops::Sub<Output = T>>(
+    spans: &mut [(T, T, usize)],
+) -> (Vec<usize>, usize) {
+    // (a, b, key): the result maps each key to its lane.
+    spans.sort_by_key(|(a, b, _)| (std::cmp::Reverse(*b - *a), *a));
+    let mut lanes: Vec<Vec<(T, T)>> = Vec::new();
+    let mut out = vec![0; spans.len()];
+    for (a, b, key) in spans.iter().copied() {
+        let lane = lanes
+            .iter()
+            .position(|l| l.iter().all(|(x, y)| b < *x || a > *y))
+            .unwrap_or_else(|| {
+                lanes.push(Vec::new());
+                lanes.len() - 1
+            });
+        lanes[lane].push((a, b));
+        out[key] = lane;
+    }
+    (out, lanes.len())
+}
+
+/// The geometry a take shares across its steps (t-111): computed from the
+/// maximum over every step, so a frame at step 1 and one at step 7 put the
+/// code at the same x and keep the same margin.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct StableGeometry {
+    /// Lane of each multi-line arrow, by annotation id, fixed for the take.
+    pub lane_of: std::collections::HashMap<String, usize>,
+    pub lane_count: usize,
+    pub box_depth: usize,
+    pub code_full_w: usize,
+    pub num_w: usize,
+}
+
+/// Sizes the lanes, the box band and the code column for every step of
+/// `doc` at once (moves and masks included): what `layout` uses when
+/// `opts.stable` is set. Public so a recorder can check that its frames
+/// agree.
+pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
+    let last = doc.max_step();
+    let mut g = StableGeometry {
+        code_full_w: 1,
+        ..Default::default()
+    };
+    // Each arrow's span in the coordinates of the last step it is drawn at
+    // (moves shift them together with the code, so the overlaps hold).
+    let mut arrow_span: Vec<(String, u32, u32)> = Vec::new();
+    for step in 0..=last {
+        let projected;
+        let d = if doc.moves.is_empty() {
+            doc
+        } else {
+            projected = doc.view_at(step).doc;
+            &projected
+        };
+        let masked;
+        let d = if opts.redact && crate::redact::has_redacts(d) {
+            masked = crate::redact::masked(d, step);
+            &masked
+        } else {
+            d
+        };
+        g.code_full_w = g.code_full_w.max(
+            d.code
+                .iter()
+                .map(|l| display_width(l, opts.tab_width))
+                .max()
+                .unwrap_or(0),
+        );
+        if opts.line_numbers {
+            g.num_w = g.num_w.max(d.last_line().to_string().len() + 2);
+        }
+        let vis = d.annotations.iter().filter(|a| {
+            a.step <= step
+                && a.shape
+                    .line_ranges()
+                    .iter()
+                    .all(|(f, t)| d.has_line(*f) && d.has_line(*t))
+        });
+        let mut boxes = Vec::new();
+        for a in vis {
+            match &a.shape {
+                Shape::Box {
+                    from_line, to_line, ..
+                } => boxes.push((*from_line, *to_line)),
+                Shape::Arrow { from, to, .. } if from.line != to.line => {
+                    let span = (from.line.min(to.line), from.line.max(to.line));
+                    match arrow_span.iter_mut().find(|(id, _, _)| *id == a.id) {
+                        Some(e) => (e.1, e.2) = span,
+                        None => arrow_span.push((a.id.clone(), span.0, span.1)),
+                    }
+                }
+                _ => {}
+            }
+        }
+        g.box_depth = g.box_depth.max(nesting_depth(&boxes));
+    }
+    let mut spans: Vec<(u32, u32, usize)> = arrow_span
+        .iter()
+        .enumerate()
+        .map(|(i, (_, a, b))| (*a, *b, i))
+        .collect();
+    let (lanes, count) = assign_lanes(&mut spans);
+    g.lane_count = count;
+    for (i, (id, _, _)) in arrow_span.into_iter().enumerate() {
+        g.lane_of.insert(id, lanes[i]);
+    }
+    g
 }
 
 /// Glyph of the underline emphasis, on the virtual row under the code:
@@ -168,6 +306,7 @@ struct Rail {
 
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let width = opts.width.max(20);
+    let stable = opts.stable.then(|| stable_geometry(doc, opts));
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.
@@ -303,7 +442,12 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             })
             .count();
     }
-    let box_depth = boxes.iter().map(|b| b.depth + 1).max().unwrap_or(0);
+    let box_depth = boxes
+        .iter()
+        .map(|b| b.depth + 1)
+        .max()
+        .unwrap_or(0)
+        .max(stable.as_ref().map_or(0, |g| g.box_depth));
 
     // ---- column widths ----
     // One cell for the cursor/selection marker, the digits, one blank.
@@ -311,14 +455,16 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         doc.last_line().to_string().len() + 2
     } else {
         0
-    };
+    }
+    .max(stable.as_ref().map_or(0, |g| g.num_w));
     let code_full_w = doc
         .code
         .iter()
         .map(|l| display_width(l, opts.tab_width))
         .max()
         .unwrap_or(0)
-        .max(1);
+        .max(1)
+        .max(stable.as_ref().map_or(0, |g| g.code_full_w));
     let multi_arrows: Vec<&Annotation> = vis
         .iter()
         .copied()
@@ -352,7 +498,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             }
         }
         lanes.len()
-    };
+    }
+    .max(stable.as_ref().map_or(0, |g| g.lane_count));
     let arrow_w = lane_bound * 2;
     let code_x_est = num_w + arrow_w + box_depth + 2;
     let code_w = code_full_w
@@ -560,7 +707,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // ---- arrow lanes (in row space) ----
     let mut arrows: Vec<ArrowInfo> = Vec::new();
     {
-        let mut spans: Vec<(usize, usize, &Annotation)> = multi_arrows
+        let spans: Vec<(usize, usize, &Annotation)> = multi_arrows
             .iter()
             .map(|a| {
                 let Shape::Arrow { from, to, .. } = &a.shape else {
@@ -571,22 +718,28 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 (r1.min(r2), r1.max(r2), *a)
             })
             .collect();
-        // Longest first → lane 0 (the farthest from the code).
-        spans.sort_by_key(|(a, b, _)| (std::cmp::Reverse(b - a), *a));
-        let mut lanes: Vec<Vec<(usize, usize)>> = Vec::new();
-        for (a, b, ann) in spans {
-            let lane = lanes
-                .iter()
-                .position(|l| l.iter().all(|(x, y)| b < *x || a > *y))
-                .unwrap_or_else(|| {
-                    lanes.push(Vec::new());
-                    lanes.len() - 1
-                });
-            lanes[lane].push((a, b));
+        // Longest first → lane 0 (the farthest from the code). With a
+        // stable geometry each arrow keeps the lane of the whole take.
+        let mut keyed: Vec<(usize, usize, usize)> = spans
+            .iter()
+            .enumerate()
+            .map(|(i, (a, b, _))| (*a, *b, i))
+            .collect();
+        let (lanes, _) = assign_lanes(&mut keyed);
+        for (i, (_, _, ann)) in spans.into_iter().enumerate() {
+            let lane = stable
+                .as_ref()
+                .and_then(|g| g.lane_of.get(ann.id.as_str()).copied())
+                .unwrap_or(lanes[i]);
             arrows.push(ArrowInfo { ann, lane });
         }
     }
-    let lane_count = arrows.iter().map(|a| a.lane + 1).max().unwrap_or(0);
+    let lane_count = arrows
+        .iter()
+        .map(|a| a.lane + 1)
+        .max()
+        .unwrap_or(0)
+        .max(stable.as_ref().map_or(0, |g| g.lane_count));
     let arrow_w = lane_count * 2;
 
     // ---- final positions ----

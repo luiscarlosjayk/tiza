@@ -1096,6 +1096,7 @@ impl TizaServer {
                 tab_width: 4,
                 typing: false,
                 redact: true,
+                stable: true,
             },
         );
         let bytes = match format {

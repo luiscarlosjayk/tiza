@@ -3,32 +3,32 @@ source: qa/tests/t-053.rs
 expression: symbols
 ---
 
-    1      fn main() {
-    2 ╭───     let s = String::from("hello");
-      │            ◀───╯                                                      s is born
-    3 │        takes(s);                                                      ━▶ move: s moves i…
-    4 │        // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns
-    5 │                                                                         it: using it here
-    6 │        let t = String::from("world");                                   does not compile
-    7 │        let n = len(&t);
-    8 │        println!("{t} has {n} letters");
+    1          fn main() {
+    2 ╭───────     let s = String::from("hello");
+      │                ◀───╯                                                      s is born
+    3 │            takes(s);                                                      ━▶ move: s mov…
+    4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer
+    5 │                                                                             owns it:
+    6 │            let t = String::from("world");                                   using it here
+    7 │            let n = len(&t);                                                 does not
+    8 │            println!("{t} has {n} letters");                                 compile
     9 │
-   10 │        let mut u = String::from("hey");
-   11 │        push(&mut u);
-   12 │        println!("{u}");
-   13 │    }
+   10 │            let mut u = String::from("hey");
+   11 │            push(&mut u);
+   12 │            println!("{u}");
+   13 │        }
    14 │
-      │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─┼▶ fn takes(s: String) {                                            │ move
-   16   │      println!("{s}");                                             │
-   17   │  }                                                                │ ╳ drop: s dies here
-        ╰───────────────────────────────────────────────────────────────────╯
+      │     ╭─ takes owns s and frees it at the end ────────────────────────────╮
+   15 ╰─────┼▶ fn takes(s: String) {                                            │ move
+   16       │      println!("{s}");                                             │
+   17       │  }                                                                │ ╳ drop: s dies
+            ╰───────────────────────────────────────────────────────────────────╯ here
    18
-   19      fn len(s: &String) -> usize {
-   20          s.len()
-   21      }
+   19          fn len(s: &String) -> usize {
+   20              s.len()
+   21          }
    22
-   23      fn push(s: &mut String) {
-   24          s.push('!');
-   25      }
+   23          fn push(s: &mut String) {
+   24              s.push('!');
+   25          }
                                                                                                 3/7

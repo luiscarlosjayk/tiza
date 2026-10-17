@@ -58,6 +58,7 @@ fn frames(doc: &Document, theme: &Theme, opts: &CastOptions) -> (Vec<(u32, Strin
                 tab_width: 4,
                 typing: false,
                 redact: true,
+                stable: true,
             },
         );
         rows = rows.max(l.canvas.height);

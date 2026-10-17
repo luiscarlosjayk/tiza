@@ -62,7 +62,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo (the message names what was undone) |
 | `t` | dark ⇄ light theme (like Excalidraw) |
-| `P` | presentation mode (hides the UI) |
+| `P` | presentation mode (hides the UI; one geometry for the whole take — see `:layout`) |
 | `L` | annotation list · `?` help · `:` commands · `q` quit (`:q!` if the last save failed) |
 
 ### `:` commands
@@ -93,6 +93,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 :redact off | :redact on | :redact      the author's own screen only; presentation mode, exports, recordings and agents always see the masks
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
+:layout stable | :layout dynamic       rehearse with the take's geometry (`⊞ stable` on the bar) · let the authoring screen grow as steps add arrows
 :theme light   :lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
 :autosave off | :autosave on | :autosave  stop writing the sidecar on every change (`--no-save` at start) · resume (writes what is pending) · state
@@ -122,6 +123,8 @@ tiza render demo.tiza --out - --format ansi | less -R    # 24-bit ANSI, no trail
 tiza render demo.tiza --out demo.cast --interval 3       # asciicast v3 of every step (asciinema, agg)
 tiza render demo.tiza --out demo.tape && vhs demo.tape   # VHS tape → demo.gif
 ```
+
+**Stable geometry.** A take is one layout, not seven: in presentation mode and in every export (`render --step N` for each step, `.cast`, `.tape`) the arrow lanes, the box band, the code column and the right margin are sized once for the maximum over every step of the document, so the code never slides sideways when a later step adds an arrow and a label that fits at step 1 still has its margin at step 7 (each arrow also keeps its lane for the whole take). The authoring screen grows as you go by default; `:layout stable` rehearses with the take's geometry (`⊞ stable` on the status line) and `:layout dynamic` goes back.
 
 Two more outputs record every step as an animation, generated without a pty or any external tool: `--out demo.cast` writes an [asciicast v3](https://docs.asciinema.org/manual/asciicast/v3/) (play it with `asciinema play demo.cast`, embed it with the asciinema web player, or turn it into a GIF with [agg](https://github.com/asciinema/agg)); `--out demo.tape` writes a [VHS](https://github.com/charmbracelet/vhs) tape that runs the real TUI in presentation mode and presses `n` through the steps (`vhs demo.tape` needs `vhs`, `ttyd` and `ffmpeg` and produces `demo.gif`). Both start at step 0 (code only) and stay `--interval` seconds (2) on each step, the last one twice as long so the GIF loop does not cut it short; `--skip-zero` and `--title` adjust them. The tape sizes the VHS window for the TUI at the given width (12 px per column and two spare rows at `FontSize 18`, plus the padding), colours it with the document theme (`--theme light` for a light window) and quotes every path; after writing, the CLI says how to play the file.
 
