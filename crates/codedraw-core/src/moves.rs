@@ -57,6 +57,15 @@ pub struct Patch {
     pub find_start: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub find_end: Option<String>,
+    /// Which match of `find` / `after` / `before` / `find_start` to use when
+    /// the text appears more than once: 1-based, counted in reading order
+    /// over the whole code as it is at this step (ADR 0007 §2). Without it,
+    /// more than one match is an error.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<u32>,
+    /// The same for `find_end`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_occurrence: Option<u32>,
     /// New lines (`insert`, `replace`); `\n` separates lines, a trailing `\n` is ignored.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
@@ -124,11 +133,23 @@ pub struct LineMap {
     pub map: Vec<Option<u32>>,
     /// Lines the patch inserted (absolute, in the new code).
     pub inserted: std::ops::Range<u32>,
+    /// Old lines a `replace` overwrote: they map to a line (same offset in
+    /// the new text) but their text is gone, so column anchors on them are
+    /// unanchored (ADR 0007 §3a).
+    pub replaced: std::ops::Range<u32>,
     pub old_len: u32,
     pub new_len: u32,
 }
 
 impl LineMap {
+    /// New line of a column anchor on `old`: `None` on a replaced line too.
+    pub fn get_column_anchor(&self, old: u32) -> Option<u32> {
+        if self.replaced.contains(&old) {
+            return None;
+        }
+        self.get(old)
+    }
+
     pub fn get(&self, old: u32) -> Option<u32> {
         self.map
             .get(old.checked_sub(self.first_line)? as usize)
@@ -146,28 +167,57 @@ pub struct Target {
     pub to: u32,
 }
 
-fn find_unique(code: &[String], first_line: u32, text: &str, what: &str) -> Result<u32, Error> {
+/// Lines of every match of `text`, one entry per match in reading order (a
+/// line holding the text twice appears twice).
+pub fn matches_of(code: &[String], first_line: u32, text: &str) -> Vec<u32> {
+    if text.is_empty() {
+        return Vec::new();
+    }
+    code.iter()
+        .enumerate()
+        .flat_map(|(i, l)| std::iter::repeat_n(first_line + i as u32, l.matches(text).count()))
+        .collect()
+}
+
+/// The line of the one match of `text`, or of its `occurrence`-th match
+/// (1-based, counted in reading order over the whole code) when given.
+fn find_unique(
+    code: &[String],
+    first_line: u32,
+    text: &str,
+    what: &str,
+    occurrence: Option<u32>,
+) -> Result<u32, Error> {
     if text.is_empty() {
         return Err(Error::Invalid(format!("{what}: empty text")));
     }
-    let hits: Vec<u32> = code
-        .iter()
-        .enumerate()
-        .filter(|(_, l)| l.contains(text))
-        .map(|(i, _)| first_line + i as u32)
-        .collect();
-    match hits.as_slice() {
-        [one] => Ok(*one),
-        [] => Err(Error::TextNotFound(format!("{what} «{text}»"))),
-        many => Err(Error::Invalid(format!(
-            "{what} «{text}» matches {} lines ({}); a move target must match exactly once",
-            many.len(),
-            many.iter()
-                .take(5)
-                .map(|l| format!("L{l}"))
-                .collect::<Vec<_>>()
-                .join(", ")
+    let hits = matches_of(code, first_line, text);
+    if hits.is_empty() {
+        return Err(Error::TextNotFound(format!("{what} «{text}»")));
+    }
+    match occurrence {
+        Some(0) => Err(Error::Invalid(format!(
+            "{what} «{text}»: occurrence is 1-based"
         ))),
+        Some(n) => hits.get(n as usize - 1).copied().ok_or_else(|| {
+            Error::Invalid(format!(
+                "{what} «{text}»: occurrence {n} asked, only {} match{} at this step",
+                hits.len(),
+                if hits.len() == 1 { "" } else { "es" }
+            ))
+        }),
+        None => match hits.as_slice() {
+            [one] => Ok(*one),
+            many => Err(Error::Invalid(format!(
+                "{what} «{text}» matches {} times ({}); a move target must match exactly once (add occurrence: N)",
+                many.len(),
+                many.iter()
+                    .take(5)
+                    .map(|l| format!("L{l}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))),
+        },
     }
 }
 
@@ -241,13 +291,14 @@ impl Patch {
                     }
                     a
                 } else if let Some(t) = &self.after {
-                    find_unique(code, first_line, t, "after")? + 1
+                    find_unique(code, first_line, t, "after", self.occurrence)? + 1
                 } else {
                     find_unique(
                         code,
                         first_line,
                         self.before.as_deref().unwrap_or(""),
                         "before",
+                        self.occurrence,
                     )?
                 };
                 Ok(Target {
@@ -288,14 +339,14 @@ impl Patch {
                     let (a, b) = parse_position(p)?;
                     (in_range(a, "position")?, in_range(b, "position")?)
                 } else if let Some(t) = &self.find {
-                    let l = find_unique(code, first_line, t, "find")?;
+                    let l = find_unique(code, first_line, t, "find", self.occurrence)?;
                     (l, l)
                 } else {
                     let (Some(s), Some(e)) = (&self.find_start, &self.find_end) else {
                         return Err(Error::Invalid("find_start and find_end go together".into()));
                     };
-                    let a = find_unique(code, first_line, s, "find_start")?;
-                    let b = find_unique(code, first_line, e, "find_end")?;
+                    let a = find_unique(code, first_line, s, "find_start", self.occurrence)?;
+                    let b = find_unique(code, first_line, e, "find_end", self.end_occurrence)?;
                     if b < a {
                         return Err(Error::Invalid(format!(
                             "find_end «{e}» (L{b}) is before find_start «{s}» (L{a})"
@@ -316,6 +367,7 @@ impl Patch {
         let mut out: Vec<String> = Vec::with_capacity(code.len() + content.len());
         let mut map: Vec<Option<u32>> = Vec::with_capacity(code.len());
         let inserted;
+        let mut replaced = 0..0;
         match self.op {
             PatchOp::Insert => {
                 let at = (t.from - first_line) as usize;
@@ -343,6 +395,9 @@ impl Patch {
                     Vec::new()
                 };
                 inserted = t.from..t.from + new_lines.len() as u32;
+                if self.op == PatchOp::Replace {
+                    replaced = t.from..t.to + 1;
+                }
                 out.extend(new_lines.iter().cloned());
                 // A replaced line maps to the same offset in the new text when it exists.
                 for k in 0..=(b - a) {
@@ -368,6 +423,7 @@ impl Patch {
                 first_line,
                 map,
                 inserted,
+                replaced,
                 old_len,
                 new_len: out.len() as u32,
             },
@@ -451,22 +507,65 @@ pub fn validate(
             }
         }
     }
-    let last = moves.iter().map(|m| m.at_step).max().unwrap_or(0);
-    apply_until(base, first_line, moves, last).map(|_| ())
+    // Apply in order, checking each move's `rebind` finds on the code after
+    // its patch: exactly one match, or an `occurrence` within the matches.
+    let mut code = base.to_vec();
+    let mut order: Vec<(usize, &Move)> = moves.iter().enumerate().collect();
+    order.sort_by_key(|(i, m)| (m.at_step, *i));
+    for (i, m) in order {
+        let MoveAction::CodePatch(p) = &m.action;
+        let (new_code, _) = p.apply(&code, first_line).map_err(|e| match e {
+            Error::TextNotFound(t) => {
+                Error::TextNotFound(format!("{t} (move #{}, step {})", i + 1, m.at_step))
+            }
+            Error::LineOutOfRange { .. } => e,
+            other => Error::Invalid(format!("move #{} (step {}): {other}", i + 1, m.at_step)),
+        })?;
+        code = new_code;
+        for (id, spec) in &m.rebind {
+            for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
+                let (Some(text), None) = (&w.find, w.line) else {
+                    continue;
+                };
+                let n = matches_of(&code, first_line, text).len();
+                let bad = match w.occurrence {
+                    None if n == 1 => None,
+                    None => Some(format!(
+                        "«{text}» matches {n} time{} after the patch; it must match exactly once (add occurrence: N)",
+                        if n == 1 { "" } else { "s" }
+                    )),
+                    Some(0) => Some(format!("«{text}»: occurrence is 1-based")),
+                    Some(k) if (k as usize) > n => Some(format!(
+                        "«{text}»: occurrence {k} asked, only {n} match{} after the patch",
+                        if n == 1 { "" } else { "es" }
+                    )),
+                    Some(_) => None,
+                };
+                if let Some(why) = bad {
+                    return Err(Error::Invalid(format!(
+                        "move #{} (step {}): rebind `{id}` {why}",
+                        i + 1,
+                        m.at_step
+                    )));
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 /// Shifts a shape through one patch's line map. `None` = unanchored.
 pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
     let line = |l: u32| map.get(l);
     let span = |s: &TextSpan| {
-        line(s.line).map(|l| TextSpan {
+        map.get_column_anchor(s.line).map(|l| TextSpan {
             line: l,
             start: s.start,
             end: s.end,
         })
     };
     let anchor = |a: &Anchor| {
-        line(a.line).map(|l| Anchor {
+        map.get_column_anchor(a.line).map(|l| Anchor {
             line: l,
             col: a.col,
         })
@@ -638,7 +737,97 @@ mod tests {
             content: None,
             typing: Typing::Instant,
             speed_ms: None,
+            occurrence: None,
+            end_occurrence: None,
         }
+    }
+
+    #[test]
+    fn occurrence_counts_matches_over_the_whole_code() {
+        let c = code("a\nb a\na a\nc");
+        assert_eq!(matches_of(&c, 1, "a"), vec![1, 2, 3, 3]);
+        let del = |occ: Option<u32>| Patch {
+            find: Some("a".into()),
+            occurrence: occ,
+            ..patch(PatchOp::Delete)
+        };
+        let e = del(None).resolve(&c, 1).unwrap_err().to_string();
+        assert!(
+            e.contains("matches 4 times") && e.contains("occurrence: N"),
+            "{e}"
+        );
+        assert_eq!(del(Some(2)).resolve(&c, 1).unwrap().from, 2);
+        assert_eq!(
+            del(Some(4)).resolve(&c, 1).unwrap().from,
+            3,
+            "two matches on one line count twice"
+        );
+        let e = del(Some(5)).resolve(&c, 1).unwrap_err().to_string();
+        assert!(e.contains("occurrence 5 asked, only 4 matches"), "{e}");
+        assert!(
+            del(Some(0))
+                .resolve(&c, 1)
+                .unwrap_err()
+                .to_string()
+                .contains("1-based")
+        );
+    }
+
+    #[test]
+    fn replaced_lines_keep_line_anchors_but_drop_column_anchors() {
+        let c = code("a\nb\nc\nd");
+        let p = Patch {
+            position: Some("2-3".into()),
+            content: Some("B\nC\nX".into()),
+            ..patch(PatchOp::Replace)
+        };
+        let (_, map) = p.apply(&c, 1).unwrap();
+        assert_eq!(map.replaced, 2..4);
+        assert_eq!(map.get(2), Some(2));
+        assert_eq!(
+            map.get_column_anchor(2),
+            None,
+            "the text under the column is gone"
+        );
+        assert_eq!(
+            map.get_column_anchor(4),
+            Some(5),
+            "after the edit: shifted, kept"
+        );
+        let note = Shape::Note {
+            line: 2,
+            text: "n".into(),
+        };
+        assert!(matches!(
+            shift_shape(&note, &map),
+            Some(Shape::Note { line: 2, .. })
+        ));
+        let hl = Shape::Highlight {
+            span: TextSpan {
+                line: 2,
+                start: 0,
+                end: 1,
+            },
+            label: None,
+            emphasis: Default::default(),
+        };
+        assert!(shift_shape(&hl, &map).is_none());
+        let hl4 = Shape::Highlight {
+            span: TextSpan {
+                line: 4,
+                start: 0,
+                end: 1,
+            },
+            label: None,
+            emphasis: Default::default(),
+        };
+        assert!(matches!(
+            shift_shape(&hl4, &map),
+            Some(Shape::Highlight {
+                span: TextSpan { line: 5, .. },
+                ..
+            })
+        ));
     }
 
     #[test]
@@ -701,7 +890,7 @@ mod tests {
             ..patch(PatchOp::Delete)
         };
         let e = p.resolve(&c, 1).unwrap_err().to_string();
-        assert!(e.contains("matches 2 lines") && e.contains("L1, L3"), "{e}");
+        assert!(e.contains("matches 2 times") && e.contains("L1, L3"), "{e}");
         let p = Patch {
             find: Some("q".into()),
             ..patch(PatchOp::Delete)

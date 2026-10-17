@@ -449,6 +449,12 @@ pub struct AddMoveParams {
         description = "replace/delete: text on the last line of the range (with find_start)"
     )]
     pub find_end: Option<String>,
+    #[schemars(
+        description = "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error"
+    )]
+    pub occurrence: Option<u32>,
+    #[schemars(description = "The same for find_end")]
+    pub end_occurrence: Option<u32>,
     #[schemars(description = "insert/replace: the new lines, separated by newlines")]
     pub content: Option<String>,
     #[schemars(
@@ -460,7 +466,7 @@ pub struct AddMoveParams {
     )]
     pub speed_ms: Option<u64>,
     #[schemars(
-        description = "Where annotations the patch replaces or deletes go afterwards, by id: `{\"a3\": {\"find\": \"text\"}}`, `{\"a4\": {\"from_line\": 7, \"to_line\": 9}}` (same fields as update_annotation's move), resolved on the code after the patch"
+        description = "Where annotations the patch replaces or deletes go afterwards, by id: `{\"a3\": {\"at\": {\"find\": \"text\", \"occurrence\": 2}}}`, `{\"a4\": {\"from_line\": 7, \"to_line\": 9}}` (same fields as update_annotation's move), resolved on the code after the patch; a find must match exactly once there or carry occurrence. Needed for column anchors (highlights, marks, arrow ends) on a replaced line: those go (unanchored) otherwise"
     )]
     pub rebind: Option<serde_json::Map<String, Value>>,
 }
@@ -883,6 +889,8 @@ impl CodeDrawServer {
         put("find", p.find.map(Value::from));
         put("find_start", p.find_start.map(Value::from));
         put("find_end", p.find_end.map(Value::from));
+        put("occurrence", p.occurrence.map(Value::from));
+        put("end_occurrence", p.end_occurrence.map(Value::from));
         put("content", p.content.map(Value::from));
         put("typing", p.typing.map(Value::from));
         put("speed_ms", p.speed_ms.map(Value::from));

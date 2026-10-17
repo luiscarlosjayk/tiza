@@ -23,6 +23,13 @@
 //! - AC5 Paste and follow are refused while moves are applied; `:embed`
 //!   embeds the step-0 code.
 //! - AC6 `examples/ownership-moves.rs.codedraw` renders every step.
+//! - AC7 On a line a `replace` overwrites, line-level annotations (note, box,
+//!   callout, spotlight) keep the same-offset line; column anchors
+//!   (highlight, mark, arrow ends) go `(unanchored)` unless `rebind`.
+//! - AC8 `occurrence: N` (1-based, over the whole code at that step) on
+//!   `find`/`find_start`/`after`/`before` (`end_occurrence` for `find_end`)
+//!   and on `rebind` finds; N beyond the matches is a load-time error naming
+//!   the move; without it, several matches are the AC1 error.
 
 use codedraw_qa::{Live, McpClient, codedraw, codedraw_ok, example, scratch};
 use crossterm::event::KeyCode;
@@ -100,7 +107,7 @@ fn ac1_move_add_validates_against_the_code_at_its_step() {
     );
     let e = r.error.unwrap();
     assert!(
-        e.message.contains("matches 2 lines (L2, L3)"),
+        e.message.contains("matches 2 times (L2, L3)"),
         "{}",
         e.message
     );
@@ -420,12 +427,14 @@ fn ac2_annotations_are_authored_against_the_code_at_their_step() {
         "m [step 1] mark read L3 4..9"
     );
     live.api_ok("step.set", json!({"step": 3}));
-    // A rebind target that does not exist leaves the annotation unanchored (no crash).
-    live.api_ok("move.add", json!({"at_step": 4, "action": "code.patch", "op": "delete", "find": "let c = 3;", "rebind": {"m": {"at": {"find": "nowhere"}}}}));
-    live.api_ok("step.set", json!({"step": 4}));
-    assert_eq!(
-        live.api_ok("move.list", json!({}))["unanchored"],
-        json!(["m"])
+    // A rebind target that does not exist is a load-time error naming the move and the id.
+    let r = live.api("move.add", json!({"at_step": 4, "action": "code.patch", "op": "delete", "find": "let c = 3;", "rebind": {"m": {"at": {"find": "nowhere"}}}}));
+    let e = r.error.unwrap();
+    assert!(
+        e.message
+            .contains("move #3 (step 4): rebind `m` «nowhere» matches 0 times"),
+        "{}",
+        e.message
     );
 }
 
@@ -707,7 +716,7 @@ fn ac1_load_time_errors_name_the_move() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("move #1 (step 1)") && err.contains("matches 2 lines"),
+        err.contains("move #1 (step 1)") && err.contains("matches 2 times"),
         "{err}"
     );
     // A move whose position runs past the code.
@@ -719,4 +728,197 @@ fn ac1_load_time_errors_name_the_move() {
     let out = codedraw(&["render", bad.to_str().unwrap(), "--out", "-"]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("line 9 does not exist"), "{err}");
+}
+
+// ---------------------------------------------------------------- AC7 / AC8
+
+#[test]
+fn ac7_replaced_line_keeps_line_anchors_and_unanchors_column_anchors() {
+    let live = live("t098-ac7");
+    // Line 3 `    let b = 2;` carries a note (line) and a highlight (columns); line 4 a mark.
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "note", "type": "note", "line": 3, "text": "two", "step": 1}),
+    );
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "hl", "type": "highlight", "at": {"find": "b = 2"}, "step": 1}),
+    );
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "box", "type": "box", "from_line": 2, "to_line": 4, "step": 1}),
+    );
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "mk", "type": "mark", "kind": "read", "at": {"find": "{a} {b}"}, "step": 1}),
+    );
+    live.api_ok("annotation.add", json!({"id": "arrow", "type": "arrow", "from": {"find": "let b"}, "to": {"find": "{b}"}, "step": 1}));
+    live.api_ok("move.add", json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 2;", "content": "    let b = a + 1;"}));
+    live.api_ok("step.set", json!({"step": 2}));
+    assert_eq!(code_of(&live)[2], "    let b = a + 1;");
+    let list = live.api_ok("move.list", json!({}));
+    assert_eq!(list["unanchored"], json!(["hl", "arrow"]), "{list}");
+    let lines: Vec<String> = live
+        .api_ok("scene.list", json!({}))
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().into())
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("note ") && l.contains("L3") && !l.contains("unanchored")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("box ") && l.contains("L2-4")),
+        "{lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("mk ") && l.contains("L4") && !l.contains("unanchored")),
+        "the mark is after the edit: {lines:?}"
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("hl ") && l.ends_with("(unanchored)")),
+        "{lines:?}"
+    );
+    // Back on `p`.
+    live.api_ok("step.prev", json!({}));
+    assert_eq!(live.api_ok("move.list", json!({}))["unanchored"], json!([]));
+    // With a rebind the highlight follows the new text.
+    live.api_ok("move.delete", json!({"index": 1}));
+    live.api_ok("move.add", json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 2;", "content": "    let b = a + 1;", "rebind": {"hl": {"at": {"find": "a + 1"}}}}));
+    live.api_ok("step.set", json!({"step": 2}));
+    assert_eq!(
+        live.api_ok("move.list", json!({}))["unanchored"],
+        json!(["arrow"])
+    );
+    let lines: Vec<String> = live
+        .api_ok("scene.list", json!({}))
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().into())
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("hl ") && l.contains("L3 12..17")),
+        "{lines:?}"
+    );
+    // The screen agrees: the highlight's label-less span is on `a + 1`, the note is drawn.
+    let t = live.api_ok("render.text", json!({"width": 60}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(t.contains("two"), "{t}");
+}
+
+#[test]
+fn ac8_occurrence_over_the_whole_code_at_that_step() {
+    let live = Live::from_code(
+        "fn main() {\n    let a = 1;\n    let a = a + 1;\n    let b = a;\n}\n",
+        "rs",
+        "t098-ac8",
+    );
+    // Without occurrence: the AC1 error, counting every match (L3 has two).
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "a"}),
+    );
+    let e = r.error.unwrap();
+    assert_eq!(e.code, "invalid_argument");
+    assert!(
+        e.message.contains("matches 5 times (L1, L2, L3, L3, L4)")
+            && e.message.contains("occurrence: N"),
+        "{}",
+        e.message
+    );
+    // Reading order: `main` (1), line 2 (2), line 3 twice (3, 4), line 4 (5).
+    let r = live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "a", "occurrence": 5}),
+    );
+    assert_eq!(r["index"], 1);
+    assert_eq!(
+        code_of(&live),
+        ["fn main() {", "    let a = 1;", "    let a = a + 1;", "}"]
+    );
+    // Beyond the matches: a load-time error naming the move.
+    let r = live.api("move.add", json!({"at_step": 2, "action": "code.patch", "op": "delete", "find": "let", "occurrence": 3}));
+    let e = r.error.unwrap();
+    assert!(
+        e.message.contains("move #2 (step 2)")
+            && e.message.contains("occurrence 3 asked, only 2 matches"),
+        "{}",
+        e.message
+    );
+    // `after` with occurrence, and `end_occurrence` for find_end.
+    live.api_ok("move.add", json!({"at_step": 2, "action": "code.patch", "op": "insert", "after": "let a", "occurrence": 2, "content": "    // second a"}));
+    live.api_ok("step.set", json!({"step": 2}));
+    assert_eq!(code_of(&live)[3], "    // second a");
+    // find_start needs its own occurrence (`let a` is on two lines); `a` of `// second a` is the 5th match.
+    let r = live.api("move.add", json!({"at_step": 3, "action": "code.patch", "op": "delete", "find_start": "let a", "find_end": "a", "end_occurrence": 5}));
+    assert!(
+        r.error
+            .unwrap()
+            .message
+            .contains("find_start «let a» matches 2 times")
+    );
+    live.api_ok("move.add", json!({"at_step": 3, "action": "code.patch", "op": "delete", "find_start": "let a", "occurrence": 1, "find_end": "a", "end_occurrence": 5}));
+    live.api_ok("step.set", json!({"step": 3}));
+    assert_eq!(code_of(&live), ["fn main() {", "}"], "{:?}", code_of(&live));
+}
+
+#[test]
+fn ac8_rebind_find_must_match_once_or_carry_occurrence() {
+    let live = Live::from_code("fn main() {\n    let b = 1;\n}\n", "rs", "t098-ac8b");
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "h", "type": "highlight", "at": {"find": "let b"}, "step": 1}),
+    );
+    let r = live.api("move.add", json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 1;", "content": "    let c = 1; let d = 1;", "rebind": {"h": {"at": {"find": "= 1;"}}}}));
+    let e = r.error.unwrap();
+    assert!(
+        e.message
+            .contains("move #1 (step 2): rebind `h` «= 1;» matches 2 times"),
+        "{}",
+        e.message
+    );
+    let r = live.api("move.add", json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 1;", "content": "    let c = 1; let d = 1;", "rebind": {"h": {"at": {"find": "= 1;", "occurrence": 3}}}}));
+    assert!(
+        r.error
+            .unwrap()
+            .message
+            .contains("occurrence 3 asked, only 2 matches")
+    );
+    live.api_ok("move.add", json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 1;", "content": "    let c = 1; let d = 1;", "rebind": {"h": {"at": {"find": "= 1;", "occurrence": 2}}}}));
+    live.api_ok("step.set", json!({"step": 2}));
+    let lines: Vec<String> = live
+        .api_ok("scene.list", json!({}))
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap().into())
+        .collect();
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("h ") && l.contains("L2 21..25")),
+        "{lines:?}"
+    );
+    assert_eq!(live.api_ok("move.list", json!({}))["unanchored"], json!([]));
+    // The document carries `occurrence` on the wire and on disk.
+    let scene = live.api_ok("scene.get", json!({}));
+    assert_eq!(
+        scene["document"]["moves"][0]["rebind"]["h"]["at"]["occurrence"],
+        2
+    );
 }

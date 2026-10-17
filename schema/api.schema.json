@@ -880,6 +880,15 @@
                   "null"
                 ]
               },
+              "end_occurrence": {
+                "description": "The same for `find_end`.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "find": {
                 "description": "`replace`/`delete`: text of the one line to change.",
                 "type": [
@@ -897,6 +906,15 @@
                 "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
                   "null"
                 ]
               },
@@ -3209,6 +3227,15 @@
                   "null"
                 ]
               },
+              "end_occurrence": {
+                "description": "The same for `find_end`.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "find": {
                 "description": "`replace`/`delete`: text of the one line to change.",
                 "type": [
@@ -3226,6 +3253,15 @@
                 "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
                   "null"
                 ]
               },
@@ -3758,6 +3794,15 @@
                   "null"
                 ]
               },
+              "end_occurrence": {
+                "description": "The same for `find_end`.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "find": {
                 "description": "`replace`/`delete`: text of the one line to change.",
                 "type": [
@@ -3775,6 +3820,15 @@
                 "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
                   "null"
                 ]
               },
@@ -4128,6 +4182,15 @@
                   "null"
                 ]
               },
+              "end_occurrence": {
+                "description": "The same for `find_end`.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
               "find": {
                 "description": "`replace`/`delete`: text of the one line to change.",
                 "type": [
@@ -4145,6 +4208,15 @@
                 "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
                 "type": [
                   "string",
+                  "null"
+                ]
+              },
+              "occurrence": {
+                "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
                   "null"
                 ]
               },
