@@ -11,10 +11,12 @@
 
 ## Working the board
 
-The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t-NNN` with `ac`, `test_steps`, `corner_cases`, `qa_test`, `notes`, `links`, `status`, `owner`, `blockedBy`, `milestone`, `priority`, `size`, `order`). Columns: `backlog` → `next` → `doing` → `review` → `done`.
+The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t-NNN` with `ac`, `test_steps`, `corner_cases`, `qa_test`, `notes`, `links`, `status`, `owner`, `blockedBy`, `milestone`, `priority`, `size`, `order`). Columns: `backlog` → `next` → `doing` → `review` → `done`, plus `rework` ("Retrabajo": cards the owner reviewed and sent back; their note starts with `RETRABAJO:` and lists what is missing) and `wontdo` ("No se hará": discarded cards; never deleted, they keep a note with the reason and the date).
 
-- Work only what the owner put in `next` (in order) or asked for explicitly; `backlog` waits, even when a card there is the obvious next step of a chain. The owner's feedback on a card in `review` has priority over starting anything new.
+- Order of work: first `rework`, then the `doing` you already have, then `next` (in order). `backlog` waits, even when a card there is the obvious next step of a chain. The owner's feedback on a card in `review` has priority over starting anything new.
+- A card in `rework` does not go through `doing`: do what the `RETRABAJO:` note lists, leave a note with the commit and move it to `review` — never to `done`.
 - Keep `doing` accurate: one card at a time, moved when you start, moved to `review` when the gate is green and the commit is pushed.
+- When the owner discards a card (`wontdo`), take it out of every candidate list that names it (ADRs, research notes) in your next commit.
 - Every card you touch gets a line in `notes`, newest last: `[AAAA-MM-DD HH:MM claude] …` with the commit hash, the state (what is done, what is missing) and anything the owner must decide or test. Add it with `str_replace` pinned to the card's `if_version` (never resend the whole document), and set `updatedAt`/`updatedBy`.
 - Nothing moves to `done` without the owner's QA APPROVE; cards the owner tests himself (TUI feel, editor integrations, taste calls) are closed by him, not by you.
 - Finishing a card means: AC, manual test steps and corner cases on the card, `qa/tests/t-XXX.rs`, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`codedraw schema api > schema/api.schema.json`, `codedraw schema document > schema/codedraw.schema.json`, `scripts/check-schema.py`).

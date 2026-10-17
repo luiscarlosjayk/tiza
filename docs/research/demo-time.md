@@ -1,6 +1,13 @@
 # Demo Time, mapped to CodeDraw (t-083)
 
-Research note, 2026-10-16. Sources: demotime.show (getting started, JSON schema, actions/text, references/api, features/presenter-view). Demo Time is MIT-licensed; nothing of it is copied here, only its vocabulary where it helps.
+Research note, 2026-10-16. Sources: demotime.show (getting started, JSON schema, actions/text, references/api, features/presenter-view). Demo Time is licensed under the Apache License 2.0 (per its repository README); nothing of it is copied here, only its vocabulary where it helps.
+
+## Decisions (2026-10-17)
+
+- **Be selective.** CodeDraw takes two things from Demo Time: (a) switching between files during the presentation, each with its own annotations (t-105, `code.link`), and (b) modifying the code progressively with the annotations following the change (t-098, `code.patch`). CodeDraw's focus is showing code and annotations, with transitions that look good on video.
+- **Out of scope:** presenter notes, presenter view / second pane, timer, clicker and remote control, snippets/templates, terminal actions. The cards t-032, t-087, t-088 and t-100 were deleted; t-102 (templates), t-085 (superseded by t-098), t-086 (terminal moves) and t-089 (duplicate of t-101 + t-051) are `wontdo`.
+- **Added:** t-105 (`cursor`, `select`, `wait`, `code.link`) and t-106 (follow mode while moves are applied, milestone `later`).
+- Anything in the table below that is not a board card is **not adopted** unless Luis asks for it. The table is kept as a dated record.
 
 ## What Demo Time is
 
@@ -31,21 +38,21 @@ Highlight specifics worth noting: whole-line highlight has a border; character-r
 | `highlightBlur` / `highlightOpacity` | No | `spotlight` | **Exists.** |
 | Placeholders (`// Start of demo1`) to locate ranges | No | `find` text anchors | **Exists** (find is per line; range-by-two-markers is a small add: t-097). |
 | `insert` / `replace` with typing modes | No (needs a buffer we own) | `replace_code` (paste) only | **Planned**: code *diffs* as steps (show v1, then v2 with the added lines typed in). This is the biggest gap and the most valuable: "explain, then evolve the code". |
-| `positionCursor`, `selection` | No | Cursor and selection exist for authoring, not as steps | **Partial**: a step that moves the cursor/selection is cheap once moves exist. |
+| `positionCursor`, `selection` | No | Cursor and selection exist for authoring, not as steps | **t-105** (`cursor`, `select` moves). |
 | `zoomIn` / `zoomOut` | Terminal font is the terminal's | — | **Out of scope** (a note in README: use the terminal's zoom; export `--font-size` covers images). |
-| `open` file, `openSlide`, previews | Yes | `:link path:A-B` switches the code | **Partial**: a move that links another file/range is the terminal equivalent; slides/markdown previews are out of scope (a slide deck tool already exists for that; CodeDraw is the code act). |
-| Terminal actions (run command, wait for output) | Yes (editor terminal) | — | **Via the editor's task / herdr pane**, not CodeDraw. Document the pattern in docs/zed.md. |
-| `waitForTimeout`, `autoAdvanceAfter`, `loop`, timer | No | — | **Planned** (small): auto-advance per step and a `timer` in the status line; `loop` for looping demos on a booth screen. |
-| `notes` per scene + presenter view | No | — | **Planned**: presenter notes per step, shown on `?`-style overlay or sent to a second terminal/`scene.notes` over the socket (a second pane in herdr is the presenter view). |
+| `open` file, `openSlide`, previews | Yes | `:link path:A-B` switches the code | **t-105** (`code.link`, each file with its own annotations); slides/markdown previews are out of scope (a slide deck tool already exists for that; CodeDraw is the code act). |
+| Terminal actions (run command, wait for output) | Yes (editor terminal) | — | **Not adopted** (decided 2026-10-17; t-086 won't do). Stays with the editor's task / herdr pane. |
+| `waitForTimeout`, `autoAdvanceAfter`, `loop`, timer | No | — | `wait` move (t-105), auto-advance per step and `loop` (t-099) as automation for recordings; the **timer is out of scope** (decided 2026-10-17). |
+| `notes` per scene + presenter view | No | — | **Out of scope** (decided 2026-10-17): no presenter notes, no presenter view. |
 | HTTP API `/api/next`, `/runById`, `/demos`, `/screenshot` | No | Unix socket: `step.next`, `step.set`, `scene.get`, `render.text`; `codedraw render` → PNG | **Exists** (socket instead of HTTP). `/screenshot` ≈ `export_image`. A `step.goto {id}` with named steps would match `runById`. |
-| Remote control PWA / clicker | No | Any client of the socket; keyboard → | **Partial**: a `codedraw next` CLI shortcut and docs for Stream Deck (run a shell command) close it. |
+| Remote control PWA / clicker | No | Any client of the socket; keyboard → | **Out of scope** (decided 2026-10-17): no clicker feature; the socket and `codedraw next|prev|goto` exist for automation (editor tasks, recordings). |
 | MCP server | No | `codedraw mcp` | **Exists** (ours is the whole surface, theirs is new). |
-| Recording / export as video | No | PNG/SVG per step | **Planned** (small): `render --all-steps --out dir/` to get one image per step; a video is then a `ffmpeg` one-liner, documented. GIF via VHS (t-057). |
-| Snippets gallery (parametrized step lists) | No | document `styles` (marks only) | **Later**: reusable annotation *templates* (e.g. "ownership move" = mark + arrow + note) with parameters. |
+| Recording / export as video | No | PNG/SVG per step, `.cast`/`.tape` (t-051) | **t-101** (`render --all-steps`); asciicast/VHS already in t-051. t-089 was a duplicate (won't do). |
+| Snippets gallery (parametrized step lists) | No | document `styles` (marks only) | **Not adopted** (decided 2026-10-17; t-102 won't do): boxes, arrows and notes are already one command each. |
 | Slides, themes, layouts, Mermaid, PowerPoint/Keynote | Yes (webview) | — | **Out of scope.** CodeDraw is the code segment of a talk; slides live elsewhere. |
 | Copilot chat actions, EngageTime polls, QR | Yes / SaaS | — | **Out of scope.** |
 | macOS desktop actions (focus mode, dock, caffeine) | OS | — | **Out of scope** (a tip in the recording profile docs at most). |
-| Preflight check (validate the demo before presenting) | No | `codedraw render` fails on bad anchors | **Planned** (small): `codedraw check FILE` validates every anchor/step and reports missing `find` texts. |
+| Preflight check (validate the demo before presenting) | No | `codedraw render` fails on bad anchors | **t-101** (`codedraw check FILE`). |
 | Redaction mode | Editor | — | Out of scope. |
 
 ## Proposal: "moves" for CodeDraw (editor-agnostic)
@@ -57,18 +64,19 @@ CodeDraw already has the *static* half of Demo Time (steps as visible states). T
   - `code.link {file, lines}` — switch to another file/range (the terminal's "open").
   - `cursor {line, col?}` / `select {from, to}` — direct attention like a presenter's mouse.
   - `wait {ms}` and per-step `auto_advance` — unattended demos and loops.
-  - `notes` per step — shown to the presenter, never to the audience (`scene.notes` over the socket for a second pane).
+  - ~~`notes` per step~~ — dropped 2026-10-17 (no speaker features).
 - Named steps (`steps: [{id, title}]`) so the socket gets `step.goto {id}` and the status line shows a title.
 - Everything that needs the editor (open files there, run terminal commands) stays with the editor's task runner; docs/zed.md and the herdr guide show how to drive both from one keystroke.
 
 This keeps the `.codedraw` file as the single source for a demo, usable from Zed, Helix, Neovim, or a bare terminal, with the socket as the remote control.
 
-## Candidate tasks (added to the board under the Demo Time epic)
+## Candidate tasks (on the board under the Demo Time epic, as of 2026-10-17)
 
-- t-084 ADR 0007: moves and named steps (this proposal, decide the schema).
-- t-097 Range anchors by two markers (`find_start` / `find_end`), the terminal version of placeholders.
-- t-098 `code.patch` moves with typing modes and re-anchoring.
-- t-099 Named steps + `step.goto`, auto-advance, loop, timer in the status line.
-- t-100 Presenter notes per step (`scene.notes`, overlay, second pane).
+- t-084 ADR 0007: moves and named steps (this proposal, decide the schema). Accepted.
+- t-097 Range anchors by two markers (`find_start` / `find_end`), the terminal version of placeholders. Done.
+- t-098 `code.patch` moves with typing modes and deterministic re-anchoring.
+- t-105 The other moves: `cursor`, `select`, `wait`, `code.link` (each file with its own annotations).
+- t-099 Named steps + `step.goto`, auto-advance, loop (automation only; no timer).
 - t-101 `codedraw check` preflight; `render --all-steps` for one image per step and the ffmpeg recipe.
-- t-102 Annotation templates with parameters (snippet gallery equivalent). Later.
+- t-106 Follow mode while moves are applied (milestone `later`).
+- Won't do: t-100 presenter notes, t-102 annotation templates, t-085 (superseded by t-098), t-086 terminal moves, t-089 preflight/recording (duplicate of t-101 + t-051).
