@@ -101,29 +101,32 @@ fn ac2_autosave_command_and_status() {
 #[test]
 fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     let dir = scratch("t110-readonly");
-    let ro = dir.join("ro");
-    std::fs::create_dir_all(&ro).unwrap();
-    let path = ro.join("doc.tiza");
+    let path = dir.join("doc.tiza");
     std::fs::copy(fixture("t-050/export.tiza"), &path).unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));
-    // A read-only directory: the sidecar cannot be replaced atomically.
-    let mut perms = std::fs::metadata(&ro).unwrap().permissions();
-    use std::os::unix::fs::PermissionsExt;
-    perms.set_mode(0o555);
-    std::fs::set_permissions(&ro, perms.clone()).unwrap();
-    if std::fs::write(ro.join("probe"), "x").is_ok() {
-        // Running as root (CI containers): the permission bit means nothing.
-        std::fs::remove_file(ro.join("probe")).unwrap();
-        return;
-    }
+    // `chmod a-w doc.tiza`: the atomic replace would walk over it, so the
+    // read-only bit itself is honoured (also when running as root).
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&path, perms.clone()).unwrap();
+    let before = std::fs::read(&path).unwrap();
     live.command("note 1 first");
     let (msg, err) = live.message().unwrap();
-    assert!(err && msg.starts_with("read-only: could not save"), "{msg}");
+    assert!(
+        err && msg.starts_with("read-only: could not save") && msg.contains("is read-only"),
+        "{msg}"
+    );
     live.command("note 2 second");
     let (msg, _) = live.message().unwrap();
     assert!(!msg.starts_with("read-only"), "only once: {msg}");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 10);
+    assert_eq!(std::fs::read(&path).unwrap(), before, "untouched");
+    let bar = live.screen(120, 20).lines().last().unwrap().to_string();
+    assert!(
+        bar.contains("could not save"),
+        "short form stays on the bar: {bar}"
+    );
     // `:q` refuses, `:w PATH` elsewhere works, then `:q` quits.
     live.command("q");
     assert!(!live.with(|a| a.quit));
@@ -132,8 +135,10 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     assert!(elsewhere.exists());
     live.command("q");
     assert!(live.with(|a| a.quit));
-    perms.set_mode(0o755);
-    std::fs::set_permissions(&ro, perms).unwrap();
+    // Writable again, so the scratch dir can be cleaned up.
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o644);
+    std::fs::set_permissions(&path, perms).unwrap();
 }
 
 #[test]

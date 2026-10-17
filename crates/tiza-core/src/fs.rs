@@ -358,6 +358,17 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     let mut doc = doc.clone();
     doc.sync_code_src();
     let json = serde_json::to_string_pretty(&doc)?;
+    // The save is an atomic replace (temp file + rename), which would walk
+    // over a file the user made read-only: honour the bit instead.
+    if let Ok(meta) = std::fs::metadata(path)
+        && meta.permissions().readonly()
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("{} is read-only", path.display()),
+        )
+        .into());
+    }
     let tmp = path.with_extension(format!("{EXT}.tmp"));
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
