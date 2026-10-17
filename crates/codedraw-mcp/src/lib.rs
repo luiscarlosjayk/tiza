@@ -5,10 +5,16 @@
 use std::path::PathBuf;
 
 use rmcp::{
-    ErrorData as McpError, ServerHandler, ServiceExt,
+    ErrorData as McpError, RoleServer, ServerHandler, ServiceExt,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, ContentBlock, Implementation, ServerCapabilities, ServerConfig},
-    schemars, tool, tool_handler, tool_router,
+    model::{
+        CallToolResult, ContentBlock, Implementation, ListResourcesResult, PaginatedRequestParams,
+        ReadResourceRequestParams, ReadResourceResponse, ReadResourceResult, Resource,
+        ResourceContents, ServerCapabilities, ServerConfig,
+    },
+    schemars,
+    service::RequestContext,
+    tool, tool_handler, tool_router,
     transport::stdio,
 };
 use serde_json::{Value, json};
@@ -973,10 +979,128 @@ impl CodeDrawServer {
     }
 }
 
+/// The resources the live instance exposes (t-044): a client that supports
+/// resources can read the scene, the code or the rendered frame without a
+/// tool call (and attach them as context).
+const RESOURCES: &[(&str, &str, &str, &str)] = &[
+    (
+        "codedraw://scene",
+        "scene",
+        "The live document as JSON (code embedded, annotations, styles, step, theme).",
+        "application/json",
+    ),
+    (
+        "codedraw://code",
+        "code",
+        "The code currently shown, with line numbers, as text.",
+        "text/plain",
+    ),
+    (
+        "codedraw://render",
+        "render",
+        "What the audience sees: the current step as plain text (box-drawing characters).",
+        "text/plain",
+    ),
+    (
+        "codedraw://render.md",
+        "render.md",
+        "The same frame as a Markdown fenced block, ready to paste.",
+        "text/markdown",
+    ),
+];
+
+impl CodeDrawServer {
+    async fn resource_text(&self, uri: &str) -> Result<String, McpError> {
+        match uri {
+            "codedraw://scene" => {
+                let v = self.call("scene.get", json!({})).await?;
+                Ok(pretty(&v))
+            }
+            "codedraw://code" => {
+                let v = self.call("code.get", json!({})).await?;
+                Ok(v["text"].as_str().unwrap_or("").to_string())
+            }
+            "codedraw://render" => {
+                let v = self.call("render.text", json!({})).await?;
+                Ok(v["text"].as_str().unwrap_or("").to_string())
+            }
+            "codedraw://render.md" => {
+                let v = self.call("render.text", json!({})).await?;
+                let status = self.call("status", json!({})).await?;
+                let title = status["file"].as_str().map(|f| {
+                    std::path::Path::new(f)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| f.to_string())
+                });
+                let mut out = String::new();
+                if let Some(t) = title {
+                    out.push_str(&format!("**{t}** (step {})\n\n", status["step"]));
+                }
+                out.push_str("```text\n");
+                out.push_str(v["text"].as_str().unwrap_or("").trim_end());
+                out.push_str("\n```\n");
+                Ok(out)
+            }
+            other => Err(McpError::resource_not_found(
+                format!(
+                    "unknown resource {other}; available: {}",
+                    RESOURCES.iter().map(|r| r.0).collect::<Vec<_>>().join(", ")
+                ),
+                None,
+            )),
+        }
+    }
+}
+
 #[tool_handler]
 impl ServerHandler for CodeDrawServer {
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        Ok(ListResourcesResult::with_all_items(
+            RESOURCES
+                .iter()
+                .map(|(uri, name, desc, mime)| {
+                    Resource::new(*uri, *name)
+                        .with_description(*desc)
+                        .with_mime_type(*mime)
+                })
+                .collect(),
+        ))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ReadResourceResponse, McpError> {
+        let text = self.resource_text(&request.uri).await?;
+        let mime = RESOURCES
+            .iter()
+            .find(|r| r.0 == request.uri)
+            .map(|r| r.3)
+            .unwrap_or("text/plain");
+        Ok(
+            ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
+                uri: request.uri,
+                mime_type: Some(mime.into()),
+                text,
+                meta: None,
+            }])
+            .into(),
+        )
+    }
+
     fn get_info(&self) -> ServerConfig {
-        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
+        ServerConfig::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
             .with_server_info(Implementation::new("codedraw", codedraw_core::VERSION))
             .with_instructions(
                 "CodeDraw is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes, callouts and \
@@ -984,6 +1108,7 @@ impl ServerHandler for CodeDrawServer {
                  1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
                  3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text; \
                  4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
+                 Resources `codedraw://scene`, `codedraw://code`, `codedraw://render` and `codedraw://render.md` give the same views without a tool call. \
                  Keep labels short: they are drawn in a ~100-column terminal.",
             )
     }

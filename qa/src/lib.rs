@@ -296,6 +296,8 @@ pub struct McpClient {
     stdin: std::process::ChildStdin,
     reader: std::io::BufReader<std::process::ChildStdout>,
     next_id: u64,
+    /// The `initialize` result (capabilities, instructions, serverInfo).
+    init: serde_json::Value,
 }
 
 impl McpClient {
@@ -316,18 +318,25 @@ impl McpClient {
             stdin,
             reader,
             next_id: 1,
+            init: serde_json::Value::Null,
         };
         let init = c.request(
             "initialize",
             serde_json::json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "codedraw-qa", "version": "0"}}),
         );
         assert!(init["result"]["serverInfo"]["name"] == "codedraw", "{init}");
+        c.init = init["result"].clone();
         c.stdin
             .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
             .unwrap();
         c.stdin.flush().unwrap();
         let _ = &mut c.reader as &mut dyn BufRead;
         c
+    }
+
+    /// What `initialize` returned: capabilities, instructions, serverInfo.
+    pub fn initialize_result(&self) -> &serde_json::Value {
+        &self.init
     }
 
     /// Sends one JSON-RPC request and returns its reply (notifications are skipped).

@@ -53,6 +53,10 @@ Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `
 
 `set_follow {"enabled": true}` makes the TUI reload the code every time the source file is saved (the presenter can also type `:follow on`). Annotations stay anchored to their text; the ones whose text disappears are dropped, and the reply (same as `follow.status`) reports `reloads` and `last_reload`, so after a save you can call `list_annotations` to see what survived and re-add what matters. It fails with `invalid_argument` when the code is embedded in the document.
 
+## Resources
+
+If your client supports MCP resources, `codedraw://scene`, `codedraw://code`, `codedraw://render` and `codedraw://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
+
 ## Idempotency
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
