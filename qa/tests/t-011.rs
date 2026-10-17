@@ -649,3 +649,202 @@ fn step12_random_edits_above_keep_a_unique_line_and_never_panic() {
         })
         .unwrap();
 }
+
+// ---------- QA round 2 (Luis, real Zed): ranges, formatter reflow, notes, undo ----------
+
+/// `examples/src/stack.rs` as Luis tested it (37 lines; `fn pop` 16-18,
+/// `fn peek` 20-22, `fn is_empty` 28-30).
+fn stack_fixture(name: &str) -> (Live, PathBuf, Vec<String>) {
+    let code = std::fs::read_to_string(fixture("t-011/stack.rs")).unwrap();
+    let (live, src) = followed(name, &code);
+    (live, src, code.lines().map(String::from).collect())
+}
+
+/// Moves the lines `from..=to` (1-based; pass the trailing blank line as
+/// `to`) to just after line `after`, like cut and paste in the editor.
+fn move_block(lines: &[String], from: usize, to: usize, after: usize) -> String {
+    let block: Vec<String> = lines[from - 1..to].to_vec();
+    let mut rest: Vec<String> = lines[..from - 1].to_vec();
+    rest.extend_from_slice(&lines[to..]);
+    let at = if after > to {
+        after - block.len()
+    } else {
+        after
+    };
+    let mut out = rest[..at].to_vec();
+    out.extend(block);
+    out.extend_from_slice(&rest[at..]);
+    out.join("\n") + "\n"
+}
+
+fn count(live: &Live) -> usize {
+    live.with(|app| app.doc.annotations.len())
+}
+
+#[test]
+fn step13_bottom_edge_leaves_with_a_moved_block_all_three_kinds_keep_their_height() {
+    let (live, src, lines) = stack_fixture("t011-step13");
+    assert_eq!(lines[15], "    pub fn pop(&mut self) -> Option<T> {");
+    live.command("box 12-18 push and pop");
+    live.command("spot 12-18");
+    live.command("callout 12-18 @below both mutate");
+    live.command("follow on");
+    // The pop block (16-18 + blank) goes below is_empty: the box's bottom
+    // edge (`}` of pop) is gone from there.
+    save_like_zed(&src, &move_block(&lines, 16, 19, 30));
+    wait_reloads(&live, 1);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "main.rs reloaded (#1): 3 annotations kept", "{msg}");
+    for id in ["a1", "a2", "a3"] {
+        assert_eq!(
+            lines_of(&live, id),
+            Some((12, 18)),
+            "{id}: height from the top edge"
+        );
+    }
+}
+
+#[test]
+fn step14_unique_bottom_edge_moves_away_the_range_never_stretches() {
+    let (live, src, lines) = stack_fixture("t011-step14");
+    assert_eq!(lines[19], "    pub fn peek(&self) -> Option<&T> {");
+    live.command("box 14-20 x");
+    live.command("spot 14-20");
+    live.command("callout 14-20 @below y");
+    live.command("follow on");
+    // The peek block moves below is_empty: `pub fn peek(` is unique and now
+    // at line 27, but the range must stay 14-20, never 14-27.
+    save_like_zed(&src, &move_block(&lines, 20, 23, 30));
+    wait_reloads(&live, 1);
+    assert_eq!(code(&live)[26], "    pub fn peek(&self) -> Option<&T> {");
+    for id in ["a1", "a2", "a3"] {
+        assert_eq!(
+            lines_of(&live, id),
+            Some((14, 20)),
+            "{id}: {:?}",
+            live.message()
+        );
+    }
+    assert_eq!(count(&live), 3);
+}
+
+#[test]
+fn corner_reordering_methods_the_callout_travels_with_its_block() {
+    let (live, src, lines) = stack_fixture("t011-reorder");
+    live.command("callout 20-22 @below peek borrows");
+    live.command("follow on");
+    // peek (20-22 + blank) is cut and pasted above push (line 12).
+    save_like_zed(&src, &move_block(&lines, 20, 23, 11));
+    wait_reloads(&live, 1);
+    assert_eq!(code(&live)[11], "    pub fn peek(&self) -> Option<&T> {");
+    assert_eq!(
+        lines_of(&live, "a1"),
+        Some((12, 14)),
+        "{:?}",
+        live.message()
+    );
+}
+
+#[test]
+fn step15_rustfmt_split_and_join_follow_the_span() {
+    let (live, src, lines) = stack_fixture("t011-step15");
+    assert_eq!(lines[8], "        Self { items: Vec::new() }");
+    live.command("hl 9:Vec::new x");
+    live.command("follow on");
+    let mut split = lines.clone();
+    split.splice(
+        8..9,
+        [
+            "        Self {",
+            "            items: Vec::new(),",
+            "        }",
+        ]
+        .map(String::from),
+    );
+    save_like_zed(&src, &(split.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "main.rs reloaded (#1): 1 annotation kept", "{msg}");
+    let span = live.with(|app| match &app.doc.annotations[0].shape {
+        Shape::Highlight { span, .. } => (span.line, span.start, span.end),
+        _ => unreachable!(),
+    });
+    assert_eq!(span, (10, 19, 27), "on `Vec::new` of the new line 10");
+    // Join the three lines back into one: it returns to line 9.
+    save_like_zed(&src, &(lines.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    let span = live.with(|app| match &app.doc.annotations[0].shape {
+        Shape::Highlight { span, .. } => (span.line, span.start, span.end),
+        _ => unreachable!(),
+    });
+    assert_eq!(span, (9, 22, 30));
+}
+
+#[test]
+fn step16_replaced_line_keeps_its_note_not_a_span_whose_text_is_gone() {
+    let (live, src, lines) = stack_fixture("t011-step16");
+    assert_eq!(lines[3], "    items: Vec<T>,");
+    live.command("note 4 owned");
+    live.command("hl 4:Vec<T> y");
+    live.command("follow on");
+    let mut edited = lines.clone();
+    edited[3] = "    items: VecDeque<T>,".into();
+    save_like_zed(&src, &(edited.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("1 annotation kept, 1 dropped"), "{msg}");
+    assert_eq!(
+        lines_of(&live, "a1"),
+        Some((4, 4)),
+        "the note stays on its line"
+    );
+    assert_eq!(lines_of(&live, "a2"), None, "the span's text is gone");
+    // Completely different text: the note still has its line.
+    edited[3] = "    return;".into();
+    save_like_zed(&src, &(edited.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    assert_eq!(lines_of(&live, "a1"), Some((4, 4)));
+}
+
+#[test]
+fn step17_one_u_after_the_editor_undo_brings_the_dropped_annotation_back() {
+    let (live, src, lines) = stack_fixture("t011-step17");
+    live.command("hl 9:Vec::new x");
+    live.command("follow on");
+    let mut edited = lines.clone();
+    edited[8] = "        Self { items: VecDeque::new() }".into();
+    save_like_zed(&src, &(edited.join("\n") + "\n"));
+    wait_reloads(&live, 1);
+    assert_eq!(count(&live), 0, "{:?}", live.message());
+    // Cmd+Z in the editor, save: the text is back, nothing to re-anchor.
+    save_like_zed(&src, &(lines.join("\n") + "\n"));
+    wait_reloads(&live, 2);
+    assert_eq!(count(&live), 0);
+    assert!(code(&live)[8].contains("Vec::new()"));
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(
+        count(&live),
+        1,
+        "one `u` reaches the reload that dropped it"
+    );
+    assert!(
+        code(&live)[8].contains("Vec::new()"),
+        "and the code is the restored one"
+    );
+    // Editor undo twice in a row (edit, save, undo, save, undo, save) is
+    // still one `u` away from the state before the first drop.
+    live.command("hl 13:push z");
+    let mut e2 = lines.clone();
+    e2[12] = "        self.items.insert(0, item);".into();
+    save_like_zed(&src, &(e2.join("\n") + "\n"));
+    wait_reloads(&live, 3);
+    assert_eq!(count(&live), 1, "{:?}", live.message());
+    save_like_zed(&src, &(lines.join("\n") + "\n"));
+    wait_reloads(&live, 4);
+    let mut e3 = lines.clone();
+    e3[0] = "//! A tiny stack.".into();
+    save_like_zed(&src, &(e3.join("\n") + "\n"));
+    wait_reloads(&live, 5);
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(count(&live), 2, "{:?}", live.message());
+}

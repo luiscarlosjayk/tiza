@@ -893,7 +893,7 @@ impl App {
         let detected = (self.doc.source.language == "txt" || self.doc.source.language.is_empty())
             .then(|| codedraw_core::highlight::language_from_content(&d.code))
             .flatten();
-        let out = self.apply_new_code(d.code, d.code_src, d.source.first_line);
+        let out = self.apply_new_code(d.code, d.code_src, d.source.first_line, true);
         if let Some(det) = detected {
             self.doc.source.language = det.language;
         }
@@ -917,14 +917,19 @@ impl App {
     }
 
     /// Replaces the code lines (and where they come from), re-anchoring the
-    /// annotations by text. One undoable step. Returns (kept, dropped).
+    /// annotations by text. One undoable step — unless `always_record` is
+    /// false and the reload touched no annotation (nothing dropped, nothing
+    /// shifted): then it leaves no step, so that after an editor undo that
+    /// restores dropped text, one `u` reaches the reload that dropped it.
+    /// Returns (kept, dropped).
     fn apply_new_code(
         &mut self,
         code: Vec<String>,
         code_src: codedraw_core::model::CodeSource,
         first_line: u32,
+        always_record: bool,
     ) -> crate::reanchor::Outcome {
-        self.history.record(&self.doc);
+        let snapshot = self.doc.clone();
         let mut d = self.doc.clone();
         d.annotations.clear();
         if !d.moves.is_empty() {
@@ -951,6 +956,10 @@ impl App {
             }
         }
         let kept = d.annotations.len();
+        let harmless = kept == before && d.annotations == snapshot.annotations;
+        if always_record || !harmless {
+            self.history.record(&snapshot);
+        }
         self.doc = d;
         self.selected = None;
         self.clamp_cursor();
@@ -1078,7 +1087,7 @@ impl App {
         let reloads = f.reloads;
         let code_src = self.doc.code_src.clone();
         let first = self.doc.source.first_line;
-        let out = self.apply_new_code(new, code_src, first);
+        let out = self.apply_new_code(new, code_src, first, false);
         self.info(format!(
             "{name} reloaded (#{reloads}): {} annotation{} kept{}",
             out.kept,

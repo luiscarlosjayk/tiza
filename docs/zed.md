@@ -53,7 +53,7 @@ Notes:
 
 - Tasks that use `$ZED_SELECTED_TEXT` only appear when there is selected text.
 - `${ZED_FILE##*.}` is the file extension; for a file without one (a `Makefile`, a script with a shebang) it expands to the whole path, which CodeDraw treats as a path: the language comes from the file name or from a shebang/modeline in the selection, else plain text. `:lang sh` overrides it inside the TUI. A range past the end of the file is clamped with a notice, so the 40-line window is safe near the bottom.
-- `--follow` (or `:follow on` later) reloads the code every time you save in Zed (⌘S), keeping the annotations anchored to their text; the status line shows `⟳ following · last HH:MM:SSZ`. It works with ranges too (`file.rs:A-B --follow` keeps showing those lines).
+- `--follow` (or `:follow on` later) reloads the code every time you save in Zed (⌘S), keeping the annotations anchored to their text; the status line shows `⟳ following · last HH:MM:SSZ`. It works with ranges too (`file.rs:A-B --follow` keeps showing those lines). If a save drops an annotation (its text is gone) and you ⌘Z in Zed and save again, the text is back but the annotation is not: press `u` once in CodeDraw — the harmless second reload leaves no undo step, so `u` goes straight to the reload that dropped it.
 - `codedraw file.rs:A-B` keeps the real line numbering, so you can say "look at line 42" and match the editor.
 - In Zed's terminal, use `line_height: "standard"` in the terminal settings so the box-drawing characters fit without gaps.
 - Theme: `t` toggles dark/light so CodeDraw matches the Zed theme you are using in the video.

@@ -22,6 +22,14 @@
 //!
 //! Beyond [`MAX_DISTANCE`] lines from the expected position, a matching line
 //! counts as a different place and the annotation is dropped.
+//!
+//! Lines the diff did not match are judged by their *hunk* (the gap between
+//! the matched lines around them): a line replaced in place (1↔1 hunk) keeps
+//! its position — a note on it survives, like a box edge; a span whose line
+//! was split or joined by a formatter (1→N, N→1) follows its text when exactly
+//! one line of the hunk's new side holds it. A range (box, callout,
+//! spotlight) never stretches after an edge that moved away with a block: it
+//! keeps its height from the edge that stayed.
 
 use std::collections::HashMap;
 
@@ -41,6 +49,19 @@ const LCS_BUDGET: usize = 4_000_000;
 pub struct Outcome {
     pub kept: usize,
     pub dropped: usize,
+}
+
+/// How a line was found in the new version.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Found {
+    /// Matched by the diff: the same line, in place (possibly shifted).
+    Matched,
+    /// Not matched, but its unique text is elsewhere: the block moved.
+    Moved,
+    /// Replaced in place (a 1↔1 hunk): same position, new text.
+    InPlace,
+    /// One of several identical neighbours that collapsed into one.
+    Collapsed,
 }
 
 /// Line mapping from `old` to `new`, shared by every annotation of one reload.
@@ -104,10 +125,35 @@ impl<'a> Remap<'a> {
             .unwrap_or(old_line)
     }
 
+    /// The hunk around an unmatched `old_line`: the old lines and the new
+    /// lines between the nearest matched pairs above and below it.
+    fn hunk(&self, old_line: u32) -> (std::ops::Range<u32>, std::ops::Range<u32>) {
+        let i = self.matched.partition_point(|(o, _)| *o < old_line);
+        let (o1, n1) = if i == 0 {
+            (
+                self.old.source.first_line.saturating_sub(1),
+                self.new.source.first_line.saturating_sub(1),
+            )
+        } else {
+            self.matched[i - 1]
+        };
+        let (o2, n2) = self
+            .matched
+            .get(i)
+            .copied()
+            .unwrap_or((self.old.last_line() + 1, self.new.last_line() + 1));
+        (o1 + 1..o2, n1 + 1..n2)
+    }
+
     /// New number of `old_line`, or `None` when that line is gone.
     pub fn line(&mut self, old_line: u32) -> Option<u32> {
+        self.locate(old_line).map(|(l, _)| l)
+    }
+
+    /// New number of `old_line` and how it was found; `None` when it is gone.
+    pub fn locate(&mut self, old_line: u32) -> Option<(u32, Found)> {
         if let Ok(i) = self.matched.binary_search_by_key(&old_line, |(o, _)| *o) {
-            return Some(self.matched[i].1);
+            return Some((self.matched[i].1, Found::Matched));
         }
         let text = self.old.line_text(old_line)?.trim();
         let expected = self.expected(old_line);
@@ -117,7 +163,7 @@ impl<'a> Remap<'a> {
                 .new
                 .line_text(expected)
                 .is_some_and(|l| l.trim().is_empty())
-                .then_some(expected);
+                .then_some((expected, Found::Matched));
         }
         // Not matched by the diff. A block moved: the text is unique on both
         // sides, nobody else took it, and it is close enough.
@@ -130,12 +176,26 @@ impl<'a> Remap<'a> {
                 .binary_search_by_key(only, |(_, n)| *n)
                 .is_err()
         {
-            return Some(*only);
+            return Some((*only, Found::Moved));
         }
-        // Repeated text (one `}` among many): the only survivor is a line that
-        // collapsed with an identical neighbour (`}` `}` → `}`); both keep
-        // their annotations on the line left. Otherwise this copy was deleted
-        // and the annotation goes with it rather than jumping to another copy.
+        let (ho, hn) = self.hunk(old_line);
+        // Replaced in place: the line is still there, with other text. A
+        // note on it (or a range edge) stays; spans check their text later.
+        if ho.len() == 1 && hn.len() == 1 {
+            return Some((hn.start, Found::InPlace));
+        }
+        // Repeated text (one `}` among many): the only survivor is a run of
+        // identical lines that shrank (`}` `}` → `}`); the annotations of the
+        // deleted copies stay on the line left. Any other deletion means this
+        // copy is gone, and the annotation goes with it rather than jumping to
+        // another copy — even when a neighbour happens to have the same text.
+        if !hn.is_empty()
+            || !ho
+                .clone()
+                .all(|l| self.old.line_text(l).map(str::trim) == Some(text))
+        {
+            return None;
+        }
         [old_line.checked_sub(1), Some(old_line + 1)]
             .into_iter()
             .flatten()
@@ -144,7 +204,7 @@ impl<'a> Remap<'a> {
                 self.matched
                     .binary_search_by_key(&l, |(o, _)| *o)
                     .ok()
-                    .map(|i| self.matched[i].1)
+                    .map(|i| (self.matched[i].1, Found::Collapsed))
             })
     }
 
@@ -159,11 +219,24 @@ impl<'a> Remap<'a> {
         }
         let text = og[start..end].concat();
         let occurrence = count_occurrences(&og[..start].concat(), &text);
-        // The line by its text; failing that, the line edited *in place*
-        // (same expected position) as long as it still holds the occurrence.
+        // The line by its text or its place; failing that, a formatter
+        // split or joined it (1→N, N→1 hunk): the span follows its text when
+        // exactly one line of the hunk's new side holds it.
         let line = match self.line(span.line) {
             Some(l) => l,
-            None => self.expected(span.line),
+            None => {
+                let (_, hn) = self.hunk(span.line);
+                let mut holders = hn.filter(|&l| {
+                    self.new
+                        .line_text(l)
+                        .is_some_and(|t| t.contains(text.as_str()))
+                });
+                let only = holders.next()?;
+                if holders.next().is_some() {
+                    return None;
+                }
+                only
+            }
         };
         let new_line = self.new.line_text(line)?;
         if new_line == old_line {
@@ -174,7 +247,11 @@ impl<'a> Remap<'a> {
             });
         }
         let g: Vec<&str> = new_line.graphemes(true).collect();
-        let s = nth_occurrence(&g, &text, occurrence)?;
+        // The same occurrence number; a reflowed line that holds the text
+        // once takes it whatever the old count was.
+        let s = nth_occurrence(&g, &text, occurrence).or_else(|| {
+            (count_occurrences(new_line, &text) == 1).then(|| nth_occurrence(&g, &text, 0))?
+        })?;
         Some(TextSpan {
             line,
             start: s as u32,
@@ -192,17 +269,27 @@ impl<'a> Remap<'a> {
         })
     }
 
-    /// A line range: both edges by text when possible; when only one edge
-    /// survives (the presenter edited the other line), the range keeps its
-    /// height from the surviving edge, clamped to the code.
+    /// A line range (box, callout, spotlight — one rule for the three). Both
+    /// edges in place: the range follows them (it grows with lines inserted
+    /// inside). One edge gone or moved away with a block while the other
+    /// stayed: the range keeps its height from the edge that stayed — it
+    /// never stretches after the one that left. Both edges moved: the block
+    /// moved as a whole and the range goes with it, same height. Both gone:
+    /// `None`.
     pub fn range(&mut self, from: u32, to: u32) -> Option<(u32, u32)> {
         let height = to.saturating_sub(from);
         let last = self.new.last_line();
         let first = self.new.source.first_line;
-        match (self.line(from), self.line(to)) {
-            (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
-            (Some(a), None) => Some((a, (a + height).min(last))),
-            (None, Some(b)) => Some((b.saturating_sub(height).max(first), b)),
+        let down = |a: u32| (a, (a + height).min(last));
+        let up = |b: u32| (b.saturating_sub(height).max(first), b);
+        use Found::*;
+        match (self.locate(from), self.locate(to)) {
+            (Some((a, Moved)), Some((b, Moved))) => Some(down(a.min(b))),
+            (Some((_, Moved)), Some((b, _))) => Some(up(b)),
+            (Some((a, _)), Some((_, Moved))) => Some(down(a)),
+            (Some((a, _)), Some((b, _))) => Some((a.min(b), a.max(b))),
+            (Some((a, _)), None) => Some(down(a)),
+            (None, Some((b, _))) => Some(up(b)),
             (None, None) => None,
         }
     }
@@ -301,13 +388,14 @@ impl<'a> Remap<'a> {
                 ids,
                 until,
             } => {
-                let a = match from_line {
-                    Some(f) => Some(self.line(*f)?),
-                    None => None,
-                };
-                let b = match to_line {
-                    Some(t) => Some(self.line(*t)?),
-                    None => None,
+                let (a, b) = match (from_line, to_line) {
+                    (Some(f), Some(t)) => {
+                        let (a, b) = self.range(*f, *t)?;
+                        (Some(a), Some(b))
+                    }
+                    (Some(f), None) => (Some(self.line(*f)?), None),
+                    (None, Some(t)) => (None, Some(self.line(*t)?)),
+                    (None, None) => (None, None),
                 };
                 Shape::Spotlight {
                     from_line: a,
@@ -345,7 +433,28 @@ fn line_diff(a: &[&str], b: &[&str]) -> Vec<(usize, usize)> {
         out.extend(middle.into_iter().map(|(i, j)| (i + pre, j + pre)));
     }
     out.extend((0..suf).rev().map(|k| (a.len() - 1 - k, b.len() - 1 - k)));
+    slide_to_runs(a, b, &mut out);
     out
+}
+
+/// Among equal-length alignments the LCS picks one arbitrarily, so a `}`
+/// of a block that moved away can get paired with the `}` of the block
+/// that took its place, leaving that block's own brace unmatched. Prefer
+/// contiguous runs: a pair that continues the previous one on one side but
+/// skips lines on the other is moved to the line right after the previous
+/// pair when that line has the same text — the alignment keeps its length
+/// and the hunks become whole blocks (so a moved block is one deletion plus
+/// one insertion, and its annotations travel with it).
+fn slide_to_runs(a: &[&str], b: &[&str], pairs: &mut [(usize, usize)]) {
+    for k in 1..pairs.len() {
+        let (po, pn) = pairs[k - 1];
+        let (o, n) = pairs[k];
+        if n == pn + 1 && o > po + 1 && a[po + 1] == a[o] {
+            pairs[k] = (po + 1, n);
+        } else if o == po + 1 && n > pn + 1 && b[pn + 1] == b[n] {
+            pairs[k] = (o, pn + 1);
+        }
+    }
 }
 
 /// Exact longest common subsequence (dynamic programming), as index pairs.
@@ -554,6 +663,106 @@ mod tests {
     }
 
     #[test]
+    fn replaced_line_keeps_its_place_but_a_span_needs_its_text() {
+        let old = doc("struct S {\n    items: Vec<T>,\n}\n");
+        let new = doc("struct S {\n    items: VecDeque<T>,\n}\n");
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.locate(2), Some((2, Found::InPlace)));
+        let span = TextSpan {
+            line: 2,
+            start: 11,
+            end: 17,
+        }; // `Vec<T>`
+        assert_eq!(r.span(&span), None, "its text is gone");
+        let items = TextSpan {
+            line: 2,
+            start: 4,
+            end: 9,
+        }; // `items`
+        assert_eq!(r.span(&items).map(|s| (s.line, s.start)), Some((2, 4)));
+        // Completely different text: a note still has its line.
+        let new2 = doc("struct S {\n    return;\n}\n");
+        let mut r = Remap::new(&old, &new2);
+        assert_eq!(r.locate(2), Some((2, Found::InPlace)));
+    }
+
+    #[test]
+    fn formatter_split_and_join_follow_the_span() {
+        let old = doc("fn new() -> Self {\n    Self { items: Vec::new() }\n}\n");
+        let new = doc("fn new() -> Self {\n    Self {\n        items: Vec::new(),\n    }\n}\n");
+        let span = TextSpan {
+            line: 2,
+            start: 18,
+            end: 26,
+        }; // `Vec::new`
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.line(2), None, "1→3 hunk: no single line to stand for it");
+        assert_eq!(
+            r.span(&span).map(|s| (s.line, s.start, s.end)),
+            Some((3, 15, 23))
+        );
+        // And back: 3→1.
+        let mut r = Remap::new(&new, &old);
+        let back = TextSpan {
+            line: 3,
+            start: 15,
+            end: 23,
+        };
+        assert_eq!(
+            r.span(&back).map(|s| (s.line, s.start, s.end)),
+            Some((2, 18, 26))
+        );
+        // The text in two of the new lines: ambiguous, dropped.
+        let two = doc(
+            "fn new() -> Self {\n    Self {\n        a: Vec::new(),\n        b: Vec::new(),\n    }\n}\n",
+        );
+        let mut r = Remap::new(&old, &two);
+        assert_eq!(r.span(&span), None);
+    }
+
+    #[test]
+    fn ranges_keep_their_height_when_an_edge_moves_away() {
+        // The block holding the bottom edge (unique `pub fn peek`) moves below.
+        let old = doc("a\n}\n\npub fn peek() {\n    x\n}\n\npub fn len() {\n    y\n}\n");
+        let new = doc("a\n}\n\npub fn len() {\n    y\n}\n\npub fn peek() {\n    x\n}\n");
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.locate(4), Some((8, Found::Moved)));
+        assert_eq!(
+            r.range(1, 4),
+            Some((1, 4)),
+            "the top edge stayed: same height, no stretch"
+        );
+        // Only the moved block: the range travels with it.
+        assert_eq!(r.range(4, 5), Some((8, 9)));
+        // A repeated `}` next to a matched `}` is not a collapse when its hunk
+        // holds other lines: the peek block moved, its brace went with it.
+        assert_eq!(r.locate(6), None);
+        assert_eq!(r.range(4, 6), Some((8, 10)));
+    }
+
+    #[test]
+    fn a_moved_block_is_one_deletion_plus_one_insertion() {
+        // peek (with its closing brace) is cut and pasted above push. The LCS
+        // alone may pair peek's old `}` with pop's new `}`; the run heuristic
+        // keeps pop's brace with pop, so the callout on peek travels with it.
+        let old = doc(
+            "fn push() {\n    a\n}\n\nfn pop() {\n    b\n}\n\nfn peek() {\n    c\n}\n\nfn len() {\n}\n",
+        );
+        let new = doc(
+            "fn peek() {\n    c\n}\n\nfn push() {\n    a\n}\n\nfn pop() {\n    b\n}\n\nfn len() {\n}\n",
+        );
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(
+            r.locate(7),
+            Some((11, Found::Matched)),
+            "pop's brace stays pop's"
+        );
+        assert_eq!(r.locate(9), Some((1, Found::Moved)));
+        assert_eq!(r.locate(11), None, "peek's brace went with its block");
+        assert_eq!(r.range(9, 11), Some((1, 3)));
+    }
+
+    #[test]
     fn big_files_with_a_small_edit_stay_exact() {
         let old: String = (0..3000).map(|i| format!("line {i}\n")).collect();
         let mut lines: Vec<String> = old.lines().map(String::from).collect();
@@ -564,7 +773,11 @@ mod tests {
         let mut r = Remap::new(&old, &new);
         assert_eq!(r.line(1000), Some(1000));
         assert_eq!(r.line(1501), Some(1502));
-        assert_eq!(r.line(2000), None, "edited in place: whole-line kinds drop");
+        assert_eq!(
+            r.locate(2000),
+            Some((2001, Found::InPlace)),
+            "edited in place (1↔1 hunk): the line keeps its position"
+        );
         assert_eq!(r.line(2001), Some(2002));
         assert_eq!(r.line(2999), Some(3000));
         // Fully reversed (over the LCS budget) must not panic.
