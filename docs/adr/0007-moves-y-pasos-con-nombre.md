@@ -1,7 +1,7 @@
 # ADR 0007: Moves and named steps (scripted demos without an editor)
 
 - Status: accepted (2026-10-16, reviewed by Luis with three changes: deterministic re-anchoring, explicit `step` on named steps, follow/link while moves are applied)
-- Board: t-084; unblocks t-097 → t-098 → t-099 → t-100 → t-101 (t-102 later)
+- Board: t-084; unblocks t-097 → t-098 → t-105 → t-099 → t-100 → t-101 → t-104 (see Consequences)
 - Research: [docs/research/demo-time.md](../research/demo-time.md)
 
 ## Context
@@ -47,7 +47,7 @@ Demo Time (VS Code) scripts a demo as scenes of *moves*: open a file, type code,
 - The TUI gets a small animation loop (typing); any key press finishes it instantly; `u` cancels it first.
 - `Document` gains `moves`, `steps`, `loop`, `timer_min`; `History` snapshots must include the applied-moves state so undo is consistent.
 - Every move with a text target validates at load time (exactly one match in the code at its step); `scene.list` shows `(unanchored)` annotations and `(stale)` moves so an author sees what a patch broke without opening the JSON.
-- Implementation order (unblocked by this ADR): t-097 (model + schema + load-time validation), t-098 (apply/revert, deterministic shift and `rebind`, `(unanchored)`), t-099 (named steps with `step: N`, notes, `goto`), t-100 (typing animation, `wait`, `auto_advance_ms`), t-101 (`--all-steps` export applying moves), t-102 later (follow pause/resume and `(stale)` moves; until then follow refuses to turn on while moves are applied).
+- Implementation order, by board card (reconciled 2026-10-16 with the real ids): **t-097** range markers `find_start`/`find_end` kept on the annotation (done: they are what `rebind` and the deterministic shift use for ranges) → **t-098** `moves` model + schema + load-time validation, `code.patch` apply/revert with the deterministic shift, `rebind`, `(unanchored)`, typing modes (supersedes the earlier card t-085) → **t-105** the other actions: `cursor`, `select`, `wait`, `code.link` → **t-099** named steps with `step: N`, `goto`, `auto_advance_ms`, `loop`, timer → **t-100** presenter notes → **t-101** `codedraw check` and `render --all-steps` applying moves → **t-104** follow mode while moves are applied (pause/resume, `(stale)` moves, `code.link` switches the watch; until it lands, `follow.set` refuses to turn on while moves are applied). t-102 (annotation templates) is independent.
 - Export (`render --step N`, `export_image`, future `--all-steps`) applies moves without animation.
 - Agents can author a full demo through MCP: annotations + moves + notes, then `goto_step` to drive it.
 - Out of scope for good: slides/markdown previews, Copilot/polls/QR, OS desktop actions, editor zoom.
