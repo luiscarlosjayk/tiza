@@ -101,6 +101,17 @@ struct Label {
     note: bool,
 }
 
+/// The vertical part of an arrow between lines: drawn after every stub so
+/// it owns its cells (a stub crossing it shows a one-cell gap).
+struct Rail {
+    x: usize,
+    top: usize,
+    bottom: usize,
+    v: &'static str,
+    turns: (&'static str, &'static str),
+    style: CellStyle,
+}
+
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let width = opts.width.max(20);
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
@@ -749,6 +760,22 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     }
 
     // ---- 4. arrows between lines ----
+    // The cells every arrow's rail (and its two turns) will occupy, so a
+    // stub drawn before that rail leaves them alone; the rails are drawn
+    // last and own their cells.
+    let stub_cells: std::collections::HashSet<(usize, usize)> = arrows
+        .iter()
+        .filter_map(|a| {
+            let Shape::Arrow { from, to, .. } = &a.ann.shape else {
+                return None;
+            };
+            let lane_x = arrow_x0 + a.lane * 2;
+            let (ys, yt) = (row_of_line[&from.line], row_of_line[&to.line]);
+            Some((lane_x, ys.min(yt), ys.max(yt)))
+        })
+        .flat_map(|(x, top, bottom)| (top..=bottom).map(move |y| (x, y)))
+        .collect();
+    let mut rails: Vec<Rail> = Vec::new();
     for a in &arrows {
         let Shape::Arrow {
             from,
@@ -766,17 +793,26 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let ys = row_of_line[&from.line];
         let yt = row_of_line[&to.line];
         let (top, bottom) = (ys.min(yt), ys.max(yt));
-        for y in top + 1..bottom {
-            canvas.put_line(lane_x, y, g.v, arrow_style);
-        }
-        let down = yt > ys;
-        // The lane turns toward the code at both ends: ╭─ at the top row, ╰─ at the bottom.
-        canvas.put(lane_x, ys, if down { g.tl } else { g.bl }, arrow_style);
-        canvas.put(lane_x, yt, if down { g.bl } else { g.tl }, arrow_style);
+        // The rail and its turns toward the code (╭─ at the top row, ╰─ at
+        // the bottom, whichever end is the source) are drawn after every
+        // stub, in `rails` below.
+        rails.push(Rail {
+            x: lane_x,
+            top,
+            bottom,
+            v: g.v,
+            turns: (g.tl, g.bl),
+            style: arrow_style,
+        });
         // Source row: line up to the code, with the start head in the last cell.
-        // Crossings with other rails become junction glyphs (t-094 AC4) in the
-        // rail's color (Canvas::put_line), whatever the drawing order.
+        // Inside the lane band the stub skips the cells of other arrows'
+        // rails, so it reads as passing *under* them (t-091, option B);
+        // crossings with a box rail become junction glyphs (t-094 AC4) in
+        // the rail's color (Canvas::put_line), whatever the drawing order.
         for x in lane_x + 1..code_x - 2 {
+            if x < box_x0 && stub_cells.contains(&(x, ys)) {
+                continue;
+            }
             canvas.put_line(x, ys, g.h, arrow_style);
         }
         match head_glyph(ls.heads.start, true, g.h) {
@@ -787,6 +823,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
         // Target row: same, with the end head.
         for x in lane_x + 1..code_x - 2 {
+            if x < box_x0 && stub_cells.contains(&(x, yt)) {
+                continue;
+            }
             canvas.put_line(x, yt, g.h, arrow_style);
         }
         match head_glyph(ls.heads.end, true, g.h) {
@@ -825,6 +864,16 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 note: false,
             });
         }
+    }
+
+    // The rails, over the stubs: a rail always owns its cells in the lane
+    // band, so a stub that crossed it earlier shows a one-cell gap.
+    for r in rails {
+        for y in r.top + 1..r.bottom {
+            canvas.put(r.x, y, r.v, r.style);
+        }
+        canvas.put(r.x, r.top, r.turns.0, r.style);
+        canvas.put(r.x, r.bottom, r.turns.1, r.style);
     }
 
     // ---- 5. arrows on the same line ----

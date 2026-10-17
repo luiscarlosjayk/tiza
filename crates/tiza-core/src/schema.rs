@@ -160,7 +160,7 @@ pub fn api_schema() -> ApiSchema {
         .iter()
         .map(|(m, d)| {
             let (params, result) = match *m {
-                "ping" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"type": {"const": "pong"}, "protocol": {"type": "integer"}}})),
+                "ping" => (schema::<NoParams>(), serde_json::json!({"type": "string", "const": "pong"})),
                 "status" => (schema::<NoParams>(), schema::<Status>()),
                 "api.methods" => (schema::<NoParams>(), serde_json::json!({"type": "array", "items": {"type": "object", "properties": {"method": string(), "description": string()}}})),
                 "api.schema" => (schema::<NoParams>(), schema::<ApiSchema>()),

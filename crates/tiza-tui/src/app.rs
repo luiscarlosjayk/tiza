@@ -2962,9 +2962,8 @@ impl App {
                 .map_err(|e| Error::Invalid(format!("invalid parameters: {e}")))
         }
         Ok(match method {
-            "ping" => {
-                json!({"type": "pong", "protocol": tiza_core::protocol::PROTOCOL_VERSION})
-            }
+            // Plain "pong": `status` already carries `protocol`.
+            "ping" => json!("pong"),
             "status" => serde_json::to_value(self.status())?,
             "api.schema" => serde_json::to_value(tiza_core::schema::api_schema())?,
             "follow.status" => self.follow_status(),

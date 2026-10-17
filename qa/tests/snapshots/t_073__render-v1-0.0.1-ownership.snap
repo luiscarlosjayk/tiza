@@ -13,12 +13,12 @@ expression: out
   8 │   │        println!("{t} tiene {n} letras");                              ┆ t sigue siendo
   9 │   │                                                                         válida
  10 │   │        let mut u = String::from("hey");
- 11 │ ╭─┼───     push(&mut u);                                                  ═▶ write
+ 11 │ ╭─│───     push(&mut u);                                                  ═▶ write
  12 │ │ │        println!("{u}");                                               ┆ u ahora vale
  13 │ │ │    }                                                                    «hey!»
  14 │ │ │
     │ │ │ ╭─ takes es dueña de s y la libera al final ────────────────────────╮
- 15 ╰─┼─┼─┼▶ fn takes(s: String) {                                            │ move
+ 15 ╰─│─│─┼▶ fn takes(s: String) {                                            │ move
  16   │ │ │      println!("{s}");                                             │
  17   │ │ │  }                                                                │ ╳ drop: aquí muere
       │ │ ╰───────────────────────────────────────────────────────────────────╯ s

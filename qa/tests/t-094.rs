@@ -6,7 +6,10 @@
 //! - AC2 `route`: rounded (╭╰, default) or sharp (┌└).
 //! - AC3 `heads.start` / `heads.end`: none | arrow | dot | bar | open; default
 //!   start none, end arrow; none+none is a plain connector. Same-line arrows too.
-//! - AC4 Crossings pick the junction by the two strokes (┼ ┿ ╂ ╋ ╪ ╫ ╬).
+//! - AC4 (amended in t-091, 2026-10-17) Where a stub crosses another arrow's
+//!   rail it breaks for one cell and the rail shows through (the arrow passes
+//!   under); crossings with a box border pick the junction by the two
+//!   strokes (┼ ┿ ╂ ╋ ╪ ╫ ╬).
 //! - AC5 `:arrow … stroke=… heads=… route=…`, `:set ID key=value` (and `e` on a
 //!   selected annotation), socket fields, MCP add_arrow/update_annotation;
 //!   wrong values list the options; style keys on a non-arrow fail naming its type.
@@ -43,8 +46,8 @@ fn ac1_ac2_strokes_and_corners() {
         line(&out, 2)
     );
     assert!(
-        line(&out, 3).contains("┼"),
-        "solid vertical crossed by the connector: {}",
+        line(&out, 3).contains("─│─") && !line(&out, 3).contains('┼'),
+        "the connector passes under the solid vertical: {}",
         line(&out, 3)
     );
     assert!(line(&out, 5).contains("╭╌"), "dashed: {}", line(&out, 5));
@@ -122,23 +125,32 @@ fn ac3_heads_at_both_ends_and_plain_connector() {
 }
 
 #[test]
-fn ac4_junctions_depend_on_both_strokes() {
+fn ac4_stubs_pass_under_rails_and_box_borders_get_junctions() {
     let out = render();
     let l3 = line(&out, 3);
     assert!(
-        l3.contains('╂') && l3.contains('┼'),
-        "light horizontal × thick and light verticals: {l3}"
+        l3.contains("─┃─│─") && !l3.contains('╂') && !l3.contains('┼'),
+        "light horizontal under a thick and a light rail: {l3}"
     );
+    let l12 = line(&out, 12);
     assert!(
-        line(&out, 12).contains('╋'),
-        "thick × thick: {}",
-        line(&out, 12)
+        l12.contains("━┃━") && !l12.contains('╋'),
+        "thick under thick: {l12}"
     );
     let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "t094-junction");
     live.command("arrow 2 5 x stroke=thick");
     live.command("arrow 1 3 y stroke=double heads=none,none");
     let s = live.with(|app| app.layout(60).canvas.to_plain_text());
-    assert!(s.contains('╫'), "thick horizontal × double vertical:\n{s}");
+    assert!(
+        s.contains("━║━") && !s.contains('╫'),
+        "thick horizontal under a double rail:\n{s}"
+    );
+    // A box border is not a rail: the stub crosses it with a junction glyph.
+    let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "t094-box-junction");
+    live.command("box 2-4 b");
+    live.command("arrow 3 5 z");
+    let s = live.with(|app| app.layout(60).canvas.to_plain_text());
+    assert!(s.contains('┼'), "stub × box border:\n{s}");
 }
 
 #[test]

@@ -14,12 +14,12 @@ expression: symbols
     8 │   ╎        println!("{t} has {n} letters");                               ┆ t is still
     9 │   ╎                                                                         valid
    10 │   ╎        let mut u = String::from("hey");
-   11 │ ┏━┿━━━     push(&mut u);                                                  ✎▶ &mut borrow
+   11 │ ┏━╎━━━     push(&mut u);                                                  ✎▶ &mut borrow
    12 │ ┃ ╎        println!("{u}");
    13 │ ┃ ╎    }
    14 │ ┃ ╎
       │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─╂─┼─┼▶ fn takes(s: String) {                                            │ move
+   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                            │ move
    16   ┃ ╎ │      println!("{s}");                                             │
    17   ┃ ╎ │  }                                                                │ ╳ drop: s dies
         ┃ ╎ ╰───────────────────────────────────────────────────────────────────╯ here

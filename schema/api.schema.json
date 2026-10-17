@@ -10,15 +10,8 @@
         "type": "object"
       },
       "result": {
-        "properties": {
-          "protocol": {
-            "type": "integer"
-          },
-          "type": {
-            "const": "pong"
-          }
-        },
-        "type": "object"
+        "const": "pong",
+        "type": "string"
       }
     },
     {

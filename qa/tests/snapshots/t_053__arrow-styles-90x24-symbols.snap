@@ -4,7 +4,7 @@ expression: symbols
 ---
    1   ┏━━━▶ fn main() {                               thick, crossed by the connector
    2   ┃ ╭──     let a = 1;                            at L3
-   3 ╭─╂─┼──     let b = 2;
+   3 ╭─┃─│──     let b = 2;
    4 │ ┃ ╰─▶     let c = 3;                            solid rounded ▶ (default)
    5 │ ┃ ╭╌╌     let d = 4;
    6 │ ┃ ╎       let e = 5;
@@ -13,7 +13,7 @@ expression: symbols
    9 │ ┃ ┆       let h = 8;
   10 │ ┃ └┄▶     let i = 9;                            dotted sharp
   11 │ ┃ ┏━●     let j = 10;
-  12 │ ┗━╋━━     let k = 11;
+  12 │ ┗━┃━━     let k = 11;
   13 │   ┗━┤     let l = 12;                           thick, dot→bar
   14 │ ╔═══>     let m = 13;
   15 │ ║         let n = 14;
