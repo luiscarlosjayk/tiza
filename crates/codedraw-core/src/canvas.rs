@@ -243,10 +243,30 @@ impl Canvas {
     /// Draws a line stroke (`─`, `│`, corners) respecting what is already there:
     /// if it crosses a perpendicular stroke, it places a junction (`┼`, `╂`, `╋`,
     /// `╪`, `╫`, `╬`… chosen by the two strokes) instead of covering it.
+    /// Draws a line glyph, merging it with a line already in the cell into a
+    /// junction. At a crossing the vertical rail owns the cell's color, so a
+    /// horizontal stroke reads as passing *under* the rails it crosses (and a
+    /// rail drawn later over a horizontal stroke takes the cell).
     pub fn put_line(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) {
-        let existing = self.get(x, y).map(|c| c.sym.as_str()).unwrap_or(" ");
-        let merged = junction(sym, existing).unwrap_or(sym);
-        self.put(x, y, merged, style);
+        let (existing, existing_style) = self
+            .get(x, y)
+            .map(|c| (c.sym.to_string(), c.style))
+            .unwrap_or((" ".into(), style));
+        match junction(sym, &existing) {
+            Some(merged) => {
+                // A horizontal stroke never recolors a rail or a junction.
+                let new_is_horizontal = weight(sym).is_some_and(|(h, _)| h);
+                let style = if new_is_horizontal {
+                    existing_style
+                } else {
+                    style
+                };
+                self.put(x, y, merged, style);
+            }
+            None => {
+                self.put(x, y, sym, style);
+            }
+        }
     }
 
     /// Writes a string starting at (x, y), grapheme by grapheme. Returns the total width.
@@ -405,10 +425,13 @@ fn weight(g: &str) -> Option<(bool, u8)> {
 }
 
 /// The junction glyph when `new` is drawn over `existing`, if they cross.
+fn is_junction(sym: &str) -> bool {
+    matches!(sym, "┼" | "╂" | "┿" | "╋" | "╪" | "╫" | "╬")
+}
+
 fn junction(new: &str, existing: &str) -> Option<&'static str> {
     // An existing junction keeps its shape when a line passes through again.
-    if matches!(existing, "┼" | "╂" | "┿" | "╋" | "╪" | "╫" | "╬") && weight(new).is_some()
-    {
+    if is_junction(existing) && weight(new).is_some() {
         return Some(match existing {
             "┼" => "┼",
             "╂" => "╂",
@@ -474,6 +497,32 @@ mod tests {
         let mut c = Canvas::new(5, 2);
         c.put_str(0, 1, "hi", CellStyle::new());
         assert_eq!(c.to_plain_text(), "\nhi");
+    }
+
+    #[test]
+    fn crossing_cell_keeps_the_vertical_rails_color() {
+        let teal = CellStyle::new().fg(Rgb(0, 200, 200));
+        let yellow = CellStyle::new().fg(Rgb(230, 200, 0));
+        // Rail first, horizontal stroke later: the crossing stays teal.
+        let mut c = Canvas::new(3, 1);
+        c.put_line(1, 0, "┆", teal);
+        c.put_line(1, 0, "━", yellow);
+        assert_eq!(c.get(1, 0).unwrap().sym, "┿");
+        assert_eq!(c.get(1, 0).unwrap().style.fg, teal.fg);
+        // Horizontal first, rail later: the rail takes the cell.
+        let mut c = Canvas::new(3, 1);
+        c.put_line(1, 0, "━", yellow);
+        c.put_line(1, 0, "┆", teal);
+        assert_eq!(c.get(1, 0).unwrap().sym, "┿");
+        assert_eq!(c.get(1, 0).unwrap().style.fg, teal.fg);
+        // A second horizontal through an existing junction does not recolor it.
+        c.put_line(1, 0, "─", yellow);
+        assert_eq!(c.get(1, 0).unwrap().style.fg, teal.fg);
+        // Parallel strokes still overwrite (no junction): last color wins.
+        let mut c = Canvas::new(3, 1);
+        c.put_line(1, 0, "─", teal);
+        c.put_line(1, 0, "━", yellow);
+        assert_eq!(c.get(1, 0).unwrap().style.fg, yellow.fg);
     }
 
     #[test]

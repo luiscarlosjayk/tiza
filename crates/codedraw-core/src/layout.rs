@@ -760,6 +760,8 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         canvas.put(lane_x, ys, if down { g.tl } else { g.bl }, arrow_style);
         canvas.put(lane_x, yt, if down { g.bl } else { g.tl }, arrow_style);
         // Source row: line up to the code, with the start head in the last cell.
+        // Crossings with other rails become junction glyphs (t-094 AC4) in the
+        // rail's color (Canvas::put_line), whatever the drawing order.
         for x in lane_x + 1..code_x - 2 {
             canvas.put_line(x, ys, g.h, arrow_style);
         }
