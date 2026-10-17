@@ -19,7 +19,7 @@
 //!   the README says what is needed to *play* them.
 
 use serde_json::Value;
-use tiza_qa::{Live, example, scratch, tiza_ok};
+use tiza_qa::{Live, example, scratch, tiza, tiza_ok};
 
 fn ownership() -> String {
     example("ownership.rs.tiza").to_string_lossy().into_owned()
@@ -165,8 +165,9 @@ fn ac2_tape_drives_the_real_binary() {
     ]);
     let tape = std::fs::read_to_string(&out).unwrap();
     let doc = tiza_core::fs::open(&ownership()).unwrap().document;
+    // AC5: `Output` is always quoted (an absolute path, one with spaces).
     assert!(
-        tape.contains(&format!("Output {}", dir.join("own.gif").display())),
+        tape.contains(&format!("Output \"{}\"", dir.join("own.gif").display())),
         "{tape}"
     );
     assert!(
@@ -179,11 +180,37 @@ fn ac2_tape_drives_the_real_binary() {
     assert_eq!(tape.matches("Type \"n\"").count(), doc.max_step() as usize);
     assert_eq!(
         tape.matches("Sleep 1s").count(),
-        doc.max_step() as usize + 1 + 1,
-        "one per step + the first + startup"
+        doc.max_step() as usize + 1 + 1 + 1,
+        "one per step + the first + startup + the hold of the last step (AC8)"
     );
-    assert!(tape.contains("Set Width 1100") && tape.contains("Set Height "));
+    // AC6: the window leaves slack for the real glyph advance, two rows
+    // and the padding: Width ≥ cols × 12 + 2 × pad.
+    let width: usize = tape
+        .lines()
+        .find_map(|l| l.strip_prefix("Set Width "))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(width >= 100 * 12 + 2 * 10, "Set Width {width}");
+    let height: usize = tape
+        .lines()
+        .find_map(|l| l.strip_prefix("Set Height "))
+        .unwrap()
+        .parse()
+        .unwrap();
+    assert!(height >= (10 + 2) * 24 + 2 * 10, "Set Height {height}");
+    // AC7: the window takes the document theme's colours, not a VHS preset.
+    assert!(
+        tape.contains("Set Theme { \"background\": \"#15171b\", \"foreground\": \"#"),
+        "{tape}"
+    );
+    assert!(!tape.contains("Catppuccin"));
     assert!(tape.trim_end().ends_with("Type \"q\""));
+    let hold = tape.lines().rev().nth(3).unwrap_or("");
+    assert_eq!(
+        hold, "Sleep 1s",
+        "the last step holds one more interval:\n{tape}"
+    );
     assert!(tape.contains("# Ownership in Rust"));
     // A path with a space is quoted for the shell.
     let spaced = dir.join("my demo.tiza");
@@ -201,7 +228,44 @@ fn ac2_tape_drives_the_real_binary() {
         t2.contains(&format!("Type \"tiza '{}' --present", spaced.display())),
         "{t2}"
     );
-    assert!(t2.contains("Output demo.gif"), "stdout tape names demo.gif");
+    assert!(
+        t2.contains("Output \"demo.gif\""),
+        "stdout tape names demo.gif"
+    );
+    // `--theme light` colours the window from the light theme.
+    let t3 = tiza_ok(&[
+        "render",
+        &ownership(),
+        "--out",
+        "-",
+        "--format",
+        "tape",
+        "--theme",
+        "light",
+    ]);
+    assert!(
+        t3.contains("Set Theme { \"background\": \"#f7f5ef\""),
+        "{t3}"
+    );
+    // AC9: one hint line after writing a file.
+    let out2 = dir.join("hint.tape");
+    let o = tiza(&["render", &ownership(), "--out", out2.to_str().unwrap()]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains(&format!(
+            "play it with `vhs {}` (needs vhs, ttyd, ffmpeg)",
+            out2.display()
+        )),
+        "{err}"
+    );
+    let cast = dir.join("hint.cast");
+    let o = tiza(&["render", &ownership(), "--out", cast.to_str().unwrap()]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        err.contains(&format!("play it with `asciinema play {}`", cast.display()))
+            && err.contains("agg "),
+        "{err}"
+    );
 }
 
 #[test]

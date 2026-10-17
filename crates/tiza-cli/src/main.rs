@@ -358,7 +358,8 @@ fn real_main() -> anyhow::Result<()> {
                                 .to_string_lossy()
                                 .into_owned()
                         };
-                        tiza_core::cast::to_vhs_tape(&doc, &document_path, &gif, &opts).into_bytes()
+                        tiza_core::cast::to_vhs_tape(&doc, &theme, &document_path, &gif, &opts)
+                            .into_bytes()
                     }
                 }
                 Format::Svg | Format::Png => {
@@ -393,6 +394,14 @@ fn real_main() -> anyhow::Result<()> {
             } else {
                 std::fs::write(&out, &bytes).with_context(|| format!("could not write {out}"))?;
                 eprintln!("wrote {out} ({} bytes)", bytes.len());
+                match format {
+                    Format::Tape => eprintln!("play it with `vhs {out}` (needs vhs, ttyd, ffmpeg)"),
+                    Format::Cast => eprintln!(
+                        "play it with `asciinema play {out}` (GIF: `agg {out} {}`)",
+                        std::path::Path::new(&out).with_extension("gif").display()
+                    ),
+                    _ => {}
+                }
             }
             Ok(())
         }

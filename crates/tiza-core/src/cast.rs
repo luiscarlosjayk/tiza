@@ -123,20 +123,33 @@ fn step_sleep(doc: &Document, step: u32, interval: f64) -> String {
     format_secs(needed.max(interval))
 }
 
+/// VHS window padding, in pixels.
+pub const TAPE_PADDING: usize = 10;
+/// Pixels per column at `FontSize 18`: the real glyph advance is ≈11.3 px,
+/// so 12 leaves slack and the TUI keeps its margin layout at 100 columns.
+pub const TAPE_PX_PER_COL: usize = 12;
+/// Pixels per row at `FontSize 18`.
+pub const TAPE_PX_PER_ROW: usize = 24;
+
 /// A VHS tape that opens the document in the real TUI (presentation mode)
 /// and advances through the steps with `n`. A step whose moves are typed
-/// sleeps at least as long as the typing takes (plus a margin).
+/// sleeps at least as long as the typing takes (plus a margin); the last
+/// step stays twice the interval so the GIF loop does not cut it short.
+/// The window takes the document theme's colours and is sized with slack
+/// for the real glyph advance, two more rows and the padding.
 pub fn to_vhs_tape(
     doc: &Document,
+    theme: &Theme,
     document_path: &str,
     output: &str,
     opts: &CastOptions,
 ) -> String {
     let first = if opts.from_zero { 0 } else { 1 };
     let last = doc.max_step().max(first);
-    let (_, tallest) = frames(doc, &Theme::from_name(crate::ThemeName::Dark), opts);
+    let (_, tallest) = frames(doc, theme, opts);
     let rows = opts.rows.unwrap_or(tallest + 1).max(10);
     let sleep = format_secs(opts.interval);
+    let hex = |c: crate::canvas::Rgb| format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2);
     let mut out = String::new();
     let title = opts.title.clone().or_else(|| doc.title.clone());
     let _ = writeln!(
@@ -148,14 +161,30 @@ pub fn to_vhs_tape(
     }
     let _ = writeln!(out, "# Run: vhs {}", output.replace(".gif", ".tape"));
     let _ = writeln!(out);
-    let _ = writeln!(out, "Output {output}");
+    let _ = writeln!(out, "Output \"{}\"", output.replace('"', "\\\""));
     let _ = writeln!(out);
     let _ = writeln!(out, "Set Shell \"bash\"");
     let _ = writeln!(out, "Set FontSize 18");
-    let _ = writeln!(out, "Set Width {}", opts.width * 11);
-    let _ = writeln!(out, "Set Height {}", rows * 24);
-    let _ = writeln!(out, "Set Padding 10");
-    let _ = writeln!(out, "Set Theme \"Catppuccin Mocha\"");
+    let _ = writeln!(
+        out,
+        "Set Width {}",
+        opts.width * TAPE_PX_PER_COL + 2 * TAPE_PADDING
+    );
+    let _ = writeln!(
+        out,
+        "Set Height {}",
+        (rows + 2) * TAPE_PX_PER_ROW + 2 * TAPE_PADDING
+    );
+    let _ = writeln!(out, "Set Padding {TAPE_PADDING}");
+    // The window matches the document theme, so the padding does not show
+    // as a lighter frame around the TUI.
+    let _ = writeln!(
+        out,
+        "Set Theme {{ \"background\": \"{}\", \"foreground\": \"{}\", \"cursor\": \"{}\" }}",
+        hex(theme.bg),
+        hex(theme.fg),
+        hex(theme.fg)
+    );
     let _ = writeln!(out, "Set TypingSpeed 0");
     let _ = writeln!(out);
     let _ = writeln!(out, "Hide");
@@ -181,6 +210,10 @@ pub fn to_vhs_tape(
         let _ = writeln!(out, "Type \"n\"");
         let _ = writeln!(out, "Sleep {}", step_sleep(doc, step, opts.interval));
     }
+    // The last step stays one more interval (2× in all) before the tape
+    // ends, so the GIF loop does not jump back to step 0 right away.
+    let _ = writeln!(out, "# hold the last step");
+    let _ = writeln!(out, "Sleep {sleep}");
     let _ = writeln!(out);
     let _ = writeln!(out, "Hide");
     let _ = writeln!(out, "Type \"q\"");
@@ -272,19 +305,38 @@ mod tests {
     fn tape_scripts_the_real_binary() {
         let tape = to_vhs_tape(
             &doc(),
+            &Theme::dark(),
             "examples/demo.tiza",
-            "demo.gif",
+            "/tmp/my demo.gif",
             &CastOptions {
                 interval: 1.5,
                 ..Default::default()
             },
         );
-        assert!(tape.contains("Output demo.gif"));
+        assert!(tape.contains("Output \"/tmp/my demo.gif\""), "{tape}");
         assert!(tape.contains("Type \"tiza examples/demo.tiza --present --no-socket --step 0\""));
         assert_eq!(tape.matches("Type \"n\"").count(), 2);
-        assert!(tape.contains("Sleep 1500ms"));
+        assert_eq!(
+            tape.matches("Sleep 1500ms").count(),
+            4,
+            "steps 0, 1, 2 + hold"
+        );
         assert!(tape.trim_end().ends_with("Type \"q\""));
-        let quoted = to_vhs_tape(&doc(), "my demo's.tiza", "x.gif", &CastOptions::default());
+        assert!(
+            tape.contains("Set Width 1220"),
+            "100 cols × 12 + 2 × 10:\n{tape}"
+        );
+        assert!(
+            tape.contains("Set Theme { \"background\": \"#15171b\""),
+            "{tape}"
+        );
+        let quoted = to_vhs_tape(
+            &doc(),
+            &Theme::dark(),
+            "my demo's.tiza",
+            "x.gif",
+            &CastOptions::default(),
+        );
         assert!(quoted.contains("Type \"tiza 'my demo'\\''s.tiza'"));
     }
 
@@ -305,7 +357,13 @@ mod tests {
             .unwrap(),
         )
         .unwrap();
-        let tape = to_vhs_tape(&d, "d.tiza", "d.gif", &CastOptions::default());
+        let tape = to_vhs_tape(
+            &d,
+            &Theme::dark(),
+            "d.tiza",
+            "d.gif",
+            &CastOptions::default(),
+        );
         let lines: Vec<&str> = tape.lines().collect();
         let i = lines
             .iter()
