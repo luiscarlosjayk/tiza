@@ -110,6 +110,10 @@ struct Label {
     text: String,
     color: Rgb,
     note: bool,
+    /// Narrow mode, arrow labels (t-116): the arrow's own glyph (`─▶`)
+    /// drawn before the text instead of the bare `·`, so the label reads
+    /// as the arrow's and not as a loose comment.
+    glyph: Option<String>,
 }
 
 /// Nesting depth of a set of line ranges (boxes): the deepest box plus one,
@@ -586,6 +590,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let mut row_of_line = BTreeMap::new();
     // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
+    // Arrow labels drawn beside the code of their target line (narrow
+    // mode, t-116): (line, glyph, text, colour).
+    let mut beside: Vec<(u32, String, String, Rgb)> = Vec::new();
     for line in doc.source.first_line..=doc.last_line() {
         let mut tops: Vec<usize> = (0..boxes.len())
             .filter(|&i| boxes[i].from == line)
@@ -618,6 +625,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                             text: l.clone(),
                             color: color_of(a),
                             note: false,
+                            glyph: None,
                         },
                         false,
                     ));
@@ -651,9 +659,36 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         from,
                         to,
                         label: Some(l),
-                        ..
+                        line: ls,
                     } if from.line != to.line && to.line == line => {
-                        Some((l.clone(), color_of(a), false))
+                        // The label belongs to the arrowhead (t-116): beside
+                        // the code of the target line when it fits inside the
+                        // code column, else on the row below behind the
+                        // arrow's own glyph.
+                        let g = Glyphs::for_style(ls);
+                        let glyph = format!(
+                            "{}{}",
+                            g.h,
+                            head_glyph(ls.heads.end, true, g.h).unwrap_or(g.h)
+                        );
+                        let text_w =
+                            display_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
+                        let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
+                        if need <= code_w {
+                            beside.push((line, glyph, l.clone(), color_of(a)));
+                        } else {
+                            unders.push((
+                                Label {
+                                    text: l.clone(),
+                                    color: color_of(a),
+                                    note: false,
+                                    glyph: Some(glyph),
+                                },
+                                false,
+                            ));
+                            rows.push(Row::Under(unders.len() - 1));
+                        }
+                        None
                     }
                     _ => None,
                 };
@@ -663,6 +698,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                             text,
                             color,
                             note: is_note,
+                            glyph: None,
                         },
                         is_note,
                     ));
@@ -932,6 +968,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 text: l,
                 color: color_of(a),
                 note: false,
+                glyph: None,
             });
         }
     }
@@ -975,6 +1012,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     text: l.clone(),
                     color: color_of(a),
                     note: false,
+                    glyph: None,
                 });
             }
         }
@@ -1130,6 +1168,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 text: l.clone(),
                 color: arrow_color,
                 note: false,
+                glyph: None,
             });
         }
     }
@@ -1214,6 +1253,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 text: l.clone(),
                 color: arrow_color,
                 note: false,
+                glyph: None,
             });
         }
         let code_row = row_of_line[&from.line];
@@ -1251,6 +1291,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     text: text.clone(),
                     color: color_of(a),
                     note: true,
+                    glyph: None,
                 });
             }
         }
@@ -1259,15 +1300,40 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
         let style = base.fg(lbl.color).italic();
-        let prefix = if *is_note { "┆ " } else { "· " };
-        canvas.put_str(code_x, y, prefix, style);
-        canvas.put_str_clipped(
-            code_x + 2,
-            y,
-            &lbl.text,
-            width.saturating_sub(code_x + 2),
-            style.prose(),
-        );
+        let x = match &lbl.glyph {
+            Some(g) => code_x + canvas.put_str(code_x, y, g, base.fg(lbl.color).bold()) + 1,
+            None => {
+                let prefix = if *is_note { "┆ " } else { "· " };
+                canvas.put_str(code_x, y, prefix, style);
+                code_x + 2
+            }
+        };
+        canvas.put_str_clipped(x, y, &lbl.text, width.saturating_sub(x), style.prose());
+    }
+    // Arrow labels beside the code of their target line (t-116): after the
+    // code and the arrows, inside the code column, so a box border is never
+    // touched. Several on one line follow each other.
+    {
+        let mut used: BTreeMap<u32, usize> = BTreeMap::new();
+        for (line, glyph, text, color) in &beside {
+            let Some(&y) = row_of_line.get(line) else {
+                continue;
+            };
+            let text_w = display_width(doc.line_text(*line).unwrap_or(""), opts.tab_width);
+            let x0 = code_x + text_w + 2 + used.get(line).copied().unwrap_or(0);
+            let end = code_x + code_w;
+            if x0 >= end {
+                continue;
+            }
+            let gw = canvas.put_str_clipped(x0, y, glyph, end - x0, base.fg(*color).bold());
+            let x1 = x0 + gw + 1;
+            let tw = if x1 < end {
+                canvas.put_str_clipped(x1, y, text, end - x1, base.fg(*color).italic().prose())
+            } else {
+                0
+            };
+            *used.entry(*line).or_insert(0) += gw + 1 + tw + 2;
+        }
     }
 
     // ---- 6b. callouts ----
@@ -1345,6 +1411,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     text: text.clone(),
                     color: color_of(vis[c.idx]),
                     note: true,
+                    glyph: None,
                 });
                 continue;
             }

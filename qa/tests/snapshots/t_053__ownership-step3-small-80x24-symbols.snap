@@ -22,7 +22,7 @@ expression: symbols
    13 │    }
    14 │
       │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─┼▶ fn takes(s: String) {                                            │
-        │  · move                                                           │
+   15 ╰─┼▶ fn takes(s: String) {  ─▶ move                                   │
+   16   │      println!("{s}");                                             │
 
  ╭▶ NORMAL  step 3/7  ownership.rs  L1  16 ann.  ⚠ labels under the lines ?help

@@ -231,7 +231,7 @@ fn ac6_mcp_export_image_tool() {
         json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"qa","version":"0"}}}),
         json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
         json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"export_image","arguments":{"path": png.to_str().unwrap(), "theme": "light", "scale": 1}}}),
-        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"export_image","arguments":{"path": dir.join("x.gif").to_str().unwrap()}}}),
+        json!({"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"export_image","arguments":{"path": dir.join("x.bmp").to_str().unwrap()}}}),
     ];
     let input = msgs
         .iter()
@@ -266,7 +266,7 @@ fn ac6_mcp_export_image_tool() {
         r3["error"]["message"]
             .as_str()
             .unwrap_or("")
-            .contains(".png, .svg, .txt, .ansi or .md"),
+            .contains(".png, .svg, .txt, .ansi, .md or .gif"),
         "{r3}"
     );
 }
