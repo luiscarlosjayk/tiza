@@ -181,8 +181,9 @@ fn corner_dotfiles_and_dockerfile_variants() {
 
 #[test]
 fn corner_lang_given_a_path_detects_from_it() {
-    // Zed's `${ZED_FILE##*.}` expands to the whole path when the file has no
-    // extension: `--lang /repo/Makefile` must not become the language id.
+    // The Zed selection task passes `--lang "$ZED_FILE"` (the whole path;
+    // Zed allows no shell expansion in tasks): `--lang /repo/Makefile`
+    // must not become the language id.
     let out = tiza(&[
         "render",
         fixture("t-013/plain").to_str().unwrap(),
