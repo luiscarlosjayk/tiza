@@ -244,7 +244,11 @@ fn ac1_export_sizes_are_bounded_in_the_tui_and_the_cli() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    assert!(t.elapsed().as_secs() < 10, "{:?}", t.elapsed());
+    // 5 s here in debug, ~0.5 s in release; the shared CI runners are two
+    // to three times slower, so the debug budget is wide (the release
+    // budget is the one the card means).
+    let budget = if cfg!(debug_assertions) { 40 } else { 10 };
+    assert!(t.elapsed().as_secs() < budget, "{:?}", t.elapsed());
 }
 
 #[test]
