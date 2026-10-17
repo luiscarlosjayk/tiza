@@ -59,7 +59,7 @@ impl Response {
 
 /// Where to anchor something: explicit coordinates or a text search.
 /// An agent rarely knows the exact column; `find` is more robust.
-#[derive(Debug, Clone, Serialize, Deserialize, Default, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default, schemars::JsonSchema)]
 pub struct Where {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
@@ -453,7 +453,7 @@ impl UpdateParams {
 /// `from_line`/`to_line` for boxes, callouts, spotlights and notes. A field
 /// that does not apply to the annotation's type is an `invalid_argument`
 /// error, never silently ignored.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct MoveSpec {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub at: Option<Where>,
@@ -747,6 +747,18 @@ pub const METHODS: &[(&str, &str)] = &[
         "scene.patch",
         "Partial change: step, theme, padding, title, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
     ),
+    (
+        "move.add",
+        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`; validated against the code at that step",
+    ),
+    (
+        "move.delete",
+        "Deletes a move by `index` (1-based, as `move.list` shows it)",
+    ),
+    (
+        "move.list",
+        "One entry per move with its index, summary and fields; plus the ids unanchored at the current step",
+    ),
     ("step.set", "Sets the current presentation step"),
     ("step.next", "Advances one step"),
     ("step.prev", "Goes back one step"),
@@ -773,6 +785,84 @@ pub const METHODS: &[(&str, &str)] = &[
         "Supervised mode state: enabled, pending proposals, accepted/rejected counts",
     ),
 ];
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveIndexParams {
+    /// 1-based, as `move.list` shows it.
+    pub index: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveListed {
+    pub index: usize,
+    pub summary: String,
+    #[serde(flatten)]
+    pub r#move: crate::moves::Move,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveList {
+    pub moves: Vec<MoveListed>,
+    /// Annotations of steps `<= step` hidden at the current step: no line of
+    /// theirs survived a later patch and no `rebind` names them.
+    pub unanchored: Vec<String>,
+    pub step: u32,
+    pub max_step: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct MoveMutated {
+    pub index: usize,
+    pub moves: usize,
+    pub max_step: u32,
+    pub revision: u64,
+}
+
+/// One line per move, in the `move.list` / `:moves` format.
+pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
+    use crate::moves::{MoveAction, PatchOp, Typing};
+    let MoveAction::CodePatch(p) = &m.action;
+    let op = match p.op {
+        PatchOp::Insert => "insert",
+        PatchOp::Replace => "replace",
+        PatchOp::Delete => "delete",
+    };
+    let target = if let Some(pos) = &p.position {
+        format!("L{pos}")
+    } else if let Some(t) = &p.after {
+        format!("after «{t}»")
+    } else if let Some(t) = &p.before {
+        format!("before «{t}»")
+    } else if let Some(t) = &p.find {
+        format!("«{t}»")
+    } else if let (Some(a), Some(b)) = (&p.find_start, &p.find_end) {
+        format!("«{a}»..«{b}»")
+    } else {
+        String::from("?")
+    };
+    let n = p.content_lines().len();
+    let content = match p.op {
+        PatchOp::Delete => String::new(),
+        _ => format!(" {n} line{}", if n == 1 { "" } else { "s" }),
+    };
+    let typing = match p.typing {
+        Typing::Instant => String::new(),
+        Typing::Line => format!(" typing=line {}ms", p.speed()),
+        Typing::Char => format!(" typing=char {}ms", p.speed()),
+    };
+    let rebind = if m.rebind.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " rebind {}",
+            m.rebind.keys().cloned().collect::<Vec<_>>().join(",")
+        )
+    };
+    format!(
+        "#{index} [step {}] code.patch {op} {target}{content}{typing}{rebind}",
+        m.at_step
+    )
+}
 
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {

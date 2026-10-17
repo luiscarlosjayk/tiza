@@ -27,6 +27,9 @@ pub struct LayoutOptions {
     pub focus: Option<(u32, u32)>,
     pub line_numbers: bool,
     pub tab_width: usize,
+    /// A typing animation of `step` is running: the code is drawn as it is
+    /// but the annotations of `step` wait until it ends (t-098).
+    pub typing: bool,
 }
 
 impl Default for LayoutOptions {
@@ -37,6 +40,7 @@ impl Default for LayoutOptions {
             focus: None,
             line_numbers: true,
             tab_width: 4,
+            typing: false,
         }
     }
 }
@@ -99,13 +103,23 @@ struct Label {
 
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let width = opts.width.max(20);
+    // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
+    // the code at that step and the annotations shifted through the patches
+    // of later steps; those without an anchor are left out.
+    let projected;
+    let doc = if doc.moves.is_empty() {
+        doc
+    } else {
+        projected = doc.view_at(opts.step).doc;
+        &projected
+    };
     // Annotations outside the code (a document whose file shrank, or a
     // hand-edited one) are reported when it opens; here they are simply not
     // drawn, so a stale line number can never break the layout.
     let vis: Vec<&Annotation> = doc
         .annotations
         .iter()
-        .filter(|a| a.step <= opts.step)
+        .filter(|a| a.step <= opts.step && !(opts.typing && a.step == opts.step))
         .filter(|a| {
             a.shape
                 .line_ranges()

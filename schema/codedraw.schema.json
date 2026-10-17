@@ -430,6 +430,174 @@
       },
       "type": "object"
     },
+    "Move": {
+      "description": "One move of the demo.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Patch",
+          "description": "Insert, replace or delete whole lines.",
+          "properties": {
+            "action": {
+              "const": "code.patch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        }
+      ],
+      "properties": {
+        "at_step": {
+          "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rebind": {
+          "additionalProperties": {
+            "$ref": "#/$defs/MoveSpec"
+          },
+          "description": "Where annotations the patch replaces or deletes go afterwards, by id:\n`{\"find\": \"…\"}`, `{\"line\": N, \"col\": C}`, `{\"from_line\": A, \"to_line\": B}`…\n(the same fields as `annotation.update`'s `move`), resolved against the\ncode after the patch.",
+          "type": "object"
+        }
+      },
+      "required": [
+        "at_step"
+      ],
+      "type": "object"
+    },
+    "MoveSpec": {
+      "description": "Partial re-anchoring of an existing annotation. Which fields apply depends\non the shape: `at` for highlights, marks and notes; `from`/`to` for arrows;\n`from_line`/`to_line` for boxes, callouts, spotlights and notes. A field\nthat does not apply to the annotation's type is an `invalid_argument`\nerror, never silently ignored.",
+      "properties": {
+        "at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "from_line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "to": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Where"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "to_line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "Patch": {
+      "properties": {
+        "after": {
+          "description": "`insert`: text of the line the content goes after / before (exactly one line matches).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "before": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "content": {
+          "description": "New lines (`insert`, `replace`); `\\n` separates lines, a trailing `\\n` is ignored.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "`replace`/`delete`: text of the one line to change.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find_end": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find_start": {
+          "description": "`replace`/`delete`: the range from the line of `find_start` to the line of `find_end`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "op": {
+          "$ref": "#/$defs/PatchOp"
+        },
+        "position": {
+          "description": "`insert`: the line the content goes before (`last + 1` appends).\n`replace`/`delete`: the line range (`\"7\"` or `\"7-9\"`).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "speed_ms": {
+          "description": "Milliseconds per line (`typing: line`, default 120) or per character (`char`, default 25).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "typing": {
+          "$ref": "#/$defs/Typing"
+        }
+      },
+      "required": [
+        "op"
+      ],
+      "type": "object"
+    },
+    "PatchOp": {
+      "enum": [
+        "insert",
+        "replace",
+        "delete"
+      ],
+      "type": "string"
+    },
     "Placement": {
       "description": "Where a callout is drawn.",
       "oneOf": [
@@ -541,6 +709,60 @@
         "light"
       ],
       "type": "string"
+    },
+    "Typing": {
+      "enum": [
+        "instant",
+        "line",
+        "char"
+      ],
+      "type": "string"
+    },
+    "Where": {
+      "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "end": {
+          "description": "With `line` and `col`: end of the span (exclusive). Without it the span runs to the end of the line.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "Text to search for in the code; with `line`, that line is searched first.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "occurrence": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     }
   },
   "$id": "https://github.com/luiscarlosjayk/codedraw/schema/codedraw.schema.json",
@@ -556,6 +778,13 @@
     "code": {
       "$ref": "#/$defs/CodeSource",
       "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
+    },
+    "moves": {
+      "description": "Code changes between steps (ADR 0007): applied when the presenter\nreaches `at_step`, reverted when going back. The embedded `code` is\nalways the step-0 code.",
+      "items": {
+        "$ref": "#/$defs/Move"
+      },
+      "type": "array"
     },
     "padding": {
       "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",

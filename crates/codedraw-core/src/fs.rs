@@ -87,7 +87,7 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
     let bad: Vec<&str> = doc
         .annotations
         .iter()
-        .filter(|a| doc.validate_shape(&a.shape).is_err())
+        .filter(|a| doc.validate_shape_at(&a.shape, a.step).is_err())
         .map(|a| a.id.as_str())
         .collect();
     if bad.is_empty() {

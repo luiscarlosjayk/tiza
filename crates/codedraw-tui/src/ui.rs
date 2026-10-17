@@ -3,7 +3,6 @@
 
 use codedraw_core::canvas::{Canvas, CellStyle, Rgb};
 use codedraw_core::layout::Layout;
-use codedraw_core::protocol::describe;
 use ratatui::Frame;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -292,9 +291,20 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     match app.overlay {
         Overlay::Help => draw_overlay(frame, app, "Keys and commands", help_lines()),
         Overlay::List => {
-            let mut lines: Vec<String> = app.doc.annotations.iter().map(describe).collect();
+            let mut lines: Vec<String> = app.list_lines();
             if lines.is_empty() {
                 lines.push("(no annotations yet; try :mark move 3:s)".into());
+            }
+            if !app.doc.moves.is_empty() {
+                lines.push(String::new());
+                lines.push("Moves (code changes between steps):".into());
+                lines.extend(
+                    app.doc
+                        .moves
+                        .iter()
+                        .enumerate()
+                        .map(|(i, m)| codedraw_core::protocol::describe_move(i + 1, m)),
+                );
             }
             draw_overlay(frame, app, "Annotations", lines)
         }

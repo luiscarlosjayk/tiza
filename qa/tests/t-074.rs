@@ -42,6 +42,7 @@ fn layouts_without_panic(doc: &Document) {
                 focus: None,
                 line_numbers: true,
                 tab_width: 4,
+                typing: false,
             },
         );
         let _ = l.canvas.to_plain_text();

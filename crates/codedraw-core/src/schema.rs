@@ -8,8 +8,8 @@ use serde_json::Value;
 
 use crate::model::{Document, MarkStyle};
 use crate::protocol::{
-    AddParams, IdParams, METHODS, Mutated, PatchParams, PutParams, Scene, SceneChanged, Status,
-    StepParams, UpdateParams,
+    AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveMutated, Mutated, PatchParams,
+    PutParams, Scene, SceneChanged, Status, StepParams, UpdateParams,
 };
 
 /// Parameters of `supervise.set`.
@@ -177,6 +177,9 @@ pub fn api_schema() -> ApiSchema {
                 "scene.put" => (schema::<PutParams>(), schema::<SceneChanged>()),
                 "scene.patch" => (schema::<PatchParams>(), schema::<SceneChanged>()),
                 "scene.clear" => (schema::<ClearParams>(), serde_json::json!({"type": "object", "properties": {"removed": {"type": "integer"}, "revision": {"type": "integer"}}})),
+                "move.add" => (schema::<crate::moves::Move>(), schema::<MoveMutated>()),
+                "move.delete" => (schema::<MoveIndexParams>(), schema::<MoveMutated>()),
+                "move.list" => (schema::<NoParams>(), schema::<MoveList>()),
                 "step.set" => (schema::<StepParams>(), step_result()),
                 "step.next" | "step.prev" => (schema::<NoParams>(), step_result()),
                 "focus.set" => (schema::<FocusParams>(), serde_json::json!({"type": "object", "properties": {"focus": {}, "revision": {"type": "integer"}}})),

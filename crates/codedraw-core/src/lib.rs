@@ -15,6 +15,7 @@ pub mod highlight;
 pub mod history;
 pub mod layout;
 pub mod model;
+pub mod moves;
 pub mod protocol;
 pub mod schema;
 pub mod socket;

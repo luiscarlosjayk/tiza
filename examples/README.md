@@ -6,6 +6,7 @@ Open them with `codedraw examples/<file>.codedraw` and advance with `n`. Both st
 |---|---|---|
 | `ownership.rs.codedraw` | move, borrow `&`, `&mut` and drop in 7 steps (two of them spotlights, the last one a callout that sums up), one color per value, and a reusable custom style `borrow_mut` defined in the document (overrides the built-in alias) | relative reference: `{"file": "ownership.rs"}` |
 | `stack-impl.codedraw` | `&self` vs `&mut self` in an `impl`, `Option<&T>` | reference with a subdirectory and a range: `{"file": "src/stack.rs", "lines": "7-30"}` |
+| `ownership-moves.rs.codedraw` | the same lesson with **moves** (t-098): step 2 types a borrow and a `len` helper into the code line by line, step 4 replaces the call with `t.len()` character by character and deletes the helper (its box and arrow become `(unanchored)`, the mark is rebound with `rebind`), step 5 sums up | embedded (the step-0 code; `moves` carry the rest) |
 
 ## The three `code` modes
 

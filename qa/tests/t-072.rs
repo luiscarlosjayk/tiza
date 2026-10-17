@@ -60,6 +60,7 @@ fn ac1_every_theme_role_passes_before_compression() {
                 focus: None,
                 line_numbers: true,
                 tab_width: 4,
+                typing: false,
             },
         );
         for (x, y, cell) in l.canvas.cells() {

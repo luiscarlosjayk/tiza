@@ -23,3 +23,7 @@
 ## Amendment (t-097): `markers`
 
 An annotation may carry `"markers": {"start": "// begin", "end": "// end"}` next to its lines when it was created from two text markers (`find_start`/`find_end`). The lines stay the truth for rendering; the markers are kept so a code change can re-resolve the range (ADR 0007, t-098). Optional field: older readers ignore it, older files have none.
+
+## Amendment (t-098): `moves`
+
+A document may carry `"moves": [ … ]` (ADR 0007): each one `{"at_step": N, "action": "code.patch", "op": "insert" | "replace" | "delete", target, "content", "typing", "speed_ms", "rebind"}`, where the target is `after` / `before` / `position` for an insert and `find` / `find_start` + `find_end` / `position` for a replace or delete, matched on the code as shown at step `N` and required to match exactly one line. The embedded `code` (or the referenced file) is always the **step-0 code**; the code at step N is a pure function of it and the moves `<= N`, in step order then list order, so the file never stores a projected state. `rebind` maps annotation ids to an `annotation.update`-style move resolved on the code after the patch. Optional field: older readers ignore it (and show the step-0 code throughout), older files have none. Schema version stays 1.

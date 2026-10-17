@@ -418,6 +418,60 @@ pub struct IdParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct AddMoveParams {
+    #[schemars(
+        description = "Step at which the code changes (>= 1). Going back to an earlier step reverts it."
+    )]
+    pub at_step: u32,
+    #[schemars(description = "`insert`, `replace` or `delete` (whole lines)")]
+    pub op: String,
+    #[schemars(
+        description = "insert: the line the content goes before (last+1 appends). replace/delete: a line or range `A-B`, as shown at that step"
+    )]
+    pub position: Option<String>,
+    #[schemars(
+        description = "insert: text of the line the content goes after (must match exactly one line)"
+    )]
+    pub after: Option<String>,
+    #[schemars(
+        description = "insert: text of the line the content goes before (must match exactly one line)"
+    )]
+    pub before: Option<String>,
+    #[schemars(
+        description = "replace/delete: text of the one line to change (must match exactly one line)"
+    )]
+    pub find: Option<String>,
+    #[schemars(
+        description = "replace/delete: text on the first line of the range (with find_end)"
+    )]
+    pub find_start: Option<String>,
+    #[schemars(
+        description = "replace/delete: text on the last line of the range (with find_start)"
+    )]
+    pub find_end: Option<String>,
+    #[schemars(description = "insert/replace: the new lines, separated by newlines")]
+    pub content: Option<String>,
+    #[schemars(
+        description = "`instant` (default), `line` or `char`: how the content appears when the presenter reaches the step"
+    )]
+    pub typing: Option<String>,
+    #[schemars(
+        description = "Milliseconds per line (`line`, default 120) or per character (`char`, default 25)"
+    )]
+    pub speed_ms: Option<u64>,
+    #[schemars(
+        description = "Where annotations the patch replaces or deletes go afterwards, by id: `{\"a3\": {\"find\": \"text\"}}`, `{\"a4\": {\"from_line\": 7, \"to_line\": 9}}` (same fields as update_annotation's move), resolved on the code after the patch"
+    )]
+    pub rebind: Option<serde_json::Map<String, Value>>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct MoveIndexParams {
+    #[schemars(description = "1-based index, as list_moves shows it")]
+    pub index: usize,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct StepParams {
     #[schemars(description = "Step to show (1-based). Clamped to the valid range.")]
     pub step: u32,
@@ -810,6 +864,53 @@ impl CodeDrawServer {
     }
 
     #[tool(
+        description = "Adds a move (ADR 0007): a `code.patch` that inserts, replaces or deletes whole lines when the presenter reaches `at_step` (reverted when going back). Targets are matched on the code as shown at that step and must match exactly once. Annotations of earlier steps are shifted through the patch; those that lose every line are hidden as (unanchored) unless `rebind` names where they go. With `typing: line|char` the content is typed in place in the TUI."
+    )]
+    async fn add_move(
+        &self,
+        Parameters(p): Parameters<AddMoveParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut m = json!({"at_step": p.at_step, "action": "code.patch", "op": p.op});
+        let o = m.as_object_mut().expect("object");
+        let mut put = |k: &str, v: Option<Value>| {
+            if let Some(v) = v {
+                o.insert(k.to_string(), v);
+            }
+        };
+        put("position", p.position.map(Value::from));
+        put("after", p.after.map(Value::from));
+        put("before", p.before.map(Value::from));
+        put("find", p.find.map(Value::from));
+        put("find_start", p.find_start.map(Value::from));
+        put("find_end", p.find_end.map(Value::from));
+        put("content", p.content.map(Value::from));
+        put("typing", p.typing.map(Value::from));
+        put("speed_ms", p.speed_ms.map(Value::from));
+        put("rebind", p.rebind.map(Value::Object));
+        Ok(text(pretty(&self.call("move.add", m).await?)))
+    }
+
+    #[tool(description = "Deletes a move by its 1-based index (see list_moves).")]
+    async fn delete_move(
+        &self,
+        Parameters(p): Parameters<MoveIndexParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(
+            &self.call("move.delete", json!({"index": p.index})).await?,
+        )))
+    }
+
+    #[tool(
+        description = "Lists the moves (index, step, summary) and the annotation ids unanchored at the current step."
+    )]
+    async fn list_moves(
+        &self,
+        Parameters(_p): Parameters<Empty>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(&self.call("move.list", json!({})).await?)))
+    }
+
+    #[tool(
         description = "Sets the current presentation step (annotations with step <= the step are shown)."
     )]
     async fn set_step(
@@ -955,6 +1056,7 @@ impl CodeDrawServer {
                 focus: None,
                 line_numbers: true,
                 tab_width: 4,
+                typing: false,
             },
         );
         let bytes = match format {

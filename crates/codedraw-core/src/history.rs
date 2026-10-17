@@ -6,10 +6,13 @@
 use std::collections::BTreeMap;
 
 use crate::model::{Annotation, CodeSource, Document, MarkStyle};
+use crate::moves::Move;
 
 #[derive(Debug, Clone)]
 struct Snapshot {
     code: Vec<String>,
+    base_code: Vec<String>,
+    moves: Vec<Move>,
     code_src: CodeSource,
     annotations: Vec<Annotation>,
     styles: BTreeMap<String, MarkStyle>,
@@ -21,6 +24,8 @@ impl Snapshot {
     fn take(doc: &Document) -> Self {
         Self {
             code: doc.code.clone(),
+            base_code: doc.base_code.clone(),
+            moves: doc.moves.clone(),
             code_src: doc.code_src.clone(),
             annotations: doc.annotations.clone(),
             styles: doc.styles.clone(),
@@ -33,11 +38,16 @@ impl Snapshot {
     fn swap(self, doc: &mut Document) -> Self {
         let current = Self::take(doc);
         doc.code = self.code;
+        doc.base_code = self.base_code;
+        doc.moves = self.moves;
         doc.code_src = self.code_src;
         doc.annotations = self.annotations;
         doc.styles = self.styles;
         doc.title = self.title;
         doc.padding = self.padding;
+        // The step may have changed since the snapshot: the shown code is
+        // always the projection of the base at the current step.
+        doc.sync_code_to_step();
         current
     }
 }

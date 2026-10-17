@@ -9,9 +9,11 @@ use codedraw_core::layout::{Layout, LayoutOptions, layout};
 use codedraw_core::model::{
     Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
 };
+use codedraw_core::moves::{self, Move, MoveAction, Typing};
 use codedraw_core::protocol::{
-    AddParams, IdParams, METHODS, Mutated, PatchParams, PutParams, Request, Response, Scene,
-    SceneChanged, Status, StepParams, UpdateParams, Where,
+    AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed, MoveMutated, Mutated,
+    PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status, StepParams,
+    UpdateParams, Where,
 };
 use codedraw_core::theme::Theme;
 use codedraw_core::{Error, fs};
@@ -45,6 +47,30 @@ pub enum Overlay {
     Review,
 }
 
+/// A typing animation in progress (t-098): the moves of the step just
+/// reached whose `typing` is `line`/`char`, revealed unit by unit. The code
+/// shown is `full` with the content of the pending items blanked out, so the
+/// line count — and every shifted annotation — stays put while it types.
+#[derive(Debug, Clone)]
+pub struct TypingState {
+    /// The code at the step with every move applied.
+    pub full: Vec<String>,
+    pub items: Vec<TypingItem>,
+    pub index: usize,
+    pub revealed: usize,
+    last: std::time::Instant,
+}
+
+#[derive(Debug, Clone)]
+pub struct TypingItem {
+    /// Lines of `full` (absolute) the content occupies.
+    pub range: std::ops::Range<u32>,
+    pub lines: Vec<String>,
+    pub mode: Typing,
+    pub speed: std::time::Duration,
+    pub units: usize,
+}
+
 /// A mutation an agent asked for while supervised mode is on: it waits for
 /// the presenter's `y`/`n` (or expires) before the socket gets its reply.
 pub struct Proposal {
@@ -71,6 +97,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "style.list",
     "render.text",
     "follow.status",
+    "move.list",
 ];
 
 pub struct App {
@@ -127,6 +154,8 @@ pub struct App {
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
+    /// Typing animation of the step just reached (t-098).
+    pub typing: Option<TypingState>,
 }
 
 impl App {
@@ -169,6 +198,7 @@ impl App {
             decided: (0, 0),
             overlay_scroll: 0,
             follow: None,
+            typing: None,
         }
     }
 
@@ -197,6 +227,7 @@ impl App {
                 focus: self.focus,
                 line_numbers: true,
                 tab_width: 4,
+                typing: self.typing.is_some(),
             },
         )
     }
@@ -479,8 +510,9 @@ impl App {
         }
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_shape(&a.shape)?;
+            doc.validate_shape_at(&a.shape, a.step)?;
         }
+        self.finish_typing();
         self.history.record(&self.doc);
         self.doc = doc;
         if let Some(t) = self.doc.theme {
@@ -582,15 +614,241 @@ impl App {
     }
 
     pub fn set_step(&mut self, step: u32) {
+        self.finish_typing();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
         if s != self.doc.step {
+            let forward_one = s == self.doc.step + 1;
             self.doc.step = s;
+            if let Some(e) = self.doc.sync_code_to_step() {
+                self.error(format!("moves: {e}"));
+            } else if forward_one {
+                self.start_typing();
+            }
+            self.clamp_cursor();
             self.revision += 1;
         }
     }
 
+    // ---------- moves (t-098) ----------
+
+    /// Starts the typing animation of the current step, when any of its
+    /// moves asks for one. The content of those moves is blanked out and
+    /// revealed by `typing_tick`.
+    fn start_typing(&mut self) {
+        let step = self.doc.step;
+        if !self.doc.moves.iter().any(|m| {
+            let MoveAction::CodePatch(p) = &m.action;
+            m.at_step == step && p.typing != Typing::Instant
+        }) {
+            return;
+        }
+        let first = self.doc.source.first_line;
+        let Ok((full, maps)) = moves::apply_until(self.doc.base(), first, &self.doc.moves, step)
+        else {
+            return;
+        };
+        // The content lines of each typing move, followed through the maps
+        // of the moves applied after it (same step) so they point into `full`.
+        let mut items: Vec<TypingItem> = Vec::new();
+        for (k, (idx, at, map)) in maps.iter().enumerate() {
+            let MoveAction::CodePatch(p) = &self.doc.moves[*idx].action;
+            if *at != step || p.typing == Typing::Instant || map.inserted.is_empty() {
+                continue;
+            }
+            let mut range = map.inserted.clone();
+            let mut lost = false;
+            for (_, _, later) in &maps[k + 1..] {
+                match (later.get(range.start), later.get(range.end - 1)) {
+                    (Some(a), Some(b)) if b >= a => range = a..b + 1,
+                    _ => {
+                        lost = true;
+                        break;
+                    }
+                }
+            }
+            if lost {
+                continue;
+            }
+            let lines = p.content_lines();
+            items.push(TypingItem {
+                range,
+                units: moves::typing_units(&lines, p.typing),
+                lines,
+                mode: p.typing,
+                speed: std::time::Duration::from_millis(p.speed().max(1)),
+            });
+        }
+        if items.is_empty() {
+            return;
+        }
+        self.typing = Some(TypingState {
+            full,
+            items,
+            index: 0,
+            revealed: 0,
+            last: std::time::Instant::now(),
+        });
+        self.refresh_typing_code();
+    }
+
+    /// Writes the partially typed code into the document.
+    fn refresh_typing_code(&mut self) {
+        let Some(t) = &self.typing else { return };
+        let first = self.doc.source.first_line;
+        let mut code = t.full.clone();
+        for (k, item) in t.items.iter().enumerate() {
+            let shown = if k < t.index {
+                continue;
+            } else if k == t.index {
+                moves::partial_content(&item.lines, item.mode, t.revealed)
+            } else {
+                vec![String::new(); item.lines.len()]
+            };
+            for (i, l) in shown.into_iter().enumerate() {
+                if let Some(slot) = code.get_mut((item.range.start - first) as usize + i) {
+                    *slot = l;
+                }
+            }
+        }
+        self.doc.code = code;
+    }
+
+    /// Advances the typing animation by the time elapsed. Returns true when
+    /// the screen changed. Call it every loop iteration.
+    pub fn typing_tick(&mut self) -> bool {
+        let Some(t) = &mut self.typing else {
+            return false;
+        };
+        let elapsed = t.last.elapsed();
+        let item = &t.items[t.index];
+        let units = (elapsed.as_micros() / item.speed.as_micros().max(1)) as usize;
+        if units == 0 {
+            return false;
+        }
+        t.last += item.speed * units as u32;
+        t.revealed += units;
+        while t.revealed >= t.items[t.index].units {
+            t.revealed -= t.items[t.index].units;
+            t.index += 1;
+            if t.index >= t.items.len() {
+                self.finish_typing();
+                self.revision += 1;
+                return true;
+            }
+        }
+        self.refresh_typing_code();
+        self.revision += 1;
+        true
+    }
+
+    /// Ends the typing animation at once (any key, `p`, a socket step change).
+    pub fn finish_typing(&mut self) {
+        if let Some(t) = self.typing.take() {
+            self.doc.code = t.full;
+        }
+    }
+
+    pub fn is_typing(&self) -> bool {
+        self.typing.is_some()
+    }
+
+    /// Adds a move (validated against the code at its step). Undoable.
+    pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+        self.finish_typing();
+        self.history.record(&self.doc);
+        match self.doc.add_move(m) {
+            Ok(i) => {
+                self.clamp_cursor();
+                self.touch();
+                Ok(i)
+            }
+            Err(e) => {
+                self.history.undo(&mut self.doc);
+                Err(e)
+            }
+        }
+    }
+
+    /// Deletes a move by 1-based index. Undoable.
+    pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
+        self.finish_typing();
+        let i = index
+            .checked_sub(1)
+            .filter(|i| *i < self.doc.moves.len())
+            .ok_or_else(|| Error::NotFound(format!("move #{index}")))?;
+        self.history.record(&self.doc);
+        let m = self.doc.delete_move(i)?;
+        if self.doc.step > self.doc.max_step() {
+            self.doc.step = self.doc.max_step();
+            self.doc.sync_code_to_step();
+        }
+        self.clamp_cursor();
+        self.touch();
+        Ok(m)
+    }
+
+    /// `scene.list` / `:list`: one line per annotation, in document order.
+    /// With moves, the coordinates are where the annotation is drawn at the
+    /// current step (shifted through the patches); one that lost its anchor
+    /// keeps its authoring coordinates and is marked `(unanchored)`.
+    pub fn list_lines(&self) -> Vec<String> {
+        if self.doc.moves.is_empty() {
+            return self
+                .doc
+                .annotations
+                .iter()
+                .map(codedraw_core::protocol::describe)
+                .collect();
+        }
+        let view = self.doc.view_at(self.doc.step);
+        self.doc
+            .annotations
+            .iter()
+            .map(|a| {
+                if view.unanchored.contains(&a.id) {
+                    format!("{} (unanchored)", codedraw_core::protocol::describe(a))
+                } else {
+                    let shown = view.doc.find_annotation(&a.id).unwrap_or(a);
+                    codedraw_core::protocol::describe(shown)
+                }
+            })
+            .collect()
+    }
+
+    /// `move.list` payload.
+    pub fn move_list(&self) -> MoveList {
+        MoveList {
+            moves: self
+                .doc
+                .moves
+                .iter()
+                .enumerate()
+                .map(|(i, m)| MoveListed {
+                    index: i + 1,
+                    summary: codedraw_core::protocol::describe_move(i + 1, m),
+                    r#move: m.clone(),
+                })
+                .collect(),
+            unanchored: self.doc.unanchored(),
+            step: self.doc.step,
+            max_step: self.doc.max_step(),
+        }
+    }
+
+    /// Why the code cannot be replaced right now (paste, follow): moves are
+    /// applied at the current step. `None` when it can.
+    fn moves_block_reason(&self, what: &str) -> Option<Error> {
+        self.doc.moves_applied().then(|| {
+            Error::Invalid(format!(
+                "cannot {what} while moves are applied (step {}): go back to step 0 first",
+                self.doc.step
+            ))
+        })
+    }
+
     pub fn undo(&mut self) {
+        self.finish_typing();
         if self.history.undo(&mut self.doc) {
             self.touch();
             self.info("undone");
@@ -600,6 +858,7 @@ impl App {
     }
 
     pub fn redo(&mut self) {
+        self.finish_typing();
         if self.history.redo(&mut self.doc) {
             self.touch();
             self.info("redone");
@@ -623,6 +882,9 @@ impl App {
             return Err(Error::Invalid(
                 "nothing to paste: the clipboard text is empty".into(),
             ));
+        }
+        if let Some(e) = self.moves_block_reason("paste") {
+            return Err(e);
         }
         let lang = self.doc.source.language.clone();
         let d = Document::from_code(text, lang, None);
@@ -665,6 +927,11 @@ impl App {
         self.history.record(&self.doc);
         let mut d = self.doc.clone();
         d.annotations.clear();
+        if !d.moves.is_empty() {
+            // Only reachable at step 0 (see `moves_block_reason`): the new
+            // text is the step-0 code.
+            d.base_code = code.clone();
+        }
         d.code = code;
         d.code_src = code_src;
         d.source.first_line = first_line;
@@ -722,6 +989,9 @@ impl App {
         }
         if let Some(f) = &self.follow {
             return Ok(format!("already following {}", f.file_name()));
+        }
+        if let Some(e) = self.moves_block_reason("follow") {
+            return Err(e);
         }
         let path = self.source_file().ok_or_else(|| {
             Error::Invalid(
@@ -794,6 +1064,15 @@ impl App {
         }
         if new == f.last_content && !was_missing {
             return false;
+        }
+        if self.doc.moves_applied() {
+            // ADR 0007 §7: follow is paused while moves are applied (t-106
+            // reconciles the edits); until then, say so instead of reloading.
+            let step = self.doc.step;
+            self.error(format!(
+                "{name} changed on disk but moves are applied at step {step}: go back to step 0 to reload"
+            ));
+            return true;
         }
         f.mark_reloaded(new.clone());
         let reloads = f.reloads;
@@ -1934,6 +2213,7 @@ impl App {
                 focus: self.focus,
                 line_numbers: true,
                 tab_width: 4,
+                typing: false,
             },
         );
         let bytes = match format {
@@ -2605,7 +2885,7 @@ impl App {
                 // directory could not resolve a relative file reference.
                 let mut document = self.doc.clone();
                 document.code_src =
-                    codedraw_core::model::CodeSource::Embedded(document.code.clone());
+                    codedraw_core::model::CodeSource::Embedded(document.base().to_vec());
                 serde_json::to_value(Scene {
                     revision: self.revision,
                     step: self.doc.step,
@@ -2613,13 +2893,28 @@ impl App {
                     document,
                 })?
             }
-            "scene.list" => json!(
-                self.doc
-                    .annotations
-                    .iter()
-                    .map(codedraw_core::protocol::describe)
-                    .collect::<Vec<_>>()
-            ),
+            "scene.list" => json!(self.list_lines()),
+            "move.add" => {
+                let m: Move = parse(params)?;
+                let i = self.add_move(m)?;
+                serde_json::to_value(MoveMutated {
+                    index: i + 1,
+                    moves: self.doc.moves.len(),
+                    max_step: self.doc.max_step(),
+                    revision: self.revision,
+                })?
+            }
+            "move.delete" => {
+                let p: MoveIndexParams = parse(params)?;
+                self.delete_move(p.index)?;
+                serde_json::to_value(MoveMutated {
+                    index: p.index,
+                    moves: self.doc.moves.len(),
+                    max_step: self.doc.max_step(),
+                    revision: self.revision,
+                })?
+            }
+            "move.list" => serde_json::to_value(self.move_list())?,
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
@@ -3065,6 +3360,12 @@ pub fn proposal_summary(req: &Request) -> String {
         "scene.put" => "replace the whole document".into(),
         "scene.patch" => "patch the document".into(),
         "style.set" => format!("define style {}", s("name")),
+        "move.add" => format!(
+            "add a {} move at step {}",
+            s("op"),
+            n("at_step").unwrap_or(0)
+        ),
+        "move.delete" => format!("delete move #{}", n("index").unwrap_or(0)),
         "step.set" => format!("go to step {}", n("step").unwrap_or(0)),
         "step.next" => "next step".into(),
         "step.prev" => "previous step".into(),

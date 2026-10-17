@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "title": "Ownership in Rust, with the code growing as we go",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hello\");",
+    "    takes(s);",
+    "    // println!(\"{s}\"); // error: value borrowed here after move",
+    "}",
+    "",
+    "fn takes(s: String) {",
+    "    println!(\"{s}\");",
+    "}"
+  ],
+  "step": 0,
+  "theme": "dark",
+  "padding": [1, 2],
+  "moves": [
+    {
+      "at_step": 2,
+      "action": "code.patch",
+      "op": "insert",
+      "after": "// println!(\"{s}\");",
+      "content": "\n    let t = String::from(\"world\");\n    let n = len(&t);\n    println!(\"{t} has {n} letters\");",
+      "typing": "line",
+      "speed_ms": 160
+    },
+    {
+      "at_step": 2,
+      "action": "code.patch",
+      "op": "insert",
+      "position": "14",
+      "content": "\nfn len(s: &String) -> usize {\n    s.len()\n}",
+      "typing": "line",
+      "speed_ms": 160
+    },
+    {
+      "at_step": 4,
+      "action": "code.patch",
+      "op": "replace",
+      "find": "let n = len(&t);",
+      "content": "    let n = t.len();",
+      "typing": "char",
+      "speed_ms": 40,
+      "rebind": {
+        "a4": { "at": { "find": "t.len()" } }
+      }
+    },
+    {
+      "at_step": 4,
+      "action": "code.patch",
+      "op": "delete",
+      "position": "14-17"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "mark",
+      "kind": "move",
+      "span": { "line": 3, "start": 10, "end": 11 },
+      "label": "s moves into takes",
+      "color": "orange"
+    },
+    {
+      "id": "a2",
+      "step": 1,
+      "type": "arrow",
+      "from": { "line": 2, "col": 8 },
+      "to": { "line": 7, "col": 9 },
+      "label": "move",
+      "color": "orange"
+    },
+    {
+      "id": "a3",
+      "step": 1,
+      "type": "note",
+      "line": 4,
+      "text": "s no longer owns it: using it here does not compile",
+      "color": "orange"
+    },
+    {
+      "id": "a4",
+      "step": 3,
+      "type": "mark",
+      "kind": "read",
+      "span": { "line": 7, "start": 16, "end": 18 },
+      "label": "a shared borrow: t stays ours",
+      "color": "green"
+    },
+    {
+      "id": "a5",
+      "step": 3,
+      "type": "arrow",
+      "from": { "line": 7, "col": 16 },
+      "to": { "line": 15, "col": 7 },
+      "label": "borrow",
+      "color": "green"
+    },
+    {
+      "id": "a6",
+      "step": 3,
+      "type": "box",
+      "from_line": 15,
+      "to_line": 17,
+      "label": "len only reads through the reference",
+      "color": "green"
+    },
+    {
+      "id": "a7",
+      "step": 4,
+      "type": "note",
+      "line": 7,
+      "text": "a method call borrows self the same way: no helper needed",
+      "color": "green"
+    },
+    {
+      "id": "a8",
+      "step": 5,
+      "type": "callout",
+      "from_line": 2,
+      "to_line": 8,
+      "title": "The rule",
+      "text": "A value has one owner. Passing it by value moves it; passing a reference lends it and the owner keeps it.",
+      "placement": "below",
+      "color": "blue"
+    }
+  ]
+}

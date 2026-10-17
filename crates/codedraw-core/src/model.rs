@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::Error;
+use crate::moves::{self, Move};
 
 /// Schema version of the `.codedraw` file.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -42,6 +43,15 @@ pub struct Document {
     /// Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding: Option<(u16, u16)>,
+    /// Code changes between steps (ADR 0007): applied when the presenter
+    /// reaches `at_step`, reverted when going back. The embedded `code` is
+    /// always the step-0 code.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub moves: Vec<Move>,
+    /// Step-0 code while the document has moves (`code` is then the
+    /// projection at `step`). Empty when there are no moves: `code` is the base.
+    #[serde(skip)]
+    pub base_code: Vec<String>,
 }
 
 /// Where the code of a `.codedraw` comes from.
@@ -613,6 +623,14 @@ fn one() -> u32 {
     1
 }
 
+/// A document projected to one step (see `Document::view_at`).
+#[derive(Debug, Clone)]
+pub struct View {
+    pub doc: Document,
+    /// Annotations of steps `<= step` hidden because no patch mapping survives.
+    pub unanchored: Vec<String>,
+}
+
 impl Document {
     pub fn from_code(code: &str, language: impl Into<String>, path: Option<String>) -> Self {
         let code = code.strip_prefix('\u{feff}').unwrap_or(code);
@@ -637,6 +655,8 @@ impl Document {
             step: 1,
             theme: None,
             padding: None,
+            moves: Vec::new(),
+            base_code: Vec::new(),
         }
     }
 
@@ -656,7 +676,7 @@ impl Document {
 
     /// Freezes the code inside the document (no longer depends on the file).
     pub fn embed_code(&mut self) {
-        self.code_src = CodeSource::Embedded(self.code.clone());
+        self.code_src = CodeSource::Embedded(self.base().to_vec());
     }
 
     pub fn is_embedded(&self) -> bool {
@@ -665,9 +685,224 @@ impl Document {
 
     /// Keeps `code_src` consistent with `code` before serializing.
     pub fn sync_code_src(&mut self) {
-        if let CodeSource::Embedded(lines) = &mut self.code_src {
-            *lines = self.code.clone();
+        if matches!(self.code_src, CodeSource::Embedded(_)) {
+            self.code_src = CodeSource::Embedded(self.base().to_vec());
         }
+    }
+
+    // ---- moves (ADR 0007, t-098) ----
+
+    /// The step-0 code.
+    pub fn base(&self) -> &[String] {
+        if self.moves.is_empty() {
+            &self.code
+        } else {
+            &self.base_code
+        }
+    }
+
+    /// Replaces the step-0 code (paste, follow, `:lang`). With moves applied
+    /// the projection is recomputed.
+    pub fn set_base_code(&mut self, lines: Vec<String>) {
+        if self.moves.is_empty() {
+            self.code = lines;
+        } else {
+            self.base_code = lines;
+            self.sync_code_to_step();
+        }
+    }
+
+    /// Whether any move is applied at the current step (`at_step <= step`).
+    pub fn moves_applied(&self) -> bool {
+        self.moves.iter().any(|m| m.at_step <= self.step)
+    }
+
+    /// Code at `step`: the step-0 code with every move `<= step` applied.
+    pub fn code_at(&self, step: u32) -> Result<Vec<String>, Error> {
+        if self.moves.is_empty() {
+            return Ok(self.code.clone());
+        }
+        moves::apply_until(&self.base_code, self.source.first_line, &self.moves, step)
+            .map(|(code, _)| code)
+    }
+
+    /// Makes `code` the projection at `step` (a pure function of the base:
+    /// going back recomputes, no diff of diffs). A document without moves
+    /// is untouched. Errors (an invalid move) leave the base code shown.
+    pub fn sync_code_to_step(&mut self) -> Option<Error> {
+        if self.moves.is_empty() {
+            return None;
+        }
+        if self.base_code.is_empty() {
+            // First call after load / first move added: `code` was the base.
+            self.base_code = self.code.clone();
+        }
+        match self.code_at(self.step) {
+            Ok(c) => {
+                self.code = c;
+                None
+            }
+            Err(e) => {
+                self.code = self.base_code.clone();
+                Some(e)
+            }
+        }
+    }
+
+    /// Validates every move against the code at its step (ADR 0007 §3) and
+    /// the `rebind` ids against the annotations.
+    pub fn validate_moves(&self) -> Result<(), Error> {
+        moves::validate(
+            self.base(),
+            self.source.first_line,
+            &self.moves,
+            &self.annotations,
+        )
+    }
+
+    /// Adds a move (validated against the code at its step). Returns its index.
+    pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+        let mut trial = self.moves.clone();
+        trial.push(m);
+        moves::validate(
+            self.base(),
+            self.source.first_line,
+            &trial,
+            &self.annotations,
+        )?;
+        if self.moves.is_empty() {
+            self.base_code = self.code.clone();
+        }
+        self.moves = trial;
+        self.sync_code_to_step();
+        Ok(self.moves.len() - 1)
+    }
+
+    /// Deletes the move at `index` (0-based).
+    pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
+        if index >= self.moves.len() {
+            return Err(Error::NotFound(format!("move #{}", index + 1)));
+        }
+        let m = self.moves.remove(index);
+        if self.moves.is_empty() {
+            self.code = std::mem::take(&mut self.base_code);
+        } else {
+            self.sync_code_to_step();
+        }
+        Ok(m)
+    }
+
+    /// The document as shown at `step`: the code at that step and every
+    /// annotation with `step <= step` shifted deterministically through
+    /// the patches of later steps (ADR 0007 §3). Annotations that lose
+    /// their anchor are left out and listed in `unanchored`. When `step`
+    /// is the current step the in-memory `code` is kept (it may be a
+    /// typing animation in progress).
+    pub fn view_at(&self, step: u32) -> View {
+        if self.moves.is_empty() {
+            return View {
+                doc: self.clone(),
+                unanchored: Vec::new(),
+            };
+        }
+        let first = self.source.first_line;
+        let mut code = self.base_code.clone();
+        let mut shapes: Vec<Option<Shape>> = self
+            .annotations
+            .iter()
+            .map(|a| Some(a.shape.clone()))
+            .collect();
+        let mut order: Vec<(usize, &Move)> = self
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.at_step <= step)
+            .collect();
+        order.sort_by_key(|(i, m)| (m.at_step, *i));
+        let mut scratch: Option<Document> = None;
+        for (_, m) in order {
+            let moves::MoveAction::CodePatch(p) = &m.action;
+            let Ok((new_code, map)) = p.apply(&code, first) else {
+                // An invalid move was reported at load/add time; show the base.
+                return View {
+                    doc: self.clone(),
+                    unanchored: Vec::new(),
+                };
+            };
+            code = new_code;
+            for (a, slot) in self.annotations.iter().zip(shapes.iter_mut()) {
+                // Authored on the code as shown at its own step: only later
+                // steps' moves shift it.
+                if a.step >= m.at_step {
+                    continue;
+                }
+                let Some(cur) = slot.as_ref() else { continue };
+                *slot = match m.rebind.get(&a.id) {
+                    Some(spec) => {
+                        let d = scratch.get_or_insert_with(|| {
+                            let mut d = self.clone();
+                            d.moves.clear();
+                            d.base_code.clear();
+                            d
+                        });
+                        d.code = code.clone();
+                        let mut shape = cur.clone();
+                        spec.apply(&mut shape, d)
+                            .and_then(|_| d.validate_shape(&shape))
+                            .ok()
+                            .map(|_| shape)
+                    }
+                    None => moves::shift_shape(cur, &map),
+                };
+            }
+        }
+        let mut doc = self.clone();
+        doc.moves.clear();
+        doc.base_code.clear();
+        doc.code = if step == self.step {
+            self.code.clone()
+        } else {
+            code
+        };
+        doc.step = step;
+        let mut unanchored = Vec::new();
+        doc.annotations = self
+            .annotations
+            .iter()
+            .zip(shapes)
+            .filter_map(|(a, s)| match s {
+                Some(shape) => Some(Annotation { shape, ..a.clone() }),
+                None => {
+                    if a.step <= step {
+                        unanchored.push(a.id.clone());
+                    }
+                    None
+                }
+            })
+            .collect();
+        View { doc, unanchored }
+    }
+
+    /// Ids of the annotations hidden at the current step because no patch
+    /// mapping survives for them (`(unanchored)` in `scene.list`).
+    pub fn unanchored(&self) -> Vec<String> {
+        if self.moves.is_empty() {
+            return Vec::new();
+        }
+        self.view_at(self.step).unanchored
+    }
+
+    /// Validates a shape against the code as shown at `step` (annotations
+    /// are authored against the code at their own step).
+    pub fn validate_shape_at(&self, shape: &Shape, step: u32) -> Result<(), Error> {
+        if self.moves.is_empty() || step == self.step {
+            return self.validate_shape(shape);
+        }
+        let mut d = self.clone();
+        d.moves.clear();
+        d.base_code.clear();
+        d.code = self.code_at(step)?;
+        d.validate_shape(shape)
     }
 
     /// Resolves the style of a mark: inline `style` > document `styles[kind]` >
@@ -725,11 +960,12 @@ impl Document {
             .unwrap_or(0)
     }
 
-    /// Highest step used by any annotation (at least 1).
+    /// Highest step used by any annotation or move (at least 1).
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()
             .map(|a| a.step)
+            .chain(self.moves.iter().map(|m| m.at_step))
             .max()
             .unwrap_or(1)
             .max(1)
@@ -768,6 +1004,13 @@ impl Document {
         }
         if self.step > self.max_step() {
             self.step = self.max_step();
+        }
+        if !self.moves.is_empty() {
+            self.base_code = self.code.clone();
+            self.validate_moves()?;
+            if let Some(e) = self.sync_code_to_step() {
+                return Err(e);
+            }
         }
         Ok(())
     }
@@ -903,7 +1146,10 @@ impl Document {
 
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
-        self.validate_shape(&ann.shape)?;
+        if ann.step == 0 {
+            ann.step = 1;
+        }
+        self.validate_shape_at(&ann.shape, ann.step)?;
         sanitize_texts(&mut ann.shape);
         if ann.id.trim().is_empty() {
             ann.id = self.next_id();
@@ -919,7 +1165,7 @@ impl Document {
     }
 
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
-        self.validate_shape(&ann.shape)?;
+        self.validate_shape_at(&ann.shape, ann.step)?;
         sanitize_texts(&mut ann.shape);
         let slot = self
             .annotations

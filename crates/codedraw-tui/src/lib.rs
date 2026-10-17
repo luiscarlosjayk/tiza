@@ -141,7 +141,12 @@ fn event_loop(
         if app.expire_proposals() {
             needs_draw = true;
         }
-        if event::poll(Duration::from_millis(50))? {
+        if app.typing_tick() {
+            needs_draw = true;
+        }
+        // While typing, poll often enough for a smooth animation.
+        let wait = if app.is_typing() { 15 } else { 50 };
+        if event::poll(Duration::from_millis(wait))? {
             match event::read()? {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
                     on_key(app, k.code, k.modifiers);
@@ -184,6 +189,13 @@ fn event_loop(
 /// Handles one key press exactly as the event loop does (public so QA tests
 /// can drive the real keyboard logic without a terminal).
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    // A typing animation (t-098) ends on any key; the key itself is consumed.
+    if app.is_typing() {
+        let _ = (code, mods);
+        app.finish_typing();
+        app.revision += 1;
+        return;
+    }
     // The review overlay has its own keys; the rest only scroll or close.
     if app.overlay == Overlay::Review {
         let msg = match code {
