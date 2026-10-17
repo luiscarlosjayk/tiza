@@ -28,6 +28,10 @@ struct Cli {
     /// Draw one frame and exit without touching the document (CI smoke test)
     #[arg(long, hide = true)]
     smoke: bool,
+    /// Start with mouse capture on: click moves the cursor, drag selects, wheel scrolls (`:mouse on|off` live).
+    /// Off by default because it takes the terminal's own text selection (Shift/Option-drag keeps it).
+    #[arg(long)]
+    mouse: bool,
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
@@ -570,6 +574,7 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             padding,
             image_exporter: Some(Box::new(image_exporter)),
             smoke: cli.smoke,
+            mouse: cli.mouse,
             follow: cli.follow,
         },
     )?;

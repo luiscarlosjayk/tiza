@@ -93,6 +93,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `codedraw 
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
 :export shot.txt | :export shot.md | :export shot.png [step=N] [width=N] [theme=light]   export what a step shows (.txt .ansi .md .svg .png)
 :supervise on | :supervise off | :review   agent changes wait for your y/n (a = all, d = none); 60 s without a decision = rejected
+:mouse on | :mouse off                     click moves the cursor, drag selects (then h/b/a/n…), wheel scrolls; off by default
 ```
 
 The language is detected from the file extension, then well-known names (`Makefile`, `Dockerfile`, `Cargo.lock`, `.bashrc`…), then a `#!` line, then a Vim/Emacs modeline in the first or last five lines; pasted or piped code uses the same shebang/modeline rule. `--lang` and `:lang <id>` override it (saved in the document); `:lang auto` re-detects and says how; an id without a grammar is shown as plain text with a warning.
@@ -138,6 +139,8 @@ Configuration for Claude Code (the project's `.mcp.json` or `claude mcp add code
 ```
 
 Tools: `status`, `get_code`, `list_annotations`, `add_mark`, `define_style`, `list_kinds`, `add_arrow`, `add_box`, `add_note`, `add_callout`, `highlight`, `add_spotlight`, `update_annotation`, `delete_annotation`, `clear_annotations`, `set_step`, `next_step`, `prev_step`, `set_focus`, `set_theme`, `set_follow`, `render_text`, `export_image`. Anchors accept `{"find": "takes(s)"}` in addition to line and column, because an agent rarely knows the exact column; `update_annotation` moves an existing annotation with the same anchors, keeping its kind and style. The server also publishes four MCP resources a client can attach as context without a tool call: `codedraw://scene` (the document as JSON), `codedraw://code` (numbered code), `codedraw://render` (the current frame as text) and `codedraw://render.md` (the frame in a Markdown fence). Full guide: [docs/agent-guide.md](docs/agent-guide.md).
+
+**Mouse** (`--mouse`, `:mouse on|off`): off by default, because capturing the mouse takes the terminal's own text selection away; while it is on, a click moves the cursor, a drag selects a span (one line) or a range of lines and leaves the selection open for `h` (highlight), `b` (box), `a` (arrow end), `n` (note), `C` (callout), and the wheel scrolls. To copy text from the terminal while CodeDraw captures the mouse, hold Shift while dragging (Ghostty, WezTerm, most Linux terminals) or Option (iTerm2, Terminal.app); Zed keeps Cmd+click for links even with mouse reporting on; under tmux the mouse reaches CodeDraw only with `set -g mouse on`.
 
 **Supervised mode** (`:supervise on`, socket `supervise.set`): while you present, every change an agent asks for is parked as a proposal — the review overlay lists them (`▶ p1  add note L4 «…»`), the status bar shows `⏸ N to review (y/n)`, and the agent's call only returns once you press `y` (applied, normal result) or `n` (error `rejected`); `a`/`d` decide everything at once, Esc hides the list and `:review` brings it back, and a proposal nobody decides within 60 s is rejected. In presentation mode the list does not pop up on its own. Reads (`status`, `get_code`, `render_text`, the resources) never wait.
 

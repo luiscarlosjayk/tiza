@@ -109,6 +109,14 @@ pub struct App {
     pub padding_override: Option<(u16, u16)>,
     /// SVG/PNG renderer for `:export`, installed by the binary.
     pub image_exporter: Option<ImageExporter>,
+    /// Mouse capture (t-033): opt-in, because capturing the mouse takes the
+    /// terminal's native text selection away (Shift/Option-drag gets it back).
+    pub mouse: bool,
+    /// Where the last frame put things, so a click can be mapped to a line
+    /// and column (filled by `ui::draw`).
+    pub hit: HitMap,
+    /// A drag in progress: where the button went down.
+    pub drag_from: Option<(u32, u32)>,
     /// Supervised mode: agent mutations wait for the presenter's approval.
     pub supervised: bool,
     pub proposals: Vec<Proposal>,
@@ -152,6 +160,9 @@ impl App {
             save_error: None,
             padding_override: None,
             image_exporter: None,
+            mouse: false,
+            hit: HitMap::default(),
+            drag_from: None,
             supervised: false,
             proposals: Vec::new(),
             next_proposal: 1,
@@ -1185,10 +1196,44 @@ impl App {
 
     /// Every `:` command name, for completion and help.
     pub const COMMANDS: &'static [&'static str] = &[
-        "arrow", "autosave", "box", "callout", "clear", "follow", "color", "del", "embed", "focus",
-        "export", "help", "hl", "label", "lang", "link", "list", "mark", "next", "note", "pad",
-        "present", "prev", "q", "redo", "set", "spot", "step", "style", "theme", "title", "undo",
-        "until", "w", "wq",
+        "arrow",
+        "autosave",
+        "box",
+        "callout",
+        "clear",
+        "follow",
+        "color",
+        "del",
+        "embed",
+        "focus",
+        "export",
+        "help",
+        "hl",
+        "label",
+        "lang",
+        "link",
+        "list",
+        "mark",
+        "mouse",
+        "next",
+        "note",
+        "pad",
+        "present",
+        "prev",
+        "q",
+        "redo",
+        "review",
+        "set",
+        "spot",
+        "step",
+        "style",
+        "supervise",
+        "theme",
+        "title",
+        "undo",
+        "until",
+        "w",
+        "wq",
     ];
 
     /// Tab completion for the command line: the command name on the first word, then
@@ -1320,6 +1365,12 @@ impl App {
                     "on" => Ok(self.set_supervised(true)),
                     "off" => Ok(self.set_supervised(false)),
                     _ => Err(Error::Invalid("usage: :supervise [on|off]".into())),
+                },
+                "mouse" => match rest.trim() {
+                    "" => Ok(format!("mouse {}", if self.mouse { "on" } else { "off" })),
+                    "on" => Ok(self.set_mouse(true)),
+                    "off" => Ok(self.set_mouse(false)),
+                    _ => Err(Error::Invalid("usage: :mouse [on|off]".into())),
                 },
                 "review" => {
                     if self.proposals.is_empty() {
@@ -2740,6 +2791,150 @@ fn parse_emphasis(v: &str) -> Result<Emphasis, Error> {
             "unknown emphasis: {v} (fill, underline, brackets, strike)"
         ))
     })
+}
+
+/// Screen geometry of the last frame: which code line each visible row shows
+/// and where the code column starts, for mouse hit-testing.
+#[derive(Debug, Clone, Default)]
+pub struct HitMap {
+    /// Top-left of the canvas on screen.
+    pub origin: (u16, u16),
+    /// Code line shown on each visible row (`None` for virtual rows).
+    pub rows: Vec<Option<u32>>,
+    /// Screen column where the code text starts.
+    pub code_x: u16,
+    pub tab_width: usize,
+}
+
+/// What a mouse event did, for the status line and tests.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MouseOutcome {
+    Ignored,
+    Moved(u32, u32),
+    Selecting,
+    Selected,
+    Scrolled,
+}
+
+impl App {
+    /// Maps a screen cell to (line, grapheme column); rows without code snap
+    /// to the nearest code row above (a label belongs to its line).
+    pub fn hit_test(&self, column: u16, row: u16) -> Option<(u32, u32)> {
+        let (ox, oy) = self.hit.origin;
+        let r = row.checked_sub(oy)? as usize;
+        if r >= self.hit.rows.len() || column < ox {
+            return None;
+        }
+        let line = (0..=r).rev().find_map(|i| self.hit.rows[i])?;
+        let x = column.saturating_sub(self.hit.code_x) as usize;
+        use unicode_segmentation::UnicodeSegmentation;
+        use unicode_width::UnicodeWidthStr;
+        let text = self.doc.line_text(line).unwrap_or("");
+        let mut w = 0usize;
+        let mut col = 0u32;
+        for g in text.graphemes(true) {
+            let gw = if g == "\t" {
+                self.hit.tab_width - (w % self.hit.tab_width)
+            } else {
+                UnicodeWidthStr::width(g).max(1)
+            };
+            if x < w + gw {
+                return Some((line, col));
+            }
+            w += gw;
+            col += 1;
+        }
+        Some((line, col.saturating_sub(1)))
+    }
+
+    /// Handles a mouse event (only when `mouse` is on): click moves the
+    /// cursor, drag selects (a span on one line, lines across several) and
+    /// leaves the selection open for `h`/`b`/`a`/`n`…, the wheel moves the
+    /// cursor three lines (which scrolls).
+    pub fn on_mouse(&mut self, kind: MouseKind, column: u16, row: u16) -> MouseOutcome {
+        if !self.mouse || self.overlay != Overlay::None {
+            return MouseOutcome::Ignored;
+        }
+        match kind {
+            // The wheel moves the cursor three lines (like `j`/`k`): the frame
+            // keeps the cursor visible, so moving the cursor is what scrolls.
+            MouseKind::ScrollDown => {
+                self.move_cursor(3);
+                MouseOutcome::Scrolled
+            }
+            MouseKind::ScrollUp => {
+                self.move_cursor(-3);
+                MouseOutcome::Scrolled
+            }
+            MouseKind::Down => {
+                let Some((line, col)) = self.hit_test(column, row) else {
+                    return MouseOutcome::Ignored;
+                };
+                if let Mode::Command(_) = self.mode {
+                    return MouseOutcome::Ignored;
+                }
+                self.mode = Mode::Normal;
+                self.cursor_line = line;
+                self.cursor_col = col;
+                self.drag_from = Some((line, col));
+                MouseOutcome::Moved(line, col)
+            }
+            MouseKind::Drag => {
+                let Some((from_line, from_col)) = self.drag_from else {
+                    return MouseOutcome::Ignored;
+                };
+                let Some((line, col)) = self.hit_test(column, row) else {
+                    return MouseOutcome::Ignored;
+                };
+                if (line, col) == (from_line, from_col) {
+                    return MouseOutcome::Ignored;
+                }
+                self.cursor_line = line;
+                self.cursor_col = col;
+                self.mode = Mode::Select {
+                    anchor_line: from_line,
+                    anchor_col: from_col,
+                    linewise: false,
+                };
+                MouseOutcome::Selecting
+            }
+            MouseKind::Up => {
+                let was_dragging = self.drag_from.take().is_some();
+                if was_dragging && matches!(self.mode, Mode::Select { .. }) {
+                    self.info(match self.selection() {
+                        Some(Selection::Lines(a, b)) => format!(
+                            "lines {a}-{b} selected: b box · s spotlight · C callout · n note · h focus (Esc)"
+                        ),
+                        _ => "selected: h highlight · m mark · a arrow · n note · b box (Esc)".into(),
+                    });
+                    MouseOutcome::Selected
+                } else {
+                    MouseOutcome::Ignored
+                }
+            }
+        }
+    }
+
+    /// Turns mouse capture on or off; the caller (the event loop) talks to the terminal.
+    pub fn set_mouse(&mut self, on: bool) -> String {
+        self.mouse = on;
+        self.drag_from = None;
+        if on {
+            "mouse on: click moves, drag selects, wheel scrolls (Shift/Option-drag keeps the terminal's own selection)".into()
+        } else {
+            "mouse off".into()
+        }
+    }
+}
+
+/// The mouse events the app understands (crossterm stays out of `app`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MouseKind {
+    Down,
+    Drag,
+    Up,
+    ScrollUp,
+    ScrollDown,
 }
 
 /// One line describing an agent request for the review overlay.

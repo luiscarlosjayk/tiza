@@ -12,11 +12,12 @@ use std::time::Duration;
 
 use codedraw_core::fs::Opened;
 use crossterm::event::{
-    self, DisableBracketedPaste, EnableBracketedPaste, Event, KeyCode, KeyEventKind, KeyModifiers,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
 use crossterm::execute;
 
-use crate::app::{App, Mode, Overlay};
+use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay};
 
 pub struct RunOptions {
     pub step: Option<u32>,
@@ -35,6 +36,8 @@ pub struct RunOptions {
     /// `--smoke`: draw one frame and exit (CI check that the terminal setup,
     /// `/dev/tty` with piped stdin included, starts and restores cleanly).
     pub smoke: bool,
+    /// `--mouse`: start with mouse capture on (`:mouse on` toggles it live).
+    pub mouse: bool,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -50,6 +53,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.focus = opts.focus;
     app.padding_override = opts.padding;
     app.image_exporter = opts.image_exporter;
+    app.mouse = opts.mouse;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }
@@ -75,6 +79,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
 
     let mut terminal = ratatui::init();
     execute!(io::stdout(), EnableBracketedPaste)?;
+    if app.mouse {
+        let _ = execute!(io::stdout(), EnableMouseCapture);
+    }
     let result = if opts.smoke {
         // One frame, then one poll of the input source: with stdin piped the
         // events come from /dev/tty (crossterm `use-dev-tty`), which is what
@@ -86,7 +93,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     } else {
         event_loop(&mut terminal, &mut app, ipc.as_ref())
     };
-    let _ = execute!(io::stdout(), DisableBracketedPaste);
+    let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
     if app.dirty && app.save().is_err() {
         // The terminal is restored by now: say it where it will be read.
@@ -107,10 +114,20 @@ fn event_loop(
     ipc: Option<&ipc::IpcServer>,
 ) -> io::Result<()> {
     let mut needs_draw = true;
+    let mut mouse_captured = app.mouse;
     loop {
         if needs_draw {
             terminal.draw(|f| ui::draw(f, app))?;
             needs_draw = false;
+        }
+        // `:mouse on|off` changed the flag: tell the terminal.
+        if app.mouse != mouse_captured {
+            mouse_captured = app.mouse;
+            let _ = if mouse_captured {
+                execute!(io::stdout(), EnableMouseCapture)
+            } else {
+                execute!(io::stdout(), DisableMouseCapture)
+            };
         }
         if let Some(server) = ipc {
             while let Ok(r) = server.rx.try_recv() {
@@ -140,6 +157,21 @@ fn event_loop(
                     needs_draw = true;
                 }
                 Event::Resize(_, _) => needs_draw = true,
+                Event::Mouse(m) => {
+                    let kind = match m.kind {
+                        MouseEventKind::Down(MouseButton::Left) => Some(MouseKind::Down),
+                        MouseEventKind::Drag(MouseButton::Left) => Some(MouseKind::Drag),
+                        MouseEventKind::Up(MouseButton::Left) => Some(MouseKind::Up),
+                        MouseEventKind::ScrollUp => Some(MouseKind::ScrollUp),
+                        MouseEventKind::ScrollDown => Some(MouseKind::ScrollDown),
+                        _ => None,
+                    };
+                    if let Some(k) = kind
+                        && app.on_mouse(k, m.column, m.row) != MouseOutcome::Ignored
+                    {
+                        needs_draw = true;
+                    }
+                }
                 _ => {}
             }
         }

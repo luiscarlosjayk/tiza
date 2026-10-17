@@ -39,6 +39,28 @@ fn style(s: CellStyle) -> Style {
     st
 }
 
+/// The geometry a mouse click needs: screen origin, the code line of each
+/// visible row and where the code text starts.
+fn codedraw_tui_hitmap(
+    area: Rect,
+    layout: &Layout,
+    scroll: usize,
+    end: usize,
+) -> crate::app::HitMap {
+    crate::app::HitMap {
+        origin: (area.x, area.y),
+        rows: layout.rows[scroll.min(end)..end]
+            .iter()
+            .map(|r| match r {
+                codedraw_core::layout::Row::Code(l) => Some(*l),
+                _ => None,
+            })
+            .collect(),
+        code_x: area.x + layout.code_x as u16,
+        tab_width: 4,
+    }
+}
+
 /// Copies the canvas rows `rows` into `area` of the buffer.
 fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buffer) {
     for (dy, y) in rows.enumerate() {
@@ -133,6 +155,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     app.scroll = app.scroll.min(total.saturating_sub(visible));
     let end = (app.scroll + visible).min(total);
+    app.hit = codedraw_tui_hitmap(canvas_area, &layout, app.scroll, end);
     blit(
         &layout.canvas,
         app.scroll..end,
@@ -644,6 +667,7 @@ fn help_lines() -> Vec<String> {
         "  :export [file.txt|.ansi|.md|.svg|.png] [step=N] [width=N] [theme=dark|light]   what this step shows, as a file (default <doc>-stepN.txt)",
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
+        "  :mouse on|off   click moves the cursor, drag selects, wheel scrolls (off by default: the terminal keeps its own selection)",
         "  :w [path]   :wq   :q   :q! (quit even if the last save failed)   :autosave on|off   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
