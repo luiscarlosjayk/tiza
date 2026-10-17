@@ -101,6 +101,14 @@ struct Label {
     note: bool,
 }
 
+/// Glyph of the underline emphasis, on the virtual row under the code:
+/// the overline (top of its cell) is thinner than the one-eighth block ▔.
+pub const UNDERLINE_GLYPH: &str = "‾";
+/// How much of the annotation colour the emphasis glyphs keep (the rest is
+/// the background): softened so the code reads first, still visible after
+/// video compression (checked by the t-072 gate).
+pub const EMPHASIS_GLYPH_OPACITY: f32 = 0.55;
+
 /// Narrowest layout a caller may ask for, in columns.
 pub const MIN_WIDTH: usize = 20;
 /// Widest layout a caller may ask for, in columns. The canvas is `width ×
@@ -692,6 +700,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             } else {
                 theme.accent
             };
+            // The emphasis glyphs (not the span's text) are drawn in a
+            // softened shade of the annotation colour, so the eye lands on
+            // the code first (Luis, t-096 review: the full colour shouted).
+            let soft = crate::theme::blend(ink, theme.bg, EMPHASIS_GLYPH_OPACITY);
             match emphasis {
                 Emphasis::Fill => {
                     canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(fg).bg(bg).bold());
@@ -700,7 +712,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
                     if let Some(&uy) = emphasis_row.get(&span.line) {
                         for x in x0..x1 {
-                            canvas.put(x, uy, "▔", base.fg(ink));
+                            canvas.put(x, uy, UNDERLINE_GLYPH, base.fg(soft));
                         }
                     }
                 }
@@ -714,25 +726,28 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         x1 < code_x + code_w && canvas.get(x1, y).is_some_and(|c| c.sym == " ");
                     let under = emphasis_row.get(&span.line).copied();
                     if blank_before {
-                        canvas.put(x0 - 1, y, "⌈", base.fg(ink).bold());
+                        canvas.put(x0 - 1, y, "⌈", base.fg(soft));
                     } else if let Some(uy) = under {
-                        canvas.put(x0, uy, "⌊", base.fg(ink));
+                        canvas.put(x0, uy, "⌊", base.fg(soft));
                     }
                     if blank_after {
-                        canvas.put(x1, y, "⌉", base.fg(ink).bold());
+                        canvas.put(x1, y, "⌉", base.fg(soft));
                     } else if let Some(uy) = under {
                         // A one-cell span glued on both sides: ⌊ and ⌋ would
                         // share the cell, so it gets a plain underline.
                         let sym = if x1 - x0 == 1 && !blank_before {
-                            "▔"
+                            UNDERLINE_GLYPH
                         } else {
                             "⌋"
                         };
-                        canvas.put(x1 - 1, uy, sym, base.fg(ink));
+                        canvas.put(x1 - 1, uy, sym, base.fg(soft));
                     }
                 }
                 Emphasis::Strike => {
-                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
+                    // The stroke shares the cell's colour with the text, so
+                    // both take the softened annotation colour (not the bold
+                    // accent): struck code reads as struck, quietly.
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(soft));
                     for x in x0..x1 {
                         let cell = canvas.get(x, y).map(|c| (c.sym.clone(), c.style));
                         if let Some((sym, st)) = cell

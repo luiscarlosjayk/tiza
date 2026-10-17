@@ -2,7 +2,7 @@
 //!
 //! Acceptance criteria:
 //! - AC1 Highlights and marks accept `emphasis`: fill (default tint),
-//!   underline (▔ row under the span), brackets (⌈ ⌉ beside the span; a glued
+//!   underline (‾ row under the span), brackets (⌈ ⌉ beside the span; a glued
 //!   side goes to the row below), strike (combining stroke). Marks keep
 //!   glyph + legend.
 //! - AC2 `:hl … emphasis=…` (`style=` synonym on :hl only), `:mark … emphasis=…`,
@@ -40,7 +40,7 @@ fn step1_underline_row_and_brackets_with_room() {
     let t = text(&live);
     let lines: Vec<&str> = t.lines().collect();
     let i = lines.iter().position(|l| l.contains("takes(s)")).unwrap();
-    assert!(lines[i + 1].contains("▔▔▔▔▔▔▔▔"), "row under line 3: {t}");
+    assert!(lines[i + 1].contains("‾‾‾‾‾‾‾‾"), "row under line 3: {t}");
     assert!(
         !lines[i + 1].contains("let n"),
         "the under row is virtual: {t}"
@@ -61,10 +61,10 @@ fn step2_glued_brackets_fall_back_to_the_row_below() {
     let lines: Vec<&str> = t.lines().collect();
     let i = lines.iter().position(|l| l.contains("takes(s)")).unwrap();
     // `3:s` finds the first `s` (inside `takes`): a one-cell span glued on
-    // both sides → a plain ▔ under it.
+    // both sides → a plain ‾ under it.
     let col = lines[i].find("takes(s)").unwrap() + 4;
     let under: String = lines[i + 1].chars().collect();
-    assert_eq!(under.chars().nth(col), Some('▔'), "{t}");
+    assert_eq!(under.chars().nth(col), Some('‾'), "{t}");
     // A wider span: the free side keeps ⌈ beside it, the glued side goes below.
     live.command("hl 2:String::from emphasis=brackets");
     let t = text(&live);
@@ -204,7 +204,7 @@ fn step6_two_underlines_share_one_row_and_marks_keep_their_legend() {
         .position(|l| l.contains("let s = String"))
         .unwrap();
     assert!(
-        lines[i + 1].contains("▔▔▔ ▔"),
+        lines[i + 1].contains("‾‾‾ ‾"),
         "one row, two underlines: {t}"
     );
     assert!(
@@ -251,7 +251,7 @@ fn corner_strike_keeps_grapheme_clusters_and_box_bottom_after_under_row() {
     let t = text(&live);
     let lines: Vec<&str> = t.lines().collect();
     let i = lines.iter().position(|l| l.contains("let x")).unwrap();
-    assert!(lines[i + 1].contains("▔▔▔"), "{t}");
+    assert!(lines[i + 1].contains("‾‾‾"), "{t}");
     assert!(
         lines[i + 2].contains("╰") || lines[i + 2].contains("└"),
         "box bottom after the under row: {t}"
