@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::model::{
     Anchor, Annotation, BorderStyle, Document, Emphasis, Head, LineStyle, MarkStyle, Placement,
-    Route, Shape, Stroke, TextSpan,
+    Route, Shape, Stroke, TextSpan, ThemeName,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -480,6 +480,71 @@ pub struct Scene {
     pub document: Document,
 }
 
+/// Params of `scene.put`: the document itself (a `.codedraw` object with the
+/// code embedded; file references cannot be resolved by the instance).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PutParams {
+    pub document: Document,
+}
+
+/// Params of `scene.patch`. Every field optional; anything else is an error.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PatchParams {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme: Option<ThemeName>,
+    /// `[vertical, horizontal]`; `null` restores the default.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub padding: Option<Option<(u16, u16)>>,
+    /// `null` clears the title.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
+    /// Styles merged by name (an existing name is replaced).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub styles: Option<std::collections::BTreeMap<String, MarkStyle>>,
+    /// Full annotations merged by id: same id replaces, new id adds,
+    /// `{"id": "a1", "deleted": true}` removes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotations: Option<Vec<Value>>,
+}
+
+/// Distinguishes an absent field (`None`) from an explicit `null`
+/// (`Some(None)`) in a patch.
+fn present<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
+where
+    T: Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    Option::<T>::deserialize(d).map(Some)
+}
+
+/// Result of `scene.put` and `scene.patch`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SceneChanged {
+    pub revision: u64,
+    pub lines: usize,
+    pub annotations: usize,
+    pub step: u32,
+    pub max_step: u32,
+    /// `scene.patch`: ids added, replaced and deleted.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub added: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replaced: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deleted: Vec<String>,
+}
+
 /// Response of `status`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Status {
@@ -547,6 +612,14 @@ pub const METHODS: &[(&str, &str)] = &[
     (
         "scene.clear",
         "Removes every annotation (or only those of `step`); can be undone in the TUI",
+    ),
+    (
+        "scene.put",
+        "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI",
+    ),
+    (
+        "scene.patch",
+        "Partial change: step, theme, padding, title, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
     ),
     ("step.set", "Sets the current presentation step"),
     ("step.next", "Advances one step"),

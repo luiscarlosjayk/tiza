@@ -145,6 +145,8 @@ codedraw scene status                 # is there an instance? what is it showing
 codedraw scene list                   # annotations
 codedraw scene text                   # what is on screen, as text
 codedraw api annotation.add '{"type":"note","line":4,"text":"hello"}'
+codedraw scene put other.codedraw      # replace the live document (u undoes)
+codedraw scene patch '{"step":2,"theme":"light","annotations":[{"id":"a1","deleted":true}]}'   # partial change, merged by id
 codedraw render demo.codedraw --out - --step 2 --width 100   # without opening the TUI
 ```
 

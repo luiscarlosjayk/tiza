@@ -171,6 +171,12 @@ enum SceneCmd {
     },
     /// Instance status
     Status,
+    /// Replace the live document with a .codedraw file (`-` = stdin); code
+    /// references are resolved relative to the file and sent embedded
+    Put { file: String },
+    /// Partial change: JSON (`-` = stdin, `@file` = a file) with step, theme,
+    /// padding, title, styles and/or annotations merged by id
+    Patch { json: String },
 }
 
 fn main() {
@@ -327,6 +333,37 @@ fn real_main() -> anyhow::Result<()> {
                 SceneCmd::List => ("scene.list", serde_json::json!({})),
                 SceneCmd::Text { width } => ("render.text", serde_json::json!({"width": width})),
                 SceneCmd::Status => ("status", serde_json::json!({})),
+                SceneCmd::Put { file } => {
+                    let opened = if file == "-" {
+                        let mut text = String::new();
+                        std::io::stdin().read_to_string(&mut text)?;
+                        fs::from_stdin(&text, None)
+                            .context("could not read the document from stdin")?
+                    } else {
+                        fs::open(&file).with_context(|| format!("could not open {file}"))?
+                    };
+                    let mut document = opened.document;
+                    // On the wire the code travels embedded: the instance may
+                    // run in another directory.
+                    document.code_src =
+                        codedraw_core::model::CodeSource::Embedded(document.code.clone());
+                    ("scene.put", serde_json::json!({"document": document}))
+                }
+                SceneCmd::Patch { json } => {
+                    let text = if json == "-" {
+                        let mut s = String::new();
+                        std::io::stdin().read_to_string(&mut s)?;
+                        s
+                    } else if let Some(path) = json.strip_prefix('@') {
+                        std::fs::read_to_string(path)
+                            .with_context(|| format!("could not read {path}"))?
+                    } else {
+                        json
+                    };
+                    let params: serde_json::Value =
+                        serde_json::from_str(&text).context("the patch is not valid JSON")?;
+                    ("scene.patch", params)
+                }
             };
             let resp = call(&socket_path, method, params)?;
             match method {

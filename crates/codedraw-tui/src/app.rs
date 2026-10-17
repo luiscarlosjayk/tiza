@@ -10,8 +10,8 @@ use codedraw_core::model::{
     Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
 };
 use codedraw_core::protocol::{
-    AddParams, IdParams, METHODS, Mutated, Request, Response, Scene, Status, StepParams,
-    UpdateParams, Where,
+    AddParams, IdParams, METHODS, Mutated, PatchParams, PutParams, Request, Response, Scene,
+    SceneChanged, Status, StepParams, UpdateParams, Where,
 };
 use codedraw_core::theme::Theme;
 use codedraw_core::{Error, fs};
@@ -392,6 +392,124 @@ impl App {
     }
 
     /// Changes the current step. Step 0 is "code only": no annotation is drawn.
+    /// `scene.put`: replaces the whole document. The code must come embedded
+    /// (the instance cannot resolve a file reference meant for another
+    /// directory); the theme follows the document; one undo step.
+    pub fn put_scene(&mut self, mut doc: Document) -> Result<SceneChanged, Error> {
+        if doc.code.is_empty() {
+            match &doc.code_src {
+                codedraw_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
+                _ => {
+                    return Err(Error::Invalid(
+                        "scene.put needs the code embedded (`\"code\": [lines…]`); resolve file references before sending".into(),
+                    ));
+                }
+            }
+        }
+        doc.normalize_loaded()?;
+        for a in &doc.annotations {
+            doc.validate_shape(&a.shape)?;
+        }
+        self.history.record(&self.doc);
+        self.doc = doc;
+        if let Some(t) = self.doc.theme {
+            self.theme = Theme::from_name(t);
+        }
+        self.selected = None;
+        self.focus = None;
+        self.scroll = 0;
+        self.clamp_cursor();
+        self.touch();
+        Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
+    }
+
+    /// `scene.patch`: partial changes; annotations merge by id (last write
+    /// wins), `{"id", "deleted": true}` removes. All or nothing: an invalid
+    /// annotation leaves the document untouched.
+    pub fn patch_scene(&mut self, p: PatchParams) -> Result<SceneChanged, Error> {
+        let mut d = self.doc.clone();
+        let (mut added, mut replaced, mut deleted) = (Vec::new(), Vec::new(), Vec::new());
+        // Styles first: a patched mark may use a style defined in the same patch.
+        if let Some(styles) = p.styles {
+            for (name, st) in styles {
+                d.styles.insert(name, st);
+            }
+        }
+        if let Some(anns) = p.annotations {
+            for v in anns {
+                let id = v
+                    .get("id")
+                    .and_then(|i| i.as_str())
+                    .map(str::trim)
+                    .filter(|i| !i.is_empty())
+                    .ok_or_else(|| Error::Invalid("every patched annotation needs an `id`".into()))?
+                    .to_string();
+                let is_delete = v.get("deleted").and_then(|b| b.as_bool()).unwrap_or(false);
+                let existed = d.find_annotation(&id).is_some();
+                if is_delete {
+                    if !existed {
+                        return Err(Error::Invalid(format!(
+                            "cannot delete {id}: no such annotation"
+                        )));
+                    }
+                    d.annotations.retain(|a| a.id != id);
+                    deleted.push(id);
+                    continue;
+                }
+                let ann: Annotation = serde_json::from_value(v)
+                    .map_err(|e| Error::Invalid(format!("annotation {id}: {e}")))?;
+                d.annotations.retain(|a| a.id != id);
+                d.add(ann)?;
+                if existed {
+                    replaced.push(id);
+                } else {
+                    added.push(id);
+                }
+            }
+        }
+        if let Some(t) = p.title {
+            d.title = t.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
+        }
+        if let Some(pad) = p.padding {
+            d.padding = pad;
+        }
+        if let Some(theme) = p.theme {
+            d.theme = Some(theme);
+        }
+        if let Some(step) = p.step {
+            d.step = step.min(d.max_step().max(1));
+        } else if d.step > d.max_step() {
+            d.step = d.max_step();
+        }
+        self.history.record(&self.doc);
+        self.doc = d;
+        if let Some(t) = self.doc.theme {
+            self.theme = Theme::from_name(t);
+        }
+        self.selected = None;
+        self.clamp_cursor();
+        self.touch();
+        Ok(self.scene_changed(added, replaced, deleted))
+    }
+
+    fn scene_changed(
+        &self,
+        added: Vec<String>,
+        replaced: Vec<String>,
+        deleted: Vec<String>,
+    ) -> SceneChanged {
+        SceneChanged {
+            revision: self.revision,
+            lines: self.doc.code.len(),
+            annotations: self.doc.annotations.len(),
+            step: self.doc.step,
+            max_step: self.doc.max_step(),
+            added,
+            replaced,
+            deleted,
+        }
+    }
+
     pub fn set_step(&mut self, step: u32) {
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
@@ -1433,6 +1551,7 @@ impl App {
                     }
                 }
                 "title" => {
+                    self.history.record(&self.doc);
                     self.doc.title = if rest.is_empty() {
                         None
                     } else {
@@ -1458,6 +1577,7 @@ impl App {
                     Ok(String::new())
                 }
                 "pad" | "padding" if matches!(rest.trim(), "default" | "reset") => {
+                    self.history.record(&self.doc);
                     self.doc.padding = None;
                     self.padding_override = None;
                     self.touch();
@@ -1489,6 +1609,7 @@ impl App {
                         [v, h, ..] => (*v, *h),
                     };
                     // `:pad 0 0` is a real value (no padding); `:pad default` returns to the theme default.
+                    self.history.record(&self.doc);
                     self.doc.padding = Some((v, h));
                     self.padding_override = None;
                     self.touch();
@@ -2214,6 +2335,14 @@ impl App {
                 "builtin": BUILTIN_KINDS.iter().map(|(k, g, l, c)| json!({"kind": k, "glyph": g, "legend": l, "color": c})).collect::<Vec<_>>(),
                 "aliases": codedraw_core::model::KIND_ALIASES.iter().map(|(a, k)| json!({"alias": a, "kind": k})).collect::<Vec<_>>(),
             }),
+            "scene.put" => {
+                let p: PutParams = parse(params)?;
+                serde_json::to_value(self.put_scene(p.document)?)?
+            }
+            "scene.patch" => {
+                let p: PatchParams = parse(params)?;
+                serde_json::to_value(self.patch_scene(p)?)?
+            }
             "scene.clear" => {
                 let step = params
                     .get("step")

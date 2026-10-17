@@ -1,0 +1,337 @@
+//! t-039 — `codedraw scene put|patch` against the live instance.
+//!
+//! Acceptance criteria:
+//! - AC1 `codedraw scene put FILE` (or `-`) replaces the live document
+//!   atomically: code, annotations, step, theme, styles, title, padding. A
+//!   `.codedraw` that references its code by a relative path is resolved
+//!   relative to the file and travels embedded; `u` in the TUI restores the
+//!   previous document in one step. The reply carries the new `revision`.
+//! - AC2 `codedraw scene patch JSON` (`-` = stdin, `@file`) changes only what
+//!   it names: `step`, `theme`, `padding`, `title`, `styles` (merged by name)
+//!   and `annotations` merged by id — same id replaces, new id adds,
+//!   `{"id","deleted":true}` removes. Annotations use the document format
+//!   (what `scene.get` returns: `span`, `from`/`to`…), not `annotation.add`'s
+//!   `at`/`find` shorthand. All or nothing: one invalid annotation
+//!   leaves the document untouched. Reply lists `added`/`replaced`/`deleted`.
+//! - AC3 Unknown patch keys → `invalid_argument` naming the key; a document
+//!   with a file reference sent to `scene.put` → `invalid_argument`.
+//! - AC4 Both methods are in `api.methods` and `schema/api.schema.json`.
+
+use codedraw_core::fs;
+use codedraw_qa::{Live, codedraw, codedraw_ok, fixture, scratch};
+use serde_json::{Value, json};
+
+fn put_file(live: &Live, path: &str) -> Value {
+    let out = codedraw_ok(&[
+        "--socket",
+        live.socket.to_str().unwrap(),
+        "scene",
+        "put",
+        path,
+    ]);
+    serde_json::from_str(&out).unwrap()
+}
+
+fn patch(live: &Live, json: &str) -> std::process::Output {
+    codedraw(&[
+        "--socket",
+        live.socket.to_str().unwrap(),
+        "scene",
+        "patch",
+        json,
+    ])
+}
+
+#[test]
+fn ac1_put_replaces_the_document_and_undo_restores() {
+    let live = Live::from_code("fn old() {}\n", "rs", "t039-put");
+    live.command("note 1 old note");
+    let before_rev = live.api_ok("status", json!({}))["revision"]
+        .as_u64()
+        .unwrap();
+
+    // The t-050 fixture embeds its code; t-013's `script.ref.codedraw`
+    // references `script` relatively: both must arrive whole.
+    let r = put_file(&live, fixture("t-050/export.codedraw").to_str().unwrap());
+    assert!(r["revision"].as_u64().unwrap() > before_rev, "{r}");
+    assert_eq!(r["annotations"], json!(8));
+    let doc = live.with(|a| a.doc.clone());
+    assert_eq!(
+        doc.title.as_deref(),
+        Some("t-050 export: symbols, emoji, wide glyphs, every annotation kind")
+    );
+    assert_eq!(doc.code.len(), 6);
+    assert!(doc.styles.contains_key("hot"));
+    assert!(
+        doc.annotations
+            .iter()
+            .all(|a| a.id != "a1" || a.shape.line_ranges()[0].0 == 2),
+        "old note gone"
+    );
+
+    let r = put_file(
+        &live,
+        fixture("t-013/script.ref.codedraw").to_str().unwrap(),
+    );
+    assert_eq!(r["lines"], json!(7), "{r}");
+    assert_eq!(r["annotations"], json!(1));
+    let (lang, embedded) = live.with(|a| {
+        (
+            a.doc.source.language.clone(),
+            matches!(
+                a.doc.code_src,
+                codedraw_core::model::CodeSource::Embedded(_)
+            ),
+        )
+    });
+    assert_eq!(lang, "py", "language detected from the referenced file");
+    assert!(embedded, "code travels embedded on the wire");
+
+    // Undo: back to the t-050 document, then to the original one.
+    live.with(|a| a.undo());
+    assert_eq!(live.with(|a| a.doc.code.len()), 6);
+    live.with(|a| a.undo());
+    assert_eq!(live.with(|a| a.doc.code.clone()), vec!["fn old() {}"]);
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+
+    // From stdin.
+    use std::io::Write;
+    let mut child = std::process::Command::new(codedraw_qa::bin())
+        .args([
+            "--socket",
+            live.socket.to_str().unwrap(),
+            "scene",
+            "put",
+            "-",
+        ])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(br#"{"schema":1,"source":{"language":"rs"},"code":["fn piped() {}"],"theme":"light","annotations":[{"id":"p","step":1,"type":"note","line":1,"text":"hi"}]}"#)
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(live.with(|a| a.doc.code.clone()), vec!["fn piped() {}"]);
+    assert_eq!(
+        live.with(|a| a.theme.name),
+        codedraw_core::ThemeName::Light,
+        "theme follows the document"
+    );
+}
+
+#[test]
+fn ac2_patch_merges_by_id_and_changes_only_what_it_names() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "t039-patch");
+    live.command("note 1 first");
+    live.command("note 2 second");
+    live.command("title Old title");
+    let ids = live.with(|a| {
+        a.doc
+            .annotations
+            .iter()
+            .map(|x| x.id.clone())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(ids.len(), 2);
+
+    let out = patch(
+        &live,
+        &json!({
+            "theme": "light",
+            "step": 2,
+            "padding": [2, 3],
+            "title": "New title",
+            "styles": {"hot": {"glyph": "🔥", "legend": "hot path", "color": "red"}},
+            "annotations": [
+                {"id": ids[0], "step": 1, "type": "note", "line": 3, "text": "moved"},
+                {"id": ids[1], "deleted": true},
+                {"id": "n3", "step": 2, "type": "mark", "kind": "hot", "span": {"line": 2, "start": 3, "end": 4}}
+            ]
+        })
+        .to_string(),
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let r: Value = serde_json::from_str(&String::from_utf8_lossy(&out.stdout)).unwrap();
+    assert_eq!(r["replaced"], json!([ids[0]]));
+    assert_eq!(r["deleted"], json!([ids[1]]));
+    assert_eq!(r["added"], json!(["n3"]));
+    assert_eq!(r["annotations"], json!(2));
+    assert_eq!(r["step"], json!(2));
+    let doc = live.with(|a| a.doc.clone());
+    assert_eq!(doc.title.as_deref(), Some("New title"));
+    assert_eq!(doc.padding, Some((2, 3)));
+    assert_eq!(doc.theme, Some(codedraw_core::ThemeName::Light));
+    assert_eq!(live.with(|a| a.theme.name), codedraw_core::ThemeName::Light);
+    assert!(doc.styles.contains_key("hot"));
+    let moved = doc.find_annotation(&ids[0]).unwrap();
+    assert_eq!(moved.shape.line_ranges(), vec![(3, 3)]);
+    assert!(doc.find_annotation(&ids[1]).is_none());
+    assert!(doc.find_annotation("n3").is_some());
+    assert_eq!(doc.code.len(), 3, "code untouched");
+
+    // A patch that names nothing else leaves everything alone; `null` clears.
+    let out = patch(&live, r#"{"title": null, "padding": null}"#);
+    assert!(out.status.success());
+    let doc = live.with(|a| a.doc.clone());
+    assert_eq!(doc.title, None);
+    assert_eq!(doc.padding, None);
+    assert_eq!(doc.annotations.len(), 2);
+    // One undo per patch.
+    live.with(|a| a.undo());
+    assert_eq!(
+        live.with(|a| a.doc.title.clone()).as_deref(),
+        Some("New title")
+    );
+
+    // `@file` and `-` are accepted.
+    let dir = scratch("t039-patchfile");
+    let f = dir.join("p.json");
+    std::fs::write(&f, r#"{"step": 1}"#).unwrap();
+    let out = patch(&live, &format!("@{}", f.display()));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(live.with(|a| a.doc.step), 1);
+}
+
+#[test]
+fn ac3_errors_leave_the_document_untouched() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t039-errors");
+    live.command("note 1 keep");
+    let snapshot = live.with(|a| a.doc.clone());
+
+    let out = patch(&live, r#"{"stepp": 2}"#);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("stepp") && err.contains("invalid_argument"),
+        "{err}"
+    );
+
+    // All or nothing: the valid note is not added because the second is invalid.
+    let out = patch(
+        &live,
+        r#"{"annotations": [{"id": "ok", "step": 1, "type": "note", "line": 2, "text": "x"}, {"id": "bad", "step": 1, "type": "note", "line": 99, "text": "y"}]}"#,
+    );
+    assert!(!out.status.success());
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("99"),
+        "names the bad line"
+    );
+    assert_eq!(live.with(|a| a.doc.clone()), snapshot);
+
+    let out = patch(
+        &live,
+        r#"{"annotations": [{"step": 1, "type": "note", "line": 1, "text": "no id"}]}"#,
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("`id`"));
+    let out = patch(
+        &live,
+        r#"{"annotations": [{"id": "ghost", "deleted": true}]}"#,
+    );
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("ghost"));
+    let out = patch(&live, "not json");
+    assert!(!out.status.success());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("not valid JSON"));
+    assert_eq!(live.with(|a| a.doc.clone()), snapshot);
+
+    // scene.put with a file reference straight on the socket: rejected.
+    let r = live.api(
+        "scene.put",
+        json!({"document": {"schema": 1, "source": {"language": "rs"}, "code": {"file": "src/main.rs"}}}),
+    );
+    let e = r.error.expect("error");
+    assert_eq!(e.code, "invalid_argument");
+    assert!(e.message.contains("embedded"), "{}", e.message);
+    // And a document whose annotations are out of range.
+    let r = live.api(
+        "scene.put",
+        json!({"document": {"schema": 1, "source": {"language": "rs"}, "code": ["x"], "annotations": [{"id": "a", "step": 1, "type": "note", "line": 5, "text": "t"}]}}),
+    );
+    assert!(r.error.is_some());
+    assert_eq!(live.with(|a| a.doc.clone()), snapshot);
+    // The CLI reports a missing file without touching the instance.
+    let out = codedraw(&[
+        "--socket",
+        live.socket.to_str().unwrap(),
+        "scene",
+        "put",
+        "/nope/none.codedraw",
+    ]);
+    assert!(!out.status.success());
+    assert_eq!(live.with(|a| a.doc.clone()), snapshot);
+}
+
+#[test]
+fn ac4_methods_are_published() {
+    let live = Live::from_code("fn a() {}\n", "rs", "t039-schema");
+    let methods = live.api_ok("api.methods", json!({}));
+    let names: Vec<&str> = methods
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["method"].as_str().unwrap())
+        .collect();
+    assert!(
+        names.contains(&"scene.put") && names.contains(&"scene.patch"),
+        "{names:?}"
+    );
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap();
+    let schema: Value = serde_json::from_str(
+        &std::fs::read_to_string(root.join("schema/api.schema.json")).unwrap(),
+    )
+    .unwrap();
+    let in_schema: Vec<&str> = schema["methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["method"].as_str().unwrap())
+        .collect();
+    assert!(in_schema.contains(&"scene.put") && in_schema.contains(&"scene.patch"));
+    // The patch schema rejects unknown keys (additionalProperties: false).
+    let patch_schema = schema["methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["method"] == "scene.patch")
+        .unwrap();
+    assert_eq!(
+        patch_schema["params"]["additionalProperties"],
+        json!(false),
+        "{patch_schema}"
+    );
+    // A round trip: scene.get → scene.put is a no-op on the content.
+    let before = live.api_ok("scene.get", json!({}));
+    let r = live.api_ok("scene.put", json!({"document": before["document"]}));
+    assert!(r["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap());
+    let after = live.api_ok("scene.get", json!({}));
+    let strip = |mut d: Value| {
+        // Saving records the active theme; the content is what must match.
+        d.as_object_mut().unwrap().remove("theme");
+        d
+    };
+    assert_eq!(
+        strip(after["document"].clone()),
+        strip(before["document"].clone())
+    );
+    let _ = fs::open; // keep the import meaningful for readers of the ACs
+}

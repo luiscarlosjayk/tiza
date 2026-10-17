@@ -13,6 +13,8 @@ struct Snapshot {
     code_src: CodeSource,
     annotations: Vec<Annotation>,
     styles: BTreeMap<String, MarkStyle>,
+    title: Option<String>,
+    padding: Option<(u16, u16)>,
 }
 
 impl Snapshot {
@@ -22,6 +24,8 @@ impl Snapshot {
             code_src: doc.code_src.clone(),
             annotations: doc.annotations.clone(),
             styles: doc.styles.clone(),
+            title: doc.title.clone(),
+            padding: doc.padding,
         }
     }
 
@@ -32,6 +36,8 @@ impl Snapshot {
         doc.code_src = self.code_src;
         doc.annotations = self.annotations;
         doc.styles = self.styles;
+        doc.title = self.title;
+        doc.padding = self.padding;
         current
     }
 }

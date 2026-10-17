@@ -8,7 +8,8 @@ use serde_json::Value;
 
 use crate::model::{Document, MarkStyle};
 use crate::protocol::{
-    AddParams, IdParams, METHODS, Mutated, Scene, Status, StepParams, UpdateParams,
+    AddParams, IdParams, METHODS, Mutated, PatchParams, PutParams, Scene, SceneChanged, Status,
+    StepParams, UpdateParams,
 };
 
 /// Parameters of `style.set`.
@@ -145,6 +146,8 @@ pub fn api_schema() -> ApiSchema {
                 "annotation.delete" => (schema::<IdParams>(), schema::<Mutated>()),
                 "style.set" => (schema::<StyleSetParams>(), serde_json::json!({"type": "object", "properties": {"name": string(), "revision": {"type": "integer"}}})),
                 "style.list" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"document": {"type": "object"}, "builtin": {"type": "array"}, "aliases": {"type": "array"}}})),
+                "scene.put" => (schema::<PutParams>(), schema::<SceneChanged>()),
+                "scene.patch" => (schema::<PatchParams>(), schema::<SceneChanged>()),
                 "scene.clear" => (schema::<ClearParams>(), serde_json::json!({"type": "object", "properties": {"removed": {"type": "integer"}, "revision": {"type": "integer"}}})),
                 "step.set" => (schema::<StepParams>(), step_result()),
                 "step.next" | "step.prev" => (schema::<NoParams>(), step_result()),
