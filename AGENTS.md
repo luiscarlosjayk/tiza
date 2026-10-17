@@ -8,3 +8,4 @@
 - Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Commits in Spanish, imperative mood, with the board task id when applicable (`t-022`).
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `codedraw api status --socket /tmp/x.sock`.
+- Releases: a `vX.Y.Z` tag goes on `main` only when every ticket in it is `done` (QA APPROVE on the board); anything with tickets still in `review` ships as `vX.Y.Z-alpha.N` / `-rc.N` (the Release workflow marks suffixed tags as prerelease on its own). Agents never create or delete tags; the owner does, after checking the board.
