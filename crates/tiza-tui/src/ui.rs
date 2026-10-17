@@ -255,17 +255,39 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
                 );
             }
         }
-    } else if app.doc.max_step() > 1 || app.doc.step == 0 {
-        // Discreet step counter in presentation mode.
-        let txt = format!(" {}/{} ", app.doc.step, app.doc.max_step());
-        let w = txt.width() as u16;
-        if area.width > w {
-            frame.buffer_mut().set_string(
-                area.x + area.width - w,
-                area.y + area.height - 1,
-                &txt,
-                Style::default().fg(rgb(th.muted)).bg(rgb(th.bg)),
+    } else {
+        if app.doc.max_step() > 1 || app.doc.step == 0 {
+            // Discreet step counter in presentation mode.
+            let txt = format!(" {}/{} ", app.doc.step, app.doc.max_step());
+            let w = txt.width() as u16;
+            if area.width > w {
+                frame.buffer_mut().set_string(
+                    area.x + area.width - w,
+                    area.y + area.height - 1,
+                    &txt,
+                    Style::default().fg(rgb(th.muted)).bg(rgb(th.bg)),
+                );
+            }
+        }
+        if !app.proposals.is_empty() {
+            // An agent is waiting: the chip is the only sign in presentation
+            // mode (no popup), bottom-left, in the accent color.
+            let txt = format!(
+                " ⏸ {} to review (:review, or P then y/n) ",
+                app.proposals.len()
             );
+            let w = txt.width() as u16;
+            if area.width > w {
+                frame.buffer_mut().set_string(
+                    area.x,
+                    area.y + area.height - 1,
+                    &txt,
+                    Style::default()
+                        .fg(rgb(th.accent))
+                        .bg(rgb(th.bg))
+                        .add_modifier(Modifier::BOLD),
+                );
+            }
         }
     }
 

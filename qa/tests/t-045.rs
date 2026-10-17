@@ -276,3 +276,74 @@ fn ac4_presentation_mode_and_mcp_bridge() {
     assert!(text.contains("presenter rejected"), "{text}");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
 }
+
+#[test]
+fn rework_presentation_chip_pop_on_return_and_colon_from_the_overlay() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t045-chip");
+    live.command("supervise on");
+    live.keys(&[KeyCode::Char('P')]);
+    assert!(live.with(|a| a.present));
+    let socket = live.socket.clone();
+    let agent = thread::spawn(move || {
+        let mut mcp = McpClient::start(&socket);
+        mcp.call("add_note", json!({"line": 1, "text": "while presenting"}))
+    });
+    wait_pending(&live, 1);
+    // No popup, but a visible chip on the screen.
+    assert_eq!(live.with(|a| a.overlay), Overlay::None);
+    let screen = live.screen(100, 20);
+    assert!(
+        screen.contains("⏸ 1 to review") && !screen.contains("Agent proposals"),
+        "chip without popup:\n{screen}"
+    );
+    // Back to normal mode: the list pops by itself.
+    live.keys(&[KeyCode::Char('P')]);
+    assert!(!live.with(|a| a.present));
+    assert_eq!(live.with(|a| a.overlay), Overlay::Review, "pops on return");
+    let screen = live.screen(100, 20);
+    assert!(screen.contains("Agent proposals"), "{screen}");
+    // `:` from the list hides it and opens the command line, so Enter ends
+    // the command instead of accepting the proposal.
+    live.keys(&[KeyCode::Char(':')]);
+    assert_eq!(live.with(|a| a.overlay), Overlay::None);
+    live.keys(&[
+        KeyCode::Char('s'),
+        KeyCode::Char('u'),
+        KeyCode::Char('p'),
+        KeyCode::Char('e'),
+        KeyCode::Char('r'),
+        KeyCode::Char('v'),
+        KeyCode::Char('i'),
+        KeyCode::Char('s'),
+        KeyCode::Char('e'),
+        KeyCode::Enter,
+    ]);
+    assert_eq!(
+        live.with(|a| a.proposals.len()),
+        1,
+        "Enter ran the command, not an accept"
+    );
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("on (1 pending)"), "{msg}");
+    live.command("review");
+    live.keys(&[KeyCode::Char('y')]);
+    let (err, text, _) = agent.join().unwrap();
+    assert!(!err, "{text}");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    // `:present` from the command line behaves like `P`.
+    let agent2 = {
+        let socket = live.socket.clone();
+        thread::spawn(move || {
+            let mut mcp = McpClient::start(&socket);
+            mcp.call("add_note", json!({"line": 2, "text": "again"}))
+        })
+    };
+    live.command("present");
+    wait_pending(&live, 1);
+    assert_eq!(live.with(|a| a.overlay), Overlay::None);
+    live.command("present");
+    assert_eq!(live.with(|a| a.overlay), Overlay::Review);
+    live.keys(&[KeyCode::Char('n')]);
+    let (err, _, _) = agent2.join().unwrap();
+    assert!(err);
+}

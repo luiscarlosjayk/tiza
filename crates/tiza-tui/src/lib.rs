@@ -200,6 +200,12 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         return;
     }
     // The review overlay has its own keys; the rest only scroll or close.
+    if app.overlay == Overlay::Review && code == KeyCode::Char(':') {
+        // Typing a command from the list: hide it and open the command
+        // line, so Enter ends the command instead of accepting a proposal.
+        app.overlay = Overlay::None;
+        app.overlay_scroll = 0;
+    }
     if app.overlay == Overlay::Review {
         let msg = match code {
             KeyCode::Char('y') | KeyCode::Enter => app.accept_proposal(),
@@ -372,7 +378,7 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('U') => app.redo(),
         KeyCode::Char('r') if ctrl => app.redo(),
         KeyCode::Char('t') => app.toggle_theme(),
-        KeyCode::Char('P') => app.present = !app.present,
+        KeyCode::Char('P') => app.set_present(!app.present),
         KeyCode::Esc => {
             if app.present {
                 app.present = false;

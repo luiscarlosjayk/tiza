@@ -916,6 +916,16 @@ impl App {
         }
     }
 
+    /// Enters or leaves presentation mode. Proposals that arrived while
+    /// presenting were only a chip on screen; coming back opens the list.
+    pub fn set_present(&mut self, on: bool) {
+        self.present = on;
+        if !on && !self.proposals.is_empty() && self.overlay == Overlay::None {
+            self.overlay = Overlay::Review;
+            self.overlay_scroll = 0;
+        }
+    }
+
     pub fn toggle_theme(&mut self) {
         self.theme = self.theme.toggled();
         self.doc.theme = Some(self.theme.name);
@@ -2015,7 +2025,7 @@ impl App {
                     Ok(format!("theme {}", theme_label(self.theme.name)))
                 }
                 "present" | "p" => {
-                    self.present = !self.present;
+                    self.set_present(!self.present);
                     Ok(if self.present {
                         "presentation mode (P to exit)".into()
                     } else {
