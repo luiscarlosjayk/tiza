@@ -249,7 +249,7 @@ impl App {
                 width,
                 step: self.doc.step,
                 focus: self.focus,
-                line_numbers: true,
+                line_numbers: self.doc.numbers,
                 tab_width: 4,
                 typing: self.typing.is_some(),
                 redact,
@@ -645,6 +645,9 @@ impl App {
         }
         if let Some(pad) = p.padding {
             d.padding = pad;
+        }
+        if let Some(n) = p.numbers {
+            d.numbers = n;
         }
         if let Some(theme) = p.theme {
             d.theme = Some(theme);
@@ -1649,6 +1652,7 @@ impl App {
         "next",
         "note",
         "pad",
+        "numbers",
         "present",
         "prev",
         "q",
@@ -2163,6 +2167,32 @@ impl App {
                     let (v, h) = crate::ui::DEFAULT_PADDING;
                     Ok(format!("padding {v} {h} (default)"))
                 }
+                "numbers" | "nums" => match rest.trim() {
+                    "" => Ok(format!(
+                        "numbers {}",
+                        if self.doc.numbers { "on" } else { "off" }
+                    )),
+                    "on" | "yes" | "off" | "no" => {
+                        let on = matches!(rest.trim(), "on" | "yes");
+                        if on == self.doc.numbers {
+                            return Ok(format!(
+                                "numbers already {}",
+                                if on { "on" } else { "off" }
+                            ));
+                        }
+                        self.history.record(&self.doc, "numbers");
+                        self.doc.numbers = on;
+                        self.touch();
+                        Ok(if on {
+                            "numbers on (saved in the document)".into()
+                        } else {
+                            "numbers off: the gutter is hidden here, in exports and for agents (saved in the document; :numbers on restores it)".into()
+                        })
+                    }
+                    other => Err(Error::Invalid(format!(
+                        "numbers {other}: use `:numbers on` or `:numbers off`"
+                    ))),
+                },
                 "pad" | "padding" => {
                     let nums: Vec<u16> = rest
                         .split([' ', ','])
@@ -2515,7 +2545,7 @@ impl App {
                 width,
                 step,
                 focus: self.focus,
-                line_numbers: true,
+                line_numbers: self.doc.numbers,
                 tab_width: 4,
                 typing: false,
                 redact: true,
@@ -3632,6 +3662,7 @@ impl App {
             supervised: self.supervised,
             autosave: self.autosave,
             pending: self.proposals.len(),
+            numbers: self.doc.numbers,
         }
     }
 

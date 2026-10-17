@@ -56,6 +56,16 @@ pub struct Document {
     /// from step 0 (off by default: a secret is never shown at an earlier step).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub redact_from_step: bool,
+    /// Line-number gutter (t-112). Off, the code starts at the left edge
+    /// (lanes and boxes move with it); the TUI, `render` and the agents'
+    /// renders all follow it. `render --no-numbers` / `--numbers` override
+    /// it for one export.
+    #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
+    pub numbers: bool,
+}
+
+fn yes() -> bool {
+    true
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -683,6 +693,7 @@ impl Document {
             moves: Vec::new(),
             base_code: Vec::new(),
             redact_from_step: false,
+            numbers: true,
         }
     }
 

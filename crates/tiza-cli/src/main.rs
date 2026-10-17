@@ -121,9 +121,12 @@ enum Cmd {
         format: Option<Format>,
         #[arg(long, value_enum)]
         theme: Option<ThemeArg>,
-        /// No line numbers
-        #[arg(long)]
+        /// No line-number gutter (overrides the document's `numbers` field for this export)
+        #[arg(long, conflicts_with = "numbers")]
         no_numbers: bool,
+        /// Force the line-number gutter on (overrides a document saved with `:numbers off`)
+        #[arg(long)]
+        numbers: bool,
         /// Language override (otherwise detected from the file or its content)
         #[arg(long)]
         lang: Option<String>,
@@ -242,6 +245,7 @@ fn real_main() -> anyhow::Result<()> {
             format,
             theme,
             no_numbers,
+            numbers,
             lang,
             font_size,
             margin,
@@ -322,6 +326,15 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
+            // The gutter: the document's `numbers` field (t-112) unless a
+            // flag forces it for this export.
+            let line_numbers = if no_numbers {
+                false
+            } else if numbers {
+                true
+            } else {
+                doc.numbers
+            };
             // Sizes from the command line are bounded (t-115): a typo must be
             // an error, never an aborted process.
             let width =
@@ -364,7 +377,7 @@ fn real_main() -> anyhow::Result<()> {
                     width,
                     step,
                     focus: None,
-                    line_numbers: !no_numbers,
+                    line_numbers,
                     tab_width: 4,
                     typing: false,
                     redact: true,
@@ -382,7 +395,7 @@ fn real_main() -> anyhow::Result<()> {
                         &tiza_core::anim::AnimOptions {
                             interval,
                             width,
-                            line_numbers: !no_numbers,
+                            line_numbers,
                             from_zero: !skip_zero,
                         },
                     );
@@ -437,7 +450,7 @@ fn real_main() -> anyhow::Result<()> {
                         interval,
                         width,
                         rows: None,
-                        line_numbers: !no_numbers,
+                        line_numbers,
                         title: title.clone(),
                         from_zero: !skip_zero,
                     };

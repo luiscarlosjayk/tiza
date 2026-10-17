@@ -62,6 +62,8 @@ Annotate the new code **at the step where it exists**: after `add_move {at_step:
 
 ## Supervised mode
 
+**The gutter is the presenter's.** `status.numbers` says whether line numbers are shown; `scene.patch {"numbers": false}` hides them (saved in the document, so every export follows). Line numbers in your anchors (`line`, `find`) are the real ones whatever the gutter shows.
+
 **One geometry per take.** `render_text` and `export_image` size the arrow lanes, the box band and the margin for the maximum over every step of the document (t-111), the same way presentation mode does: a frame at step 1 and one at step 7 put the code at the same x, so you can compare frames and build thumbnails that line up. The presenter's authoring screen may look narrower than your render at an early step; that is the dynamic layout, not a bug, and `:layout stable` on their side makes the two agree.
 
 **Secrets on screen.** The presenter may mask a span with a `redact` annotation (or ask you to: `redact {at: {line, find: "API_KEY="}}` masks what follows the anchor; `{at: {line, col, end}}` masks columns; `keep` shows the last characters). The mask is applied in one place, at the layout boundary, so what you read is what the viewer sees: `get_code`, `scene.get`, `render_text`, the `tiza://` resources and every export return eight `•` where the secret is, and a `find` on a masked substring fails like text that is not there — do not try to read around a mask, and never put a secret into a `find` or a label (a `find` that looks like a secret is refused). `list_annotations` shows `redact L2 (masked)` with columns only.

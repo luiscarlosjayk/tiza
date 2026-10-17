@@ -25,6 +25,7 @@ struct Snapshot {
     styles: BTreeMap<String, MarkStyle>,
     title: Option<String>,
     padding: Option<(u16, u16)>,
+    numbers: bool,
 }
 
 impl Snapshot {
@@ -40,6 +41,7 @@ impl Snapshot {
             styles: doc.styles.clone(),
             title: doc.title.clone(),
             padding: doc.padding,
+            numbers: doc.numbers,
         }
     }
 
@@ -54,6 +56,7 @@ impl Snapshot {
         doc.styles = self.styles;
         doc.title = self.title;
         doc.padding = self.padding;
+        doc.numbers = self.numbers;
         if let Some(step) = self.step {
             doc.step = step;
         }

@@ -691,6 +691,9 @@ pub struct PatchParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub title: Option<Option<String>>,
+    /// Line-number gutter on or off (t-112; saved in the document).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub numbers: Option<bool>,
     /// Styles merged by name (an existing name is replaced).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub styles: Option<std::collections::BTreeMap<String, MarkStyle>>,
@@ -758,6 +761,9 @@ pub struct Status {
     /// turn it off; `:w` saves explicitly either way).
     #[serde(default = "yes")]
     pub autosave: bool,
+    /// Whether the line-number gutter is shown (`:numbers`, document field).
+    #[serde(default = "yes")]
+    pub numbers: bool,
 }
 
 fn yes() -> bool {

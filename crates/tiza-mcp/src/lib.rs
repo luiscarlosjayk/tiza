@@ -1101,7 +1101,7 @@ impl TizaServer {
                 },
                 step: p.step.unwrap_or(scene.step),
                 focus: None,
-                line_numbers: true,
+                line_numbers: scene.document.numbers,
                 tab_width: 4,
                 typing: false,
                 redact: true,
@@ -1149,7 +1149,7 @@ impl TizaServer {
                 &tiza_core::anim::AnimOptions {
                     interval: p.interval.unwrap_or(2.0),
                     width: layout.canvas.width,
-                    line_numbers: true,
+                    line_numbers: scene.document.numbers,
                     from_zero: !p.skip_zero.unwrap_or(false),
                 },
             )

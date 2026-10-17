@@ -66,6 +66,11 @@
             "minimum": 0,
             "type": "integer"
           },
+          "numbers": {
+            "default": true,
+            "description": "Whether the line-number gutter is shown (`:numbers`, document field).",
+            "type": "boolean"
+          },
           "pending": {
             "description": "Proposals waiting for a decision.",
             "format": "uint",
@@ -649,6 +654,10 @@
                   "$ref": "#/$defs/Move"
                 },
                 "type": "array"
+              },
+              "numbers": {
+                "description": "Line-number gutter (t-112). Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "type": "boolean"
               },
               "padding": {
                 "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",
@@ -3095,6 +3104,10 @@
                 },
                 "type": "array"
               },
+              "numbers": {
+                "description": "Line-number gutter (t-112). Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "type": "boolean"
+              },
               "padding": {
                 "description": "Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.",
                 "maxItems": 2,
@@ -3721,6 +3734,13 @@
             "items": true,
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "numbers": {
+            "description": "Line-number gutter on or off (t-112; saved in the document).",
+            "type": [
+              "boolean",
               "null"
             ]
           },
