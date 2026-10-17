@@ -26,6 +26,7 @@ struct Snapshot {
     title: Option<String>,
     padding: Option<(u16, u16)>,
     numbers: bool,
+    margin: Option<u16>,
 }
 
 impl Snapshot {
@@ -42,6 +43,7 @@ impl Snapshot {
             title: doc.title.clone(),
             padding: doc.padding,
             numbers: doc.numbers,
+            margin: doc.margin,
         }
     }
 
@@ -57,6 +59,7 @@ impl Snapshot {
         doc.title = self.title;
         doc.padding = self.padding;
         doc.numbers = self.numbers;
+        doc.margin = self.margin;
         if let Some(step) = self.step {
             doc.step = step;
         }

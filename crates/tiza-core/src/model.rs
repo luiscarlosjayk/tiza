@@ -62,6 +62,10 @@ pub struct Document {
     /// it for one export.
     #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
     pub numbers: bool,
+    /// Cap on the right margin, in cells (t-113): long notes wrap at it
+    /// instead of spreading across a wide terminal. `None`: dynamic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin: Option<u16>,
 }
 
 fn yes() -> bool {
@@ -694,6 +698,7 @@ impl Document {
             base_code: Vec::new(),
             redact_from_step: false,
             numbers: true,
+            margin: None,
         }
     }
 

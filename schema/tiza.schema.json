@@ -828,6 +828,16 @@
       "$ref": "#/$defs/CodeSource",
       "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
     },
+    "margin": {
+      "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
+      "format": "uint16",
+      "maximum": 65535,
+      "minimum": 0,
+      "type": [
+        "integer",
+        "null"
+      ]
+    },
     "moves": {
       "description": "Code changes between steps (ADR 0007): applied when the presenter\nreaches `at_step`, reverted when going back. The embedded `code` is\nalways the step-0 code.",
       "items": {

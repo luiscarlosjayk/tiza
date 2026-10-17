@@ -63,6 +63,7 @@ fn ac1_every_theme_role_passes_before_compression() {
                 typing: false,
                 redact: true,
                 stable: true,
+                margin_cap: None,
             },
         );
         for (x, y, cell) in l.canvas.cells() {

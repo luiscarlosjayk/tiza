@@ -694,6 +694,14 @@ pub struct PatchParams {
     /// Line-number gutter on or off (t-112; saved in the document).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numbers: Option<bool>,
+    /// Right-margin cap in cells (t-113; saved in the document); `null`
+    /// restores the dynamic margin.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub margin: Option<Option<u16>>,
     /// Styles merged by name (an existing name is replaced).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub styles: Option<std::collections::BTreeMap<String, MarkStyle>>,
@@ -764,6 +772,9 @@ pub struct Status {
     /// Whether the line-number gutter is shown (`:numbers`, document field).
     #[serde(default = "yes")]
     pub numbers: bool,
+    /// Right-margin cap in cells (`:margin N`, document field); absent = dynamic.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margin: Option<u16>,
 }
 
 fn yes() -> bool {

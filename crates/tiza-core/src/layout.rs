@@ -33,6 +33,11 @@ pub struct LayoutOptions {
     /// Apply the redact masks (t-117). Every output path passes `true`; only
     /// the author's own screen may pass `false` after `:redact off`.
     pub redact: bool,
+    /// Cap on the right margin, in cells (t-113): notes, labels and legends
+    /// wrap at it instead of spreading across a wide terminal, and the
+    /// canvas ends there (a PNG is no wider than the content). `None`: the
+    /// margin takes what the width leaves.
+    pub margin_cap: Option<usize>,
     /// Stable geometry (t-111): the arrow lanes, the box band, the code
     /// column and the margin are sized once for the maximum over every step
     /// of the document, so the code never slides sideways between steps and
@@ -52,7 +57,25 @@ impl Default for LayoutOptions {
             typing: false,
             redact: true,
             stable: true,
+            margin_cap: None,
         }
+    }
+}
+
+/// Narrowest right-margin cap a caller may ask for (`:margin N`): enough
+/// for a mark glyph, its legend and a short note.
+pub const MIN_MARGIN_CAP: usize = 12;
+/// Widest cap: wider than any sensible margin at `MAX_WIDTH`.
+pub const MAX_MARGIN_CAP: usize = 200;
+
+/// Checks a margin cap that came from the user.
+pub fn check_margin_cap(cap: usize) -> Result<usize, crate::Error> {
+    if (MIN_MARGIN_CAP..=MAX_MARGIN_CAP).contains(&cap) {
+        Ok(cap)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "margin={cap}: use a number between {MIN_MARGIN_CAP} and {MAX_MARGIN_CAP}, or auto"
+        )))
     }
 }
 
@@ -509,7 +532,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let code_w = code_full_w
         .min(width.saturating_sub(code_x_est + box_depth + 1))
         .max(10);
-    let margin_est = width.saturating_sub(code_x_est + code_w + 1 + box_depth + 1);
+    let margin_est = width
+        .saturating_sub(code_x_est + code_w + 1 + box_depth + 1)
+        .min(opts.margin_cap.unwrap_or(usize::MAX));
     let labels_in_margin = margin_est >= 14;
 
     // ---- callouts: decide placement and pre-wrap their text ----
@@ -787,6 +812,13 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         .max(10);
     let rbox_x0 = code_x + code_w + 1; // right rail: the innermost one here
     let margin_x = rbox_x0 + box_depth + 1;
+    // The cap (t-113) ends the frame: the margin is at most `cap` cells and
+    // the canvas no wider than the content, so a capped PNG has no blank
+    // band on the right and a capped terminal leaves its right columns free.
+    let width = match opts.margin_cap {
+        Some(cap) if width > margin_x + cap => margin_x + cap,
+        _ => width,
+    };
     let margin_w = width.saturating_sub(margin_x);
 
     let base = theme.base();

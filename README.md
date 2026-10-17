@@ -95,6 +95,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 :focus 15-17   :focus                 dim everything but a range · clear the focus
 :layout stable | :layout dynamic       rehearse with the take's geometry (`⊞ stable` on the bar) · let the authoring screen grow as steps add arrows
 :theme light   :lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
+:margin 24 | :margin auto | :margin     cap the right margin at N cells (12-200) so long notes wrap earlier on a wide terminal; saved as `margin`; `render --margin-cols N` overrides it once
 :numbers off | :numbers on | :numbers   hide or show the line-number gutter (saved in the document as `numbers`; exports and agents follow it; `render --no-numbers` / `--numbers` override it once)
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
 :autosave off | :autosave on | :autosave  stop writing the sidecar on every change (`--no-save` at start) · resume (writes what is pending) · state

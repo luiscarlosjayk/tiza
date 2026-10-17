@@ -1106,6 +1106,7 @@ impl TizaServer {
                 typing: false,
                 redact: true,
                 stable: true,
+                margin_cap: scene.document.margin.map(usize::from),
             },
         );
         let bytes = match format {

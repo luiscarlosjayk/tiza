@@ -127,6 +127,9 @@ enum Cmd {
         /// Force the line-number gutter on (overrides a document saved with `:numbers off`)
         #[arg(long)]
         numbers: bool,
+        /// Cap on the right margin in cells (notes wrap there; overrides the document's `margin` field)
+        #[arg(long)]
+        margin_cols: Option<usize>,
         /// Language override (otherwise detected from the file or its content)
         #[arg(long)]
         lang: Option<String>,
@@ -246,6 +249,7 @@ fn real_main() -> anyhow::Result<()> {
             theme,
             no_numbers,
             numbers,
+            margin_cols,
             lang,
             font_size,
             margin,
@@ -339,6 +343,12 @@ fn real_main() -> anyhow::Result<()> {
             // an error, never an aborted process.
             let width =
                 tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
+            let margin_cap = match margin_cols {
+                Some(c) => Some(
+                    tiza_core::layout::check_margin_cap(c).map_err(|e| anyhow::anyhow!("{e}"))?,
+                ),
+                None => doc.margin.map(usize::from),
+            };
             let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
             let scale = scale.unwrap_or(if animated { 1.0 } else { 2.0 });
             if matches!(format, Format::Png | Format::Svg) || animated {
@@ -382,6 +392,7 @@ fn real_main() -> anyhow::Result<()> {
                     typing: false,
                     redact: true,
                     stable: true,
+                    margin_cap,
                 },
             );
             let bytes: Vec<u8> = match format {

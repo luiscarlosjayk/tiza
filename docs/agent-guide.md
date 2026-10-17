@@ -62,6 +62,8 @@ Annotate the new code **at the step where it exists**: after `add_move {at_step:
 
 ## Supervised mode
 
+**The margin is the presenter's too.** `status.margin` is the cap on the right margin when one is set (`scene.patch {"margin": 24}` sets it, `null` removes it); long notes wrap at it. Keep notes short either way — a wrapped note takes rows from the lines below it.
+
 **The gutter is the presenter's.** `status.numbers` says whether line numbers are shown; `scene.patch {"numbers": false}` hides them (saved in the document, so every export follows). Line numbers in your anchors (`line`, `find`) are the real ones whatever the gutter shows.
 
 **One geometry per take.** `render_text` and `export_image` size the arrow lanes, the box band and the margin for the maximum over every step of the document (t-111), the same way presentation mode does: a frame at step 1 and one at step 7 put the code at the same x, so you can compare frames and build thumbnails that line up. The presenter's authoring screen may look narrower than your render at an early step; that is the dynamic layout, not a bug, and `:layout stable` on their side makes the two agree.

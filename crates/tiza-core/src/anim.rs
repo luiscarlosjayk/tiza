@@ -62,6 +62,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 typing,
                 redact: true,
                 stable: true,
+                margin_cap: d.margin.map(usize::from),
             },
         )
         .canvas

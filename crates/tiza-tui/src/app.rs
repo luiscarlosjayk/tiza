@@ -256,6 +256,7 @@ impl App {
                 // Presentation mode is a take: one geometry for every step
                 // (t-111). Authoring grows as it goes unless `:layout stable`.
                 stable: self.present || self.layout_stable,
+                margin_cap: self.doc.margin.map(usize::from),
             },
         )
     }
@@ -648,6 +649,12 @@ impl App {
         }
         if let Some(n) = p.numbers {
             d.numbers = n;
+        }
+        if let Some(m) = p.margin {
+            d.margin = match m {
+                Some(cap) => Some(tiza_core::layout::check_margin_cap(usize::from(cap))? as u16),
+                None => None,
+            };
         }
         if let Some(theme) = p.theme {
             d.theme = Some(theme);
@@ -1653,6 +1660,7 @@ impl App {
         "note",
         "pad",
         "numbers",
+        "margin",
         "present",
         "prev",
         "q",
@@ -2167,6 +2175,39 @@ impl App {
                     let (v, h) = crate::ui::DEFAULT_PADDING;
                     Ok(format!("padding {v} {h} (default)"))
                 }
+                "margin" => match rest.trim() {
+                    "" => Ok(match self.doc.margin {
+                        Some(n) => format!(
+                            "margin {n} (notes wrap at {n} cells; :margin auto removes the cap)"
+                        ),
+                        None => "margin auto (the right margin takes what the width leaves)".into(),
+                    }),
+                    "auto" | "off" | "none" => {
+                        if self.doc.margin.is_none() {
+                            return Ok("margin already auto".into());
+                        }
+                        self.history.record(&self.doc, "margin");
+                        self.doc.margin = None;
+                        self.touch();
+                        Ok("margin auto".into())
+                    }
+                    n => {
+                        let cap = n.parse::<usize>().map_err(|_| {
+                            Error::Invalid(format!(
+                                "margin {n}: use `:margin N` ({}-{} cells) or `:margin auto`",
+                                tiza_core::layout::MIN_MARGIN_CAP,
+                                tiza_core::layout::MAX_MARGIN_CAP
+                            ))
+                        })?;
+                        let cap = tiza_core::layout::check_margin_cap(cap)?;
+                        self.history.record(&self.doc, "margin");
+                        self.doc.margin = Some(cap as u16);
+                        self.touch();
+                        Ok(format!(
+                            "margin {cap}: notes, labels and legends wrap at {cap} cells (saved in the document)"
+                        ))
+                    }
+                },
                 "numbers" | "nums" => match rest.trim() {
                     "" => Ok(format!(
                         "numbers {}",
@@ -2550,6 +2591,7 @@ impl App {
                 typing: false,
                 redact: true,
                 stable: true,
+                margin_cap: self.doc.margin.map(usize::from),
             },
         );
         let bytes = match format {
@@ -3663,6 +3705,7 @@ impl App {
             autosave: self.autosave,
             pending: self.proposals.len(),
             numbers: self.doc.numbers,
+            margin: self.doc.margin,
         }
     }
 
@@ -4577,7 +4620,11 @@ mod tests {
     #[test]
     fn command_completion_and_history() {
         let mut a = app();
-        assert_eq!(a.complete("ma").0, "mark ");
+        // `ma` is ambiguous since `:margin` (t-113): both are offered.
+        let (text, many) = a.complete("ma");
+        assert_eq!(text, "mar");
+        assert!(many.contains(&"mark".to_string()) && many.contains(&"margin".to_string()));
+        assert_eq!(a.complete("mark").0, "mark ");
         let (text, many) = a.complete("s");
         assert_eq!(text, "s");
         assert!(many.contains(&"spot".to_string()) && many.contains(&"step".to_string()));
