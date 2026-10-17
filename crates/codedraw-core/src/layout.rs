@@ -1371,6 +1371,7 @@ mod tests {
             id: "a1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Mark {
                 kind: "move".into(),
                 style: Default::default(),
@@ -1388,6 +1389,7 @@ mod tests {
             id: "a2".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Arrow {
                 from: Anchor {
                     line: s.line,
@@ -1403,6 +1405,7 @@ mod tests {
             id: "a3".into(),
             step: 2,
             color: None,
+            markers: None,
             shape: Shape::Box {
                 from_line: 7,
                 to_line: 9,
@@ -1415,6 +1418,7 @@ mod tests {
             id: "a4".into(),
             step: 2,
             color: None,
+            markers: None,
             shape: Shape::Note {
                 line: 4,
                 text: "error: s is no longer the owner".into(),
@@ -1463,6 +1467,7 @@ mod tests {
             id: "s1".into(),
             step: 3,
             color: None,
+            markers: None,
             shape: Shape::Spotlight {
                 from_line: Some(7),
                 to_line: Some(9),
@@ -1529,6 +1534,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Note {
                 line: 2,
                 text: "s is born here with String::from and lives until it is moved".into(),
@@ -1539,6 +1545,7 @@ mod tests {
             id: "n2".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Note {
                 line: 2,
                 text: "second note".into(),
@@ -1652,6 +1659,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            markers: None,
             shape: Shape::Callout {
                 from_line: 2,
                 to_line: Some(3),
@@ -1667,6 +1675,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Note {
                 line: 4,
                 text: "does not compile".into(),
@@ -1677,6 +1686,7 @@ mod tests {
             id: "b1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Box {
                 from_line: 2,
                 to_line: 3,
@@ -1781,6 +1791,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            markers: None,
             shape: Shape::Callout {
                 from_line: 1,
                 to_line: Some(3),

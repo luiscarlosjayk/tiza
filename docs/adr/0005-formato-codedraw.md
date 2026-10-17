@@ -19,3 +19,7 @@
 
 - Migrations: when the schema changes, `fs::parse_document` will apply per-version transformations; per-version fixtures in the tests (t-073).
 - The original `find` of an anchor will be stored in a future version to re-anchor after source edits (t-011/t-043).
+
+## Amendment (t-097): `markers`
+
+An annotation may carry `"markers": {"start": "// begin", "end": "// end"}` next to its lines when it was created from two text markers (`find_start`/`find_end`). The lines stay the truth for rendering; the markers are kept so a code change can re-resolve the range (ADR 0007, t-098). Optional field: older readers ignore it, older files have none.

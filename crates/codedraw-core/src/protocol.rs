@@ -9,7 +9,7 @@ use serde_json::Value;
 
 use crate::model::{
     Anchor, Annotation, BorderStyle, Document, Emphasis, Head, LineStyle, MarkStyle, Placement,
-    Route, Shape, Stroke, TextSpan, ThemeName,
+    RangeMarkers, Route, Shape, Stroke, TextSpan, ThemeName,
 };
 
 pub const PROTOCOL_VERSION: u32 = 1;
@@ -135,8 +135,16 @@ pub enum ShapeSpec {
         emphasis: Emphasis,
     },
     Box {
-        from_line: u32,
-        to_line: u32,
+        #[serde(default)]
+        from_line: Option<u32>,
+        #[serde(default)]
+        to_line: Option<u32>,
+        /// Text markers instead of line numbers (t-097): the box runs from
+        /// the line of `find_start` to the line of `find_end`.
+        #[serde(default)]
+        find_start: Option<String>,
+        #[serde(default)]
+        find_end: Option<String>,
         #[serde(default)]
         label: Option<String>,
         #[serde(flatten, default)]
@@ -155,9 +163,14 @@ pub enum ShapeSpec {
         text: String,
     },
     Callout {
-        from_line: u32,
+        #[serde(default)]
+        from_line: Option<u32>,
         #[serde(default)]
         to_line: Option<u32>,
+        #[serde(default)]
+        find_start: Option<String>,
+        #[serde(default)]
+        find_end: Option<String>,
         text: String,
         #[serde(default)]
         title: Option<String>,
@@ -174,15 +187,68 @@ pub enum ShapeSpec {
         #[serde(default)]
         to_line: Option<u32>,
         #[serde(default)]
+        find_start: Option<String>,
+        #[serde(default)]
+        find_end: Option<String>,
+        #[serde(default)]
         ids: Vec<String>,
         #[serde(default)]
         until: Option<u32>,
     },
 }
 
+/// A line range given either as numbers or as two text markers.
+fn resolve_range(
+    doc: &Document,
+    what: &str,
+    from_line: Option<u32>,
+    to_line: Option<u32>,
+    find_start: Option<&str>,
+    find_end: Option<&str>,
+) -> Result<(u32, u32, Option<RangeMarkers>), crate::Error> {
+    match (find_start, find_end) {
+        (Some(s), Some(e)) => {
+            if from_line.is_some() || to_line.is_some() {
+                return Err(crate::Error::Invalid(format!(
+                    "{what}: give either from_line/to_line or find_start/find_end, not both"
+                )));
+            }
+            let (a, b) = doc.resolve_markers(s, e)?;
+            Ok((
+                a,
+                b,
+                Some(RangeMarkers {
+                    start: s.to_string(),
+                    end: e.to_string(),
+                }),
+            ))
+        }
+        (Some(_), None) | (None, Some(_)) => Err(crate::Error::Invalid(format!(
+            "{what}: find_start and find_end go together"
+        ))),
+        (None, None) => {
+            let a = from_line.ok_or_else(|| {
+                crate::Error::Invalid(format!(
+                    "{what}: from_line (or find_start/find_end) is required"
+                ))
+            })?;
+            Ok((a, to_line.unwrap_or(a), None))
+        }
+    }
+}
+
 impl ShapeSpec {
     pub fn resolve(&self, doc: &Document) -> Result<Shape, crate::Error> {
-        Ok(match self {
+        self.resolve_with_markers(doc).map(|(s, _)| s)
+    }
+
+    /// Resolves the spec and returns the markers the range came from, if any.
+    pub fn resolve_with_markers(
+        &self,
+        doc: &Document,
+    ) -> Result<(Shape, Option<RangeMarkers>), crate::Error> {
+        let mut markers = None;
+        let shape = match self {
             ShapeSpec::Highlight {
                 at,
                 label,
@@ -208,14 +274,27 @@ impl ShapeSpec {
             ShapeSpec::Box {
                 from_line,
                 to_line,
+                find_start,
+                find_end,
                 label,
                 frame,
-            } => Shape::Box {
-                from_line: *from_line,
-                to_line: *to_line,
-                label: label.clone(),
-                frame: *frame,
-            },
+            } => {
+                let (a, b, m) = resolve_range(
+                    doc,
+                    "box",
+                    *from_line,
+                    *to_line,
+                    find_start.as_deref(),
+                    find_end.as_deref(),
+                )?;
+                markers = m;
+                Shape::Box {
+                    from_line: a,
+                    to_line: b,
+                    label: label.clone(),
+                    frame: *frame,
+                }
+            }
             ShapeSpec::Arrow {
                 from,
                 to,
@@ -234,33 +313,70 @@ impl ShapeSpec {
             ShapeSpec::Callout {
                 from_line,
                 to_line,
+                find_start,
+                find_end,
                 text,
                 title,
                 placement,
                 width,
                 frame,
-            } => Shape::Callout {
-                from_line: *from_line,
-                to_line: *to_line,
-                text: text.clone(),
-                title: title.clone(),
-                placement: *placement,
-                width: *width,
-                frame: *frame,
-            },
+            } => {
+                let (a, b, m) = resolve_range(
+                    doc,
+                    "callout",
+                    *from_line,
+                    *to_line,
+                    find_start.as_deref(),
+                    find_end.as_deref(),
+                )?;
+                markers = m;
+                Shape::Callout {
+                    from_line: a,
+                    // A callout keeps `to_line` only when a range was given.
+                    to_line: (b != a || to_line.is_some() || m_is_some(&markers)).then_some(b),
+                    text: text.clone(),
+                    title: title.clone(),
+                    placement: *placement,
+                    width: *width,
+                    frame: *frame,
+                }
+            }
             ShapeSpec::Spotlight {
                 from_line,
                 to_line,
+                find_start,
+                find_end,
                 ids,
                 until,
-            } => Shape::Spotlight {
-                from_line: *from_line,
-                to_line: to_line.or(*from_line),
-                ids: ids.clone(),
-                until: *until,
-            },
-        })
+            } => {
+                let (a, b) = if find_start.is_some() || find_end.is_some() {
+                    let (a, b, m) = resolve_range(
+                        doc,
+                        "spotlight",
+                        *from_line,
+                        *to_line,
+                        find_start.as_deref(),
+                        find_end.as_deref(),
+                    )?;
+                    markers = m;
+                    (Some(a), Some(b))
+                } else {
+                    (*from_line, to_line.or(*from_line))
+                };
+                Shape::Spotlight {
+                    from_line: a,
+                    to_line: b,
+                    ids: ids.clone(),
+                    until: *until,
+                }
+            }
+        };
+        Ok((shape, markers))
     }
+}
+
+fn m_is_some(m: &Option<RangeMarkers>) -> bool {
+    m.is_some()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -660,6 +776,14 @@ pub const METHODS: &[(&str, &str)] = &[
 
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
+    let base = describe_shape(a);
+    match &a.markers {
+        Some(m) => format!("{base} @«{}»..@«{}»", m.start, m.end),
+        None => base,
+    }
+}
+
+fn describe_shape(a: &Annotation) -> String {
     match &a.shape {
         Shape::Highlight {
             span,

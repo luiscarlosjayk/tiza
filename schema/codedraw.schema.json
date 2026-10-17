@@ -299,6 +299,17 @@
           "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
           "type": "string"
         },
+        "markers": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RangeMarkers"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
+        },
         "step": {
           "default": 1,
           "description": "Step at which it appears (1-based).",
@@ -438,6 +449,22 @@
           "type": "string"
         }
       ]
+    },
+    "RangeMarkers": {
+      "description": "Two texts that delimit a line range: the first occurrence of `start`\nanywhere, then the first occurrence of `end` at or after it.",
+      "properties": {
+        "end": {
+          "type": "string"
+        },
+        "start": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "start",
+        "end"
+      ],
+      "type": "object"
     },
     "Route": {
       "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",

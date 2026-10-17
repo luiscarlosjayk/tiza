@@ -560,8 +560,21 @@ pub struct Annotation {
     /// Without a color, arrows rotate through a palette and the rest use the theme color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Range shapes (box, callout, spotlight) created from two text markers
+    /// (`find_start` / `find_end`, t-097): kept so the range can be
+    /// re-resolved after the code changes (t-098). Lines stay the truth.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub markers: Option<RangeMarkers>,
     #[serde(flatten)]
     pub shape: Shape,
+}
+
+/// Two texts that delimit a line range: the first occurrence of `start`
+/// anywhere, then the first occurrence of `end` at or after it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, schemars::JsonSchema)]
+pub struct RangeMarkers {
+    pub start: String,
+    pub end: String,
 }
 
 /// Control characters (tabs, newlines, escapes) become spaces: labels are one line.
@@ -928,6 +941,44 @@ impl Document {
 
     /// Searches `text` in the code and returns the span of the `occurrence`-th
     /// match (1-based). If `near_line` is given, that line is searched first.
+    /// Resolves a line range from two markers (t-097): `start` is the first
+    /// occurrence in the document, `end` the first occurrence at or after it
+    /// (same line allowed when it comes after the start text). Errors name
+    /// the missing marker; an `end` that only appears before the start is
+    /// an invalid range, not a silent swap.
+    pub fn resolve_markers(&self, start: &str, end: &str) -> Result<(u32, u32), Error> {
+        if start.trim().is_empty() || end.trim().is_empty() {
+            return Err(Error::Invalid(
+                "find_start and find_end must both be non-empty".into(),
+            ));
+        }
+        let s = self
+            .find_text(start, 1, None)
+            .ok_or_else(|| Error::TextNotFound(format!("start marker «{start}»")))?;
+        // Same line, after the start text?
+        if let Some(t) = self.line_text(s.line)
+            && let Some(byte_end) = grapheme_byte_offset(t, s.end)
+            && t[byte_end..].contains(end)
+        {
+            return Ok((s.line, s.line));
+        }
+        for line in (s.line + 1)..=self.last_line() {
+            if self.line_text(line).is_some_and(|t| t.contains(end)) {
+                return Ok((s.line, line));
+            }
+        }
+        if self.find_text(end, 1, None).is_some() {
+            return Err(Error::Invalid(format!(
+                "end marker «{end}» appears only before the start marker «{start}» (line {})",
+                s.line
+            )));
+        }
+        Err(Error::TextNotFound(format!(
+            "end marker «{end}» (after line {})",
+            s.line
+        )))
+    }
+
     pub fn find_text(
         &self,
         text: &str,
@@ -974,6 +1025,16 @@ pub fn grapheme_index(s: &str, byte_offset: usize) -> u32 {
     s.grapheme_indices(true)
         .take_while(|(b, _)| *b < byte_offset)
         .count() as u32
+}
+
+/// Byte offset where grapheme `index` starts (`s.len()` past the end).
+pub fn grapheme_byte_offset(s: &str, index: u32) -> Option<usize> {
+    Some(
+        s.grapheme_indices(true)
+            .nth(index as usize)
+            .map(|(b, _)| b)
+            .unwrap_or(s.len()),
+    )
 }
 
 /// Returns the slice of `s` between graphemes `start..end`.
@@ -1045,6 +1106,7 @@ mod tests {
                 id: String::new(),
                 step: 1,
                 color: None,
+                markers: None,
                 shape: Shape::Note {
                     line: 2,
                     text: "s is born here".into(),
@@ -1057,6 +1119,7 @@ mod tests {
                 id: String::new(),
                 step: 1,
                 color: None,
+                markers: None,
                 shape: Shape::Note {
                     line: 99,
                     text: "x".into(),
@@ -1073,6 +1136,7 @@ mod tests {
             id: "a1".into(),
             step: 2,
             color: None,
+            markers: None,
             shape: Shape::Arrow {
                 from: Anchor { line: 2, col: 8 },
                 to: Anchor { line: 3, col: 10 },

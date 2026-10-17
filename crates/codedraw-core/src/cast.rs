@@ -193,6 +193,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: crate::model::Shape::Note {
                 line: 1,
                 text: "one".into(),
@@ -203,6 +204,7 @@ mod tests {
             id: "n2".into(),
             step: 2,
             color: None,
+            markers: None,
             shape: crate::model::Shape::Note {
                 line: 3,
                 text: "two".into(),

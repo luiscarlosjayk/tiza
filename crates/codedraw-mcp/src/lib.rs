@@ -63,10 +63,20 @@ pub struct Empty {}
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct BoxParams {
-    #[schemars(description = "First line enclosed by the box (1-based)")]
-    pub from_line: u32,
-    #[schemars(description = "Last line enclosed by the box (inclusive)")]
-    pub to_line: u32,
+    #[schemars(
+        description = "First line enclosed by the box (1-based). Or give find_start/find_end instead."
+    )]
+    pub from_line: Option<u32>,
+    #[schemars(description = "Last line enclosed by the box (inclusive); defaults to from_line")]
+    pub to_line: Option<u32>,
+    #[schemars(
+        description = "Text on the first line of the box (e.g. a comment marker `// begin` or code like `fn takes`), instead of from_line. Must be given with find_end."
+    )]
+    pub find_start: Option<String>,
+    #[schemars(
+        description = "Text on the last line of the box, searched after find_start (same line allowed). Fails with text_not_found naming the marker."
+    )]
+    pub find_end: Option<String>,
     #[schemars(description = "Label drawn on the top edge")]
     pub label: Option<String>,
     #[schemars(
@@ -335,9 +345,15 @@ pub struct ExportParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CalloutParams {
     #[schemars(description = "First line the callout explains (1-based)")]
-    pub from_line: u32,
+    pub from_line: Option<u32>,
     #[schemars(description = "Last line it explains; defaults to from_line")]
     pub to_line: Option<u32>,
+    #[schemars(
+        description = "Text on the first line of the range, instead of from_line (with find_end)"
+    )]
+    pub find_start: Option<String>,
+    #[schemars(description = "Text on the last line of the range, searched after find_start")]
+    pub find_end: Option<String>,
     #[schemars(
         description = "Body: two or three sentences, wrapped by words. Newlines start new paragraphs."
     )]
@@ -371,6 +387,12 @@ pub struct SpotlightParams {
     pub from_line: Option<u32>,
     #[schemars(description = "Last line to highlight; defaults to from_line")]
     pub to_line: Option<u32>,
+    #[schemars(
+        description = "Text on the first line of the range, instead of from_line (with find_end)"
+    )]
+    pub find_start: Option<String>,
+    #[schemars(description = "Text on the last line of the range, searched after find_start")]
+    pub find_end: Option<String>,
     #[schemars(
         description = "Ids of annotations to highlight; the others are dimmed and their code stays in focus"
     )]
@@ -580,13 +602,13 @@ impl CodeDrawServer {
     }
 
     #[tool(
-        description = "Draws a box around a range of lines, with an optional label on the top edge."
+        description = "Draws a box around a range of lines, with an optional label on the top edge. Give from_line/to_line, or find_start/find_end (two texts that delimit the range, like Demo Time placeholders: `// begin` … `// end`, or code such as `fn takes` … `}`)."
     )]
     async fn add_box(
         &self,
         Parameters(p): Parameters<BoxParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
@@ -728,7 +750,7 @@ impl CodeDrawServer {
                 ));
             }
         };
-        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id});
+        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
@@ -746,7 +768,7 @@ impl CodeDrawServer {
         let v = self
             .call(
                 "annotation.add",
-                json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id}),
+                json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id}),
             )
             .await?;
         Ok(text(pretty(&v)))

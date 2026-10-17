@@ -256,6 +256,19 @@ impl App {
         color: Option<String>,
         shape: Shape,
     ) -> Result<String, Error> {
+        self.add_annotation_full(id, step, color, None, shape)
+    }
+
+    /// `add_annotation_colored` plus the range markers a box/callout/spotlight
+    /// was created from (t-097).
+    pub fn add_annotation_full(
+        &mut self,
+        id: Option<String>,
+        step: Option<u32>,
+        color: Option<String>,
+        markers: Option<codedraw_core::model::RangeMarkers>,
+        shape: Shape,
+    ) -> Result<String, Error> {
         if let Some(c) = &color
             && self.theme.named_color(c).is_none()
         {
@@ -270,6 +283,7 @@ impl App {
             id: id.unwrap_or_default(),
             step,
             color,
+            markers,
             shape,
         });
         match res {
@@ -343,10 +357,16 @@ impl App {
             }
         }
         if let Some(spec) = &p.shape {
-            ann.shape = spec.resolve(&self.doc)?;
+            let (shape, markers) = spec.resolve_with_markers(&self.doc)?;
+            ann.shape = shape;
+            ann.markers = markers;
         }
         if let Some(mv) = &p.mv {
             mv.apply(&mut ann.shape, &self.doc)?;
+            // Moved by lines: the markers no longer describe the range.
+            if mv.from_line.is_some() || mv.to_line.is_some() {
+                ann.markers = None;
+            }
         }
         if p.has_border_style() {
             match &mut ann.shape {
@@ -1753,20 +1773,23 @@ impl App {
     }
 
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
-        let (range, rest) = split_first(rest);
-        let (a, b) = parse_range(range).map_err(|_| {
-            Error::Invalid(
-                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]".into(),
-            )
+        let (a, b, markers, rest) = self.parse_range_arg(rest).map_err(|e| match e {
+            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(
+                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]   or   :box @'start'..@'end' [label]"
+                    .into(),
+            ),
+            other => other,
         })?;
         let (label, kv) = split_trailing_kv(rest);
         let mut frame = codedraw_core::model::BorderStyle::default();
         for (k, v) in &kv {
             apply_border_kv(&mut frame, k, v)?;
         }
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            markers,
             Shape::Box {
                 from_line: a,
                 to_line: b,
@@ -1775,6 +1798,47 @@ impl App {
             },
         )?;
         Ok(format!("{id}: box {a}-{b}"))
+    }
+
+    /// The first argument of a range command: `A-B`, `.`, or two text
+    /// markers `@'start'..@'end'` (quotes optional when the text has no
+    /// spaces; `@start..@end`). Returns the lines, the markers, and the rest.
+    fn parse_range_arg<'a>(
+        &self,
+        s: &'a str,
+    ) -> Result<
+        (
+            u32,
+            u32,
+            Option<codedraw_core::model::RangeMarkers>,
+            &'a str,
+        ),
+        Error,
+    > {
+        let s = s.trim_start();
+        if let Some(after_at) = s.strip_prefix('@') {
+            let (start, rest) = take_marker(after_at)?;
+            let rest = rest.strip_prefix("..").ok_or_else(|| {
+                Error::Invalid("markers: write @'start'..@'end' (two markers joined by ..)".into())
+            })?;
+            let rest = rest.strip_prefix('@').ok_or_else(|| {
+                Error::Invalid("markers: the end marker also starts with @".into())
+            })?;
+            let (end, rest) = take_marker(rest)?;
+            let (a, b) = self.doc.resolve_markers(&start, &end)?;
+            return Ok((
+                a,
+                b,
+                Some(codedraw_core::model::RangeMarkers { start, end }),
+                rest.trim_start(),
+            ));
+        }
+        let (range, rest) = split_first(s);
+        if range == "." {
+            return Ok((self.cursor_line, self.cursor_line, None, rest));
+        }
+        let (a, b) = parse_range(range)?;
+        Ok((a, b, None, rest))
     }
 
     fn cmd_arrow(&mut self, rest: &str) -> Result<String, Error> {
@@ -2207,7 +2271,15 @@ impl App {
     /// (`:until ID N` extends it).
     fn cmd_spot(&mut self, rest: &str) -> Result<String, Error> {
         let mut range: Option<(u32, u32)> = None;
+        let mut markers = None;
         let mut ids = Vec::new();
+        let mut rest = rest.trim_start();
+        if rest.starts_with('@') {
+            let (a, b, m, after) = self.parse_range_arg(rest)?;
+            range = Some((a, b));
+            markers = m;
+            rest = after;
+        }
         for tok in rest.split_whitespace() {
             if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 range = Some(parse_range(tok)?);
@@ -2220,9 +2292,11 @@ impl App {
                 "usage: :spot A-B [ID…]  |  :spot ID…".into(),
             ));
         }
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            markers,
             Shape::Spotlight {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
@@ -2235,16 +2309,13 @@ impl App {
 
     /// `:callout A[-B] [@below|@margin|@auto] [title="…"] text…`
     fn cmd_callout(&mut self, rest: &str) -> Result<String, Error> {
-        let (range, mut rest) = split_first(rest);
-        let (a, b) = if range == "." {
-            (self.cursor_line, self.cursor_line)
-        } else {
-            parse_range(range).map_err(|_| {
-                Error::Invalid(
-                    "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text".into(),
-                )
-            })?
-        };
+        let (a, b, markers, mut rest) = self.parse_range_arg(rest).map_err(|e| match e {
+            Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(
+                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   (or @'start'..@'end')"
+                    .into(),
+            ),
+            other => other,
+        })?;
         let mut placement = codedraw_core::model::Placement::Margin;
         let mut title = None;
         loop {
@@ -2281,9 +2352,11 @@ impl App {
         if text.trim().is_empty() {
             return Err(Error::Invalid("the callout text is empty".into()));
         }
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            markers,
             Shape::Callout {
                 from_line: a,
                 to_line: if b == a { None } else { Some(b) },
@@ -2549,8 +2622,8 @@ impl App {
             ),
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
-                let shape = p.shape.resolve(&self.doc)?;
-                let id = self.add_annotation_colored(p.id, p.step, p.color, shape)?;
+                let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
+                let id = self.add_annotation_full(p.id, p.step, p.color, markers, shape)?;
                 serde_json::to_value(Mutated {
                     id,
                     revision: self.revision,
@@ -3213,6 +3286,32 @@ pub fn looks_like_anchor(tok: &str) -> bool {
     }
     let head = t.split([':', '@']).next().unwrap_or("");
     (head == "." || head.chars().all(|c| c.is_ascii_digit())) && !head.is_empty()
+}
+
+/// Reads one marker after `@`: `'text with spaces'`, `"text"` or a bare word
+/// (up to `..` or whitespace). Returns the text and what follows.
+fn take_marker(s: &str) -> Result<(String, &str), Error> {
+    if let Some(q) = s.chars().next().filter(|c| *c == '\'' || *c == '"') {
+        let body = &s[1..];
+        let end = body
+            .find(q)
+            .ok_or_else(|| Error::Invalid(format!("markers: missing closing {q}")))?;
+        let text = &body[..end];
+        if text.is_empty() {
+            return Err(Error::Invalid("markers: empty marker".into()));
+        }
+        return Ok((text.to_string(), &body[end + 1..]));
+    }
+    let end = s
+        .find("..")
+        .into_iter()
+        .chain(s.find(char::is_whitespace))
+        .min()
+        .unwrap_or(s.len());
+    if end == 0 {
+        return Err(Error::Invalid("markers: empty marker".into()));
+    }
+    Ok((s[..end].to_string(), &s[end..]))
 }
 
 fn split_first(s: &str) -> (&str, &str) {

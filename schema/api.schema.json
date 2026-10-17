@@ -548,6 +548,17 @@
                 "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
                 "type": "string"
               },
+              "markers": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RangeMarkers"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
+              },
               "step": {
                 "default": 1,
                 "description": "Step at which it appears (1-based).",
@@ -769,6 +780,22 @@
                 "type": "string"
               }
             ]
+          },
+          "RangeMarkers": {
+            "description": "Two texts that delimit a line range: the first occurrence of `start`\nanywhere, then the first occurrence of `end` at or after it.",
+            "properties": {
+              "end": {
+                "type": "string"
+              },
+              "start": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
           },
           "Route": {
             "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",
@@ -1143,10 +1170,29 @@
                   "null"
                 ]
               },
+              "find_end": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "find_start": {
+                "default": null,
+                "description": "Text markers instead of line numbers (t-097): the box runs from\nthe line of `find_start` to the line of `find_end`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "from_line": {
+                "default": null,
                 "format": "uint32",
                 "minimum": 0,
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "label": {
                 "default": null,
@@ -1156,9 +1202,13 @@
                 ]
               },
               "to_line": {
+                "default": null,
                 "format": "uint32",
                 "minimum": 0,
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "type": {
                 "const": "box",
@@ -1166,9 +1216,7 @@
               }
             },
             "required": [
-              "type",
-              "from_line",
-              "to_line"
+              "type"
             ],
             "type": "object"
           },
@@ -1246,10 +1294,28 @@
                   "null"
                 ]
               },
+              "find_end": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "find_start": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "from_line": {
+                "default": null,
                 "format": "uint32",
                 "minimum": 0,
-                "type": "integer"
+                "type": [
+                  "integer",
+                  "null"
+                ]
               },
               "placement": {
                 "$ref": "#/$defs/Placement",
@@ -1290,13 +1356,26 @@
             },
             "required": [
               "type",
-              "from_line",
               "text"
             ],
             "type": "object"
           },
           {
             "properties": {
+              "find_end": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "find_start": {
+                "default": null,
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "from_line": {
                 "default": null,
                 "format": "uint32",
@@ -1659,10 +1738,29 @@
                       "null"
                     ]
                   },
+                  "find_end": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "find_start": {
+                    "default": null,
+                    "description": "Text markers instead of line numbers (t-097): the box runs from\nthe line of `find_start` to the line of `find_end`.",
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "from_line": {
+                    "default": null,
                     "format": "uint32",
                     "minimum": 0,
-                    "type": "integer"
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   },
                   "label": {
                     "default": null,
@@ -1672,9 +1770,13 @@
                     ]
                   },
                   "to_line": {
+                    "default": null,
                     "format": "uint32",
                     "minimum": 0,
-                    "type": "integer"
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   },
                   "type": {
                     "const": "box",
@@ -1682,9 +1784,7 @@
                   }
                 },
                 "required": [
-                  "type",
-                  "from_line",
-                  "to_line"
+                  "type"
                 ],
                 "type": "object"
               },
@@ -1762,10 +1862,28 @@
                       "null"
                     ]
                   },
+                  "find_end": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "find_start": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "from_line": {
+                    "default": null,
                     "format": "uint32",
                     "minimum": 0,
-                    "type": "integer"
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
                   },
                   "placement": {
                     "$ref": "#/$defs/Placement",
@@ -1806,13 +1924,26 @@
                 },
                 "required": [
                   "type",
-                  "from_line",
                   "text"
                 ],
                 "type": "object"
               },
               {
                 "properties": {
+                  "find_end": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "find_start": {
+                    "default": null,
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
                   "from_line": {
                     "default": null,
                     "format": "uint32",
@@ -2517,6 +2648,17 @@
                 "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
                 "type": "string"
               },
+              "markers": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/RangeMarkers"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
+              },
               "step": {
                 "default": 1,
                 "description": "Step at which it appears (1-based).",
@@ -2738,6 +2880,22 @@
                 "type": "string"
               }
             ]
+          },
+          "RangeMarkers": {
+            "description": "Two texts that delimit a line range: the first occurrence of `start`\nanywhere, then the first occurrence of `end` at or after it.",
+            "properties": {
+              "end": {
+                "type": "string"
+              },
+              "start": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "start",
+              "end"
+            ],
+            "type": "object"
           },
           "Route": {
             "description": "Corner shape of a routed line: `╭╰` (rounded, the cell-grid \"curve\") or `┌└` (sharp).",

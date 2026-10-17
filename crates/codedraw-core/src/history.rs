@@ -99,6 +99,7 @@ mod tests {
             id: "a1".into(),
             step: 1,
             color: None,
+            markers: None,
             shape: Shape::Note {
                 line: 1,
                 text: "x".into(),
