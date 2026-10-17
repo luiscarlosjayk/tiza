@@ -173,9 +173,13 @@ fn ac4_export_command_formats_defaults_and_errors() {
     live.command(&format!("export {}", md.display()));
     assert!(std::fs::read_to_string(&md).unwrap().contains("```text\n"));
     // Errors name the valid values.
-    live.command(&format!("export {}", dir.join("a.gif").display()));
+    live.command(&format!("export {}", dir.join("a.bmp").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains(".txt .ansi .md .svg .png"), "{msg}");
+    // A recording is made from the shell (t-120): the message says how.
+    live.command(&format!("export {}", dir.join("a.gif").display()));
+    let (msg, err) = live.message().unwrap();
+    assert!(err && msg.contains("tiza render --out"), "{msg}");
     live.command(&format!("export {} width=5", dir.join("b.txt").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains("width=5"), "{msg}");
@@ -260,9 +264,9 @@ fn ac5_mcp_export_image_writes_text_formats() {
     }
     let (err, text, _) = mcp.call(
         "export_image",
-        json!({"path": dir.join("out.gif").to_str().unwrap()}),
+        json!({"path": dir.join("out.bmp").to_str().unwrap()}),
     );
-    assert!(err && text.contains(".txt, .ansi or .md"), "{text}");
+    assert!(err && text.contains(".txt, .ansi, .md or .gif"), "{text}");
 }
 
 #[test]

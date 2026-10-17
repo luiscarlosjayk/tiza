@@ -26,3 +26,4 @@ insta.workspace = true
 jsonschema.workspace = true
 proptest.workspace = true
 two-face.workspace = true
+gif.workspace = true

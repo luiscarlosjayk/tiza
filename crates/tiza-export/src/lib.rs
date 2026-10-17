@@ -6,9 +6,11 @@
 //! SVG (`@font-face`, optional) and in the PNG rasterizer, so the output does
 //! not depend on the fonts installed on the machine.
 pub mod fonts;
+pub mod gif;
 pub mod png;
 pub mod svg;
 
+pub use gif::{GifOptions, GifReport, to_gif};
 pub use png::{PngOptions, to_png};
 pub use svg::{SvgOptions, to_svg};
 
@@ -29,4 +31,6 @@ pub enum Error {
     TooBig(u32, u32),
     #[error("PNG encoding failed: {0}")]
     Png(String),
+    #[error("GIF encoding failed: {0}")]
+    Gif(String),
 }

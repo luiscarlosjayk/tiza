@@ -7,6 +7,7 @@
 //! - [`fs`][]: open sources/`.tiza` files and save.
 //! - [`history`][]: undo/redo.
 
+pub mod anim;
 pub mod canvas;
 pub mod cast;
 pub mod error;

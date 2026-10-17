@@ -704,6 +704,114 @@ pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
     })
 }
 
+/// One typed move inside a [`TypingPlan`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypingItem {
+    /// Lines of the step's full code (absolute) the content occupies.
+    pub range: std::ops::Range<u32>,
+    pub lines: Vec<String>,
+    pub mode: Typing,
+    /// Milliseconds per unit (line or grapheme).
+    pub speed_ms: u64,
+    pub units: usize,
+}
+
+/// The typing animation of a step: the code with every move of the step
+/// applied, and the typed moves in order. The TUI reveals it over time;
+/// the GIF export (t-120) turns the same plan into frames.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TypingPlan {
+    pub full: Vec<String>,
+    pub items: Vec<TypingItem>,
+}
+
+impl TypingPlan {
+    /// The code while item `index` has `revealed` units shown: earlier
+    /// items complete, later ones blank (the line count never changes, so
+    /// every shifted annotation stays put).
+    pub fn code_at(&self, first_line: u32, index: usize, revealed: usize) -> Vec<String> {
+        let mut code = self.full.clone();
+        for (k, item) in self.items.iter().enumerate() {
+            let shown = if k < index {
+                continue;
+            } else if k == index {
+                partial_content(&item.lines, item.mode, revealed)
+            } else {
+                vec![String::new(); item.lines.len()]
+            };
+            for (i, l) in shown.into_iter().enumerate() {
+                if let Some(slot) = code.get_mut((item.range.start - first_line) as usize + i) {
+                    *slot = l;
+                }
+            }
+        }
+        code
+    }
+
+    /// Every intermediate code of the animation with how long it stays, in
+    /// order, ending with the full code at the last item's speed: what a
+    /// recording draws between the step's arrival and its annotations.
+    pub fn frames(&self, first_line: u32) -> Vec<(Vec<String>, u64)> {
+        let mut out = Vec::new();
+        for (k, item) in self.items.iter().enumerate() {
+            for revealed in 0..item.units {
+                out.push((self.code_at(first_line, k, revealed), item.speed_ms));
+            }
+        }
+        let last_speed = self.items.last().map_or(0, |i| i.speed_ms);
+        out.push((self.full.clone(), last_speed));
+        out
+    }
+}
+
+/// The typing animation of `step`, when any move at that step is typed:
+/// the content lines of each typing move, followed through the maps of the
+/// moves applied after it (same step) so they point into the final code.
+/// `None` when nothing is typed at `step` or the moves do not apply.
+pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
+    if !doc.moves.iter().any(|m| {
+        let MoveAction::CodePatch(p) = &m.action;
+        m.at_step == step && p.typing != Typing::Instant
+    }) {
+        return None;
+    }
+    let first = doc.source.first_line;
+    let (full, maps) = apply_until(doc.base(), first, &doc.moves, step).ok()?;
+    let mut items: Vec<TypingItem> = Vec::new();
+    for (k, (idx, at, map)) in maps.iter().enumerate() {
+        let MoveAction::CodePatch(p) = &doc.moves[*idx].action;
+        if *at != step || p.typing == Typing::Instant || map.inserted.is_empty() {
+            continue;
+        }
+        let mut range = map.inserted.clone();
+        let mut lost = false;
+        for (_, _, later) in &maps[k + 1..] {
+            match (later.get(range.start), later.get(range.end - 1)) {
+                (Some(a), Some(b)) if b >= a => range = a..b + 1,
+                _ => {
+                    lost = true;
+                    break;
+                }
+            }
+        }
+        if lost {
+            continue;
+        }
+        let lines = p.content_lines();
+        items.push(TypingItem {
+            range,
+            units: typing_units(&lines, p.typing),
+            lines,
+            mode: p.typing,
+            speed_ms: p.speed().max(1),
+        });
+    }
+    if items.is_empty() {
+        return None;
+    }
+    Some(TypingPlan { full, items })
+}
+
 /// Partial content of a typing animation: `revealed` units of the patch's
 /// content (lines for `Typing::Line`, graphemes for `Typing::Char`), the
 /// rest blank, so the line count — and every shifted annotation — stays put.

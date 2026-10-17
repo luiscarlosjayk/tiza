@@ -10,7 +10,7 @@ use tiza_core::layout::{Layout, LayoutOptions, layout};
 use tiza_core::model::{
     Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
 };
-use tiza_core::moves::{self, Move, MoveAction, Typing};
+use tiza_core::moves::{self, Move};
 use tiza_core::protocol::{
     AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed, MoveMutated, Mutated,
     PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status, StepParams,
@@ -53,22 +53,10 @@ pub enum Overlay {
 /// line count — and every shifted annotation — stays put while it types.
 #[derive(Debug, Clone)]
 pub struct TypingState {
-    /// The code at the step with every move applied.
-    pub full: Vec<String>,
-    pub items: Vec<TypingItem>,
+    pub plan: moves::TypingPlan,
     pub index: usize,
     pub revealed: usize,
     last: std::time::Instant,
-}
-
-#[derive(Debug, Clone)]
-pub struct TypingItem {
-    /// Lines of `full` (absolute) the content occupies.
-    pub range: std::ops::Range<u32>,
-    pub lines: Vec<String>,
-    pub mode: Typing,
-    pub speed: std::time::Duration,
-    pub units: usize,
 }
 
 /// A mutation an agent asked for while supervised mode is on: it waits for
@@ -718,55 +706,11 @@ impl App {
     /// moves asks for one. The content of those moves is blanked out and
     /// revealed by `typing_tick`.
     fn start_typing(&mut self) {
-        let step = self.doc.step;
-        if !self.doc.moves.iter().any(|m| {
-            let MoveAction::CodePatch(p) = &m.action;
-            m.at_step == step && p.typing != Typing::Instant
-        }) {
-            return;
-        }
-        let first = self.doc.source.first_line;
-        let Ok((full, maps)) = moves::apply_until(self.doc.base(), first, &self.doc.moves, step)
-        else {
+        let Some(plan) = moves::typing_plan(&self.doc, self.doc.step) else {
             return;
         };
-        // The content lines of each typing move, followed through the maps
-        // of the moves applied after it (same step) so they point into `full`.
-        let mut items: Vec<TypingItem> = Vec::new();
-        for (k, (idx, at, map)) in maps.iter().enumerate() {
-            let MoveAction::CodePatch(p) = &self.doc.moves[*idx].action;
-            if *at != step || p.typing == Typing::Instant || map.inserted.is_empty() {
-                continue;
-            }
-            let mut range = map.inserted.clone();
-            let mut lost = false;
-            for (_, _, later) in &maps[k + 1..] {
-                match (later.get(range.start), later.get(range.end - 1)) {
-                    (Some(a), Some(b)) if b >= a => range = a..b + 1,
-                    _ => {
-                        lost = true;
-                        break;
-                    }
-                }
-            }
-            if lost {
-                continue;
-            }
-            let lines = p.content_lines();
-            items.push(TypingItem {
-                range,
-                units: moves::typing_units(&lines, p.typing),
-                lines,
-                mode: p.typing,
-                speed: std::time::Duration::from_millis(p.speed().max(1)),
-            });
-        }
-        if items.is_empty() {
-            return;
-        }
         self.typing = Some(TypingState {
-            full,
-            items,
+            plan,
             index: 0,
             revealed: 0,
             last: std::time::Instant::now(),
@@ -777,23 +721,9 @@ impl App {
     /// Writes the partially typed code into the document.
     fn refresh_typing_code(&mut self) {
         let Some(t) = &self.typing else { return };
-        let first = self.doc.source.first_line;
-        let mut code = t.full.clone();
-        for (k, item) in t.items.iter().enumerate() {
-            let shown = if k < t.index {
-                continue;
-            } else if k == t.index {
-                moves::partial_content(&item.lines, item.mode, t.revealed)
-            } else {
-                vec![String::new(); item.lines.len()]
-            };
-            for (i, l) in shown.into_iter().enumerate() {
-                if let Some(slot) = code.get_mut((item.range.start - first) as usize + i) {
-                    *slot = l;
-                }
-            }
-        }
-        self.doc.code = code;
+        self.doc.code = t
+            .plan
+            .code_at(self.doc.source.first_line, t.index, t.revealed);
     }
 
     /// Advances the typing animation by the time elapsed. Returns true when
@@ -803,17 +733,18 @@ impl App {
             return false;
         };
         let elapsed = t.last.elapsed();
-        let item = &t.items[t.index];
-        let units = (elapsed.as_micros() / item.speed.as_micros().max(1)) as usize;
+        let item = &t.plan.items[t.index];
+        let speed = std::time::Duration::from_millis(item.speed_ms);
+        let units = (elapsed.as_micros() / speed.as_micros().max(1)) as usize;
         if units == 0 {
             return false;
         }
-        t.last += item.speed * units as u32;
+        t.last += speed * units as u32;
         t.revealed += units;
-        while t.revealed >= t.items[t.index].units {
-            t.revealed -= t.items[t.index].units;
+        while t.revealed >= t.plan.items[t.index].units {
+            t.revealed -= t.plan.items[t.index].units;
             t.index += 1;
-            if t.index >= t.items.len() {
+            if t.index >= t.plan.items.len() {
                 self.finish_typing();
                 self.revision += 1;
                 return true;
@@ -827,7 +758,7 @@ impl App {
     /// Ends the typing animation at once (any key, `p`, a socket step change).
     pub fn finish_typing(&mut self) {
         if let Some(t) = self.typing.take() {
-            self.doc.code = t.full;
+            self.doc.code = t.plan.full;
         }
     }
 
@@ -2560,10 +2491,22 @@ impl App {
             PathBuf::from(path)
         };
         let format = ExportFormat::from_path(&path).ok_or_else(|| {
-            Error::Invalid(format!(
-                "{}: the extension picks the format (.txt .ansi .md .svg .png)",
-                path.display()
-            ))
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase);
+            if matches!(ext.as_deref(), Some("gif" | "mp4" | "webm" | "cast" | "tape")) {
+                Error::Invalid(format!(
+                    "{}: a recording of every step is made from the shell — `tiza render --out {}` records this instance (no FILE needed)",
+                    path.display(),
+                    path.display()
+                ))
+            } else {
+                Error::Invalid(format!(
+                    "{}: the extension picks the format (.txt .ansi .md .svg .png)",
+                    path.display()
+                ))
+            }
         })?;
         let l = layout(
             &self.doc,

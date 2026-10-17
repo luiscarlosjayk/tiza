@@ -51,6 +51,8 @@ jsonschema = { version = "0.59.0", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+# Animated GIF (t-120): encoder only, LZW through weezl; our own palette, no color_quant.
+gif = { version = "0.14", default-features = false, features = ["std"] }
 
 
 [profile.release]

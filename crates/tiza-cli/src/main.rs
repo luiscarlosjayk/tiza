@@ -93,6 +93,12 @@ enum Format {
     Cast,
     /// VHS tape that drives the real binary through every step (vhs → GIF/MP4)
     Tape,
+    /// Animated GIF of every step, drawn by Tiza itself (nothing to install)
+    Gif,
+    /// MP4 of every step through `ffmpeg` on your PATH (never bundled)
+    Mp4,
+    /// WebM of every step through `ffmpeg` on your PATH (never bundled)
+    Webm,
 }
 
 #[derive(Subcommand)]
@@ -102,7 +108,7 @@ enum Cmd {
     Render {
         /// `.tiza` document (or source file) to draw; omit it to use the live instance
         file: Option<String>,
-        /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`) unless --format is given.
+        /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`, `.gif`, `.mp4`, `.webm`, `.cast`, `.tape`) unless --format is given.
         #[arg(long, default_value = "-")]
         out: String,
         /// Step to show (default: the document's current step, or all of them for a file)
@@ -130,9 +136,9 @@ enum Cmd {
         /// SVG/PNG: corner radius of the background in px (0 = square)
         #[arg(long, default_value_t = 12.0)]
         radius: f32,
-        /// PNG: device scale (2 = HiDPI / video)
-        #[arg(long, default_value_t = 2.0)]
-        scale: f32,
+        /// PNG/GIF/MP4: device scale (default 2 for PNG, 1 for GIF and video)
+        #[arg(long)]
+        scale: Option<f32>,
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
         #[arg(long)]
         no_embed_fonts: bool,
@@ -145,15 +151,18 @@ enum Cmd {
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
-        /// .cast/.tape: seconds each step stays on screen
+        /// .gif/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long)
         #[arg(long, default_value_t = 2.0)]
         interval: f64,
-        /// .cast/.tape: start at the first annotated step instead of step 0 (code only)
+        /// .gif/.mp4/.cast/.tape: start at the first annotated step instead of step 0 (code only)
         #[arg(long)]
         skip_zero: bool,
         /// .cast/.tape: recording title (default: the document's)
         #[arg(long)]
         title: Option<String>,
+        /// .gif: how many times it plays (0 = forever, the default)
+        #[arg(long = "loop", default_value_t = 0)]
+        loop_count: u16,
     },
     /// Start the MCP server (stdio) that controls the live instance
     Mcp,
@@ -245,6 +254,7 @@ fn real_main() -> anyhow::Result<()> {
             interval,
             skip_zero,
             title,
+            loop_count,
         }) => {
             let format = format.unwrap_or_else(|| {
                 match std::path::Path::new(&out)
@@ -259,6 +269,9 @@ fn real_main() -> anyhow::Result<()> {
                     Some("md") | Some("markdown") => Format::Md,
                     Some("cast") => Format::Cast,
                     Some("tape") => Format::Tape,
+                    Some("gif") => Format::Gif,
+                    Some("mp4") | Some("m4v") | Some("mov") => Format::Mp4,
+                    Some("webm") => Format::Webm,
                     _ => Format::Txt,
                 }
             });
@@ -313,12 +326,20 @@ fn real_main() -> anyhow::Result<()> {
             // an error, never an aborted process.
             let width =
                 tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
-            if matches!(format, Format::Png | Format::Svg) {
+            let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
+            let scale = scale.unwrap_or(if animated { 1.0 } else { 2.0 });
+            if matches!(format, Format::Png | Format::Svg) || animated {
                 tiza_core::layout::check_font_size(font_size)
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
-                if format == Format::Png {
+                if format != Format::Svg {
                     tiza_core::layout::check_scale(scale).map_err(|e| anyhow::anyhow!("{e}"))?;
                 }
+            }
+            if animated && out == "-" {
+                bail!(
+                    "a .{0} needs a file: pass --out demo.{0}",
+                    format_ext(format)
+                );
             }
             // An explicit step past the last one is probably a typo in a
             // script: say so (on stderr, so `--out -` stays clean) and show
@@ -354,6 +375,63 @@ fn real_main() -> anyhow::Result<()> {
                 Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
                 Format::Ansi => l.canvas.to_ansi().into_bytes(),
                 Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
+                Format::Gif | Format::Mp4 | Format::Webm => {
+                    let frames = tiza_core::anim::frames(
+                        &doc,
+                        &theme,
+                        &tiza_core::anim::AnimOptions {
+                            interval,
+                            width,
+                            line_numbers: !no_numbers,
+                            from_zero: !skip_zero,
+                        },
+                    );
+                    let svg_opts = tiza_export::SvgOptions {
+                        font_size,
+                        margin_cells: margin,
+                        radius,
+                        embed_fonts: false,
+                        title: None,
+                        brand_font,
+                    };
+                    let png_opts = tiza_export::PngOptions {
+                        scale,
+                        system_fonts,
+                    };
+                    if format == Format::Gif {
+                        let gif_frames: Vec<(tiza_core::canvas::Canvas, u64)> =
+                            frames.into_iter().map(|f| (f.canvas, f.delay_ms)).collect();
+                        let (bytes, report) = tiza_export::to_gif(
+                            &gif_frames,
+                            &theme,
+                            &tiza_export::GifOptions {
+                                svg: svg_opts,
+                                png: png_opts,
+                                repeat: (loop_count > 0).then(|| loop_count.saturating_sub(1)),
+                            },
+                        )
+                        .context("could not encode the GIF")?;
+                        write_atomically(&out, &bytes)?;
+                        eprintln!(
+                            "wrote {out} ({} bytes): {} frames, {}×{} px, {:.1} s per loop, {} colours{}",
+                            bytes.len(),
+                            report.frames,
+                            report.width,
+                            report.height,
+                            report.duration_ms as f64 / 1000.0,
+                            report.colors,
+                            if loop_count == 0 {
+                                ", loops forever".to_string()
+                            } else {
+                                format!(", plays {loop_count}×")
+                            }
+                        );
+                        return Ok(());
+                    }
+                    let bytes = encode_video(&frames, &theme, &svg_opts, &png_opts, format, &out)?;
+                    eprintln!("wrote {out} ({bytes} bytes)");
+                    return Ok(());
+                }
                 Format::Cast | Format::Tape => {
                     let opts = tiza_core::cast::CastOptions {
                         interval,
@@ -412,7 +490,10 @@ fn real_main() -> anyhow::Result<()> {
                 std::fs::write(&out, &bytes).with_context(|| format!("could not write {out}"))?;
                 eprintln!("wrote {out} ({} bytes)", bytes.len());
                 match format {
-                    Format::Tape => eprintln!("play it with `vhs {out}` (needs vhs, ttyd, ffmpeg)"),
+                    Format::Tape => eprintln!(
+                        "play it with `vhs {out}` (needs vhs, ttyd, ffmpeg); `--out {}.gif` needs nothing",
+                        std::path::Path::new(&out).with_extension("").display()
+                    ),
                     Format::Cast => eprintln!(
                         "play it with `asciinema play {out}` (GIF: `agg {out} {}`)",
                         std::path::Path::new(&out).with_extension("gif").display()
@@ -518,6 +599,169 @@ fn call(
         bail!("{} ({})", e.message, e.code);
     }
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
+}
+
+fn format_ext(f: Format) -> &'static str {
+    match f {
+        Format::Txt => "txt",
+        Format::Ansi => "ansi",
+        Format::Md => "md",
+        Format::Svg => "svg",
+        Format::Png => "png",
+        Format::Cast => "cast",
+        Format::Tape => "tape",
+        Format::Gif => "gif",
+        Format::Mp4 => "mp4",
+        Format::Webm => "webm",
+    }
+}
+
+/// Writes next to the target and renames, so an interrupted render never
+/// leaves a half-written file behind.
+fn write_atomically(out: &str, bytes: &[u8]) -> anyhow::Result<()> {
+    let path = std::path::Path::new(out);
+    let tmp = path.with_file_name(format!(
+        ".{}.tiza-tmp",
+        path.file_name()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "out".into())
+    ));
+    std::fs::write(&tmp, bytes).with_context(|| format!("could not write {}", tmp.display()))?;
+    std::fs::rename(&tmp, path).with_context(|| format!("could not write {out}"))
+}
+
+/// Where `ffmpeg` is: `$TIZA_FFMPEG`, or the first one on PATH. Tiza never
+/// bundles, downloads or vendors it (ADR 0009 spirit: the binary that shows
+/// your code stays what it is; a video is the one thing it delegates).
+fn find_ffmpeg() -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("TIZA_FFMPEG")
+        && !p.trim().is_empty()
+    {
+        return Some(std::path::PathBuf::from(p));
+    }
+    let path = std::env::var_os("PATH")?;
+    std::env::split_paths(&path)
+        .map(|dir| dir.join("ffmpeg"))
+        .find(|p| p.is_file())
+}
+
+/// MP4/WebM: the frames go to a temporary directory as PNGs with a concat
+/// list carrying each one's duration, and `ffmpeg` muxes them with a fixed,
+/// printed command (30 fps, even dimensions, yuv420p for MP4 so every
+/// player opens it). Returns the size of the file written.
+fn encode_video(
+    frames: &[tiza_core::anim::Frame],
+    theme: &Theme,
+    svg_opts: &tiza_export::SvgOptions,
+    png_opts: &tiza_export::PngOptions,
+    format: Format,
+    out: &str,
+) -> anyhow::Result<usize> {
+    let Some(ffmpeg) = find_ffmpeg() else {
+        eprintln!(
+            "tiza: ffmpeg not found on PATH (or in $TIZA_FFMPEG), and Tiza never bundles it.\n\
+             Install it — macOS: `brew install ffmpeg`; Debian/Ubuntu: `sudo apt install ffmpeg`; Fedora: `sudo dnf install ffmpeg`; Windows: `winget install ffmpeg` — and run the same command again.\n\
+             `.gif` and `.cast` need nothing: `tiza render … --out {}.gif`",
+            std::path::Path::new(out).with_extension("").display()
+        );
+        std::process::exit(2);
+    };
+    let dir = std::env::temp_dir().join(format!("tiza-video-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
+    let _cleanup = TempDir(dir.clone());
+    let mut list = String::from("ffconcat version 1.0\n");
+    for (i, f) in frames.iter().enumerate() {
+        let svg = tiza_export::to_svg(&f.canvas, theme, svg_opts);
+        let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
+        let name = format!("f{i:05}.png");
+        std::fs::write(dir.join(&name), png)?;
+        list.push_str(&format!(
+            "file '{name}'\nduration {:.3}\n",
+            f.delay_ms as f64 / 1000.0
+        ));
+    }
+    // The concat demuxer drops the last duration unless the file is listed
+    // once more.
+    if let Some(last) = frames.len().checked_sub(1) {
+        list.push_str(&format!("file 'f{last:05}.png'\n"));
+    }
+    std::fs::write(dir.join("frames.txt"), &list)?;
+    let out_path = std::path::Path::new(out);
+    let tmp = out_path.with_file_name(format!(
+        ".{}.tiza-tmp.{}",
+        out_path
+            .file_stem()
+            .map(|f| f.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "out".into()),
+        format_ext(format)
+    ));
+    let mut args: Vec<String> = vec![
+        "-y".into(),
+        "-hide_banner".into(),
+        "-loglevel".into(),
+        "error".into(),
+        "-f".into(),
+        "concat".into(),
+        "-safe".into(),
+        "0".into(),
+        "-i".into(),
+        dir.join("frames.txt").to_string_lossy().into_owned(),
+        "-vf".into(),
+        "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30".into(),
+    ];
+    match format {
+        Format::Webm => args.extend([
+            "-c:v".into(),
+            "libvpx-vp9".into(),
+            "-b:v".into(),
+            "0".into(),
+            "-crf".into(),
+            "30".into(),
+        ]),
+        _ => args.extend([
+            "-c:v".into(),
+            "libx264".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
+            "-crf".into(),
+            "18".into(),
+            "-movflags".into(),
+            "+faststart".into(),
+        ]),
+    }
+    args.push(tmp.to_string_lossy().into_owned());
+    eprintln!(
+        "ffmpeg {}",
+        args.iter()
+            .map(|a| if a.contains(' ') || a.contains('(') {
+                format!("'{a}'")
+            } else {
+                a.clone()
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    );
+    let status = std::process::Command::new(&ffmpeg)
+        .args(&args)
+        .status()
+        .with_context(|| format!("could not run {}", ffmpeg.display()))?;
+    if !status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        bail!(
+            "ffmpeg failed ({status}); the frames were fine, so check the codec above is in your ffmpeg build"
+        );
+    }
+    std::fs::rename(&tmp, out_path).with_context(|| format!("could not write {out}"))?;
+    Ok(std::fs::metadata(out_path)
+        .map(|m| m.len() as usize)
+        .unwrap_or(0))
+}
+
+struct TempDir(std::path::PathBuf);
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 /// `:export file.svg|png` inside the TUI: the image stack lives in this binary.

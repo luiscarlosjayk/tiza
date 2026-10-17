@@ -342,7 +342,7 @@ pub struct UpdateParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExportParams {
     #[schemars(
-        description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi or .md"
+        description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, or .gif (an animated GIF of every step, drawn by Tiza itself)"
     )]
     pub path: String,
     #[schemars(description = "Step to show; defaults to the current one")]
@@ -351,8 +351,16 @@ pub struct ExportParams {
     pub width: Option<usize>,
     #[schemars(description = "dark or light; defaults to the document's theme")]
     pub theme: Option<String>,
-    #[schemars(description = "PNG device scale (default 2)")]
+    #[schemars(description = "PNG device scale (default 2; 1 for a GIF)")]
     pub scale: Option<f32>,
+    #[schemars(
+        description = "GIF: seconds each step stays on screen (default 2; the last one twice as long)"
+    )]
+    pub interval: Option<f64>,
+    #[schemars(
+        description = "GIF: start at the first annotated step instead of step 0 (default false)"
+    )]
+    pub skip_zero: Option<bool>,
     #[schemars(description = "Font size in px (default 16)")]
     pub font_size: Option<f32>,
     #[schemars(
@@ -1051,9 +1059,10 @@ impl TizaServer {
             Some("txt") => "txt",
             Some("ansi") | Some("ans") => "ansi",
             Some("md") | Some("markdown") => "md",
+            Some("gif") => "gif",
             _ => {
                 return Err(McpError::invalid_params(
-                    "path must end in .png, .svg, .txt, .ansi or .md",
+                    "path must end in .png, .svg, .txt, .ansi, .md or .gif",
                     None,
                 ));
             }
@@ -1111,7 +1120,10 @@ impl TizaServer {
             _ => None,
         };
         let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
-        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
+        let is_gif = format == "gif";
+        let scale =
+            tiza_core::layout::check_scale(p.scale.unwrap_or(if is_gif { 1.0 } else { 2.0 }))
+                .map_err(bad)?;
         let font_size =
             tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
         let svg_opts = tiza_export::SvgOptions {
@@ -1121,8 +1133,48 @@ impl TizaServer {
             title: scene.document.title.clone(),
             ..Default::default()
         };
+        let too_big = |e: tiza_export::Error| match e {
+            tiza_export::Error::TooBig(..) => McpError::invalid_params(e.to_string(), None),
+            other => McpError::internal_error(other.to_string(), None),
+        };
+        let mut gif_frames = 0usize;
         let bytes = if let Some(b) = bytes {
             b
+        } else if is_gif {
+            // Every step, the typed moves between them, one geometry for the
+            // take, masks on (t-120).
+            let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
+                &scene.document,
+                &theme,
+                &tiza_core::anim::AnimOptions {
+                    interval: p.interval.unwrap_or(2.0),
+                    width: layout.canvas.width,
+                    line_numbers: true,
+                    from_zero: !p.skip_zero.unwrap_or(false),
+                },
+            )
+            .into_iter()
+            .map(|f| (f.canvas, f.delay_ms))
+            .collect();
+            gif_frames = frames.len();
+            let (bytes, _) = tiza_export::to_gif(
+                &frames,
+                &theme,
+                &tiza_export::GifOptions {
+                    svg: tiza_export::SvgOptions {
+                        embed_fonts: false,
+                        title: None,
+                        ..svg_opts.clone()
+                    },
+                    png: tiza_export::PngOptions {
+                        scale,
+                        system_fonts: false,
+                    },
+                    repeat: None,
+                },
+            )
+            .map_err(too_big)?;
+            bytes
         } else if is_png {
             let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
             tiza_export::to_png(
@@ -1132,22 +1184,25 @@ impl TizaServer {
                     system_fonts: false,
                 },
             )
-            .map_err(|e| match e {
-                tiza_export::Error::TooBig(..) => McpError::invalid_params(e.to_string(), None),
-                other => McpError::internal_error(other.to_string(), None),
-            })?
+            .map_err(too_big)?
         } else {
             tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes()
         };
         std::fs::write(&p.path, &bytes).map_err(|e| {
             McpError::internal_error(format!("could not write {}: {e}", p.path), None)
         })?;
-        Ok(text(pretty(&json!({
+        let mut reply = json!({
             "path": p.path,
             "bytes": bytes.len(),
             "format": format,
             "step": p.step.unwrap_or(scene.step),
-        }))))
+        });
+        if is_gif {
+            reply["frames"] = json!(gif_frames);
+            reply["steps"] = json!(format!("0-{}", scene.document.max_step()));
+            reply.as_object_mut().unwrap().remove("step");
+        }
+        Ok(text(pretty(&reply)))
     }
 }
 

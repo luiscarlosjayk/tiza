@@ -39,6 +39,7 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | insta | 1.49.0 | 2026-09 | Apache-2.0 | dev-dependency of `codedraw-qa` (render snapshots) |
 | proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |
+| gif / weezl | 0.14.2 / 0.1.12 | 2025 | MIT/Apache-2.0 | Only in `tiza-export` (t-120, 2026-10-18): GIF encoder (LZW through weezl), `default-features = false` + `std`, no `color_quant` — the palette and the frame diffs are ours (`gif.rs`). The MP4/WebM path shells out to the user's ffmpeg and adds no crate. |
 | notify | 8.2.0 | 2026-02 | CC0-1.0 (inotify: ISC) | Only in `codedraw-tui`, follow mode (t-011): watches the source file's directory, debounce in our code (no `notify-debouncer-*`) |
 
 Evaluated and **postponed**: `arboard` (in-app clipboard; `pbpaste | codedraw` covers macOS). `notify` (adopted for follow mode: Zed and most editors save with tmp+rename, so the *directory* is watched and events are matched by file name; the 120 ms debounce and the empty-write deferral live in `codedraw-tui/src/follow.rs`, so no debouncer crate is needed), `resvg`, `proptest` and `insta` were adopted later (rows above).

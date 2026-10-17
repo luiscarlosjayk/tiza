@@ -37,6 +37,14 @@ fn font_db(system_fonts: bool) -> usvg::fontdb::Database {
 /// Rasterizes an SVG produced by [`crate::to_svg`] (fonts need not be embedded
 /// in it: the rasterizer carries its own copies).
 pub fn to_png(svg: &str, o: &PngOptions) -> Result<Vec<u8>, Error> {
+    rasterize(svg, o)?
+        .encode_png()
+        .map_err(|e| Error::Png(e.to_string()))
+}
+
+/// The pixels of an SVG at `o.scale` (what `to_png` encodes; the GIF
+/// encoder reads them directly).
+pub fn rasterize(svg: &str, o: &PngOptions) -> Result<resvg::tiny_skia::Pixmap, Error> {
     let opts = usvg::Options {
         fontdb: std::sync::Arc::new(font_db(o.system_fonts)),
         font_family: fonts::FAMILY.to_string(),
@@ -57,7 +65,7 @@ pub fn to_png(svg: &str, o: &PngOptions) -> Result<Vec<u8>, Error> {
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or(Error::Alloc(w, h))?;
     let ts = resvg::tiny_skia::Transform::from_scale(o.scale, o.scale);
     resvg::render(&tree, ts, &mut pixmap.as_mut());
-    pixmap.encode_png().map_err(|e| Error::Png(e.to_string()))
+    Ok(pixmap)
 }
 
 #[cfg(test)]
