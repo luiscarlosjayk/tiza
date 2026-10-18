@@ -623,6 +623,11 @@ pub struct RedactAt {
     pub by_move: Option<usize>,
     /// The moves (indexes) whose content copied its value where no mask was.
     pub copied_by: Vec<usize>,
+    /// The text under its mask while it still covered it exactly (taken on
+    /// the first patch it goes through, t-157): searched for — whole or in
+    /// pieces — in every line a later patch writes, even once the mask
+    /// itself was widened. Never shown.
+    pub value: Option<String>,
 }
 
 impl RedactAt {
@@ -1102,20 +1107,28 @@ fn follow_redacts(
             .map(|m| (m.start as usize, m.end as usize))
             .collect()
     };
-    // The values under the exact masks (never shown, only searched for).
+    // The values under the masks (never shown, only searched for): taken
+    // while a mask is still exact and remembered after it widens (t-157).
     let mut secrets: Vec<(usize, String)> = Vec::new();
-    for (i, r) in red.iter().enumerate() {
-        let Some(r) = r else { continue };
+    for (i, slot) in red.iter_mut().enumerate() {
+        let Some(r) = slot.as_mut() else { continue };
         let a = slot_annotation(doc, i);
-        if &a.file != key || r.dropped || r.widened || r.spans.len() != 1 || !r.copies.is_empty() {
+        if &a.file != key || r.dropped {
             continue;
         }
-        let sp = r.spans[0];
-        if let Some(text) = line_of(before, sp.line) {
-            let value = crate::model::grapheme_slice(&text, sp.start, sp.end).to_string();
-            if value.trim().chars().count() >= 3 {
-                secrets.push((i, value));
-            }
+        if r.value.is_none()
+            && !r.widened
+            && r.spans.len() == 1
+            && r.copies.is_empty()
+            && let Some(text) = line_of(before, r.spans[0].line)
+        {
+            let sp = r.spans[0];
+            r.value = Some(crate::model::grapheme_slice(&text, sp.start, sp.end).to_string());
+        }
+        if let Some(value) = &r.value
+            && value.trim().chars().count() >= 3
+        {
+            secrets.push((i, value.clone()));
         }
     }
     let follow_all = |spans: &[TextSpan], widened: &mut bool| -> Vec<TextSpan> {
@@ -1171,18 +1184,21 @@ fn follow_redacts(
         r.spans = spans;
         r.copies = copies;
     }
-    // Copies of a masked value in the new lines: masked, whatever line.
+    // Copies of a masked value in the new lines — whole, or a piece of 4+
+    // characters of it — are masked, whatever line, and fail CLOSED
+    // (t-157): the whole token that holds the copy, or the rest of the line
+    // when the token's end is unclear. A move added later at an earlier
+    // step can retarget a `position` move onto a line no redact covers, so
+    // the copy is all there is to go by.
     for (i, value) in secrets {
         for l in map.inserted.clone() {
             let Some(text) = line_of(after, l) else {
                 continue;
             };
-            let mut from = 0;
-            while let Some(pos) = text[from..].find(&value) {
-                let b0 = from + pos;
-                from = b0 + value.len().max(1);
-                let s = crate::model::grapheme_index(&text, b0);
-                let e = crate::model::grapheme_index(&text, b0 + value.len());
+            for (b0, b1, whole) in crate::redact::value_hits(&text, &value) {
+                let (t0, t1) = crate::redact::token_around(&text, b0, b1);
+                let s = crate::model::grapheme_index(&text, t0);
+                let e = crate::model::grapheme_index(&text, t1);
                 let covered = red.iter().enumerate().any(|(j, r)| {
                     slot_annotation(doc, j).file == *key
                         && r.as_ref().is_some_and(|r| {
@@ -1199,7 +1215,9 @@ fn follow_redacts(
                     });
                     r.widened = true;
                     r.by_move = Some(index);
-                    if !r.copied_by.contains(&index) {
+                    // Only a copy of the whole value makes `move.add`
+                    // refuse the move (t-140 AC6); a piece is masked.
+                    if whole && !r.copied_by.contains(&index) {
                         r.copied_by.push(index);
                     }
                 }
@@ -1478,6 +1496,162 @@ pub fn repin_span(
         },
         f => f,
     })
+}
+
+/// Which lines a `code.patch` hits where it runs (t-157): the lines it
+/// replaces or deletes, or the line an insert goes before (the last line
+/// when it appends), with their text then — raw to compare, masked to quote.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatchHit {
+    pub at_step: u32,
+    pub file: ViewKey,
+    pub op: PatchOp,
+    /// First and last line hit; for an insert, the line it goes before.
+    pub from: u32,
+    pub to: u32,
+    /// An insert past the last line (it appends after `from`).
+    pub appends: bool,
+    pub text: Vec<String>,
+    pub masked: Vec<String>,
+}
+
+/// [`PatchHit`] of every `code.patch` of `doc` that applies, by move index.
+pub fn patch_hits(doc: &Document) -> BTreeMap<usize, PatchHit> {
+    let mut out = BTreeMap::new();
+    let (Ok(raw), Ok(shown)) = (
+        project(doc, &doc.moves, u32::MAX, false),
+        project(doc, &doc.moves, u32::MAX, true),
+    ) else {
+        return out;
+    };
+    let mut cur: BTreeMap<ViewKey, (Vec<String>, Vec<String>)> = BTreeMap::new();
+    for (ap, mp) in raw.patches.iter().zip(&shown.patches) {
+        let first = doc.view_first_line(&ap.file);
+        let (before, before_masked) = cur
+            .entry(ap.file.clone())
+            .or_insert_with(|| {
+                (
+                    doc.view_base_code(&ap.file, false).unwrap_or_default(),
+                    doc.view_base_code(&ap.file, true).unwrap_or_default(),
+                )
+            })
+            .clone();
+        if let MoveAction::CodePatch(patch) = &doc.moves[ap.index].action
+            && let Ok(t) = patch.resolve(&before, first)
+        {
+            let last = first + before.len().saturating_sub(1) as u32;
+            let (from, to, appends) = match patch.op {
+                PatchOp::Insert if t.from > last => (last, last, true),
+                PatchOp::Insert => (t.from, t.from, false),
+                _ => (t.from, t.to, false),
+            };
+            let slice = |code: &[String]| -> Vec<String> {
+                (from..=to)
+                    .filter_map(|l| code.get(l.checked_sub(first)? as usize).cloned())
+                    .collect()
+            };
+            out.insert(
+                ap.index,
+                PatchHit {
+                    at_step: ap.at_step,
+                    file: ap.file.clone(),
+                    op: patch.op,
+                    from,
+                    to,
+                    appends,
+                    text: slice(&before),
+                    masked: slice(&before_masked),
+                },
+            );
+        }
+        cur.insert(ap.file.clone(), (ap.after.clone(), mp.after.clone()));
+    }
+    out
+}
+
+/// A line as a retarget notice quotes it (t-157): the masked text, cut
+/// where its first mask starts (`token=…`), short, and nothing at all when
+/// what is left still looks like a secret.
+fn quote_line(masked: &[String]) -> String {
+    let Some(line) = masked.first() else {
+        return "…".into();
+    };
+    let mut q = line.trim().to_string();
+    let mut cut = false;
+    if let Some(k) = q.find('•') {
+        q.truncate(k);
+        cut = true;
+    }
+    if q.graphemes(true).count() > 32 {
+        q = q.graphemes(true).take(31).collect();
+        cut = true;
+    }
+    if crate::redact::looks_like_secret(&q) {
+        return "…".into();
+    }
+    if cut || masked.len() > 1 {
+        q.push('…');
+    }
+    q
+}
+
+/// After the moves changed (`old` → `new`; `new_index` maps an old move
+/// to its index in `new`, `None` when it was deleted), one notice per
+/// `code.patch` that now hits other lines than before (t-157): a move
+/// added or deleted at an earlier step shifts the code a `position`
+/// target counts on (ADR 0007 §3d). The notice quotes only masked text.
+pub fn retarget_notices(
+    old: &Document,
+    new: &Document,
+    new_index: impl Fn(usize) -> Option<usize>,
+) -> Vec<String> {
+    let (before, after) = (patch_hits(old), patch_hits(new));
+    let mut out = Vec::new();
+    for (i, o) in &before {
+        let Some(j) = new_index(*i) else { continue };
+        let Some(n) = after.get(&j) else { continue };
+        if o.text == n.text && o.appends == n.appends {
+            continue;
+        }
+        let mut lines = if n.from == n.to {
+            format!("L{}", n.from)
+        } else {
+            format!("L{}-{}", n.from, n.to)
+        };
+        if let Some(f) = &n.file {
+            lines = format!("{lines} of {f}");
+        }
+        let (was, now) = (quote_line(&o.masked), quote_line(&n.masked));
+        let what = match n.op {
+            PatchOp::Replace => format!("replaces {lines} «{now}» instead of «{was}»"),
+            PatchOp::Delete => format!("deletes {lines} «{now}» instead of «{was}»"),
+            PatchOp::Insert => {
+                let place = |h: &PatchHit, q: &str| {
+                    if h.appends {
+                        format!("after «{q}» (the end)")
+                    } else {
+                        format!("before «{q}»")
+                    }
+                };
+                format!(
+                    "inserts at {} {} instead of {}",
+                    if n.appends {
+                        format!("L{}", n.from + 1)
+                    } else {
+                        lines
+                    },
+                    place(n, &now),
+                    place(o, &was)
+                )
+            }
+        };
+        out.push(format!(
+            "move #{} (step {}) now {what}: check it",
+            j + 1,
+            n.at_step
+        ));
+    }
+    out
 }
 
 /// The moves as they are read back (`scene.get`, `move.list`, the MCP,

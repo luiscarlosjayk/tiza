@@ -943,8 +943,11 @@ pub struct MoveMutated {
     pub moves: usize,
     pub max_step: u32,
     pub revision: u64,
-    /// Loud notices of the change (t-154): a redact dropped because the
-    /// deleted move wrote its line. Check the screen before recording.
+    /// Loud notices of the change: a redact dropped because the deleted
+    /// move wrote its line (t-154), and every `code.patch` the change
+    /// retargets — a later move whose `position` now hits another line
+    /// (t-157). They never quote masked text. Check the screen before
+    /// recording.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub notices: Vec<String>,
 }

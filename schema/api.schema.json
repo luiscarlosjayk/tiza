@@ -4735,7 +4735,7 @@
             "type": "integer"
           },
           "notices": {
-            "description": "Loud notices of the change (t-154): a redact dropped because the\ndeleted move wrote its line. Check the screen before recording.",
+            "description": "Loud notices of the change: a redact dropped because the deleted\nmove wrote its line (t-154), and every `code.patch` the change\nretargets — a later move whose `position` now hits another line\n(t-157). They never quote masked text. Check the screen before\nrecording.",
             "items": {
               "type": "string"
             },
@@ -4795,7 +4795,7 @@
             "type": "integer"
           },
           "notices": {
-            "description": "Loud notices of the change (t-154): a redact dropped because the\ndeleted move wrote its line. Check the screen before recording.",
+            "description": "Loud notices of the change: a redact dropped because the deleted\nmove wrote its line (t-154), and every `code.patch` the change\nretargets — a later move whose `position` now hits another line\n(t-157). They never quote masked text. Check the screen before\nrecording.",
             "items": {
               "type": "string"
             },

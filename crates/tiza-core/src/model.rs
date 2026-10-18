@@ -1067,6 +1067,14 @@ impl Document {
     /// index. A `code.link` needs its file loaded first (`fs::load_view`
     /// or an entry in `views`).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+        self.add_move_noting(m).map(|(i, _)| i)
+    }
+
+    /// [`Document::add_move`] plus its notices (t-157): every `code.patch`
+    /// that the new move retargets (it now hits other lines, because the
+    /// new move shifted the code its `position` counts on), named without
+    /// quoting masked text.
+    pub fn add_move_noting(&mut self, m: Move) -> Result<(usize, Vec<String>), Error> {
         // Every redact is pinned to the code its columns refer to before
         // the new move changes what "the code at its step" is (t-140,
         // t-154), so the move is followed through, never read in its old
@@ -1091,9 +1099,10 @@ impl Document {
         // found» does not repeat them.
         moves::validate(&with, &trial, &with.annotations).map_err(|e| with.scrub_targets(&m, e))?;
         with.check_move_content(trial.len() - 1)?;
+        let notices = moves::retarget_notices(&framed, &with, Some);
         *self = with;
         self.sync_code_to_step();
-        Ok(self.moves.len() - 1)
+        Ok((self.moves.len() - 1, notices))
     }
 
     /// Pins every redact Tiza can pin without losing a reading (t-140,
@@ -1365,7 +1374,8 @@ impl Document {
                 ));
                 continue;
             }
-            let lines: Vec<u32> = r.all().map(|s| s.line).collect();
+            let mut lines: Vec<u32> = r.all().map(|s| s.line).collect();
+            lines.sort_unstable();
             let place = match (lines.first(), lines.last()) {
                 (Some(a), Some(b)) if a == b => format!("the rest of L{a}"),
                 (Some(a), Some(b)) => format!("L{a}-{b}"),
@@ -1396,11 +1406,14 @@ impl Document {
         self.pin_redacts_with(&moves, None);
         let old = self.clone();
         let m = self.moves.remove(index);
-        let notices = self.repin_redacts(&old, |i| match i.cmp(&index) {
+        let new_index = |i: usize| match i.cmp(&index) {
             std::cmp::Ordering::Less => Some(i),
             std::cmp::Ordering::Equal => None,
             std::cmp::Ordering::Greater => Some(i - 1),
-        });
+        };
+        let mut notices = self.repin_redacts(&old, new_index);
+        // The moves the deletion retargets (t-157).
+        notices.extend(moves::retarget_notices(&old, self, new_index));
         if self.moves.is_empty() {
             self.code = std::mem::take(&mut self.base_code);
             self.source.first_line = self.base_first_line;

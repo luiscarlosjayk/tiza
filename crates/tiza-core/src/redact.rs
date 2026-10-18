@@ -419,6 +419,107 @@ pub fn whole_line(text: &str, l: u32) -> Option<TextSpan> {
     })
 }
 
+/// Shortest piece of a masked value that counts as a copy of it (t-157):
+/// four characters, at least one of them a letter or digit. A value
+/// shorter than that only counts whole.
+pub const MIN_PIECE: usize = 4;
+
+/// Byte ranges of `text` that hold `value` (t-157): every copy of the
+/// whole value, and every run made of pieces of it of [`MIN_PIECE`]+
+/// characters, merged where they touch; `true` when the range holds the
+/// whole value. Only searched for, never shown.
+pub fn value_hits(text: &str, value: &str) -> Vec<(usize, usize, bool)> {
+    let mut hits: Vec<(usize, usize, bool)> = Vec::new();
+    if value.is_empty() {
+        return hits;
+    }
+    let mut from = 0;
+    while let Some(pos) = text[from..].find(value) {
+        let b0 = from + pos;
+        hits.push((b0, b0 + value.len(), true));
+        from = b0 + value.len();
+    }
+    let chars: Vec<(usize, char)> = value.char_indices().collect();
+    if chars.len() > MIN_PIECE {
+        for w in 0..=chars.len() - MIN_PIECE {
+            let start = chars[w].0;
+            let end = chars.get(w + MIN_PIECE).map_or(value.len(), |c| c.0);
+            let piece = &value[start..end];
+            if !piece.chars().any(char::is_alphanumeric) {
+                continue;
+            }
+            let mut from = 0;
+            while let Some(pos) = text[from..].find(piece) {
+                let b0 = from + pos;
+                hits.push((b0, b0 + piece.len(), false));
+                // Overlapping copies of a piece (`aaaa` in `aaaaa`) too.
+                from = b0 + text[b0..].chars().next().map_or(1, char::len_utf8);
+            }
+        }
+    }
+    hits.sort_unstable();
+    let mut out: Vec<(usize, usize, bool)> = Vec::new();
+    for (s, e, whole) in hits {
+        match out.last_mut() {
+            Some(last) if s <= last.1 => {
+                last.1 = last.1.max(e);
+                last.2 |= whole;
+            }
+            _ => out.push((s, e, whole)),
+        }
+    }
+    out
+}
+
+/// Whether `c` can be part of a token around a secret (t-157): anything
+/// but blanks, quotes and the punctuation that separates a value from its
+/// key or from the next item.
+fn token_char(c: char) -> bool {
+    !c.is_whitespace()
+        && !matches!(
+            c,
+            '"' | '\''
+                | '`'
+                | ','
+                | ';'
+                | '('
+                | ')'
+                | '['
+                | ']'
+                | '{'
+                | '}'
+                | '<'
+                | '>'
+                | '='
+                | ':'
+        )
+}
+
+/// The whole token of `text` around bytes `[b0, b1)` (t-157): grown to the
+/// left and to the right over [`token_char`]s. When the token ends at a
+/// `=` or `:` its end is unclear (base64 padding, `user:password`), so it
+/// runs to the end of the line (trailing blanks aside): fail closed.
+pub fn token_around(text: &str, b0: usize, b1: usize) -> (usize, usize) {
+    let mut s = b0;
+    while let Some(c) = text[..s].chars().next_back() {
+        if !token_char(c) {
+            break;
+        }
+        s -= c.len_utf8();
+    }
+    let mut e = b1;
+    while let Some(c) = text[e..].chars().next() {
+        if !token_char(c) {
+            if matches!(c, '=' | ':') {
+                e = text.trim_end().len().max(e);
+            }
+            break;
+        }
+        e += c.len_utf8();
+    }
+    (s, e)
+}
+
 /// Shifts or clamps a column anchor on `line` after `[s0, s1)` became a
 /// run `delta` cells longer (or shorter).
 fn remap_col(col: u32, s0: u32, s1: u32, delta: i64) -> u32 {
@@ -667,6 +768,50 @@ mod tests {
             },
         ];
         assert_eq!(mask_with(&d.code, 1, &spans)[0], "token=•••••••• end");
+    }
+
+    #[test]
+    fn copies_and_pieces_of_a_value_grow_to_their_whole_token() {
+        let v = "abc123secret";
+        let tok = |line: &str| -> Vec<String> {
+            value_hits(line, v)
+                .into_iter()
+                .map(|(s, e, _)| {
+                    let (s, e) = token_around(line, s, e);
+                    line[s..e].to_string()
+                })
+                .collect()
+        };
+        // Start of a longer token, in the middle, quoted, twice.
+        assert_eq!(
+            tok("token=abc123secretLONGER-v9"),
+            ["abc123secretLONGER-v9"]
+        );
+        assert_eq!(tok("x=PREabc123secretPOST"), ["PREabc123secretPOST"]);
+        assert_eq!(tok(r#"k="abc123secret-v2", n=1"#), ["abc123secret-v2"]);
+        assert_eq!(
+            tok("a=abc123secretX b=abc123secretY"),
+            ["abc123secretX", "abc123secretY"]
+        );
+        // An unclear end (`=`, `:`): the rest of the line.
+        assert_eq!(tok("t=abc123secret==  "), ["abc123secret=="]);
+        assert_eq!(
+            tok("u=abc123secret:more stuff"),
+            ["abc123secret:more stuff"]
+        );
+        // Pieces of 4+ characters count; 3 do not; nor pieces without a
+        // letter or digit.
+        assert_eq!(tok("id=abc123 ref=abc-x"), ["abc123"]);
+        assert_eq!(tok("name=Xcret9"), ["Xcret9"]);
+        assert!(tok("ref=abc-x sec").is_empty());
+        let whole: Vec<bool> = value_hits("a=abc123secret b=c123s", v)
+            .iter()
+            .map(|h| h.2)
+            .collect();
+        assert_eq!(whole, [true, false], "only a whole copy is whole");
+        assert!(value_hits("a=---- y", "x----z").is_empty());
+        // Non-ASCII around a piece keeps char boundaries.
+        assert_eq!(tok("é=ñabc123ñ"), ["ñabc123ñ"]);
     }
 
     #[test]

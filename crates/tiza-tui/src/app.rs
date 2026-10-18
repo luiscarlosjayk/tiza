@@ -1088,18 +1088,28 @@ impl App {
     /// Adds a move (validated against the code at its step). Undoable. A
     /// `code.link` reads its file next to the document first (t-105).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+        self.add_move_noting(m).map(|(i, _)| i)
+    }
+
+    /// [`App::add_move`] plus the moves it retargets (t-157): a `position`
+    /// move of a later step that now hits another line. Said loudly, on
+    /// rows of their own (t-135); `u` undoes the move and clears them.
+    pub fn add_move_noting(&mut self, m: Move) -> Result<(usize, Vec<String>), Error> {
         self.finish_typing();
         if let tiza_core::moves::MoveAction::CodeLink(l) = &m.action {
             let base = self.save_path.parent().map(Path::to_path_buf);
             fs::load_view(&mut self.doc, &l.file, base.as_deref())?;
         }
         self.history.record(&self.doc, "move added");
-        match self.doc.add_move(m) {
-            Ok(i) => {
+        match self.doc.add_move_noting(m) {
+            Ok((i, notices)) => {
                 self.history.label_last(format!("move #{} added", i + 1));
                 self.clamp_cursor();
                 self.touch();
-                Ok(i)
+                if !notices.is_empty() {
+                    self.redact_alert(notices.join(" · "));
+                }
+                Ok((i, notices))
             }
             Err(e) => {
                 self.history.undo(&mut self.doc);
@@ -4087,13 +4097,13 @@ impl App {
             "scene.list" => json!(self.list_lines()),
             "move.add" => {
                 let m: Move = parse(params)?;
-                let i = self.add_move(m)?;
+                let (i, notices) = self.add_move_noting(m)?;
                 serde_json::to_value(MoveMutated {
                     index: i + 1,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
-                    notices: Vec::new(),
+                    notices,
                 })?
             }
             "move.delete" => {
