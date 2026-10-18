@@ -266,7 +266,16 @@ pub fn base_redacts(doc: &Document, key: &Option<String>) -> Vec<Annotation> {
     doc.annotations
         .iter()
         .filter(|a| &a.file == key && matches!(a.shape, Shape::Redact { .. }))
-        .filter(|a| doc.moves.is_empty() || a.step == 0 || doc.redact_from_step)
+        .filter(|a| {
+            doc.moves.is_empty()
+                || match crate::moves::redact_frame(doc, a) {
+                    Some(crate::moves::RedactFrame::File) => true,
+                    // Marked at their own step: masking them on the step-0
+                    // code can only mask more.
+                    Some(crate::moves::RedactFrame::EndOfStep(_)) => doc.redact_from_step,
+                    _ => false,
+                }
+        })
         .cloned()
         .collect()
 }
@@ -588,6 +597,7 @@ mod tests {
                 keep,
                 label: None,
                 widened: false,
+                pin: None,
             },
         }
     }

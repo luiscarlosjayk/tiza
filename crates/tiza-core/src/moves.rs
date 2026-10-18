@@ -632,6 +632,41 @@ impl RedactAt {
     }
 }
 
+/// Which code a redact's columns refer to (t-154).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RedactFrame {
+    /// The untouched file (`pin: 0`, or `step: 0`).
+    File,
+    /// The code right after the move at this index (`pin: N` = index N-1),
+    /// the move that wrote its line.
+    AfterMove(usize),
+    /// The code at the end of this step (no pin: ADR 0007 §3d). On a step
+    /// with patches this reading is ambiguous for a document Tiza did not
+    /// pin itself, so the projection also masks the file's reading.
+    EndOfStep(u32),
+}
+
+/// The frame of redact `a` (`None`: not a redact). A pin that names no
+/// `code.patch` (a hand-edited file) falls back to the step's reading.
+pub fn redact_frame(doc: &Document, a: &Annotation) -> Option<RedactFrame> {
+    let Shape::Redact { pin, .. } = &a.shape else {
+        return None;
+    };
+    Some(match pin {
+        Some(0) => RedactFrame::File,
+        Some(n)
+            if doc
+                .moves
+                .get(*n as usize - 1)
+                .is_some_and(|m| matches!(m.action, MoveAction::CodePatch(_))) =>
+        {
+            RedactFrame::AfterMove(*n as usize - 1)
+        }
+        _ if a.step == 0 => RedactFrame::File,
+        _ => RedactFrame::EndOfStep(a.step),
+    })
+}
+
 /// The document's state at a step: every view's code with its patches
 /// `<= step` applied, what is shown, and the cursor/selection the moves
 /// left (shifted through later patches of the same view).
@@ -763,19 +798,25 @@ pub fn project(
     order.sort_by_key(|(i, m)| (m.at_step, *i));
     let track = crate::redact::has_redacts(doc);
     // One slot per annotation, then one per annotation for its "ghost":
-    // a redact whose `step` has moves can be read two ways — its columns
-    // on the code after that step's moves (ADR 0007 §3d), or on the file
-    // as it was before them (a file written by hand or by an agent, a
-    // `.tiza` saved before t-140). Fail closed: both are masked, the
-    // second followed from step 0 through every patch like a step-0 one.
+    // a redact Tiza did not pin (no `pin`, t-154) whose `step` has moves
+    // can be read two ways — its columns on the code after that step's
+    // moves (ADR 0007 §3d), or on the file as it was before them (a file
+    // written by hand or by an agent, a `.tiza` saved before t-140). Fail
+    // closed: both are masked, the second followed from step 0 through
+    // every patch like a step-0 one. A pinned redact has one reading.
     let n = doc.annotations.len();
     let mut red: Vec<Option<RedactAt>> = vec![None; 2 * n];
+    let frames: Vec<Option<RedactFrame>> = doc
+        .annotations
+        .iter()
+        .map(|a| redact_frame(doc, a))
+        .collect();
     if track && !doc.redact_from_step {
         for (i, a) in doc.annotations.iter().enumerate() {
             let Shape::Redact { span, widened, .. } = &a.shape else {
                 continue;
             };
-            let ambiguous = a.step >= 1
+            let ambiguous = matches!(frames[i], Some(RedactFrame::EndOfStep(s)) if s >= 1)
                 && moves
                     .iter()
                     .any(|m| m.at_step <= a.step && matches!(m.action, MoveAction::CodePatch(_)));
@@ -801,7 +842,11 @@ pub fn project(
         let named = |e: Error| name_move(e, i, m.at_step);
         if track {
             // Redacts marked at an earlier step exist from here on.
-            birth(doc, &mut red, |a| a.step < m.at_step);
+            birth(doc, &mut red, &frames, |f| match f {
+                RedactFrame::File => true,
+                RedactFrame::EndOfStep(s) => s < m.at_step,
+                RedactFrame::AfterMove(_) => false,
+            });
         }
         // The code a text target is matched on.
         let probe = |code: &[String], key: &ViewKey, first: u32, red: &[Option<RedactAt>]| {
@@ -842,6 +887,9 @@ pub fn project(
                 let mut masks = Vec::new();
                 if track {
                     follow_redacts(doc, &mut red, &key, &code, &new_code, first, &map, i, m);
+                    // Redacts pinned to this move start here, on the code
+                    // it just wrote (t-154).
+                    birth(doc, &mut red, &frames, |f| f == RedactFrame::AfterMove(i));
                     masks = view_masks(doc, &red, &key);
                 }
                 let after = if masked && track {
@@ -927,7 +975,14 @@ pub fn project(
         }
     }
     if track {
-        birth(doc, &mut red, |a| a.step <= step);
+        birth(doc, &mut red, &frames, |f| match f {
+            RedactFrame::File => true,
+            RedactFrame::EndOfStep(s) => s <= step,
+            // Pinned to a move that already ran but not born there (its
+            // move edited another file: a hand-edited pin): fail closed,
+            // its stored span is masked anyway.
+            RedactFrame::AfterMove(j) => moves.get(j).is_some_and(|m| m.at_step <= step),
+        });
     }
     // Each ghost joins its redact (or stands for it, before it exists).
     let ghosts = red.split_off(n);
@@ -959,14 +1014,20 @@ fn slot_annotation(doc: &Document, i: usize) -> &Annotation {
     &doc.annotations[i % doc.annotations.len()]
 }
 
-/// Starts following the redacts `born` says exist now, at their stored span.
-fn birth(doc: &Document, red: &mut [Option<RedactAt>], born: impl Fn(&Annotation) -> bool) {
-    for (a, slot) in doc.annotations.iter().zip(red.iter_mut()) {
+/// Starts following the redacts whose frame `born` says exists now, at
+/// their stored span.
+fn birth(
+    doc: &Document,
+    red: &mut [Option<RedactAt>],
+    frames: &[Option<RedactFrame>],
+    born: impl Fn(RedactFrame) -> bool,
+) {
+    for ((a, slot), frame) in doc.annotations.iter().zip(red.iter_mut()).zip(frames) {
         if slot.is_some() {
             continue;
         }
         if let Shape::Redact { span, widened, .. } = &a.shape
-            && born(a)
+            && frame.is_some_and(&born)
         {
             *slot = Some(RedactAt {
                 spans: vec![*span],
@@ -1269,14 +1330,37 @@ pub fn follow_span(
     }
 }
 
+/// Where a line of view `key` at the end of `step` comes from (t-154).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LineOrigin {
+    /// The earliest step whose code already holds the line exactly as it is
+    /// at the end of `step`, and the line's number at the end of that step.
+    pub frame: u32,
+    pub frame_line: u32,
+    /// The move (index) that wrote the line, and its number right after
+    /// that move; `None`: a line of the file (`frame` is then 0).
+    pub writer: Option<(usize, u32)>,
+}
+
 /// The earliest step whose code already holds `line` of view `key` exactly
 /// as it is at the end of `step` (no patch in between created or rewrote
 /// it), and the line's number there: where a redact marked at `step` on
 /// that line belongs, so the moves that come later — or that are added
 /// later at earlier steps — follow it (t-140). `(0, line)` without moves.
 pub fn frame_of_line(doc: &Document, key: &ViewKey, step: u32, line: u32) -> (u32, u32) {
+    let o = line_origin(doc, key, step, line);
+    (o.frame, o.frame_line)
+}
+
+/// [`frame_of_line`] plus the move that wrote the line (t-154).
+pub fn line_origin(doc: &Document, key: &ViewKey, step: u32, line: u32) -> LineOrigin {
+    let unknown = LineOrigin {
+        frame: step,
+        frame_line: line,
+        writer: None,
+    };
     let Ok(p) = project(doc, &doc.moves, step, false) else {
-        return (step, line);
+        return unknown;
     };
     let first = doc.view_first_line(key);
     // Each patch of the view with the code it was applied to.
@@ -1294,22 +1378,106 @@ pub fn frame_of_line(doc: &Document, key: &ViewKey, step: u32, line: u32) -> (u3
         let (frame, frame_line) = (st, cur);
         while i > 0 && patches[i - 1].0.at_step == st {
             let (ap, before) = &patches[i - 1];
+            let wrote = LineOrigin {
+                frame,
+                frame_line,
+                writer: Some((ap.index, cur)),
+            };
             let Some(o) = ap.map.map.iter().position(|n| *n == Some(cur)) else {
-                return (frame, frame_line); // the patch wrote this line
+                return wrote; // the patch wrote this line
             };
             let o = first + o as u32;
             if ap.map.replaced.contains(&o) {
                 let old = before.get((o - first) as usize);
                 let new = ap.after.get((cur - first) as usize);
                 if old != new {
-                    return (frame, frame_line); // rewritten with other text
+                    return wrote; // rewritten with other text
                 }
             }
             cur = o;
             i -= 1;
         }
     }
-    (0, cur)
+    LineOrigin {
+        frame: 0,
+        frame_line: cur,
+        writer: None,
+    }
+}
+
+/// The code of view `key` right after the move at `index` (unmasked), and
+/// its first line: what a redact pinned to that move is written on.
+pub fn code_after_move(doc: &Document, index: usize) -> Option<(ViewKey, Vec<String>, u32)> {
+    let m = doc.moves.get(index)?;
+    let p = project(doc, &doc.moves, m.at_step, false).ok()?;
+    let ap = p.patches.iter().find(|ap| ap.index == index)?;
+    Some((
+        ap.file.clone(),
+        ap.after.clone(),
+        doc.view_first_line(&ap.file),
+    ))
+}
+
+/// Where a redact pinned to the move at `old_index` of `old` goes on `new`
+/// (the same document after a move was added or deleted), the move now at
+/// `new_index` (t-154). The move wrote its line, so it keeps its offset in
+/// that move's new lines; it stays exact while that line's text is the
+/// same, else it fails CLOSED like a patch (rest of the line, or the whole
+/// line). `None`: nothing to say where (a move that no longer applies).
+pub fn repin_span(
+    old: &Document,
+    old_index: usize,
+    new: &Document,
+    new_index: usize,
+    span: TextSpan,
+) -> Option<RedactFate> {
+    let at = |d: &Document, i: usize| -> Option<AppliedPatch> {
+        let m = d.moves.get(i)?;
+        let p = project(d, &d.moves, m.at_step, false).ok()?;
+        p.patches.into_iter().find(|ap| ap.index == i)
+    };
+    let (o, n) = (at(old, old_index)?, at(new, new_index)?);
+    let first = new.view_first_line(&n.file);
+    let line = (i64::from(n.map.inserted.start) + i64::from(span.line)
+        - i64::from(o.map.inserted.start))
+    .max(i64::from(first)) as u32;
+    let text = |code: &[String], l: u32| -> Option<String> {
+        code.get(l.checked_sub(first)? as usize).cloned()
+    };
+    let old_text = text(&o.after, span.line)?;
+    let Some(new_text) = text(&n.after, line) else {
+        // Its offset is past the move's lines (a hand-edited pin): the
+        // whole of the move's last line, never nothing.
+        let last = n.map.inserted.end.checked_sub(1)?;
+        let t = text(&n.after, last)?;
+        return Some(match crate::redact::whole_line(&t, last) {
+            Some(sp) => RedactFate::Widened(vec![sp]),
+            None => RedactFate::Dropped,
+        });
+    };
+    if old_text == new_text {
+        return Some(RedactFate::Followed(TextSpan { line, ..span }));
+    }
+    // The same rule as a patch that rewrote the line in place.
+    let map = LineMap {
+        first_line: span.line,
+        map: vec![Some(line)],
+        inserted: line..line + 1,
+        replaced: span.line..span.line + 1,
+        old_len: 1,
+        new_len: 1,
+    };
+    let mut before = vec![String::new(); (span.line - first) as usize];
+    before.push(old_text);
+    let mut after = vec![String::new(); (line - first) as usize];
+    after.push(new_text.clone());
+    Some(match follow_span(&before, &after, first, &map, &[], span) {
+        RedactFate::Dropped => match crate::redact::whole_line(&new_text, line) {
+            Some(sp) => RedactFate::Widened(vec![sp]),
+            None => RedactFate::Dropped,
+        },
+        f => f,
+    })
 }
 
 /// The moves as they are read back (`scene.get`, `move.list`, the MCP,
@@ -1535,11 +1703,13 @@ pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
             keep,
             label,
             widened,
+            pin,
         } => Shape::Redact {
             span: span(s)?,
             keep: *keep,
             label: label.clone(),
             widened: *widened,
+            pin: *pin,
         },
         Shape::Box {
             from_line,

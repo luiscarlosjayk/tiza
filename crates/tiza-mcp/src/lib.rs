@@ -973,7 +973,9 @@ impl TizaServer {
         Ok(text(pretty(&self.call("move.add", m).await?)))
     }
 
-    #[tool(description = "Deletes a move by its 1-based index (see list_moves).")]
+    #[tool(
+        description = "Deletes a move by its 1-based index (see list_moves). `notices` names any redact dropped with it (the move wrote its line): check get_code before recording."
+    )]
     async fn delete_move(
         &self,
         Parameters(p): Parameters<MoveIndexParams>,

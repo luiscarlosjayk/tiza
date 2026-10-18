@@ -417,12 +417,14 @@ impl<'a> Remap<'a> {
                 keep,
                 label,
                 widened,
+                pin,
             } => match self.redact(span) {
                 RedactFate::Followed(span) => Shape::Redact {
                     span,
                     keep: *keep,
                     label: label.clone(),
                     widened: *widened,
+                    pin: *pin,
                 },
                 RedactFate::Widened(_) | RedactFate::Dropped => return None,
             },
@@ -964,6 +966,7 @@ mod tests {
                     keep: 4,
                     label: None,
                     widened: false,
+                    pin: None,
                 },
             });
         }

@@ -87,7 +87,7 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
     let bad: Vec<String> = doc
         .annotations
         .iter()
-        .filter(|a| doc.validate_shape_in(&a.shape, &a.file, a.step).is_err())
+        .filter(|a| doc.validate_annotation(a).is_err())
         .map(|a| match &a.file {
             // An annotation of a linked file (t-105): say which file.
             Some(f) => {

@@ -834,7 +834,7 @@ impl App {
         fs::load_views(&mut doc, base.as_deref())?;
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_shape_in(&a.shape, &a.file, a.step)?;
+            doc.validate_annotation(a)?;
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -962,7 +962,25 @@ impl App {
         }
     }
 
+    /// `:next`, `:prev`, `:step N`: goes to `step` and says where it is,
+    /// unless the step raised a redact notice (t-154): then the notice
+    /// stays on the bar, as with the `n` key, and nothing replaces it.
+    fn step_message(&mut self, step: u32) -> String {
+        if self.step_to(step) {
+            return String::new();
+        }
+        format!("step {}/{}", self.doc.step, self.doc.max_step())
+    }
+
     pub fn set_step(&mut self, step: u32) {
+        self.step_to(step);
+    }
+
+    /// Goes to `step` (moves applied, typing started going forward one).
+    /// `true` when it said something loud on the bar: a move that does not
+    /// apply, or a redact notice (t-140).
+    fn step_to(&mut self, step: u32) -> bool {
+        let mut loud = false;
         self.finish_typing();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
@@ -971,6 +989,7 @@ impl App {
             self.doc.step = s;
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
+                loud = true;
             } else {
                 // A `cursor` move left at this step moves the TUI cursor
                 // too; a `code.link` puts it on the first shown line (t-105).
@@ -991,11 +1010,13 @@ impl App {
                 let notices = self.doc.redact_notices_at(s, false);
                 if !notices.is_empty() {
                     self.redact_alert(notices.join(" · "));
+                    loud = true;
                 }
             }
             self.clamp_cursor();
             self.revision += 1;
         }
+        loud
     }
 
     // ---------- moves (t-098) ----------
@@ -1089,6 +1110,12 @@ impl App {
 
     /// Deletes a move by 1-based index. Undoable.
     pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
+        self.delete_move_noting(index).map(|(m, _)| m)
+    }
+
+    /// [`App::delete_move`] plus the redacts it dropped (t-154): the move
+    /// wrote their line. Said loudly; `u` brings both back.
+    pub fn delete_move_noting(&mut self, index: usize) -> Result<(Move, Vec<String>), Error> {
         self.finish_typing();
         let i = index
             .checked_sub(1)
@@ -1096,14 +1123,17 @@ impl App {
             .ok_or_else(|| Error::NotFound(format!("move #{index}")))?;
         self.history
             .record(&self.doc, format!("move #{index} deleted"));
-        let m = self.doc.delete_move(i)?;
+        let (m, notices) = self.doc.delete_move_noting(i)?;
         if self.doc.step > self.doc.max_step() {
             self.doc.step = self.doc.max_step();
             self.doc.sync_code_to_step();
         }
         self.clamp_cursor();
         self.touch();
-        Ok(m)
+        if !notices.is_empty() {
+            self.redact_alert(notices.join(" · "));
+        }
+        Ok((m, notices))
     }
 
     /// `scene.list` / `:list`: one line per annotation, in document order.
@@ -1332,23 +1362,49 @@ impl App {
         // exist (AC9). A step whose moves no longer apply on the new text
         // falls back to the step-0 code (those moves are reported when
         // the presenter steps onto them).
-        let mut steps: Vec<u32> = old.annotations.iter().map(|a| a.step).collect();
+        // A redact is re-anchored on the code its columns refer to (t-154):
+        // the file, or the code right after the move it is pinned to.
+        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        enum Frame {
+            Step(u32),
+            AfterMove(usize),
+        }
+        let frame_of = |a: &Annotation| -> Frame {
+            if old.moves.is_empty() {
+                return Frame::Step(a.step);
+            }
+            match tiza_core::moves::redact_frame(&old, a) {
+                Some(tiza_core::moves::RedactFrame::File) => Frame::Step(0),
+                Some(tiza_core::moves::RedactFrame::AfterMove(i)) => Frame::AfterMove(i),
+                _ => Frame::Step(a.step),
+            }
+        };
+        let mut steps: Vec<Frame> = old.annotations.iter().map(frame_of).collect();
         steps.sort_unstable();
         steps.dedup();
         // Only the main file changed: its annotations are re-anchored on
         // its own code at their step; those of a linked file (t-105) keep
         // their coordinates.
-        let at_step = |doc: &Document, step: u32| -> Document {
+        let at_step = |doc: &Document, frame: Frame| -> Document {
             let mut s = doc.clone();
-            if !doc.moves.is_empty()
-                && let Ok((code, first)) = doc.view_code_at(&None, step)
-            {
+            let code = match frame {
+                _ if doc.moves.is_empty() => None,
+                Frame::Step(step) => doc.view_code_at(&None, step).ok(),
+                Frame::AfterMove(i) => tiza_core::moves::code_after_move(doc, i)
+                    .filter(|(key, _, _)| key.is_none())
+                    .map(|(_, c, f)| (c, f))
+                    .or_else(|| doc.view_code_at(&None, 0).ok()),
+            };
+            if let Some((code, first)) = code {
                 s.code = code;
                 s.source.first_line = first;
             }
             s.moves.clear();
             s.base_code.clear();
-            s.step = step;
+            s.step = match frame {
+                Frame::Step(step) => step,
+                Frame::AfterMove(i) => doc.moves.get(i).map_or(0, |m| m.at_step),
+            };
             s
         };
         let mut shapes: Vec<Option<Shape>> = old
@@ -1364,7 +1420,7 @@ impl App {
             let new_s = at_step(&d, step);
             let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
             for (i, a) in old.annotations.iter().enumerate() {
-                if a.step != step || a.file.is_some() {
+                if frame_of(a) != step || a.file.is_some() {
                     continue;
                 }
                 if let Shape::Redact { span, .. } = &a.shape
@@ -1383,7 +1439,8 @@ impl App {
         let mut extra: Vec<Annotation> = Vec::new();
         for (i, (a, shape)) in old.annotations.iter().zip(shapes).enumerate() {
             let is_redact = matches!(a.shape, Shape::Redact { .. });
-            if let (Some(spans), Shape::Redact { label, .. }) = (widened[i].take(), &a.shape) {
+            if let (Some(spans), Shape::Redact { label, pin, .. }) = (widened[i].take(), &a.shape) {
+                // Still on the code it is pinned to (t-154).
                 let mask = |span: tiza_core::TextSpan, id: String| Annotation {
                     id,
                     shape: Shape::Redact {
@@ -1391,6 +1448,7 @@ impl App {
                         keep: 0,
                         label: label.clone(),
                         widened: true,
+                        pin: *pin,
                     },
                     ..a.clone()
                 };
@@ -1819,6 +1877,7 @@ impl App {
                         keep: 0,
                         label: None,
                         widened: false,
+                        pin: None,
                     },
                 ) {
                     Ok(id) => self.info(format!(
@@ -2436,8 +2495,7 @@ impl App {
                                     "step {n}/{max}: empty, new annotations go here"
                                 ));
                             }
-                            self.set_step(n);
-                            Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
+                            Ok(self.step_message(n))
                         }
                         [id, n] => {
                             let n: u32 = n
@@ -2476,14 +2534,8 @@ impl App {
                         _ => Err(Error::Invalid("usage: :step N  |  :step ID N".into())),
                     }
                 }
-                "next" => {
-                    self.set_step(self.doc.step + 1);
-                    Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
-                }
-                "prev" => {
-                    self.set_step(self.doc.step.saturating_sub(1));
-                    Ok(format!("step {}/{}", self.doc.step, self.doc.max_step()))
-                }
+                "next" => Ok(self.step_message(self.doc.step + 1)),
+                "prev" => Ok(self.step_message(self.doc.step.saturating_sub(1))),
                 "focus" | "f" => {
                     if rest.is_empty() {
                         self.focus = None;
@@ -3466,6 +3518,7 @@ impl App {
                 keep: 0,
                 label: None,
                 widened: false,
+                pin: None,
             },
         )?;
         Ok(Some(id))
@@ -3581,6 +3634,7 @@ impl App {
                 keep,
                 label: opt(label),
                 widened: false,
+                pin: None,
             },
         )?;
         Ok(format!(
@@ -3657,6 +3711,7 @@ impl App {
                     keep: 0,
                     label: None,
                     widened: false,
+                    pin: None,
                 },
             )?;
             masked += 1;
@@ -4038,16 +4093,18 @@ impl App {
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
+                    notices: Vec::new(),
                 })?
             }
             "move.delete" => {
                 let p: MoveIndexParams = parse(params)?;
-                self.delete_move(p.index)?;
+                let (_, notices) = self.delete_move_noting(p.index)?;
                 serde_json::to_value(MoveMutated {
                     index: p.index,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
+                    notices,
                 })?
             }
             "move.list" => serde_json::to_value(self.move_list())?,

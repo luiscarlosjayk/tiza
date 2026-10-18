@@ -542,6 +542,15 @@
                       "null"
                     ]
                   },
+                  "pin": {
+                    "description": "On a document with moves, which code the span's columns refer to\n(t-154), set by Tiza when it pins the redact: `0` the untouched\nfile, `N` the code right after move #N (1-based), the move that\nwrote its line. Absent: the code at the end of the annotation's\n`step` (ADR 0007 §3d; `step: 0` is the untouched file). Moves\nadded or deleted later keep it on that same text.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
                   "span": {
                     "$ref": "#/$defs/TextSpan"
                   },
@@ -3199,6 +3208,15 @@
                       "null"
                     ]
                   },
+                  "pin": {
+                    "description": "On a document with moves, which code the span's columns refer to\n(t-154), set by Tiza when it pins the redact: `0` the untouched\nfile, `N` the code right after move #N (1-based), the move that\nwrote its line. Absent: the code at the end of the annotation's\n`step` (ADR 0007 §3d; `step: 0` is the untouched file). Moves\nadded or deleted later keep it on that same text.",
+                    "format": "uint32",
+                    "minimum": 0,
+                    "type": [
+                      "integer",
+                      "null"
+                    ]
+                  },
                   "span": {
                     "$ref": "#/$defs/TextSpan"
                   },
@@ -4716,6 +4734,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "notices": {
+            "description": "Loud notices of the change (t-154): a redact dropped because the\ndeleted move wrote its line. Check the screen before recording.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "revision": {
             "format": "uint64",
             "minimum": 0,
@@ -4768,6 +4793,13 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "notices": {
+            "description": "Loud notices of the change (t-154): a redact dropped because the\ndeleted move wrote its line. Check the screen before recording.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           },
           "revision": {
             "format": "uint64",

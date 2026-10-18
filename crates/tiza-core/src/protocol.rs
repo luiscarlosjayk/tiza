@@ -388,6 +388,7 @@ impl ShapeSpec {
                 keep: *keep,
                 label: label.clone(),
                 widened: false,
+                pin: None,
             },
         };
         Ok((shape, markers))
@@ -942,6 +943,10 @@ pub struct MoveMutated {
     pub moves: usize,
     pub max_step: u32,
     pub revision: u64,
+    /// Loud notices of the change (t-154): a redact dropped because the
+    /// deleted move wrote its line. Check the screen before recording.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notices: Vec<String>,
 }
 
 /// One line per move, in the `move.list` / `:moves` format.
@@ -1044,6 +1049,7 @@ fn describe_shape(a: &Annotation) -> String {
             keep,
             label,
             widened,
+            ..
         } => format!(
             "{} [step {}] redact L{} {}..{} (masked{}){}",
             a.id,
