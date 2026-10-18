@@ -8,6 +8,7 @@ with what came back, and report the WCAG contrast against the background.
 
     python3 scripts/legibility.py examples/ownership.rs.tiza --step 7
     python3 scripts/legibility.py doc.tiza --theme light --min 4.5 --json report.json
+    python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme-file examples/themes/catppuccin-mocha.toml
 
 Exit code 1 when any measured role falls under --min. Needs python3 with
 Pillow and numpy, ffmpeg on PATH, and the tiza binary (--bin or
@@ -45,12 +46,23 @@ def run(cmd, **kw):
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
 
 
+THEME_FILE = None
+
+
+def theme_args(theme):
+    args = []
+    if theme:
+        args += ["--theme", theme]
+    if THEME_FILE:
+        args += ["--theme-file", THEME_FILE]
+    return args
+
+
 def render(binary, doc, step, theme, width, png):
     args = [binary, "render", doc, "--out", png, "--width", str(width), "--scale", "2"]
     if step is not None:
         args += ["--step", str(step)]
-    if theme:
-        args += ["--theme", theme]
+    args += theme_args(theme)
     run(args)
 
 
@@ -85,8 +97,7 @@ def roles_from_svg(binary, doc, step, theme, width):
     args = [binary, "render", doc, "--out", "-", "--format", "svg", "--no-embed-fonts", "--width", str(width)]
     if step is not None:
         args += ["--step", str(step)]
-    if theme:
-        args += ["--theme", theme]
+    args += theme_args(theme)
     svg = run(args).stdout
     fills = set(re.findall(r'<text [^>]*fill="(#[0-9a-f]{6})"', svg))
     return sorted(fills)
@@ -147,6 +158,7 @@ def main():
     ap.add_argument("document")
     ap.add_argument("--step", type=int)
     ap.add_argument("--theme", choices=["dark", "light"])
+    ap.add_argument("--theme-file", help="a theme override file (examples/themes/*.toml) passed to `tiza render`")
     ap.add_argument("--width", type=int, default=100)
     ap.add_argument("--bitrate", type=int, default=8000, help="kbit/s (YouTube 1080p30 ≈ 8000)")
     ap.add_argument("--min", type=float, default=4.5, help="minimum contrast after compression")
@@ -154,6 +166,8 @@ def main():
     ap.add_argument("--json")
     ap.add_argument("--keep", help="directory to keep the PNGs in")
     a = ap.parse_args()
+    global THEME_FILE
+    THEME_FILE = a.theme_file
     if not shutil.which("ffmpeg"):
         print("ffmpeg not found", file=sys.stderr)
         return 2
@@ -169,7 +183,7 @@ def main():
     report = measure(before, after, bg, roles)
     worst = min((r["contrast_after"] for r in report), default=0)
     result = {
-        "document": a.document, "step": a.step, "theme": a.theme or "document", "bitrate_kbps": a.bitrate,
+        "document": a.document, "step": a.step, "theme": a.theme or "document", "theme_file": a.theme_file, "bitrate_kbps": a.bitrate,
         "background": "#%02x%02x%02x" % bg, "roles": report, "worst": worst, "min": a.min,
         "pass": worst >= a.min, "frames": {"before": before, "after": after},
     }

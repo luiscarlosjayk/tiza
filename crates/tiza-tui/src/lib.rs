@@ -1,6 +1,7 @@
 //! `tiza-tui`: the Tiza terminal interface and its local API server.
 
 pub mod app;
+pub mod appearance;
 pub mod follow;
 pub mod ipc;
 pub mod reanchor;
@@ -22,6 +23,13 @@ use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay};
 pub struct RunOptions {
     pub step: Option<u32>,
     pub theme: Option<tiza_core::ThemeName>,
+    /// `--theme auto`: follow the terminal even when the document names a
+    /// theme.
+    pub theme_auto: bool,
+    /// `--theme-file PATH`: per-token overrides applied as the document's.
+    pub theme_file: Option<PathBuf>,
+    /// The `[theme]` table of the config file (loaded by the binary).
+    pub config_overrides: Option<tiza_core::theme::ThemeOverrides>,
     pub present: bool,
     /// `None` = no local API server.
     pub socket: Option<PathBuf>,
@@ -45,8 +53,27 @@ pub struct RunOptions {
 /// Starts the TUI with an opened document. Returns when it closes.
 pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let mut app = App::new(opened.document, opened.save_path);
+    app.config_overrides = opts.config_overrides;
+    app.rebuild_theme();
+    if let Some(path) = &opts.theme_file {
+        match app.load_theme_file(path) {
+            Ok(m) => app.info(m),
+            Err(e) => app.error(e.to_string()),
+        }
+        app.dirty = false;
+    }
     if let Some(t) = opts.theme {
-        app.theme = tiza_core::Theme::from_name(t);
+        app.set_theme_name(t, true);
+    }
+    if opts.theme_auto {
+        app.theme_follow_host();
+    }
+    // The host's appearance (t-119): asked before crossterm owns the
+    // input, 100 ms at most, silent fallback to dark.
+    if (app.theme_auto || app.theme.is_terminal())
+        && let Some(host) = appearance::query_host(Duration::from_millis(100))
+    {
+        app.set_host(host);
     }
     if let Some(s) = opts.step {
         app.set_step(s);
@@ -210,7 +237,15 @@ fn event_loop(
                     }
                     needs_draw = true;
                 }
-                Event::Resize(_, _) => needs_draw = true,
+                Event::Resize(_, _) => {
+                    // A theme change usually comes with a resize (or a
+                    // `kill -WINCH`): ask the terminal again; the answer
+                    // comes back through the key stream.
+                    if app.theme_auto || app.theme.is_terminal() {
+                        appearance::request_host();
+                    }
+                    needs_draw = true;
+                }
                 Event::Mouse(m) => {
                     let kind = match m.kind {
                         MouseEventKind::Down(MouseButton::Left) => Some(MouseKind::Down),
@@ -238,6 +273,15 @@ fn event_loop(
 /// Handles one key press exactly as the event loop does (public so QA tests
 /// can drive the real keyboard logic without a terminal).
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    // An OSC answer to a re-query arrives as key presses (t-119): collect
+    // it and keep it away from the editor.
+    let (swallowed, host) = app.osc.feed(code, mods);
+    if let Some(h) = host {
+        app.set_host(h);
+    }
+    if swallowed {
+        return;
+    }
     // A typing animation (t-098) ends on any key; the key itself is consumed.
     if app.is_typing() {
         let _ = (code, mods);

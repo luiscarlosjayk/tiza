@@ -12,10 +12,16 @@ use tiza_core::layout::Layout;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, Mode, Overlay, Selection, theme_label};
+use crate::app::{App, Mode, Overlay, Selection};
 
+/// A canvas colour for ratatui: real colours as they are, the host-palette
+/// sentinels of the `terminal` theme (t-119) as the terminal's own.
 fn rgb(c: Rgb) -> Color {
-    Color::Rgb(c.0, c.1, c.2)
+    match tiza_core::theme::host_color(c) {
+        Some(tiza_core::theme::HostColor::Default) => Color::Reset,
+        Some(tiza_core::theme::HostColor::Indexed(n)) => Color::Indexed(n),
+        None => Color::Rgb(c.0, c.1, c.2),
+    }
 }
 
 fn style(s: CellStyle) -> Style {
@@ -181,7 +187,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // Cursor line indicator, selection and cursor cell (only outside presentation mode).
     if !app.present {
         let sel = app.selection();
-        let sel_bg = rgb(tiza_core::theme::blend(th.accent, th.bg, 0.35));
+        let sel_bg = rgb(th.tint(th.accent, 0.35));
         if let Some(Selection::Lines(a, b)) = sel {
             for line in a..=b {
                 if let Some(&row) = layout.row_of_line.get(&line)
@@ -460,7 +466,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             bar,
         ),
         Span::styled(format!("  {}×{}", app.size.0, app.size.1), muted),
-        Span::styled(format!("  {}", theme_label(th.name)), muted),
+        Span::styled(format!("  {}", app.theme_status()), muted),
         Span::styled(format!("  {file}"), bar),
         Span::styled(format!("  L{}", app.cursor_line), muted),
         Span::styled(format!("  {} ann.", app.doc.annotations.len()), muted),
@@ -755,6 +761,7 @@ fn help_lines() -> Vec<String> {
         "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
         "  :mouse on|off   click moves the cursor, drag selects, wheel scrolls (off by default: the terminal keeps its own selection)",
         "  :layout stable|dynamic   rehearse with the take's geometry (presentation mode and exports always use it)",
+        "  :theme dark|light|terminal|auto   :theme file PATH   fix a theme, use the terminal's palette, follow the terminal, load token overrides",
         "  :numbers on|off   show or hide the line-number gutter (saved in the document; exports follow it)",
         "  :margin N | :margin auto   cap the right margin so long notes wrap earlier (12-200 cells; saved in the document)",
         "  :w [path]   :wq   :q   :q! (quit even if unsaved)   :autosave on|off (--no-save at start)   :redo   :help",

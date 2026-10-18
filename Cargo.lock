@@ -2325,6 +2325,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_spanned"
+version = "1.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
+dependencies = [
+ "serde_core",
+]
+
+[[package]]
 name = "sha2"
 version = "0.10.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2754,6 +2763,7 @@ dependencies = [
  "serde_json",
  "syntect",
  "thiserror 2.0.21",
+ "toml",
  "two-face",
  "unicode-segmentation",
  "unicode-width",
@@ -2812,6 +2822,7 @@ dependencies = [
  "crossterm",
  "notify",
  "ratatui",
+ "rustix",
  "serde",
  "serde_json",
  "tiza-core",
@@ -2853,6 +2864,19 @@ dependencies = [
  "libc",
  "pin-project-lite",
  "tokio",
+]
+
+[[package]]
+name = "toml"
+version = "1.1.8+spec-1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20489e00e4d8741d6be680764cc12e270655e375a20d1011e844a9c3379e678d"
+dependencies = [
+ "serde_core",
+ "serde_spanned",
+ "toml_datetime",
+ "toml_parser",
+ "winnow",
 ]
 
 [[package]]

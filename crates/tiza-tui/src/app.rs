@@ -158,13 +158,34 @@ pub struct App {
     pub follow: Option<crate::follow::Follow>,
     /// Typing animation of the step just reached (t-098).
     pub typing: Option<TypingState>,
+    /// Follow the host terminal's appearance (t-119): light or dark from
+    /// OSC 11, re-asked on resize. Off once the document, `--theme`, `t`
+    /// or `:theme NAME` fixes a theme; `:theme auto` turns it back on.
+    pub theme_auto: bool,
+    /// What the terminal said about its background (`None`: never asked
+    /// or no answer).
+    pub host_dark: Option<bool>,
+    /// The `[theme]` table of the config file, applied under the
+    /// document's own overrides.
+    pub config_overrides: Option<tiza_core::theme::ThemeOverrides>,
+    /// What the last theme resolution changed or ignored (pushed tokens,
+    /// unknown keys), for `:theme` to report.
+    pub theme_notes: Vec<String>,
+    /// OSC answers arriving through the key stream after a re-query.
+    pub osc: crate::appearance::OscCapture,
 }
 
 impl App {
     pub fn new(doc: Document, save_path: PathBuf) -> Self {
+        let theme_auto = doc.theme.is_none();
         let theme = Theme::from_name(doc.theme.unwrap_or(ThemeName::Dark));
         let cursor_line = doc.source.first_line;
-        Self {
+        let mut app = Self {
+            theme_auto,
+            host_dark: None,
+            config_overrides: None,
+            theme_notes: Vec::new(),
+            osc: Default::default(),
             doc,
             save_path,
             history: History::default(),
@@ -205,7 +226,120 @@ impl App {
             overlay_scroll: 0,
             follow: None,
             typing: None,
+        };
+        app.rebuild_theme();
+        app
+    }
+
+    // ---------- themes (t-119) ----------
+
+    /// Builds the current theme name again with the host's appearance and
+    /// the override tables (config file, then the document's).
+    pub fn rebuild_theme(&mut self) {
+        let (theme, notes) = Theme::resolve(
+            self.theme.name,
+            self.host_dark.unwrap_or(self.theme.host_dark),
+            self.config_overrides.as_ref(),
+            self.doc.theme_overrides.as_ref(),
+        );
+        self.theme = theme;
+        self.theme_notes = notes;
+        self.revision += 1;
+    }
+
+    /// Switches to `name`. `fix` records it in the document and stops
+    /// following the terminal (`t`, `:theme NAME`, `--theme`, a document
+    /// that names one); auto-detection passes `false`.
+    pub fn set_theme_name(&mut self, name: ThemeName, fix: bool) {
+        self.theme.name = name;
+        if fix {
+            self.theme_auto = false;
+            self.doc.theme = Some(name);
         }
+        self.rebuild_theme();
+    }
+
+    /// Follow the terminal again: the document stops naming a theme and
+    /// the last answer (if any) picks light or dark.
+    pub fn theme_follow_host(&mut self) {
+        self.theme_auto = true;
+        self.doc.theme = None;
+        match self.host_dark {
+            Some(dark) => self.set_theme_name(
+                if dark {
+                    ThemeName::Dark
+                } else {
+                    ThemeName::Light
+                },
+                false,
+            ),
+            None => self.rebuild_theme(),
+        }
+    }
+
+    /// The terminal answered (at start-up or after a resize): remember its
+    /// appearance and, when following, pick the matching theme.
+    pub fn set_host(&mut self, host: crate::appearance::Host) {
+        if let Some(dark) = host.dark() {
+            self.host_dark = Some(dark);
+            if self.theme_auto {
+                self.set_theme_name(
+                    if dark {
+                        ThemeName::Dark
+                    } else {
+                        ThemeName::Light
+                    },
+                    false,
+                );
+            } else {
+                self.rebuild_theme();
+            }
+        }
+    }
+
+    /// Parses what `:theme`, `theme.set` and `--theme` accept.
+    pub fn parse_theme_name(text: &str) -> Option<ThemeName> {
+        match text.trim().to_ascii_lowercase().as_str() {
+            "dark" | "oscuro" => Some(ThemeName::Dark),
+            "light" | "claro" => Some(ThemeName::Light),
+            "terminal" | "term" | "ansi" => Some(ThemeName::Terminal),
+            _ => None,
+        }
+    }
+
+    /// What the status line says about the theme: the name, `·auto` while
+    /// following the terminal.
+    pub fn theme_status(&self) -> String {
+        format!(
+            "{}{}",
+            theme_label(self.theme.name),
+            if self.theme_auto { "·auto" } else { "" }
+        )
+    }
+
+    /// Applies a theme file (`--theme-file`, `:theme file PATH`) as the
+    /// document's overrides.
+    pub fn load_theme_file(&mut self, path: &std::path::Path) -> Result<String, Error> {
+        let ov = tiza_core::theme::load_theme_file(path).map_err(Error::Invalid)?;
+        self.history.record(&self.doc, "theme file");
+        self.doc.theme_overrides = Some(ov);
+        self.rebuild_theme();
+        self.touch();
+        Ok(format!(
+            "theme file {}: {} token(s) applied on {}{}",
+            path.display(),
+            self.doc
+                .theme_overrides
+                .as_ref()
+                .map(|o| o.0.len())
+                .unwrap_or(0),
+            theme_label(self.theme.name),
+            if self.theme_notes.is_empty() {
+                String::new()
+            } else {
+                format!(" — {}", self.theme_notes.join("; "))
+            }
+        ))
     }
 
     /// Padding in effect: the session override, else the document's, else the default.
@@ -286,7 +420,11 @@ impl App {
     /// `read-only • unsaved (:w)` on the bar; `:q` refuses while there are
     /// unsaved changes; the first autosave that works again says so.
     pub fn save(&mut self) -> Result<(), Error> {
-        self.doc.theme = Some(self.theme.name);
+        // A document that follows the terminal keeps following it: only a
+        // fixed theme is written (t-119).
+        if !self.theme_auto {
+            self.doc.theme = Some(self.theme.name);
+        }
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
@@ -592,8 +730,9 @@ impl App {
         let other = doc.source.path != self.doc.source.path;
         self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
-        if let Some(t) = self.doc.theme {
-            self.theme = Theme::from_name(t);
+        match self.doc.theme {
+            Some(t) => self.set_theme_name(t, true),
+            None => self.rebuild_theme(),
         }
         self.selected = None;
         self.focus = None;
@@ -679,8 +818,9 @@ impl App {
         }
         self.history.record_with_step(&self.doc, "scene.patch");
         self.doc = d;
-        if let Some(t) = self.doc.theme {
-            self.theme = Theme::from_name(t);
+        match self.doc.theme {
+            Some(t) => self.set_theme_name(t, true),
+            None => self.rebuild_theme(),
         }
         self.selected = None;
         self.clamp_cursor();
@@ -888,6 +1028,7 @@ impl App {
     pub fn undo(&mut self) {
         self.finish_typing();
         if let Some(what) = self.history.undo(&mut self.doc) {
+            self.rebuild_theme();
             self.touch();
             self.info(format!("undone: {what}"));
         } else {
@@ -898,6 +1039,7 @@ impl App {
     pub fn redo(&mut self) {
         self.finish_typing();
         if let Some(what) = self.history.redo(&mut self.doc) {
+            self.rebuild_theme();
             self.touch();
             self.info(format!("redone: {what}"));
         } else {
@@ -916,9 +1058,8 @@ impl App {
     }
 
     pub fn toggle_theme(&mut self) {
-        self.theme = self.theme.toggled();
-        self.doc.theme = Some(self.theme.name);
-        self.revision += 1;
+        let next = self.theme.toggled().name;
+        self.set_theme_name(next, true);
     }
 
     /// Replaces the code (paste, stdin). Annotations are re-anchored by the
@@ -2096,19 +2237,51 @@ impl App {
                     }
                 }
                 "theme" | "t" => {
-                    match rest.trim().to_ascii_lowercase().as_str() {
-                        "dark" | "oscuro" => self.theme = Theme::dark(),
-                        "light" | "claro" => self.theme = Theme::light(),
-                        "" | "toggle" => self.theme = self.theme.toggled(),
-                        other => {
-                            return Err(Error::Invalid(format!(
-                                "unknown theme: {other} (dark, light; :theme alone toggles)"
-                            )));
-                        }
+                    let arg = rest.trim();
+                    let lower = arg.to_ascii_lowercase();
+                    if let Some(path) = lower
+                        .strip_prefix("file ")
+                        .map(|_| arg[5..].trim())
+                        .filter(|p| !p.is_empty())
+                    {
+                        return self.load_theme_file(std::path::Path::new(path));
                     }
-                    self.doc.theme = Some(self.theme.name);
-                    self.revision += 1;
-                    Ok(format!("theme {}", theme_label(self.theme.name)))
+                    match lower.as_str() {
+                        "" | "toggle" => {
+                            let next = self.theme.toggled().name;
+                            self.set_theme_name(next, true);
+                        }
+                        "auto" | "host" => {
+                            self.theme_follow_host();
+                            self.touch();
+                            return Ok(match self.host_dark {
+                                Some(dark) => format!(
+                                    "theme auto: following the terminal ({} now)",
+                                    if dark { "dark" } else { "light" }
+                                ),
+                                None => "theme auto: following the terminal (no answer yet; a resize asks again)"
+                                    .into(),
+                            });
+                        }
+                        other => match Self::parse_theme_name(other) {
+                            Some(name) => self.set_theme_name(name, true),
+                            None => {
+                                return Err(Error::Invalid(format!(
+                                    "unknown theme: {other} (dark, light, terminal, auto, file PATH; :theme alone toggles)"
+                                )));
+                            }
+                        },
+                    }
+                    self.touch();
+                    Ok(format!(
+                        "theme {}{}",
+                        theme_label(self.theme.name),
+                        if self.theme_notes.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — {}", self.theme_notes.join("; "))
+                        }
+                    ))
                 }
                 "present" | "p" => {
                     self.set_present(!self.present);
@@ -2549,11 +2722,16 @@ impl App {
                     })?)?;
                 }
                 "theme" => {
-                    theme = Theme::from_name(match v.to_ascii_lowercase().as_str() {
-                        "dark" | "oscuro" => ThemeName::Dark,
-                        "light" | "claro" => ThemeName::Light,
-                        _ => return Err(Error::Invalid(format!("theme={v}: dark or light"))),
-                    });
+                    let name = Self::parse_theme_name(&v)
+                        .filter(|n| *n != ThemeName::Terminal)
+                        .ok_or_else(|| Error::Invalid(format!("theme={v}: dark or light")))?;
+                    theme = Theme::resolve(
+                        name,
+                        self.host_dark.unwrap_or(true),
+                        self.config_overrides.as_ref(),
+                        self.doc.theme_overrides.as_ref(),
+                    )
+                    .0;
                 }
                 _ => {
                     return Err(Error::Invalid(format!(
@@ -2592,6 +2770,9 @@ impl App {
                 ))
             }
         })?;
+        // A terminal theme (or `reset` tokens) has no palette in a file:
+        // the export uses the dark/light theme and the message says so.
+        let (theme, theme_notice) = theme.for_export();
         let l = layout(
             &self.doc,
             &theme,
@@ -2628,9 +2809,10 @@ impl App {
         std::fs::write(&path, &bytes)
             .map_err(|e| Error::Invalid(format!("could not write {}: {e}", path.display())))?;
         Ok(format!(
-            "exported step {step} to {} ({} bytes)",
+            "exported step {step} to {} ({} bytes){}",
             path.display(),
-            bytes.len()
+            bytes.len(),
+            theme_notice.map(|n| format!(" — {n}")).unwrap_or_default()
         ))
     }
 
@@ -3682,18 +3864,22 @@ impl App {
                     .map(|t| t.trim().to_ascii_lowercase())
                     .as_deref()
                 {
-                    Some("dark") | Some("oscuro") => self.theme = Theme::dark(),
-                    Some("light") | Some("claro") => self.theme = Theme::light(),
-                    None | Some("") | Some("toggle") => self.theme = self.theme.toggled(),
-                    Some(other) => {
-                        return Err(Error::Invalid(format!(
-                            "unknown theme: {other} (dark, light, toggle)"
-                        )));
+                    None | Some("") | Some("toggle") => {
+                        let next = self.theme.toggled().name;
+                        self.set_theme_name(next, true);
                     }
+                    Some("auto") => self.theme_follow_host(),
+                    Some(other) => match Self::parse_theme_name(other) {
+                        Some(name) => self.set_theme_name(name, true),
+                        None => {
+                            return Err(Error::Invalid(format!(
+                                "unknown theme: {other} (dark, light, terminal, auto, toggle)"
+                            )));
+                        }
+                    },
                 }
-                self.doc.theme = Some(self.theme.name);
-                self.revision += 1;
-                json!({"theme": self.theme.name, "revision": self.revision})
+                self.touch();
+                json!({"theme": self.theme.name, "auto": self.theme_auto, "revision": self.revision})
             }
             other => return Err(Error::Invalid(format!("unknown method: {other}"))),
         })
@@ -3770,6 +3956,7 @@ pub fn theme_label(t: ThemeName) -> &'static str {
     match t {
         ThemeName::Dark => "dark",
         ThemeName::Light => "light",
+        ThemeName::Terminal => "terminal",
     }
 }
 

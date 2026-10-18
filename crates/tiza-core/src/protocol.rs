@@ -858,7 +858,10 @@ pub const METHODS: &[(&str, &str)] = &[
         "focus.set",
         "Dims everything outside `from_line..to_line`; without lines, clears the focus",
     ),
-    ("theme.set", "Switches the theme: `dark` or `light`"),
+    (
+        "theme.set",
+        "Switches the theme: `dark`, `light`, `terminal`, `auto` or `toggle`",
+    ),
     ("render.text", "Returns the current canvas as plain text"),
     (
         "follow.set",

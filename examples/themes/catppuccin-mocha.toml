@@ -1,0 +1,53 @@
+# Catppuccin Mocha for Tiza — the worked example of a theme file (t-119).
+#
+# A theme file maps Tiza's roles (and the named annotation palette) to
+# colours: hex, rgb(r, g, b), an ANSI name (red, bright-blue…) or `reset`
+# (the terminal's own colour). The values below are Catppuccin's published
+# Mocha palette (https://catppuccin.com/palette, MIT), nothing else is
+# copied. Use it with
+#
+#     tiza FILE --theme-file examples/themes/catppuccin-mocha.toml
+#     :theme file examples/themes/catppuccin-mocha.toml      (live, saved in the document)
+#     tiza render FILE --theme-file examples/themes/catppuccin-mocha.toml --out x.png
+#
+# or paste the tokens into the `[theme]` table of ~/.config/tiza/config.toml
+# so every document gets them (a document's own `theme_overrides` win).
+#
+# Every text token must keep 4.5:1 against the background at 1080p after
+# video compression (scripts/legibility.py, the t-072 gate). Tiza checks the
+# roles below when it loads the file and pushes a faint one toward the text
+# colour, saying so; the syntax colours of the base theme (One Half Dark)
+# are lifted the same way at render time (the comment grey #5c6370 reads at
+# 2.6:1 on #1e1e2e and is lifted to #8991a5, 5.2:1). Measured with this file
+# on examples/ownership.rs.tiza step 7 at 8000 kbit/s: worst contrast 5.8:1
+# after compression (the mauve of keywords), nothing pushed.
+
+bg = "#1e1e2e"            # base
+fg = "#cdd6f4"            # text
+muted = "#9399b2"         # overlay2: line numbers, legends (overlay1 #7f849c would be lifted)
+dimmed = "#6c7086"        # overlay0: code outside the focus (not text, no gate)
+accent = "#fab387"        # peach
+rail = "#585b70"          # surface2
+box_line = "#fab387"      # peach
+box_bg = "#181825"        # mantle
+arrow = "#fab387"         # peach
+note = "#f9e2af"          # yellow
+highlight_bg = "#313244"  # surface0
+status_bg = "#181825"     # mantle
+status_fg = "#cdd6f4"     # text
+cmd_bg = "#11111b"        # crust
+error = "#f38ba8"         # red
+
+# Named annotation colours (`:color a2 blue`, arrows' automatic palette).
+orange = "#fab387"        # peach
+blue = "#89b4fa"
+green = "#a6e3a1"
+purple = "#cba6f7"        # mauve
+pink = "#f5c2e7"
+cyan = "#94e2d5"          # teal
+yellow = "#f9e2af"
+red = "#f38ba8"
+gray = "#9399b2"          # overlay2
+
+# A `[light]` or `[dark]` table applies only on that base theme; this file
+# is a dark palette and sets nothing for light.

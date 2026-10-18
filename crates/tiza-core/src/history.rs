@@ -27,6 +27,7 @@ struct Snapshot {
     padding: Option<(u16, u16)>,
     numbers: bool,
     margin: Option<u16>,
+    theme_overrides: Option<crate::theme::ThemeOverrides>,
 }
 
 impl Snapshot {
@@ -44,6 +45,7 @@ impl Snapshot {
             padding: doc.padding,
             numbers: doc.numbers,
             margin: doc.margin,
+            theme_overrides: doc.theme_overrides.clone(),
         }
     }
 
@@ -60,6 +62,7 @@ impl Snapshot {
         doc.padding = self.padding;
         doc.numbers = self.numbers;
         doc.margin = self.margin;
+        doc.theme_overrides = self.theme_overrides;
         if let Some(step) = self.step {
             doc.step = step;
         }

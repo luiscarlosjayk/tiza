@@ -519,7 +519,9 @@ pub struct FocusParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ThemeParams {
-    #[schemars(description = "dark, light or toggle")]
+    #[schemars(
+        description = "dark, light, terminal (the host's palette), auto (follow the terminal) or toggle"
+    )]
     pub theme: String,
 }
 
@@ -1002,7 +1004,9 @@ impl TizaServer {
         )))
     }
 
-    #[tool(description = "Changes the theme: dark, light or toggle.")]
+    #[tool(
+        description = "Changes the theme: dark, light, terminal (the host's own palette), auto (follow the terminal's background) or toggle."
+    )]
     async fn set_theme(
         &self,
         Parameters(p): Parameters<ThemeParams>,
@@ -1089,7 +1093,15 @@ impl TizaServer {
             },
             None => scene.document.theme.unwrap_or(tiza_core::ThemeName::Dark),
         };
-        let theme = tiza_core::Theme::from_name(theme_name);
+        // The document's overrides apply; a terminal theme or `reset`
+        // tokens have no palette in a file and fall back (t-119).
+        let (theme, _) = tiza_core::Theme::resolve(
+            theme_name,
+            true,
+            None,
+            scene.document.theme_overrides.as_ref(),
+        );
+        let (theme, _notice) = theme.for_export();
         let layout = tiza_core::layout::layout(
             &scene.document,
             &theme,

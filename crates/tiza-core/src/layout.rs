@@ -871,7 +871,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
-                crate::theme::blend(theme.dimmed, theme.bg, 0.12),
+                theme.tint(theme.dimmed, 0.12),
                 label.clone(),
                 *emphasis,
             ),
@@ -882,7 +882,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             } => {
                 let c = color_of(a);
                 let (fg, bg) = if a.color.is_some() {
-                    (c, crate::theme::blend(c, theme.bg, 0.22))
+                    (c, theme.tint(c, 0.22))
                 } else {
                     (theme.fg, theme.highlight_bg)
                 };
@@ -897,7 +897,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
-                crate::theme::blend(theme.dimmed, theme.bg, 0.12),
+                theme.tint(theme.dimmed, 0.12),
                 Some(mark_text(doc, kind, style, None)),
                 *emphasis,
             ),
@@ -938,7 +938,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             // The emphasis glyphs (not the span's text) are drawn in a
             // softened shade of the annotation colour, so the eye lands on
             // the code first (Luis, t-096 review: the full colour shouted).
-            let soft = crate::theme::blend(ink, theme.bg, EMPHASIS_GLYPH_OPACITY);
+            let soft = theme.tint_ink(ink, EMPHASIS_GLYPH_OPACITY);
             match emphasis {
                 Emphasis::Fill => {
                     canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(fg).bg(bg).bold());
@@ -1074,7 +1074,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     lx + 1,
                     y,
                     rx - lx - 1,
-                    CellStyle::new().bg(crate::theme::blend(box_color, theme.bg, 0.08)),
+                    CellStyle::new().bg(theme.tint(box_color, 0.08)),
                 );
             }
         }
@@ -1379,7 +1379,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         let border = base.fg(color);
         // Callouts are not tinted unless asked (`fill: true`).
         let inside = if c.frame.fill.unwrap_or(false) {
-            base.bg(crate::theme::blend(color, theme.bg, 0.08))
+            base.bg(theme.tint(color, 0.08))
         } else {
             base
         };

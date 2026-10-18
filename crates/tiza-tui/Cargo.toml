@@ -13,6 +13,7 @@ tiza-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 notify.workspace = true
+rustix.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 unicode-width.workspace = true

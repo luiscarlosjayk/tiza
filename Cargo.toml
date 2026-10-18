@@ -51,6 +51,10 @@ jsonschema = { version = "0.59.0", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+# Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm.
+rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs"] }
+# Theme override files (t-119): `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
+toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
 # Animated GIF (t-120): encoder only, LZW through weezl; our own palette, no color_quant.
 gif = { version = "0.14", default-features = false, features = ["std"] }
 

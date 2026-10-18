@@ -62,6 +62,8 @@ Annotate the new code **at the step where it exists**: after `add_move {at_step:
 
 ## Supervised mode
 
+**Themes.** `set_theme` takes `dark`, `light`, `terminal` (the host's palette), `auto` (follow the terminal's background) or `toggle`; the reply says whether the instance is following (`auto`). A document may carry `theme_overrides` (per-token colours); `export_image` applies them and, for a terminal theme, paints the matching dark/light palette instead — there is no host palette in a file.
+
 **The margin is the presenter's too.** `status.margin` is the cap on the right margin when one is set (`scene.patch {"margin": 24}` sets it, `null` removes it); long notes wrap at it. Keep notes short either way — a wrapped note takes rows from the lines below it.
 
 **The gutter is the presenter's.** `status.numbers` says whether line numbers are shown; `scene.patch {"numbers": false}` hides them (saved in the document, so every export follows). Line numbers in your anchors (`line`, `find`) are the real ones whatever the gutter shows.

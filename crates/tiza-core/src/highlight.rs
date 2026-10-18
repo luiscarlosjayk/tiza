@@ -249,6 +249,18 @@ pub type Highlighted = Arc<Vec<Vec<Segment>>>;
 /// frame and syntect costs ~50 µs per line, so re-highlighting 2,000 lines
 /// each frame would eat the whole budget. Keyed by a hash of (code, language,
 /// theme); the last four results are kept (TUI + MCP bridge + exports).
+/// A syntect colour as a canvas colour. bat's terminal themes (`Ansi`,
+/// `Base16`) encode the host palette in the alpha channel: `a == 0` means
+/// indexed colour `r` and `a == 1` the terminal's default foreground
+/// (t-119); real colours have `a == 255`.
+fn syntect_color(c: syntect::highlighting::Color) -> Rgb {
+    match c.a {
+        0 => crate::theme::ansi(c.r),
+        1 => crate::theme::terminal_default(),
+        _ => Rgb(c.r, c.g, c.b),
+    }
+}
+
 pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeName) -> Highlighted {
     use std::hash::{Hash, Hasher};
     static CACHE: Mutex<Vec<(u64, Highlighted)>> = Mutex::new(Vec::new());
@@ -289,7 +301,7 @@ pub fn highlight(code: &[String], language: &str, theme: EmbeddedThemeName) -> V
                     .into_iter()
                     .map(|(st, s)| Segment {
                         text: s.trim_end_matches('\n').to_string(),
-                        fg: Some(Rgb(st.foreground.r, st.foreground.g, st.foreground.b)),
+                        fg: Some(syntect_color(st.foreground)),
                         bold: st
                             .font_style
                             .contains(syntect::highlighting::FontStyle::BOLD),

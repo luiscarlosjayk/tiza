@@ -551,6 +551,22 @@
       },
       "type": "object"
     },
+    "OverrideValue": {
+      "anyOf": [
+        {
+          "description": "`#rrggbb`, `#rgb`, `rgb(r, g, b)`, a palette or ANSI name, or\n`reset` (the terminal's default colour; exports fall back).",
+          "type": "string"
+        },
+        {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Overrides that apply only when this base theme is active.",
+          "type": "object"
+        }
+      ],
+      "description": "One value of a `[theme]` table: a colour, or the `dark` / `light`\nsubtable that applies on top when that base theme is active."
+    },
     "Patch": {
       "properties": {
         "after": {
@@ -753,11 +769,27 @@
       "type": "object"
     },
     "ThemeName": {
-      "enum": [
-        "dark",
-        "light"
-      ],
-      "type": "string"
+      "oneOf": [
+        {
+          "enum": [
+            "dark",
+            "light"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "terminal",
+          "description": "The host terminal's own palette (t-119): default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+          "type": "string"
+        }
+      ]
+    },
+    "ThemeOverrides": {
+      "additionalProperties": {
+        "$ref": "#/$defs/OverrideValue"
+      },
+      "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark` / `light`\nsubtables with the same keys.",
+      "type": "object"
     },
     "Typing": {
       "enum": [
@@ -907,6 +939,17 @@
           "type": "null"
         }
       ]
+    },
+    "theme_overrides": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ThemeOverrides"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Per-token theme overrides (t-119), the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
     },
     "title": {
       "type": [

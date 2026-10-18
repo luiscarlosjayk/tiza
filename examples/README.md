@@ -35,3 +35,7 @@ To generate a sidecar from any source: `tiza src/main.rs:12-48` creates `src/mai
 ```
 
 A document style wins over a built-in kind or alias of the same name (`borrow_mut` is normally an alias of `write`). For a one-off, put the style inline on the annotation instead: `"kind": "test", "style": {"glyph": "🧪", "legend": "needs a test"}`. In the TUI: `:style borrow_mut glyph=✎▶ legend="&mut borrow" color=yellow`, then `:mark borrow_mut 11:&mut u`.
+
+## Themes
+
+`themes/catppuccin-mocha.toml` is the one shipped theme file: Catppuccin's published Mocha values on Tiza's roles, and the example to copy when writing your own (`tiza FILE --theme-file examples/themes/catppuccin-mocha.toml`, or `:theme file PATH` inside the TUI; paste the tokens into the `[theme]` table of `~/.config/tiza/config.toml` to apply them everywhere). See «Themes» in the README.

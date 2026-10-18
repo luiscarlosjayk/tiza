@@ -61,7 +61,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 | `Tab` / `Shift-Tab` | select an annotation; then `Enter` edit label · `e` set properties · `x` delete · `c` color · `+`/`-` move step |
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo (the message names what was undone) |
-| `t` | dark ⇄ light theme (like Excalidraw) |
+| `t` | dark ⇄ light theme (like Excalidraw); fixes it in the document and stops following the terminal |
 | `P` | presentation mode (hides the UI; one geometry for the whole take — see `:layout`) |
 | `L` | annotation list · `?` help · `:` commands · `q` quit (`:q!` if the last save failed) |
 
@@ -94,7 +94,8 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 :until s1 4                            spotlight s1 stays active until step 4
 :focus 15-17   :focus                 dim everything but a range · clear the focus
 :layout stable | :layout dynamic       rehearse with the take's geometry (`⊞ stable` on the bar) · let the authoring screen grow as steps add arrows
-:theme light   :lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
+:theme light | dark | terminal | auto   :theme file PATH   theme (see «Themes»); `:theme` alone toggles
+:lang ts | :lang auto   :pad 1 4   :w   :q      (:pad = blank margins, saved in the document; :pad 0 0 none, :pad default)
 :margin 24 | :margin auto | :margin     cap the right margin at N cells (12-200) so long notes wrap earlier on a wide terminal; saved as `margin`; `render --margin-cols N` overrides it once
 :numbers off | :numbers on | :numbers   hide or show the line-number gutter (saved in the document as `numbers`; exports and agents follow it; `render --no-numbers` / `--numbers` override it once)
 :follow on | :follow off | :follow        reload the code when the source file is saved · state
@@ -204,6 +205,15 @@ In detail, `tiza` reads the source file you open (and re-reads it in follow mode
 ## Zed integration
 
 A task that sends the current selection to Tiza in the integrated terminal: [docs/zed.md](docs/zed.md).
+
+## Themes
+
+Tiza ships two palettes, `dark` and `light`, with explicit RGB colours measured for 1080p video (every text colour keeps ≥ 4.5:1 against the background after YouTube-like compression — `scripts/legibility.py`, the t-072 gate). Around them:
+
+- **Auto appearance.** A document that names no theme follows the terminal: on start Tiza asks the terminal for its background (OSC 11, with OSC 10 for the text colour), decides light or dark by luminance (the 299/587/114 rule, threshold at half) and shows `dark·auto` / `light·auto` on the status line. The query waits 100 ms at most and falls back to dark in silence when nothing answers (a pipe, a CI pty, a multiplexer that swallows it). When the terminal changes its theme it usually sends a resize, and Tiza asks again on every resize — inside tmux or a terminal that does not resize on a theme change, `kill -WINCH $(pgrep tiza)` asks by hand. `t`, `:theme dark|light`, `--theme` or a document that names a theme fix it and stop following; `:theme auto` (or `--theme auto`) follows again and the document stops naming one. Mode 2031 (the terminal reporting its colour scheme on its own) is not enabled: the input library would read the report as key presses.
+- **`:theme terminal`** (`--theme terminal`): Tiza draws with the terminal's own palette — default background and text, the roles on the 16 ANSI colours, syntax on the terminal's colours — so it looks like the rest of your terminal. Never the default. Exports have no host palette to paint with: `:export`, `tiza render` and `export_image` fall back to the dark or light theme (whichever matches the terminal's background) and say so.
+- **Per-token overrides.** A `[theme]` table in `~/.config/tiza/config.toml` (or `$TIZA_CONFIG`, `$XDG_CONFIG_HOME/tiza/config.toml`) and the same keys in a document's `theme_overrides` replace any of Tiza's roles — `bg`, `fg`, `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`, `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error` — and the named annotation palette (`orange`, `blue`, `green`, `purple`, `pink`, `cyan`, `yellow`, `red`, `gray`). Values: `#rrggbb`, `#rgb`, `rgb(r, g, b)`, an ANSI name (`red`, `bright-blue`, `ansi208`) or `reset` (the terminal's own colour; exports fall back for it). `[theme.dark]` and `[theme.light]` subtables apply on top of the flat tokens when that base theme is active. Precedence: built-in → config file → document → `:theme` / `t`. Text tokens that end up under 4.5:1 on the background are pushed toward the text colour and `:theme` says which (`theme muted: #202020 reads at 1.3:1 … pushed to #8a8a8a`); the syntax colours of the base theme are lifted the same way at render time. Unknown keys are reported and ignored; a config file that does not parse is reported once and ignored.
+- **Theme files.** `--theme-file PATH` and `:theme file PATH` load a TOML file with the same tokens (a `[theme]` table or bare keys) into the document's `theme_overrides`, so the next session and every export match; `tiza render --theme-file PATH` uses it for one export instead of the document's. The one shipped example is [`examples/themes/catppuccin-mocha.toml`](examples/themes/catppuccin-mocha.toml) — Catppuccin's published Mocha values on Tiza's roles, and THE example of how to write one; it passes the legibility gate (`python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme-file examples/themes/catppuccin-mocha.toml` → worst contrast 5.8:1 after compression). The base theme's syntax palette (One Half Dark/Light) is not a token: a theme file recolours Tiza's roles, not the code's keywords.
 
 ## Recommended recording profile
 

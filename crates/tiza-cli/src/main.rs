@@ -35,9 +35,12 @@ struct Cli {
     /// Initial presentation step
     #[arg(long)]
     step: Option<u32>,
-    /// Theme
+    /// Theme: dark, light, terminal (the host's own palette) or auto (follow the terminal, the default when the document names none)
     #[arg(long, value_enum)]
     theme: Option<ThemeArg>,
+    /// Per-token theme overrides from a TOML file (`[theme]` table or bare tokens), applied as the document's; see examples/themes/
+    #[arg(long)]
+    theme_file: Option<PathBuf>,
     /// Start in presentation mode (no UI)
     #[arg(long)]
     present: bool,
@@ -66,19 +69,71 @@ struct Cli {
     cmd: Option<Cmd>,
 }
 
-#[derive(Clone, Copy, ValueEnum)]
+#[derive(Clone, Copy, ValueEnum, PartialEq)]
 enum ThemeArg {
     Dark,
     Light,
+    /// The host terminal's own palette (TUI only; exports fall back to dark/light)
+    Terminal,
+    /// Follow the terminal's background: light or dark by luminance (TUI only)
+    Auto,
 }
 
-impl From<ThemeArg> for ThemeName {
-    fn from(t: ThemeArg) -> Self {
-        match t {
-            ThemeArg::Dark => ThemeName::Dark,
-            ThemeArg::Light => ThemeName::Light,
+impl ThemeArg {
+    /// The fixed theme this flag names (`auto` names none).
+    fn fixed(self) -> Option<ThemeName> {
+        match self {
+            ThemeArg::Dark => Some(ThemeName::Dark),
+            ThemeArg::Light => Some(ThemeName::Light),
+            ThemeArg::Terminal => Some(ThemeName::Terminal),
+            ThemeArg::Auto => None,
         }
     }
+}
+
+/// The `[theme]` table of `~/.config/tiza/config.toml`, with a one-line
+/// warning on stderr when the file does not parse (never fatal).
+fn config_theme() -> Option<tiza_core::theme::ThemeOverrides> {
+    match tiza_core::theme::load_config() {
+        Ok(Some((cfg, _))) => cfg.theme,
+        Ok(None) => None,
+        Err(e) => {
+            eprintln!("tiza: config ignored: {e}");
+            None
+        }
+    }
+}
+
+/// The theme an export paints: the flag or the document's, with the
+/// override tables applied; `terminal` and `reset` tokens fall back with a
+/// notice on stderr (there is no host palette in a file).
+fn export_theme(
+    flag: Option<ThemeArg>,
+    doc: &tiza_core::Document,
+    theme_file: Option<&PathBuf>,
+) -> anyhow::Result<Theme> {
+    let name = flag
+        .and_then(ThemeArg::fixed)
+        .or(doc.theme)
+        .unwrap_or(ThemeName::Dark);
+    let file = match theme_file {
+        Some(p) => Some(tiza_core::theme::load_theme_file(p).map_err(|e| anyhow::anyhow!("{e}"))?),
+        None => None,
+    };
+    let (theme, notes) = Theme::resolve(
+        name,
+        true,
+        config_theme().as_ref(),
+        file.as_ref().or(doc.theme_overrides.as_ref()),
+    );
+    for n in notes {
+        eprintln!("tiza: {n}");
+    }
+    let (theme, notice) = theme.for_export();
+    if let Some(n) = notice {
+        eprintln!("tiza: {n}");
+    }
+    Ok(theme)
 }
 
 #[derive(Clone, Copy, ValueEnum, PartialEq)]
@@ -119,8 +174,12 @@ enum Cmd {
         width: Option<usize>,
         #[arg(long, value_enum)]
         format: Option<Format>,
+        /// dark or light (terminal/auto have no palette outside the terminal: dark is used)
         #[arg(long, value_enum)]
         theme: Option<ThemeArg>,
+        /// Per-token theme overrides from a TOML file for this export (instead of the document's)
+        #[arg(long)]
+        theme_file: Option<PathBuf>,
         /// No line-number gutter (overrides the document's `numbers` field for this export)
         #[arg(long, conflicts_with = "numbers")]
         no_numbers: bool,
@@ -247,6 +306,7 @@ fn real_main() -> anyhow::Result<()> {
             width,
             format,
             theme,
+            theme_file,
             no_numbers,
             numbers,
             margin_cols,
@@ -374,12 +434,7 @@ fn real_main() -> anyhow::Result<()> {
                     doc.max_step()
                 );
             }
-            let theme = Theme::from_name(
-                theme
-                    .map(Into::into)
-                    .or(doc.theme)
-                    .unwrap_or(ThemeName::Dark),
-            );
+            let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             let l = layout(
                 &doc,
                 &theme,
@@ -921,7 +976,10 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
         opened,
         tiza_tui::RunOptions {
             step: cli.step,
-            theme: cli.theme.map(Into::into),
+            theme: cli.theme.and_then(ThemeArg::fixed),
+            theme_auto: cli.theme == Some(ThemeArg::Auto),
+            theme_file: cli.theme_file.clone(),
+            config_overrides: config_theme(),
             present: cli.present,
             socket: if cli.no_socket {
                 None

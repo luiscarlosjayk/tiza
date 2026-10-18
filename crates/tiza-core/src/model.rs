@@ -66,6 +66,11 @@ pub struct Document {
     /// instead of spreading across a wide terminal. `None`: dynamic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin: Option<u16>,
+    /// Per-token theme overrides (t-119), the same keys as the `[theme]`
+    /// table of `~/.config/tiza/config.toml`; they apply on top of the
+    /// config file's and under `:theme`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub theme_overrides: Option<crate::theme::ThemeOverrides>,
 }
 
 fn yes() -> bool {
@@ -111,6 +116,10 @@ pub struct Source {
 pub enum ThemeName {
     Dark,
     Light,
+    /// The host terminal's own palette (t-119): default background and
+    /// foreground, roles on the 16 ANSI colours, syntax on the terminal's
+    /// colours. Only meaningful in the TUI; exports fall back to dark/light.
+    Terminal,
 }
 
 /// How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).
@@ -699,6 +708,7 @@ impl Document {
             redact_from_step: false,
             numbers: true,
             margin: None,
+            theme_overrides: None,
         }
     }
 

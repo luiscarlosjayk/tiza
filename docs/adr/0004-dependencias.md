@@ -39,6 +39,8 @@ Tooling: `cargo-deny` in CI (licenses, advisories, sources, duplicates), version
 | insta | 1.49.0 | 2026-09 | Apache-2.0 | dev-dependency of `codedraw-qa` (render snapshots) |
 | proptest | 1.12.0 | 2026-09 | MIT/Apache-2.0 | dev-dependency of `codedraw-core` (property tests) |
 | base64 | 0.23.1 | 2026-09 | MIT/Apache-2.0 | `@font-face` data URIs in SVG |
+| toml | 1.1.8 | 2026 | MIT/Apache-2.0 | `tiza-core` (t-119): `~/.config/tiza/config.toml` and theme files, `default-features = false` + `parse`, `serde` (brings `toml_parser`, `winnow`); never serializes |
+| rustix | 1.1.5 | 2026 | Apache-2.0 WITH LLVM-exception / MIT | Already in the tree through crossterm; direct in `tiza-tui` (t-119) for the start-up OSC 11 query: raw mode and a timed read on `/dev/tty` before crossterm owns the input (`termios`, `fs`, `std`) |
 | gif / weezl | 0.14.2 / 0.1.12 | 2025 | MIT/Apache-2.0 | Only in `tiza-export` (t-120, 2026-10-18): GIF encoder (LZW through weezl), `default-features = false` + `std`, no `color_quant` — the palette and the frame diffs are ours (`gif.rs`). The MP4/WebM path shells out to the user's ffmpeg and adds no crate. |
 | notify | 8.2.0 | 2026-02 | CC0-1.0 (inotify: ISC) | Only in `codedraw-tui`, follow mode (t-011): watches the source file's directory, debounce in our code (no `notify-debouncer-*`) |
 
