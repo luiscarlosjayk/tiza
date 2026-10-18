@@ -215,6 +215,27 @@ In detail, `tiza` reads the source file you open (and re-reads it in follow mode
 
 A task that sends the current selection to Tiza in the integrated terminal: [docs/zed.md](docs/zed.md).
 
+## Terminal support
+
+**Verified on macOS in Zed's integrated terminal and in [Herdr](https://herdr.dev)**, the terminals Tiza is built and used in. Any terminal with truecolor (24-bit colour) and Unicode box drawing should work; the others (Ghostty, WezTerm, iTerm2, Kitty, Alacritty, Terminal.app, tmux, Linux terminals) are **not tested** — reports welcome.
+
+What Tiza asks of the terminal, and what happens without it:
+
+- **Truecolor.** The `dark` and `light` themes are explicit RGB colours. Tiza does not read `COLORTERM` and has no 256-colour fallback, so in a terminal without 24-bit colour they come out wrong. `--theme terminal` (`:theme terminal`) draws Tiza's roles and the syntax with the terminal's own 16 ANSI colours instead (a colour you set yourself as `#rrggbb` is still sent as 24-bit).
+- **Unicode box drawing** (`─ │ ╭ ╯ ┆ ━ ▶`) in a monospace font whose box glyphs fill the cell, so lines join without gaps. Emoji in your own styles need a font that has them.
+- **Bracketed paste.** Tiza turns it on: pasting code into the window replaces the code shown (into the `:` line, it pastes the first line). A terminal without bracketed paste delivers a paste as typed keys, which Tiza runs as commands — pipe the code in instead (`pbpaste | tiza`).
+- **Mouse, only if you ask.** Without `--mouse` / `:mouse on` Tiza never requests mouse reporting and the terminal keeps its own selection; with it, see **Mouse** above.
+- **The OSC 11 / OSC 10 colour query** (auto appearance, see [Themes](#themes)): sent at start and on every resize, only when the document names no theme or with `--theme terminal`; Tiza waits 100 ms at most and falls back to dark in silence when nothing answers.
+- **Plain keys.** Tiza does not enable the kitty keyboard protocol and no shortcut depends on it (`Shift-Tab` is the classic back-tab every terminal sends).
+
+Known caveats (not tested here):
+
+- **Terminal.app** has 24-bit colour only since macOS 26; on older macOS use `--theme terminal` or another terminal.
+- **tmux.** Tiza sends the colour query as plain OSC, not wrapped for tmux's passthrough, so `set -g allow-passthrough on` does not change it: whatever answers is tmux itself, and with no answer within 100 ms Tiza stays dark — pick the theme by hand there (`--theme light`, `t`). tmux does not resize when the outer terminal changes theme, so `kill -WINCH $(pgrep tiza)` asks again. tmux's own `set -g mouse on|off` decides, together with Tiza's `--mouse`, who gets clicks, drags and the wheel. tmux passes 24-bit colour through only when it knows the outer terminal has it (`set -as terminal-features ',*:RGB'`).
+- **Zed** needs `line_height: "standard"` in the terminal settings for box drawing without gaps ([docs/zed.md](docs/zed.md)).
+
+A terminal issue? [Open an issue](https://github.com/luiscarlosjayk/tiza/issues) with the terminal's name and version, the output of `echo "$TERM $COLORTERM"`, whether tmux or Herdr sits in between, and a screenshot.
+
 ## Themes
 
 Tiza ships two palettes, `dark` and `light`, with explicit RGB colours measured for 1080p video (every text colour keeps ≥ 4.5:1 against the background after YouTube-like compression — `scripts/legibility.py`, the t-072 gate). Around them:
