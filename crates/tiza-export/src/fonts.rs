@@ -98,6 +98,43 @@ impl Default for Coverage {
     }
 }
 
+/// Face `face` (an index in [`FACES`]) cut down to the characters in `chars`
+/// plus every glyph the browser can reach from them (t-137): the GSUB closure
+/// of the features a browser applies by default (`calt` draws JetBrains
+/// Mono's ligatures, `ccmp`/`locl`, …) and the GPOS `mark`/`mkmk` anchors of
+/// combining marks, with `cmap`, `glyf`/`loca`, `hmtx`, the hinting tables and
+/// the vertical metrics kept consistent. Done in memory for the SVG only; the
+/// font files in the binary stay complete and the PNG path never sees this.
+///
+/// `None` when the subsetter refuses the font: the caller then embeds the
+/// whole face, so a subsetting bug costs bytes, never glyphs.
+pub fn subset(face: usize, chars: &std::collections::BTreeSet<char>) -> Option<Vec<u8>> {
+    use skrifa::raw::collections::IntSet;
+    use skrifa::raw::types::{NameId, Tag};
+
+    let font = skrifa::FontRef::new(FACES.get(face)?.data).ok()?;
+    let unicodes: IntSet<u32> = chars.iter().map(|&c| c as u32).collect();
+    let mut scripts = IntSet::<Tag>::empty();
+    scripts.invert(); // every script
+    let features: IntSet<Tag> = skera::DEFAULT_LAYOUT_FEATURES.iter().copied().collect();
+    // hb-subset's default name records (family, style, version, PostScript
+    // name) plus the OFL license text and URL (13, 14), US English.
+    let names: IntSet<NameId> = (0..=6).chain([13, 14]).map(NameId::new).collect();
+    let languages: IntSet<u16> = [0x0409].into_iter().collect();
+    let plan = skera::Plan::new(
+        &IntSet::empty(),
+        &unicodes,
+        &font,
+        skera::SubsetFlags::default(), // keeps the hinting: same pixels
+        &IntSet::empty(),
+        &scripts,
+        &features,
+        &names,
+        &languages,
+    );
+    skera::subset_font(&font, &plan).ok()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -118,5 +155,45 @@ mod tests {
         let c = Coverage::new();
         assert!(c.has(0, 'a') && c.has(0, '─') && c.has(3, 'a'));
         assert!(!c.has(0, '★') && c.has(SYMBOLS_FACE, '★'));
+    }
+
+    fn glyphs(data: &[u8]) -> u16 {
+        use skrifa::raw::TableProvider as _;
+        skrifa::FontRef::new(data)
+            .unwrap()
+            .maxp()
+            .unwrap()
+            .num_glyphs()
+    }
+
+    #[test]
+    fn subset_keeps_the_characters_and_what_gsub_reaches_from_them() {
+        use skrifa::MetadataProvider as _;
+        let chars: std::collections::BTreeSet<char> = "->".chars().collect();
+        let sub = subset(0, &chars).expect("JetBrains Mono subsets");
+        let f = skrifa::FontRef::new(&sub).unwrap();
+        let cmap = f.charmap();
+        assert!(cmap.map('-').is_some() && cmap.map('>').is_some());
+        assert!(cmap.map('a').is_none(), "only the characters asked for");
+        // .notdef, '-', '>' and the `calt` ligature pieces of `->` (and of
+        // the other `-`/`>` sequences): more glyphs than characters.
+        let n = glyphs(&sub);
+        assert!(n > 3, "{n} glyphs: the GSUB closure is missing");
+        assert!(n < glyphs(FACES[0].data) / 4, "{n} glyphs");
+        assert!(sub.len() < FACES[0].data.len() / 4);
+    }
+
+    #[test]
+    fn subset_never_touches_the_embedded_files() {
+        let before: Vec<usize> = FACES.iter().map(|f| f.data.len()).collect();
+        let chars = "fn main() ★".chars().collect();
+        for i in 0..FACES.len() {
+            assert!(subset(i, &chars).is_some(), "face {i}");
+        }
+        assert_eq!(
+            before,
+            FACES.iter().map(|f| f.data.len()).collect::<Vec<_>>()
+        );
+        assert_eq!(glyphs(FACES[0].data), 1743, "JetBrains Mono Regular, whole");
     }
 }

@@ -58,7 +58,15 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
     ]);
     let small_text = std::fs::read_to_string(&small).unwrap();
     assert!(!small_text.contains("@font-face"));
-    assert!(small_text.len() < 64 * 1024 && text.len() > 1_000_000);
+    // Since t-137 the embedded faces are subset to the characters drawn: tens
+    // of KB of fonts on top of the drawing, no longer ~1 MB.
+    assert!(small_text.len() < 64 * 1024);
+    assert!(
+        text.len() > small_text.len() + 20_000 && text.len() < 300_000,
+        "{} bytes with fonts, {} without",
+        text.len(),
+        small_text.len()
+    );
 }
 
 #[test]

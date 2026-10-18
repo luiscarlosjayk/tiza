@@ -53,6 +53,12 @@ jsonschema = { version = "0.59.0", default-features = false }
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 # Character coverage of the embedded faces (t-130): the SVG embeds only the faces it draws. Already in the tree through usvg.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+# SVG font subsetting (t-137): Google Fonts' port of hb-subset (fontations), keeps the GSUB/GPOS closure.
+# Pinned to the release that shares skrifa 0.44 / read-fonts 0.41 with usvg, so no second copy of the font stack.
+skera = { version = "=0.4.0", default-features = false }
+# Canonical (de)compositions of the subset's characters (t-137): the browser's shaper composes e + U+0301 into é
+# when the font has it, so the subset must keep the forms it can reach.
+unicode-normalization = "0.1.25"
 # Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm.
 rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs"] }
 # Theme override files (t-119): `~/.config/tiza/config.toml`, `--theme-file`. Parse only.

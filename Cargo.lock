@@ -2409,6 +2409,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "33f4fe9184a62d842c9ef383018f3306d8ba224fd9d836f56d7288308847c256"
 
 [[package]]
+name = "skera"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7ef75eddaf703e5a3e9eb837b9a7426ff995042a9a410f85981446cffed1e21e"
+dependencies = [
+ "hashbrown",
+ "skrifa",
+ "thiserror 2.0.21",
+ "write-fonts",
+]
+
+[[package]]
 name = "skrifa"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2776,9 +2788,11 @@ dependencies = [
  "base64 0.23.1",
  "gif",
  "resvg",
+ "skera",
  "skrifa",
  "thiserror 2.0.21",
  "tiza-core",
+ "unicode-normalization",
  "unicode-segmentation",
  "unicode-width",
 ]
@@ -2802,6 +2816,7 @@ dependencies = [
 name = "tiza-qa"
 version = "0.0.1"
 dependencies = [
+ "base64 0.23.1",
  "crossterm",
  "gif",
  "insta",
@@ -2809,6 +2824,7 @@ dependencies = [
  "proptest",
  "ratatui",
  "serde_json",
+ "skrifa",
  "tiza-core",
  "tiza-export",
  "tiza-mcp",
@@ -2987,6 +3003,15 @@ name = "unicode-ident"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
+
+[[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
 
 [[package]]
 name = "unicode-script"
@@ -3443,6 +3468,17 @@ name = "wit-bindgen"
 version = "0.57.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1ebf944e87a7c253233ad6766e082e3cd714b5d03812acc24c318f549614536e"
+
+[[package]]
+name = "write-fonts"
+version = "0.50.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cae90d1d9f6d1d36ef116b0b1e651a6d7c12ba925439d4d06ff9adc94662a3d8"
+dependencies = [
+ "font-types",
+ "log",
+ "read-fonts",
+]
 
 [[package]]
 name = "xmlwriter"
