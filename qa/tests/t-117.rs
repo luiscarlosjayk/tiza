@@ -12,6 +12,10 @@
 //! - AC4 Only columns are stored; anchoring by the secret itself is refused;
 //!   `:embed` and `:w` never write the secret.
 //! - AC5 Follow/paste re-anchor a redact; a dropped one is reported loudly.
+//!   (Retrabajo) A redact follows the text AROUND it, never the secret: a
+//!   rotated value under the same key stays masked (`keep=N` shows the new
+//!   tail); only when that text is gone is it dropped, loudly. `:embed`
+//!   turns follow off (the code no longer comes from the file).
 //! - AC6 `:redact off|on` for the author only; `◆ redacted` on the bar;
 //!   presentation mode and exports force the masks.
 //! - AC7 `:redact auto [--dry]` creates ordinary redact annotations from the
@@ -217,8 +221,10 @@ fn ac5_follow_reanchors_and_a_dropped_redact_is_loud() {
             .any(|l| l.contains("3") && l.contains("API_KEY=••••••••")),
         "{text}"
     );
-    // The masked line rewritten: the redact is dropped with a loud notice.
-    let changed = config().replace(&format!("API_KEY={SECRET}"), "API_KEY=rotated-later");
+    // The anchor itself (the text before the secret) rewritten: the redact
+    // is dropped with a loud notice. (A new value under the same key stays
+    // masked: see `ac5_rotating_a_masked_value_under_follow_keeps_it_masked`.)
+    let changed = config().replace(&format!("API_KEY={SECRET}"), "APIKEY_V2=rotated-later");
     std::fs::write(
         src.with_extension("env.tmp"),
         format!("# new first line\n{changed}"),
@@ -240,6 +246,192 @@ fn ac5_follow_reanchors_and_a_dropped_redact_is_loud() {
         "{msg}"
     );
     assert_clean("drop notice", &msg);
+}
+
+const ROTATED: &str = "sk-live-NEWvalue987654zzQ9";
+
+/// Waits (10 s at most) until follow mode has applied `n` reloads.
+fn wait_reloads(live: &Live, n: u64) {
+    let start = std::time::Instant::now();
+    while live.api_ok("follow.status", json!({}))["reloads"]
+        .as_u64()
+        .unwrap_or(0)
+        < n
+    {
+        assert!(
+            start.elapsed().as_secs() < 10,
+            "follow did not reload #{n} in 10 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Atomic save, as editors do (tmp + rename).
+fn save_atomically(src: &std::path::Path, text: &str) {
+    let tmp = src.with_extension("env.tmp");
+    std::fs::write(&tmp, text).unwrap();
+    std::fs::rename(&tmp, src).unwrap();
+}
+
+/// The rotated value is nowhere an agent or a recording can read it.
+fn assert_rotated_masked(live: &Live, what: &str) {
+    let text = live.api_ok("render.text", json!({"width": 100}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let code = live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let scene = live.api_ok("scene.get", json!({})).to_string();
+    let screen = live.screen(100, 20);
+    for (surface, s) in [
+        ("render.text", &text),
+        ("code.get", &code),
+        ("scene.get", &scene),
+        ("screen", &screen),
+    ] {
+        assert!(
+            !s.contains(ROTATED) && !s.contains("NEWvalue"),
+            "{what}: {surface} shows the rotated value:\n{s}"
+        );
+        assert_clean(&format!("{what}: {surface}"), s);
+    }
+    // keep=4 shows the tail of the NEW value.
+    let tail = &ROTATED[ROTATED.len() - 4..];
+    assert!(
+        text.contains(&format!("API_KEY=••••••••{tail}")),
+        "{what}: {text}"
+    );
+    assert!(
+        code.contains(&format!("API_KEY=••••••••{tail}")),
+        "{what}: {code}"
+    );
+}
+
+#[test]
+fn ac5_rotating_a_masked_value_under_follow_keeps_it_masked() {
+    let (live, src, _) = opened("t117-rotate-follow");
+    live.command("redact 2:API_KEY= keep=4");
+    assert!(!live.message().unwrap().1);
+    live.command("follow on");
+    // Same key, new (longer) value, saved with tmp + rename.
+    save_atomically(
+        &src,
+        &config().replace(&format!("API_KEY={SECRET}"), &format!("API_KEY={ROTATED}")),
+    );
+    wait_reloads(&live, 1);
+    assert_rotated_masked(&live, "after the rotation");
+    let (msg, err) = live.message().unwrap();
+    assert!(!err && !msg.contains("dropped"), "kept, no notice: {msg}");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    // Rotated again with a line added above it and one right after it
+    // (the line moves and changes at once): still masked.
+    let again = config().replace(
+        &format!("API_KEY={SECRET}\n"),
+        &format!("API_KEY={ROTATED}\nAPI_REGION=eu\n"),
+    );
+    save_atomically(&src, &format!("# rotated on 2026-10-18\n{again}"));
+    wait_reloads(&live, 2);
+    assert_rotated_masked(&live, "after moving and rotating");
+    // The sidecar a save writes never holds the new value either.
+    let saved = serde_json::to_string(&live.with(|a| a.doc.clone())).unwrap();
+    assert!(!saved.contains(ROTATED), "{saved}");
+}
+
+#[test]
+fn ac5_rotating_a_masked_value_by_paste_keeps_it_masked() {
+    let (live, _src, _) = opened("t117-rotate-paste");
+    live.command("redact 2:API_KEY= keep=4");
+    assert!(!live.message().unwrap().1);
+    let pasted = config().replace(&format!("API_KEY={SECRET}"), &format!("API_KEY={ROTATED}"));
+    live.with(move |a| a.replace_code(&pasted)).unwrap();
+    assert_rotated_masked(&live, "after the paste");
+    let (msg, err) = live.message().unwrap();
+    assert!(!err && !msg.contains("dropped"), "{msg}");
+    // A paste where the key itself is gone: dropped, loudly.
+    let renamed = config().replace(&format!("API_KEY={SECRET}"), &format!("TOKEN_V2={ROTATED}"));
+    live.with(move |a| a.replace_code(&renamed)).unwrap();
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg
+            .contains("redact a1 dropped: the line changed — check the screen before recording"),
+        "{msg}"
+    );
+    assert!(!msg.contains(ROTATED), "{msg}");
+}
+
+#[test]
+fn ac5_column_redact_keeps_its_columns_with_a_notice() {
+    // A value selected mid-line (columns): the text on both sides follows
+    // it; when both sides change and the line is still long enough, the
+    // columns stay and the presenter is told to check the screen.
+    let dir = scratch("t117-columns");
+    let src = dir.join("cfg.json");
+    std::fs::write(&src, "{\"token\": \"abc123secret\", \"user\": \"ana\"}\n").unwrap();
+    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, dir.join("cfg.json.tiza"), dir.join("live.sock"));
+    live.command("redact 1@11..23");
+    assert!(!live.message().unwrap().1);
+    live.command("follow on");
+    let tmp = dir.join("cfg.json.tmp");
+    std::fs::write(
+        &tmp,
+        "{\"token\": \"NEWvalue-much-longer\", \"user\": \"ana\"}\n",
+    )
+    .unwrap();
+    std::fs::rename(&tmp, &src).unwrap();
+    wait_reloads(&live, 1);
+    let code = live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(!code.contains("NEWvalue"), "{code}");
+    assert!(code.contains("\"token\": \"••••••••\", \"user\""), "{code}");
+    // Both sides changed: columns kept, with the notice.
+    std::fs::write(&tmp, "{\"tok\": \"zzzzzzzzzzzzzzzzzz\", \"usr\": 1}\n").unwrap();
+    std::fs::rename(&tmp, &src).unwrap();
+    wait_reloads(&live, 2);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("redact a1 kept by columns: the text around it changed — check the screen before recording"),
+        "{msg}"
+    );
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+}
+
+#[test]
+fn ac4_embed_turns_follow_off() {
+    let (live, src, _) = opened("t117-embed-follow");
+    live.command("redact 2:API_KEY=");
+    live.command("follow on");
+    live.command("embed");
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        !err && msg.contains("follow off") && msg.contains(":link and :follow on"),
+        "{msg}"
+    );
+    assert_eq!(live.api_ok("follow.status", json!({}))["enabled"], false);
+    // An edit on disk no longer reaches the frozen copy, and nothing is dropped.
+    save_atomically(
+        &src,
+        &config().replace(&format!("API_KEY={SECRET}"), &format!("API_KEY={ROTATED}")),
+    );
+    let settle = std::time::Instant::now() + std::time::Duration::from_millis(400);
+    while std::time::Instant::now() < settle {
+        let (msg, err) = live.message().unwrap_or_default();
+        assert!(!err, "no reload, no drop notice: {msg}");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    let code = live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        code.contains("API_KEY=••••••••") && !code.contains(ROTATED),
+        "{code}"
+    );
 }
 
 #[test]

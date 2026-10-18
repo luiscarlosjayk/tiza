@@ -75,6 +75,10 @@ pub struct Remap<'a> {
     matched: Vec<(u32, u32)>,
     /// Trimmed text → new lines with that text.
     index: HashMap<&'a str, Vec<u32>>,
+    /// Set by the last [`Remap::shape`] of a redact that kept its columns
+    /// only because the text on both sides of it changed (see
+    /// [`Remap::redact`]); read with [`Remap::take_by_columns`].
+    by_columns: bool,
 }
 
 impl<'a> Remap<'a> {
@@ -105,7 +109,14 @@ impl<'a> Remap<'a> {
             new,
             matched,
             index,
+            by_columns: false,
         }
+    }
+
+    /// Whether the last redact re-anchored by [`Remap::shape`] fell back to
+    /// its columns (the caller warns: the screen must be checked).
+    pub fn take_by_columns(&mut self) -> bool {
+        std::mem::take(&mut self.by_columns)
     }
 
     /// Shift of the nearest matched line above `old_line` (or below, when
@@ -265,6 +276,106 @@ impl<'a> Remap<'a> {
         })
     }
 
+    /// New place of a redact (t-117). Never by the text under the mask: that
+    /// is exactly what changes when a key is rotated. A redact is anchored
+    /// by the text AROUND it on its line — the text before it (what
+    /// `:redact L:ANCHOR` typed) and, when it stops mid-line, the text after
+    /// it — with the other masks of the line as wildcards too, so two
+    /// secrets rotated on one line both stay masked. On the new line (found
+    /// like any line, or the one line of its hunk that still has that
+    /// text), the mask covers whatever sits between those texts now: a
+    /// rotated value stays masked whatever its new length, and `keep=N`
+    /// shows the tail of the NEW value.
+    ///
+    /// When that text is gone: a redact that reached the end of its line
+    /// (an anchor, a whole line, a selection to the end) is dropped — the
+    /// caller says so loudly; one that stopped mid-line keeps its columns
+    /// when its line still exists and is long enough (the second value is
+    /// `true`, so the caller warns), and is dropped otherwise.
+    pub fn redact(&mut self, span: &TextSpan) -> Option<(TextSpan, bool)> {
+        let old_text = self.old.line_text(span.line)?;
+        let og: Vec<&str> = old_text.graphemes(true).collect();
+        let clamp = |s: &TextSpan| {
+            let e = (s.end as usize).min(og.len());
+            ((s.start as usize).min(e), e)
+        };
+        let (start, end) = clamp(span);
+        if start == end {
+            return None;
+        }
+        // Every mask of this line (any step), merged where they touch.
+        let mut spans: Vec<(usize, usize)> = self
+            .old
+            .annotations
+            .iter()
+            .filter(|a| a.file.is_none())
+            .filter_map(|a| match &a.shape {
+                Shape::Redact { span: s, .. } if s.line == span.line => Some(clamp(s)),
+                _ => None,
+            })
+            .filter(|(s, e)| s < e)
+            .collect();
+        spans.push((start, end));
+        spans.sort_unstable();
+        let mut masks: Vec<(usize, usize)> = Vec::new();
+        for (s, e) in spans {
+            match masks.last_mut() {
+                Some(last) if s <= last.1 => last.1 = last.1.max(e),
+                _ => masks.push((s, e)),
+            }
+        }
+        let k = masks
+            .iter()
+            .position(|(s, e)| *s <= start && end <= *e)
+            .unwrap_or(0);
+        // The literal text between the masks: before the first, between
+        // each pair, after the last.
+        let mut literals: Vec<String> = Vec::with_capacity(masks.len() + 1);
+        let mut prev = 0;
+        for (s, e) in &masks {
+            literals.push(og[prev..*s].concat());
+            prev = *e;
+        }
+        literals.push(og[prev..].concat());
+        let to_end_of_line = k + 1 == masks.len() && literals[k + 1].trim_end().is_empty();
+        let located = self.line(span.line);
+        let new = self.new;
+        let try_line = |l: u32| -> Option<TextSpan> {
+            let (s, e) = *match_masks(new.line_text(l)?, &literals)?.get(k)?;
+            (s < e).then_some(TextSpan {
+                line: l,
+                start: s,
+                end: e,
+            })
+        };
+        if let Some(found) = located.and_then(try_line) {
+            return Some((found, false));
+        }
+        // The line moved and changed at once (a line added next to the
+        // rotated one): the one line of its hunk that still has that text.
+        let (_, hunk) = self.hunk(span.line);
+        let mut hits = hunk.filter(|l| Some(*l) != located).filter_map(try_line);
+        if let Some(only) = hits.next()
+            && hits.next().is_none()
+        {
+            return Some((only, false));
+        }
+        if !to_end_of_line
+            && let Some(l) = located
+            && end as u32 <= self.new.line_len(l)
+        {
+            return Some((
+                TextSpan {
+                    line: l,
+                    start: start as u32,
+                    end: end as u32,
+                },
+                true,
+            ));
+        }
+        None
+    }
+
     /// New place of a point anchor: the word under it identifies it.
     pub fn anchor(&mut self, a: &Anchor) -> Option<Anchor> {
         let word = word_span(self.old, a.line, a.col)?;
@@ -325,11 +436,15 @@ impl<'a> Remap<'a> {
                 style: style.clone(),
                 emphasis: *emphasis,
             },
-            Shape::Redact { span, keep, label } => Shape::Redact {
-                span: self.span(span)?,
-                keep: *keep,
-                label: label.clone(),
-            },
+            Shape::Redact { span, keep, label } => {
+                let (span, by_columns) = self.redact(span)?;
+                self.by_columns = by_columns;
+                Shape::Redact {
+                    span,
+                    keep: *keep,
+                    label: label.clone(),
+                }
+            }
             Shape::Box {
                 from_line,
                 to_line,
@@ -417,6 +532,45 @@ impl<'a> Remap<'a> {
             }
         })
     }
+}
+
+/// The grapheme spans of the masks on `line`, given the literal text around
+/// them on the old line (`literals[0]` before the first mask, `literals[i]`
+/// between masks `i-1` and `i`, the last one after the last mask). Leading
+/// indentation and trailing blanks are not part of the anchor; between two
+/// masks the first occurrence of the text that separated them is taken.
+/// `None` when the line no longer has that text around the masks.
+fn match_masks(line: &str, literals: &[String]) -> Option<Vec<(u32, u32)>> {
+    let n = literals.len().checked_sub(1)?;
+    let lead = line.len() - line.trim_start().len();
+    let first = literals[0].trim_start();
+    if !line[lead..].starts_with(first) {
+        return None;
+    }
+    let mut pos = lead + first.len();
+    let body_end = line.trim_end().len().max(pos);
+    let tail = literals[n].trim_end();
+    if !line[..body_end].ends_with(tail) || body_end - tail.len() < pos {
+        return None;
+    }
+    let end_all = body_end - tail.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let s = pos;
+        let e = if i + 1 == n {
+            end_all
+        } else {
+            let lit = literals[i + 1].as_str();
+            let off = line[pos..end_all].find(lit)?;
+            pos += off + lit.len();
+            s + off
+        };
+        out.push((
+            tiza_core::model::grapheme_index(line, s),
+            tiza_core::model::grapheme_index(line, e),
+        ));
+    }
+    Some(out)
 }
 
 /// Pairs `(i, j)` of equal lines, increasing in both, from an LCS of `a` and
@@ -831,6 +985,140 @@ mod tests {
         let rev = doc(&rev);
         let mut r = Remap::new(&old, &rev);
         let _ = r.line(1500);
+    }
+
+    fn with_redacts(code: &str, spans: &[(u32, u32, u32)]) -> Document {
+        let mut d = Document::from_code(code, "txt", None);
+        for (i, (line, start, end)) in spans.iter().enumerate() {
+            d.annotations.push(tiza_core::model::Annotation {
+                id: format!("a{}", i + 1),
+                step: 1,
+                color: None,
+                markers: None,
+                file: None,
+                shape: Shape::Redact {
+                    span: TextSpan {
+                        line: *line,
+                        start: *start,
+                        end: *end,
+                    },
+                    keep: 4,
+                    label: None,
+                },
+            });
+        }
+        d
+    }
+
+    fn masked_text(d: &Document, sp: &TextSpan) -> String {
+        let g: Vec<&str> = d.line_text(sp.line).unwrap().graphemes(true).collect();
+        g[sp.start as usize..sp.end as usize].concat()
+    }
+
+    #[test]
+    fn rotated_value_stays_masked_by_the_text_before_it() {
+        // `:redact 2:STRIPE_KEY=` → columns 11..end of line.
+        let old = with_redacts(
+            "# keys\nSTRIPE_KEY=sk_live_OLDVALUEp7dc\nNAME=demo\n",
+            &[(2, 11, 31)],
+        );
+        let sp = TextSpan {
+            line: 2,
+            start: 11,
+            end: 31,
+        };
+        // Same key, a longer new value; plus a line added above.
+        let new = doc("# keys\n# rotated\nSTRIPE_KEY=sk_live_NEWVALUEzzzz9999extra\nNAME=demo\n");
+        let mut r = Remap::new(&old, &new);
+        let (got, by_cols) = r.redact(&sp).unwrap();
+        assert!(!by_cols);
+        assert_eq!(got.line, 3);
+        assert_eq!(masked_text(&new, &got), "sk_live_NEWVALUEzzzz9999extra");
+        // A shorter one, indented by a formatter.
+        let new = doc("# keys\n  STRIPE_KEY=x1\nNAME=demo\n");
+        let mut r = Remap::new(&old, &new);
+        let (got, _) = r.redact(&sp).unwrap();
+        assert_eq!(masked_text(&new, &got), "x1");
+        // The prefix itself gone: dropped (the caller says so loudly).
+        let new = doc("# keys\nSTRIPE=sk_live_NEWVALUE\nNAME=demo\n");
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.redact(&sp), None);
+        // The value emptied: nothing left to mask, dropped too.
+        let new = doc("# keys\nSTRIPE_KEY=\nNAME=demo\n");
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.redact(&sp), None);
+    }
+
+    #[test]
+    fn rotated_line_that_moved_is_found_in_its_hunk() {
+        let old = with_redacts("a\nTOKEN=old-secret-1\nb\n", &[(2, 6, 18)]);
+        // A line inserted right after the rotated one: a 1→2 hunk.
+        let new = doc("a\nTOKEN=brand-new-secret\nEXTRA=1\nb\n");
+        let mut r = Remap::new(&old, &new);
+        let (got, by_cols) = r
+            .redact(&TextSpan {
+                line: 2,
+                start: 6,
+                end: 18,
+            })
+            .unwrap();
+        assert!(!by_cols);
+        assert_eq!(
+            (got.line, masked_text(&new, &got).as_str()),
+            (2, "brand-new-secret")
+        );
+    }
+
+    #[test]
+    fn mid_line_redact_follows_both_sides_then_falls_back_to_columns() {
+        // `{"token": "abc123", "user": "ana"}` with the value selected.
+        let code = "{\"token\": \"abc123\", \"user\": \"ana\"}\n";
+        let sp = TextSpan {
+            line: 1,
+            start: 11,
+            end: 17,
+        };
+        let old = with_redacts(code, &[(1, 11, 17)]);
+        let new = doc("{\"token\": \"zz-much-longer-99\", \"user\": \"ana\"}\n");
+        let mut r = Remap::new(&old, &new);
+        let (got, by_cols) = r.redact(&sp).unwrap();
+        assert!(!by_cols);
+        assert_eq!(masked_text(&new, &got), "zz-much-longer-99");
+        // Text on both sides changed, the line still long enough: columns.
+        let new = doc("{\"tok\": \"zz-much-longer-99\", \"usr\": 1}\n");
+        let mut r = Remap::new(&old, &new);
+        let (got, by_cols) = r.redact(&sp).unwrap();
+        assert!(by_cols, "kept by columns: the caller warns");
+        assert_eq!((got.start, got.end), (11, 17));
+        // ... and too short for them: dropped.
+        let new = doc("{}\n");
+        let mut r = Remap::new(&old, &new);
+        assert_eq!(r.redact(&sp), None);
+    }
+
+    #[test]
+    fn two_masks_on_one_line_both_rotate() {
+        // `postgres://admin:PASS@host/db?key=KEY` with both values masked.
+        let code = "URL=postgres://admin:hunter2@db/app?key=k-111\n";
+        let old = with_redacts(code, &[(1, 21, 28), (1, 40, 45)]);
+        let new = doc("URL=postgres://admin:s3cr3t-new@db/app?key=k-222-longer\n");
+        let mut r = Remap::new(&old, &new);
+        let (p, _) = r
+            .redact(&TextSpan {
+                line: 1,
+                start: 21,
+                end: 28,
+            })
+            .unwrap();
+        let (k, _) = r
+            .redact(&TextSpan {
+                line: 1,
+                start: 40,
+                end: 45,
+            })
+            .unwrap();
+        assert_eq!(masked_text(&new, &p), "s3cr3t-new");
+        assert_eq!(masked_text(&new, &k), "k-222-longer");
     }
 
     #[test]
