@@ -15,7 +15,7 @@ edition = "2024"
 rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/luiscarlosjayk/tiza"
-authors = ["Luis Carlos Osorio <luiscarlosjayk@gmail.com>", "Claude <noreply@anthropic.com>"]
+authors = ["Luis Carlos Osorio Jayk <luiscarlosjayk@gmail.com>"]
 
 [workspace.dependencies]
 tiza-core = { path = "crates/tiza-core", version = "0.0.1" }
