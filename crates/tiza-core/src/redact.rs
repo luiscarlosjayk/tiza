@@ -29,6 +29,17 @@ pub fn active(doc: &Document, a: &Annotation, step: u32) -> bool {
     matches!(a.shape, Shape::Redact { .. }) && (!doc.redact_from_step || a.step <= step)
 }
 
+/// Characters a redact leaves visible after its bullets: its `keep`, or
+/// none once it was widened (it no longer knows where the value ends, so a
+/// tail could be part of a new secret).
+pub fn shown_tail(shape: &Shape) -> u8 {
+    match shape {
+        Shape::Redact { widened: true, .. } => 0,
+        Shape::Redact { keep, .. } => *keep,
+        _ => 0,
+    }
+}
+
 /// Whether the document has any redact annotation.
 pub fn has_redacts(doc: &Document) -> bool {
     doc.annotations
@@ -49,13 +60,13 @@ pub fn masked(doc: &Document, step: u32) -> Document {
     let mut by_line: std::collections::BTreeMap<u32, Vec<(usize, TextSpan, u8)>> =
         Default::default();
     for (i, a) in doc.annotations.iter().enumerate() {
-        if let Shape::Redact { span, keep, .. } = &a.shape
+        if let Shape::Redact { span, .. } = &a.shape
             && active(doc, a, step)
         {
             by_line
                 .entry(span.line)
                 .or_default()
-                .push((i, *span, *keep));
+                .push((i, *span, shown_tail(&a.shape)));
         }
     }
     for (line, masks) in by_line.iter_mut() {
@@ -111,7 +122,9 @@ pub fn mask_lines(code: &[String], first_line: u32, annotations: &[Annotation]) 
     let mut spans: Vec<(u32, u32, u32, u8)> = annotations
         .iter()
         .filter_map(|a| match &a.shape {
-            Shape::Redact { span, keep, .. } => Some((span.line, span.start, span.end, *keep)),
+            Shape::Redact { span, .. } => {
+                Some((span.line, span.start, span.end, shown_tail(&a.shape)))
+            }
             _ => None,
         })
         .collect();
@@ -348,6 +361,7 @@ mod tests {
                 span: TextSpan { line, start, end },
                 keep,
                 label: None,
+                widened: false,
             },
         }
     }

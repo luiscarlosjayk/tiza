@@ -265,6 +265,10 @@
             "type": {
               "const": "redact",
               "type": "string"
+            },
+            "widened": {
+              "description": "Set by a reload or paste that could not follow the redact's text\n(fail-closed, t-117): the mask was widened to the rest of its\nline, or to whole lines, and keeps no tail. Cleared when the\npresenter marks the value again (a new redact over it).",
+              "type": "boolean"
             }
           },
           "required": [

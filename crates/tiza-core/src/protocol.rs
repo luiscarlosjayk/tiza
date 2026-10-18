@@ -387,6 +387,7 @@ impl ShapeSpec {
                 span: resolve_redact_span(doc, at)?,
                 keep: *keep,
                 label: label.clone(),
+                widened: false,
             },
         };
         Ok((shape, markers))
@@ -1038,14 +1039,21 @@ pub fn describe(a: &Annotation) -> String {
 fn describe_shape(a: &Annotation) -> String {
     match &a.shape {
         // Never the text under the mask: columns only.
-        Shape::Redact { span, keep, label } => format!(
+        Shape::Redact {
+            span,
+            keep,
+            label,
+            widened,
+        } => format!(
             "{} [step {}] redact L{} {}..{} (masked{}){}",
             a.id,
             a.step,
             span.line,
             span.start,
             span.end,
-            if *keep > 0 {
+            if *widened {
+                ", WIDENED: could not follow its text, mark the value again".to_string()
+            } else if *keep > 0 {
                 format!(", keeps {keep}")
             } else {
                 String::new()

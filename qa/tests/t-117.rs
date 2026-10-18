@@ -14,8 +14,12 @@
 //! - AC5 Follow/paste re-anchor a redact; a dropped one is reported loudly.
 //!   (Retrabajo) A redact follows the text AROUND it, never the secret: a
 //!   rotated value under the same key stays masked (`keep=N` shows the new
-//!   tail); only when that text is gone is it dropped, loudly. `:embed`
-//!   turns follow off (the code no longer comes from the file).
+//!   tail). (Retrabajo 2) When it cannot follow that text it fails CLOSED:
+//!   the rest of its line (or every line of a hunk that changed size) is
+//!   masked, loudly, marked `widened` in scene.list/scene.get until the
+//!   value is marked again; only a line deleted with nothing in its place
+//!   drops it. `:embed` turns follow off (the code no longer comes from
+//!   the file).
 //! - AC6 `:redact off|on` for the author only; `◆ redacted` on the bar;
 //!   presentation mode and exports force the masks.
 //! - AC7 `:redact auto [--dry]` creates ordinary redact annotations from the
@@ -191,54 +195,44 @@ fn ac4_anchoring_by_the_secret_is_refused_and_the_sidecar_never_holds_it() {
 }
 
 #[test]
-fn ac5_follow_reanchors_and_a_dropped_redact_is_loud() {
+fn ac5_follow_reanchors_and_a_lost_anchor_fails_closed() {
     let (live, src, _) = opened("t117-follow");
     live.command("redact 2:API_KEY=");
     live.command("follow on");
     // A line added above: the mask follows.
-    std::fs::write(
-        src.with_extension("env.tmp"),
-        format!("# new first line\n{}", config()),
-    )
-    .unwrap();
-    std::fs::rename(src.with_extension("env.tmp"), &src).unwrap();
-    let start = std::time::Instant::now();
-    while live.api_ok("follow.status", json!({}))["reloads"]
-        .as_u64()
-        .unwrap_or(0)
-        < 1
-    {
-        assert!(start.elapsed().as_secs() < 10);
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
-    let text = live.api_ok("render.text", json!({"width": 100}))["text"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    save_atomically(&src, &format!("# new first line\n{}", config()));
+    wait_reloads(&live, 1);
+    let text = render_text(&live);
     assert_clean("after reload", &text);
     assert!(
         text.lines()
             .any(|l| l.contains("3") && l.contains("API_KEY=••••••••")),
         "{text}"
     );
-    // The anchor itself (the text before the secret) rewritten: the redact
-    // is dropped with a loud notice. (A new value under the same key stays
-    // masked: see `ac5_rotating_a_masked_value_under_follow_keeps_it_masked`.)
+    // The anchor itself (the text before the secret) rewritten: fail-closed,
+    // the mask is NOT dropped — it covers the rest of the line from where
+    // the line first differs, loudly. (A new value under the same key stays
+    // masked precisely: see `ac5_rotating_a_masked_value_under_follow_keeps_it_masked`.)
     let changed = config().replace(&format!("API_KEY={SECRET}"), "APIKEY_V2=rotated-later");
-    std::fs::write(
-        src.with_extension("env.tmp"),
-        format!("# new first line\n{changed}"),
-    )
-    .unwrap();
-    std::fs::rename(src.with_extension("env.tmp"), &src).unwrap();
-    while live.api_ok("follow.status", json!({}))["reloads"]
-        .as_u64()
-        .unwrap_or(0)
-        < 2
-    {
-        assert!(start.elapsed().as_secs() < 10);
-        std::thread::sleep(std::time::Duration::from_millis(20));
-    }
+    save_atomically(&src, &format!("# new first line\n{changed}"));
+    wait_reloads(&live, 2);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains(
+            "redact a1 could not follow its text: masking the rest of L3 — fix it before recording (u undoes the reload)"
+        ),
+        "{msg}"
+    );
+    assert!(
+        !msg.contains("dropped") && !msg.contains("rotated"),
+        "{msg}"
+    );
+    assert_eq!(code_line(&live, 3), "API••••••••");
+    assert_no_value(&live, "anchor rewritten", &["rotated-later", "KEY_V2"]);
+    // Deleted with nothing in its place: only now is it dropped, loudly.
+    let deleted = config().replace(&format!("API_KEY={SECRET}\n"), "");
+    save_atomically(&src, &format!("# new first line\n{deleted}"));
+    wait_reloads(&live, 3);
     let (msg, err) = live.message().unwrap();
     assert!(
         err && msg
@@ -246,6 +240,69 @@ fn ac5_follow_reanchors_and_a_dropped_redact_is_loud() {
         "{msg}"
     );
     assert_clean("drop notice", &msg);
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
+}
+
+/// `render.text` at width 100.
+fn render_text(live: &Live) -> String {
+    live.api_ok("render.text", json!({"width": 100}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Line `n` (1-based) of `code.get`.
+fn code_line(live: &Live, n: usize) -> String {
+    live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .lines()
+        .nth(n - 1)
+        .and_then(|l| l.get(6..)) // past the `{n:>4}  ` gutter
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// None of `pieces` of a new value on any surface an agent, a recording or
+/// the screen reads: code.get, render.text, scene.get, scene.list, the
+/// screen, the `.tiza` a save writes and an SVG rendered from it (the PNG
+/// and the GIF are drawn from the same canvas).
+fn assert_no_value(live: &Live, what: &str, pieces: &[&str]) {
+    live.command("w");
+    let sidecar = live.with(|a| a.save_path.clone());
+    let saved = std::fs::read_to_string(&sidecar).unwrap();
+    let svg_path = scratch(&format!("t117-svg-{}", what.replace(' ', "-"))).join("x.svg");
+    tiza_ok(&[
+        "render",
+        sidecar.to_str().unwrap(),
+        "--out",
+        svg_path.to_str().unwrap(),
+        "--width",
+        "100",
+    ]);
+    let svg = std::fs::read_to_string(&svg_path).unwrap();
+    assert!(svg.contains("••••••••"), "{what}: svg without the mask");
+    let code = live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for (surface, s) in [
+        ("code.get", code),
+        ("render.text", render_text(live)),
+        ("scene.get", live.api_ok("scene.get", json!({})).to_string()),
+        (
+            "scene.list",
+            live.api_ok("scene.list", json!({})).to_string(),
+        ),
+        ("screen", live.screen(100, 20)),
+        ("sidecar", saved),
+        ("svg", svg),
+    ] {
+        for p in pieces {
+            assert!(!s.contains(p), "{what}: {surface} shows `{p}`:\n{s}");
+        }
+        assert_clean(&format!("{what}: {surface}"), &s);
+    }
 }
 
 const ROTATED: &str = "sk-live-NEWvalue987654zzQ9";
@@ -349,25 +406,24 @@ fn ac5_rotating_a_masked_value_by_paste_keeps_it_masked() {
     assert_rotated_masked(&live, "after the paste");
     let (msg, err) = live.message().unwrap();
     assert!(!err && !msg.contains("dropped"), "{msg}");
-    // A paste where the key itself is gone: dropped, loudly.
+    // A paste where the key itself is gone: fail-closed, the whole line
+    // (nothing before the old column survived), loudly.
     let renamed = config().replace(&format!("API_KEY={SECRET}"), &format!("TOKEN_V2={ROTATED}"));
     live.with(move |a| a.replace_code(&renamed)).unwrap();
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg
-            .contains("redact a1 dropped: the line changed — check the screen before recording"),
+        err && msg.contains("redact a1 could not follow its text: masking the rest of L2"),
         "{msg}"
     );
     assert!(!msg.contains(ROTATED), "{msg}");
+    assert_eq!(code_line(&live, 2), "••••••••", "no tail once widened");
+    assert_no_value(&live, "paste renamed", &[ROTATED, "NEWvalue", "TOKEN_V2"]);
 }
 
-#[test]
-fn ac5_column_redact_whose_surroundings_changed_is_dropped_loudly() {
-    // A value selected mid-line (columns): the text on both sides follows
-    // it; when both sides change it is dropped with the loud notice, even
-    // though the line is still long enough for the old columns — they could
-    // uncover part of a longer value (Luis, 2026-10-18: the secret first).
-    let dir = scratch("t117-columns");
+/// `cfg.json` with `{"token": "abc123secret", "user": "ana"}`, the value
+/// selected as columns (as `r` on a selection stores it), follow on.
+fn json_live(name: &str) -> (Live, std::path::PathBuf) {
+    let dir = scratch(name);
     let src = dir.join("cfg.json");
     std::fs::write(&src, "{\"token\": \"abc123secret\", \"user\": \"ana\"}\n").unwrap();
     let doc = fs::open(src.to_str().unwrap()).unwrap().document;
@@ -375,41 +431,130 @@ fn ac5_column_redact_whose_surroundings_changed_is_dropped_loudly() {
     live.command("redact 1@11..23");
     assert!(!live.message().unwrap().1);
     live.command("follow on");
-    let tmp = dir.join("cfg.json.tmp");
-    std::fs::write(
-        &tmp,
+    (live, src)
+}
+
+#[test]
+fn ac5_column_redact_that_cannot_follow_fails_closed() {
+    // Retrabajo (Luis, 2026-10-17): dropping revealed the secret. A value
+    // selected mid-line follows the text on both sides; when one side or
+    // both change, the mask covers the rest of the line, loudly, and the
+    // widened state shows in scene.list / scene.get until the presenter
+    // marks the value again.
+    let (live, src) = json_live("t117-columns");
+    save_atomically(
+        &src,
         "{\"token\": \"NEWvalue-much-longer\", \"user\": \"ana\"}\n",
-    )
-    .unwrap();
-    std::fs::rename(&tmp, &src).unwrap();
+    );
     wait_reloads(&live, 1);
-    let code = live.api_ok("code.get", json!({}))["text"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(!code.contains("NEWvalue"), "{code}");
-    assert!(code.contains("\"token\": \"••••••••\", \"user\""), "{code}");
-    // Both sides changed, the line long enough for columns 11..23: dropped,
-    // loudly, never kept by columns.
-    std::fs::write(&tmp, "{\"tok\": \"zzzzzzzzzzzzzzzzzz\", \"usr\": 1}\n").unwrap();
-    std::fs::rename(&tmp, &src).unwrap();
+    assert_eq!(
+        code_line(&live, 1),
+        "{\"token\": \"••••••••\", \"user\": \"ana\"}"
+    );
+    // One side changed (`user` → `usr`): the rest of the line from the value on.
+    save_atomically(&src, "{\"token\": \"r0tat3d-0ne-side\", \"usr\": 1}\n");
     wait_reloads(&live, 2);
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg
-            .contains("redact a1 dropped: the line changed — check the screen before recording"),
+        err && msg.contains(
+            "redact a1 could not follow its text: masking the rest of L1 — fix it before recording"
+        ),
         "{msg}"
     );
-    assert!(!msg.contains("kept by columns"), "{msg}");
-    assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
-    let code = live.api_ok("code.get", json!({}))["text"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(
-        !code.contains('•'),
-        "no mask left at the old columns: {code}"
+    assert!(!msg.contains("dropped"), "{msg}");
+    assert_eq!(code_line(&live, 1), "{\"token\": \"••••••••");
+    assert_no_value(&live, "one side", &["r0tat3d", "0ne-side"]);
+    // The widened state is visible to the presenter and to agents.
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(list.contains("WIDENED"), "{list}");
+    let scene = live.api_ok("scene.get", json!({}));
+    assert_eq!(
+        scene["document"]["annotations"][0]["widened"], true,
+        "{scene}"
     );
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    // Both sides changed: from where the line first differs (`{"tok`), so
+    // not one character of the new value shows (the old column 11 would
+    // have shown `zz`).
+    save_atomically(&src, "{\"tok\": \"zzq-b0th-s1des\", \"usr\": 1}\n");
+    wait_reloads(&live, 3);
+    let (msg, err) = live.message().unwrap();
+    assert!(err && msg.contains("could not follow its text"), "{msg}");
+    assert_eq!(code_line(&live, 1), "{\"tok••••••••");
+    assert_no_value(&live, "both sides", &["zzq-b0th", "b0th-s1des"]);
+    // Marking the value again (`:redact off` shows it to the author, a
+    // selection or columns mark it) replaces the widened mask.
+    live.command("redact 1@9..23");
+    assert!(!live.message().unwrap().1);
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(!list.contains("WIDENED"), "{list}");
+    assert!(
+        !live
+            .api_ok("scene.get", json!({}))
+            .to_string()
+            .contains("widened")
+    );
+    assert_eq!(code_line(&live, 1), "{\"tok\": \"••••••••\", \"usr\": 1}");
+}
+
+#[test]
+fn ac5_auto_redact_whose_prefix_is_gone_fails_closed() {
+    let (live, src, _) = opened("t117-auto-prefix");
+    live.command("redact auto");
+    assert!(live.message().unwrap().0.contains("3 masked"));
+    live.command("follow on");
+    // The env key renamed and the value rotated at once: the auto redact
+    // (anchored after `API_KEY=`) cannot follow; the URL password rotated
+    // under the same `admin:` … `@` stays masked precisely.
+    let changed = config()
+        .replace(
+            &format!("API_KEY={SECRET}"),
+            "SERVICE_TOKEN=svc-N3W-rotated-77",
+        )
+        .replace("admin:hunter2@", "admin:n3w-pa55@");
+    save_atomically(&src, &changed);
+    wait_reloads(&live, 1);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("could not follow its text: masking the rest of L2"),
+        "{msg}"
+    );
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 3, "nothing dropped");
+    assert!(code_line(&live, 4).contains("postgres://admin:••••••••@"));
+    assert_no_value(&live, "auto prefix", &["svc-N3W", "rotated-77", "n3w-pa55"]);
+}
+
+#[test]
+fn ac5_a_hunk_that_changed_size_masks_all_its_new_lines() {
+    let (live, src, _) = opened("t117-hunk");
+    live.command("redact 2:API_KEY=");
+    live.command("follow on");
+    // The masked line replaced by three lines, none with `API_KEY=`: which
+    // one holds the value cannot be told, so all three are masked whole.
+    let changed = config().replace(
+        &format!("API_KEY={SECRET}\n"),
+        "# keys moved to the vault\nVAULT_PATH=kv/app\nVAULT_TOKEN=hvs.N3wT0ken\n",
+    );
+    save_atomically(&src, &changed);
+    wait_reloads(&live, 1);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("redact a1 could not follow its text: masking L2-4 whole"),
+        "{msg}"
+    );
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 3);
+    for n in 2..=4 {
+        assert_eq!(code_line(&live, n), "••••••••", "L{n}");
+    }
+    assert_eq!(
+        code_line(&live, 5),
+        format!("AUTH=Bearer {JWT}"),
+        "untouched"
+    );
+    assert_no_value(&live, "hunk", &["hvs.", "N3wT0ken", "VAULT", "kv/app"]);
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert_eq!(list.matches("WIDENED").count(), 3, "{list}");
 }
 
 #[test]

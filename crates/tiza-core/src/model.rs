@@ -525,6 +525,12 @@ pub enum Shape {
         keep: u8,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
+        /// Set by a reload or paste that could not follow the redact's text
+        /// (fail-closed, t-117): the mask was widened to the rest of its
+        /// line, or to whole lines, and keeps no tail. Cleared when the
+        /// presenter marks the value again (a new redact over it).
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        widened: bool,
     },
     /// Directs attention: while active (from `step` to `until`, or only at
     /// `step`), dims the code outside `lines` and the annotations outside `ids`.

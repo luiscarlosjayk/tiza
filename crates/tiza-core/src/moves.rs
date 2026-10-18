@@ -952,10 +952,12 @@ pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
             span: s,
             keep,
             label,
+            widened,
         } => Shape::Redact {
             span: span(s)?,
             keep: *keep,
             label: label.clone(),
+            widened: *widened,
         },
         Shape::Box {
             from_line,
