@@ -119,6 +119,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "redact_alerts": {
+            "default": [],
+            "description": "The loud redact notices on the presenter's screen, oldest first\n(t-156): a redact widened or dropped by a reload, a paste or a move\n(t-117, t-140, t-157) and a move retargeted by another (t-157), the\nsame rows the TUI draws above its bar (t-135). Ids, lines and\nvisible text only, never text under a mask. A later reload does not\nclear them; the presenter's next key does (they were seen). Always\npresent, `[]` when nothing is pending.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
           "revision": {
             "format": "uint64",
             "minimum": 0,

@@ -4417,6 +4417,7 @@ impl App {
                 w.extend(self.doc.step_warnings());
                 w
             },
+            redact_alerts: self.redact_alerts.clone(),
             supervised: self.supervised,
             autosave: self.autosave,
             pending: self.proposals.len(),

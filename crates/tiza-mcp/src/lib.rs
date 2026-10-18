@@ -682,7 +682,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size, plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
+        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size; `redact_alerts`, the loud redact notices still pending on the presenter's screen (a redact widened or dropped by a reload, paste or move, a move retargeted by another; ids, lines and visible text only, never masked text), cleared when the presenter presses a key — while it is not empty, tell the presenter to check the screen and read `get_code` before recording; plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         let mut v = self.call("status", json!({})).await?;

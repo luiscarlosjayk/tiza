@@ -853,6 +853,15 @@ pub struct Status {
     /// code) and the document (a `steps` entry past the last step).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
+    /// The loud redact notices on the presenter's screen, oldest first
+    /// (t-156): a redact widened or dropped by a reload, a paste or a move
+    /// (t-117, t-140, t-157) and a move retargeted by another (t-157), the
+    /// same rows the TUI draws above its bar (t-135). Ids, lines and
+    /// visible text only, never text under a mask. A later reload does not
+    /// clear them; the presenter's next key does (they were seen). Always
+    /// present, `[]` when nothing is pending.
+    #[serde(default)]
+    pub redact_alerts: Vec<String>,
     /// Supervised mode: mutations wait for the presenter's approval.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supervised: bool,

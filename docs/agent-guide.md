@@ -10,7 +10,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 
 ## Recommended flow
 
-1. `status` — confirm there is an instance and look at `cols`/`rows` and `warnings` (`small terminal …: labels go under the lines` → keep labels short; `code clipped (N cols)` → the presenter should widen the terminal or open a narrower range).
+1. `status` — confirm there is an instance and look at `cols`/`rows` and `warnings` (`small terminal …: labels go under the lines` → keep labels short; `code clipped (N cols)` → the presenter should widen the terminal or open a narrower range); and `redact_alerts`, which must be `[]` before anything is recorded — see «While the presenter edits»).
 2. `get_code` — read the code with line numbers. Pick exact texts.
 3. Annotate in the order of the explanation, assigning an increasing `step`:
    - `add_box {find_start, find_end}` (also `add_callout`, `add_spotlight`): two texts that delimit the range instead of line numbers — a comment marker (`// begin` … `// end`) or code (`fn takes` … `println`). The start is the first occurrence in the file, the end the first occurrence after it; a marker is plain text, so choose one that appears only where you mean it (the first `}` after `fn takes` may be inside a `println!("{s}")`). Errors name the missing marker. The markers are kept on the annotation (`markers`), so a later code change can re-resolve the range.
@@ -54,6 +54,8 @@ Every annotation accepts `color`: `orange`, `blue`, `green`, `purple`, `pink`, `
 ## While the presenter edits
 
 `set_follow {"enabled": true}` makes the TUI reload the code every time the source file is saved (the presenter can also type `:follow on`). Annotations stay anchored to their text; the ones whose text disappears are dropped, and the reply (same as `follow.status`) reports `reloads` and `last_reload`, so after a save you can call `list_annotations` to see what survived and re-add what matters. It fails with `invalid_argument` when the code is embedded in the document.
+
+A reload, a paste or a move can widen or drop a redact (or retarget a later move); the TUI then shows a loud notice on rows of its own above the bar until the presenter presses a key, and `status` carries the same notices in `redact_alerts` (t-156), oldest first, ids, lines and visible text only — never what a mask covers: `["redact a1 could not follow its text: masking the rest of L4 — fix it before recording (u undoes the reload)"]`. A later reload does not clear them (its own message goes to the bar; these stay). While `redact_alerts` is not empty, do not start a take: tell the presenter to look at the screen, read `get_code`, and re-mark the value (a new `redact` over it) or fix the move. It goes back to `[]` when the presenter presses a key in the TUI; nothing you send clears it.
 
 ## Code that changes between steps (moves)
 
