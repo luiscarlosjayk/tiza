@@ -1,9 +1,11 @@
 //! Syntax highlighting with syntect + two-face (bat's grammars, including TypeScript and TOML).
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use syntect::easy::HighlightLines;
-use syntect::parsing::SyntaxSet;
+use syntect::highlighting::HighlightState;
+use syntect::parsing::{ParseState, SyntaxSet};
 use two_face::theme::{EmbeddedLazyThemeSet, EmbeddedThemeName};
 
 use crate::canvas::Rgb;
@@ -285,15 +287,189 @@ pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeNam
 }
 
 /// Highlights every line. If the language is unknown, returns plain text.
+///
+/// Long files are split into chunks highlighted on several threads (t-138);
+/// the result is identical to one sequential pass (see [`highlight_chunked`]).
 pub fn highlight(code: &[String], language: &str, theme: EmbeddedThemeName) -> Vec<Vec<Segment>> {
+    highlight_chunked(code, language, theme, default_threads(code.len())).0
+}
+
+/// Fewest lines a chunk gets before highlighting goes multi-threaded: below
+/// this, spawning threads costs more than it saves.
+pub const MIN_CHUNK_LINES: usize = 400;
+
+/// Most threads one highlight uses.
+pub const MAX_THREADS: usize = 8;
+
+/// Chunks per thread in [`highlight_chunked`] (balances the threads).
+const CHUNKS_PER_THREAD: usize = 4;
+
+/// Threads `highlight` uses for a file of `lines` lines: one per
+/// [`MIN_CHUNK_LINES`], at most the machine's parallelism and [`MAX_THREADS`].
+pub fn default_threads(lines: usize) -> usize {
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    (lines / MIN_CHUNK_LINES).clamp(1, cpus.clamp(1, MAX_THREADS))
+}
+
+/// How [`highlight_chunked`] split the work.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chunking {
+    /// First line of each chunk (the first is always 0).
+    pub starts: Vec<usize>,
+    /// Chunks whose speculative result was thrown away and highlighted again
+    /// from the real state (the previous chunk did not end at top level).
+    pub redone: usize,
+}
+
+type States = (HighlightState, ParseState);
+type Part = (Vec<Vec<Segment>>, States);
+
+/// `highlight` on up to `threads` threads.
+///
+/// syntect's parser is a state machine, so line N can only be highlighted
+/// with the state left by line N-1. Each chunk after the first is highlighted
+/// speculatively, in parallel, from the state of a file's top level (a
+/// fresh parser after one empty line); then, in order, the real end state of
+/// the previous chunk is compared with that guess. Equal states mean equal
+/// output, so the chunk is kept; otherwise (the boundary fell inside a block
+/// comment, a template literal, a class body…) the chunk is highlighted again
+/// from the real state. The output is always the sequential one; only the
+/// speed depends on where the boundaries fall, which is why each one is moved
+/// forward, a little, to a non-indented line after a blank one.
+pub fn highlight_chunked(
+    code: &[String],
+    language: &str,
+    theme: EmbeddedThemeName,
+    threads: usize,
+) -> (Vec<Vec<Segment>>, Chunking) {
     let ss = syntax_set();
     let syntax = ss
         .find_syntax_by_extension(language)
         .or_else(|| ss.find_syntax_by_token(language))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
     let theme = theme_set().get(theme);
-    let mut h = HighlightLines::new(syntax, theme);
-    code.iter()
+    let threads = threads.clamp(1, code.len().max(1));
+    if threads == 1 || std::ptr::eq(syntax, ss.find_syntax_plain_text()) {
+        let mut h = HighlightLines::new(syntax, theme);
+        let out = highlight_lines(&mut h, code, ss);
+        return (
+            out,
+            Chunking {
+                starts: vec![0],
+                redone: 0,
+            },
+        );
+    }
+    let starts = chunk_starts(code, threads * CHUNKS_PER_THREAD);
+    let ranges: Vec<(usize, usize)> = starts
+        .iter()
+        .zip(starts.iter().skip(1).chain(std::iter::once(&code.len())))
+        .map(|(&a, &b)| (a, b))
+        .collect();
+    let top_level = || {
+        let mut h = HighlightLines::new(syntax, theme);
+        let _ = h.highlight_line("\n", ss);
+        h
+    };
+    let guess = top_level().state();
+    // Speculative pass: chunk 0 from the real start, the rest from the guess.
+    let run = |k: usize| -> (Vec<Vec<Segment>>, States) {
+        let (a, b) = ranges[k];
+        let mut h = if k == 0 {
+            HighlightLines::new(syntax, theme)
+        } else {
+            top_level()
+        };
+        let out = highlight_lines(&mut h, &code[a..b], ss);
+        (out, h.state())
+    };
+    // Several chunks per thread, taken in order from a shared counter, so a
+    // thread that drew cheap lines (or found the regexes already compiled)
+    // picks up more work instead of waiting for the slowest one.
+    let next = AtomicUsize::new(0);
+    let slots: Vec<Mutex<Option<Part>>> = ranges.iter().map(|_| Mutex::new(None)).collect();
+    let work = || {
+        loop {
+            let k = next.fetch_add(1, Ordering::Relaxed);
+            if k >= ranges.len() {
+                break;
+            }
+            let part = run(k);
+            if let Ok(mut slot) = slots[k].lock() {
+                *slot = Some(part);
+            }
+        }
+    };
+    std::thread::scope(|s| {
+        for i in 1..threads {
+            // A thread that cannot be spawned only means less parallelism.
+            let _ = std::thread::Builder::new()
+                .name(format!("tiza-highlight-{i}"))
+                .spawn_scoped(s, work);
+        }
+        work();
+    });
+    // A slot left empty (its thread panicked) is redone below.
+    let parts: Vec<Option<Part>> = slots
+        .into_iter()
+        .map(|m| m.into_inner().ok().flatten())
+        .collect();
+    // Stitch in order, redoing every chunk whose guess was wrong (or whose
+    // thread could not be spawned or panicked).
+    let mut out = Vec::with_capacity(code.len());
+    let mut state: Option<States> = None;
+    let mut redone = 0;
+    for (k, part) in parts.into_iter().enumerate() {
+        let (a, b) = ranges[k];
+        match (state.take(), part) {
+            (None, Some((lines, end))) => {
+                out.extend(lines);
+                state = Some(end);
+            }
+            (Some(real), Some((lines, end))) if real == guess => {
+                out.extend(lines);
+                state = Some(end);
+            }
+            (real, _) => {
+                if k > 0 {
+                    redone += 1;
+                }
+                let mut h = match real {
+                    Some((hs, ps)) => HighlightLines::from_state(theme, hs, ps),
+                    None => HighlightLines::new(syntax, theme),
+                };
+                out.extend(highlight_lines(&mut h, &code[a..b], ss));
+                state = Some(h.state());
+            }
+        }
+    }
+    (out, Chunking { starts, redone })
+}
+
+/// Where each of `n` chunks starts: evenly spaced, each moved forward by at
+/// most half a chunk to the first non-indented line after a blank one (the
+/// likeliest place for the parser to be back at the top level).
+fn chunk_starts(code: &[String], n: usize) -> Vec<usize> {
+    let len = code.len();
+    let mut starts = vec![0];
+    for k in 1..n {
+        let nominal = k * len / n;
+        let limit = (nominal + len / n / 2).min(len);
+        let at_top = |i: usize| {
+            code[i - 1].trim().is_empty() && code[i].starts_with(|c: char| !c.is_whitespace())
+        };
+        let start = (nominal..limit).find(|&i| at_top(i)).unwrap_or(nominal);
+        if start > *starts.last().unwrap_or(&0) && start < len {
+            starts.push(start);
+        }
+    }
+    starts
+}
+
+/// Highlights `lines` in order with `h`, converting syntect's ranges.
+fn highlight_lines(h: &mut HighlightLines, lines: &[String], ss: &SyntaxSet) -> Vec<Vec<Segment>> {
+    lines
+        .iter()
         .map(|line| {
             let with_nl = format!("{line}\n");
             match h.highlight_line(&with_nl, ss) {

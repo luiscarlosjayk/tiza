@@ -39,60 +39,60 @@
     },
     "x86_64-unknown-linux-gnu": {
       "target": "x86_64-unknown-linux-gnu",
-      "commit": "5ab5bb1",
-      "date": "2026-10-18 03:49 UTC",
+      "commit": "51a824f",
+      "date": "2026-10-18 09:44 UTC",
       "machine": "Linux x86_64, 2 CPUs",
-      "binary_bytes": 13158152,
+      "binary_bytes": 13323328,
       "scenarios": {
         "version": {
-          "median_ms": 1.28,
-          "min_ms": 1.26,
-          "max_ms": 2.08,
+          "median_ms": 1.31,
+          "min_ms": 1.18,
+          "max_ms": 1.34,
           "runs": 7
         },
         "render_txt_step7": {
-          "median_ms": 29.9,
-          "min_ms": 29.22,
-          "max_ms": 31.32,
+          "median_ms": 29.89,
+          "min_ms": 29.59,
+          "max_ms": 37.53,
           "runs": 7
         },
         "render_png_step7": {
-          "median_ms": 102.66,
-          "min_ms": 99.94,
-          "max_ms": 123.85,
+          "median_ms": 108.1,
+          "min_ms": 101.86,
+          "max_ms": 118.39,
           "runs": 7
         },
         "render_txt_rust_2000_lines": {
-          "median_ms": 229.92,
-          "min_ms": 187.17,
-          "max_ms": 243.08,
+          "median_ms": 140.11,
+          "min_ms": 138.51,
+          "max_ms": 168.16,
           "runs": 7
         },
         "render_txt_typescript_3000_lines": {
-          "median_ms": 1648.27,
-          "min_ms": 1590.09,
-          "max_ms": 1775.44,
+          "median_ms": 1160.12,
+          "min_ms": 1146.76,
+          "max_ms": 1176.63,
           "runs": 7
         },
         "render_gif_example": {
-          "median_ms": 326.54,
-          "min_ms": 315.87,
-          "max_ms": 334.97,
+          "median_ms": 319.25,
+          "min_ms": 304.3,
+          "max_ms": 323.44,
           "runs": 7
         },
         "tui_first_frame": {
-          "median_ms": 31.66,
-          "min_ms": 29.37,
-          "max_ms": 42.0,
+          "median_ms": 30.91,
+          "min_ms": 30.29,
+          "max_ms": 34.37,
           "runs": 7
         },
         "t054_frame_median": {
-          "median_ms": 6.29,
+          "median_ms": 6.54,
           "runs": 21
         }
       },
-      "cargo_install_cold_s": 187.6,
-      "note": "First baseline (t-133): after t-134 and lto = \"fat\", agent container (Linux x86_64, 2 CPUs); thin LTO on the same commit measured within noise (cold build 154 s thin vs 185 s fat)."
+      "note": "t-138: long files highlighted in chunks on several threads (exact sequential output); TypeScript 3,000 lines 1648 -> ~1200 ms, Rust 2,000 lines 230 -> ~137 ms on the 2-CPU agent container",
+      "cargo_install_cold_s": 187.6
     }
   }
 }
