@@ -18,13 +18,19 @@
 //!
 //! Herdr 0.9.5 has no `pane wait-output`: the script waits on conditions
 //! instead (the instance answering `tiza api status` on its own socket, then
-//! two identical `pane read`s), and reads the pane's size from Tiza, since
-//! `herdr pane list` gives no columns. These tests drive the whole script
-//! with `TIZA_HERDR_FAKE`, which replaces every `herdr` call with a model:
-//! panes are real ptys of the modelled size running the real `tiza`, and
-//! `pane read` is that instance's live `tiza render`. What only a real
-//! Herdr shows (escape sequences through libghostty-vt, Herdr's own resize
-//! units) is checked in Luis's QA round with `--update` / `--check`.
+//! two identical `pane read`s). Sizes come from `herdr pane layout` (each
+//! pane's `rect.width/height`): every pane is split off at its target size
+//! (`--ratio` is the share the parent keeps), and a cell or two of error is
+//! fixed with `pane resize` in the direction that GROWS the pane resized —
+//! Herdr does not move an edge a pane does not share, so a pane at the right
+//! never shrinks with `resize right` (seen in Luis's QA on 2026-10-18, where
+//! the first version stayed at 180 columns). These tests drive the whole
+//! script with `TIZA_HERDR_FAKE`, which replaces every `herdr` call with a
+//! model that has that limitation: panes are real ptys of the modelled size
+//! running the real `tiza`, and `pane read` is that instance's live `tiza
+//! render`. What only a real Herdr shows (escape sequences through
+//! libghostty-vt, its exact rounding) is checked in Luis's QA round with
+//! `--update` / `--check`.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -43,10 +49,53 @@ const CASES: [(&str, &str); 7] = [
 ];
 
 fn script() -> PathBuf {
+    root().join("scripts/herdr-matrix.sh")
+}
+
+fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .join("scripts/herdr-matrix.sh")
+        .to_path_buf()
+}
+
+/// Every `herdr` call the script made against the model, in order.
+fn calls(fake: &Path) -> Vec<String> {
+    std::fs::read_to_string(fake.join("calls"))
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The `pane resize` calls as (pane, direction).
+fn resizes(fake: &Path) -> Vec<(String, String)> {
+    calls(fake)
+        .iter()
+        .filter(|c| c.starts_with("pane resize"))
+        .map(|c| {
+            let w: Vec<&str> = c.split_whitespace().collect();
+            let arg = |k: &str| {
+                let i = w.iter().position(|x| *x == k).expect(k);
+                w[i + 1].to_owned()
+            };
+            (arg("--pane"), arg("--direction"))
+        })
+        .collect()
+}
+
+/// Each case's line reports its target size twice: from Herdr's layout and,
+/// as a cross-check, from `tiza api status`.
+fn assert_sizes(r: &Run) {
+    for (case, size) in CASES {
+        let line = r
+            .stdout
+            .lines()
+            .find(|l| l.split_whitespace().next() == Some(case))
+            .unwrap_or_else(|| panic!("no line for {case}:\n{}\n{}", r.stdout, r.stderr));
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(cols[2..4], [size, size], "{case}: {line}\n{}", r.stderr);
+    }
 }
 
 struct Run {
@@ -184,15 +233,27 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
 
     let r = matrix(&dir, &fake, &["--update"], &[]);
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
-    for (case, size) in CASES {
-        let line = r
-            .stdout
-            .lines()
-            .find(|l| l.split_whitespace().next() == Some(case))
-            .unwrap_or_else(|| panic!("no line for {case}:\n{}", r.stdout));
-        assert!(line.contains(size), "{case}: {line}");
-    }
+    assert_sizes(&r);
     assert_eq!(snapshot_names(&dir.join("snaps")), expected_names());
+    // Split at the target size: the ratio is what the base keeps (1 − 80/200
+    // for vt100, 1 − 24/60 for its rows), so no resize is needed at all.
+    let calls = calls(&fake);
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.starts_with("pane split p0 --direction right --ratio 0.6000 ")),
+        "{calls:#?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.contains("--direction down --ratio 0.6000")),
+        "{calls:#?}"
+    );
+    assert!(
+        !calls.iter().any(|c| c.starts_with("pane resize")),
+        "{calls:#?}"
+    );
     let frame = std::fs::read_to_string(dir.join("snaps/vt100-80x24.txt")).unwrap();
     assert!(frame.contains("s is born"), "{frame}");
     // Each case ran the document at step 7, presented or with the status bar.
@@ -241,23 +302,63 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     assert_cleaned(&fake);
 }
 
-/// AC1: Herdr's resize units and which direction grows a pane are learnt
-/// from what each resize did, so a model with the directions swapped still
-/// reaches the targets; the plain run (no flag) only writes `--out`.
+/// AC1: when a split misses by a couple of cells (here the model gives every
+/// new pane 2 cells too many), the pane is shrunk by growing its NEIGHBOUR
+/// towards it (`resize right|down` on the pane left of / above it), never by
+/// `resize right|down` on the pane itself, which Herdr ignores; the plain
+/// run (no flag) only writes `--out`.
 #[test]
-fn ac1_resize_direction_is_learnt() {
-    let dir = scratch("t071-flip");
+fn ac1_too_big_is_shrunk_by_growing_the_neighbour() {
+    let dir = scratch("t071-skew-plus");
     let fake = fake(&dir);
     let out = dir.join("out");
     let r = matrix(
         &dir,
         &fake,
         &["--out", out.to_str().unwrap()],
-        &[("TIZA_HERDR_FAKE_FLIP", "1")],
+        &[("TIZA_HERDR_FAKE_SKEW", "2")],
     );
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert_sizes(&r);
     assert_eq!(snapshot_names(&out), expected_names());
     assert!(!dir.join("snaps").exists(), "a plain run wrote snapshots");
+    let resizes = resizes(&fake);
+    assert!(
+        resizes.iter().any(|(p, d)| p == "p0" && d == "right"),
+        "{resizes:#?}"
+    );
+    assert!(resizes.iter().any(|(_, d)| d == "down"), "{resizes:#?}");
+    assert!(
+        resizes.iter().all(|(_, d)| d == "right" || d == "down"),
+        "{resizes:#?}"
+    );
+    assert_cleaned(&fake);
+}
+
+/// AC1: a split 2 cells short grows the pane itself towards its neighbour
+/// (`resize left|up`), and never touches the base pane.
+#[test]
+fn ac1_too_small_grows_the_pane_itself() {
+    let dir = scratch("t071-skew-minus");
+    let fake = fake(&dir);
+    let out = dir.join("out");
+    let r = matrix(
+        &dir,
+        &fake,
+        &["--out", out.to_str().unwrap()],
+        &[("TIZA_HERDR_FAKE_SKEW", "-2")],
+    );
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert_sizes(&r);
+    let resizes = resizes(&fake);
+    assert!(resizes.iter().any(|(_, d)| d == "left"), "{resizes:#?}");
+    assert!(resizes.iter().any(|(_, d)| d == "up"), "{resizes:#?}");
+    assert!(
+        resizes
+            .iter()
+            .all(|(p, d)| p != "p0" && (d == "left" || d == "up")),
+        "{resizes:#?}"
+    );
     assert_cleaned(&fake);
 }
 
@@ -330,7 +431,7 @@ fn ac4_herdr_missing_or_not_running() {
 /// captures of a plain run stay out of git.
 #[test]
 fn ac5_documented() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let root = root();
     let readme = std::fs::read_to_string(root.join("qa/README.md")).unwrap();
     for needle in [
         "scripts/herdr-matrix.sh",

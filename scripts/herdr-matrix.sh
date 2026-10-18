@@ -15,22 +15,28 @@
 #   --snapshots DIR   committed snapshots (default: qa/herdr)
 #   --out DIR         where captures land (default: qa/herdr/latest, git-ignored)
 #
-# Run it from a Herdr pane. For each case of the matrix it splits one new
-# pane off the base pane (right, then down for a row target), launches Tiza
-# there with a socket of its own, reads the pane's real size from
-# `tiza api status` (Herdr does not report columns), nudges it towards the
-# target with `herdr pane resize`, waits for a stable first frame and saves
-# `herdr pane read --source visible --format text` as
-# <snapshots>/<case>-<cols>x<rows>.txt (the real size, which may miss the
-# target by a cell or two). Every pane it opens is closed again, also on
-# errors or Ctrl-C; the user's panes are only split and resized back by
-# Herdr when ours close.
+# Run it from a Herdr pane. For each case of the matrix it reads the base
+# pane's size from `herdr pane layout` (each pane's rect.width/height), splits
+# one new pane off it already at the target width (`herdr pane split BASE
+# --direction right --ratio R`, R = 1 - target_cols/base_width: the ratio is
+# what the base keeps), then, for a row target, splits that pane the same way
+# with `--direction down`. A pane that misses by a cell or so is fixed with
+# `herdr pane resize`, always in the direction that GROWS the pane resized:
+# to grow ours, ours towards the base (left/up); to shrink ours, the
+# neighbour towards ours (right/down) -- Herdr does not move an edge a pane
+# does not share, so `resize right` on a pane at the right does nothing.
+# Then it launches Tiza there with a socket of its own, waits for a stable
+# first frame and saves `herdr pane read --source visible --format text` as
+# <snapshots>/<case>-<cols>x<rows>.txt, with the real size from `pane layout`
+# (`tiza api status` is printed next to it as a cross-check). Every pane it
+# opens is closed again, also on errors or Ctrl-C; the user's panes are only
+# split and given their space back by Herdr when ours close.
 #
-# Only the herdr 0.9.5 CLI is used: pane split/resize/run/send-keys/read/
-# close/list. Everything that talks to Herdr goes through `herdr()` below;
-# with TIZA_HERDR_FAKE=<state dir> it is simulated (panes are Python ptys,
-# `pane read` is the live instance's `tiza render`), so qa/tests/t-071.rs can
-# drive the rest of this script without Herdr.
+# Only the herdr 0.9.5 CLI is used: pane layout/split/resize/run/send-keys/
+# read/close/list. Everything that talks to Herdr goes through `herdr()`
+# below; with TIZA_HERDR_FAKE=<state dir> it is simulated (panes are Python
+# ptys, `pane read` is the live instance's `tiza render`), so
+# qa/tests/t-071.rs can drive the rest of this script without Herdr.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -94,15 +100,20 @@ herdr() {
 }
 
 # A tiny model of Herdr for the tests: the base pane p0 has the window size
-# in $FAKE/window ("cols rows"); `split` gives the new pane `ratio` of the
-# parent and `close` gives it back; `resize --direction left|up` grows a pane
-# by `amount` × the window, taking it from the pane beside it (right|down
-# shrinks it; TIZA_HERDR_FAKE_FLIP=1 swaps them, to check the
-# script finds the direction by itself); `run` starts the command in a Python
-# pty of the pane's size that follows later resizes; `read` is the live
-# instance's text render. TIZA_HERDR_FAKE_FAIL_READ=1 makes `read` fail.
+# in $FAKE/window ("cols rows"). `split P --direction right|down --ratio R`
+# leaves P the share R and puts the new pane to its right (below), as Herdr
+# does; TIZA_HERDR_FAKE_SKEW=N gives the new pane N cells more (or fewer),
+# like a rounding or border the ratio does not know about. `resize --pane P
+# --direction D --amount A` moves P's edge on side D by A × the split it
+# belongs to, but only if P shares an edge on that side: a pane at the right
+# never shrinks with `resize right` (Herdr 0.9.5 behaves so). `layout` gives
+# each pane's rect, `close` gives the space back to the parent, `run` starts
+# the command in a Python pty of the pane's size that follows later
+# resizes, `read` is the live instance's text render. Every call is
+# appended to $FAKE/calls. TIZA_HERDR_FAKE_FAIL_READ=1 makes `read` fail.
 fake_herdr() {
     [ -f "$FAKE/window" ] || { echo "error: cannot connect to the herdr server" >&2; return 1; }
+    printf '%s\n' "$*" >>"$FAKE/calls"
     local sub="$1 $2"
     shift 2
     case "$sub" in
@@ -117,71 +128,8 @@ for p in sorted(os.listdir(os.path.join(d, "panes"))):
 print(json.dumps({"panes": panes}))
 PY
         ;;
-    "pane split")
-        local parent=p0 dir="" ratio=0.5
-        while [ $# -gt 0 ]; do
-            case "$1" in
-            --direction) dir="$2"; shift ;;
-            --ratio) ratio="$2"; shift ;;
-            --cwd) shift ;;
-            *) parent="$1" ;;
-            esac
-            shift
-        done
-        [ -d "$FAKE/panes/$parent" ] || { echo "error: pane not found: $parent" >&2; return 1; }
-        local n id
-        n=$(cat "$FAKE/next" 2>/dev/null || echo 1)
-        echo $((n + 1)) >"$FAKE/next"
-        id="p$n"
-        mkdir -p "$FAKE/panes/$id"
-        read -r pc pr <"$FAKE/panes/$parent/size"
-        awk -v c="$pc" -v r="$pr" -v k="$ratio" -v d="$dir" -v f="$FAKE/panes/$parent/size" 'BEGIN {
-            if (d == "right") { n = int(c * k + 0.5); printf "%d %d\n", n, r; printf "%d %d\n", c - n, r > f }
-            else { n = int(r * k + 0.5); printf "%d %d\n", c, n; printf "%d %d\n", c, r - n > f } }' \
-            >"$FAKE/panes/$id/size"
-        echo "$parent $dir" >"$FAKE/panes/$id/parent"
-        echo "{\"pane_id\":\"$id\"}"
-        ;;
-    "pane resize")
-        local pane="" dir="" amount=0
-        while [ $# -gt 0 ]; do
-            case "$1" in
-            --pane) pane="$2"; shift ;;
-            --direction) dir="$2"; shift ;;
-            --amount) amount="$2"; shift ;;
-            esac
-            shift
-        done
-        [ -d "$FAKE/panes/$pane" ] || { echo "error: pane not found: $pane" >&2; return 1; }
-        local wc wr split_dir field delta x chain="" anc="" pdir
-        read -r wc wr <"$FAKE/window"
-        if [ "$dir" = left ] || [ "$dir" = right ]; then split_dir=right; field=1; else split_dir=down; field=2; fi
-        delta=$(awk -v a="$amount" -v d="$dir" -v w="$wc" -v h="$wr" -v flip="${TIZA_HERDR_FAKE_FLIP:-0}" 'BEGIN {
-            s = (d == "left" || d == "up") ? 1 : -1; if (flip == "1") s = -s
-            n = (d == "left" || d == "right") ? w : h; printf "%d", s * int(a * n + 0.5) }')
-        # The space comes from the pane beside the split along that axis: walk
-        # up to it; every pane on the way changes with this one.
-        x="$pane"
-        while [ -f "$FAKE/panes/$x/parent" ]; do
-            chain="$chain $x"
-            read -r anc pdir <"$FAKE/panes/$x/parent"
-            [ "$pdir" = "$split_dir" ] && break
-            x="$anc"
-            anc=""
-        done
-        [ -n "$anc" ] || return 0
-        # Both sides keep at least 2 cells.
-        local mine theirs
-        mine=$(cut -d' ' -f"$field" "$FAKE/panes/$pane/size")
-        theirs=$(cut -d' ' -f"$field" "$FAKE/panes/$anc/size")
-        [ $((mine + delta)) -ge 2 ] || delta=$((2 - mine))
-        [ $((theirs - delta)) -ge 2 ] || delta=$((theirs - 2))
-        for x in $chain; do
-            awk -v f="$field" -v d="$delta" '{ $f += d; print }' "$FAKE/panes/$x/size" >"$FAKE/panes/$x/size.new"
-            mv "$FAKE/panes/$x/size.new" "$FAKE/panes/$x/size"
-        done
-        awk -v f="$field" -v d="$delta" '{ $f -= d; print }' "$FAKE/panes/$anc/size" >"$FAKE/panes/$anc/size.new"
-        mv "$FAKE/panes/$anc/size.new" "$FAKE/panes/$anc/size"
+    "pane layout" | "pane split" | "pane resize")
+        python3 -c "$FAKE_MODEL" "$FAKE" "${sub#pane }" "$@"
         ;;
     "pane run")
         local pane="$1" cmd="$2"
@@ -238,6 +186,105 @@ PY
         ;;
     esac
 }
+
+# The fake layout model (see fake_herdr): panes/<id>/size is "cols rows",
+# panes/<id>/parent is "<parent id> right|down" for a pane split off another.
+FAKE_MODEL='
+import json, os, sys
+d, cmd, args = sys.argv[1], sys.argv[2], sys.argv[3:]
+P = os.path.join(d, "panes")
+def ids():
+    return sorted(os.listdir(P), key=lambda x: int(x[1:]))
+def size(p):
+    return [int(x) for x in open(os.path.join(P, p, "size")).read().split()]
+def put(p, s):
+    open(os.path.join(P, p, "size"), "w").write("%d %d\n" % (s[0], s[1]))
+def parent(p):
+    f = os.path.join(P, p, "parent")
+    return open(f).read().split() if os.path.exists(f) else [None, None]
+def opts(a):
+    o, pos, i = {}, [], 0
+    while i < len(a):
+        if a[i].startswith("--"):
+            o[a[i][2:]] = a[i + 1] if i + 1 < len(a) else ""
+            i += 2
+        else:
+            pos.append(a[i])
+            i += 1
+    return o, pos
+def fail(msg):
+    print("error: " + msg, file=sys.stderr)
+    sys.exit(1)
+o, pos = opts(args)
+if cmd == "layout":
+    w, h = [int(x) for x in open(os.path.join(d, "window")).read().split()]
+    panes = [{"pane_id": p, "rect": {"x": 0, "y": 0, "width": size(p)[0], "height": size(p)[1]}} for p in ids()]
+    print(json.dumps({"result": {"workspace_id": "w1", "tab_id": "w1:t1", "zoomed": False,
+        "focused_pane_id": "p0", "area": {"x": 0, "y": 0, "width": w, "height": h},
+        "panes": panes, "splits": []}}))
+elif cmd == "split":
+    par = pos[0] if pos else o.get("pane", "p0")
+    if not os.path.isdir(os.path.join(P, par)):
+        fail("pane not found: " + par)
+    dirn, ratio = o.get("direction", "right"), float(o.get("ratio", "0.5"))
+    f = 0 if dirn == "right" else 1
+    s = size(par)
+    new = s[f] - int(s[f] * ratio + 0.5) + int(os.environ.get("TIZA_HERDR_FAKE_SKEW", "0"))
+    new = max(2, min(s[f] - 2, new))
+    n = int(open(os.path.join(d, "next")).read()) if os.path.exists(os.path.join(d, "next")) else 1
+    open(os.path.join(d, "next"), "w").write("%d\n" % (n + 1))
+    pid = "p%d" % n
+    os.makedirs(os.path.join(P, pid))
+    c = list(s)
+    c[f] = new
+    s[f] -= new
+    put(par, s)
+    put(pid, c)
+    open(os.path.join(P, pid, "parent"), "w").write("%s %s\n" % (par, dirn))
+    print(json.dumps({"result": {"pane": {"pane_id": pid}}}))
+elif cmd == "resize":
+    pane, dirn, amount = o.get("pane", ""), o.get("direction", ""), float(o.get("amount", "0.05"))
+    if not os.path.isdir(os.path.join(P, pane)):
+        fail("pane not found: " + pane)
+    axis = "right" if dirn in ("left", "right") else "down"
+    f = 0 if axis == "right" else 1
+    def band(p):
+        # p and the panes split off it across the other axis: they share
+        # the edges of p along this axis and change with it.
+        out = [p]
+        for q in ids():
+            a, b = parent(q)
+            if a == p and b != axis:
+                out += band(q)
+        return out
+    if dirn in ("left", "up"):
+        # The low-side edge: the nearest split along this axis above pane.
+        x = pane
+        while True:
+            a, b = parent(x)
+            if a is None:
+                sys.exit(0)  # no edge on that side: nothing moves
+            if b == axis:
+                break
+            x = a
+        grow, shrink = x, a
+    else:
+        kids = [q for q in ids() if parent(q) == [pane, axis]]
+        if not kids:
+            sys.exit(0)  # a pane at the right (bottom) has no edge there
+        grow, shrink = pane, kids[-1]
+    g, t = size(grow)[f], size(shrink)[f]
+    delta = int(amount * (g + t) + 0.5)
+    delta = max(0, min(delta, t - 2))
+    for p in band(grow):
+        s = size(p)
+        s[f] += delta
+        put(p, s)
+    for p in band(shrink):
+        s = size(p)
+        s[f] -= delta
+        put(p, s)
+'
 
 # The fake pane: runs `bash -c CMD` on a pty of the size in DIR/size, applies
 # every later change of that file (the kernel sends SIGWINCH), drains the
@@ -325,6 +372,78 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+# ------------------------------------------------------------ measuring ----
+
+# Herdr's `pane layout` JSON → "focused <id>" and "pane <id> <width> <height>"
+# lines: every object with a pane_id (or a nested pane.pane_id) and a rect
+# with width/height, wherever it sits in the snapshot.
+LAYOUT_PY='
+import json, sys
+try:
+    v = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+panes, focused = {}, []
+def walk(x):
+    if isinstance(x, dict):
+        if isinstance(x.get("focused_pane_id"), str):
+            focused.append(x["focused_pane_id"])
+        pid, r = x.get("pane_id"), x.get("rect")
+        if pid is None and isinstance(x.get("pane"), dict):
+            pid = x["pane"].get("pane_id")
+        if isinstance(pid, str) and isinstance(r, dict) and "width" in r and "height" in r:
+            panes[pid] = (int(r["width"]), int(r["height"]))
+        for y in x.values():
+            walk(y)
+    elif isinstance(x, list):
+        for y in x:
+            walk(y)
+walk(v)
+if focused:
+    print("focused", focused[0])
+for p, (w, h) in panes.items():
+    print("pane", p, w, h)
+'
+
+# layout → refreshes $WORK/layout.txt from the base pane's tab (the focused
+# pane's before --base is known).
+layout() {
+    if [ -n "$BASE" ]; then
+        herdr pane layout --pane "$BASE" >"$WORK/layout.json" || die "herdr pane layout --pane $BASE failed"
+    else
+        herdr pane layout --current >"$WORK/layout.json" || die "herdr pane layout --current failed"
+    fi
+    python3 -c "$LAYOUT_PY" <"$WORK/layout.json" >"$WORK/layout.txt" ||
+        die "herdr pane layout did not print JSON: $(head -c 300 "$WORK/layout.json")"
+}
+
+# rect PANE → "cols rows" of PANE from a fresh layout.
+rect() {
+    local r
+    layout
+    r="$(awk -v p="$1" '$1 == "pane" && $2 == p { print $3, $4 }' "$WORK/layout.txt")"
+    [ -n "$r" ] || die "herdr pane layout gave no rect.width/height for pane $1: $(head -c 300 "$WORK/layout.json")"
+    printf '%s\n' "$r"
+}
+
+# wait_rect PANE "cols rows" → PANE's size once it differs (or the same after
+# 1 s: the resize did nothing).
+wait_rect() {
+    local end=$((SECONDS + 1)) s
+    while :; do
+        s="$(rect "$1")"
+        if [ "$s" != "$2" ] || [ "$SECONDS" -ge "$end" ]; then
+            printf '%s\n' "$s"
+            return 0
+        fi
+        sleep 0.05
+    done
+}
+
+axis_of() {
+    if [ "$1" = cols ]; then echo "${2% *}"; else echo "${2#* }"; fi
+}
+
 pane_ids() {
     herdr pane list | python3 -c '
 import json, sys
@@ -340,16 +459,13 @@ def walk(v):
 walk(json.load(sys.stdin))' | sort
 }
 
-# split PARENT|"" DIRECTION → sets NEW_PANE to the new pane's id (found by
+# split PARENT DIRECTION RATIO → sets NEW_PANE to the new pane's id (found by
 # comparing `pane list` before and after, whatever `split` itself prints).
+# RATIO is the share PARENT keeps; the new pane goes right of (below) it.
 split() {
-    local parent="$1" dir="$2" before after new
+    local parent="$1" dir="$2" ratio="$3" before after new
     before="$(pane_ids)"
-    if [ -n "$parent" ]; then
-        herdr pane split "$parent" --direction "$dir" --ratio 0.5 --cwd "$ROOT" >/dev/null
-    else
-        herdr pane split --direction "$dir" --ratio 0.5 --cwd "$ROOT" >/dev/null
-    fi
+    herdr pane split "$parent" --direction "$dir" --ratio "$ratio" --cwd "$ROOT" >/dev/null
     after="$(pane_ids)"
     new="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after") | head -n 1)"
     [ -n "$new" ] || die "herdr pane split did not create a pane"
@@ -357,7 +473,43 @@ split() {
     NEW_PANE="$new"
 }
 
-# ------------------------------------------------------------ measuring ----
+# keep_ratio TARGET TOTAL → the ratio the parent keeps so the new pane gets
+# TARGET of TOTAL cells.
+keep_ratio() {
+    awk -v t="$1" -v n="$2" 'BEGIN { printf "%.4f", 1 - t / n }'
+}
+
+# fit PANE NEIGHBOUR AXIS TARGET TOTAL → PANE's size after fixing the last
+# cells of AXIS (cols|rows). PANE is right of (below) NEIGHBOUR and both
+# share TOTAL cells. Every resize grows the pane it names: PANE towards
+# NEIGHBOUR (left|up) to grow, NEIGHBOUR towards PANE (right|down) to shrink
+# PANE. --amount is a share of the split, as in Herdr (0.1 of 202 = 20
+# cells); one that moves nothing is doubled.
+fit() {
+    local pane="$1" nb="$2" axis="$3" target="$4" total="$5"
+    local grow shrink size cur next diff amount scale=1 i
+    if [ "$axis" = cols ]; then grow=left; shrink=right; else grow=up; shrink=down; fi
+    size="$(rect "$pane")"
+    cur=$(axis_of "$axis" "$size")
+    for i in 1 2 3 4 5 6; do
+        diff=$((target - cur))
+        [ "$diff" -eq 0 ] && break
+        amount=$(awk -v d="${diff#-}" -v s="$scale" -v n="$total" 'BEGIN { printf "%.4f", d * s / n }')
+        if [ "$diff" -gt 0 ]; then
+            herdr pane resize --pane "$pane" --direction "$grow" --amount "$amount" >/dev/null
+        else
+            herdr pane resize --pane "$nb" --direction "$shrink" --amount "$amount" >/dev/null
+        fi
+        size="$(wait_rect "$pane" "$size")"
+        next=$(axis_of "$axis" "$size")
+        if [ "$next" -eq "$cur" ]; then scale=$((scale * 2)); else scale=1; fi
+        cur=$next
+    done
+    diff=$((target - cur))
+    [ "${diff#-}" -le "$TOL" ] ||
+        echo "herdr-matrix: pane $pane has $cur $axis, target $target (Herdr would not get closer)" >&2
+    printf '%s\n' "$size"
+}
 
 # status SOCKET → "cols rows" of the live instance, or nothing.
 status() {
@@ -371,69 +523,22 @@ v = v.get("result", v)
 print(v["cols"], v["rows"])' 2>/dev/null || true
 }
 
-
-# wait_status SOCKET → "cols rows" once the instance answers (or dies).
-wait_status() {
+# tiza_size SOCKET "cols rows" → the size the instance reports once it
+# answers and agrees with Herdr's (or what it reports after 3 s more).
+tiza_size() {
     local end=$((SECONDS + TIMEOUT)) s
-    while [ "$SECONDS" -le "$end" ]; do
+    while :; do
         s="$(status "$1")"
-        [ -n "$s" ] && { printf '%s\n' "$s"; return 0; }
+        [ -n "$s" ] && break
+        [ "$SECONDS" -le "$end" ] || die "Tiza did not answer on $1 within ${TIMEOUT}s"
         sleep 0.1
     done
-    die "Tiza did not answer on $1 within ${TIMEOUT}s"
-}
-
-# wait_change SOCKET "cols rows" → the size once it differs (or the same
-# after 3 s: the resize did nothing).
-wait_change() {
-    local end=$((SECONDS + 3)) s
-    while [ "$SECONDS" -le "$end" ]; do
+    end=$((SECONDS + 3))
+    while [ "$s" != "$2" ] && [ "$SECONDS" -le "$end" ]; do
+        sleep 0.1
         s="$(status "$1")"
-        if [ -n "$s" ] && [ "$s" != "$2" ]; then
-            printf '%s\n' "$s"
-            return 0
-        fi
-        sleep 0.05
     done
-    printf '%s\n' "$2"
-}
-
-# fit PANE SOCKET AXIS TARGET "cols rows" → the size after nudging AXIS
-# (cols|rows) towards TARGET. Herdr's units for --amount and which direction
-# grows a pane are learnt from what each resize actually did.
-fit() {
-    local pane="$1" sock="$2" axis="$3" target="$4" size="$5"
-    local grow shrink cur i diff dir amount next moved per_cell
-    if [ "$axis" = cols ]; then grow=left; shrink=right; else grow=up; shrink=down; fi
-    cur=$(axis_of "$axis" "$size")
-    per_cell=$(awk -v c="$cur" 'BEGIN { printf "%.6f", 0.5 / (c > 0 ? c : 1) }')
-    for i in 1 2 3 4 5 6 7 8; do
-        diff=$((target - cur))
-        [ "${diff#-}" -le "$TOL" ] && break
-        if [ "$diff" -gt 0 ]; then dir=$grow; else dir=$shrink; fi
-        amount=$(awk -v d="${diff#-}" -v k="$per_cell" 'BEGIN { a = d * k; if (a < 0.0001) a = 0.0001; if (a > 200) a = 200; printf "%.4f", a }')
-        herdr pane resize --pane "$pane" --direction "$dir" --amount "$amount" >/dev/null
-        size="$(wait_change "$sock" "$size")"
-        next=$(axis_of "$axis" "$size")
-        moved=$((next - cur))
-        if [ "$moved" -eq 0 ]; then
-            # Too small for Herdr to move a cell (or it was at a limit): go bigger.
-            per_cell=$(awk -v k="$per_cell" 'BEGIN { printf "%.6f", k * 4 }')
-            continue
-        fi
-        if { [ "$diff" -gt 0 ] && [ "$moved" -lt 0 ]; } || { [ "$diff" -lt 0 ] && [ "$moved" -gt 0 ]; }; then
-            local t=$grow
-            grow=$shrink
-            shrink=$t
-        fi
-        per_cell=$(awk -v a="$amount" -v m="${moved#-}" 'BEGIN { printf "%.6f", a / m }')
-        cur=$next
-    done
-    printf '%s\n' "$size"
-}
-
-axis_of() {
-    if [ "$1" = cols ]; then echo "${2% *}"; else echo "${2#* }"; fi
+    printf '%s\n' "$s"
 }
 
 # wait_frame PANE → the visible text once two reads in a row agree (and are
@@ -455,36 +560,55 @@ wait_frame() {
 
 # ------------------------------------------------------------------ run ----
 
+if [ -z "$BASE" ]; then
+    layout
+    BASE="$(awk '$1 == "focused" { print $2 }' "$WORK/layout.txt")"
+    [ -n "$BASE" ] || die "herdr pane layout names no focused pane; pass --base PANE_ID"
+fi
+rect "$BASE" >/dev/null
+
 mkdir -p "$OUT"
 rm -f "$OUT"/*.txt
-printf '%-13s %-8s %-8s %s\n' case target real file
+printf '%-13s %-8s %-8s %-8s %s\n' case target herdr tiza file
 CAPTURED=""
 while read -r name tc tr mode; do
     sock="$WORK/$name.sock"
-    split "$BASE" right
+    # The base pane has its whole size back: the last case's panes are closed.
+    base="$(rect "$BASE")"
+    bw=${base% *}
+    [ "$tc" = max ] && tc=$((bw - 12))   # leave the base pane about 12 columns
+    if [ "$tc" -gt $((bw - 2)) ]; then
+        echo "herdr-matrix: $name: the base pane has $bw columns, $tc do not fit" >&2
+        tc=$((bw - 2))
+    fi
+    split "$BASE" right "$(keep_ratio "$tc" "$bw")"
     col="$NEW_PANE"
     pane="$col"
+    size="$(fit "$col" "$BASE" cols "$tc" "$bw")"
     if [ "$tr" != max ]; then
-        split "$col" down
+        ch=${size#* }
+        if [ "$tr" -gt $((ch - 2)) ]; then
+            echo "herdr-matrix: $name: the base pane has $ch rows, $tr do not fit" >&2
+            tr=$((ch - 2))
+        fi
+        split "$col" down "$(keep_ratio "$tr" "$ch")"
         pane="$NEW_PANE"
+        size="$(fit "$pane" "$col" rows "$tr" "$ch")"
     fi
     flags="--present --step 7"
     [ "$mode" = normal ] && flags="--step 7"
     herdr pane run "$pane" "$(printf '%q' "$TIZA_BIN") $(printf '%q' "$DOC") $flags --no-save --socket $(printf '%q' "$sock")" >/dev/null
-    size="$(wait_status "$sock")"
-    if [ "$tc" = max ]; then
-        # Leave the base pane about 12 columns.
-        tc=$(($(axis_of cols "$size") * 2 - 12))
-    fi
-    size="$(fit "$pane" "$sock" cols "$tc" "$size")"
-    [ "$tr" = max ] || size="$(fit "$pane" "$sock" rows "$tr" "$size")"
+    seen="$(tiza_size "$sock" "$size")"
     frame="$(wait_frame "$pane")"
     real="${size% *}x${size#* }"
+    tiza="${seen% *}x${seen#* }"
+    [ "$seen" = "$size" ] ||
+        echo "herdr-matrix: $name: Herdr's layout says $real, Tiza sees $tiza" >&2
     file="$name-$real.txt"
     printf '%s\n' "$frame" >"$OUT/$file"
     target="${tc}x${tr}"
     [ "$tr" = max ] && target=max
-    printf '%-13s %-8s %-8s %s\n' "$name" "$target" "$real" "$OUT/$file"
+    printf '%-13s %-8s %-8s %-8s %s\n' "$name" "$target" "$real" "$tiza" "$OUT/$file"
     CAPTURED="$CAPTURED $file"
     # Close this case's panes before the next one, so each split starts from
     # the base pane at its own size.
