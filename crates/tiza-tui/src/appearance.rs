@@ -113,14 +113,13 @@ pub fn query_host(timeout: Duration) -> Option<Host> {
     {
         Ok(f) => f,
         Err(_) => {
-            use std::os::fd::{AsFd, FromRawFd, IntoRawFd};
+            use std::os::fd::AsFd;
             let stdin = std::io::stdin();
             if !rustix::termios::isatty(stdin.as_fd()) {
                 return None;
             }
             let dup = rustix::io::dup(stdin.as_fd()).ok()?;
-            // SAFETY: `dup` is a fresh descriptor this process owns.
-            unsafe { std::fs::File::from_raw_fd(dup.into_raw_fd()) }
+            std::fs::File::from(dup)
         }
     };
     let saved = rustix::termios::tcgetattr(&tty).ok()?;
