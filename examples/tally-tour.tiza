@@ -1,0 +1,251 @@
+{
+  "schema": 1,
+  "title": "Codebase tour: tally, a tiny wc in four files",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "tally/src/main.rs"
+  },
+  "step": 0,
+  "theme": "dark",
+  "padding": [
+    1,
+    2
+  ],
+  "steps": [
+    {
+      "step": 1,
+      "id": "main",
+      "title": "main.rs: parse, count, report"
+    },
+    {
+      "step": 2,
+      "id": "args",
+      "title": "args.rs: one flag, by hand"
+    },
+    {
+      "step": 3,
+      "id": "count",
+      "title": "count.rs: one pass"
+    },
+    {
+      "step": 4,
+      "id": "report",
+      "title": "report.rs: sort, then print"
+    },
+    {
+      "step": 5,
+      "id": "recap",
+      "title": "Back in main.rs"
+    }
+  ],
+  "moves": [
+    {
+      "at_step": 2,
+      "action": "code.link",
+      "file": "tally/src/args.rs",
+      "lines": "14-30"
+    },
+    {
+      "at_step": 3,
+      "action": "code.link",
+      "file": "tally/src/count.rs"
+    },
+    {
+      "at_step": 4,
+      "action": "code.link",
+      "file": "tally/src/report.rs"
+    },
+    {
+      "at_step": 5,
+      "action": "code.link",
+      "file": "tally/src/main.rs",
+      "lines": "9-28"
+    },
+    {
+      "at_step": 5,
+      "action": "select",
+      "from": {
+        "find": "report::table"
+      },
+      "to": {
+        "find": "opts.sort)"
+      }
+    }
+  ],
+  "annotations": [
+    {
+      "color": "blue",
+      "id": "m1",
+      "kind": "flow",
+      "label": "1 parse the flags",
+      "span": {
+        "end": 32,
+        "line": 10,
+        "start": 21
+      },
+      "step": 1,
+      "type": "mark"
+    },
+    {
+      "color": "green",
+      "id": "m2",
+      "kind": "flow",
+      "label": "2 count each file",
+      "span": {
+        "end": 61,
+        "line": 21,
+        "start": 49
+      },
+      "step": 1,
+      "type": "mark"
+    },
+    {
+      "color": "purple",
+      "id": "m3",
+      "kind": "flow",
+      "label": "3 print the table",
+      "span": {
+        "end": 30,
+        "line": 26,
+        "start": 17
+      },
+      "step": 1,
+      "type": "mark"
+    },
+    {
+      "id": "n1",
+      "line": 14,
+      "step": 1,
+      "text": "a bad flag ends here: exit code 2",
+      "type": "note"
+    },
+    {
+      "from_line": 19,
+      "id": "b1",
+      "label": "a file it cannot read is skipped",
+      "step": 1,
+      "to_line": 24,
+      "type": "box"
+    },
+    {
+      "color": "blue",
+      "file": "tally/src/args.rs",
+      "from_line": 17,
+      "id": "b2",
+      "label": "every argument is a path, except the flag",
+      "step": 2,
+      "to_line": 25,
+      "type": "box"
+    },
+    {
+      "file": "tally/src/args.rs",
+      "id": "k1",
+      "kind": "error",
+      "label": "main prints it, exits 2",
+      "span": {
+        "end": 22,
+        "line": 21,
+        "start": 19
+      },
+      "step": 2,
+      "type": "mark"
+    },
+    {
+      "file": "tally/src/args.rs",
+      "id": "n2",
+      "line": 26,
+      "step": 2,
+      "text": "no paths at all is an error too",
+      "type": "note"
+    },
+    {
+      "color": "cyan",
+      "file": "tally/src/count.rs",
+      "from_line": 11,
+      "id": "c1",
+      "step": 3,
+      "text": "text.len() is the byte length of the String, so only lines and words need the loop.",
+      "title": "bytes come free",
+      "to_line": 14,
+      "type": "callout"
+    },
+    {
+      "color": "green",
+      "file": "tally/src/count.rs",
+      "from_line": 15,
+      "id": "b3",
+      "label": "one pass over the lines",
+      "step": 3,
+      "to_line": 18,
+      "type": "box"
+    },
+    {
+      "file": "tally/src/count.rs",
+      "id": "h1",
+      "label": "runs of spaces count once",
+      "span": {
+        "end": 42,
+        "line": 17,
+        "start": 24
+      },
+      "step": 3,
+      "type": "highlight"
+    },
+    {
+      "file": "tally/src/report.rs",
+      "id": "k2",
+      "kind": "new",
+      "label": "a copy: the caller's rows are untouched",
+      "span": {
+        "end": 32,
+        "line": 7,
+        "start": 19
+      },
+      "step": 4,
+      "type": "mark"
+    },
+    {
+      "color": "purple",
+      "file": "tally/src/report.rs",
+      "from_line": 8,
+      "id": "b4",
+      "label": "--by-words: most words first",
+      "step": 4,
+      "to_line": 11,
+      "type": "box"
+    },
+    {
+      "file": "tally/src/report.rs",
+      "id": "n3",
+      "line": 14,
+      "step": 4,
+      "text": "right-aligned columns, like wc",
+      "type": "note"
+    },
+    {
+      "color": "cyan",
+      "from_line": 18,
+      "id": "c2",
+      "placement": "auto",
+      "step": 5,
+      "text": "args.rs turns the flags into Options, count.rs reads each file once, report.rs sorts and prints. main only wires them together.",
+      "title": "the whole flow",
+      "to_line": 26,
+      "type": "callout"
+    },
+    {
+      "id": "s1",
+      "ids": [
+        "m1",
+        "m2",
+        "m3",
+        "c2"
+      ],
+      "step": 5,
+      "type": "spotlight"
+    }
+  ]
+}
