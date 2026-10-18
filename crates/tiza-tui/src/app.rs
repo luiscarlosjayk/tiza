@@ -1224,12 +1224,20 @@ impl App {
         }
     }
 
+    /// Redoes the last undone edit. Redoing a move added or deleted shifts
+    /// the code again under every later `position` move it retargeted, so
+    /// the presenter is told again, as when it was first made (t-157).
     pub fn redo(&mut self) {
         self.finish_typing();
+        let before = self.doc.clone();
         if let Some(what) = self.history.redo(&mut self.doc) {
             self.rebuild_theme();
             self.touch();
             self.info(format!("redone: {what}"));
+            let notices = tiza_core::moves::retarget_notices_between(&before, &self.doc);
+            if !notices.is_empty() {
+                self.redact_alert(notices.join(" · "));
+            }
         } else {
             self.info("nothing to redo");
         }

@@ -1654,6 +1654,29 @@ pub fn retarget_notices(
     out
 }
 
+/// [`retarget_notices`] between two states of the same document whose
+/// moves differ by one move added, one deleted or none (an undo or redo
+/// swapping one edit, t-157): each move of `old` is matched to its index
+/// in `new` from the lists themselves. Moves changed any other way are
+/// matched by index.
+pub fn retarget_notices_between(old: &Document, new: &Document) -> Vec<String> {
+    let (a, b) = (&old.moves, &new.moves);
+    // The first index where the lists part: the move added or deleted
+    // there (an added move is pushed last, a deleted one can be anywhere).
+    let split = a.iter().zip(b).take_while(|(x, y)| x == y).count();
+    if b.len() == a.len() + 1 && a[split..] == b[split + 1..] {
+        retarget_notices(old, new, |i| Some(if i < split { i } else { i + 1 }))
+    } else if a.len() == b.len() + 1 && a[split + 1..] == b[split..] {
+        retarget_notices(old, new, |i| match i.cmp(&split) {
+            std::cmp::Ordering::Less => Some(i),
+            std::cmp::Ordering::Equal => None,
+            std::cmp::Ordering::Greater => Some(i - 1),
+        })
+    } else {
+        retarget_notices(old, new, |i| (i < b.len()).then_some(i))
+    }
+}
+
 /// The moves as they are read back (`scene.get`, `move.list`, the MCP,
 /// t-140): the content of every `code.patch` with the masks of that point
 /// drawn on it — any text that lands under a redact after the patch shows

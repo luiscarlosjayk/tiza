@@ -486,9 +486,9 @@ fn python_env(
 }
 
 /// The Python prelude of every pty test (`qa/src/pty.py`): a `Pty` class whose
-/// reads are all `select`-bounded, `wait_for(pred, timeout)` instead of
-/// sleeps, `finish()` that kills a child that does not exit, and a SIGALRM
-/// backstop at `TIZA_PTY_DEADLINE` seconds.
+/// reader thread drains the pty all the time with `select`-bounded reads,
+/// `wait_for(pred, timeout)` instead of sleeps, `finish()` that kills a child
+/// that does not exit, and a SIGALRM backstop at `TIZA_PTY_DEADLINE` seconds.
 pub const PTY_PRELUDE: &str = include_str!("pty.py");
 
 /// Default hard deadline of one pty script, Python side (seconds). The Rust

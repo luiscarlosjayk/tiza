@@ -2,11 +2,12 @@
 # prepends this file to the test's own Python body.
 #
 # Nothing here may block past DEADLINE: every read goes through select() with a
-# short slice, a child that never writes (or never exits) is killed, and a
-# SIGALRM backstop ends the whole script even if a body does something blocking
-# by mistake. The Rust side (`tiza_qa::python`) adds its own wall-clock timeout
+# short slice, in one reader thread per Pty that drains the pty all the time (so
+# a child never blocks writing while the body does something else); a child
+# that never writes (or never exits) is killed, and a SIGALRM backstop ends the
+# whole script even if a body does something blocking by mistake. The Rust side (`tiza_qa::python`) adds its own wall-clock timeout
 # around this process.
-import fcntl, os, pty, re, select, signal, struct, subprocess, sys, termios, time, tty
+import fcntl, os, pty, re, select, signal, struct, subprocess, sys, termios, threading, time, tty
 
 DEADLINE_S = float(os.environ.get("TIZA_PTY_DEADLINE", "40"))
 DEADLINE = time.monotonic() + DEADLINE_S
@@ -39,7 +40,14 @@ class Pty:
     `ctty=True` makes the pty its controlling terminal (so it can open
     /dev/tty); `raw=True` puts the line discipline in raw mode before the
     child starts; `seed` is written to the child's input before it starts
-    (a terminal answer that is already waiting when the child asks)."""
+    (a terminal answer that is already waiting when the child asks).
+
+    A background reader thread (t-157 retrabajo) drains the pty into `out`
+    from the start, whatever the body is doing: a body that runs `tiza api`
+    with `subprocess.run` between two `wait_for`s no longer leaves the child
+    blocked writing a frame into a full pty buffer (small on macOS), unable to
+    answer its socket. `wait_for`/`settle` only look at what the thread has
+    already read."""
 
     def __init__(self, argv, rows, cols, env=None, ctty=False, raw=False, seed=b""):
         self.master, slave = pty.openpty()
@@ -59,50 +67,95 @@ class Pty:
         os.close(slave)
         os.set_blocking(self.master, False)
         self.ctty = ctty
-        self.out = b""
-        self.eof = False
         self.closed = False
+        # Shared with the reader thread, always under `_cv`: the output so
+        # far, whether the master reported EOF, when the last bytes came, and
+        # the order to stop.
+        self._cv = threading.Condition()
+        self._out = b""
+        self._eof = False
+        self._last = time.monotonic()
+        self._stop = False
+        self._reader = threading.Thread(target=self._pump, daemon=True)
+        self._reader.start()
         PTYS.append(self)
+
+    @property
+    def out(self):
+        """Everything the child wrote so far (read by the reader thread)."""
+        with self._cv:
+            return self._out
+
+    @property
+    def eof(self):
+        with self._cv:
+            return self._eof
+
+    def _pump(self):
+        """The reader thread: select-bounded reads of the master into `_out`
+        until EOF or `_stop`; wakes every waiter on each chunk."""
+        while True:
+            with self._cv:
+                if self._stop:
+                    return
+            try:
+                r, _, _ = select.select([self.master], [], [], 0.05)
+            except (OSError, ValueError):
+                r, chunk = None, b""
+            else:
+                if not r:
+                    continue
+                try:
+                    chunk = os.read(self.master, 65536)
+                except (BlockingIOError, InterruptedError):
+                    continue
+                except OSError:  # EIO: the slave side is gone (Linux)
+                    chunk = b""
+            with self._cv:
+                if chunk:
+                    self._out += chunk
+                    self._last = time.monotonic()
+                else:
+                    self._eof = True
+                self._cv.notify_all()
+            if not chunk:
+                return
 
     def _left(self, end):
         return min(end, DEADLINE) - time.monotonic()
 
-    def _read(self, slice_s):
-        """At most one read, waiting at most `slice_s`. True when bytes came."""
-        if self.eof or self.closed:
-            return False
-        r, _, _ = select.select([self.master], [], [], max(0.0, slice_s))
-        if not r:
-            return False
-        try:
-            chunk = os.read(self.master, 65536)
-        except (BlockingIOError, InterruptedError):
-            return False
-        except OSError:  # EIO: the slave side is gone (Linux)
-            self.eof = True
-            return False
-        if not chunk:
-            self.eof = True
-            return False
-        self.out += chunk
-        return True
+    def _wait(self, slice_s):
+        """Waits (bounded by `slice_s`) for the reader thread to bring bytes,
+        report EOF or be stopped. Caller holds `_cv`."""
+        self._cv.wait(max(0.0, slice_s))
 
     def _drain(self):
-        """The child exited: take what is left and stop at the first quiet
-        0.2 s (macOS may never report EOF on the master)."""
+        """The child exited: let the reader take what is left and stop at
+        EOF or the first quiet 0.2 s (macOS may never report EOF on the
+        master), at most 2 s."""
         end = time.monotonic() + 2
-        while self._left(end) > 0 and self._read(min(0.2, self._left(end))):
-            pass
+        with self._cv:
+            while not self._eof and self._left(end) > 0:
+                quiet = time.monotonic() - self._last
+                if quiet >= 0.2:
+                    break
+                self._wait(min(0.2 - quiet, self._left(end)))
 
     def wait_for(self, pred, timeout=10.0, what="condition"):
-        """Reads until `pred(self.out)` holds, the child is gone, or `timeout`
+        """Waits until `pred(self.out)` holds, the child is gone, or `timeout`
         passes. Prints `WAIT_TIMEOUT <what>` and returns False on failure."""
         end = time.monotonic() + timeout
-        while not pred(self.out):
-            left = self._left(end)
-            if left <= 0 or self.eof:
-                break
-            if not self._read(min(left, 0.05)) and self.p.poll() is not None:
+        while True:
+            with self._cv:
+                if pred(self._out):
+                    return True
+                left = self._left(end)
+                if left <= 0 or self._eof:
+                    break
+                self._wait(min(left, 0.05))
+                if pred(self._out):
+                    return True
+            if self.p.poll() is not None:
                 self._drain()
                 break
         ok = pred(self.out)
@@ -111,10 +164,22 @@ class Pty:
         return ok
 
     def settle(self, seconds):
-        """Keeps reading for `seconds` (a negative check's short settle)."""
+        """Lets the reader keep reading for `seconds` (a negative check's
+        short settle)."""
         end = time.monotonic() + seconds
-        while self._left(end) > 0 and not self.eof:
-            self._read(min(self._left(end), 0.05))
+        with self._cv:
+            while self._left(end) > 0 and not self._eof:
+                self._wait(self._left(end))
+
+    def _stop_reader(self):
+        """Stops the reader thread (it notices within one 0.05 s slice), so
+        the master can be closed under no one's select."""
+        with self._cv:
+            self._stop = True
+            self._cv.notify_all()
+        self._reader.join(timeout=5)
+        if self._reader.is_alive():
+            print("READER_STUCK", flush=True)
 
     def send(self, data):
         """Writes to the child's input; never blocks past the deadline."""
@@ -123,8 +188,7 @@ class Pty:
                 print("SEND_TIMEOUT", flush=True)
                 return False
             _, w, _ = select.select([], [self.master], [], 0.05)
-            if not w:
-                self._read(0)  # keep the child's output flowing
+            if not w:  # the reader thread keeps the child's output flowing
                 continue
             try:
                 n = os.write(self.master, data)
@@ -162,23 +226,20 @@ class Pty:
             print("CHILD_UNKILLABLE", flush=True)
 
     def finish(self, timeout=10.0):
-        """Waits for the child to exit while draining its output; past
-        `timeout` its process group is killed (`CHILD_KILLED`). Returns the
-        exit code (negative when killed by a signal)."""
+        """Waits for the child to exit while the reader drains its output;
+        past `timeout` its process group is killed (`CHILD_KILLED`). Returns
+        the exit code (negative when killed by a signal)."""
         end = time.monotonic() + timeout
-        while self.p.poll() is None and self._left(end) > 0:
-            if self.eof:  # nothing more to read: just wait, bounded
-                try:
-                    self.p.wait(timeout=max(0.0, self._left(end)))
-                except subprocess.TimeoutExpired:
-                    pass
-                break
-            self._read(min(self._left(end), 0.05))
+        try:
+            self.p.wait(timeout=max(0.0, self._left(end)))
+        except subprocess.TimeoutExpired:
+            pass
         if self.p.poll() is None:
             print("CHILD_KILLED", flush=True)
             self.kill()
         self._drain()
         if not self.closed:
+            self._stop_reader()
             os.close(self.master)
             self.closed = True
         return self.p.returncode

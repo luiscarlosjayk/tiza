@@ -196,6 +196,18 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "f
     s.wait_for(lambda out: b"now replaces L2" in out, 10, "bar notice")
     api("code.get", {})
     api("render.text", {"width": 110})
+    # `u` then `U` (rework): redoing the insert retargets move #1 again and
+    # the bar says so again. Spaces may come as cursor moves, so the text
+    # is compared without them.
+    squeezed = lambda since: lambda out: plain(out[since:]).replace(" ", "")
+    mark = len(s.out)
+    s.send(b"u")
+    s.wait_for(lambda out: "undone:move#2added" in squeezed(mark)(out), 10, "undo")
+    mark = len(s.out)
+    s.send(b"U")
+    if s.wait_for(lambda out: "move#1(step2)nowreplacesL2" in squeezed(mark)(out), 10,
+                  "bar notice after redo"):
+        print("REDO_NOTICE", flush=True)
     s.send(b"P")
     s.wait_for(lambda out: plain(out).count("token=") >= 1, 5, "presentation")
     s.settle(0.3)
@@ -218,6 +230,66 @@ print("SCREEN", plain(s.out).replace("\n", " "))
         "{out}"
     );
     assert!(out.contains("token=••••••••"), "{out}");
+    assert!(out.contains("REDO_NOTICE"), "{out}");
+}
+
+#[test]
+fn harness_the_pty_is_drained_while_the_body_calls_the_api() {
+    // Rework of t-157: case 1 failed on macOS because nobody read the pty
+    // while the body ran `tiza api` with `subprocess.run`; Tiza blocked
+    // writing a frame into the full pty buffer and stopped answering its
+    // socket. The same on Linux with frames bigger than its buffer: a
+    // 200×400 terminal full of long lines, never read by the body, and
+    // API calls that redraw it whole (`theme.set toggle`). With the reader thread of
+    // qa/src/pty.py every call answers (with the old helper, the first one
+    // timed out at 10 s).
+    let dir = scratch("t157-drain");
+    let doc = dir.join("big.tiza");
+    let code: Vec<String> = (1..=300)
+        .map(|i| format!("line {i} = {}", "x".repeat(150)))
+        .collect();
+    std::fs::write(
+        &doc,
+        json!({"schema": 1, "code": code, "source": {"language": "ini"}}).to_string(),
+    )
+    .unwrap();
+    let sock = dir.join("drain.sock");
+    let out = tiza_qa::pty_script(
+        &dir,
+        "drain.py",
+        r##"
+import json
+binary, doc, sock = sys.argv[1], sys.argv[2], sys.argv[3]
+def api(method, params):
+    try:
+        r = subprocess.run([binary, "--socket", sock, "api", method, json.dumps(params)],
+                           capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        print("API_TIMEOUT", method, flush=True)
+        return False
+    print("API", method, r.returncode, flush=True)
+    return r.returncode == 0
+s = Pty([binary, "--socket", sock, "--no-save", doc], 200, 400)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
+    for i in range(6):
+        if not (api("theme.set", {"theme": "toggle"}) and api("code.get", {})):
+            break
+    else:
+        print("ALL_ANSWERED", flush=True)
+s.kill()
+s.finish(5)
+print("READ", len(s.out))
+"##,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            doc.to_str().unwrap(),
+            sock.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        out.contains("ALL_ANSWERED") && !out.contains("API_TIMEOUT"),
+        "{out}"
+    );
 }
 
 #[test]
@@ -575,6 +647,48 @@ fn ac2_case11_undo_and_redo() {
         ]
     );
     assert_every_step(&live, &["LONGERvalue77", SECRET], "after redo");
+    // Redoing shifts the code under move #1 again: the presenter is told
+    // again, on the bar, as move.add told them (rework of t-157).
+    // (Visiting step 2 above added the widened redact's own alert.)
+    assert!(
+        live.with(|a| a.redact_alerts.clone())
+            .contains(&NOTICE.to_string())
+    );
+    let screen = live.screen(80, 20);
+    assert!(screen.contains("now replaces L2 «# config»"), "{screen}");
+    assert_no(&["LONGERvalue77", SECRET], "screen after redo", &screen);
+    // Any key hides it, as after move.add; undo again clears it.
+    live.keys(&[KeyCode::Char('u')]);
+    assert!(live.with(|a| a.redact_alerts.is_empty()));
+    // Redoing a deletion that retargets says it too: delete the insert
+    // (move #1 goes back to `token=…`), undo, redo.
+    live.keys(&[KeyCode::Char('U')]);
+    live.keys(&[KeyCode::Esc]);
+    assert!(live.with(|a| a.redact_alerts.is_empty()));
+    let reply = live.api_ok("move.delete", json!({"index": 2}));
+    let back = "move #1 (step 2) now replaces L2 «token=…» instead of «# config»: check it";
+    assert_eq!(notices(&reply), vec![back.to_string()]);
+    live.keys(&[KeyCode::Char('u')]);
+    assert!(live.with(|a| a.redact_alerts.is_empty()));
+    live.keys(&[KeyCode::Char('U')]);
+    assert!(
+        live.with(|a| a.redact_alerts.clone())
+            .contains(&back.to_string())
+    );
+    assert_every_step(
+        &live,
+        &["LONGERvalue77", SECRET],
+        "after redoing the delete",
+    );
+    // Redoing an edit that retargets nothing says nothing.
+    live.keys(&[KeyCode::Esc]);
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "box", "from_line": 3, "to_line": 3}),
+    );
+    live.keys(&[KeyCode::Char('u')]);
+    live.keys(&[KeyCode::Char('U')]);
+    assert!(live.with(|a| a.redact_alerts.is_empty()));
 }
 
 #[test]
