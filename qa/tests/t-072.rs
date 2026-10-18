@@ -58,6 +58,7 @@ fn ac1_every_theme_role_passes_before_compression() {
                 width: 60,
                 step: 1,
                 focus: None,
+                pointer: None,
                 line_numbers: true,
                 tab_width: 4,
                 typing: false,

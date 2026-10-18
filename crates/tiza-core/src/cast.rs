@@ -54,6 +54,7 @@ fn frames(doc: &Document, theme: &Theme, opts: &CastOptions) -> (Vec<(u32, Strin
                 width: opts.width,
                 step,
                 focus: None,
+                pointer: None,
                 line_numbers: opts.line_numbers,
                 tab_width: 4,
                 typing: false,

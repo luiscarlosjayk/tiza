@@ -879,6 +879,63 @@ pub struct Status {
     /// Right-margin cap in cells (`:margin N`, document field); absent = dynamic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin: Option<u16>,
+    /// The live pointer (t-030): the lines the presenter (`f`) or an agent
+    /// (`pointer.set`) is pointing at on the screen right now, or `null`.
+    /// Never saved nor exported. Always present.
+    #[serde(default)]
+    pub pointer: Option<PointerAt>,
+}
+
+/// Where the live pointer is (t-030).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PointerAt {
+    /// First pointed line.
+    pub line: u32,
+    /// Last pointed line (`line` itself for a single line).
+    pub to: u32,
+    /// Who put it there last: the presenter (`f`, then the cursor or the
+    /// selection moves it) or an agent (`pointer.set`).
+    pub by: PointerBy,
+}
+
+/// Who moved the live pointer last (t-030).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum PointerBy {
+    Presenter,
+    Agent,
+}
+
+/// Parameters of `pointer.set` (t-030): `{line}`, `{line, find}`,
+/// `{find}` (the text must appear once in the shown code) or
+/// `{from, to}`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct PointerParams {
+    /// The line to point at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// Text that names the line: on `line` when given, else it must appear
+    /// exactly once in the code shown (searched on the masked code: a
+    /// redacted secret is never found).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub find: Option<String>,
+    /// First line of a range (with `to`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from: Option<u32>,
+    /// Last line of a range (defaults to `from`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to: Option<u32>,
+}
+
+/// Result of `pointer.set` and `pointer.clear` (t-030).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct PointerReply {
+    /// Where the pointer is now; `null` after `pointer.clear`.
+    pub pointer: Option<PointerAt>,
+    /// `false` while the presenter has the command line open: the pointer
+    /// shows when it closes.
+    pub shown: bool,
 }
 
 fn yes() -> bool {
@@ -1049,6 +1106,14 @@ pub const METHODS: &[(&str, &str)] = &[
     (
         "focus.set",
         "Dims everything outside `from_line..to_line`; without lines, clears the focus",
+    ),
+    (
+        "pointer.set",
+        "Points at a line on the live screen (t-030): `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
+    ),
+    (
+        "pointer.clear",
+        "Turns the live pointer off (the presenter's `f` too)",
     ),
     (
         "theme.set",

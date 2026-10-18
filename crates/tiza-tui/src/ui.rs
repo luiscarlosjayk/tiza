@@ -146,7 +146,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             .saturating_sub(pad_v * 2),
     };
 
-    let layout = app.screen_layout(canvas_area.width as usize);
+    // A motion the pointer has not seen yet (mouse, agent): follow it.
+    app.sync_pointer();
+    let layout = app.screen_layout_with_pointer(canvas_area.width as usize);
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
@@ -609,6 +611,8 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         _ => {
             if app.arrow_from.is_some() {
                 "ARROW→"
+            } else if app.pointer.is_some() {
+                "POINTER"
             } else {
                 "NORMAL"
             }
@@ -925,6 +929,7 @@ fn help_lines() -> Vec<String> {
         "                     a arrow (select source, a, select target, a)   s spotlight",
         "u / U    undo / redo                 t      dark/light theme",
         "P        presentation mode           L      annotation list      :  command line",
+        "f        pointer: the cursor line (or the selection) stays lit, the rest dims; j/k move it, f or Esc ends it (live only: never saved nor exported)",
         "         (presenting, : shows the command line on the last row and its result for 2 s)",
         "",
         "Commands (L = line number, text = fragment to find on that line):",

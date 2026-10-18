@@ -25,6 +25,11 @@ pub struct LayoutOptions {
     pub step: u32,
     /// Focused line range; the rest is dimmed.
     pub focus: Option<(u32, u32)>,
+    /// The live pointer (t-030): these lines are drawn normally and every
+    /// other code line is dimmed, over any focus or spotlight. Only the
+    /// presenter's own screen passes it; every export, recording and
+    /// `render.text` passes `None` (it is never part of the document).
+    pub pointer: Option<(u32, u32)>,
     pub line_numbers: bool,
     pub tab_width: usize,
     /// A typing animation of `step` is running: the code is drawn as it is
@@ -52,6 +57,7 @@ impl Default for LayoutOptions {
             width: 100,
             step: u32::MAX,
             focus: None,
+            pointer: None,
             line_numbers: true,
             tab_width: 4,
             typing: false,
@@ -885,8 +891,11 @@ pub fn layout_with(
     for (y, row) in rows.iter().enumerate() {
         let Row::Code(line) = row else { continue };
         let text = doc.line_text(*line).unwrap_or("");
-        let in_focus =
-            opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line);
+        let in_focus = match opts.pointer {
+            // The pointer wins over the focus and the spotlights (t-030).
+            Some((a, b)) => *line >= a && *line <= b,
+            None => opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line),
+        };
         if opts.line_numbers {
             let n = format!("{:>w$}", line, w = num_w - 1);
             canvas.put_str(0, y, &n, base.fg(theme.muted));

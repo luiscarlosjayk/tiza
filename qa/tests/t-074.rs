@@ -40,6 +40,7 @@ fn layouts_without_panic(doc: &Document) {
                 width,
                 step: doc.step,
                 focus: None,
+                pointer: None,
                 line_numbers: true,
                 tab_width: 4,
                 typing: false,

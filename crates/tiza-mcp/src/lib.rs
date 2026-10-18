@@ -550,6 +550,20 @@ pub struct FocusParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct PointAtParams {
+    #[schemars(description = "The line to point at (with `find`: the line the text is on)")]
+    pub line: Option<u32>,
+    #[schemars(
+        description = "Text that names the line: on `line` when given, else it must appear exactly once in the code shown (redacted text is never found)"
+    )]
+    pub find: Option<String>,
+    #[schemars(description = "First line of a range to point at (instead of `line`)")]
+    pub from: Option<u32>,
+    #[schemars(description = "Last line of the range (defaults to `from`)")]
+    pub to: Option<u32>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ThemeParams {
     #[schemars(
         description = "dark, light, terminal (the host's palette), auto (follow the terminal) or toggle"
@@ -1115,6 +1129,39 @@ impl TizaServer {
     }
 
     #[tool(
+        description = "Points at a line (or a range) on the live screen, like a laser pointer: that line is drawn normally and the rest of the code is dimmed while you talk about it. Nothing is created: it is not an annotation, never saved, never in an export, a GIF or a recording, and the next step keeps it on the same line (it goes off when the line disappears). Use it to say «this line» during a live explanation; use `add_spotlight` when the focus belongs to a step of the recording. Give `line`, `line` + `find`, `find` alone (must appear once) or `from`/`to`. The presenter's `f` key is the same pointer: the last one wins. `status` shows it as `pointer`."
+    )]
+    async fn point_at(
+        &self,
+        Parameters(p): Parameters<PointAtParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let mut params = serde_json::Map::new();
+        for (k, v) in [
+            ("line", p.line.map(Value::from)),
+            ("find", p.find.map(Value::from)),
+            ("from", p.from.map(Value::from)),
+            ("to", p.to.map(Value::from)),
+        ] {
+            if let Some(v) = v {
+                params.insert(k.into(), v);
+            }
+        }
+        Ok(text(pretty(
+            &self.call("pointer.set", Value::Object(params)).await?,
+        )))
+    }
+
+    #[tool(
+        description = "Turns the live pointer off (yours or the presenter's `f`): the code is drawn normally again."
+    )]
+    async fn clear_pointer(
+        &self,
+        Parameters(_p): Parameters<Empty>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(&self.call("pointer.clear", json!({})).await?)))
+    }
+
+    #[tool(
         description = "Changes the theme: dark, light, terminal (the host's own palette), auto (follow the terminal's background) or toggle."
     )]
     async fn set_theme(
@@ -1223,6 +1270,7 @@ impl TizaServer {
                 },
                 step: p.step.unwrap_or(scene.step),
                 focus: None,
+                pointer: None,
                 line_numbers: scene.document.numbers,
                 tab_width: 4,
                 typing: false,

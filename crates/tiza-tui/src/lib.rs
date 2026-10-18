@@ -284,6 +284,12 @@ fn event_loop(
 /// Handles one key press exactly as the event loop does (public so QA tests
 /// can drive the real keyboard logic without a terminal).
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    key(app, code, mods);
+    // The live pointer follows the cursor or the selection (t-030).
+    app.sync_pointer();
+}
+
+fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // An OSC answer to a re-query arrives as key presses (t-119): collect
     // it and keep it away from the editor.
     let (swallowed, host) = app.osc.feed(code, mods);
@@ -416,6 +422,8 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 app.arrow_from = None;
             }
             KeyCode::Char('v') | KeyCode::Char('V') => app.mode = Mode::Normal,
+            // The pointer on the selected lines (t-030).
+            KeyCode::Char('f') if !ctrl => app.toggle_pointer(),
             KeyCode::Char('h') if mods.is_empty() && app.selection().is_some() => {
                 // `h` is both "move left" and "highlight": left needs Shift-less motion via arrows;
                 // in selection mode `h` acts, `←` moves.
@@ -491,8 +499,12 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('r') if ctrl => app.redo(),
         KeyCode::Char('t') => app.toggle_theme(),
         KeyCode::Char('P') => app.set_present(!app.present),
+        // The live pointer (t-030): on the cursor line, or off.
+        KeyCode::Char('f') if !ctrl => app.toggle_pointer(),
         KeyCode::Esc => {
-            if app.present {
+            if app.pointer.is_some() {
+                app.clear_pointer();
+            } else if app.present {
                 app.present = false;
             } else if app.selected.is_some() {
                 app.selected = None;

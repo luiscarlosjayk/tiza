@@ -191,6 +191,15 @@ pub struct App {
     pub theme_notes: Vec<String>,
     /// OSC answers arriving through the key stream after a re-query.
     pub osc: crate::appearance::OscCapture,
+    /// The live pointer (t-030): `f` (or `pointer.set`) turns it on; while
+    /// on, its lines are drawn normally and the rest of the code dimmed on
+    /// this screen only. Never in the document, the undo stack, a save or
+    /// an export.
+    pub pointer: Option<tiza_core::protocol::PointerAt>,
+    /// Cursor line and selection lines when the pointer last looked: a
+    /// change since then is a motion of the presenter's, and the pointer
+    /// follows it ([`App::sync_pointer`]).
+    pointer_seen: ((u32, u32), Option<u32>),
 }
 
 impl App {
@@ -247,6 +256,8 @@ impl App {
             follow: None,
             typing: None,
             step_ready_at: Some(std::time::Instant::now()),
+            pointer: None,
+            pointer_seen: ((cursor_line, cursor_line), None),
         };
         app.rebuild_theme();
         app
@@ -465,24 +476,228 @@ impl App {
         self.layout_with_masks(width, self.redact_shown || self.present)
     }
 
+    /// [`App::screen_layout`] with the live pointer (t-030). Only the
+    /// presenter's frame (`ui::draw`) calls it; `layout` (`render.text`,
+    /// screen captures) and every export never draw the pointer.
+    pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
+        let mut opts = self.layout_options(width, self.redact_shown || self.present);
+        opts.pointer = self.pointer_shown();
+        layout(&self.doc, &self.theme, &opts)
+    }
+
     fn layout_with_masks(&self, width: usize, redact: bool) -> Layout {
-        layout(
-            &self.doc,
-            &self.theme,
-            &LayoutOptions {
-                width,
-                step: self.doc.step,
-                focus: self.focus,
-                line_numbers: self.doc.numbers,
-                tab_width: 4,
-                typing: self.typing.is_some(),
-                redact,
-                // Presentation mode is a take: one geometry for every step
-                // (t-111). Authoring grows as it goes unless `:layout stable`.
-                stable: self.present || self.layout_stable,
-                margin_cap: self.doc.margin.map(usize::from),
-            },
-        )
+        layout(&self.doc, &self.theme, &self.layout_options(width, redact))
+    }
+
+    fn layout_options(&self, width: usize, redact: bool) -> LayoutOptions {
+        LayoutOptions {
+            width,
+            step: self.doc.step,
+            focus: self.focus,
+            pointer: None,
+            line_numbers: self.doc.numbers,
+            tab_width: 4,
+            typing: self.typing.is_some(),
+            redact,
+            // Presentation mode is a take: one geometry for every step
+            // (t-111). Authoring grows as it goes unless `:layout stable`.
+            stable: self.present || self.layout_stable,
+            margin_cap: self.doc.margin.map(usize::from),
+        }
+    }
+
+    // ---------- live pointer (t-030) ----------
+
+    /// The lines the presenter's cursor names: the selection's lines while
+    /// one is open (`v`/`V`), else the cursor line.
+    fn cursor_lines(&self) -> (u32, u32) {
+        match self.selection() {
+            Some(Selection::Lines(a, b)) => (a, b),
+            Some(Selection::Span(sp)) => (sp.line, sp.line),
+            None => (self.cursor_line, self.cursor_line),
+        }
+    }
+
+    fn pointer_snapshot(&self) -> ((u32, u32), Option<u32>) {
+        let anchor = match self.mode {
+            Mode::Select { anchor_line, .. } => Some(anchor_line),
+            _ => None,
+        };
+        (self.cursor_lines(), anchor)
+    }
+
+    /// The pointer lines to draw now: none while the command line is open
+    /// (an agent's pointer shows when it closes) or when it is off.
+    pub fn pointer_shown(&self) -> Option<(u32, u32)> {
+        if matches!(self.mode, Mode::Command(_)) {
+            return None;
+        }
+        self.pointer.map(|p| (p.line, p.to))
+    }
+
+    /// `f`: the pointer on the cursor line (or the selection), or off.
+    pub fn toggle_pointer(&mut self) {
+        if self.pointer.take().is_some() {
+            self.info("pointer off");
+        } else {
+            self.point_at_cursor();
+            self.info("pointer on (f or Esc turns it off; never saved nor exported)");
+        }
+    }
+
+    fn point_at_cursor(&mut self) {
+        let (line, to) = self.cursor_lines();
+        self.pointer = Some(tiza_core::protocol::PointerAt {
+            line,
+            to,
+            by: tiza_core::protocol::PointerBy::Presenter,
+        });
+        self.pointer_seen = self.pointer_snapshot();
+    }
+
+    /// The pointer follows the presenter's motions (keys, mouse): when the
+    /// cursor or the selection moved since it last looked, it moves there.
+    /// A pointer whose lines no longer exist (a reload, a paste) turns
+    /// off. Called after every key and before every frame.
+    pub fn sync_pointer(&mut self) {
+        let now = self.pointer_snapshot();
+        if now != self.pointer_seen {
+            if self.pointer.is_some() {
+                self.point_at_cursor();
+            }
+            self.pointer_seen = now;
+        }
+        if let Some(p) = self.pointer
+            && (p.line < self.doc.source.first_line || p.to > self.doc.last_line())
+        {
+            self.pointer = None;
+        }
+    }
+
+    /// `pointer.set` (t-030): resolves the lines on the code shown — a
+    /// `find` on the masked code, so it never confirms text under a redact
+    /// — moves the cursor there (the view scrolls to it, `j`/`k` go on
+    /// from it) and points. Nothing is recorded: no revision, no undo, no
+    /// save.
+    pub fn set_pointer(
+        &mut self,
+        p: &tiza_core::protocol::PointerParams,
+    ) -> Result<tiza_core::protocol::PointerAt, Error> {
+        let first = self.doc.source.first_line;
+        let last = self.doc.last_line();
+        let check = |line: u32| {
+            if line < first || line > last {
+                Err(Error::LineOutOfRange { line, first, last })
+            } else {
+                Ok(line)
+            }
+        };
+        let (a, b) = match (p.line, &p.find, p.from, p.to) {
+            (_, Some(_), Some(_), _)
+            | (_, Some(_), _, Some(_))
+            | (Some(_), _, Some(_), _)
+            | (Some(_), _, _, Some(_)) => {
+                return Err(Error::Invalid(
+                    "pointer.set: give `line` (with an optional `find`), `find`, or `from`/`to`, not both"
+                        .into(),
+                ));
+            }
+            (None, None, None, Some(_)) => {
+                return Err(Error::Invalid("pointer.set: `to` needs `from`".into()));
+            }
+            (None, None, None, None) => {
+                return Err(Error::Invalid(
+                    "pointer.set needs `line`, `line` + `find`, `find` or `from`/`to` (pointer.clear turns it off)"
+                        .into(),
+                ));
+            }
+            (None, None, Some(f), t) => {
+                let t = t.unwrap_or(f);
+                (check(f.min(t))?, check(f.max(t))?)
+            }
+            (line, Some(text), None, None) => {
+                if text.is_empty() {
+                    return Err(Error::Invalid("pointer.set: empty `find`".into()));
+                }
+                let view = self.doc.view_at(self.doc.step);
+                let code = tiza_core::redact::masked_code(&view.doc, self.doc.step);
+                let hits = moves::matches_of(&code, first, text);
+                let l = match line {
+                    Some(l) => {
+                        let l = check(l)?;
+                        if !hits.contains(&l) {
+                            return Err(Error::TextNotFound(format!("«{text}» on line {l}")));
+                        }
+                        l
+                    }
+                    None => {
+                        let mut lines = hits.clone();
+                        lines.dedup();
+                        match lines.as_slice() {
+                            [] => return Err(Error::TextNotFound(format!("«{text}»"))),
+                            [l] => *l,
+                            many => {
+                                return Err(Error::Invalid(format!(
+                                    "pointer.set: «{text}» is on {} lines ({}); add `line`",
+                                    many.len(),
+                                    many.iter()
+                                        .map(|l| format!("L{l}"))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )));
+                            }
+                        }
+                    }
+                };
+                (l, l)
+            }
+            (Some(l), None, None, None) => {
+                let l = check(l)?;
+                (l, l)
+            }
+        };
+        // The presenter's selection gives way: the last one wins.
+        if matches!(self.mode, Mode::Select { .. }) {
+            self.mode = Mode::Normal;
+        }
+        self.cursor_line = a;
+        self.clamp_col();
+        let at = tiza_core::protocol::PointerAt {
+            line: a,
+            to: b,
+            by: tiza_core::protocol::PointerBy::Agent,
+        };
+        self.pointer = Some(at);
+        self.pointer_seen = self.pointer_snapshot();
+        Ok(at)
+    }
+
+    /// `pointer.clear`, `Esc`, a second `f`: off.
+    pub fn clear_pointer(&mut self) {
+        self.pointer = None;
+    }
+
+    /// A step change keeps the pointer on its line, carried through the
+    /// moves of the steps in between (t-030); off when the line is gone.
+    /// The cursor goes with it, so the view and `j`/`k` stay with it.
+    fn carry_pointer(&mut self, from_step: u32) {
+        let Some(p) = self.pointer else { return };
+        let to_step = self.doc.step;
+        let carried = moves::carry_line(&self.doc, from_step, to_step, p.line)
+            .zip(moves::carry_line(&self.doc, from_step, to_step, p.to));
+        let first = self.doc.source.first_line;
+        let last = self.doc.last_line();
+        match carried {
+            Some((a, b)) if a >= first && b <= last && a <= b => {
+                self.pointer = Some(tiza_core::protocol::PointerAt {
+                    line: a,
+                    to: b,
+                    by: p.by,
+                });
+                self.cursor_line = a;
+            }
+            _ => self.pointer = None,
+        }
     }
 
     /// Whether the document has redact masks (for the status bar).
@@ -1058,9 +1273,11 @@ impl App {
         let s = step.min(max.max(1));
         if s != self.doc.step {
             let forward_one = s == self.doc.step + 1 && !jump;
+            let from_step = self.doc.step;
             self.doc.step = s;
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
+                self.pointer = None;
                 loud = true;
             } else {
                 // A `cursor` move left at this step moves the TUI cursor
@@ -1074,6 +1291,8 @@ impl App {
                         self.cursor_line = self.doc.source.first_line;
                     }
                 }
+                // Before the typing blanks what it is about to type.
+                self.carry_pointer(from_step);
                 if forward_one {
                     self.start_typing();
                 }
@@ -1086,6 +1305,9 @@ impl App {
                 }
             }
             self.clamp_cursor();
+            // The step moved the cursor (to the pointer, a `cursor` move):
+            // not a motion of the presenter's for the pointer to follow.
+            self.pointer_seen = self.pointer_snapshot();
             self.revision += 1;
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
@@ -3251,6 +3473,8 @@ impl App {
                 width,
                 step,
                 focus: self.focus,
+                // `:export` never draws the live pointer (t-030).
+                pointer: None,
                 line_numbers: self.doc.numbers,
                 tab_width: 4,
                 typing: false,
@@ -4136,7 +4360,25 @@ impl App {
         Ok(match method {
             // Plain "pong": `status` already carries `protocol`.
             "ping" => json!("pong"),
-            "status" => serde_json::to_value(self.status())?,
+            "status" => {
+                self.sync_pointer();
+                serde_json::to_value(self.status())?
+            }
+            "pointer.set" => {
+                let p: tiza_core::protocol::PointerParams = parse(params)?;
+                let at = self.set_pointer(&p)?;
+                serde_json::to_value(tiza_core::protocol::PointerReply {
+                    pointer: Some(at),
+                    shown: self.pointer_shown().is_some(),
+                })?
+            }
+            "pointer.clear" => {
+                self.clear_pointer();
+                serde_json::to_value(tiza_core::protocol::PointerReply {
+                    pointer: None,
+                    shown: false,
+                })?
+            }
             "api.schema" => serde_json::to_value(tiza_core::schema::api_schema())?,
             "follow.status" => self.follow_status(),
             "follow.set" => {
@@ -4418,6 +4660,7 @@ impl App {
             pending: self.proposals.len(),
             numbers: self.doc.numbers,
             margin: self.doc.margin,
+            pointer: self.pointer,
         }
     }
 
@@ -4795,6 +5038,13 @@ pub fn proposal_summary(req: &Request) -> String {
         ),
         "step.prev" => "previous step".into(),
         "focus.set" => "change the focus".into(),
+        "pointer.set" => match (n("line"), n("from"), n("to")) {
+            (Some(l), _, _) => format!("point at L{l}"),
+            (None, Some(a), Some(b)) => format!("point at L{a}-{b}"),
+            (None, Some(a), None) => format!("point at L{a}"),
+            _ => format!("point at «{}»", s("find")),
+        },
+        "pointer.clear" => "turn the pointer off".into(),
         "theme.set" => format!("theme {}", s("theme")),
         "follow.set" => "toggle follow mode".into(),
         other => other.to_string(),

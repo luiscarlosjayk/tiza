@@ -684,6 +684,7 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
         width,
         step,
         focus: None,
+        pointer: None,
         line_numbers: doc.numbers,
         tab_width: 4,
         typing: false,

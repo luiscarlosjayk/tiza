@@ -183,6 +183,8 @@ pub fn api_schema() -> ApiSchema {
                 "step.next" | "step.prev" => (schema::<NoParams>(), step_result()),
                 "step.goto" => (schema::<StepGotoParams>(), step_result()),
                 "focus.set" => (schema::<FocusParams>(), serde_json::json!({"type": "object", "properties": {"focus": {}, "revision": {"type": "integer"}}})),
+                "pointer.set" => (schema::<crate::protocol::PointerParams>(), schema::<crate::protocol::PointerReply>()),
+                "pointer.clear" => (schema::<NoParams>(), schema::<crate::protocol::PointerReply>()),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
                 "render.text" => (schema::<RenderParams>(), text()),
                 "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),

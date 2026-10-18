@@ -67,6 +67,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 width: opts.width,
                 step,
                 focus: None,
+                pointer: None,
                 line_numbers: opts.line_numbers,
                 tab_width: 4,
                 typing,

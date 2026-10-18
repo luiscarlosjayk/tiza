@@ -1423,6 +1423,44 @@ pub fn line_origin(doc: &Document, key: &ViewKey, step: u32, line: u32) -> LineO
     }
 }
 
+/// Where `line` of the code shown at step `from` is at step `to` (t-030:
+/// the live pointer stays on its line across `n`/`p`): carried forward
+/// through every patch of the shown view between the two steps, or back
+/// through them in reverse. `None` when a patch removed the line, when the
+/// two steps show different files, or when the moves do not apply. The
+/// same line without moves. Only line maps are read: no text, masked or
+/// not, reaches the caller.
+pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> {
+    if doc.moves.is_empty() || from == to {
+        return Some(line);
+    }
+    let (lo, hi) = (from.min(to), from.max(to));
+    let low = project(doc, &doc.moves, lo, false).ok()?;
+    let high = project(doc, &doc.moves, hi, false).ok()?;
+    if low.shown.file != high.shown.file {
+        return None;
+    }
+    let key = &high.shown.file;
+    let maps: Vec<&LineMap> = high
+        .patches
+        .iter()
+        .filter(|p| &p.file == key && p.at_step > lo && p.at_step <= hi)
+        .map(|p| &p.map)
+        .collect();
+    let mut cur = line;
+    if to > from {
+        for m in maps {
+            cur = m.get(cur)?;
+        }
+    } else {
+        for m in maps.iter().rev() {
+            let old = m.map.iter().position(|n| *n == Some(cur))?;
+            cur = m.first_line + old as u32;
+        }
+    }
+    Some(cur)
+}
+
 /// The code of view `key` right after the move at `index` (unmasked), and
 /// its first line: what a redact pinned to that move is written on.
 pub fn code_after_move(doc: &Document, index: usize) -> Option<(ViewKey, Vec<String>, u32)> {

@@ -24,6 +24,43 @@
         "type": "object"
       },
       "result": {
+        "$defs": {
+          "PointerAt": {
+            "description": "Where the live pointer is (t-030).",
+            "properties": {
+              "by": {
+                "$ref": "#/$defs/PointerBy",
+                "description": "Who put it there last: the presenter (`f`, then the cursor or the\nselection moves it) or an agent (`pointer.set`)."
+              },
+              "line": {
+                "description": "First pointed line.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "to": {
+                "description": "Last pointed line (`line` itself for a single line).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "line",
+              "to",
+              "by"
+            ],
+            "type": "object"
+          },
+          "PointerBy": {
+            "description": "Who moved the live pointer last (t-030).",
+            "enum": [
+              "presenter",
+              "agent"
+            ],
+            "type": "string"
+          }
+        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Response of `status`.",
         "properties": {
@@ -113,6 +150,18 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PointerAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The live pointer (t-030): the lines the presenter (`f`) or an agent\n(`pointer.set`) is pointing at on the screen right now, or `null`.\nNever saved nor exported. Always present."
           },
           "protocol": {
             "format": "uint32",
@@ -5801,6 +5850,189 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      }
+    },
+    {
+      "description": "Points at a line on the live screen (t-030): `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
+      "method": "pointer.set",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "description": "Parameters of `pointer.set` (t-030): `{line}`, `{line, find}`,\n`{find}` (the text must appear once in the shown code) or\n`{from, to}`.",
+        "properties": {
+          "find": {
+            "description": "Text that names the line: on `line` when given, else it must appear\nexactly once in the code shown (searched on the masked code: a\nredacted secret is never found).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "from": {
+            "description": "First line of a range (with `to`).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "The line to point at.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "to": {
+            "description": "Last line of a range (defaults to `from`).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "PointerParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "PointerAt": {
+            "description": "Where the live pointer is (t-030).",
+            "properties": {
+              "by": {
+                "$ref": "#/$defs/PointerBy",
+                "description": "Who put it there last: the presenter (`f`, then the cursor or the\nselection moves it) or an agent (`pointer.set`)."
+              },
+              "line": {
+                "description": "First pointed line.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "to": {
+                "description": "Last pointed line (`line` itself for a single line).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "line",
+              "to",
+              "by"
+            ],
+            "type": "object"
+          },
+          "PointerBy": {
+            "description": "Who moved the live pointer last (t-030).",
+            "enum": [
+              "presenter",
+              "agent"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `pointer.set` and `pointer.clear` (t-030).",
+        "properties": {
+          "pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PointerAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the pointer is now; `null` after `pointer.clear`."
+          },
+          "shown": {
+            "description": "`false` while the presenter has the command line open: the pointer\nshows when it closes.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shown"
+        ],
+        "title": "PointerReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Turns the live pointer off (the presenter's `f` too)",
+      "method": "pointer.clear",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `code.get` (none).",
+        "title": "NoParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "PointerAt": {
+            "description": "Where the live pointer is (t-030).",
+            "properties": {
+              "by": {
+                "$ref": "#/$defs/PointerBy",
+                "description": "Who put it there last: the presenter (`f`, then the cursor or the\nselection moves it) or an agent (`pointer.set`)."
+              },
+              "line": {
+                "description": "First pointed line.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "to": {
+                "description": "Last pointed line (`line` itself for a single line).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "line",
+              "to",
+              "by"
+            ],
+            "type": "object"
+          },
+          "PointerBy": {
+            "description": "Who moved the live pointer last (t-030).",
+            "enum": [
+              "presenter",
+              "agent"
+            ],
+            "type": "string"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `pointer.set` and `pointer.clear` (t-030).",
+        "properties": {
+          "pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/PointerAt"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Where the pointer is now; `null` after `pointer.clear`."
+          },
+          "shown": {
+            "description": "`false` while the presenter has the command line open: the pointer\nshows when it closes.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "shown"
+        ],
+        "title": "PointerReply",
         "type": "object"
       }
     },
