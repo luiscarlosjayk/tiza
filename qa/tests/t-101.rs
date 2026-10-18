@@ -1006,3 +1006,40 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
         assert!(v.get("narrower").is_none(), "{w}: {v}");
     }
 }
+
+/// Second rework (QA 2 on d2057db): the cleanup removed `step-1.png`,
+/// `step-3.png` and `step-0001.png` of the user's next to a 7-step take.
+/// Tiza pads every number to the width of the last step, never fewer than
+/// two digits, so only names with this run's width are its own.
+#[test]
+fn rework6_all_steps_leaves_step_files_tiza_never_writes_at_this_width() {
+    let dir = scratch("t101-user-steps");
+    let out = dir.join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    let user = ["step-1.png", "step-3.png", "step-0001.png", "step-009.png"];
+    for f in user.iter().chain(&["step-08.png"]) {
+        std::fs::write(out.join(f), "mine").unwrap();
+    }
+    let file = example("ownership.rs.tiza");
+    let r = tiza(&[
+        "render",
+        file.to_str().unwrap(),
+        "--all-steps",
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    let err = String::from_utf8_lossy(&r.stderr);
+    assert!(r.status.success(), "{err}");
+    // Only the earlier run's own leftover goes, and it is the only one named.
+    assert!(
+        err.contains("removed 1 file from an earlier run: step-08.png"),
+        "{err}"
+    );
+    for f in user {
+        assert!(out.join(f).exists(), "{f} was removed: {err}");
+        assert_eq!(std::fs::read(out.join(f)).unwrap(), b"mine", "{f}");
+        assert!(!err.contains(f), "{f} is named: {err}");
+    }
+    assert!(!out.join("step-08.png").exists());
+    assert!(!err.contains("another run"), "{err}");
+}

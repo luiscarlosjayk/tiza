@@ -916,7 +916,7 @@ fn render_all_steps(
     let names: Vec<String> = (first..=last)
         .map(|step| format!("step-{step:0digits$}.{ext}"))
         .collect();
-    let stale = stale_step_files(dir, &names);
+    let stale = stale_step_files(dir, &names, digits);
     let mut size = String::new();
     for (step, canvas) in canvases.iter().enumerate().skip(first as usize) {
         let bytes: Vec<u8> = match format {
@@ -992,8 +992,11 @@ fn files_word(n: usize) -> String {
 }
 
 /// The `step-NN.<ext>` files in `dir` (any of the still formats) that a
-/// run writing `names` does not write, sorted.
-fn stale_step_files(dir: &std::path::Path, names: &[String]) -> Vec<String> {
+/// run writing `names` does not write, sorted. Only numbers with this
+/// run's width (`digits`, never fewer than 2) count: a `step-1.png` or a
+/// `step-0001.png` next to a 7-step take is not a name this run's scheme
+/// produces, so it is the user's (or of another take) and stays out.
+fn stale_step_files(dir: &std::path::Path, names: &[String], digits: usize) -> Vec<String> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Vec::new();
     };
@@ -1008,7 +1011,7 @@ fn stale_step_files(dir: &std::path::Path, names: &[String]) -> Vec<String> {
             let Some((num, ext)) = rest.split_once('.') else {
                 return false;
             };
-            !num.is_empty()
+            num.len() == digits
                 && num.bytes().all(|b| b.is_ascii_digit())
                 && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
                 && !names.contains(f)
