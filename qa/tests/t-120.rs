@@ -66,7 +66,33 @@ fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
     let delays: Vec<u16> = g.frames.iter().map(|f| f.4).collect();
     assert_eq!(delays, vec![200, 200, 200, 200, 200, 200, 200, 400]);
     assert!(g.looping);
+    // Scale 2 by default (t-121 AC0, Luis's decision on the t-120 review):
+    // the 100-column example is ~2048 px wide and still well under 1 MB
+    // (~400 kB); `--scale 1` gives exactly half the pixels per side.
     assert!(bytes.len() < 1_000_000, "{} bytes", bytes.len());
+    assert!(g.width >= 2000, "scale 2 by default: {} px wide", g.width);
+    let one = dir.join("own-1x.gif");
+    tiza_ok(&[
+        "render",
+        ex.to_str().unwrap(),
+        "--out",
+        one.to_str().unwrap(),
+        "--scale",
+        "1",
+    ]);
+    let g1 = decode(&std::fs::read(&one).unwrap());
+    assert_eq!(
+        (
+            g1.width.abs_diff(g.width / 2) <= 1,
+            g1.height.abs_diff(g.height / 2) <= 1
+        ),
+        (true, true),
+        "--scale 1 {}×{} vs default {}×{}",
+        g1.width,
+        g1.height,
+        g.width,
+        g.height
+    );
     // The first frame is whole; later ones are sub-rectangles inside it.
     assert_eq!(g.frames[0], (0, 0, g.width, g.height, 200));
     assert!(
@@ -289,6 +315,8 @@ fn ac5_the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
     let g = decode(&std::fs::read(&path).unwrap());
     assert_eq!(g.frames.len(), 7);
     assert_eq!(g.frames[0].4, 100);
+    // Same default scale (2) as the CLI at the same width.
+    assert_eq!(g.width, decode(&std::fs::read(&out).unwrap()).width);
     // In the TUI, `:export x.gif` points at the shell command.
     live.command(&format!("export {}", dir.join("tui.gif").display()));
     let (m, is_err) = live.message().unwrap();

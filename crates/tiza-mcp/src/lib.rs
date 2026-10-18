@@ -351,7 +351,7 @@ pub struct ExportParams {
     pub width: Option<usize>,
     #[schemars(description = "dark or light; defaults to the document's theme")]
     pub theme: Option<String>,
-    #[schemars(description = "PNG device scale (default 2; 1 for a GIF)")]
+    #[schemars(description = "PNG/GIF device scale (default 2)")]
     pub scale: Option<f32>,
     #[schemars(
         description = "GIF: seconds each step stays on screen (default 2; the last one twice as long)"
@@ -1168,9 +1168,7 @@ impl TizaServer {
         };
         let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
         let is_gif = format == "gif";
-        let scale =
-            tiza_core::layout::check_scale(p.scale.unwrap_or(if is_gif { 1.0 } else { 2.0 }))
-                .map_err(bad)?;
+        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
         let font_size =
             tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
         let svg_opts = tiza_export::SvgOptions {

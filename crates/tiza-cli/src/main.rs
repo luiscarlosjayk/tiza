@@ -201,7 +201,7 @@ enum Cmd {
         /// SVG/PNG: corner radius of the background in px (0 = square)
         #[arg(long, default_value_t = 12.0)]
         radius: f32,
-        /// PNG/GIF/MP4: device scale (default 2 for PNG, 1 for GIF and video)
+        /// PNG/GIF/MP4: device scale (default 2 for PNG and GIF, 1 for MP4/WebM)
         #[arg(long)]
         scale: Option<f32>,
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
@@ -413,7 +413,10 @@ fn real_main() -> anyhow::Result<()> {
                 None => doc.margin.map(usize::from),
             };
             let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
-            let scale = scale.unwrap_or(if animated { 1.0 } else { 2.0 });
+            // Scale 2 for stills and the GIF (t-121: long italic notes are soft
+            // at 1); video stays at 1, the player scales it.
+            let video = matches!(format, Format::Mp4 | Format::Webm);
+            let scale = scale.unwrap_or(if video { 1.0 } else { 2.0 });
             if matches!(format, Format::Png | Format::Svg) || animated {
                 tiza_core::layout::check_font_size(font_size)
                     .map_err(|e| anyhow::anyhow!("{e}"))?;

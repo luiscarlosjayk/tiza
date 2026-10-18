@@ -221,7 +221,9 @@ def main():
             ("render_png_step7", [binary, *step7, out("png")]),
             ("render_txt_rust_2000_lines", [binary, "render", big_rs, "--width", "100", "--out", out("txt")]),
             ("render_txt_typescript_3000_lines", [binary, "render", big_ts, "--width", "100", "--out", out("txt")]),
-            ("render_gif_example", [binary, "render", EXAMPLE, "--width", "100", "--out", out("gif")]),
+            # `--scale 1`: the baselines were measured before the GIF default
+            # became 2 (t-121); scale 2 rasterises 4× the pixels.
+            ("render_gif_example", [binary, "render", EXAMPLE, "--width", "100", "--scale", "1", "--out", out("gif")]),
         ]
         for name, argv in scenarios:
             if not wants(name):

@@ -1,5 +1,7 @@
 # ╭─ Tiza ─▶
 
+![Tiza: step-by-step code annotations for the terminal. Three real frames of the Rust ownership example, steps 1, 4 and 7](docs/img/hero.png)
+
 **Draw on top of code in the terminal to explain it on video.**
 
 Tiza is a Rust TUI (ratatui) built for tutorials: you share your screen with your editor, send the code to Tiza in a terminal and draw on top of it (boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*, plus any style you define, emoji included) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
@@ -10,25 +12,30 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 > Status: **v0.0.1, first working demo**. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev) and [tuios](https://github.com/Gaurav-Gosain/tuios).
 
+<!-- readme-images:ownership-txt -->
 ```
- 1          fn main() {
- 2 ╭───────     let s = String::from("hello");
-   │                ◀───╯                                                      s is born
- 3 │            takes(s);                                                      ━▶ move: s moves into
- 4 │            // println!("{s}"); // error: value borrowed here after move   takes
- 5 │                                                                           ┆ s no longer owns
- 6 │            let t = String::from("world");                                   it: using it here
- 7 │   ╭───     let n = len(&t);                                                 does not compile
- 8 │   │        println!("{t} has {n} letters");                               ╌▶ borrow &: shared
- 9 │   │                                                                       borrow
-10 │   │        let mut u = String::from("hey");                               ┆ t is still valid
-   ⋮   ⋮
-   │ │ │ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-15 ╰─┼─┼─┼▶ fn takes(s: String) {                                            │ move
-16   │ │ │      println!("{s}");                                             │
-17   │ │ │  }                                                                │ ╳ drop: s dies here
-     │ │ ╰───────────────────────────────────────────────────────────────────╯
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it:
+  5 │                                                                             using it here does not
+  6 │            let t = String::from("world");                                   compile
+  7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
+  8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+  9 │ ╎
+ 10 │ ╎          let mut u = String::from("hey");
+ 11 │ ╎ ┏━━━     push(&mut u);                                                  ✎▶ &mut borrow
+ 12 │ ╎ ┃        println!("{u}");                                               ┆ u is now "hey!"
+ 13 │ ╎ ┃    }
+ 14 │ ╎ ┃
+    │ ╎ ┃ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─╎─┃─┼▶ fn takes(s: String) {                                            │ move
+ 16   ╎ ┃ │      println!("{s}");                                             │
+ 17   ╎ ┃ │  }                                                                │ ╳ drop: s dies here
+      ╎ ┃ ╰───────────────────────────────────────────────────────────────────╯
 ```
+<!-- /readme-images:ownership-txt -->
 
 ## Installation
 
@@ -135,7 +142,7 @@ tiza render demo.tiza --out demo.tape && vhs demo.tape   # VHS tape → demo.gif
 
 **Recording every step.** Four outputs turn the whole take into an animation, every one drawn from the same frames as the PNG export (one geometry for the take, masks on), so nothing slides between steps and nothing shows that the screen does not:
 
-- `--out demo.gif` — an animated GIF written by Tiza itself, nothing to install: one frame per step from 0 (`--skip-zero` starts at the first annotated step), `--interval` seconds each (2; the last one twice as long so a loop does not cut the end short), the typed frames of `code.patch` moves at their `speed_ms` (the format counts in 10 ms units and players treat anything under 20 ms as 100 ms, so faster typing is rounded up to 20 ms), looping forever (`--loop N` plays it N times), `--scale` 1 by default (2 for a 2× video frame), one palette per animation (the colours that cover most pixels — background, code, rails — kept exactly, the anti-aliasing blends reduced into the rest of the 256, no dithering so text stays crisp) and every frame after the first stored as the rectangle that changed: the seven-step `examples/ownership.rs.tiza` is ~170 kB at 100 columns. The summary line says frames, size, seconds per loop and colours.
+- `--out demo.gif` — an animated GIF written by Tiza itself, nothing to install: one frame per step from 0 (`--skip-zero` starts at the first annotated step), `--interval` seconds each (2; the last one twice as long so a loop does not cut the end short), the typed frames of `code.patch` moves at their `speed_ms` (the format counts in 10 ms units and players treat anything under 20 ms as 100 ms, so faster typing is rounded up to 20 ms), looping forever (`--loop N` plays it N times), `--scale` 2 by default as for a PNG (long italic notes are soft at 1; `--scale 1` halves each side and the file), one palette per animation (the colours that cover most pixels — background, code, rails — kept exactly, the anti-aliasing blends reduced into the rest of the 256, no dithering so text stays crisp) and every frame after the first stored as the rectangle that changed: the seven-step `examples/ownership.rs.tiza` is ~395 kB at 100 columns (2048×1650 px; ~170 kB with `--scale 1`). The summary line says frames, size, seconds per loop and colours.
 - `--out demo.mp4` (or `.webm`) — the same frames muxed by **`ffmpeg` from your PATH** (or `$TIZA_FFMPEG`): Tiza writes them to a temporary folder with their durations and runs a fixed command it prints first (30 fps, even dimensions, `yuv420p` H.264 for MP4, VP9 for WebM), then removes the folder. ffmpeg is never bundled, downloaded or vendored, not even behind a feature flag ([ADR 0009](docs/adr/0009-politica-de-red.md) spirit: the binary that shows your code stays what it is); without it the command exits with code 2, says how to install it (`brew install ffmpeg`, `apt install ffmpeg`…) and reminds you that `.gif` and `.cast` need nothing. No half-written file is ever left behind (temp + rename).
 - `--out demo.cast` — an [asciicast v3](https://docs.asciinema.org/manual/asciicast/v3/) of every step as text (tiny; play it with `asciinema play demo.cast`, embed it with the asciinema web player, or turn it into a GIF with [agg](https://github.com/asciinema/agg)).
 - `--out demo.tape` — a [VHS](https://github.com/charmbracelet/vhs) tape that runs the real TUI in presentation mode and presses `n` through the steps, for the VHS look (a terminal window with its chrome): `vhs demo.tape` needs `vhs`, `ttyd` and `ffmpeg` and produces `demo.gif`. The tape sizes the window for the TUI at the given width (12 px per column and two spare rows at `FontSize 18`, plus the padding), colours it with the document theme (`--theme light` for a light window), quotes every path and holds a typed step for the typing time plus half a second.
@@ -144,11 +151,11 @@ All four start at step 0 (code only) unless `--skip-zero`, honour `--interval`, 
 
 The text formats keep the box-drawing characters as they are on screen (`.txt`: plain, no trailing spaces or blank rows; `.md`: the same inside a ```` ```text ```` block with the document title above; `.ansi`: 24-bit colors with a reset per line, for `cat`, `less -R` or a terminal-recording tool). Inside the TUI, `:export shot.md` (or `.txt`, `.ansi`, `.svg`, `.png`, with `step=`, `width=`, `theme=`) writes the same next to the document.
 
-Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG, 2), `--no-embed-fonts` (small SVG that uses the viewer's fonts; by default the SVG embeds only the faces it draws — regular always, bold, italic and the symbols fallback when used), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL, the four faces complete) for everything, code and notes alike, and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. (`--brand-font`, which set notes in a brand serif, was removed after v0.0.1; it is still accepted for one prerelease and only prints a notice. The serif lives on as brand material in [`docs/brand/fonts/`](docs/brand/fonts/README.md).) Agents get the same through the `export_image` MCP tool (which also writes `.txt`, `.ansi` and `.md`).
+Options: `--width` (columns, default 100 or the live terminal's), `--font-size` (16 px), `--margin` (1.5 cells), `--radius` (12 px, `0` for square corners), `--scale` (PNG and GIF 2, MP4/WebM 1), `--no-embed-fonts` (small SVG that uses the viewer's fonts; by default the SVG embeds only the faces it draws — regular always, bold, italic and the symbols fallback when used), `--system-fonts` (PNG fallback for emoji/CJK). The fonts ship inside the binary — JetBrains Mono (OFL, the four faces complete) for everything, code and notes alike, and a symbols subset of DejaVu Sans Mono — so the output is identical on every machine. (`--brand-font`, which set notes in a brand serif, was removed after v0.0.1; it is still accepted for one prerelease and only prints a notice. The serif lives on as brand material in [`docs/brand/fonts/`](docs/brand/fonts/README.md).) Agents get the same through the `export_image` MCP tool (which also writes `.txt`, `.ansi` and `.md`).
 
-![ownership example, step 7](docs/img/ownership-step7.png)
+![ownership example, step 7: move, shared borrow, mutable borrow and drop, with a callout that sums up](docs/img/ownership-step7.png)
 
-The GIF at the top of this README is eight of these exports (`--all-steps` is t-101; today it is a loop over `--step`) stitched with Pillow — no screen recording involved.
+Every image in this README is made by Tiza itself, with no screen recording: `scripts/readme-images.sh` renders the GIF at the top (the native `.gif` export), this step-7 PNG, the text block under the GIF and the three real `--step` frames of the hero image (`docs/img/src/hero.html`, screenshotted by a headless Chrome or Chromium — a docs-only tool, skipped with a message when none is installed), all from `examples/ownership.rs.tiza` at `--width 108`. Running it twice gives the same bytes.
 
 ## For agents: MCP and local API
 
