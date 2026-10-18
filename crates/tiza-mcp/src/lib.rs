@@ -537,9 +537,9 @@ pub struct StepParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct GotoStepParams {
     #[schemars(
-        description = "The `id` of a named step (the document's `steps` list), or a step number as text (\"3\")."
+        description = "The `id` of a named step (the document's `steps` list), or a step number: `4` or `\"4\"` (a number always means a step number)."
     )]
-    pub id: String,
+    pub id: tiza_core::protocol::StepRef,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]

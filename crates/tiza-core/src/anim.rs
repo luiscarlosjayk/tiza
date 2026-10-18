@@ -201,6 +201,7 @@ mod tests {
             id: Some("b".into()),
             title: None,
             auto_advance_ms: Some(3000),
+            unknown: Default::default(),
         }];
         let f = frames(&d, &Theme::dark(), &AnimOptions::default());
         let delays: Vec<u64> = f.iter().map(|f| f.delay_ms).collect();

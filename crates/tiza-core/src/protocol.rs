@@ -668,18 +668,69 @@ pub struct StepGotoParams {
 }
 
 /// A step named by its id or by its number.
-#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+///
+/// Deserializing never fails on the value itself: anything that is neither
+/// a step number (`0..=u32::MAX`) nor a string lands in [`StepRef::Other`],
+/// so the instance can answer `` `id` must be a step id or a step number
+/// from 0 to N `` with the document's real N instead of serde's
+/// "did not match any variant" (t-099 rework). Its schema is inline and
+/// flat (`{"type": ["integer", "string"]}`), with no `$ref`/`anyOf`, so
+/// MCP clients that do not resolve references read it like any other field.
+#[derive(Debug, Clone, Serialize)]
 #[serde(untagged)]
 pub enum StepRef {
     Number(u32),
     Id(String),
+    /// A value that names no step (`-1`, `4.5`, `null`, an object…), kept
+    /// as sent so the error can quote it.
+    Other(serde_json::Value),
+}
+
+impl<'de> Deserialize<'de> for StepRef {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let v = serde_json::Value::deserialize(d)?;
+        Ok(match v {
+            serde_json::Value::String(s) => StepRef::Id(s),
+            serde_json::Value::Number(ref n) => {
+                match n.as_u64().and_then(|n| u32::try_from(n).ok()) {
+                    Some(n) => StepRef::Number(n),
+                    None => StepRef::Other(v),
+                }
+            }
+            other => StepRef::Other(other),
+        })
+    }
+}
+
+impl schemars::JsonSchema for StepRef {
+    fn schema_name() -> std::borrow::Cow<'static, str> {
+        "StepRef".into()
+    }
+
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn json_schema(_: &mut schemars::SchemaGenerator) -> schemars::Schema {
+        schemars::json_schema!({
+            "type": ["integer", "string"],
+            "minimum": 0,
+            "description": "A step id (`\"borrow\"`) or a step number (`3` or `\"3\"`)."
+        })
+    }
 }
 
 impl StepRef {
-    pub fn as_text(&self) -> String {
+    /// The step this names in `doc`: a number (or an all-digit string) is a
+    /// step number, any other string an `id` of `steps`.
+    pub fn resolve(&self, doc: &crate::model::Document) -> Result<u32, crate::Error> {
         match self {
-            StepRef::Number(n) => n.to_string(),
-            StepRef::Id(s) => s.clone(),
+            StepRef::Number(n) => doc.resolve_step(&n.to_string()),
+            StepRef::Id(s) => doc.resolve_step(s),
+            StepRef::Other(v) => Err(crate::Error::Invalid(format!(
+                "`id` must be a step id or a step number from 0 to {}, not {v}",
+                doc.max_step()
+            ))),
         }
     }
 }

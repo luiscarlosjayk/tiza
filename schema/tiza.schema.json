@@ -680,7 +680,7 @@
           ]
         },
         "id": {
-          "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+          "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, not all digits (a number means a step number) and\nnot starting with `-` (`tiza goto -1` would read it as an option).",
           "type": [
             "string",
             "null"

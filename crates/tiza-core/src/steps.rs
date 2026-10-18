@@ -9,6 +9,8 @@
 //! Automation only (decided 2026-10-17): no presenter notes, no timer, no
 //! clicker features.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::Error;
@@ -21,7 +23,8 @@ pub struct NamedStep {
     /// reordering the list or moving annotations never rebinds it.
     pub step: u32,
     /// What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.
-    /// Unique, no blanks, and not all digits (a number means a step number).
+    /// Unique, no blanks, not all digits (a number means a step number) and
+    /// not starting with `-` (`tiza goto -1` would read it as an option).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// Shown on the status line (`step 3/7 · Shared borrow`) and in `status`.
@@ -33,6 +36,13 @@ pub struct NamedStep {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[schemars(range(min = 1))]
     pub auto_advance_ms: Option<u64>,
+    /// Keys this version does not know (the dropped `timer_min`, a typo,
+    /// a field from a newer Tiza): kept in the file as written, never used,
+    /// and said on load ([`Document::step_warnings`]) instead of ignored in
+    /// silence. Not part of the schema.
+    #[serde(flatten, default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(skip)]
+    pub unknown: BTreeMap<String, serde_json::Value>,
 }
 
 /// Saves the entries sorted by `step`, whatever order they are in memory.
@@ -43,8 +53,9 @@ pub fn serialize_sorted<S: Serializer>(steps: &[NamedStep], s: S) -> Result<S::O
 }
 
 /// Checks and tidies a `steps` list (load, `scene.put`, `scene.patch`):
-/// single-line titles, ids trimmed, unique, without blanks and not all
-/// digits, one entry per step, `auto_advance_ms >= 1`; sorted by `step`.
+/// single-line titles, ids trimmed, unique, without blanks, not all digits
+/// and not starting with `-`, one entry per step, `auto_advance_ms >= 1`;
+/// sorted by `step`.
 pub fn normalize(steps: &mut [NamedStep]) -> Result<(), Error> {
     let mut ids = std::collections::BTreeSet::new();
     let mut numbers = std::collections::BTreeSet::new();
@@ -60,6 +71,12 @@ pub fn normalize(steps: &mut [NamedStep]) -> Result<(), Error> {
             if id.is_empty() {
                 return Err(Error::Invalid(format!(
                     "steps: the entry of step {} has an empty `id` (leave it out instead)",
+                    n.step
+                )));
+            }
+            if id.starts_with('-') {
+                return Err(Error::Invalid(format!(
+                    "steps: id {id:?} (step {}) starts with `-`, which `tiza goto` would read as an option; start it with a letter or a digit",
                     n.step
                 )));
             }
@@ -175,28 +192,43 @@ impl Document {
         Ok(n.step)
     }
 
-    /// Entries of `steps` that name a step past the last one: kept in the
-    /// file (deleting the last step's annotations must not lose them, nor
-    /// make the file fail to load), never shown, and said here so the
-    /// author sees them (`status.warnings`, the TUI on open, `render`).
+    /// What the author should know about `steps` (`status.warnings`, the
+    /// TUI on open, `render` and `tiza check`): entries that name a step
+    /// past the last one — kept in the file (deleting the last step's
+    /// annotations must not lose them, nor make the file fail to load),
+    /// never shown — and keys an entry has that this version does not know
+    /// (kept as written, never used).
     pub fn step_warnings(&self) -> Vec<String> {
         let max = self.max_step();
-        self.steps
+        let name = |n: &NamedStep| {
+            n.id.as_deref()
+                .or(n.title.as_deref())
+                .map(|t| format!(" «{t}»"))
+                .unwrap_or_default()
+        };
+        let mut out: Vec<String> = self
+            .steps
             .iter()
             .filter(|n| n.step > max)
             .map(|n| {
-                let name = n
-                    .id
-                    .as_deref()
-                    .or(n.title.as_deref())
-                    .map(|t| format!(" «{t}»"))
-                    .unwrap_or_default();
                 format!(
-                    "steps: entry{name} names step {}, beyond the last step ({max}); kept, not used",
+                    "steps: entry{} names step {}, beyond the last step ({max}); kept, not used",
+                    name(n),
                     n.step
                 )
             })
-            .collect()
+            .collect();
+        for n in self.steps.iter().filter(|n| !n.unknown.is_empty()) {
+            let keys: Vec<String> = n.unknown.keys().map(|k| format!("`{k}`")).collect();
+            out.push(format!(
+                "steps: entry{} (step {}) has unknown {} {}; kept in the file, not used (known: step, id, title, auto_advance_ms)",
+                name(n),
+                n.step,
+                if keys.len() == 1 { "key" } else { "keys" },
+                keys.join(", ")
+            ));
+        }
+        out
     }
 }
 
@@ -245,6 +277,8 @@ mod tests {
             json!([{"step": 1, "id": "two words"}]),
             json!([{"step": 1}, {"step": 1, "id": "b"}]),
             json!([{"step": 1, "auto_advance_ms": 0}]),
+            json!([{"step": 1, "id": "-1"}]),
+            json!([{"step": 1, "id": " -x"}]),
         ] {
             assert!(doc(bad.clone()).is_err(), "{bad}");
         }
@@ -257,6 +291,25 @@ mod tests {
         assert_eq!(d.step_warnings().len(), 1);
         assert!(d.step_warnings()[0].contains("step 9"));
         assert!(d.resolve_step("later").is_err());
+    }
+
+    #[test]
+    fn an_unknown_key_is_kept_and_warned() {
+        let d = doc(json!([
+            {"step": 1, "id": "one", "timer_min": 5},
+            {"step": 2, "title": "Two", "auto_advance_ms": 10}
+        ]))
+        .unwrap();
+        let w = d.step_warnings();
+        assert_eq!(w.len(), 1, "{w:?}");
+        assert!(
+            w[0].contains("«one» (step 1) has unknown key `timer_min`"),
+            "{w:?}"
+        );
+        let v = serde_json::to_value(&d).unwrap();
+        assert_eq!(v["steps"][0]["timer_min"], 5);
+        assert!(v["steps"][1].get("unknown").is_none());
+        assert_eq!(d.auto_advance_ms(2), Some(10));
     }
 
     #[test]

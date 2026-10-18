@@ -32,6 +32,13 @@
 //! auto-advance waits while the command line is open; `goto` to a typed step
 //! lands with the text complete; a number means a step number; a redact
 //! notice once per loop pass; an entry past the last step is kept and warned.
+//!
+//! Rework (2026-10-18, after QA 2): MCP `goto_step` takes a step number too
+//! (`{"id": 4}`); ids starting with `-` are rejected on load and by
+//! `scene.patch` (`tiza goto -1` would be read as an option); an unknown key
+//! in a `steps` entry (the dropped `timer_min`) is kept and warned
+//! (`status.warnings`, `render` stderr, `tiza check`); an open `v` selection
+//! defers the auto-advance like the `:` line.
 
 use std::time::{Duration, Instant};
 
@@ -436,6 +443,223 @@ fn corner_bad_ids_are_rejected_on_load_and_a_step_past_the_end_is_kept_and_warne
     let out = tiza(&["render", dir.join("d.tiza").to_str().unwrap(), "--out", "-"]);
     assert!(out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("names step 9"));
+}
+
+// ---- Rework of 2026-10-18 (QA 2's minor findings) ----
+
+#[test]
+fn rework1_mcp_goto_step_takes_a_step_number_too() {
+    let (live, _) = opened("t099-rw1");
+    let mut mcp = McpClient::start(&live.socket);
+    let (err, text, _) = mcp.call("goto_step", json!({"id": 4}));
+    assert!(
+        !err && text.contains("\"label\": \"step 4/5 · method\""),
+        "{text}"
+    );
+    assert_eq!(step(&live), 4);
+    let (err, text, _) = mcp.call("goto_step", json!({"id": "2"}));
+    assert!(!err && text.contains("\"step\": 2"), "{text}");
+    assert_eq!(step(&live), 2);
+    let (err, text, _) = mcp.call("goto_step", json!({"id": 9}));
+    assert!(err && text.contains("beyond the last step"), "{text}");
+    assert_eq!(step(&live), 2, "a bad number moves nothing");
+    // The tool's input schema says it takes a number.
+    let tools = mcp.tools();
+    let goto = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == "goto_step")
+        .expect("goto_step listed");
+    // Flat, like every other tool: no `$ref`/`$defs`/`anyOf` for clients
+    // that do not resolve references.
+    let id = &goto["inputSchema"]["properties"]["id"];
+    assert_eq!(id["type"], json!(["integer", "string"]), "{id}");
+    let schema = goto["inputSchema"].to_string();
+    for k in ["$ref", "$defs", "anyOf"] {
+        assert!(!schema.contains(k), "{k} in {schema}");
+    }
+}
+
+#[test]
+fn rework1_a_value_that_names_no_step_gets_a_plain_error_on_the_socket_and_mcp() {
+    let (live, _) = opened("t099-rw1-bad");
+    live.api_ok("step.set", json!({"step": 2}));
+    let mut mcp = McpClient::start(&live.socket);
+    for bad in [json!(-1), json!(4.5), json!(null)] {
+        let r = live.api("step.goto", json!({"id": bad}));
+        let e = r.error.unwrap_or_else(|| panic!("{bad} accepted"));
+        assert_eq!(e.code, "invalid_argument", "{bad}");
+        assert!(
+            e.message
+                .contains("`id` must be a step id or a step number from 0 to 5"),
+            "{bad}: {}",
+            e.message
+        );
+        assert!(!e.message.contains("untagged"), "{}", e.message);
+        let (err, text, _) = mcp.call("goto_step", json!({"id": bad}));
+        assert!(err, "{bad}: {text}");
+        assert!(
+            text.contains("`id` must be a step id or a step number from 0 to 5"),
+            "{bad}: {text}"
+        );
+        assert!(
+            !text.contains("untagged") && !text.contains("deserialize"),
+            "{text}"
+        );
+        assert_eq!(step(&live), 2, "{bad} moved nothing");
+    }
+}
+
+#[test]
+fn rework2_ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
+    for id in ["-1", "-x", "--socket"] {
+        let e = load(json!([{"step": 1, "id": id}])).unwrap_err();
+        assert!(e.contains("starts with `-`"), "{id}: {e}");
+        assert!(e.contains("as an option"), "{id}: {e}");
+    }
+    // A dash inside an id is fine.
+    let d = load(json!([{"step": 1, "id": "shared-borrow"}])).unwrap();
+    assert_eq!(d.resolve_step("shared-borrow").unwrap(), 1);
+    let (live, _) = opened("t099-rw2");
+    let before = live.api_ok("scene.get", json!({}))["document"]["steps"].clone();
+    let r = live.api("scene.patch", json!({"steps": [{"step": 1, "id": "-1"}]}));
+    let e = r.error.expect("refused");
+    assert_eq!(e.code, "invalid_argument");
+    assert!(e.message.contains("starts with `-`"), "{}", e.message);
+    assert_eq!(
+        live.api_ok("scene.get", json!({}))["document"]["steps"],
+        before,
+        "nothing changed"
+    );
+    // `tiza check` reports it as an error.
+    let dir = scratch("t099-rw2-check");
+    let p = dir.join("d.tiza");
+    std::fs::write(
+        &p,
+        json!({"schema": 1, "source": {"language": "rs"}, "code": ["a", "b"],
+               "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "x"}],
+               "steps": [{"step": 1, "id": "-1"}]})
+        .to_string(),
+    )
+    .unwrap();
+    let out = tiza(&["check", p.to_str().unwrap()]);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!out.status.success(), "{all}");
+    assert!(all.contains("starts with `-`"), "{all}");
+}
+
+#[test]
+fn rework3_an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
+    let d = load(json!([
+        {"step": 1, "id": "one", "title": "One", "timer_min": 5},
+        {"step": 2, "id": "two", "auto_advance_ms": 1000, "notes": "x", "colour": "red"}
+    ]))
+    .unwrap();
+    // Everything known still works.
+    assert_eq!(d.step_label(1), "step 1/2 · One");
+    assert_eq!(d.auto_advance_ms(2), Some(1000));
+    assert_eq!(d.resolve_step("two").unwrap(), 2);
+    let w = d.step_warnings();
+    assert_eq!(w.len(), 2, "{w:?}");
+    assert!(
+        w[0].contains("«one» (step 1) has unknown key `timer_min`"),
+        "{w:?}"
+    );
+    assert!(w[1].contains("unknown keys `colour`, `notes`"), "{w:?}");
+    // status.warnings, and the keys are kept on save.
+    let dir = scratch("t099-rw3");
+    let live = Live::open(d, dir.join("d.tiza"), dir.join("live.sock"));
+    let st = live.api_ok("status", json!({}));
+    assert!(
+        st["warnings"]
+            .to_string()
+            .contains("unknown key `timer_min`"),
+        "{st}"
+    );
+    live.command("w");
+    let saved: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("d.tiza")).unwrap()).unwrap();
+    assert_eq!(saved["steps"][0]["timer_min"], 5, "kept: {saved}");
+    assert!(saved["steps"][0].get("unknown").is_none(), "{saved}");
+    // render says it on stderr, `tiza check` lists it as a warning.
+    let f = dir.join("d.tiza");
+    let out = tiza(&["render", f.to_str().unwrap(), "--out", "-"]);
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("unknown key `timer_min`"), "{err}");
+    let out = tiza(&["check", f.to_str().unwrap()]);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(
+        all.contains("warning: steps: entry «one» (step 1) has unknown key `timer_min`"),
+        "a warning, not an error: {all}"
+    );
+    assert!(all.contains("0 errors, 2 warnings"), "{all}");
+    assert_eq!(out.status.code(), Some(0), "warnings only: exit 0\n{all}");
+    let out = tiza(&["check", "--strict", f.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1), "--strict fails on warnings");
+    let out = tiza(&["check", "--json", f.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(0));
+    let report: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(report["errors"], 0, "{report}");
+    let finding = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|f| f["message"].as_str().unwrap().contains("`timer_min`"))
+        .unwrap_or_else(|| panic!("no timer_min finding: {report}"));
+    assert_eq!(finding["level"], "warning", "{finding}");
+    assert_eq!(finding["code"], "steps", "{finding}");
+    // A valid document has no such warning, and `null` known keys are fine.
+    let ok = load(json!([{"step": 1, "id": "a", "title": null, "auto_advance_ms": null}])).unwrap();
+    assert!(ok.step_warnings().is_empty(), "{:?}", ok.step_warnings());
+    let (live, _) = opened("t099-rw3-ok");
+    let st = live.api_ok("status", json!({}));
+    assert!(!st["warnings"].to_string().contains("steps:"), "{st}");
+    let out = tiza(&["check", fixture("t-099/steps.tiza").to_str().unwrap()]);
+    let all = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(!all.contains("steps:"), "{all}");
+    // scene.patch with an unknown key: accepted, warned.
+    live.api_ok(
+        "scene.patch",
+        json!({"steps": [{"step": 3, "id": "borrow", "timer_min": 2}]}),
+    );
+    let st = live.api_ok("status", json!({}));
+    assert!(
+        st["warnings"]
+            .to_string()
+            .contains("unknown key `timer_min`"),
+        "{st}"
+    );
+}
+
+#[test]
+fn rework_optional_a_v_selection_defers_the_auto_advance() {
+    let (live, _) = opened("t099-visual");
+    live.api_ok(
+        "scene.patch",
+        json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 100}]}),
+    );
+    live.api_ok("step.set", json!({"step": 3}));
+    live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
+    assert!(live.with(|a| a.selection().is_some()));
+    std::thread::sleep(Duration::from_millis(400));
+    assert_eq!(step(&live), 3, "deferred while the selection is open");
+    assert!(live.with(|a| a.selection().is_some()), "selection kept");
+    live.keys(&[KeyCode::Esc]);
+    wait_until("advance once the selection closes", || step(&live) == 4);
 }
 
 #[test]

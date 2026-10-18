@@ -1189,7 +1189,7 @@
                 ]
               },
               "id": {
-                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, not all digits (a number means a step number) and\nnot starting with `-` (`tiza goto -1` would read it as an option).",
                 "type": [
                   "string",
                   "null"
@@ -3970,7 +3970,7 @@
                 ]
               },
               "id": {
-                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, not all digits (a number means a step number) and\nnot starting with `-` (`tiza goto -1` would read it as an option).",
                 "type": [
                   "string",
                   "null"
@@ -4438,7 +4438,7 @@
                 ]
               },
               "id": {
-                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, not all digits (a number means a step number) and\nnot starting with `-` (`tiza goto -1` would read it as an option).",
                 "type": [
                   "string",
                   "null"
@@ -5739,27 +5739,16 @@
       "description": "Jumps to a named step by `id` (or a step number), recomputed from step 0 as if walked there, its typing complete; an unknown id is `not_found`",
       "method": "step.goto",
       "params": {
-        "$defs": {
-          "StepRef": {
-            "anyOf": [
-              {
-                "format": "uint32",
-                "minimum": 0,
-                "type": "integer"
-              },
-              {
-                "type": "string"
-              }
-            ],
-            "description": "A step named by its id or by its number."
-          }
-        },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Parameters of `step.goto` (t-099).",
         "properties": {
           "id": {
-            "$ref": "#/$defs/StepRef",
-            "description": "The `id` of a named step (`\"borrow\"`), or a step number (`3` or\n`\"3\"`: a number always means a step number)."
+            "description": "The `id` of a named step (`\"borrow\"`), or a step number (`3` or\n`\"3\"`: a number always means a step number).",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "string"
+            ]
           }
         },
         "required": [

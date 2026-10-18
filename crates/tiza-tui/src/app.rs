@@ -1256,12 +1256,13 @@ impl App {
 
     /// The `auto_advance_ms` countdown (t-099): when the current step has
     /// one and has been ready that long, go to the next step. Deferred while
-    /// the command line or an overlay is open (it fires once they close),
+    /// the command line, a `v`/`V` selection or an overlay is open (it fires
+    /// once they close, so a selection is never lost under the presenter),
     /// never while a typed move or a `wait` is still running. `true` when
     /// the screen changed.
     pub fn auto_advance_tick(&mut self, now: std::time::Instant) -> bool {
         if self.typing.is_some()
-            || matches!(self.mode, Mode::Command(_))
+            || matches!(self.mode, Mode::Command(_) | Mode::Select { .. })
             || self.overlay != Overlay::None
         {
             return false;
@@ -4737,7 +4738,8 @@ impl App {
             }
             "step.goto" => {
                 let p: StepGotoParams = parse(params)?;
-                self.goto_step(&p.id.as_text())?;
+                let to = p.id.resolve(&self.doc)?;
+                self.goto_step(&to.to_string())?;
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "check" => {
