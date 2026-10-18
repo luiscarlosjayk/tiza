@@ -1,0 +1,90 @@
+{
+  "warn_pct": 20,
+  "targets": {
+    "aarch64-apple-darwin": {
+      "target": "aarch64-apple-darwin",
+      "commit": "99fa2dd",
+      "date": "2026-10-18",
+      "machine": "Luis's Mac (macOS arm64)",
+      "binary_bytes": 12292992,
+      "scenarios": {
+        "version": {
+          "median_ms": 3.0
+        },
+        "render_txt_step7": {
+          "median_ms": 18.0
+        },
+        "render_png_step7": {
+          "median_ms": 56.0
+        },
+        "render_txt_rust_2000_lines": {
+          "median_ms": 78.0
+        },
+        "render_txt_typescript_3000_lines": {
+          "median_ms": 166.0
+        },
+        "t054_frame_median": {
+          "median_ms": 3.7
+        }
+      },
+      "note": "The card's numbers of 2026-10-18 (99fa2dd, thin LTO, measured by hand: the 2,000-line and TypeScript files were not the generated ones). Replace with the first scripts/bench.sh --update-baseline run on the Mac."
+    },
+    "x86_64-unknown-linux-gnu": {
+      "target": "x86_64-unknown-linux-gnu",
+      "commit": "5ab5bb1",
+      "date": "2026-10-18 03:49 UTC",
+      "machine": "Linux x86_64, 2 CPUs",
+      "binary_bytes": 13158152,
+      "scenarios": {
+        "version": {
+          "median_ms": 1.28,
+          "min_ms": 1.26,
+          "max_ms": 2.08,
+          "runs": 7
+        },
+        "render_txt_step7": {
+          "median_ms": 29.9,
+          "min_ms": 29.22,
+          "max_ms": 31.32,
+          "runs": 7
+        },
+        "render_png_step7": {
+          "median_ms": 102.66,
+          "min_ms": 99.94,
+          "max_ms": 123.85,
+          "runs": 7
+        },
+        "render_txt_rust_2000_lines": {
+          "median_ms": 229.92,
+          "min_ms": 187.17,
+          "max_ms": 243.08,
+          "runs": 7
+        },
+        "render_txt_typescript_3000_lines": {
+          "median_ms": 1648.27,
+          "min_ms": 1590.09,
+          "max_ms": 1775.44,
+          "runs": 7
+        },
+        "render_gif_example": {
+          "median_ms": 326.54,
+          "min_ms": 315.87,
+          "max_ms": 334.97,
+          "runs": 7
+        },
+        "tui_first_frame": {
+          "median_ms": 31.66,
+          "min_ms": 29.37,
+          "max_ms": 42.0,
+          "runs": 7
+        },
+        "t054_frame_median": {
+          "median_ms": 6.29,
+          "runs": 21
+        }
+      },
+      "cargo_install_cold_s": 187.6,
+      "note": "First baseline (t-133): after t-134 and lto = \"fat\", agent container (Linux x86_64, 2 CPUs); thin LTO on the same commit measured within noise (cold build 154 s thin vs 185 s fat)."
+    }
+  }
+}

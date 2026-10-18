@@ -1,0 +1,23 @@
+{
+  "limits": {
+    "binary_bytes": 16000000,
+    "archive_bytes": 8000000,
+    "growth_pct": 10
+  },
+  "targets": {
+    "aarch64-apple-darwin": {
+      "binary_bytes": 11374320,
+      "archive_bytes": 5820000,
+      "commit": "99fa2dd",
+      "measured": "2026-10-18",
+      "reason": "Luis's measurement on 99fa2dd with lto = \"fat\" alone (before t-134; the archive figure is gzip of the binary, 6.07 → 5.82 MB): replace with the first scripts/size-check.sh --update run on the Mac"
+    },
+    "x86_64-unknown-linux-gnu": {
+      "binary_bytes": 13158152,
+      "archive_bytes": 6321056,
+      "commit": "5ab5bb1",
+      "measured": "2026-10-18",
+      "reason": "First baseline (t-133): after t-134 and lto = \"fat\" (thin LTO on the same commit: 14,001,752 / 6,513,078)"
+    }
+  }
+}

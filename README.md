@@ -32,7 +32,7 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ## Installation
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, ~5.8 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
 
 ```sh
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza
@@ -227,6 +227,8 @@ Full-screen terminal or 50 % next to Zed, 18–22 px font, snippets of ≤ 60 co
 cargo test                                   # core, TUI (incl. socket), commands and the per-ticket QA tests (qa/)
 cargo clippy --all-targets -- -D warnings
 cargo run -- examples/ownership.rs
+scripts/size-check.sh                        # release binary < 16 MB, download < 8 MB, ≤ 10 % over qa/budgets.json
+scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
 ```
 
 Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `tiza-export` (SVG/PNG with [resvg](https://github.com/linebender/resvg) and embedded fonts), `tiza` (the binary, in `crates/tiza-cli`). Decisions in [docs/adr](docs/adr). Dependency policy (maintained crates only, `cargo-deny` in CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).

@@ -62,6 +62,10 @@ gif = { version = "0.14", default-features = false, features = ["std"] }
 
 
 [profile.release]
-lto = "thin"
+# Fat LTO (t-133): -0.9 MB on macOS arm64 at the same speed. Keep the default
+# panic = "unwind": a panic in a socket or MCP thread must fail that request
+# only, never close the presenter's TUI (panic = "abort" was discarded).
+# No opt-level = "s"/"z": measured 25 % to 2x slower.
+lto = "fat"
 codegen-units = 1
 strip = true
