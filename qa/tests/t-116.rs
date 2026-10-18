@@ -123,6 +123,7 @@ fn corner_two_arrows_into_one_line_follow_each_other() {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: tiza_core::model::Shape::Arrow {
                 from: tiza_core::model::Anchor {
                     line: *from,

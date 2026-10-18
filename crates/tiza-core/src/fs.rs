@@ -84,11 +84,18 @@ pub struct Opened {
 /// One line naming the annotations whose lines fall outside the code (they
 /// are kept in the file but cannot be drawn), or `None`.
 pub fn outside_notice(doc: &Document) -> Option<String> {
-    let bad: Vec<&str> = doc
+    let bad: Vec<String> = doc
         .annotations
         .iter()
-        .filter(|a| doc.validate_shape_at(&a.shape, a.step).is_err())
-        .map(|a| a.id.as_str())
+        .filter(|a| doc.validate_shape_in(&a.shape, &a.file, a.step).is_err())
+        .map(|a| match &a.file {
+            // An annotation of a linked file (t-105): say which file.
+            Some(f) => {
+                let n = doc.view_code.get(f).map_or(0, Vec::len);
+                format!("{} ({f}, lines 1-{n})", a.id)
+            }
+            None => a.id.clone(),
+        })
         .collect();
     if bad.is_empty() {
         return None;
@@ -97,8 +104,8 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
         "{} annotation{} outside the code (lines {}-{}) and not drawn: {}",
         bad.len(),
         if bad.len() == 1 { "" } else { "s" },
-        doc.source.first_line,
-        doc.last_line(),
+        doc.base_first(),
+        doc.base_first() + doc.base().len().saturating_sub(1) as u32,
         bad.join(", ")
     ))
 }
@@ -235,8 +242,90 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     let mut doc: Document = serde_json::from_value(raw)?;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
+    load_views(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
+}
+
+/// Absolute path of a file a `code.link` names, resolved like `code.file`:
+/// against `base_dir` (the document's directory) when relative.
+pub fn view_path(file: &str, base_dir: Option<&Path>) -> PathBuf {
+    let raw = Path::new(file);
+    let full = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        base_dir
+            .filter(|d| !d.as_os_str().is_empty())
+            .map(|d| d.join(raw))
+            .unwrap_or_else(|| raw.to_path_buf())
+    };
+    std::path::absolute(&full).unwrap_or(full)
+}
+
+/// Loads the code of every file the document's `code.link` moves name
+/// (t-105): from the embedded `views` when present, else from disk next to
+/// the document. A missing file is an error naming the move and the path.
+pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
+    let links: Vec<(usize, u32, String)> = doc
+        .moves
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| match &m.action {
+            crate::moves::MoveAction::CodeLink(l) => Some((i, m.at_step, l.file.clone())),
+            _ => None,
+        })
+        .collect();
+    for (i, at_step, file) in links {
+        let Some(key) = doc.view_key(&file) else {
+            continue; // the main file: always loaded
+        };
+        if doc.view_code.contains_key(&key) {
+            continue;
+        }
+        if let Some(code) = doc.views.get(&key).or_else(|| doc.views.get(&file)) {
+            let code = if code.is_empty() {
+                vec![String::new()]
+            } else {
+                code.clone()
+            };
+            doc.view_code.insert(key, code);
+            continue;
+        }
+        let code = load_view_file(&file, base_dir)
+            .map_err(|e| Error::Invalid(format!("move #{} (step {at_step}): {e}", i + 1)))?;
+        doc.view_code.insert(key, code);
+    }
+    Ok(())
+}
+
+/// Reads one linked file (whole) for `doc`, adding it to the loaded views.
+/// A no-op when the file is the main file or is already loaded.
+pub fn load_view(doc: &mut Document, file: &str, base_dir: Option<&Path>) -> Result<(), Error> {
+    let Some(key) = doc.view_key(file) else {
+        return Ok(());
+    };
+    if doc.view_code.contains_key(&key) {
+        return Ok(());
+    }
+    let code = load_view_file(file, base_dir)?;
+    doc.view_code.insert(key, code);
+    Ok(())
+}
+
+fn load_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>, Error> {
+    let full = view_path(file, base_dir);
+    let text = std::fs::read_to_string(&full).map_err(|e| {
+        Error::Invalid(format!(
+            "code.link «{file}»: could not read {} ({e})",
+            full.display()
+        ))
+    })?;
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+    if lines.is_empty() {
+        lines.push(String::new());
+    }
+    Ok(lines)
 }
 
 /// Migrations between schema versions: `(from, f)` turns a schema-`from`

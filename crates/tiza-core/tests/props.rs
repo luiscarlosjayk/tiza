@@ -112,6 +112,7 @@ fn doc_strategy() -> impl Strategy<Value = Document> {
                     step,
                     color: None,
                     markers: None,
+                    file: None,
                     shape,
                 });
             }

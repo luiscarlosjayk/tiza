@@ -488,7 +488,7 @@ impl App {
         color: Option<String>,
         shape: Shape,
     ) -> Result<String, Error> {
-        self.add_annotation_full(id, step, color, None, shape)
+        self.add_annotation_full(id, step, color, None, None, shape)
     }
 
     /// `add_annotation_colored` plus the range markers a box/callout/spotlight
@@ -499,6 +499,7 @@ impl App {
         step: Option<u32>,
         color: Option<String>,
         markers: Option<tiza_core::model::RangeMarkers>,
+        file: Option<String>,
         shape: Shape,
     ) -> Result<String, Error> {
         if let Some(c) = &color
@@ -517,6 +518,7 @@ impl App {
             step,
             color,
             markers,
+            file,
             shape,
         });
         match res {
@@ -716,9 +718,13 @@ impl App {
                 }
             }
         }
+        // Linked files (t-105): embedded in `views`, else read next to the
+        // open document.
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        fs::load_views(&mut doc, base.as_deref())?;
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_shape_at(&a.shape, a.step)?;
+            doc.validate_shape_in(&a.shape, &a.file, a.step)?;
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -855,8 +861,21 @@ impl App {
             self.doc.step = s;
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
-            } else if forward_one {
-                self.start_typing();
+            } else {
+                // A `cursor` move left at this step moves the TUI cursor
+                // too; a `code.link` puts it on the first shown line (t-105).
+                if !self.doc.moves.is_empty() {
+                    let v = self.doc.view_at(s);
+                    if let Some(c) = v.cursor {
+                        self.cursor_line = c.line;
+                        self.cursor_col = c.col;
+                    } else if v.view.file.is_some() || v.view.window.is_some() {
+                        self.cursor_line = self.doc.source.first_line;
+                    }
+                }
+                if forward_one {
+                    self.start_typing();
+                }
             }
             self.clamp_cursor();
             self.revision += 1;
@@ -929,9 +948,14 @@ impl App {
         self.typing.is_some()
     }
 
-    /// Adds a move (validated against the code at its step). Undoable.
+    /// Adds a move (validated against the code at its step). Undoable. A
+    /// `code.link` reads its file next to the document first (t-105).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         self.finish_typing();
+        if let tiza_core::moves::MoveAction::CodeLink(l) = &m.action {
+            let base = self.save_path.parent().map(Path::to_path_buf);
+            fs::load_view(&mut self.doc, &l.file, base.as_deref())?;
+        }
         self.history.record(&self.doc, "move added");
         match self.doc.add_move(m) {
             Ok(i) => {
@@ -1011,7 +1035,15 @@ impl App {
             unanchored: self.doc.unanchored(),
             step: self.doc.step,
             max_step: self.doc.max_step(),
+            view: self.doc.shown_view_at(self.doc.step).label(),
         }
+    }
+
+    /// The file shown at the current step: the one a `code.link` left up
+    /// (as the move names it), else the source file.
+    pub fn shown_file(&self) -> Option<String> {
+        let v = self.doc.shown_view_at(self.doc.step);
+        v.file.or_else(|| self.doc.source.path.clone())
     }
 
     /// Why the code cannot be replaced right now (paste, follow): moves are
@@ -1133,6 +1165,7 @@ impl App {
             // Only reachable at step 0 (see `moves_block_reason`): the new
             // text is the step-0 code.
             d.base_code = code.clone();
+            d.base_first_line = first_line;
         }
         d.code = code;
         d.code_src = code_src;
@@ -1150,25 +1183,33 @@ impl App {
         let mut steps: Vec<u32> = old.annotations.iter().map(|a| a.step).collect();
         steps.sort_unstable();
         steps.dedup();
+        // Only the main file changed: its annotations are re-anchored on
+        // its own code at their step; those of a linked file (t-105) keep
+        // their coordinates.
         let at_step = |doc: &Document, step: u32| -> Document {
             let mut s = doc.clone();
             if !doc.moves.is_empty()
-                && let Ok(code) = doc.code_at(step)
+                && let Ok((code, first)) = doc.view_code_at(&None, step)
             {
                 s.code = code;
+                s.source.first_line = first;
             }
             s.moves.clear();
             s.base_code.clear();
             s.step = step;
             s
         };
-        let mut shapes: Vec<Option<Shape>> = vec![None; old.annotations.len()];
+        let mut shapes: Vec<Option<Shape>> = old
+            .annotations
+            .iter()
+            .map(|a| a.file.is_some().then(|| a.shape.clone()))
+            .collect();
         for step in steps {
             let old_s = at_step(&old, step);
             let new_s = at_step(&d, step);
             let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
             for (a, slot) in old.annotations.iter().zip(shapes.iter_mut()) {
-                if a.step == step {
+                if a.step == step && a.file.is_none() {
                     *slot = remap.shape(&a.shape);
                 }
             }
@@ -1796,6 +1837,7 @@ impl App {
         "callout",
         "clear",
         "redact",
+        "ref",
         "follow",
         "color",
         "del",
@@ -1995,7 +2037,13 @@ impl App {
                     self.touch();
                     Ok("code frozen inside the .tiza".into())
                 }
-                "link" => {
+                "link" if !rest.is_empty() && self.doc.step >= 1 => {
+                    // At a step: a `code.link` move that shows `path` (with
+                    // `A-B` as a window) from this step on (t-105). At step 0,
+                    // or as `:ref`, the one-shot form: reference the file.
+                    self.cmd_link_move(rest)
+                }
+                "link" | "ref" => {
                     let (file, range) = if rest.is_empty() {
                         let Some(f) = self.doc.source.path.clone() else {
                             return Err(Error::Invalid(
@@ -2003,8 +2051,13 @@ impl App {
                                     .into(),
                             ));
                         };
-                        let r = (self.doc.source.first_line > 1)
-                            .then(|| (self.doc.source.first_line, self.doc.last_line()));
+                        let r = (self.doc.base_first() > 1).then(|| {
+                            (
+                                self.doc.base_first(),
+                                self.doc.base_first()
+                                    + self.doc.base().len().saturating_sub(1) as u32,
+                            )
+                        });
                         (f, r)
                     } else {
                         let (p, r) = fs::parse_target(rest);
@@ -2540,6 +2593,36 @@ impl App {
         }
     }
 
+    /// `:link path[:A-B]` at step N ≥ 1: records `code.link {file, lines}`
+    /// at the current step. The file is read next to the document.
+    fn cmd_link_move(&mut self, rest: &str) -> Result<String, Error> {
+        let (p, r) = fs::parse_target_checked(rest.trim())?;
+        let file = p.to_string_lossy().into_owned();
+        let lines = r.map(|(a, b)| {
+            if a == b {
+                a.to_string()
+            } else {
+                format!("{a}-{b}")
+            }
+        });
+        let m = Move {
+            at_step: self.doc.step,
+            action: tiza_core::moves::MoveAction::CodeLink(tiza_core::moves::Link {
+                file: file.clone(),
+                lines: lines.clone(),
+            }),
+            rebind: Default::default(),
+        };
+        let i = self.add_move(m)?;
+        Ok(format!(
+            "move #{} added: step {} shows {}{} (:ref path to change the document's own file)",
+            i + 1,
+            self.doc.step,
+            file,
+            lines.map(|l| format!(":{l}")).unwrap_or_default()
+        ))
+    }
+
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, rest) = self.parse_range_arg(rest).map_err(|e| match e {
             Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
@@ -2557,6 +2640,7 @@ impl App {
             None,
             None,
             markers,
+            None,
             Shape::Box {
                 from_line: a,
                 to_line: b,
@@ -3386,6 +3470,7 @@ impl App {
             None,
             None,
             markers,
+            None,
             Shape::Spotlight {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
@@ -3446,6 +3531,7 @@ impl App {
             None,
             None,
             markers,
+            None,
             Shape::Callout {
                 from_line: a,
                 to_line: if b == a { None } else { Some(b) },
@@ -3680,22 +3766,21 @@ impl App {
             ),
             "code.get" => {
                 // What an agent reads is what the screen shows: masked (t-117).
-                let code = tiza_core::redact::masked_code(&self.doc, self.doc.step);
+                let view = self.doc.view_at(self.doc.step);
+                let code = tiza_core::redact::masked_code(&view.doc, self.doc.step);
                 let mut out = String::new();
                 for (i, text) in code.iter().enumerate() {
                     let line = self.doc.source.first_line + i as u32;
                     out.push_str(&format!("{line:>4}  {text}\n"));
                 }
-                json!({"language": self.doc.source.language, "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
+                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.doc.shown_view_at(self.doc.step).label(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
             }
             "scene.get" => {
                 // On the wire the code travels embedded: a client in another
                 // directory could not resolve a relative file reference.
-                let mut document = self.doc.clone();
-                // Masked (t-117): the embedded code an agent gets never holds a secret.
-                document.code_src = tiza_core::model::CodeSource::Embedded(
-                    tiza_core::redact::masked_base(&document),
-                );
+                // Masked (t-117): the embedded code an agent gets never holds
+                // a secret; linked files travel embedded too (t-105).
+                let document = self.doc.embedded_copy();
                 serde_json::to_value(Scene {
                     revision: self.revision,
                     step: self.doc.step,
@@ -3728,7 +3813,7 @@ impl App {
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
-                let id = self.add_annotation_full(p.id, p.step, p.color, markers, shape)?;
+                let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 serde_json::to_value(Mutated {
                     id,
                     revision: self.revision,
@@ -3892,8 +3977,11 @@ impl App {
             build: tiza_core::GIT_SHA.into(),
             protocol: tiza_core::protocol::PROTOCOL_VERSION,
             revision: self.revision,
-            file: self.doc.source.path.clone(),
+            file: self.shown_file(),
             lines: self.doc.code.len(),
+            first_line: self.doc.source.first_line,
+            last_line: self.doc.last_line(),
+            view: self.doc.shown_view_at(self.doc.step).label(),
             annotations: self.doc.annotations.len(),
             step: self.doc.step,
             max_step: self.doc.max_step(),

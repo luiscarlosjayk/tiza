@@ -325,6 +325,13 @@
             "null"
           ]
         },
+        "file": {
+          "description": "The file (view) the annotation belongs to, as a `code.link` names it\n(t-105). Absent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "id": {
           "description": "Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.",
           "type": "string"
@@ -383,6 +390,28 @@
       ],
       "description": "Where the code of a `.tiza` comes from."
     },
+    "CursorAt": {
+      "description": "`cursor`: a line (real file line number) and an optional grapheme column.",
+      "properties": {
+        "col": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "line": {
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "line"
+      ],
+      "type": "object"
+    },
     "Emphasis": {
       "description": "How a highlighted or marked span is drawn (t-096).",
       "oneOf": [
@@ -433,6 +462,24 @@
       },
       "type": "object"
     },
+    "Link": {
+      "description": "`code.link`: `file` is the path as `code.file` would name it (relative to\nthe `.tiza` directory); `lines` is only a window (`\"7-30\"` or `\"7\"`) that\ncrops what is shown — annotations keep real file line numbers and the\nsame file with another window is the same view.",
+      "properties": {
+        "file": {
+          "type": "string"
+        },
+        "lines": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "file"
+      ],
+      "type": "object"
+    },
     "MarkStyle": {
       "description": "Semantic marks for explaining Rust (each with a fixed color, glyph and legend).\nVisual style of a mark: a glyph, a short legend and a color name. Styles come\nfrom three places, in priority order: an inline `style` on the annotation, the\ndocument's reusable `styles` map, and the built-in kinds (see [`BUILTIN_KINDS`]).",
       "properties": {
@@ -465,10 +512,66 @@
       "oneOf": [
         {
           "$ref": "#/$defs/Patch",
-          "description": "Insert, replace or delete whole lines.",
+          "description": "Insert, replace or delete whole lines of the file shown at the step.",
           "properties": {
             "action": {
               "const": "code.patch",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/Link",
+          "description": "Show another file (or the main file again), optionally cropped to a\nwindow of lines. Each file is a view with its own annotations.",
+          "properties": {
+            "action": {
+              "const": "code.link",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CursorAt",
+          "description": "Put the cursor on a line (and column) of the shown file.",
+          "properties": {
+            "action": {
+              "const": "cursor",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/SelectSpec",
+          "description": "Select a span of the shown file, from one point to another.",
+          "properties": {
+            "action": {
+              "const": "select",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/Wait",
+          "description": "Pause for `ms` before the step's annotations appear (TUI and\nrecordings; a still render ignores it).",
+          "properties": {
+            "action": {
+              "const": "wait",
               "type": "string"
             }
           },
@@ -707,6 +810,22 @@
       ],
       "type": "string"
     },
+    "SelectSpec": {
+      "description": "`select`: two points of the shown file, each a `find` (exactly one match\nat that step, or with `occurrence`) or a `line`/`col`. With `find`, the\nselection starts at the start of `from`'s text and ends at the end of\n`to`'s text.",
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/Where"
+        },
+        "to": {
+          "$ref": "#/$defs/Where"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "type": "object"
+    },
     "Source": {
       "properties": {
         "first_line": {
@@ -798,6 +917,20 @@
         "char"
       ],
       "type": "string"
+    },
+    "Wait": {
+      "description": "`wait`: milliseconds.",
+      "properties": {
+        "ms": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "ms"
+      ],
+      "type": "object"
     },
     "Where": {
       "description": "Where to anchor something: explicit coordinates or a text search.\nAn agent rarely knows the exact column; `find` is more robust.",
@@ -956,6 +1089,16 @@
         "string",
         "null"
       ]
+    },
+    "views": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "Code of the files `code.link` moves name, frozen inside the document\nby `:embed` (one entry per file, keyed as the move names it; the\nwindow stays in the move). A file absent here is read from disk next\nto the `.tiza` when the document loads.",
+      "type": "object"
     }
   },
   "required": [

@@ -458,6 +458,13 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 .map(|f| f.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "(stdin)".into());
+    // While a `code.link` shows another file, name it (with its window).
+    let file = app
+        .doc
+        .shown_view_at(app.doc.step)
+        .label()
+        .map(|l| format!("↪ {l}"))
+        .unwrap_or(file);
     let mut left = vec![
         Span::styled(" ╭▶ ", accent),
         Span::styled(mode, accent),
@@ -755,7 +762,8 @@ fn help_lines() -> Vec<String> {
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
         "  :focus A-B | :focus     :theme dark|light     :lang rs | :lang auto     :title text",
         "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
-        "  :embed  freezes the code inside the .tiza   :link [path]  references a file",
+        "  :embed  freezes the code (and every linked file) inside the .tiza   :ref [path[:A-B]]  references a file (:link at step 0 does the same)",
+        "  :link path[:A-B]   at step N ≥ 1: from this step the demo shows that file (A-B only crops it); each file keeps its own annotations",
         "  :export [file.txt|.ansi|.md|.svg|.png] [step=N] [width=N] [theme=dark|light]   what this step shows, as a file (default <doc>-stepN.txt)",
         "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
         "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",

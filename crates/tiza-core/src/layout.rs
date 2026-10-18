@@ -338,10 +338,15 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.
     let projected;
+    let mut scripted_cursor = None;
+    let mut scripted_selection = None;
     let doc = if doc.moves.is_empty() {
         doc
     } else {
-        projected = doc.view_at(opts.step).doc;
+        let v = doc.view_at(opts.step);
+        scripted_cursor = v.cursor;
+        scripted_selection = v.selection;
+        projected = v.doc;
         &projected
     };
     // Redaction (t-117): the one place every rendered surface goes through.
@@ -1513,6 +1518,38 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
     }
 
+    // ---- scripted selection and cursor (t-105): what `select` and
+    // `cursor` moves left at this step, drawn like the TUI's own ----
+    if let Some((from, to)) = scripted_selection {
+        let sel = CellStyle::new().bg(theme.tint(theme.accent, 0.35));
+        for line in from.line..=to.line {
+            let (Some(&y), Some(text)) = (row_of_line.get(&line), doc.line_text(line)) else {
+                continue;
+            };
+            let start = if line == from.line { from.col } else { 0 };
+            let end = if line == to.line {
+                to.col
+            } else {
+                doc.line_len(line)
+            };
+            let x0 = code_x + col_to_x(text, start, opts.tab_width);
+            let x1 = code_x + col_to_x(text, end, opts.tab_width).max(x0 + 1);
+            let x1 = x1.min(code_x + code_w);
+            if x1 > x0 {
+                canvas.restyle(x0, y, x1 - x0, sel);
+            }
+        }
+    }
+    if let Some(c) = scripted_cursor
+        && let (Some(&y), Some(text)) = (row_of_line.get(&c.line), doc.line_text(c.line))
+    {
+        let col = c.col.min(doc.line_len(c.line).saturating_sub(1));
+        let x = code_x + col_to_x(text, col, opts.tab_width);
+        if x < code_x + code_w {
+            canvas.restyle(x, y, 1, CellStyle::new().fg(theme.bg).bg(theme.fg));
+        }
+    }
+
     Layout {
         canvas,
         rows,
@@ -1802,6 +1839,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Mark {
                 kind: "move".into(),
                 style: Default::default(),
@@ -1820,6 +1858,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Arrow {
                 from: Anchor {
                     line: s.line,
@@ -1836,6 +1875,7 @@ mod tests {
             step: 2,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Box {
                 from_line: 7,
                 to_line: 9,
@@ -1849,6 +1889,7 @@ mod tests {
             step: 2,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Note {
                 line: 4,
                 text: "error: s is no longer the owner".into(),
@@ -1898,6 +1939,7 @@ mod tests {
             step: 3,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Spotlight {
                 from_line: Some(7),
                 to_line: Some(9),
@@ -1965,6 +2007,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Note {
                 line: 2,
                 text: "s is born here with String::from and lives until it is moved".into(),
@@ -1976,6 +2019,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Note {
                 line: 2,
                 text: "second note".into(),
@@ -2090,6 +2134,7 @@ mod tests {
             step: 1,
             color: Some("cyan".into()),
             markers: None,
+            file: None,
             shape: Shape::Callout {
                 from_line: 2,
                 to_line: Some(3),
@@ -2106,6 +2151,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Note {
                 line: 4,
                 text: "does not compile".into(),
@@ -2117,6 +2163,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Box {
                 from_line: 2,
                 to_line: 3,
@@ -2222,6 +2269,7 @@ mod tests {
             step: 1,
             color: Some("cyan".into()),
             markers: None,
+            file: None,
             shape: Shape::Callout {
                 from_line: 1,
                 to_line: Some(3),

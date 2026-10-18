@@ -450,8 +450,36 @@ pub struct AddMoveParams {
         description = "Step at which the code changes (>= 1). Going back to an earlier step reverts it."
     )]
     pub at_step: u32,
-    #[schemars(description = "`insert`, `replace` or `delete` (whole lines)")]
-    pub op: String,
+    #[schemars(
+        description = "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select` or `wait`"
+    )]
+    pub action: Option<String>,
+    #[schemars(description = "code.patch: `insert`, `replace` or `delete` (whole lines)")]
+    pub op: Option<String>,
+    #[schemars(
+        description = "code.link: the file to show, relative to the .tiza directory (as `code.file` names it); naming the main file links back to it"
+    )]
+    pub file: Option<String>,
+    #[schemars(
+        description = "code.link: a window `A-B` (or `A`) of the file to show; only a crop, annotations keep real file line numbers and a note outside the window is kept but not drawn"
+    )]
+    pub lines: Option<String>,
+    #[schemars(description = "cursor: the line (real file line number) of the shown file")]
+    pub line: Option<u32>,
+    #[schemars(description = "cursor: grapheme column (default 0)")]
+    pub col: Option<u32>,
+    #[schemars(
+        description = "select: where the selection starts — `{find}` (exactly one match at that step, or with `occurrence`) or `{line, col}`"
+    )]
+    pub from: Option<Value>,
+    #[schemars(
+        description = "select: where it ends — `{find}` (the end of the found text) or `{line, col}`"
+    )]
+    pub to: Option<Value>,
+    #[schemars(
+        description = "wait: milliseconds to pause before the step's annotations appear (TUI, GIF and tape; a still render ignores it)"
+    )]
+    pub ms: Option<u64>,
     #[schemars(
         description = "insert: the line the content goes before (last+1 appends). replace/delete: a line or range `A-B`, as shown at that step"
     )]
@@ -654,22 +682,23 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Returns the code currently shown, with line numbers. Read it before annotating to pick exact lines and texts."
+        description = "Returns the code currently shown, with line numbers (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown."
     )]
     async fn get_code(
         &self,
         Parameters(_p): Parameters<Empty>,
     ) -> Result<CallToolResult, McpError> {
         let v = self.call("code.get", json!({})).await?;
-        Ok(text(
-            v.get("text")
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string(),
-        ))
+        let body = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        Ok(text(match v.get("view").and_then(|t| t.as_str()) {
+            Some(view) => format!("# {view}\n{body}"),
+            None => body.to_string(),
+        }))
     }
 
-    #[tool(description = "Lists the existing annotations (id, step, kind and where they are).")]
+    #[tool(
+        description = "Lists the existing annotations (id, step, kind and where they are). An annotation of a linked file ends with its file in parentheses; one hidden by a patch says (unanchored)."
+    )]
     async fn list_annotations(
         &self,
         Parameters(_p): Parameters<Empty>,
@@ -911,19 +940,28 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move (ADR 0007): a `code.patch` that inserts, replaces or deletes whole lines when the presenter reaches `at_step` (reverted when going back). Targets are matched on the code as shown at that step and must match exactly once. Annotations of earlier steps are shifted through the patch; those that lose every line are hidden as (unanchored) unless `rebind` names where they go. With `typing: line|char` the content is typed in place in the TUI."
+        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly."
     )]
     async fn add_move(
         &self,
         Parameters(p): Parameters<AddMoveParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut m = json!({"at_step": p.at_step, "action": "code.patch", "op": p.op});
+        let action = p.action.unwrap_or_else(|| "code.patch".into());
+        let mut m = json!({"at_step": p.at_step, "action": action});
         let o = m.as_object_mut().expect("object");
         let mut put = |k: &str, v: Option<Value>| {
             if let Some(v) = v {
                 o.insert(k.to_string(), v);
             }
         };
+        put("op", p.op.map(Value::from));
+        put("file", p.file.map(Value::from));
+        put("lines", p.lines.map(Value::from));
+        put("line", p.line.map(Value::from));
+        put("col", p.col.map(Value::from));
+        put("from", p.from);
+        put("to", p.to);
+        put("ms", p.ms.map(Value::from));
         put("position", p.position.map(Value::from));
         put("after", p.after.map(Value::from));
         put("before", p.before.map(Value::from));
@@ -950,7 +988,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the moves (index, step, summary) and the annotation ids unanchored at the current step."
+        description = "Lists the moves (index, step, summary), the annotation ids unanchored at the current step and the file/window a `code.link` shows (`view`)."
     )]
     async fn list_moves(
         &self,

@@ -450,6 +450,10 @@ pub struct AddParams {
     /// Palette name (orange, blue, green, purple, pink, cyan, yellow, red, gray) or `#rrggbb`.
     #[serde(default)]
     pub color: Option<String>,
+    /// The file (view) the annotation belongs to, as a `code.link` names
+    /// it (t-105). Default: the file shown at its step.
+    #[serde(default)]
+    pub file: Option<String>,
     #[serde(flatten)]
     pub shape: ShapeSpec,
 }
@@ -748,8 +752,20 @@ pub struct Status {
     pub build: String,
     pub protocol: u32,
     pub revision: u64,
+    /// The file shown: the source file, or the one a `code.link` move
+    /// left up at the current step (t-105).
     pub file: Option<String>,
     pub lines: usize,
+    /// First and last line of the shown code (the window of a `code.link`
+    /// with `lines`, the whole file otherwise).
+    #[serde(default = "one")]
+    pub first_line: u32,
+    #[serde(default)]
+    pub last_line: u32,
+    /// The `code.link` view shown, as `file` or `file:A-B`; absent on the
+    /// main file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
     pub annotations: usize,
     pub step: u32,
     pub max_step: u32,
@@ -781,6 +797,10 @@ fn yes() -> bool {
     true
 }
 
+fn one() -> u32 {
+    1
+}
+
 fn is_zero(n: &usize) -> bool {
     *n == 0
 }
@@ -804,12 +824,18 @@ pub const METHODS: &[(&str, &str)] = &[
         "api.schema",
         "JSON Schema of every method (params and result) and of the request/response lines",
     ),
-    ("code.get", "Code with line numbers (text)"),
+    (
+        "code.get",
+        "Code shown at the current step with line numbers (text), and the file/window it comes from",
+    ),
     (
         "scene.get",
         "Full document with annotations and current step (code embedded)",
     ),
-    ("scene.list", "One line per annotation, in document order"),
+    (
+        "scene.list",
+        "One line per annotation, in document order (an annotation of a linked file ends with its file in parentheses)",
+    ),
     (
         "annotation.add",
         "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
@@ -841,7 +867,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.add",
-        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`; validated against the code at that step",
+        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step",
     ),
     (
         "move.delete",
@@ -849,7 +875,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.list",
-        "One entry per move with its index, summary and fields; plus the ids unanchored at the current step",
+        "One entry per move with its index, summary and fields; plus the ids unanchored at the current step and the view shown (`file`, `first_line`, `last_line`)",
     ),
     ("step.set", "Sets the current presentation step"),
     ("step.next", "Advances one step"),
@@ -903,6 +929,10 @@ pub struct MoveList {
     pub unanchored: Vec<String>,
     pub step: u32,
     pub max_step: u32,
+    /// The `code.link` view shown at the current step (`file`, or
+    /// `file:A-B` with a window); absent on the main file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub view: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -916,7 +946,39 @@ pub struct MoveMutated {
 /// One line per move, in the `move.list` / `:moves` format.
 pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
     use crate::moves::{MoveAction, PatchOp, Typing};
-    let MoveAction::CodePatch(p) = &m.action;
+    let p = match &m.action {
+        MoveAction::CodePatch(p) => p,
+        MoveAction::CodeLink(l) => {
+            return format!("#{index} [step {}] code.link {}", m.at_step, l.label());
+        }
+        MoveAction::Cursor(c) => {
+            return format!(
+                "#{index} [step {}] cursor L{}{}",
+                m.at_step,
+                c.line,
+                c.col.map(|c| format!(":{c}")).unwrap_or_default()
+            );
+        }
+        MoveAction::Select(sel) => {
+            let point = |w: &Where| match (&w.find, w.line) {
+                (Some(t), _) => format!(
+                    "«{t}»{}",
+                    w.occurrence.map(|n| format!("#{n}")).unwrap_or_default()
+                ),
+                (None, Some(l)) => format!("L{l}:{}", w.col.unwrap_or(0)),
+                (None, None) => "?".into(),
+            };
+            return format!(
+                "#{index} [step {}] select {} → {}",
+                m.at_step,
+                point(&sel.from),
+                point(&sel.to)
+            );
+        }
+        MoveAction::Wait(w) => {
+            return format!("#{index} [step {}] wait {}ms", m.at_step, w.ms);
+        }
+    };
     let op = match p.op {
         PatchOp::Insert => "insert",
         PatchOp::Replace => "replace",
@@ -962,8 +1024,13 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
     let base = describe_shape(a);
-    match &a.markers {
+    let base = match &a.markers {
         Some(m) => format!("{base} @«{}»..@«{}»", m.start, m.end),
+        None => base,
+    };
+    // The file it belongs to, when it is not the main one (t-105).
+    match &a.file {
+        Some(f) => format!("{base} ({f})"),
         None => base,
     }
 }

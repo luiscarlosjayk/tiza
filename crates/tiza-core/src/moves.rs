@@ -1,9 +1,12 @@
-//! Moves (ADR 0007): the code changes between steps. A `code.patch` move is
-//! applied when the presenter reaches `at_step` and reverted when going back;
-//! the document is a pure function of the step, recomputed from the step-0
-//! code. Annotations are authored against the code at their own step and
-//! shifted through later patches by the patch's own line map — never by a
-//! text search (t-098).
+//! Moves (ADR 0007): the code changes between steps. A move is applied when
+//! the presenter reaches `at_step` and reverted when going back; the document
+//! is a pure function of the step, recomputed from the step-0 code.
+//! `code.patch` edits lines (t-098); `code.link` switches the shown file
+//! (a *view*, with an optional window of lines); `cursor`, `select` and
+//! `wait` set the cursor, a selection and a pause (t-105). Annotations are
+//! authored against the code at their own step, belong to the view shown at
+//! that step, and are shifted through that view's later patches by the
+//! patch's own line map — never by a text search.
 
 use std::collections::BTreeMap;
 
@@ -11,8 +14,8 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::Error;
-use crate::model::{Anchor, Annotation, Shape, TextSpan};
-use crate::protocol::MoveSpec;
+use crate::model::{Anchor, Annotation, Document, Shape, TextSpan};
+use crate::protocol::{MoveSpec, Where};
 
 /// One move of the demo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -35,9 +38,101 @@ pub struct Move {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(tag = "action")]
 pub enum MoveAction {
-    /// Insert, replace or delete whole lines.
+    /// Insert, replace or delete whole lines of the file shown at the step.
     #[serde(rename = "code.patch")]
     CodePatch(Patch),
+    /// Show another file (or the main file again), optionally cropped to a
+    /// window of lines. Each file is a view with its own annotations.
+    #[serde(rename = "code.link")]
+    CodeLink(Link),
+    /// Put the cursor on a line (and column) of the shown file.
+    #[serde(rename = "cursor")]
+    Cursor(CursorAt),
+    /// Select a span of the shown file, from one point to another.
+    #[serde(rename = "select")]
+    Select(SelectSpec),
+    /// Pause for `ms` before the step's annotations appear (TUI and
+    /// recordings; a still render ignores it).
+    #[serde(rename = "wait")]
+    Wait(Wait),
+}
+
+impl MoveAction {
+    /// The JSON `action` name.
+    pub fn name(&self) -> &'static str {
+        match self {
+            MoveAction::CodePatch(_) => "code.patch",
+            MoveAction::CodeLink(_) => "code.link",
+            MoveAction::Cursor(_) => "cursor",
+            MoveAction::Select(_) => "select",
+            MoveAction::Wait(_) => "wait",
+        }
+    }
+}
+
+/// `code.link`: `file` is the path as `code.file` would name it (relative to
+/// the `.tiza` directory); `lines` is only a window (`"7-30"` or `"7"`) that
+/// crops what is shown — annotations keep real file line numbers and the
+/// same file with another window is the same view.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Link {
+    pub file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<String>,
+}
+
+impl Link {
+    /// The window as `(first, last)`, or `None` for the whole file.
+    pub fn window(&self) -> Result<Option<(u32, u32)>, Error> {
+        match &self.lines {
+            None => Ok(None),
+            Some(s) => {
+                let (a, b) = parse_position(s).map_err(|_| {
+                    Error::Invalid(format!(
+                        "code.link lines «{s}»: use a line or A-B (a window of the file)"
+                    ))
+                })?;
+                if a == 0 {
+                    return Err(Error::Invalid(format!(
+                        "code.link lines «{s}»: line ranges start at 1"
+                    )));
+                }
+                Ok(Some((a, b)))
+            }
+        }
+    }
+
+    /// `file:A-B` as the status line shows it.
+    pub fn label(&self) -> String {
+        match &self.lines {
+            Some(l) => format!("{}:{}", self.file, l.trim()),
+            None => self.file.clone(),
+        }
+    }
+}
+
+/// `cursor`: a line (real file line number) and an optional grapheme column.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct CursorAt {
+    pub line: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub col: Option<u32>,
+}
+
+/// `select`: two points of the shown file, each a `find` (exactly one match
+/// at that step, or with `occurrence`) or a `line`/`col`. With `find`, the
+/// selection starts at the start of `from`'s text and ends at the end of
+/// `to`'s text.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct SelectSpec {
+    pub from: Where,
+    pub to: Where,
+}
+
+/// `wait`: milliseconds.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct Wait {
+    pub ms: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -459,50 +554,285 @@ pub fn moves_at(moves: &[Move], step: u32) -> impl Iterator<Item = (usize, &Move
         .filter(move |(_, m)| m.at_step == step)
 }
 
-/// One applied move: its index in `Document::moves`, its step and its line map.
-pub type AppliedMove = (usize, u32, LineMap);
+/// A view of the document: `None` is the main file (the document's own
+/// `code`), `Some(file)` a file a `code.link` named, as written there.
+pub type ViewKey = Option<String>;
 
-/// The code at `step`: the step-0 code with every move `<= step` applied, in
-/// step order then list order. Returns the code and the line map of every
-/// applied move (with its index and step), for shifting annotations.
-pub fn apply_until(
-    base: &[String],
+/// What is shown: the view and the window of its lines (`None`: all).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ViewRef {
+    pub file: ViewKey,
+    pub window: Option<(u32, u32)>,
+}
+
+impl ViewRef {
+    /// `queue.rs:10-30`, `queue.rs`, or `None` for the main file.
+    pub fn label(&self) -> Option<String> {
+        let f = self.file.as_ref()?;
+        Some(match self.window {
+            Some((a, b)) if a == b => format!("{f}:{a}"),
+            Some((a, b)) => format!("{f}:{a}-{b}"),
+            None => f.clone(),
+        })
+    }
+}
+
+/// One applied patch: its index in the moves list, its step, the view it
+/// edited, its line map and the view's code right after it.
+#[derive(Debug, Clone)]
+pub struct AppliedPatch {
+    pub index: usize,
+    pub at_step: u32,
+    pub file: ViewKey,
+    pub map: LineMap,
+    pub after: Vec<String>,
+}
+
+/// The document's state at a step: every view's code with its patches
+/// `<= step` applied, what is shown, and the cursor/selection the moves
+/// left (shifted through later patches of the same view).
+#[derive(Debug, Clone, Default)]
+pub struct Projection {
+    pub shown: ViewRef,
+    /// Code of every view that was shown or edited (always the main one).
+    pub codes: BTreeMap<ViewKey, Vec<String>>,
+    pub patches: Vec<AppliedPatch>,
+    pub cursor: Option<Anchor>,
+    pub selection: Option<(Anchor, Anchor)>,
+}
+
+impl Projection {
+    /// The shown code cropped to the window, and its first line.
+    pub fn shown_code(&self, doc: &Document) -> (Vec<String>, u32) {
+        let code = self
+            .codes
+            .get(&self.shown.file)
+            .cloned()
+            .unwrap_or_default();
+        let first = doc.view_first_line(&self.shown.file);
+        crop(code, first, self.shown.window)
+    }
+}
+
+/// `code[first..]` cropped to `window`, clamped to the lines that exist.
+pub fn crop(code: Vec<String>, first: u32, window: Option<(u32, u32)>) -> (Vec<String>, u32) {
+    let Some((a, b)) = window else {
+        return (code, first);
+    };
+    let last = first + code.len().saturating_sub(1) as u32;
+    let a = a.clamp(first, last.max(first));
+    let b = b.clamp(a, last.max(first));
+    let out = code
+        .into_iter()
+        .skip((a - first) as usize)
+        .take((b - a + 1) as usize)
+        .collect();
+    (out, a)
+}
+
+/// Resolves a point of a `select` on `code`: a `find` must match exactly
+/// once (on its `line` when given, else in the whole code) or carry
+/// `occurrence`. `end` selects the end of the found text (for `to`).
+fn resolve_point(
+    doc: &Document,
+    code: &[String],
     first_line: u32,
+    w: &Where,
+    what: &str,
+    end: bool,
+) -> Result<Anchor, Error> {
+    let Some(text) = &w.find else {
+        let line = w
+            .line
+            .ok_or_else(|| Error::Invalid(format!("{what}: give `find` or `line`")))?;
+        let last = first_line + code.len() as u32 - 1;
+        if line < first_line || line > last {
+            return Err(Error::LineOutOfRange {
+                line,
+                first: first_line,
+                last,
+            });
+        }
+        let len = code[(line - first_line) as usize].graphemes(true).count() as u32;
+        let col = w.col.unwrap_or(if end { len } else { 0 });
+        if col > len {
+            return Err(Error::SpanOutOfRange {
+                line,
+                start: col,
+                end: col,
+                len,
+            });
+        }
+        return Ok(Anchor { line, col });
+    };
+    let scope: Vec<String> = match w.line {
+        Some(l) => {
+            let last = first_line + code.len() as u32 - 1;
+            if l < first_line || l > last {
+                return Err(Error::LineOutOfRange {
+                    line: l,
+                    first: first_line,
+                    last,
+                });
+            }
+            vec![code[(l - first_line) as usize].clone()]
+        }
+        None => code.to_vec(),
+    };
+    let scope_first = w.line.unwrap_or(first_line);
+    find_unique(&scope, scope_first, text, what, w.occurrence)?;
+    let mut d = doc.clone();
+    d.moves.clear();
+    d.base_code.clear();
+    d.annotations.clear();
+    d.code = code.to_vec();
+    d.source.first_line = first_line;
+    let span = d
+        .find_text(text, w.occurrence.unwrap_or(1), w.line)
+        .ok_or_else(|| Error::TextNotFound(format!("{what} «{text}»")))?;
+    Ok(Anchor {
+        line: span.line,
+        col: if end { span.end } else { span.start },
+    })
+}
+
+/// The document at `step`: the moves `<= step` applied in step order then
+/// list order, each on the view shown at its point. `masked`: match text
+/// targets on the redact-masked code, so a `find` never probes a secret.
+/// An error names the move that failed.
+pub fn project(
+    doc: &Document,
     moves: &[Move],
     step: u32,
-) -> Result<(Vec<String>, Vec<AppliedMove>), Error> {
-    let mut code = base.to_vec();
-    let mut maps = Vec::new();
+    masked: bool,
+) -> Result<Projection, Error> {
     let mut order: Vec<(usize, &Move)> = moves
         .iter()
         .enumerate()
         .filter(|(_, m)| m.at_step <= step)
         .collect();
     order.sort_by_key(|(i, m)| (m.at_step, *i));
+    let mut p = Projection::default();
+    p.codes
+        .insert(None, doc.view_base_code(&None, masked).unwrap_or_default());
     for (i, m) in order {
-        let MoveAction::CodePatch(p) = &m.action;
-        let (new_code, map) = p
-            .apply(&code, first_line)
-            .map_err(|e| name_move(e, i, m.at_step))?;
-        code = new_code;
-        maps.push((i, m.at_step, map));
+        let named = |e: Error| name_move(e, i, m.at_step);
+        match &m.action {
+            MoveAction::CodePatch(patch) => {
+                let key = p.shown.file.clone();
+                let first = doc.view_first_line(&key);
+                let code = p.codes.get(&key).cloned().unwrap_or_default();
+                let (new_code, map) = patch.apply(&code, first).map_err(named)?;
+                if let Some(c) = p.cursor {
+                    p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
+                }
+                if let Some((a, b)) = p.selection {
+                    p.selection =
+                        match (map.get_column_anchor(a.line), map.get_column_anchor(b.line)) {
+                            (Some(la), Some(lb)) => Some((
+                                Anchor {
+                                    line: la,
+                                    col: a.col,
+                                },
+                                Anchor {
+                                    line: lb,
+                                    col: b.col,
+                                },
+                            )),
+                            _ => None,
+                        };
+                }
+                p.codes.insert(key.clone(), new_code.clone());
+                p.patches.push(AppliedPatch {
+                    index: i,
+                    at_step: m.at_step,
+                    file: key,
+                    map,
+                    after: new_code,
+                });
+            }
+            MoveAction::CodeLink(link) => {
+                let key = doc.view_key(&link.file);
+                if !p.codes.contains_key(&key) {
+                    let base = doc.view_base_code(&key, masked).ok_or_else(|| {
+                        named(Error::Invalid(format!(
+                            "code.link «{}»: the file is not loaded (it could not be read next to the document; `:embed` stores it)",
+                            link.file
+                        )))
+                    })?;
+                    p.codes.insert(key.clone(), base);
+                }
+                let window = link.window().map_err(named)?;
+                p.shown = ViewRef { file: key, window };
+                p.cursor = None;
+                p.selection = None;
+            }
+            MoveAction::Cursor(c) => {
+                let key = p.shown.file.clone();
+                let first = doc.view_first_line(&key);
+                let code = p.codes.get(&key).cloned().unwrap_or_default();
+                let last = first + code.len().saturating_sub(1) as u32;
+                if c.line < first || c.line > last {
+                    return Err(named(Error::LineOutOfRange {
+                        line: c.line,
+                        first,
+                        last,
+                    }));
+                }
+                let len = code[(c.line - first) as usize].graphemes(true).count() as u32;
+                let col = c.col.unwrap_or(0);
+                if col > len {
+                    return Err(named(Error::SpanOutOfRange {
+                        line: c.line,
+                        start: col,
+                        end: col,
+                        len,
+                    }));
+                }
+                p.cursor = Some(Anchor { line: c.line, col });
+            }
+            MoveAction::Select(s) => {
+                let key = p.shown.file.clone();
+                let first = doc.view_first_line(&key);
+                let code = p.codes.get(&key).cloned().unwrap_or_default();
+                let a = resolve_point(doc, &code, first, &s.from, "select from", false)
+                    .map_err(named)?;
+                let b =
+                    resolve_point(doc, &code, first, &s.to, "select to", true).map_err(named)?;
+                let (a, b) = if (b.line, b.col) < (a.line, a.col) {
+                    (b, a)
+                } else {
+                    (a, b)
+                };
+                p.selection = Some((a, b));
+            }
+            MoveAction::Wait(w) => {
+                if w.ms == 0 {
+                    return Err(named(Error::Invalid("wait: ms must be >= 1".into())));
+                }
+            }
+        }
     }
-    Ok((code, maps))
+    Ok(p)
 }
 
 /// Validates every move against the code at its step: targets resolve to
-/// exactly one place, `at_step >= 1`, `rebind` ids exist, content present.
-pub fn validate(
-    base: &[String],
-    first_line: u32,
-    moves: &[Move],
-    annotations: &[Annotation],
-) -> Result<(), Error> {
+/// exactly one place, `at_step >= 1`, `rebind` ids exist and only on
+/// patches, linked files are loaded, cursors and selections exist.
+pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> Result<(), Error> {
     for (i, m) in moves.iter().enumerate() {
         if m.at_step == 0 {
             return Err(Error::Invalid(format!(
                 "move #{}: at_step must be >= 1 (step 0 is the untouched code)",
                 i + 1
+            )));
+        }
+        if !m.rebind.is_empty() && !matches!(m.action, MoveAction::CodePatch(_)) {
+            return Err(Error::Invalid(format!(
+                "move #{} (step {}): rebind only applies to code.patch, not {}",
+                i + 1,
+                m.at_step,
+                m.action.name()
             )));
         }
         for (id, spec) in &m.rebind {
@@ -522,23 +852,18 @@ pub fn validate(
             }
         }
     }
-    // Apply in order, checking each move's `rebind` finds on the code after
-    // its patch: exactly one match, or an `occurrence` within the matches.
-    let mut code = base.to_vec();
-    let mut order: Vec<(usize, &Move)> = moves.iter().enumerate().collect();
-    order.sort_by_key(|(i, m)| (m.at_step, *i));
-    for (i, m) in order {
-        let MoveAction::CodePatch(p) = &m.action;
-        let (new_code, _) = p
-            .apply(&code, first_line)
-            .map_err(|e| name_move(e, i, m.at_step))?;
-        code = new_code;
+    // Apply in order, checking each patch's `rebind` finds on the code after
+    // it: exactly one match, or an `occurrence` within the matches.
+    let p = project(doc, moves, u32::MAX, true)?;
+    for ap in &p.patches {
+        let m = &moves[ap.index];
+        let first = doc.view_first_line(&ap.file);
         for (id, spec) in &m.rebind {
             for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
                 let (Some(text), None) = (&w.find, w.line) else {
                     continue;
                 };
-                let n = matches_of(&code, first_line, text).len();
+                let n = matches_of(&ap.after, first, text).len();
                 let bad = match w.occurrence {
                     None if n == 1 => None,
                     None => Some(format!(
@@ -555,7 +880,7 @@ pub fn validate(
                 if let Some(why) = bad {
                     return Err(Error::Invalid(format!(
                         "move #{} (step {}): rebind `{id}` {why}",
-                        i + 1,
+                        ap.index + 1,
                         m.at_step
                     )));
                 }
@@ -740,7 +1065,11 @@ impl TypingPlan {
                 vec![String::new(); item.lines.len()]
             };
             for (i, l) in shown.into_iter().enumerate() {
-                if let Some(slot) = code.get_mut((item.range.start - first_line) as usize + i) {
+                // A typed line outside the shown window is simply not drawn.
+                let Some(at) = (item.range.start + i as u32).checked_sub(first_line) else {
+                    continue;
+                };
+                if let Some(slot) = code.get_mut(at as usize) {
                     *slot = l;
                 }
             }
@@ -764,29 +1093,41 @@ impl TypingPlan {
     }
 }
 
-/// The typing animation of `step`, when any move at that step is typed:
-/// the content lines of each typing move, followed through the maps of the
-/// moves applied after it (same step) so they point into the final code.
-/// `None` when nothing is typed at `step` or the moves do not apply.
+/// The typing animation of `step`, when any move at that step is typed or
+/// waits: the content lines of each typing move of the shown view,
+/// followed through the maps of the patches applied after it (same step,
+/// same view) so they point into the final code, and every `wait` as one
+/// unit of `ms`, all in list order. `None` when nothing is typed or waited
+/// at `step` or the moves do not apply.
 pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
     if !doc.moves.iter().any(|m| {
-        let MoveAction::CodePatch(p) = &m.action;
-        m.at_step == step && p.typing != Typing::Instant
+        m.at_step == step
+            && match &m.action {
+                MoveAction::CodePatch(p) => p.typing != Typing::Instant,
+                MoveAction::Wait(_) => true,
+                _ => false,
+            }
     }) {
         return None;
     }
-    let first = doc.source.first_line;
-    let (full, maps) = apply_until(doc.base(), first, &doc.moves, step).ok()?;
-    let mut items: Vec<TypingItem> = Vec::new();
-    for (k, (idx, at, map)) in maps.iter().enumerate() {
-        let MoveAction::CodePatch(p) = &doc.moves[*idx].action;
-        if *at != step || p.typing == Typing::Instant || map.inserted.is_empty() {
+    let proj = project(doc, &doc.moves, step, false).ok()?;
+    let (full, _) = proj.shown_code(doc);
+    let mut items: Vec<(usize, TypingItem)> = Vec::new();
+    for (k, ap) in proj.patches.iter().enumerate() {
+        let MoveAction::CodePatch(p) = &doc.moves[ap.index].action else {
+            continue;
+        };
+        if ap.at_step != step
+            || ap.file != proj.shown.file
+            || p.typing == Typing::Instant
+            || ap.map.inserted.is_empty()
+        {
             continue;
         }
-        let mut range = map.inserted.clone();
+        let mut range = ap.map.inserted.clone();
         let mut lost = false;
-        for (_, _, later) in &maps[k + 1..] {
-            match (later.get(range.start), later.get(range.end - 1)) {
+        for later in proj.patches[k + 1..].iter().filter(|l| l.file == ap.file) {
+            match (later.map.get(range.start), later.map.get(range.end - 1)) {
                 (Some(a), Some(b)) if b >= a => range = a..b + 1,
                 _ => {
                     lost = true;
@@ -798,18 +1139,39 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
             continue;
         }
         let lines = p.content_lines();
-        items.push(TypingItem {
-            range,
-            units: typing_units(&lines, p.typing),
-            lines,
-            mode: p.typing,
-            speed_ms: p.speed().max(1),
-        });
+        items.push((
+            ap.index,
+            TypingItem {
+                range,
+                units: typing_units(&lines, p.typing),
+                lines,
+                mode: p.typing,
+                speed_ms: p.speed().max(1),
+            },
+        ));
+    }
+    for (i, m) in moves_at(&doc.moves, step) {
+        if let MoveAction::Wait(w) = &m.action {
+            items.push((
+                i,
+                TypingItem {
+                    range: 0..0,
+                    lines: Vec::new(),
+                    mode: Typing::Instant,
+                    speed_ms: w.ms.max(1),
+                    units: 1,
+                },
+            ));
+        }
     }
     if items.is_empty() {
         return None;
     }
-    Some(TypingPlan { full, items })
+    items.sort_by_key(|(i, _)| *i);
+    Some(TypingPlan {
+        full,
+        items: items.into_iter().map(|(_, it)| it).collect(),
+    })
 }
 
 /// Partial content of a typing animation: `revealed` units of the patch's
@@ -1071,6 +1433,132 @@ mod tests {
             shift_shape(&note5, &map),
             Some(Shape::Note { line: 4, .. })
         ));
+    }
+
+    #[test]
+    fn views_are_keyed_by_file_and_windows_only_crop() {
+        let mut d = Document::from_code("a\nb\nc\nd\n", "rs", Some("/x/src/main.rs".into()));
+        d.reference_file("src/main.rs", None);
+        assert_eq!(d.view_key("./src/main.rs"), None, "the main file by name");
+        assert_eq!(d.view_key("main.rs"), None, "the main file by file name");
+        assert_eq!(d.view_key("/x/src/main.rs"), None, "the main file by path");
+        assert_eq!(d.view_key(" lib.rs "), Some("lib.rs".into()));
+        d.view_code.insert("lib.rs".into(), code("x\ny\nz"));
+        let link = |step: u32, file: &str, lines: Option<&str>| Move {
+            at_step: step,
+            action: MoveAction::CodeLink(Link {
+                file: file.into(),
+                lines: lines.map(String::from),
+            }),
+            rebind: BTreeMap::new(),
+        };
+        d.add_move(link(1, "lib.rs", Some("2-9"))).unwrap();
+        d.add_move(link(2, "main.rs", Some("3-4"))).unwrap();
+        d.add_move(link(3, "lib.rs", None)).unwrap();
+        assert_eq!(d.code_at(1).unwrap(), (code("y\nz"), 2), "clamped window");
+        assert_eq!(
+            d.code_at(2).unwrap(),
+            (code("c\nd"), 3),
+            "the main file, windowed"
+        );
+        assert_eq!(d.code_at(3).unwrap(), (code("x\ny\nz"), 1));
+        assert_eq!(d.shown_view_at(0), ViewRef::default());
+        assert_eq!(
+            d.shown_view_at(2).label(),
+            None,
+            "the main file has no label"
+        );
+        assert_eq!(d.shown_view_at(1).label().as_deref(), Some("lib.rs:2-9"));
+        assert_eq!(d.link_files(), ["lib.rs"]);
+        // An annotation added at step 1 belongs to lib.rs; at step 2 to the main file.
+        let note = |step: u32, line: u32| Annotation {
+            id: String::new(),
+            step,
+            color: None,
+            markers: None,
+            file: None,
+            shape: Shape::Note {
+                line,
+                text: "n".into(),
+            },
+        };
+        d.add(note(1, 1)).unwrap(); // L1 of lib.rs: outside the window, still valid
+        d.add(note(2, 1)).unwrap(); // L1 of main.rs
+        assert_eq!(d.annotations[0].file.as_deref(), Some("lib.rs"));
+        assert_eq!(d.annotations[1].file, None);
+        assert!(matches!(
+            d.add(note(1, 9)),
+            Err(Error::LineOutOfRange { line: 9, .. })
+        ));
+        let v = d.view_at(1);
+        assert_eq!(v.doc.annotations.len(), 1, "only lib.rs's annotation, kept");
+        assert!(v.unanchored.is_empty());
+        assert_eq!(d.view_at(2).doc.annotations[0].id, "a2");
+        // Embedding stores the linked file; the main code stays the base.
+        d.step = 3;
+        d.sync_code_to_step();
+        d.embed_code();
+        assert_eq!(d.views["lib.rs"], code("x\ny\nz"));
+        let mut saved = d.clone();
+        saved.sync_code_src();
+        assert_eq!(saved.source.first_line, 1);
+        assert!(matches!(&saved.code_src, crate::model::CodeSource::Embedded(c) if c.len() == 4));
+    }
+
+    #[test]
+    fn cursor_select_and_wait_project_and_shift() {
+        let mut d = Document::from_code("fn a() {}\nlet u = 1;\nlet v = u;\n", "rs", None);
+        let mv = |v: serde_json::Value| -> Move { serde_json::from_value(v).unwrap() };
+        d.add_move(mv(
+            serde_json::json!({"at_step": 1, "action": "cursor", "line": 2, "col": 4}),
+        ))
+        .unwrap();
+        d.add_move(mv(serde_json::json!({"at_step": 1, "action": "select", "from": {"find": "u = 1"}, "to": {"find": "u;"}})))
+            .unwrap();
+        d.add_move(mv(serde_json::json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "1", "content": "// top"})))
+            .unwrap();
+        d.add_move(mv(
+            serde_json::json!({"at_step": 3, "action": "wait", "ms": 50}),
+        ))
+        .unwrap();
+        let v1 = d.view_at(1);
+        assert_eq!(v1.cursor, Some(Anchor { line: 2, col: 4 }));
+        let (a, b) = v1.selection.unwrap();
+        assert_eq!((a.line, a.col, b.line, b.col), (2, 4, 3, 10));
+        // Shifted by the insert at step 2, cleared at step 0.
+        let v2 = d.view_at(2);
+        assert_eq!(v2.cursor, Some(Anchor { line: 3, col: 4 }));
+        assert_eq!(v2.selection.unwrap().1.line, 4);
+        assert!(d.view_at(0).cursor.is_none());
+        // The wait is one typing unit of 50 ms; only at its step.
+        let plan = typing_plan(&d, 3).unwrap();
+        assert_eq!(
+            (
+                plan.items.len(),
+                plan.items[0].units,
+                plan.items[0].speed_ms
+            ),
+            (1, 1, 50)
+        );
+        assert!(typing_plan(&d, 2).is_none());
+        assert_eq!(d.typing_ms_at(3), 50);
+        assert_eq!(d.wait_ms_at(3), 50);
+        // Errors name the move.
+        let e = d
+            .add_move(mv(serde_json::json!({"at_step": 1, "action": "select", "from": {"find": "let"}, "to": {"find": "u;"}})))
+            .unwrap_err()
+            .to_string();
+        assert!(
+            e.contains("move #5 (step 1)") && e.contains("occurrence"),
+            "{e}"
+        );
+        let e = d
+            .add_move(mv(
+                serde_json::json!({"at_step": 1, "action": "cursor", "line": 2, "col": 99}),
+            ))
+            .unwrap_err()
+            .to_string();
+        assert!(e.contains("move #5 (step 1)"), "{e}");
     }
 
     #[test]

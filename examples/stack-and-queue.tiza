@@ -1,0 +1,84 @@
+{
+  "schema": 1,
+  "title": "Stack and queue: two files, each with its own annotations",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "src/stack.rs",
+    "lines": "7-30"
+  },
+  "step": 0,
+  "theme": "dark",
+  "padding": [1, 2],
+  "moves": [
+    { "at_step": 2, "action": "code.link", "file": "src/queue.rs", "lines": "10-36" },
+    { "at_step": 3, "action": "select", "from": { "find": "push_back" }, "to": { "find": "pop_front" } },
+    { "at_step": 3, "action": "cursor", "line": 22, "col": 8 },
+    { "at_step": 3, "action": "wait", "ms": 800 },
+    { "at_step": 4, "action": "code.link", "file": "src/stack.rs" },
+    { "at_step": 5, "action": "code.link", "file": "src/queue.rs", "lines": "17-23" }
+  ],
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "box",
+      "from_line": 12,
+      "to_line": 18,
+      "label": "LIFO: push and pop at the same end",
+      "color": "orange"
+    },
+    {
+      "id": "a2",
+      "step": 1,
+      "type": "mark",
+      "kind": "write",
+      "span": { "line": 12, "start": 16, "end": 25 },
+      "label": "mutates: needs &mut"
+    },
+    {
+      "id": "a3",
+      "step": 2,
+      "file": "src/queue.rs",
+      "type": "box",
+      "from_line": 17,
+      "to_line": 23,
+      "label": "FIFO: in at the back, out at the front",
+      "color": "cyan"
+    },
+    {
+      "id": "a4",
+      "step": 2,
+      "file": "src/queue.rs",
+      "type": "note",
+      "line": 13,
+      "text": "a VecDeque, so both ends are O(1)"
+    },
+    {
+      "id": "a5",
+      "step": 2,
+      "file": "src/queue.rs",
+      "type": "note",
+      "line": 4,
+      "text": "outside the window at steps 2-3: kept, not drawn"
+    },
+    {
+      "id": "a6",
+      "step": 4,
+      "type": "note",
+      "line": 20,
+      "text": "same signature in both files: a shared borrow"
+    },
+    {
+      "id": "a7",
+      "step": 5,
+      "file": "src/queue.rs",
+      "type": "mark",
+      "kind": "read",
+      "span": { "line": 22, "start": 8, "end": 30 },
+      "label": "the window crops; the box above still shows"
+    }
+  ]
+}

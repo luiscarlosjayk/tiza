@@ -74,7 +74,12 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
         if let Some(plan) = crate::moves::typing_plan(doc, step) {
             let mut d = doc.clone();
             d.step = step;
-            let first_line = d.source.first_line;
+            // The shown file (and window) at that step, not the current one.
+            let first_line = d
+                .code_at(step)
+                .map(|(_, f)| f)
+                .unwrap_or(d.source.first_line);
+            d.source.first_line = first_line;
             let typed = plan.frames(first_line);
             let n = typed.len();
             for (i, (code, delay)) in typed.into_iter().enumerate() {
@@ -135,6 +140,7 @@ mod tests {
             step: 2,
             color: None,
             markers: None,
+            file: None,
             shape: crate::model::Shape::Note {
                 line: 1,
                 text: "hello".into(),

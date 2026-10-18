@@ -343,6 +343,7 @@ mod tests {
             step: 3,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Redact {
                 span: TextSpan { line, start, end },
                 keep,
@@ -360,6 +361,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Highlight {
                 span: TextSpan {
                     line: 1,
@@ -397,6 +399,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Highlight {
                 span: TextSpan {
                     line: 1,

@@ -97,7 +97,13 @@ pub fn to_asciicast(doc: &Document, theme: &Theme, opts: &CastOptions) -> String
     let _ = writeln!(out, "{header}");
     let bg = theme.bg;
     for (i, (step, ansi)) in frames.iter().enumerate() {
-        let interval = if i == 0 { 0.0 } else { opts.interval };
+        // A `wait` at a step holds that step's frame for its `ms` on top of
+        // the interval (t-105): the timing survives in the recording.
+        let interval = if i == 0 {
+            0.0
+        } else {
+            opts.interval + doc.wait_ms_at(frames[i - 1].0) as f64 / 1000.0
+        };
         let marker = serde_json::json!([0.0, "m", format!("step {step}")]);
         let _ = writeln!(out, "{marker}");
         // Clear with the theme background, home, then the frame.
@@ -253,6 +259,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: crate::model::Shape::Note {
                 line: 1,
                 text: "one".into(),
@@ -264,6 +271,7 @@ mod tests {
             step: 2,
             color: None,
             markers: None,
+            file: None,
             shape: crate::model::Shape::Note {
                 line: 3,
                 text: "two".into(),

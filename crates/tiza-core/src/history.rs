@@ -18,7 +18,11 @@ struct Snapshot {
     /// `None` for ordinary edits, whose undo keeps the current step.
     step: Option<u32>,
     code: Vec<String>,
+    first_line: u32,
     base_code: Vec<String>,
+    base_first_line: u32,
+    views: BTreeMap<String, Vec<String>>,
+    view_code: BTreeMap<String, Vec<String>>,
     moves: Vec<Move>,
     code_src: CodeSource,
     annotations: Vec<Annotation>,
@@ -36,7 +40,11 @@ impl Snapshot {
             label,
             step: with_step.then_some(doc.step),
             code: doc.code.clone(),
+            first_line: doc.source.first_line,
             base_code: doc.base_code.clone(),
+            base_first_line: doc.base_first_line,
+            views: doc.views.clone(),
+            view_code: doc.view_code.clone(),
             moves: doc.moves.clone(),
             code_src: doc.code_src.clone(),
             annotations: doc.annotations.clone(),
@@ -53,7 +61,11 @@ impl Snapshot {
     fn swap(self, doc: &mut Document) -> Self {
         let current = Self::take(doc, self.label.clone(), self.step.is_some());
         doc.code = self.code;
+        doc.source.first_line = self.first_line;
         doc.base_code = self.base_code;
+        doc.base_first_line = self.base_first_line;
+        doc.views = self.views;
+        doc.view_code = self.view_code;
         doc.moves = self.moves;
         doc.code_src = self.code_src;
         doc.annotations = self.annotations;
@@ -156,6 +168,7 @@ mod tests {
             step: 1,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Note {
                 line: 1,
                 text: "x".into(),

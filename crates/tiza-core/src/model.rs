@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::Error;
-use crate::moves::{self, Move};
+use crate::moves::{self, Move, MoveAction, ViewKey, ViewRef};
 
 /// Schema version of the `.tiza` file.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -52,6 +52,20 @@ pub struct Document {
     /// projection at `step`). Empty when there are no moves: `code` is the base.
     #[serde(skip)]
     pub base_code: Vec<String>,
+    /// First line of `base_code` while the document has moves (`source.first_line`
+    /// is then that of the shown view). Meaningless without moves.
+    #[serde(skip_serializing, skip_deserializing, default = "one")]
+    pub base_first_line: u32,
+    /// Code of the files `code.link` moves name, frozen inside the document
+    /// by `:embed` (one entry per file, keyed as the move names it; the
+    /// window stays in the move). A file absent here is read from disk next
+    /// to the `.tiza` when the document loads.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub views: BTreeMap<String, Vec<String>>,
+    /// Code of every linked file in memory (from `views` or from disk),
+    /// keyed by the file as the move names it. Never serialized directly.
+    #[serde(skip)]
+    pub view_code: BTreeMap<String, Vec<String>>,
     /// Redact masks follow their annotation's `step` instead of being active
     /// from step 0 (off by default: a secret is never shown at an earlier step).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -618,6 +632,13 @@ pub struct Annotation {
     /// re-resolved after the code changes (t-098). Lines stay the truth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub markers: Option<RangeMarkers>,
+    /// The file (view) the annotation belongs to, as a `code.link` names it
+    /// (t-105). Absent: the document's main file. Filled in from the view
+    /// shown at the annotation's step when it is added without one. Lines
+    /// are always real file line numbers; the annotation is drawn only
+    /// while its file is shown and its lines fall inside the window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
     #[serde(flatten)]
     pub shape: Shape,
 }
@@ -674,9 +695,16 @@ fn is_zero_u8(n: &u8) -> bool {
 /// A document projected to one step (see `Document::view_at`).
 #[derive(Debug, Clone)]
 pub struct View {
+    /// The shown file cropped to its window, with the annotations of that
+    /// file (the others are left out) shifted through its patches.
     pub doc: Document,
     /// Annotations of steps `<= step` hidden because no patch mapping survives.
     pub unanchored: Vec<String>,
+    /// Which file and window is shown.
+    pub view: ViewRef,
+    /// Cursor and selection the moves left at this step (t-105).
+    pub cursor: Option<Anchor>,
+    pub selection: Option<(Anchor, Anchor)>,
 }
 
 impl Document {
@@ -705,6 +733,9 @@ impl Document {
             padding: None,
             moves: Vec::new(),
             base_code: Vec::new(),
+            base_first_line: 1,
+            views: BTreeMap::new(),
+            view_code: BTreeMap::new(),
             redact_from_step: false,
             numbers: true,
             margin: None,
@@ -731,27 +762,59 @@ impl Document {
     /// the masked code: a `.tiza` never carries the text under a mask.
     pub fn embed_code(&mut self) {
         self.code_src = CodeSource::Embedded(crate::redact::masked_base(self));
+        // Every linked file too (masked with its own redacts), so the demo
+        // stays one portable file.
+        for file in self.link_files() {
+            if let Some(code) = self.view_code.get(&file) {
+                let masked =
+                    crate::redact::mask_lines(code, 1, &self.annotations_of(&Some(file.clone())));
+                self.views.insert(file, masked);
+            }
+        }
     }
 
     pub fn is_embedded(&self) -> bool {
         matches!(self.code_src, CodeSource::Embedded(_))
     }
 
-    /// Keeps `code_src` consistent with `code` before serializing.
+    /// Keeps `code_src` (and `source.first_line`) consistent with the
+    /// step-0 code of the main file before serializing: what is saved is
+    /// never the projection of a step.
     pub fn sync_code_src(&mut self) {
         if matches!(self.code_src, CodeSource::Embedded(_)) {
             self.code_src = CodeSource::Embedded(self.base().to_vec());
         }
+        if !self.moves.is_empty() {
+            self.source.first_line = self.base_first_line;
+        }
     }
 
-    // ---- moves (ADR 0007, t-098) ----
+    /// A copy ready for the wire (`scene.get`): the main code and every
+    /// linked file embedded and masked, the first line that of the main file.
+    pub fn embedded_copy(&self) -> Document {
+        let mut d = self.clone();
+        d.sync_code_src();
+        d.embed_code();
+        d
+    }
 
-    /// The step-0 code.
+    // ---- moves (ADR 0007, t-098) and views (t-105) ----
+
+    /// The step-0 code of the main file.
     pub fn base(&self) -> &[String] {
         if self.moves.is_empty() {
             &self.code
         } else {
             &self.base_code
+        }
+    }
+
+    /// First line of the main file's step-0 code.
+    pub fn base_first(&self) -> u32 {
+        if self.moves.is_empty() {
+            self.source.first_line
+        } else {
+            self.base_first_line
         }
     }
 
@@ -766,15 +829,139 @@ impl Document {
         }
     }
 
-    /// Total typing time of the moves that run at `step`, in milliseconds
-    /// (they are typed one after another; 0 when nothing is typed).
+    /// `file` as a `code.link` or an annotation names it, normalized:
+    /// trimmed, without a leading `./`.
+    pub fn normalize_file(file: &str) -> String {
+        let mut f = file.trim();
+        while let Some(rest) = f.strip_prefix("./") {
+            f = rest;
+        }
+        f.to_string()
+    }
+
+    /// The view a file name points at: `None` when it names the main file
+    /// (as `code.file` or `source.path` name it), else the normalized name.
+    pub fn view_key(&self, file: &str) -> ViewKey {
+        let f = Self::normalize_file(file);
+        let main_names: Vec<String> = [
+            match &self.code_src {
+                CodeSource::File { file, .. } => Some(file.clone()),
+                CodeSource::Embedded(_) => None,
+            },
+            self.source.path.clone(),
+            self.source.path.as_ref().and_then(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+            }),
+        ]
+        .into_iter()
+        .flatten()
+        .map(|n| Self::normalize_file(&n))
+        .collect();
+        // Equal to a name of the main file, or a path suffix of its source
+        // path (`src/stack.rs` for `/home/x/demo/src/stack.rs`), so an
+        // embedded document moved elsewhere still knows which link is the
+        // main file.
+        let is_main = main_names
+            .iter()
+            .any(|n| *n == f || (n.contains('/') && n.ends_with(&format!("/{f}"))));
+        if is_main { None } else { Some(f) }
+    }
+
+    /// First line of a view's code: the main file keeps its range, a linked
+    /// file is read whole.
+    pub fn view_first_line(&self, key: &ViewKey) -> u32 {
+        match key {
+            None => self.base_first(),
+            Some(_) => 1,
+        }
+    }
+
+    /// Step-0 code of a view (`None` when a linked file is not loaded).
+    /// `masked`: with the redact masks of that view's annotations applied.
+    pub fn view_base_code(&self, key: &ViewKey, masked: bool) -> Option<Vec<String>> {
+        let code: &[String] = match key {
+            None => self.base(),
+            Some(f) => self.view_code.get(f)?,
+        };
+        Some(if masked {
+            crate::redact::mask_lines(code, self.view_first_line(key), &self.annotations_of(key))
+        } else {
+            code.to_vec()
+        })
+    }
+
+    /// The annotations that belong to a view.
+    pub fn annotations_of(&self, key: &ViewKey) -> Vec<Annotation> {
+        self.annotations
+            .iter()
+            .filter(|a| &a.file == key)
+            .cloned()
+            .collect()
+    }
+
+    /// Files named by `code.link` moves other than the main file, in order
+    /// of first appearance, without repeats.
+    pub fn link_files(&self) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for m in &self.moves {
+            if let MoveAction::CodeLink(l) = &m.action
+                && let Some(f) = self.view_key(&l.file)
+                && !out.contains(&f)
+            {
+                out.push(f);
+            }
+        }
+        out
+    }
+
+    /// The view and window shown at `step`: the last `code.link` with
+    /// `at_step <= step`, or the main file. Cheap (no moves applied).
+    pub fn shown_view_at(&self, step: u32) -> ViewRef {
+        let mut links: Vec<(usize, &Move)> = self
+            .moves
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.at_step <= step && matches!(m.action, MoveAction::CodeLink(_)))
+            .collect();
+        links.sort_by_key(|(i, m)| (m.at_step, *i));
+        match links.last() {
+            Some((_, m)) => {
+                let MoveAction::CodeLink(l) = &m.action else {
+                    unreachable!()
+                };
+                ViewRef {
+                    file: self.view_key(&l.file),
+                    window: l.window().unwrap_or(None),
+                }
+            }
+            None => ViewRef::default(),
+        }
+    }
+
+    /// Total time of the animation that runs at `step`, in milliseconds:
+    /// the typing of its moves plus its waits (0 when nothing animates).
     pub fn typing_ms_at(&self, step: u32) -> u64 {
         self.moves
             .iter()
             .filter(|m| m.at_step == step)
-            .map(|m| {
-                let moves::MoveAction::CodePatch(p) = &m.action;
-                p.typing_ms()
+            .map(|m| match &m.action {
+                MoveAction::CodePatch(p) => p.typing_ms(),
+                MoveAction::Wait(w) => w.ms,
+                _ => 0,
+            })
+            .sum()
+    }
+
+    /// Milliseconds the `wait` moves of `step` add up to.
+    pub fn wait_ms_at(&self, step: u32) -> u64 {
+        self.moves
+            .iter()
+            .filter(|m| m.at_step == step)
+            .map(|m| match &m.action {
+                MoveAction::Wait(w) => w.ms,
+                _ => 0,
             })
             .sum()
     }
@@ -784,13 +971,37 @@ impl Document {
         self.moves.iter().any(|m| m.at_step <= self.step)
     }
 
-    /// Code at `step`: the step-0 code with every move `<= step` applied.
-    pub fn code_at(&self, step: u32) -> Result<Vec<String>, Error> {
+    /// The code shown at `step` and its first line: the view a `code.link`
+    /// left up, cropped to its window, with every patch `<= step` applied.
+    pub fn code_at(&self, step: u32) -> Result<(Vec<String>, u32), Error> {
         if self.moves.is_empty() {
-            return Ok(self.code.clone());
+            return Ok((self.code.clone(), self.source.first_line));
         }
-        moves::apply_until(&self.base_code, self.source.first_line, &self.moves, step)
-            .map(|(code, _)| code)
+        let p = moves::project(self, &self.moves, step, false)?;
+        Ok(p.shown_code(self))
+    }
+
+    /// The full code of one view at `step` (its step-0 code with its
+    /// patches `<= step`), and its first line. Annotations of that view are
+    /// validated against it, whatever window is shown.
+    pub fn view_code_at(&self, key: &ViewKey, step: u32) -> Result<(Vec<String>, u32), Error> {
+        if self.moves.is_empty() {
+            return Ok((self.code.clone(), self.source.first_line));
+        }
+        let p = moves::project(self, &self.moves, step, false)?;
+        let first = self.view_first_line(key);
+        match p.codes.get(key) {
+            Some(c) => Ok((c.clone(), first)),
+            None => self
+                .view_base_code(key, false)
+                .map(|c| (c, first))
+                .ok_or_else(|| {
+                    Error::NotFound(format!(
+                        "file «{}» is not a view of this document",
+                        key.as_deref().unwrap_or("?")
+                    ))
+                }),
+        }
     }
 
     /// Makes `code` the projection at `step` (a pure function of the base:
@@ -803,14 +1014,17 @@ impl Document {
         if self.base_code.is_empty() {
             // First call after load / first move added: `code` was the base.
             self.base_code = self.code.clone();
+            self.base_first_line = self.source.first_line;
         }
         match self.code_at(self.step) {
-            Ok(c) => {
+            Ok((c, first)) => {
                 self.code = c;
+                self.source.first_line = first;
                 None
             }
             Err(e) => {
                 self.code = self.base_code.clone();
+                self.source.first_line = self.base_first_line;
                 Some(e)
             }
         }
@@ -819,32 +1033,19 @@ impl Document {
     /// Validates every move against the code at its step (ADR 0007 §3) and
     /// the `rebind` ids against the annotations.
     pub fn validate_moves(&self) -> Result<(), Error> {
-        moves::validate(
-            &self.matching_base(),
-            self.source.first_line,
-            &self.moves,
-            &self.annotations,
-        )
+        moves::validate(self, &self.moves, &self.annotations)
     }
 
-    /// The step-0 code as text targets are matched against: with the
-    /// redact masks applied, so a move's `find` can never probe a secret.
-    fn matching_base(&self) -> Vec<String> {
-        crate::redact::mask_lines(self.base(), self.source.first_line, &self.annotations)
-    }
-
-    /// Adds a move (validated against the code at its step). Returns its index.
+    /// Adds a move (validated against the code at its step). Returns its
+    /// index. A `code.link` needs its file loaded first (`fs::load_view`
+    /// or an entry in `views`).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         let mut trial = self.moves.clone();
         trial.push(m);
-        moves::validate(
-            &self.matching_base(),
-            self.source.first_line,
-            &trial,
-            &self.annotations,
-        )?;
+        moves::validate(self, &trial, &self.annotations)?;
         if self.moves.is_empty() {
             self.base_code = self.code.clone();
+            self.base_first_line = self.source.first_line;
         }
         self.moves = trial;
         self.sync_code_to_step();
@@ -859,54 +1060,48 @@ impl Document {
         let m = self.moves.remove(index);
         if self.moves.is_empty() {
             self.code = std::mem::take(&mut self.base_code);
+            self.source.first_line = self.base_first_line;
         } else {
             self.sync_code_to_step();
         }
         Ok(m)
     }
 
-    /// The document as shown at `step`: the code at that step and every
-    /// annotation with `step <= step` shifted deterministically through
-    /// the patches of later steps (ADR 0007 §3). Annotations that lose
-    /// their anchor are left out and listed in `unanchored`. When `step`
-    /// is the current step the in-memory `code` is kept (it may be a
-    /// typing animation in progress).
+    /// The document as shown at `step`: the shown file (cropped to its
+    /// window) at that step and every annotation of that file with `step <=
+    /// step`, shifted deterministically through the patches of later steps
+    /// (ADR 0007 §3). Annotations of other files are left out (they come
+    /// back untouched when their file is shown); those that lose their
+    /// anchor are left out and listed in `unanchored`. When `step` is the
+    /// current step the in-memory `code` is kept (it may be a typing
+    /// animation in progress).
     pub fn view_at(&self, step: u32) -> View {
+        let plain = || View {
+            doc: self.clone(),
+            unanchored: Vec::new(),
+            view: ViewRef::default(),
+            cursor: None,
+            selection: None,
+        };
         if self.moves.is_empty() {
-            return View {
-                doc: self.clone(),
-                unanchored: Vec::new(),
-            };
+            return plain();
         }
-        let first = self.source.first_line;
-        let mut code = self.base_code.clone();
+        let Ok(proj) = moves::project(self, &self.moves, step, false) else {
+            // An invalid move was reported at load/add time; show the base.
+            return plain();
+        };
         let mut shapes: Vec<Option<Shape>> = self
             .annotations
             .iter()
             .map(|a| Some(a.shape.clone()))
             .collect();
-        let mut order: Vec<(usize, &Move)> = self
-            .moves
-            .iter()
-            .enumerate()
-            .filter(|(_, m)| m.at_step <= step)
-            .collect();
-        order.sort_by_key(|(i, m)| (m.at_step, *i));
         let mut scratch: Option<Document> = None;
-        for (_, m) in order {
-            let moves::MoveAction::CodePatch(p) = &m.action;
-            let Ok((new_code, map)) = p.apply(&code, first) else {
-                // An invalid move was reported at load/add time; show the base.
-                return View {
-                    doc: self.clone(),
-                    unanchored: Vec::new(),
-                };
-            };
-            code = new_code;
+        for ap in &proj.patches {
+            let m = &self.moves[ap.index];
             for (a, slot) in self.annotations.iter().zip(shapes.iter_mut()) {
                 // Authored on the code as shown at its own step: only later
-                // steps' moves shift it.
-                if a.step >= m.at_step {
+                // steps' patches of its own file shift it.
+                if a.file != ap.file || a.step >= ap.at_step {
                     continue;
                 }
                 let Some(cur) = slot.as_ref() else { continue };
@@ -918,17 +1113,19 @@ impl Document {
                             d.base_code.clear();
                             d
                         });
-                        d.code = code.clone();
+                        d.code = ap.after.clone();
+                        d.source.first_line = self.view_first_line(&ap.file);
                         let mut shape = cur.clone();
                         spec.apply(&mut shape, d)
                             .and_then(|_| d.validate_shape(&shape))
                             .ok()
                             .map(|_| shape)
                     }
-                    None => moves::shift_shape(cur, &map),
+                    None => moves::shift_shape(cur, &ap.map),
                 };
             }
         }
+        let (code, first) = proj.shown_code(self);
         let mut doc = self.clone();
         doc.moves.clear();
         doc.base_code.clear();
@@ -937,6 +1134,11 @@ impl Document {
         } else {
             code
         };
+        doc.source.first_line = if step == self.step {
+            self.source.first_line
+        } else {
+            first
+        };
         doc.step = step;
         let mut unanchored = Vec::new();
         doc.annotations = self
@@ -944,7 +1146,8 @@ impl Document {
             .iter()
             .zip(shapes)
             .filter_map(|(a, s)| match s {
-                Some(shape) => Some(Annotation { shape, ..a.clone() }),
+                Some(shape) if a.file == proj.shown.file => Some(Annotation { shape, ..a.clone() }),
+                Some(_) => None,
                 None => {
                     if a.step <= step {
                         unanchored.push(a.id.clone());
@@ -953,7 +1156,13 @@ impl Document {
                 }
             })
             .collect();
-        View { doc, unanchored }
+        View {
+            doc,
+            unanchored,
+            view: proj.shown,
+            cursor: proj.cursor,
+            selection: proj.selection,
+        }
     }
 
     /// Ids of the annotations hidden at the current step because no patch
@@ -965,10 +1174,11 @@ impl Document {
         self.view_at(self.step).unanchored
     }
 
-    /// Validates a shape against the code as shown at `step` (annotations
-    /// are authored against the code at their own step).
-    pub fn validate_shape_at(&self, shape: &Shape, step: u32) -> Result<(), Error> {
-        if self.moves.is_empty() || step == self.step {
+    /// Validates a shape against the code of `file` as it is at `step`
+    /// (annotations are authored against the code at their own step, with
+    /// real file line numbers, whatever window is shown).
+    pub fn validate_shape_in(&self, shape: &Shape, file: &ViewKey, step: u32) -> Result<(), Error> {
+        if self.moves.is_empty() {
             return self.validate_shape(shape);
         }
         let mut d = self.clone();
@@ -976,8 +1186,17 @@ impl Document {
         d.base_code.clear();
         // A move that no longer applies leaves the base code shown
         // (`sync_code_to_step`), so that is what the shape is checked against.
-        d.code = self.code_at(step).unwrap_or_else(|_| self.base().to_vec());
+        let (code, first) = self
+            .view_code_at(file, step)
+            .unwrap_or_else(|_| (self.base().to_vec(), self.base_first()));
+        d.code = code;
+        d.source.first_line = first;
         d.validate_shape(shape)
+    }
+
+    /// Validates a shape against the file shown at `step`.
+    pub fn validate_shape_at(&self, shape: &Shape, step: u32) -> Result<(), Error> {
+        self.validate_shape_in(shape, &self.shown_view_at(step).file, step)
     }
 
     /// Resolves the style of a mark: inline `style` > document `styles[kind]` >
@@ -1080,8 +1299,31 @@ impl Document {
         if self.step > self.max_step() {
             self.step = self.max_step();
         }
+        // Embedded linked files (`views`) become loaded views; a file read
+        // from disk by the loader (`fs::load_views`) is already there.
+        for (file, code) in &self.views {
+            let key = Self::normalize_file(file);
+            self.view_code.entry(key).or_insert_with(|| {
+                if code.is_empty() {
+                    vec![String::new()]
+                } else {
+                    code.clone()
+                }
+            });
+        }
+        let keys: Vec<Option<ViewKey>> = self
+            .annotations
+            .iter()
+            .map(|a| a.file.as_deref().map(|f| self.view_key(f)))
+            .collect();
+        for (a, k) in self.annotations.iter_mut().zip(keys) {
+            if let Some(k) = k {
+                a.file = k;
+            }
+        }
         if !self.moves.is_empty() {
             self.base_code = self.code.clone();
+            self.base_first_line = self.source.first_line;
             self.validate_moves()?;
             if let Some(e) = self.sync_code_to_step() {
                 return Err(e);
@@ -1228,12 +1470,36 @@ impl Document {
         }
     }
 
+    /// Settles the file an annotation belongs to: the one it names
+    /// (normalized; it must be the main file or a linked one), else the
+    /// view shown at its step (ADR 0007 §3d/§3f).
+    fn resolve_file(&self, ann: &mut Annotation) -> Result<(), Error> {
+        match &ann.file {
+            Some(f) => {
+                let key = self.view_key(f);
+                if key.is_some() && !self.view_code.contains_key(key.as_deref().unwrap_or("")) {
+                    return Err(Error::NotFound(format!(
+                        "file «{f}» is not a view of this document (link it with a code.link move first)"
+                    )));
+                }
+                ann.file = key;
+            }
+            None => {
+                if !self.moves.is_empty() {
+                    ann.file = self.shown_view_at(ann.step).file;
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
         if ann.step == 0 {
             ann.step = 1;
         }
-        self.validate_shape_at(&ann.shape, ann.step)?;
+        self.resolve_file(&mut ann)?;
+        self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
         sanitize_texts(&mut ann.shape);
         if ann.id.trim().is_empty() {
             ann.id = self.next_id();
@@ -1249,7 +1515,8 @@ impl Document {
     }
 
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
-        self.validate_shape_at(&ann.shape, ann.step)?;
+        self.resolve_file(&mut ann)?;
+        self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
         sanitize_texts(&mut ann.shape);
         let slot = self
             .annotations
@@ -1442,6 +1709,7 @@ mod tests {
                 step: 1,
                 color: None,
                 markers: None,
+                file: None,
                 shape: Shape::Note {
                     line: 2,
                     text: "s is born here".into(),
@@ -1455,6 +1723,7 @@ mod tests {
                 step: 1,
                 color: None,
                 markers: None,
+                file: None,
                 shape: Shape::Note {
                     line: 99,
                     text: "x".into(),
@@ -1472,6 +1741,7 @@ mod tests {
             step: 2,
             color: None,
             markers: None,
+            file: None,
             shape: Shape::Arrow {
                 from: Anchor { line: 2, col: 8 },
                 to: Anchor { line: 3, col: 10 },
