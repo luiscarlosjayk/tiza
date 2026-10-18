@@ -291,6 +291,17 @@ pub fn check_path(path: &Path, opts: &CheckOptions) -> Result<Report, crate::Err
 
 /// Checks the text of a `.tiza`; `base_dir` resolves its relative files.
 pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
+    check_text_with(text, base_dir, opts, &Default::default())
+}
+
+/// [`check_text`] knowing the values a live instance keeps in memory
+/// ([`crate::redact::KnownValues`], t-174): a `.tiza` text never holds them.
+fn check_text_with(
+    text: &str,
+    base_dir: Option<&Path>,
+    opts: &CheckOptions,
+    known: &crate::redact::KnownValues,
+) -> Report {
     let width = opts.width.unwrap_or(DEFAULT_WIDTH);
     let mut out: Vec<Finding> = Vec::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -352,6 +363,7 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         }
     };
     doc.schema = SCHEMA_VERSION;
+    doc.known_values = known.clone();
     // ---- the code ----
     if let Err(e) = crate::fs::resolve_code(&mut doc, base_dir) {
         out.push(Finding::new(Level::Error, "code", e.to_string()));
@@ -407,7 +419,7 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
         }
     }
     match serde_json::to_string(&d) {
-        Ok(text) => check_text(&text, base_dir, opts),
+        Ok(text) => check_text_with(&text, base_dir, opts, &doc.known_values),
         Err(e) => Report::new(
             opts.width.unwrap_or(DEFAULT_WIDTH),
             vec![Finding::new(Level::Error, "schema", e.to_string())],
@@ -420,7 +432,7 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
 /// The texts under every mask at any step (see
 /// [`crate::redact::masked_values`]).
 fn secrets(doc: &Document) -> Vec<String> {
-    crate::redact::masked_values(doc)
+    crate::redact::all_values(doc).to_vec()
 }
 
 /// Takes every text under a mask out of the findings.
@@ -428,6 +440,18 @@ fn scrub_secrets(doc: &Document, out: &mut [Finding]) {
     let secrets = secrets(doc);
     if secrets.is_empty() {
         return;
+    }
+    // Shown text (t-174): an id, a message or a clipped label sharing text
+    // with a masked value is masked, as on screen.
+    let filter = crate::redact::Echo::quoting(doc);
+    for f in out.iter_mut() {
+        if let Some(id) = &mut f.id {
+            *id = filter.shown(id);
+        }
+        f.message = filter.shown_message(&f.message);
+        if let Some(t) = &mut f.text {
+            *t = filter.shown(t);
+        }
     }
     for f in out {
         for s in &secrets {

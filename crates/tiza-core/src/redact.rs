@@ -50,16 +50,30 @@
 //!   MCP `export_image`, `tiza render` of the live instance) the same way;
 //!   the TUI's own exports pass the title through [`Echo::shown`];
 //! - `scene.list` / `list_annotations` / `:list` / the selection line:
-//!   `protocol::describe_with`;
+//!   `protocol::describe_with` (ids too); `move.list` and the moves of
+//!   `:list`: `protocol::describe_move_with` (targets `«…»`);
+//! - glyphs, annotation ids (and a spotlight's `ids`, `rebind` keys) and
+//!   unknown `steps` keys: [`Echo::shown_doc`]; the «not drawn: ID» notice
+//!   (`fs::outside_notice`), the redact notices of moves and the `steps`
+//!   warnings pass [`shown`]; `tiza check` masks every finding;
+//! - the `:` line's Tab completion never offers a name that shares text
+//!   with a masked value (`App::complete`); `style.set` replies masked;
+//! - an agent's new id that shares text with a masked value is refused
+//!   (`App::refuse_masked_id`);
 //! - status-bar messages and notices: `App::info` / `App::error` /
-//!   `App::redact_alert`;
+//!   `App::redact_alert`, through [`Echo::shown_message`] (a message's
+//!   own lowercase words stay, as in t-167's errors);
 //! - supervised mode (review list, accepted/rejected/expired messages,
 //!   `supervise.status`): `proposal_summary`, with [`Echo::copies`];
 //! - errors over the socket, the MCP, the CLI and on load: [`Echo::error`].
 //!
-//! Only `scene.get` without `as_shown` (the explicit editing call) and the
-//! saved `.tiza` keep the author's text as written: the file is the
-//! author's, like the code under a redact.
+//! Only `scene.get` without `as_shown` (the explicit editing call) keeps
+//! the author's text as written. A `.tiza` whose code is embedded is saved
+//! with its code masked (t-117), so its texts are saved through
+//! [`Echo::shown_doc`] too (`fs::save_document`): reopened, it would no
+//! longer know the value. A file reference keeps the author's texts. The
+//! values an instance knew survive a `scene.put` of the masked copy in
+//! memory only ([`KnownValues`], [`carry_values`]).
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -768,14 +782,18 @@ pub fn masked_values(doc: &Document) -> Vec<String> {
     v
 }
 
-/// A key for what [`masked_values`] reads: the code (the step-0 code and
-/// the linked files when there are moves), the redacts and the moves.
+/// A key for what [`masked_values`] reads: without moves, the redacts and
+/// the lines they are on (not the whole code: the key is taken on every
+/// frame); with moves, the step-0 code, the linked files and the moves.
 fn values_key(doc: &Document) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     if doc.moves.is_empty() {
-        doc.code.hash(&mut h);
-        doc.source.first_line.hash(&mut h);
+        for a in &doc.annotations {
+            if let Shape::Redact { span, .. } = &a.shape {
+                doc.line_text(span.line).hash(&mut h);
+            }
+        }
     } else {
         doc.base().hash(&mut h);
         doc.base_first().hash(&mut h);
@@ -818,6 +836,58 @@ pub fn masked_values_cached(doc: &Document) -> Arc<Vec<String>> {
         c.push((key, v.clone()));
     }
     v
+}
+
+/// Values under a mask that a document no longer holds in clear (t-174):
+/// the instance learnt them before a `scene.put` replaced its code by the
+/// masked copy `scene.get` hands out. Kept in memory only (never
+/// serialized, never printed: Debug shows how many), and compared as
+/// always equal so they never make two documents differ.
+#[derive(Clone, Default)]
+pub struct KnownValues(pub Arc<Vec<String>>);
+
+impl std::fmt::Debug for KnownValues {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "KnownValues({} values)", self.0.len())
+    }
+}
+
+impl PartialEq for KnownValues {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// Every value the filter masks for `doc`: those under its redacts at any
+/// step (cached) and those it was told about ([`KnownValues`]), longest
+/// first. Empty on a document without redacts.
+pub fn all_values(doc: &Document) -> Arc<Vec<String>> {
+    if !has_redacts(doc) {
+        return Arc::default();
+    }
+    let v = masked_values_cached(doc);
+    let known = &doc.known_values.0;
+    if known.is_empty() || known.iter().all(|k| v.contains(k)) {
+        return v;
+    }
+    let mut all: Vec<String> = v.iter().chain(known.iter()).cloned().collect();
+    all.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    all.dedup();
+    Arc::new(all)
+}
+
+/// Gives `to` (a document about to replace `from`, as a `scene.put` does)
+/// every value `from` masks, so a code that comes back masked does not
+/// leave its labels in clear (t-174).
+pub fn carry_values(from: &Document, to: &mut Document) {
+    let v = all_values(from);
+    if v.is_empty() {
+        return;
+    }
+    let mut all: Vec<String> = v.iter().chain(to.known_values.0.iter()).cloned().collect();
+    all.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    all.dedup();
+    to.known_values = KnownValues(Arc::new(all));
 }
 
 /// `text` with every copy of `values`, whole or a piece of [`MIN_PIECE`]+
@@ -874,9 +944,17 @@ pub fn shown(text: &str, doc: &Document) -> String {
     Echo::quoting(doc).shown(text)
 }
 
+/// [`Echo::shown_message`] for `doc`: a message Tiza writes (a notice, a
+/// warning) that may name a document's id or text.
+pub fn shown_message(text: &str, doc: &Document) -> String {
+    Echo::quoting(doc).shown_message(text)
+}
+
 /// `doc` with every text a reader can see masked by [`shown`]: its title,
 /// step titles and ids, labels, notes, callout texts and titles, mark
-/// legends and style names. The code and the redacts are left as they are
+/// legends, glyphs and style names, annotation ids (and the ids a
+/// spotlight or a `rebind` names, the same way, so they still match) and
+/// range markers. The code and the redact spans are left as they are
 /// ([`masked`] does those). Unchanged on a document without redacts.
 pub fn shown_doc(doc: &Document) -> Document {
     let mut d = doc.clone();
@@ -896,20 +974,24 @@ pub struct MaskedText {
     pub id: Option<String>,
     /// Its step (an annotation's, or the named step's).
     pub step: Option<u32>,
-    /// Which text: `label`, `text`, `title`, `kind`, `legend`, `id`.
+    /// Which text: `label`, `text`, `title`, `kind`, `legend`, `glyph`,
+    /// `name`, `id`.
     pub field: &'static str,
 }
 
+/// What the alert, `tiza check` and an agent's reply say about a text of
+/// `field` that repeats a masked value (t-174, Luis's wording).
+pub fn shares_message(field: &str) -> String {
+    format!("its {field} shares text with a masked value; masked on screen — reword the {field}")
+}
+
 impl MaskedText {
-    /// `its label repeats masked text; masked on screen — fix the label`.
+    /// `its label shares text with a masked value; masked on screen — reword the label`.
     pub fn message(&self) -> String {
-        format!(
-            "its {0} repeats masked text; masked on screen — fix the {0}",
-            self.field
-        )
+        shares_message(self.field)
     }
 
-    /// The alert: `a3: its label repeats masked text; masked on screen — fix the label`.
+    /// The alert: `a3: its label shares text with a masked value; masked on screen — reword the label`.
     pub fn notice(&self) -> String {
         format!("{}: {}", self.subject, self.message())
     }
@@ -945,6 +1027,12 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
                 push(format!("step {}", n.step), None, Some(n.step), field);
             }
         }
+        if n.unknown
+            .iter()
+            .any(|(k, v)| f.repeats(k) || v.as_str().is_some_and(|t| f.repeats(t)))
+        {
+            push(format!("step {}", n.step), None, Some(n.step), "key");
+        }
     }
     for (k, st) in &doc.styles {
         let name = f.shown_kind(k);
@@ -954,9 +1042,12 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
         if hit(st.legend.as_deref()) {
             push(format!("style {name}"), None, None, "legend");
         }
+        if hit(st.glyph.as_deref()) {
+            push(format!("style {name}"), None, None, "glyph");
+        }
     }
     for a in &doc.annotations {
-        let mut fields: Vec<(Option<&str>, &'static str)> = Vec::new();
+        let mut fields: Vec<(Option<&str>, &'static str)> = vec![(Some(&a.id), "id")];
         match &a.shape {
             Shape::Highlight { label, .. }
             | Shape::Box { label, .. }
@@ -970,6 +1061,7 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
                 }
                 fields.push((label.as_deref(), "label"));
                 fields.push((style.legend.as_deref(), "legend"));
+                fields.push((style.glyph.as_deref(), "glyph"));
             }
             Shape::Note { text, .. } => fields.push((Some(text), "text")),
             Shape::Callout { text, title, .. } => {
@@ -1046,7 +1138,7 @@ impl Echo {
         Echo {
             active: true,
             written: Vec::new(),
-            values: masked_values_cached(doc),
+            values: all_values(doc),
         }
         .written(document_targets(doc))
     }
@@ -1061,7 +1153,7 @@ impl Echo {
         Echo {
             active: true,
             written: Vec::new(),
-            values: masked_values_cached(doc),
+            values: all_values(doc),
         }
     }
 
@@ -1129,7 +1221,37 @@ impl Echo {
         mask_copies(text, &self.values).unwrap_or_else(|| text.to_string())
     }
 
-    /// Whether [`Echo::shown`] changes `text` (it repeats masked text).
+    /// A message Tiza writes that may carry document text (the bar, an
+    /// alert, a notice, a `check` finding): [`Echo::shown`], except that a
+    /// plain lowercase word holding only a piece of a value stays — the
+    /// message's own words (`value`, `masked`, `label`) — as for the errors
+    /// of t-167. A whole copy goes anyway; labels and notes reach messages
+    /// already masked by [`Echo::shown`].
+    pub fn shown_message(&self, text: &str) -> String {
+        if self.values.is_empty() {
+            return text.to_string();
+        }
+        let mut out = String::with_capacity(text.len());
+        let mut rest = text;
+        // Token by token: a plain word is kept unless it holds a whole copy.
+        while !rest.is_empty() {
+            let start = rest.find(|c: char| token_char(c)).unwrap_or(rest.len());
+            out.push_str(&rest[..start]);
+            rest = &rest[start..];
+            let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
+            let tok = &rest[..end];
+            let whole = self.values.iter().any(|v| tok.contains(v.as_str()));
+            if !tok.is_empty() && plain_word(tok) && !whole {
+                out.push_str(tok);
+            } else {
+                out.push_str(&self.shown(tok));
+            }
+            rest = &rest[end..];
+        }
+        out
+    }
+
+    /// Whether [`Echo::shown`] changes `text` (it shares text with a masked value).
     pub fn repeats(&self, text: &str) -> bool {
         !self.values.is_empty() && self.values.iter().any(|v| !value_hits(text, v).is_empty())
     }
@@ -1158,7 +1280,8 @@ impl Echo {
         }
     }
 
-    /// The texts of one annotation's shape, masked in place.
+    /// The texts of one annotation's shape, masked in place (the ids a
+    /// spotlight names are left to [`Echo::shown_doc`]).
     pub fn shown_shape(&self, shape: &mut Shape) {
         if self.values.is_empty() {
             return;
@@ -1174,6 +1297,7 @@ impl Echo {
                 *kind = self.shown_kind(kind);
                 self.shown_opt(label);
                 self.shown_opt(&mut style.legend);
+                self.shown_opt(&mut style.glyph);
             }
             Shape::Note { text, .. } => self.shown_str(text),
             Shape::Callout { text, title, .. } => {
@@ -1185,30 +1309,106 @@ impl Echo {
     }
 
     /// Every text of `doc` a reader can see, masked in place (see
-    /// [`shown_doc`]).
+    /// [`shown_doc`]), ids included.
     pub fn shown_doc(&self, doc: &mut Document) {
+        self.shown_doc_with(doc, true);
+    }
+
+    /// [`Echo::shown_doc`] without the ids, for the layout: it draws no id
+    /// and keys its geometry by them.
+    pub fn shown_texts(&self, doc: &mut Document) {
+        self.shown_doc_with(doc, false);
+    }
+
+    fn shown_doc_with(&self, doc: &mut Document, ids: bool) {
         if self.values.is_empty() {
             return;
         }
         self.shown_opt(&mut doc.title);
+        // Ids that repeat a value: masked, and kept unique (`••••••••-2`)
+        // so a spotlight or a `rebind` still names the same annotation.
+        let mut renamed: std::collections::HashMap<String, String> = Default::default();
+        if ids && doc.annotations.iter().any(|a| self.repeats(&a.id)) {
+            let mut taken: std::collections::HashSet<String> = doc
+                .annotations
+                .iter()
+                .filter(|a| !self.repeats(&a.id))
+                .map(|a| a.id.clone())
+                .collect();
+            for a in &doc.annotations {
+                if self.repeats(&a.id) && !renamed.contains_key(&a.id) {
+                    let base = self.shown(&a.id);
+                    let mut new = base.clone();
+                    let mut n = 2;
+                    while taken.contains(&new) {
+                        new = format!("{base}-{n}");
+                        n += 1;
+                    }
+                    taken.insert(new.clone());
+                    renamed.insert(a.id.clone(), new);
+                }
+            }
+        }
+        let rename = |id: &mut String| {
+            if let Some(n) = renamed.get(id.as_str()) {
+                *id = n.clone();
+            }
+        };
         for a in &mut doc.annotations {
             self.shown_shape(&mut a.shape);
+            if ids {
+                rename(&mut a.id);
+                if let Shape::Spotlight { ids, .. } = &mut a.shape {
+                    for id in ids {
+                        rename(id);
+                    }
+                }
+                if let Some(m) = &mut a.markers {
+                    self.shown_str(&mut m.start);
+                    self.shown_str(&mut m.end);
+                }
+            }
+        }
+        if !renamed.is_empty() {
+            for m in &mut doc.moves {
+                let rebind = std::mem::take(&mut m.rebind);
+                for (mut k, v) in rebind {
+                    rename(&mut k);
+                    m.rebind.insert(k, v);
+                }
+            }
         }
         if doc.styles.keys().any(|k| self.repeats(k))
-            || doc
-                .styles
-                .values()
-                .any(|st| st.legend.as_deref().is_some_and(|l| self.repeats(l)))
+            || doc.styles.values().any(|st| {
+                st.legend.as_deref().is_some_and(|l| self.repeats(l))
+                    || st.glyph.as_deref().is_some_and(|g| self.repeats(g))
+            })
         {
             let styles = std::mem::take(&mut doc.styles);
             for (k, mut st) in styles {
                 self.shown_opt(&mut st.legend);
+                self.shown_opt(&mut st.glyph);
                 doc.styles.entry(self.shown_kind(&k)).or_insert(st);
             }
         }
         for n in &mut doc.steps {
             self.shown_opt(&mut n.title);
             self.shown_opt(&mut n.id);
+            // Keys this version does not know, kept as written (t-099).
+            if n.unknown.keys().any(|k| self.repeats(k))
+                || n.unknown
+                    .values()
+                    .any(|v| v.as_str().is_some_and(|t| self.repeats(t)))
+            {
+                let unknown = std::mem::take(&mut n.unknown);
+                for (k, v) in unknown {
+                    let v = match v {
+                        serde_json::Value::String(t) => serde_json::Value::String(self.shown(&t)),
+                        other => other,
+                    };
+                    n.unknown.insert(self.shown(&k), v);
+                }
+            }
         }
     }
 

@@ -983,7 +983,14 @@ impl TizaServer {
                 json!({"name": p.name, "glyph": p.glyph, "legend": p.legend, "color": p.color}),
             )
             .await?;
-        Ok(text(pretty(&v)))
+        // The instance says when a text of it shares text with a masked
+        // value (t-174); the sentence first, never the text.
+        Ok(text(
+            match v.get("masked_notice").and_then(|n| n.as_str()) {
+                Some(n) => format!("{n}.\n{}", pretty(&v)),
+                None => pretty(&v),
+            },
+        ))
     }
 
     #[tool(

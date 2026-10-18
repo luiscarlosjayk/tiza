@@ -100,6 +100,13 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
+    /// Values under a mask this instance knew before its code was replaced
+    /// by masked code (a `scene.put` of what `scene.get` returned, t-174):
+    /// in memory only, never written, so the texts repeating them stay
+    /// masked. Debug prints only how many there are.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub known_values: crate::redact::KnownValues,
 }
 
 fn yes() -> bool {
@@ -827,6 +834,7 @@ impl Document {
             theme_overrides: None,
             steps: Vec::new(),
             looping: false,
+            known_values: Default::default(),
         }
     }
 
@@ -1427,31 +1435,81 @@ impl Document {
         for (a, r) in self.annotations.iter().zip(&p.redacts) {
             let Some(r) = r else { continue };
             let Some(by) = r.by_move else { continue };
-            if a.file != shown || (!cumulative && self.moves[by].at_step != step) {
+            if a.file != shown {
                 continue;
             }
             if r.dropped {
-                out.push((
-                    a.id.clone(),
-                    format!("redact {} dropped: move #{} deleted its line", a.id, by + 1),
-                ));
+                if cumulative || self.moves[by].at_step == step {
+                    out.push((
+                        a.id.clone(),
+                        format!("redact {} dropped: move #{} deleted its line", a.id, by + 1),
+                    ));
+                }
                 continue;
             }
-            let mut lines: Vec<u32> = r.all().map(|s| s.line).collect();
-            lines.sort_unstable();
-            let place = match (lines.first(), lines.last()) {
-                (Some(a), Some(b)) if a == b => format!("the rest of L{a}"),
-                (Some(a), Some(b)) => format!("L{a}-{b}"),
-                _ => continue,
-            };
-            out.push((
-                a.id.clone(),
-                format!(
-                    "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
-                    a.id,
-                    by + 1
-                ),
-            ));
+            // It really could not follow its text (t-140): its own mask
+            // widened. A copy of its value that a move wrote elsewhere is
+            // masked too, and said apart, line by line (t-174): the redact
+            // itself did follow its text.
+            let lost = r
+                .lost_by
+                .or(if r.copy_by.is_none() { Some(by) } else { None });
+            if let Some(lost) = lost
+                && (cumulative || self.moves[lost].at_step == step)
+            {
+                let mut lines: Vec<u32> = r.spans.iter().map(|s| s.line).collect();
+                lines.sort_unstable();
+                lines.dedup();
+                let place = match (lines.first(), lines.last()) {
+                    (Some(a), Some(b)) if a == b => Some(format!("the rest of L{a}")),
+                    (Some(a), Some(b)) if (b - a) as usize + 1 == lines.len() => {
+                        Some(format!("L{a}-{b}"))
+                    }
+                    (Some(_), Some(_)) => Some(
+                        lines
+                            .iter()
+                            .map(|l| format!("L{l}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                    ),
+                    _ => None,
+                };
+                if let Some(place) = place {
+                    out.push((
+                        a.id.clone(),
+                        format!(
+                            "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
+                            a.id,
+                            lost + 1
+                        ),
+                    ));
+                }
+            }
+            if let Some(copy) = r.copy_by
+                && !r.copies.is_empty()
+                && (cumulative || self.moves[copy].at_step == step)
+            {
+                let mut lines: Vec<u32> = r.copies.iter().map(|s| s.line).collect();
+                lines.sort_unstable();
+                lines.dedup();
+                out.push((
+                    a.id.clone(),
+                    format!(
+                        "redact {}: masked a copy of its value on {} (move #{})",
+                        a.id,
+                        lines
+                            .iter()
+                            .map(|l| format!("L{l}"))
+                            .collect::<Vec<_>>()
+                            .join(", "),
+                        copy + 1
+                    ),
+                ));
+            }
+        }
+        // Shown text (t-174): an id repeating a masked value is masked.
+        for (_, n) in &mut out {
+            *n = crate::redact::shown_message(n, self);
         }
         out
     }

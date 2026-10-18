@@ -2176,8 +2176,15 @@
             "type": "string"
           },
           "masked": {
-            "description": "Its text (label, note, callout text or title) repeats a masked value\n(t-174): accepted, but masked on every surface; fix it. The text is\nnever quoted back.",
+            "description": "One of its texts (label, note, callout text or title, kind, glyph)\nshares text with a masked value (t-174): accepted, but masked on\nevery surface; reword it. The text is never quoted back.",
             "type": "boolean"
+          },
+          "masked_notice": {
+            "description": "Which text, in the alert's words: `a3: its label shares text with a\nmasked value; masked on screen — reword the label`.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "revision": {
             "format": "uint64",
@@ -2975,8 +2982,15 @@
             "type": "string"
           },
           "masked": {
-            "description": "Its text (label, note, callout text or title) repeats a masked value\n(t-174): accepted, but masked on every surface; fix it. The text is\nnever quoted back.",
+            "description": "One of its texts (label, note, callout text or title, kind, glyph)\nshares text with a masked value (t-174): accepted, but masked on\nevery surface; reword it. The text is never quoted back.",
             "type": "boolean"
+          },
+          "masked_notice": {
+            "description": "Which text, in the alert's words: `a3: its label shares text with a\nmasked value; masked on screen — reword the label`.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "revision": {
             "format": "uint64",

@@ -323,7 +323,9 @@ fn ac1_case02_a_normal_document_masks_the_whole_new_value() {
     live.keys(&[KeyCode::Char('n')]);
     let alerts = live.with(|a| a.redact_alerts.clone()).join(" ");
     assert!(
-        alerts.contains("redact a1 could not follow its text through move #1: masking L2-3"),
+        // t-174 (Luis, A5): the redact followed its text; the copy the
+        // move wrote is said line by line, not as a range L2-3.
+        alerts.contains("redact a1: masked a copy of its value on L2 (move #1)"),
         "{alerts}"
     );
     // scene.get at every step: the moves' content has no tail.
@@ -382,7 +384,7 @@ fn ac3_case03_every_export_of_the_saved_document() {
         assert!(o.status.success(), "{ext}: {err}");
         assert_no(&values, &format!("{ext} stderr"), &err);
         assert_eq!(
-            err.matches("could not follow its text through move #1")
+            err.matches("redact a1: masked a copy of its value on L2 (move #1)")
                 .count(),
             1,
             "{ext}: said once: {err}"
@@ -764,7 +766,7 @@ fn ac3_case13_save_quit_and_reopen() {
         let out = String::from_utf8_lossy(&o.stdout).into_owned();
         assert!(o.status.success(), "{out}");
         assert!(
-            out.contains("redact a1 could not follow its text through move #"),
+            out.contains("redact a1: masked a copy of its value on L2 (move #1)"),
             "{out}"
         );
         assert_no(&["LONGERvalue77", SECRET], "tiza check", &out);

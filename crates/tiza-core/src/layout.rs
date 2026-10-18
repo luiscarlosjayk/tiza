@@ -401,12 +401,12 @@ pub fn layout_with(
     let doc = if opts.redact && crate::redact::has_redacts(doc) {
         masked_doc = crate::redact::masked(doc, opts.step);
         if let Some(f) = &filter {
-            f.shown_doc(&mut masked_doc);
+            f.shown_texts(&mut masked_doc);
         }
         &masked_doc
     } else if let Some(f) = &filter {
         masked_doc = doc.clone();
-        f.shown_doc(&mut masked_doc);
+        f.shown_texts(&mut masked_doc);
         &masked_doc
     } else {
         doc

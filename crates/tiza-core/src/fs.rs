@@ -100,13 +100,17 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
     if bad.is_empty() {
         return None;
     }
-    Some(format!(
-        "{} annotation{} outside the code (lines {}-{}) and not drawn: {}",
-        bad.len(),
-        if bad.len() == 1 { "" } else { "s" },
-        doc.base_first(),
-        doc.base_first() + doc.base().len().saturating_sub(1) as u32,
-        bad.join(", ")
+    // Shown text (t-174): an id repeating a masked value is masked.
+    Some(crate::redact::shown_message(
+        &format!(
+            "{} annotation{} outside the code (lines {}-{}) and not drawn: {}",
+            bad.len(),
+            if bad.len() == 1 { "" } else { "s" },
+            doc.base_first(),
+            doc.base_first() + doc.base().len().saturating_sub(1) as u32,
+            bad.join(", ")
+        ),
+        doc,
     ))
 }
 
@@ -463,6 +467,12 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     // A sidecar never carries a secret: embedded code is written with the
     // redact masks applied (t-117). A file reference stays a reference.
     if matches!(doc.code_src, CodeSource::Embedded(_)) && crate::redact::has_redacts(&doc) {
+        // The texts that repeat a masked value are written masked too
+        // (t-174): once the code is saved masked, the reopened file no
+        // longer knows the value, so a label left as written would show
+        // it in clear. Fail closed, like the code; a file reference keeps
+        // the author's texts (the value is read from the file again).
+        crate::redact::Echo::quoting(&doc).shown_doc(&mut doc);
         doc.code_src = CodeSource::Embedded(crate::redact::masked_base(&doc));
     }
     let json = serde_json::to_string_pretty(&doc)?;

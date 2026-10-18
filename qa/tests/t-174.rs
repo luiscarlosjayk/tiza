@@ -20,14 +20,28 @@
 //!   GIF, MP4, txt, md, ansi, cast), `render.text`/`render_text`,
 //!   `code.get`, `scene.list`/`list_annotations`, MCP resources
 //!   (`tiza://scene`, `tiza://render`, `tiza://render.md`), `status`.
-//! - AC4 `scene.get` and the saved `.tiza` keep the author's text as
-//!   written; only `scene.get` does (the `tiza://scene` resource is a
-//!   reader and is masked). The agent guide says to edit from `scene.get`.
-//! - AC5 One alert the first time a text repeats a masked value
-//!   (`redact_alerts`): `h1: its label repeats masked text; masked on
-//!   screen — fix the label`; `tiza check` warns with the same words; an
-//!   agent's `annotation.add`/`update` with such a text is accepted and the
-//!   reply says it was masked, never quoting it.
+//! - AC4 `scene.get` keeps the author's text as written; only `scene.get`
+//!   does (the `tiza://scene` resource is a reader and is masked). The
+//!   agent guide says to edit from `scene.get`. Review round 1 (fail
+//!   closed, for Luis to confirm): a `.tiza` whose code is embedded is
+//!   saved with its code masked (t-117), so its texts that share text with
+//!   a masked value are saved masked too — reopened, it no longer knows the
+//!   value. A file reference keeps the author's texts. Across `scene.get` →
+//!   `scene.put` the instance keeps the values it knew, in memory only.
+//! - AC5 One alert the first time a text shares text with a masked value
+//!   (`redact_alerts`): `h1: its label shares text with a masked value;
+//!   masked on screen — reword the label` (Luis's wording, the field named
+//!   as it is: label, text, title, kind, legend, glyph, name, id); `tiza
+//!   check` warns with the same words; an agent's `annotation.add`/`update`
+//!   or `style.set` with such a text is accepted and the reply says
+//!   `"masked": true` with the same sentence, never quoting it. An agent's
+//!   new id that shares text with a masked value is refused
+//!   (`invalid_argument`, not quoted); one already in the file is masked
+//!   wherever ids are shown, and said.
+//! - Review round 1: a move that writes a copy of the value says
+//!   `redact r1: masked a copy of its value on L7 (move #1)`, not «could
+//!   not follow … L1-7»; glyphs, Tab completion, `steps` warnings,
+//!   `style.set` and `move.list`/`:list` targets go through the filter.
 //! - AC6 This file: one test per reader/export, searching the output bytes
 //!   (raw pty included) for any piece of 4+ characters of the value.
 //!
@@ -47,7 +61,8 @@ use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
 
 const VALUE: &str = "9vK7wPx3Lm";
 const MASK: &str = "••••••••";
-const LABEL_ALERT: &str = "h1: its label repeats masked text; masked on screen — fix the label";
+const LABEL_ALERT: &str =
+    "h1: its label shares text with a masked value; masked on screen — reword the label";
 
 /// Every piece of 4 characters of the value (the t-157 rule).
 fn pieces() -> Vec<String> {
@@ -203,7 +218,7 @@ fn corner_no_letter_or_digit_piece_and_fail_closed_common_word() {
     assert_eq!(found.len(), 1);
     assert_eq!(
         found[0].notice(),
-        "document: its title repeats masked text; masked on screen — fix the title"
+        "document: its title shares text with a masked value; masked on screen — reword the title"
     );
 }
 
@@ -264,7 +279,7 @@ fn ac2_every_known_formatting_site_calls_the_filter() {
     for (file, needle) in [
         (
             "crates/tiza-core/src/layout.rs",
-            "f.shown_doc(&mut masked_doc)",
+            "f.shown_texts(&mut masked_doc)",
         ),
         (
             "crates/tiza-core/src/protocol.rs",
@@ -288,15 +303,15 @@ fn ac2_every_known_formatting_site_calls_the_filter() {
         ),
         (
             "crates/tiza-tui/src/app.rs",
-            "self.message = Some((self.shown(&msg.into()), false));",
+            "self.message = Some((self.shown_message(&msg.into()), false));",
         ),
         (
             "crates/tiza-tui/src/app.rs",
-            "self.message = Some((self.shown(&msg.into()), true));",
+            "self.message = Some((self.shown_message(&msg.into()), true));",
         ),
         (
             "crates/tiza-tui/src/app.rs",
-            "let notice = self.shown(&notice);",
+            "let notice = self.shown_message(&notice);",
         ),
         (
             "crates/tiza-tui/src/app.rs",
@@ -311,6 +326,22 @@ fn ac2_every_known_formatting_site_calls_the_filter() {
             "crates/tiza-cli/src/main.rs",
             "let doc = tiza_core::redact::shown_doc(&doc);",
         ),
+        ("crates/tiza-core/src/fs.rs", ".shown_doc(&mut doc);"),
+        (
+            "crates/tiza-core/src/fs.rs",
+            "crate::redact::shown_message(",
+        ),
+        (
+            "crates/tiza-core/src/model.rs",
+            "crate::redact::shown_message(n, self)",
+        ),
+        ("crates/tiza-tui/src/app.rs", "self.refuse_masked_id(id)?;"),
+        ("crates/tiza-tui/src/app.rs", "!filter.repeats(c)"),
+        (
+            "crates/tiza-tui/src/app.rs",
+            "tiza_core::redact::carry_values(&self.doc, &mut doc);",
+        ),
+        ("crates/tiza-tui/src/ui.rs", "describe_move_with("),
     ] {
         assert!(
             read(file).contains(needle),
@@ -360,7 +391,10 @@ fn ac3_render_txt_shows_bullets_where_the_value_was() {
     assert_clean("render txt", &txt);
     // Said once on stderr, never quoted.
     assert!(err.contains(&format!("tiza: {LABEL_ALERT}")), "{err}");
-    assert!(err.contains("n1: its text repeats masked text"), "{err}");
+    assert!(
+        err.contains("n1: its text shares text with a masked value"),
+        "{err}"
+    );
     assert_clean("render stderr", &err);
 }
 
@@ -560,10 +594,13 @@ fn ac3_live_readers_mask_and_scene_get_keeps_the_author_text() {
         json!(format!("was {VALUE}"))
     );
     assert_eq!(scene["document"]["code"][1], json!(format!("TOKEN={MASK}")));
-    // The saved file keeps it too.
+    // The saved file: its code is embedded, so it is saved masked (t-117)
+    // and so are the texts that share text with the value (review round
+    // 1: reopened, the file no longer knows the value).
     live.command("w");
     let saved = std::fs::read_to_string(live.with(|a| a.save_path.clone())).unwrap();
-    assert!(saved.contains(&format!("was {VALUE}")), "{saved}");
+    assert!(saved.contains(&format!("was {MASK}")), "{saved}");
+    assert_clean("the saved .tiza", &saved);
     // The screen: labels, the bar's step title, `:list`, `:export`.
     let screen = live.screen(140, 30);
     assert!(screen.contains(&format!("Rotate {MASK}")), "{screen}");
@@ -644,7 +681,12 @@ fn ac3_mcp_resources_and_tools_mask_and_add_note_says_masked() {
         json!({"line": 4, "text": format!("old token {VALUE}"), "id": "n9"}),
     );
     assert!(!err, "{raw}");
-    assert!(text.contains("Its text repeats masked text"), "{text}");
+    assert!(
+        text.contains(
+            "n9: its text shares text with a masked value; masked on screen — reword the text."
+        ),
+        "{text}"
+    );
     assert!(text.contains("\"masked\": true"), "{text}");
     assert_clean("add_note reply", &raw.to_string());
     let (_, frame, _) = mcp.call("render_text", json!({"width": 120}));
@@ -656,7 +698,9 @@ fn ac3_mcp_resources_and_tools_mask_and_add_note_says_masked() {
     );
     let (_, status, _) = mcp.call("status", json!({}));
     assert!(
-        status.contains("n9: its text repeats masked text; masked on screen — fix the text"),
+        status.contains(
+            "n9: its text shares text with a masked value; masked on screen — reword the text"
+        ),
         "{status}"
     );
     // A label without a copy says nothing.
@@ -679,7 +723,8 @@ fn ac5_alert_once_per_text_and_check_warns_with_the_same_words() {
         alerts,
         [
             LABEL_ALERT.to_string(),
-            "n1: its text repeats masked text; masked on screen — fix the text".to_string()
+            "n1: its text shares text with a masked value; masked on screen — reword the text"
+                .to_string()
         ]
     );
     let screen = live.screen(120, 30);
@@ -710,12 +755,12 @@ fn ac5_alert_once_per_text_and_check_warns_with_the_same_words() {
         String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     assert!(
         report.contains(
-            "warning: h1, step 1: its label repeats masked text; masked on screen — fix the label"
+            "warning: h1, step 1: its label shares text with a masked value; masked on screen — reword the label"
         ),
         "{report}"
     );
     assert!(
-        report.contains("warning: n1, step 1: its text repeats masked text"),
+        report.contains("warning: n1, step 1: its text shares text with a masked value"),
         "{report}"
     );
     assert!(report.contains("0 errors, 2 warnings"), "{report}");
@@ -738,11 +783,11 @@ fn ac5_every_kind_of_text_is_said_and_checked() {
     let out = tiza(&["check", f.to_str().unwrap()]);
     let report = String::from_utf8_lossy(&out.stdout).into_owned();
     for want in [
-        "document: its title repeats masked text",
-        "step 1: its title repeats masked text",
-        "step 1: its id repeats masked text",
-        "its name repeats masked text",
-        "its legend repeats masked text",
+        "document: its title shares text with a masked value",
+        "step 1: its title shares text with a masked value",
+        "step 1: its id shares text with a masked value",
+        "its name shares text with a masked value",
+        "its legend shares text with a masked value",
         "h1, step 1: its label",
         "n1, step 1: its text",
         "b1, step 1: its label",
@@ -773,7 +818,7 @@ pieces = sys.argv[4].split(",")
 squeezed = lambda out: plain(out).replace(" ", "")
 s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 140)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
-    if s.wait_for(lambda out: "itslabelrepeatsmaskedtext" in squeezed(out), 10, "the alert"):
+    if s.wait_for(lambda out: "itslabelsharestextwithamaskedvalue" in squeezed(out), 10, "the alert"):
         print("ALERT", flush=True)
     for key in [b"n", b"p", b"n", b"L", b"\x1b", b"P", b"p", b"n", b"P"]:
         s.send(key)
@@ -810,7 +855,400 @@ fn ac4_the_agent_guide_says_to_edit_from_scene_get() {
     );
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(
-        readme.contains("repeats masked text"),
+        readme.contains("shares text with a masked value")
+            && readme.contains("random-looking fake values"),
         "README, secrets section"
+    );
+}
+
+// ---------- review round 1 ----------
+
+/// A document whose code is a file next to it: saved, it keeps the
+/// author's texts (the value is read from the file again).
+fn file_backed(dir: &Path) -> PathBuf {
+    std::fs::write(
+        dir.join("demo.sh"),
+        format!("# demo\nTOKEN={VALUE}\nUSER=ana\n"),
+    )
+    .unwrap();
+    let mut d: Value = serde_json::from_str(&std::fs::read_to_string(demo()).unwrap()).unwrap();
+    d["code"] = json!({"file": "demo.sh"});
+    write(dir, "demo.sh", &d)
+}
+
+#[test]
+fn b1_saving_an_embedded_document_masks_its_texts_and_reopening_shows_no_value() {
+    let dir = scratch("t174-b1-save");
+    let path = dir.join("demo.tiza");
+    std::fs::copy(demo(), &path).unwrap();
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    // Any change autosaves.
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 1, "text": "plain"}),
+    );
+    drop(live);
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert_clean("the autosaved .tiza", &saved);
+    assert!(saved.contains(&format!("was {MASK}")), "{saved}");
+    let (txt, err) = out_of(&["render", path.to_str().unwrap(), "--format", "txt"]);
+    assert_clean(
+        "render of the reopened file",
+        &String::from_utf8_lossy(&txt),
+    );
+    assert_clean("its stderr", &err);
+    let (svg, _) = out_of(&[
+        "render",
+        path.to_str().unwrap(),
+        "--format",
+        "svg",
+        "--no-embed-fonts",
+    ]);
+    assert_clean("svg of the reopened file", &String::from_utf8_lossy(&svg));
+
+    // A file reference keeps the author's texts: the value is in the file.
+    let fb = file_backed(&dir);
+    let doc = tiza_core::fs::open(fb.to_str().unwrap()).unwrap().document;
+    let save = dir.join("fb.tiza");
+    tiza_core::fs::save_document(&doc, &save).unwrap();
+    let saved = std::fs::read_to_string(&save).unwrap();
+    assert!(saved.contains(&format!("was {VALUE}")), "{saved}");
+}
+
+#[test]
+fn b1_scene_get_then_put_keeps_the_values_in_memory() {
+    // A value of 8 characters or fewer: the masked copy shows no tail.
+    let short = "Ab3x9Kq";
+    let doc = json!({
+        "schema": 1, "source": {"language": "sh"},
+        "code": ["# demo", format!("PIN={short}")],
+        "annotations": [
+            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 4, "end": 11}},
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 2, "end": 6}, "label": format!("was {short}")}
+        ]
+    });
+    let live = live_of(&doc, "t174-b1-put");
+    live.with(|a| a.set_step(1));
+    let scene = live.api_ok("scene.get", json!({}));
+    assert_eq!(scene["document"]["code"][1], json!(format!("PIN={MASK}")));
+    live.api_ok("scene.put", json!({"document": scene["document"]}));
+    let text = live.api_ok("render.text", json!({"width": 100}));
+    let text = text["text"].as_str().unwrap();
+    assert!(text.contains(&format!("was {MASK}")), "{text}");
+    assert!(!text.contains(short) && !text.contains("3x9K"), "{text}");
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(!list.contains("3x9K"), "{list}");
+    let check = live.api_ok("check", json!({})).to_string();
+    assert!(
+        check.contains("masked_text") && !check.contains("3x9K"),
+        "{check}"
+    );
+    // Never written: the values live in memory only.
+    let saved = std::fs::read_to_string(live.with(|a| a.save_path.clone())).unwrap();
+    assert!(!saved.contains("3x9K"), "{saved}");
+    // Debug of the document names how many, never which.
+    let known = format!("{:?}", live.with(|a| a.doc.known_values.clone()));
+    assert_eq!(known, "KnownValues(1 values)");
+}
+
+fn glyphs_and_ids() -> Value {
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", format!("TOKEN={VALUE}"), "USER=ana", "PORT=1"],
+        "styles": {"secretish": {"glyph": "K7wP", "legend": "plain legend", "color": "red"}},
+        "steps": [{"step": 1, "title": "one", "x9vK7w": true}],
+        "annotations": [
+            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
+            {"id": "m1", "step": 1, "type": "mark", "kind": "secretish", "span": {"line": 3, "start": 0, "end": 4}},
+            {"id": "m2", "step": 1, "type": "mark", "kind": "read", "span": {"line": 4, "start": 0, "end": 4}, "style": {"glyph": "wPx3"}},
+            {"id": format!("n{VALUE}"), "step": 1, "type": "note", "line": 3, "text": "plain"},
+            {"id": "s1", "step": 1, "type": "spotlight", "ids": [format!("n{VALUE}")]},
+            {"id": "out7wPx3", "step": 1, "type": "note", "line": 99, "text": "outside"}
+        ]
+    })
+}
+
+#[test]
+fn b2_glyphs_go_through_the_filter() {
+    let dir = scratch("t174-b2");
+    let f = write(&dir, "glyphs", &glyphs_and_ids());
+    let (txt, err) = out_of(&[
+        "render",
+        f.to_str().unwrap(),
+        "--format",
+        "txt",
+        "--step",
+        "1",
+    ]);
+    let txt = String::from_utf8_lossy(&txt).into_owned();
+    assert_clean("render with glyphs", &txt);
+    assert_clean("render stderr", &err);
+    assert!(
+        err.contains("its glyph shares text with a masked value"),
+        "{err}"
+    );
+    let report =
+        String::from_utf8_lossy(&tiza(&["check", f.to_str().unwrap()]).stdout).into_owned();
+    assert!(
+        report.contains("style secretish: its glyph shares text"),
+        "{report}"
+    );
+    assert!(
+        report.contains("m2, step 1: its glyph shares text"),
+        "{report}"
+    );
+    assert_clean("check", &report);
+    let live = live_of(&glyphs_and_ids(), "t174-b2-live");
+    live.with(|a| a.set_step(1));
+    for (m, p) in [
+        ("render.text", json!({"width": 100})),
+        ("style.list", json!({})),
+        ("scene.get", json!({"as_shown": true})),
+    ] {
+        assert_clean(m, &live.api_ok(m, p).to_string());
+    }
+    assert_clean("the screen", &live.screen(120, 30));
+}
+
+#[test]
+fn a2_ids_are_refused_from_agents_and_masked_from_the_file() {
+    let live = live_of(&glyphs_and_ids(), "t174-a2");
+    live.with(|a| a.set_step(1));
+    // An agent's new id: refused, not quoted.
+    for (m, p) in [
+        (
+            "annotation.add",
+            json!({"type": "note", "line": 1, "text": "x", "id": format!("a{VALUE}")}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "note", "line": 1, "text": "x", "id": "z7wPx3"}),
+        ),
+        (
+            "scene.patch",
+            json!({"annotations": [{"id": "q9vK7", "type": "note", "step": 1, "line": 1, "text": "x"}]}),
+        ),
+    ] {
+        let r = live.api(m, p);
+        let e = r.error.unwrap_or_else(|| panic!("{m} accepted the id"));
+        assert_eq!(e.code, "invalid_argument");
+        assert!(
+            e.message
+                .contains("this id shares text with a masked value"),
+            "{}",
+            e.message
+        );
+        assert_clean(m, &e.message);
+    }
+    // Ids from the file: masked wherever ids are shown, and said.
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(list.contains(&format!("{MASK} [step 1] note L3")), "{list}");
+    assert!(list.contains(&format!("spotlight [{MASK}]")), "{list}");
+    assert_clean("scene.list", &list);
+    assert_clean(
+        "scene.get as_shown",
+        &live
+            .api_ok("scene.get", json!({"as_shown": true}))
+            .to_string(),
+    );
+    let status = live.api_ok("status", json!({})).to_string();
+    assert!(
+        status.contains("its id shares text with a masked value"),
+        "{status}"
+    );
+    assert_clean("status", &status);
+    assert_clean("the screen", &live.screen(120, 30));
+    live.keys(&[crossterm::event::KeyCode::Char('L')]);
+    assert_clean("the :list overlay", &live.screen(120, 30));
+    let mut mcp = McpClient::start(&live.socket);
+    let v = mcp.request("resources/read", json!({"uri": "tiza://scene"}));
+    assert_clean("tiza://scene", &v.to_string());
+    let (_, text, raw) = mcp.call("list_annotations", json!({}));
+    assert_clean("list_annotations", &text);
+    assert_clean("list_annotations raw", &raw.to_string());
+    // The CLI: the outside notice («not drawn: ID»), render and check.
+    let dir = scratch("t174-a2-cli");
+    let f = write(&dir, "ids", &glyphs_and_ids());
+    let (_, err) = out_of(&["render", f.to_str().unwrap(), "--format", "txt"]);
+    assert!(err.contains("not drawn"), "{err}");
+    assert_clean("render stderr", &err);
+    let report = String::from_utf8_lossy(&tiza(&["check", f.to_str().unwrap(), "--json"]).stdout)
+        .into_owned();
+    assert!(report.contains("masked_text"), "{report}");
+    assert_clean("check --json", &report);
+}
+
+#[test]
+fn a2_ids_in_the_list_overlay_in_a_pty() {
+    let dir = scratch("t174-a2-pty");
+    let doc = write(&dir, "ids", &glyphs_and_ids());
+    let sock = dir.join("live.sock");
+    let out = tiza_qa::pty_script(
+        &dir,
+        "list.py",
+        r##"
+binary, doc, sock = sys.argv[1], sys.argv[2], sys.argv[3]
+pieces = sys.argv[4].split(",")
+squeezed = lambda out: plain(out).replace(" ", "")
+s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 140)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
+    s.send(b"n")
+    s.settle(0.3)
+    mark = len(s.out)
+    s.send(b"L")
+    if s.wait_for(lambda out: "Annotations" in squeezed(out[mark:]), 10, "the list"):
+        print("LISTED", flush=True)
+    s.send(b"\x1b")
+    s.settle(0.2)
+    # Tab completion on `:style ` and `:del `: never types a masked name.
+    for cmd in [b":style ", b":del "]:
+        s.send(cmd)
+        s.settle(0.2)
+        s.send(b"\t")
+        s.settle(0.3)
+        s.send(b"\x1b")
+        s.settle(0.2)
+s.kill()
+s.finish(5)
+raw = s.out
+leaks = [p for p in pieces if p.encode() in raw]
+print("RAW_LEAKS" if leaks else "RAW_CLEAN", leaks, flush=True)
+"##,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            doc.to_str().unwrap(),
+            sock.to_str().unwrap(),
+            &pieces().join(","),
+        ],
+    );
+    for want in ["LISTED", "RAW_CLEAN"] {
+        assert!(out.contains(want), "{want}:\n{out}");
+    }
+}
+
+#[test]
+fn b4_tab_completion_never_offers_a_masked_name() {
+    let mut doc = glyphs_and_ids();
+    doc["styles"][format!("k{VALUE}")] = json!({"glyph": "!", "legend": "x"});
+    let live = live_of(&doc, "t174-b4");
+    let (line, cands) = live.with(|a| a.complete("style "));
+    assert_clean("completion", &format!("{line} {cands:?}"));
+    assert!(
+        line.contains("secretish") || cands.iter().any(|c| c == "secretish"),
+        "{line} {cands:?}"
+    );
+    let (line, cands) = live.with(|a| a.complete("del "));
+    assert_clean("id completion", &format!("{line} {cands:?}"));
+}
+
+#[test]
+fn b5_unknown_keys_of_steps_are_shown_text() {
+    let live = live_of(&glyphs_and_ids(), "t174-b5");
+    let status = live.api_ok("status", json!({}));
+    let warnings = status["warnings"].to_string();
+    assert!(warnings.contains("unknown key"), "{warnings}");
+    assert_clean("status.warnings", &warnings);
+    let dir = scratch("t174-b5-cli");
+    let f = write(&dir, "steps", &glyphs_and_ids());
+    let (_, err) = out_of(&["render", f.to_str().unwrap(), "--format", "txt"]);
+    assert!(err.contains("unknown key"), "{err}");
+    assert_clean("render stderr", &err);
+}
+
+#[test]
+fn b6_style_set_and_define_style_reply_masked() {
+    let live = live_of(&all_texts(), "t174-b6");
+    let r = live.api_ok(
+        "style.set",
+        json!({"name": "warnish", "glyph": "!", "legend": format!("old {VALUE}")}),
+    );
+    assert_eq!(r["masked"], json!(true), "{r}");
+    assert!(
+        r["masked_notice"].as_str().unwrap().contains(
+            "its legend shares text with a masked value; masked on screen — reword the legend"
+        ),
+        "{r}"
+    );
+    assert_clean("style.set reply", &r.to_string());
+    let mut mcp = McpClient::start(&live.socket);
+    let (err, text, raw) = mcp.call(
+        "define_style",
+        json!({"name": "other", "glyph": "?", "legend": format!("x {VALUE}")}),
+    );
+    assert!(!err, "{raw}");
+    assert!(
+        text.contains("its legend shares text with a masked value"),
+        "{text}"
+    );
+    assert_clean("define_style", &raw.to_string());
+}
+
+#[test]
+fn b7_move_targets_are_elided_in_move_list_and_the_list_overlay() {
+    let mut doc = all_texts();
+    doc["moves"] = json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "USER=ana", "content": "USER=bob"}]);
+    let live = live_of(&doc, "t174-b7");
+    let list = live.api_ok("move.list", json!({}));
+    let summary = list["moves"][0]["summary"].as_str().unwrap().to_string();
+    assert_eq!(summary, "#1 [step 1] code.patch replace «…» 1 line");
+    live.keys(&[crossterm::event::KeyCode::Char('L')]);
+    let screen = live.screen(140, 40);
+    assert!(screen.contains("code.patch replace «…»"), "{screen}");
+    // Without redacts the target is quoted as before.
+    let mut plain = doc.clone();
+    plain["annotations"] = json!([]);
+    let live = live_of(&plain, "t174-b7-plain");
+    let list = live.api_ok("move.list", json!({}));
+    assert_eq!(
+        list["moves"][0]["summary"],
+        json!("#1 [step 1] code.patch replace «USER=ana» 1 line")
+    );
+}
+
+#[test]
+fn a5_a_copy_written_by_a_move_is_said_line_by_line() {
+    let f = fixture("t-174/conmove.tiza");
+    let (txt, err) = out_of(&["render", f.to_str().unwrap(), "--step", "1", "--out", "-"]);
+    assert!(
+        err.contains("tiza: redact r1: masked a copy of its value on L7 (move #1)"),
+        "{err}"
+    );
+    assert!(
+        !err.contains("could not follow"),
+        "the redact did follow its text: {err}"
+    );
+    assert_clean("stderr", &err);
+    assert_clean("render", &String::from_utf8_lossy(&txt));
+}
+
+#[test]
+fn a3_a_message_keeps_its_own_words_and_masks_document_text() {
+    // A value that holds an ordinary word (`value`): Tiza's own words in a
+    // notice stay; an id or a whole copy goes.
+    let d = tiza_core::fs::parse_document(
+        &json!({"schema": 1, "source": {"language": "txt"}, "code": ["k=LONGERvalue77"],
+                "annotations": [{"id": "r1", "step": 1, "type": "redact", "span": {"line": 1, "start": 2, "end": 15}}]})
+        .to_string(),
+        None,
+    )
+    .unwrap();
+    let m = tiza_core::redact::shown_message;
+    assert_eq!(
+        m("redact r1: masked a copy of its value on L7 (move #1)", &d),
+        "redact r1: masked a copy of its value on L7 (move #1)"
+    );
+    assert_eq!(
+        m("a1: copy LONGERvalue77 here", &d),
+        format!("a1: copy {MASK} here")
+    );
+    assert_eq!(m("idERvalu7 is gone", &d), format!("{MASK} is gone"));
+    // Document text stays fully fail closed: the word goes.
+    assert_eq!(
+        tiza_core::redact::shown("the value here", &d),
+        format!("the {MASK} here")
     );
 }

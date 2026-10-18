@@ -418,12 +418,23 @@ impl App {
             self.save_warning_pending = false;
             return;
         }
-        self.message = Some((self.shown(&msg.into()), false));
+        self.message = Some((self.shown_message(&msg.into()), false));
     }
 
     pub fn error(&mut self, msg: impl Into<String>) {
         self.save_warning_pending = false;
-        self.message = Some((self.shown(&msg.into()), true));
+        self.message = Some((self.shown_message(&msg.into()), true));
+    }
+
+    /// An agent's id for a new annotation that shares text with a masked
+    /// value: `invalid_argument`, without quoting it (t-174, Luis).
+    pub fn refuse_masked_id(&self, id: &str) -> Result<(), Error> {
+        if tiza_core::redact::Echo::quoting(&self.doc).repeats(id) {
+            return Err(Error::Invalid(
+                "this id shares text with a masked value: it would show it wherever ids are listed — choose another id".into(),
+            ));
+        }
+        Ok(())
     }
 
     /// Document-derived text as the bar, the alerts and the exports show
@@ -433,9 +444,15 @@ impl App {
         tiza_core::redact::shown(text, &self.doc)
     }
 
+    /// A message for the bar or an alert ([`tiza_core::redact::shown_message`]):
+    /// the message's own lowercase words stay.
+    pub fn shown_message(&self, text: &str) -> String {
+        tiza_core::redact::shown_message(text, &self.doc)
+    }
+
     /// Says once, on the alert row (t-135), each text of the document that
-    /// repeats a masked value (t-174): `a3: its label repeats masked text;
-    /// masked on screen — fix the label`. Checked once per revision; a
+    /// shares text with a masked value (t-174): `a3: its label shares text with a masked value;
+    /// masked on screen — reword the label`. Checked once per revision; a
     /// text fixed and broken again is said again.
     pub fn note_masked_texts(&mut self) {
         if self.masked_checked == Some(self.revision) {
@@ -458,7 +475,7 @@ impl App {
     /// (t-135). An alert already pending stays; the same text is not
     /// repeated.
     pub fn redact_alert(&mut self, notice: String) {
-        let notice = self.shown(&notice);
+        let notice = self.shown_message(&notice);
         self.error(notice.clone());
         if !self.redact_alerts.contains(&notice) {
             self.redact_alerts.push(notice);
@@ -1097,6 +1114,10 @@ impl App {
     /// (the instance cannot resolve a file reference meant for another
     /// directory); the theme follows the document; one undo step.
     pub fn put_scene(&mut self, mut doc: Document) -> Result<SceneChanged, Error> {
+        // `scene.get` hands out the code masked: what comes back no longer
+        // holds the values, so the ones this instance knew are kept (in
+        // memory only) and its labels stay masked (t-174).
+        tiza_core::redact::carry_values(&self.doc, &mut doc);
         if doc.code.is_empty() {
             match &doc.code_src {
                 tiza_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
@@ -1169,6 +1190,10 @@ impl App {
                     .to_string();
                 let is_delete = v.get("deleted").and_then(|b| b.as_bool()).unwrap_or(false);
                 let existed = d.find_annotation(&id).is_some();
+                // A new id sharing text with a masked value (t-174).
+                if !existed && !is_delete {
+                    self.refuse_masked_id(&id)?;
+                }
                 if is_delete {
                     if !existed {
                         return Err(Error::Invalid(format!(
@@ -1532,7 +1557,9 @@ impl App {
 
     /// `move.list` payload.
     pub fn move_list(&self) -> MoveList {
-        // Content masked where it lands under a redact (t-140).
+        // Content masked where it lands under a redact (t-140); targets
+        // and the rest through the output filter (t-174).
+        let echo = tiza_core::redact::Echo::new(&self.doc);
         let shown = tiza_core::moves::masked_moves(&self.doc);
         MoveList {
             moves: shown
@@ -1540,7 +1567,7 @@ impl App {
                 .enumerate()
                 .map(|(i, m)| MoveListed {
                     index: i + 1,
-                    summary: tiza_core::protocol::describe_move(i + 1, &m),
+                    summary: tiza_core::protocol::describe_move_with(i + 1, &m, &echo),
                     r#move: m,
                 })
                 .collect(),
@@ -2566,9 +2593,12 @@ impl App {
                 (cur, pool)
             }
         };
+        // A style name or an id sharing text with a masked value is never
+        // offered: Tab would type it on the command line in clear (t-174).
+        let filter = tiza_core::redact::Echo::quoting(&self.doc);
         let matches: Vec<String> = candidates
             .into_iter()
-            .filter(|c| c.starts_with(prefix))
+            .filter(|c| c.starts_with(prefix) && !filter.repeats(c))
             .collect();
         match matches.as_slice() {
             [] => (input.to_string(), vec![]),
@@ -4736,6 +4766,11 @@ impl App {
             "move.list" => serde_json::to_value(self.move_list())?,
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
+                // An id that shares text with a masked value would show it
+                // wherever ids are listed (t-174): refused, never quoted.
+                if let Some(id) = &p.id {
+                    self.refuse_masked_id(id)?;
+                }
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 // Where it stands against the view right now (t-155).
@@ -4777,7 +4812,29 @@ impl App {
                 }
                 self.doc.styles.insert(name.to_string(), st.clone());
                 self.touch();
-                json!({"name": name, "style": st, "revision": self.revision})
+                // Shown text (t-174): a name, legend or glyph sharing text
+                // with a masked value comes back masked, and says so.
+                let filter = tiza_core::redact::Echo::quoting(&self.doc);
+                let mut shown = self.doc.clone();
+                shown.styles.retain(|k, _| k == name);
+                filter.shown_doc(&mut shown);
+                let (shown_name, shown_st) = shown
+                    .styles
+                    .into_iter()
+                    .next()
+                    .unwrap_or((name.to_string(), st.clone()));
+                let notices: Vec<String> = tiza_core::redact::masked_texts(&self.doc)
+                    .into_iter()
+                    .filter(|m| m.subject == format!("style {shown_name}"))
+                    .map(|m| m.notice())
+                    .collect();
+                let mut reply =
+                    json!({"name": shown_name, "style": shown_st, "revision": self.revision});
+                if !notices.is_empty() {
+                    reply["masked"] = json!(true);
+                    reply["masked_notice"] = json!(notices.join(" · "));
+                }
+                reply
             }
             "style.list" => {
                 // Style names and legends are shown text (t-174).

@@ -1049,30 +1049,36 @@ pub struct AnnotationMutated {
     /// lib.rs is not shown at step 2 (main.rs is)`…); absent when visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden: Option<String>,
-    /// Its text (label, note, callout text or title) repeats a masked value
-    /// (t-174): accepted, but masked on every surface; fix it. The text is
-    /// never quoted back.
+    /// One of its texts (label, note, callout text or title, kind, glyph)
+    /// shares text with a masked value (t-174): accepted, but masked on
+    /// every surface; reword it. The text is never quoted back.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub masked: bool,
+    /// Which text, in the alert's words: `a3: its label shares text with a
+    /// masked value; masked on screen — reword the label`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub masked_notice: Option<String>,
 }
 
 impl AnnotationMutated {
     pub fn of(doc: &Document, id: String, revision: u64) -> Self {
         let step = doc.find_annotation(&id).map(|a| a.step).unwrap_or(0);
         let hidden = doc.why_hidden(&id, doc.step);
-        let masked = doc.find_annotation(&id).is_some_and(|a| {
-            let mut shown = a.shape.clone();
-            crate::redact::Echo::quoting(doc).shown_shape(&mut shown);
-            shown != a.shape
-        });
+        let notices: Vec<String> = crate::redact::masked_texts(doc)
+            .into_iter()
+            .filter(|m| m.id.as_deref() == Some(id.as_str()))
+            .map(|m| m.notice())
+            .collect();
         AnnotationMutated {
-            masked,
+            masked: !notices.is_empty(),
+            masked_notice: (!notices.is_empty()).then(|| notices.join(" · ")),
             step_title: doc.step_title(step),
             shown_step: doc.step,
             visible: hidden.is_none(),
             hidden,
             step,
-            id,
+            // Shown text (t-174): an id from the file repeating a value.
+            id: crate::redact::shown(&id, doc),
             revision,
         }
     }
@@ -1081,12 +1087,9 @@ impl AnnotationMutated {
     /// now: the view is at step 0 (next_step shows it).`
     pub fn sentence(&self, verb: &str) -> String {
         let s = self.sentence_where(verb);
-        if self.masked {
-            format!(
-                "{s} Its text repeats masked text: it is masked on every surface — fix the label."
-            )
-        } else {
-            s
+        match &self.masked_notice {
+            Some(n) if self.masked => format!("{s} {n}."),
+            _ => s,
         }
     }
 
@@ -1276,6 +1279,21 @@ pub struct MoveMutated {
 
 /// One line per move, in the `move.list` / `:moves` format.
 pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
+    describe_move_with(index, m, &crate::redact::Echo::default())
+}
+
+/// [`describe_move`] through the output filter of its document (t-174):
+/// on a document with a redact its targets read «…» (t-167) and the rest
+/// is shown text.
+pub fn describe_move_with(
+    index: usize,
+    m: &crate::moves::Move,
+    echo: &crate::redact::Echo,
+) -> String {
+    echo.shown_message(&describe_move_raw(index, m, echo))
+}
+
+fn describe_move_raw(index: usize, m: &crate::moves::Move, echo: &crate::redact::Echo) -> String {
     use crate::moves::{MoveAction, PatchOp, Typing};
     let p = match &m.action {
         MoveAction::CodePatch(p) => p,
@@ -1293,7 +1311,8 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
         MoveAction::Select(sel) => {
             let point = |w: &Where| match (&w.find, w.line) {
                 (Some(t), _) => format!(
-                    "«{t}»{}",
+                    "{}{}",
+                    echo.quote(t),
                     w.occurrence.map(|n| format!("#{n}")).unwrap_or_default()
                 ),
                 (None, Some(l)) => format!("L{l}:{}", w.col.unwrap_or(0)),
@@ -1318,13 +1337,13 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
     let target = if let Some(pos) = &p.position {
         format!("L{pos}")
     } else if let Some(t) = &p.after {
-        format!("after «{t}»")
+        format!("after {}", echo.quote(t))
     } else if let Some(t) = &p.before {
-        format!("before «{t}»")
+        format!("before {}", echo.quote(t))
     } else if let Some(t) = &p.find {
-        format!("«{t}»")
+        echo.quote(t)
     } else if let (Some(a), Some(b)) = (&p.find_start, &p.find_end) {
-        format!("«{a}»..«{b}»")
+        format!("{}..{}", echo.quote(a), echo.quote(b))
     } else {
         String::from("?")
     };
@@ -1343,7 +1362,11 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
     } else {
         format!(
             " rebind {}",
-            m.rebind.keys().cloned().collect::<Vec<_>>().join(",")
+            m.rebind
+                .keys()
+                .map(|k| echo.shown(k))
+                .collect::<Vec<_>>()
+                .join(",")
         )
     };
     format!(
@@ -1367,16 +1390,25 @@ pub fn describe(a: &Annotation) -> String {
 pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
     let mut shown = a.clone();
     echo.shown_shape(&mut shown.shape);
+    // Its id and the ids a spotlight names are document text too.
+    shown.id = echo.shown(&shown.id);
+    if let Shape::Spotlight { ids, .. } = &mut shown.shape {
+        for id in ids {
+            *id = echo.shown(id);
+        }
+    }
     let base = describe_shape(&shown);
     let base = match &a.markers {
         Some(m) => format!("{base} @{}..@{}", echo.quote(&m.start), echo.quote(&m.end)),
         None => base,
     };
     // The file it belongs to, when it is not the main one (t-105).
-    match &a.file {
+    let line = match &a.file {
         Some(f) => format!("{base} ({f})"),
         None => base,
-    }
+    };
+    // The file name, the rest: Tiza's own words stay.
+    echo.shown_message(&line)
 }
 
 fn describe_shape(a: &Annotation) -> String {

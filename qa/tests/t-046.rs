@@ -550,14 +550,34 @@ fn scenario_6_asks_for_redacts_without_a_label() {
     let dir = scratch("t046-s6");
     std::fs::create_dir_all(&dir).unwrap();
     let env = [
-        ("DATABASE_URL=postgres://app:", "hunter2", "@db.local/app"),
-        ("API_TOKEN=", "tok_demo_0000000000000000", ""),
+        ("DATABASE_URL=postgres://app:", "Qz7rW4xv", "@db.local/app"),
+        ("API_TOKEN=", "tk_R7vQ2mXz9LpW4nB8", ""),
         ("LOG_LEVEL=info", "", ""),
     ];
     let text: String = env.iter().map(|(a, v, b)| format!("{a}{v}{b}\n")).collect();
     std::fs::write(dir.join("demo.env"), text).unwrap();
     // The span of each secret value, from the text before it (0-based
     // columns, end exclusive), as the prompt asks the agent to compute it.
+    // The fake values share no four characters in a row with anything else
+    // in the scenario (nor with the notes and labels below, nor with the
+    // file name): a value that does masks those words in every label and
+    // note too (t-174, fail closed). `hunter2` masked «counter», «enter».
+    let words = s[5]
+        .1
+        .replace("Qz7rW4xv", "")
+        .replace("tk_R7vQ2mXz9LpW4nB8", "")
+        + " demo.env where the app's Postgres lives the token the API client sends how chatty the logs are database password API token";
+    for (_, value, _) in env.iter().take(2) {
+        assert!(s[5].1.contains(value), "scenario 6 writes {value}");
+        let c: Vec<char> = value.chars().collect();
+        for w in c.windows(4) {
+            let piece: String = w.iter().collect();
+            assert!(
+                !words.contains(&piece),
+                "{value} shares «{piece}» with the scenario's text"
+            );
+        }
+    }
     let span = |line: usize| {
         let (before, value, _) = env[line - 1];
         json!({"line": line, "start": before.len(), "end": before.len() + value.len()})

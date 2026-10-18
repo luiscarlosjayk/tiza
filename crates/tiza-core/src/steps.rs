@@ -223,6 +223,10 @@ impl Document {
                 )
             })
             .collect();
+        // Shown text (t-174): a step's title, id or unknown key repeating a
+        // masked value is masked.
+        let shown = |s: String| crate::redact::shown_message(&s, self);
+        out = out.into_iter().map(shown).collect();
         for n in self.steps.iter().filter(|n| !n.unknown.is_empty()) {
             let keys: Vec<String> = n.unknown.keys().map(|k| format!("`{k}`")).collect();
             out.push(format!(
@@ -233,7 +237,7 @@ impl Document {
                 keys.join(", ")
             ));
         }
-        out
+        out.into_iter().map(shown).collect()
     }
 }
 
