@@ -916,7 +916,7 @@ fn render_all_steps(
     let names: Vec<String> = (first..=last)
         .map(|step| format!("step-{step:0digits$}.{ext}"))
         .collect();
-    let stale = stale_step_files(dir, &names, digits);
+    let (stale, odd) = stale_step_files(dir, &names);
     let mut size = String::new();
     for (step, canvas) in canvases.iter().enumerate().skip(first as usize) {
         let bytes: Vec<u8> = match format {
@@ -943,12 +943,25 @@ fn render_all_steps(
         write_atomically(&path.to_string_lossy(), &bytes)?;
     }
     // Images of an earlier run that this one did not overwrite (a document
-    // that had more steps): a `step-%02d` glob would pick them up.
+    // that had more steps): a `step-%02d` glob would pick them up. Only
+    // regular files of this format go; a failed removal is a warning.
     let (same, other): (Vec<String>, Vec<String>) = stale
         .into_iter()
         .partition(|f| f.ends_with(&format!(".{ext}")));
-    for f in &same {
-        std::fs::remove_file(dir.join(f)).with_context(|| format!("could not remove {f}"))?;
+    let mut removed: Vec<String> = Vec::new();
+    let mut kept: Vec<String> = Vec::new();
+    let mut why = String::new();
+    for f in same {
+        match std::fs::remove_file(dir.join(&f)) {
+            Ok(()) => removed.push(f),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => {
+                if why.is_empty() {
+                    why = e.to_string();
+                }
+                kept.push(f);
+            }
+        }
     }
     let n = names.len();
     let steps = if first == last {
@@ -964,11 +977,20 @@ fn render_all_steps(
         if n == 1 { "" } else { "s" },
         dir.display()
     );
-    if !same.is_empty() {
+    let left = |n: usize| if n == 1 { "it is" } else { "they are" };
+    if !removed.is_empty() {
         eprintln!(
             "tiza: removed {} from an earlier run: {}",
-            files_word(same.len()),
-            same.join(", ")
+            files_word(removed.len()),
+            name_list(&removed)
+        );
+    }
+    if !kept.is_empty() {
+        eprintln!(
+            "tiza: could not remove {} from an earlier run ({why}), left as {}: {}",
+            files_word(kept.len()),
+            left(kept.len()),
+            name_list(&kept)
         );
     }
     if !other.is_empty() {
@@ -976,12 +998,22 @@ fn render_all_steps(
             "tiza: {} also holds {} of another run, left as {}: {}",
             dir.display(),
             files_word(other.len()),
-            if other.len() == 1 {
-                "it is"
+            left(other.len()),
+            name_list(&other)
+        );
+    }
+    if !odd.is_empty() {
+        eprintln!(
+            "tiza: {} also holds {} named like a step that {} not a regular file, left as {}: {}",
+            dir.display(),
+            if odd.len() == 1 {
+                "1 entry".to_string()
             } else {
-                "they are"
+                format!("{} entries", odd.len())
             },
-            other.join(", ")
+            if odd.len() == 1 { "is" } else { "are" },
+            left(odd.len()),
+            name_list(&odd)
         );
     }
     Ok(())
@@ -991,34 +1023,69 @@ fn files_word(n: usize) -> String {
     format!("{n} file{}", if n == 1 { "" } else { "s" })
 }
 
-/// The `step-NN.<ext>` files in `dir` (any of the still formats) that a
-/// run writing `names` does not write, sorted. Only numbers with this
-/// run's width (`digits`, never fewer than 2) count: a `step-1.png` or a
-/// `step-0001.png` next to a 7-step take is not a name this run's scheme
-/// produces, so it is the user's (or of another take) and stays out.
-fn stale_step_files(dir: &std::path::Path, names: &[String], digits: usize) -> Vec<String> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
+/// At most five names, then «and N more» (a directory can hold thousands).
+fn name_list(names: &[String]) -> String {
+    const SHOWN: usize = 5;
+    if names.len() <= SHOWN + 1 {
+        names.join(", ")
+    } else {
+        format!(
+            "{} and {} more",
+            names[..SHOWN].join(", "),
+            names.len() - SHOWN
+        )
+    }
+}
+
+/// Whether `f` is a name `--all-steps` can write: `step-` + at least two
+/// digits (Tiza pads to the last step's width, never fewer than 2, and a
+/// document has no step limit, so `step-0123.png` is one too) + `.` + a
+/// still format, lowercase. `step-1.png`, `STEP-05.PNG`, `step-05.png.bak`
+/// or `step-5a.png` are the user's.
+fn is_step_name(f: &str) -> bool {
+    let Some(rest) = f.strip_prefix("step-") else {
+        return false;
     };
-    let mut out: Vec<String> = entries
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .filter_map(|e| e.file_name().to_str().map(str::to_string))
-        .filter(|f| {
-            let Some(rest) = f.strip_prefix("step-") else {
-                return false;
-            };
-            let Some((num, ext)) = rest.split_once('.') else {
-                return false;
-            };
-            num.len() == digits
-                && num.bytes().all(|b| b.is_ascii_digit())
-                && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
-                && !names.contains(f)
-        })
+    let Some((num, ext)) = rest.split_once('.') else {
+        return false;
+    };
+    num.len() >= 2
+        && num.bytes().all(|b| b.is_ascii_digit())
+        && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
+}
+
+/// The entries of `dir` named like a step (any still format) that a run
+/// writing `names` does not write, sorted: the regular files, and the rest
+/// (directories, symlinks, …), which are never removed and are described
+/// (`step-08.png (a directory)`). Names that are not UTF-8 are skipped.
+fn stale_step_files(dir: &std::path::Path, names: &[String]) -> (Vec<String>, Vec<String>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut files: Vec<String> = Vec::new();
+    let mut odd: Vec<(String, &str)> = Vec::new();
+    for e in entries.filter_map(|e| e.ok()) {
+        let Some(f) = e.file_name().to_str().map(str::to_string) else {
+            continue;
+        };
+        if !is_step_name(&f) || names.contains(&f) {
+            continue;
+        }
+        // `file_type` does not follow symlinks.
+        match e.file_type() {
+            Ok(t) if t.is_file() => files.push(f),
+            Ok(t) if t.is_dir() => odd.push((f, "a directory")),
+            Ok(t) if t.is_symlink() => odd.push((f, "a symlink")),
+            _ => odd.push((f, "not a regular file")),
+        }
+    }
+    files.sort();
+    odd.sort();
+    let odd = odd
+        .into_iter()
+        .map(|(f, what)| format!("{f} ({what})"))
         .collect();
-    out.sort();
-    out
+    (files, odd)
 }
 
 fn format_ext(f: Format) -> &'static str {

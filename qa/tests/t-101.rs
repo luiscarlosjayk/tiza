@@ -1007,39 +1007,266 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
     }
 }
 
-/// Second rework (QA 2 on d2057db): the cleanup removed `step-1.png`,
-/// `step-3.png` and `step-0001.png` of the user's next to a 7-step take.
-/// Tiza pads every number to the width of the last step, never fewer than
-/// two digits, so only names with this run's width are its own.
-#[test]
-fn rework6_all_steps_leaves_step_files_tiza_never_writes_at_this_width() {
-    let dir = scratch("t101-user-steps");
-    let out = dir.join("steps");
-    std::fs::create_dir_all(&out).unwrap();
-    let user = ["step-1.png", "step-3.png", "step-0001.png", "step-009.png"];
-    for f in user.iter().chain(&["step-08.png"]) {
-        std::fs::write(out.join(f), "mine").unwrap();
-    }
+// Second rework (QA 2 on d2057db, scenarios A-H from Luis): the cleanup
+// removed `step-1.png` and `step-3.png` of the user's. It only ever
+// removes names Tiza could have written: `step-` + at least 2 digits +
+// `.` + the format being written, lowercase, a regular file.
+
+/// `tiza render examples/ownership.rs.tiza --all-steps --out <out> <extra>`:
+/// (exit code, stderr). The example has steps 0-7.
+fn all_steps(out: &Path, extra: &[&str]) -> (i32, String) {
     let file = example("ownership.rs.tiza");
-    let r = tiza(&[
+    let mut args = vec![
         "render",
         file.to_str().unwrap(),
         "--all-steps",
         "--out",
         out.to_str().unwrap(),
-    ]);
-    let err = String::from_utf8_lossy(&r.stderr);
-    assert!(r.status.success(), "{err}");
-    // Only the earlier run's own leftover goes, and it is the only one named.
-    assert!(
-        err.contains("removed 1 file from an earlier run: step-08.png"),
-        "{err}"
-    );
-    for f in user {
-        assert!(out.join(f).exists(), "{f} was removed: {err}");
-        assert_eq!(std::fs::read(out.join(f)).unwrap(), b"mine", "{f}");
+    ];
+    args.extend_from_slice(extra);
+    let r = tiza(&args);
+    (
+        r.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&r.stderr).into_owned(),
+    )
+}
+
+fn names_in(dir: &Path) -> Vec<String> {
+    listing(dir).into_iter().map(|(n, _)| n).collect()
+}
+
+#[test]
+fn rework6_a_names_tiza_never_writes_survive_byte_for_byte() {
+    let out = scratch("t101-r2-a").join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    // No two of these differ only in case (a case-insensitive APFS would
+    // make them one file), and none is a name this run writes.
+    let user = [
+        "step-1.png",
+        "step-3.png",
+        "STEP-09.PNG",
+        "step-10.PNG",
+        "step-05.png.bak",
+        "step-05.png~",
+        ".step-05.png",
+        "my-step-05.png",
+        "step-5a.png",
+        "step-.png",
+        "step--1.png",
+        "step-05.jpeg",
+        "step-11.gif",
+        "step-12",
+        "notes.txt",
+    ];
+    for (i, f) in user.iter().enumerate() {
+        std::fs::write(out.join(f), format!("mine {i}")).unwrap();
+    }
+    let (code, err) = all_steps(&out, &[]);
+    assert_eq!(code, 0, "{err}");
+    for (i, f) in user.iter().enumerate() {
+        assert_eq!(
+            std::fs::read_to_string(out.join(f)).unwrap(),
+            format!("mine {i}"),
+            "{f}: {err}"
+        );
         assert!(!err.contains(f), "{f} is named: {err}");
     }
-    assert!(!out.join("step-08.png").exists());
-    assert!(!err.contains("another run"), "{err}");
+    assert!(!err.contains("tiza:"), "{err}");
+    let names = names_in(&out);
+    for s in 0..=7 {
+        assert!(names.contains(&format!("step-{s:02}.png")), "{names:?}");
+    }
+    assert_eq!(names.len(), user.len() + 8, "{names:?}");
+}
+
+#[test]
+fn rework6_b_f_leftovers_of_its_format_go_and_are_named() {
+    let out = scratch("t101-r2-b").join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    // B: an earlier, longer run; F: a 100+ / 1000+ step document's names.
+    for f in [
+        "step-07.png",
+        "step-09.png",
+        "step-10.png",
+        "step-000.png",
+        "step-0123.png",
+    ] {
+        std::fs::write(out.join(f), "old").unwrap();
+    }
+    let (code, err) = all_steps(&out, &[]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains(
+            "removed 4 files from an earlier run: step-000.png, step-0123.png, step-09.png, step-10.png"
+        ),
+        "{err}"
+    );
+    // step-07.png was overwritten, not removed.
+    assert!(!err.contains("step-07"), "{err}");
+    assert_ne!(std::fs::read(out.join("step-07.png")).unwrap(), b"old");
+    let want: Vec<String> = (0..=7).map(|s| format!("step-{s:02}.png")).collect();
+    assert_eq!(names_in(&out), want);
+}
+
+#[cfg(unix)]
+#[test]
+fn rework6_c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
+    let dir = scratch("t101-r2-c");
+    let out = dir.join("steps");
+    std::fs::create_dir_all(out.join("step-08.png")).unwrap();
+    std::fs::write(out.join("step-08.png").join("inside"), "keep").unwrap();
+    std::fs::write(dir.join("outside.png"), "target").unwrap();
+    std::os::unix::fs::symlink("../outside.png", out.join("step-09.png")).unwrap();
+    let (code, err) = all_steps(&out, &[]);
+    assert_eq!(code, 0, "{err}");
+    assert!(
+        err.contains(
+            "also holds 2 entries named like a step that are not a regular file, left as they are: step-08.png (a directory), step-09.png (a symlink)"
+        ),
+        "{err}"
+    );
+    assert!(!err.contains("removed"), "{err}");
+    assert!(out.join("step-08.png").join("inside").exists());
+    let link = std::fs::symlink_metadata(out.join("step-09.png")).unwrap();
+    assert!(link.file_type().is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("outside.png")).unwrap(),
+        "target"
+    );
+}
+
+#[test]
+fn rework6_d_e_another_format_is_left_and_skip_zero_removes_step_00() {
+    let out = scratch("t101-r2-d").join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    for s in 0..=7 {
+        std::fs::write(out.join(format!("step-{s:02}.svg")), "svg").unwrap();
+    }
+    std::fs::write(out.join("step-00.png"), "old").unwrap();
+    let (code, err) = all_steps(&out, &["--skip-zero"]);
+    assert_eq!(code, 0, "{err}");
+    // E: step-00.png is not part of this run.
+    assert!(
+        err.contains("removed 1 file from an earlier run: step-00.png"),
+        "{err}"
+    );
+    assert!(!out.join("step-00.png").exists());
+    assert!(out.join("step-01.png").exists() && out.join("step-07.png").exists());
+    // D: eight SVGs, named (five, then «and 3 more») and left.
+    assert!(
+        err.contains(
+            "also holds 8 files of another run, left as they are: step-00.svg, step-01.svg, step-02.svg, step-03.svg, step-04.svg and 3 more"
+        ),
+        "{err}"
+    );
+    for s in 0..=7 {
+        assert!(out.join(format!("step-{s:02}.svg")).exists());
+    }
+}
+
+/// G. A directory that refuses deletes refuses new images too (unlink and
+/// create need the same permission), so the run fails on its first write,
+/// exactly as it would without the leftover, and the leftover stays. As
+/// root the mode does not bind and the run succeeds; then the leftover is
+/// removed like any other. (A single file that cannot be removed, e.g.
+/// `chflags uchg` on macOS, gives `could not remove … left as it is`.)
+#[cfg(unix)]
+#[test]
+fn rework6_g_a_directory_without_write_permission_changes_no_exit_code() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("t101-r2-g");
+    let (with, without) = (dir.join("with"), dir.join("without"));
+    for d in [&with, &without] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    std::fs::write(with.join("step-09.png"), "old").unwrap();
+    let ro = std::fs::Permissions::from_mode(0o555);
+    std::fs::set_permissions(&with, ro.clone()).unwrap();
+    std::fs::set_permissions(&without, ro).unwrap();
+    let (code_with, err_with) = all_steps(&with, &[]);
+    let (code_without, err_without) = all_steps(&without, &[]);
+    for d in [&with, &without] {
+        std::fs::set_permissions(d, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    assert_eq!(code_with, code_without, "{err_with}\n---\n{err_without}");
+    assert!(!err_with.contains("panicked"), "{err_with}");
+    if code_with == 0 {
+        assert!(err_with.contains("removed 1 file from an earlier run: step-09.png"));
+    } else {
+        assert!(with.join("step-09.png").exists(), "{err_with}");
+        assert!(!err_with.contains("removed"), "{err_with}");
+    }
+}
+
+#[test]
+fn rework6_h_thousands_of_unrelated_files_and_a_long_list() {
+    let (big, empty) = (scratch("t101-r2-h").join("big"), scratch("t101-r2-h0"));
+    std::fs::create_dir_all(&big).unwrap();
+    for i in 0..5000 {
+        std::fs::write(big.join(format!("frame-{i}.png")), "").unwrap();
+    }
+    let (code, err) = all_steps(&big, &["--format", "txt"]);
+    assert_eq!(code, 0, "{err}");
+    let (_, err0) = all_steps(&empty, &["--format", "txt"]);
+    assert_eq!(
+        err.replace(big.to_str().unwrap(), "DIR"),
+        err0.replace(empty.to_str().unwrap(), "DIR")
+    );
+    // Twenty leftovers: five names and «and 15 more».
+    for s in 10..30 {
+        std::fs::write(big.join(format!("step-{s}.txt")), "old").unwrap();
+    }
+    let (_, err) = all_steps(&big, &["--format", "txt"]);
+    assert!(
+        err.contains(
+            "removed 20 files from an earlier run: step-10.txt, step-11.txt, step-12.txt, step-13.txt, step-14.txt and 15 more"
+        ),
+        "{err}"
+    );
+    assert_eq!(names_in(&big).len(), 5000 + 8);
+}
+
+/// G, the warning: a leftover that cannot be removed (immutable: `chattr
+/// +i` on Linux, `chflags uchg` on macOS) is named, the images are
+/// written and the exit code stays 0. Where neither flag can be set (no
+/// root for `chattr`, a filesystem without the flag) only the run is checked.
+#[cfg(unix)]
+#[test]
+fn rework6_g_a_leftover_that_cannot_be_removed_is_a_warning() {
+    let out = scratch("t101-r2-g2").join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    let f = out.join("step-09.png");
+    std::fs::write(&f, "old").unwrap();
+    let flag = |on: bool| {
+        let (cmd, arg) = if cfg!(target_os = "macos") {
+            ("chflags", if on { "uchg" } else { "nouchg" })
+        } else {
+            ("chattr", if on { "+i" } else { "-i" })
+        };
+        Command::new(cmd)
+            .arg(arg)
+            .arg(&f)
+            .stderr(Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success())
+    };
+    let locked = flag(true);
+    let (code, err) = all_steps(&out, &[]);
+    if locked {
+        flag(false);
+    }
+    assert_eq!(code, 0, "{err}");
+    assert!(out.join("step-07.png").exists(), "{err}");
+    if locked {
+        assert!(f.exists(), "{err}");
+        assert!(
+            err.contains("could not remove 1 file from an earlier run (")
+                && err.contains("), left as it is: step-09.png"),
+            "{err}"
+        );
+        assert!(!err.contains("removed 1 file"), "{err}");
+    } else {
+        eprintln!("(no immutable flag here: only the run was checked)");
+        assert!(err.contains("removed 1 file from an earlier run: step-09.png"));
+    }
 }
