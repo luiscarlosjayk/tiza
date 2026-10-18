@@ -1,0 +1,18 @@
+---
+source: qa/tests/t-107.rs
+expression: symbols
+---
+  1    fn main() {
+    ╭─ moved here ────────────────────────╮
+  2 │      let s = String::from("hello"); │
+  3 │      takes(s);                      │
+    ╰─────────────────────────────────────╯
+  4    }
+  5
+  6    fn takes(s: String) {
+  7        println!("{s}");
+  8    }
+
+
+
+                                                                  1/2

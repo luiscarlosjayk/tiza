@@ -73,6 +73,10 @@ pub struct Proposal {
 /// How long a proposal waits for the presenter before it is rejected.
 pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
+/// How long the result of a `:` command stays on the last row in
+/// presentation mode, where there is no status bar to keep it (t-107).
+pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
+
 /// Methods that never change the document or the view: they bypass supervision.
 pub const READ_ONLY_METHODS: &[&str] = &[
     "ping",
@@ -111,6 +115,9 @@ pub struct App {
     pub selected: Option<String>,
     pub scroll: usize,
     pub message: Option<(String, bool)>,
+    /// Presentation mode only (t-107): until when `message` — the result of
+    /// the command just run — is drawn on the last row. `None`: hidden.
+    pub present_message_until: Option<std::time::Instant>,
     pub revision: u64,
     pub dirty: bool,
     pub quit: bool,
@@ -203,6 +210,7 @@ impl App {
             selected: None,
             scroll: 0,
             message: None,
+            present_message_until: None,
             revision: 1,
             dirty: false,
             quit: false,
@@ -1083,10 +1091,46 @@ impl App {
     /// presenting were only a chip on screen; coming back opens the list.
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
+        self.present_message_until = None;
         if !on && !self.proposals.is_empty() && self.overlay == Overlay::None {
             self.overlay = Overlay::Review;
             self.overlay_scroll = 0;
         }
+    }
+
+    /// A `:` command just ran (Enter): in presentation mode its message
+    /// stays on the last row for [`PRESENT_MESSAGE_TTL`] (t-107).
+    pub fn command_finished(&mut self, now: std::time::Instant) {
+        self.present_message_until = if self.present && self.message.is_some() {
+            Some(now + PRESENT_MESSAGE_TTL)
+        } else {
+            None
+        };
+    }
+
+    /// Hides the presentation-mode message once its time is up; `true` when
+    /// the frame must be drawn again.
+    pub fn present_message_tick(&mut self, now: std::time::Instant) -> bool {
+        match self.present_message_until {
+            Some(until) if now >= until => {
+                self.present_message_until = None;
+                if self.present {
+                    // Seen and gone: it must not come back on the status
+                    // bar when presentation mode ends.
+                    self.message = None;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Whether the last row shows a command result in presentation mode.
+    pub fn present_message_shown(&self) -> bool {
+        self.present
+            && self.present_message_until.is_some()
+            && self.message.is_some()
+            && !matches!(self.mode, Mode::Command(_))
     }
 
     pub fn toggle_theme(&mut self) {

@@ -1,0 +1,4 @@
+{"schema":1,"title":"t-107: presentation frame","source":{"language":"rs"},"code":["fn main() {","    let s = String::from(\"hello\");","    takes(s);","}","","fn takes(s: String) {","    println!(\"{s}\");","}"],"step":1,"annotations":[
+{"id":"a1","step":1,"type":"box","from_line":2,"to_line":3,"label":"moved here"},
+{"id":"a2","step":2,"type":"note","line":6,"text":"takes ownership"}
+]}

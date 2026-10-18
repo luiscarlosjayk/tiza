@@ -220,6 +220,9 @@ fn event_loop(
         if app.typing_tick() {
             needs_draw = true;
         }
+        if app.present_message_tick(std::time::Instant::now()) {
+            needs_draw = true;
+        }
         // While typing, poll often enough for a smooth animation.
         let wait = if app.is_typing() { 15 } else { 50 };
         if event::poll(Duration::from_millis(wait))? {
@@ -352,6 +355,7 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 let cmd = input.clone();
                 app.mode = Mode::Normal;
                 app.run_command(&cmd);
+                app.command_finished(std::time::Instant::now());
             }
             KeyCode::Backspace => {
                 if input.pop().is_none() {

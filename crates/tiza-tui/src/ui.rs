@@ -318,18 +318,20 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         }
     }
 
+    let last_row = Rect {
+        x: area.x,
+        y: area.y + area.height - 1,
+        width: area.width,
+        height: 1,
+    };
     if !app.present {
-        draw_status(
-            frame,
-            app,
-            &layout,
-            Rect {
-                x: area.x,
-                y: area.y + area.height - 1,
-                width: area.width,
-                height: 1,
-            },
-        );
+        draw_status(frame, app, &layout, last_row);
+    } else if let Mode::Command(input) = &app.mode {
+        // Presentation mode has no status bar, but what is typed after `:`
+        // and its result must be seen (t-107): the last row, only then.
+        draw_command_line(frame, app, input, last_row);
+    } else if app.present_message_shown() {
+        draw_present_message(frame, app, last_row);
     }
 
     match app.overlay {
@@ -378,6 +380,97 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
 }
 
+/// The `:` line being typed, with completions and notices on the right:
+/// the status bar's place outside presentation mode, the last row in it
+/// (t-107).
+fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
+    let th = &app.theme;
+    let cmd = Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg));
+    // In presentation mode the row already holds code or the step counter.
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame.buffer_mut().set_style(area, cmd);
+    let line = Line::from(vec![
+        Span::styled(":", Style::default().fg(rgb(th.accent)).bg(rgb(th.cmd_bg))),
+        Span::styled(input, cmd),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
+    if let Some((m, _)) = &app.message {
+        // Completion candidates and notices: as much as fits, with an ellipsis.
+        let room = (area.width as usize).saturating_sub(input.width() + 4);
+        let text = if m.width() <= room {
+            m.clone()
+        } else if room >= 4 {
+            let mut cut = String::new();
+            let mut w = 0;
+            for g in m.graphemes(true) {
+                if w + g.width() > room - 1 {
+                    break;
+                }
+                cut.push_str(g);
+                w += g.width();
+            }
+            format!("{cut}…")
+        } else {
+            String::new()
+        };
+        let w = text.width() as u16;
+        if w > 0 {
+            frame.buffer_mut().set_string(
+                area.x + area.width - w - 1,
+                area.y,
+                &text,
+                Style::default().fg(rgb(th.muted)).bg(rgb(th.cmd_bg)),
+            );
+        }
+    }
+    // A long input on a narrow terminal keeps the cursor on the row.
+    let cx = (1 + input.width()).min(area.width.saturating_sub(1) as usize) as u16;
+    frame.set_cursor_position((area.x + cx, area.y));
+}
+
+/// The result of the command just run, on the last row in presentation
+/// mode, for [`crate::app::PRESENT_MESSAGE_TTL`] (t-107): the status bar's
+/// text on the command line's row, nothing else of the bar.
+fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
+    let Some((m, is_err)) = &app.message else {
+        return;
+    };
+    let th = &app.theme;
+    let style = if *is_err {
+        Style::default()
+            .fg(rgb(th.error))
+            .bg(rgb(th.cmd_bg))
+            .add_modifier(Modifier::BOLD)
+    } else {
+        Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg))
+    };
+    frame.render_widget(ratatui::widgets::Clear, area);
+    frame
+        .buffer_mut()
+        .set_style(area, Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg)));
+    // Keep the beginning, with an ellipsis, as the status bar does.
+    let room = (area.width as usize).saturating_sub(2);
+    let text = if m.width() <= room {
+        m.clone()
+    } else if room >= 2 {
+        let mut cut = String::new();
+        let mut w = 0;
+        for g in m.graphemes(true) {
+            if w + g.width() > room - 1 {
+                break;
+            }
+            cut.push_str(g);
+            w += g.width();
+        }
+        format!("{cut}…")
+    } else {
+        String::new()
+    };
+    frame
+        .buffer_mut()
+        .set_string(area.x + 1.min(area.width), area.y, &text, style);
+}
+
 fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     let th = &app.theme;
     let bar = Style::default().fg(rgb(th.status_fg)).bg(rgb(th.status_bg));
@@ -389,43 +482,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     frame.buffer_mut().set_style(area, bar);
 
     if let Mode::Command(input) = &app.mode {
-        let cmd = Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg));
-        frame.buffer_mut().set_style(area, cmd);
-        let line = Line::from(vec![
-            Span::styled(":", Style::default().fg(rgb(th.accent)).bg(rgb(th.cmd_bg))),
-            Span::styled(input.as_str(), cmd),
-        ]);
-        frame.render_widget(Paragraph::new(line), area);
-        if let Some((m, _)) = &app.message {
-            // Completion candidates and notices: as much as fits, with an ellipsis.
-            let room = (area.width as usize).saturating_sub(input.width() + 4);
-            let text = if m.width() <= room {
-                m.clone()
-            } else if room >= 4 {
-                let mut cut = String::new();
-                let mut w = 0;
-                for g in m.graphemes(true) {
-                    if w + g.width() > room - 1 {
-                        break;
-                    }
-                    cut.push_str(g);
-                    w += g.width();
-                }
-                format!("{cut}…")
-            } else {
-                String::new()
-            };
-            let w = text.width() as u16;
-            if w > 0 {
-                frame.buffer_mut().set_string(
-                    area.x + area.width - w - 1,
-                    area.y,
-                    &text,
-                    Style::default().fg(rgb(th.muted)).bg(rgb(th.cmd_bg)),
-                );
-            }
-        }
-        frame.set_cursor_position((area.x + 1 + input.width() as u16, area.y));
+        draw_command_line(frame, app, input, area);
         return;
     }
 
@@ -745,6 +802,7 @@ fn help_lines() -> Vec<String> {
         "                     a arrow (select source, a, select target, a)   s spotlight",
         "u / U    undo / redo                 t      dark/light theme",
         "P        presentation mode           L      annotation list      :  command line",
+        "         (presenting, : shows the command line on the last row and its result for 2 s)",
         "",
         "Commands (L = line number, text = fragment to find on that line):",
         "  :mark KIND[@COLOR] L:text [label]   KIND: info warn error ok question important read write move new drop scope flow todo",

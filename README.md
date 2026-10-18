@@ -62,7 +62,7 @@ Try the bundled demos (see [examples/README.md](examples/README.md)): `tiza exam
 | `n` / `p` (or `→`/`←`) | next / previous step; step 0 shows only the code |
 | `u` / `U` | undo / redo (the message names what was undone) |
 | `t` | dark ⇄ light theme (like Excalidraw); fixes it in the document and stops following the terminal |
-| `P` | presentation mode (hides the UI; one geometry for the whole take — see `:layout`) |
+| `P` | presentation mode (hides the UI; one geometry for the whole take — see `:layout`). `:` still works there: the command line shows on the last row while you type, its result (or error) stays for ~2 s, then the frame is clean again |
 | `L` | annotation list · `?` help · `:` commands · `q` quit (`:q!` if the last save failed) |
 
 ### `:` commands
