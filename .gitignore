@@ -3,3 +3,4 @@
 *.tiza~
 .DS_Store
 qa/bench/latest.json
+qa/herdr/latest/

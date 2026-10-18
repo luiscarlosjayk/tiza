@@ -22,6 +22,21 @@ Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-re
 
 `scripts/legibility.py` (t-072) is the YouTube-compression check: it renders a step, scales it to 1080p, round-trips it through H.264 with ffmpeg and measures the contrast every text color keeps. `qa/tests/t-072.rs` and the Mocha step of `qa/tests/t-119.rs` run it when python3 + Pillow + numpy + ffmpeg are installed (shared check `tiza_qa::legibility_tools_missing()`; otherwise they skip and print what is missing) and CI runs it in the `legibility` job (report and compressed frames as an artifact).
 
+## Terminal size matrix with Herdr (t-071)
+
+A QA-round step on a machine with [Herdr](https://herdr.dev) (Luis's Mac), not part of `cargo test`: Herdr renders through libghostty-vt, a real terminal emulator, so it catches escape-sequence and redraw problems the pty snapshots (t-053, t-064, t-073) cannot. From a Herdr pane at the repository root:
+
+```sh
+scripts/herdr-matrix.sh            # capture into qa/herdr/latest/ (git-ignored), print each pane's size
+scripts/herdr-matrix.sh --check    # capture and diff with qa/herdr/*.txt; exit 1 and list the panes that changed
+scripts/herdr-matrix.sh --update   # capture and rewrite qa/herdr/*.txt on purpose (commit them with the change)
+scripts/herdr-matrix.sh --check --file /tmp/copy.rs.tiza   # another document (default examples/ownership.rs.tiza, only read)
+```
+
+For each case — `vt100` 80×24, `wide` 120×40, `zed-half` 75×50, `narrow` 60×30 and `full` (as large as the base pane allows, about 12 columns left to it), all `--present --step 7`, plus `normal` 120×40 and `normal-narrow` 60×30 in normal mode with the status bar (the narrow one shows the small-terminal badge, t-064) — it splits one pane off the base pane (`herdr pane split --direction right`, then `down` for a row target), runs Tiza there with `--no-save` and a socket of its own, reads the real size from `tiza api status` (Herdr 0.9.5 reports no columns), nudges it with `herdr pane resize` (it learns Herdr's units and which direction grows the pane from what each resize did, within one cell), waits for the instance to answer and for two identical `herdr pane read --source visible --format text`, and saves `qa/herdr/<case>-<cols>x<rows>.txt` with the **real** size: a pane that misses its target, or a different window, shows up in `--check` as a size change rather than as a broken frame. Herdr 0.9.5 has no `pane wait-output` and no command to open a tab, so the cases run one after another off the base pane (`--base PANE_ID`, default Herdr's focused pane) and every pane the script opened is closed again, also on an error or Ctrl-C; the user's own panes are only split and given their space back. Without `herdr` on PATH, or with a Herdr that does not answer `herdr pane list`, it stops with a message before opening anything.
+
+Every `herdr` call goes through one function; with `TIZA_HERDR_FAKE=<state dir>` it is a model instead (panes are Python ptys of the modelled size running the real `tiza`, `pane read` is that instance's `tiza render`), which is how `qa/tests/t-071.rs` checks the rest of the script — sizes, file names, `--check`/`--update`, cleanup on failure — without Herdr. The frames in `qa/herdr/` come only from a real Herdr run.
+
 ## Size breakdown of the first baseline (t-133)
 
 Where the bytes of the release binary go, next to the baselines in `qa/budgets.json` and `qa/bench/baseline.json`. Measured on 2026-10-18 on Linux x86_64 at 5e57795 (fat LTO, the t-133 profile; the committed Linux baseline at 5ab5bb1 is 13,158,152 bytes, this tree is 13,171,048 stripped, +0.1 %) with `cargo-bloat 0.12.1`: `CARGO_PROFILE_RELEASE_STRIP=false cargo bloat --release -p tiza --bin tiza --crates -n 0` for the code, `size -A` on the stripped binary for the sections, and a byte search in the stripped binary for each embedded blob. The Mac binary (11,209,360 bytes) was not broken down; Mach-O has smaller unwind and relocation tables, so expect the same proportions with a smaller "other sections" row. cargo-bloat attributes code by symbol name: generic code lands in the crate that instantiates it (most of ratatui and serde shows up under `tiza_*` and `serde_core`), so the per-crate code rows are approximate.
