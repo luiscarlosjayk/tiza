@@ -257,3 +257,53 @@ fn corner_strike_keeps_grapheme_clusters_and_box_bottom_after_under_row() {
         "box bottom after the under row: {t}"
     );
 }
+
+#[test]
+fn rework_softened_glyph_colour_and_legible_struck_text() {
+    use tiza_core::layout::{EMPHASIS_GLYPH_OPACITY, UNDERLINE_GLYPH};
+    use tiza_core::theme::{MIN_CODE_CONTRAST, contrast};
+    // Second review: 0.55 read too soft, the full colour too loud; the
+    // glyphs sit in between, and struck text (still code) keeps 4.5:1.
+    assert!((0.7..0.9).contains(&EMPHASIS_GLYPH_OPACITY));
+    let live = Live::from_code(CODE, "rs", "t096-rework");
+    live.command("hl 3:takes(s) emphasis=underline");
+    live.command("hl 5:println! emphasis=strike");
+    live.command("set a1 color=red");
+    live.command("set a2 color=red");
+    let (red, bg, soft, under, struck) = live.with(|app| {
+        let th = app.theme.clone();
+        let red = th.named_color("red").unwrap();
+        let canvas = app.layout(70).canvas;
+        let mut under = Vec::new();
+        let mut struck = Vec::new();
+        for y in 0..canvas.height {
+            for x in 0..canvas.width {
+                if let Some(c) = canvas.get(x, y) {
+                    if &*c.sym == UNDERLINE_GLYPH {
+                        under.push(c.style);
+                    } else if c.sym.ends_with('\u{336}') {
+                        struck.push(c.style);
+                    }
+                }
+            }
+        }
+        let soft = th.tint_ink(red, EMPHASIS_GLYPH_OPACITY);
+        (red, th.bg, soft, under, struck)
+    });
+    assert_eq!(under.len(), 8, "‾ under takes(s)");
+    assert!(
+        under.iter().all(|st| st.fg == Some(soft)),
+        "glyphs in the softened red: {under:?}"
+    );
+    assert_ne!(soft, red);
+    assert_eq!(struck.len(), 8, "p̶r̶i̶n̶t̶l̶n̶!̶");
+    for st in struck {
+        let fg = st.fg.unwrap();
+        assert!(
+            contrast(fg, bg) >= MIN_CODE_CONTRAST,
+            "struck text {fg:?} reads at {:.2}:1",
+            contrast(fg, bg)
+        );
+        assert!(!st.bold);
+    }
+}

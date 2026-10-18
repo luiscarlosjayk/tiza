@@ -36,7 +36,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 
 ## Emphasis
 
-`highlight` and `add_mark` take `emphasis`: `fill` (the default tint), `underline` (a thin ‾ row under the span, good for "look here" without hiding the syntax colors), `brackets` (⌈ ⌉ beside the span; a side glued to other text goes to the row below, code is never covered) and `strike` (struck through, for "this line is gone"). The emphasis glyphs and the struck text are drawn in a softened shade of the annotation's colour (the span's own text keeps the full colour for underline and brackets), so they point without shouting. `update_annotation {"id", "emphasis": "strike"}` changes it later. Omitted means fill, and fill is not written to the file.
+`highlight` and `add_mark` take `emphasis`: `fill` (the default tint), `underline` (a thin ‾ row under the span, good for "look here" without hiding the syntax colors), `brackets` (⌈ ⌉ beside the span; a side glued to other text goes to the row below, code is never covered) and `strike` (struck through, for "this line is gone"). The emphasis glyphs and the struck text are drawn in a softened shade of the annotation's colour (the span's own text keeps the full colour for underline and brackets), so they point without shouting; struck text still reads at the 4.5:1 code contrast. `update_annotation {"id", "emphasis": "strike"}` changes it later. Omitted means fill, and fill is not written to the file.
 
 ## Color
 

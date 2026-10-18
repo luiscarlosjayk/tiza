@@ -275,8 +275,9 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
 pub const UNDERLINE_GLYPH: &str = "‾";
 /// How much of the annotation colour the emphasis glyphs keep (the rest is
 /// the background): softened so the code reads first, still visible after
-/// video compression (checked by the t-072 gate).
-pub const EMPHASIS_GLYPH_OPACITY: f32 = 0.55;
+/// video compression (checked by the t-072 gate). Owner's calls on t-096:
+/// 1.0 shouted, 0.55 was too soft; 0.75 sits between them.
+pub const EMPHASIS_GLYPH_OPACITY: f32 = 0.75;
 
 /// Narrowest layout a caller may ask for, in columns.
 pub const MIN_WIDTH: usize = 20;
@@ -986,8 +987,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 Emphasis::Strike => {
                     // The stroke shares the cell's colour with the text, so
                     // both take the softened annotation colour (not the bold
-                    // accent): struck code reads as struck, quietly.
-                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(soft));
+                    // accent): struck code reads as struck, quietly. It is
+                    // still code, so it keeps the code contrast floor (the
+                    // softened red alone fell under 4.5:1 after compression).
+                    canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(theme.legible(soft)));
                     for x in x0..x1 {
                         let cell = canvas.get(x, y).map(|c| (c.sym.clone(), c.style));
                         if let Some((sym, st)) = cell
