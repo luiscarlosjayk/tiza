@@ -71,6 +71,21 @@ pub struct Proposal {
     pub summary: String,
 }
 
+/// Agent changes the view does not show that arrive within this long of
+/// each other share one status-bar message (t-155).
+pub const AGENT_NOTICE_GROUP: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// The status-bar message about agent changes the view does not show
+/// (t-155): what it names, so a change arriving within
+/// [`AGENT_NOTICE_GROUP`] joins it, and the text it put on the bar.
+#[derive(Debug, Clone)]
+struct AgentNotice {
+    /// Annotation id and verb (`added`, `updated`), first time each.
+    items: Vec<(String, &'static str)>,
+    last: std::time::Instant,
+    text: String,
+}
+
 /// How long a proposal waits for the presenter before it is rejected.
 pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
@@ -201,6 +216,12 @@ pub struct App {
     /// change since then is a motion of the presenter's, and the pointer
     /// follows it ([`App::sync_pointer`]).
     pointer_seen: ((u32, u32), Option<u32>),
+    /// The last message about an agent change the view does not show
+    /// (t-155), while it may still group the next one.
+    agent_notice: Option<AgentNotice>,
+    /// Agent changes not shown that arrived in presentation mode: told on
+    /// the bar when it ends, never on the take (t-155).
+    agent_deferred: Vec<(String, &'static str)>,
 }
 
 impl App {
@@ -259,6 +280,8 @@ impl App {
             step_ready_at: Some(std::time::Instant::now()),
             pointer: None,
             pointer_seen: ((cursor_line, cursor_line), None),
+            agent_notice: None,
+            agent_deferred: Vec::new(),
         };
         app.rebuild_theme();
         app
@@ -1544,12 +1567,21 @@ impl App {
 
     /// Enters or leaves presentation mode. Proposals that arrived while
     /// presenting were only a chip on screen; coming back opens the list.
+    /// Agent changes the view did not show while presenting are told on
+    /// the bar now (t-155).
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
         if !on && !self.proposals.is_empty() && self.overlay == Overlay::None {
             self.overlay = Overlay::Review;
             self.overlay_scroll = 0;
+        }
+        if !on && !self.agent_deferred.is_empty() {
+            let items = std::mem::take(&mut self.agent_deferred);
+            self.agent_notice = None;
+            if let Some(text) = self.agent_notice_text(&items) {
+                self.info(text);
+            }
         }
     }
 
@@ -4200,11 +4232,29 @@ impl App {
     /// mutating method) parks the request as a proposal until the presenter
     /// decides. `supervise.*` and read-only methods are never parked.
     pub fn handle_ipc(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
+        self.handle_ipc_at(req, reply, std::time::Instant::now());
+    }
+
+    /// [`App::handle_ipc`] at `now`, the clock that groups the messages
+    /// about agent changes the view does not show (t-155); tests pass
+    /// their own.
+    pub fn handle_ipc_at(
+        &mut self,
+        req: Request,
+        reply: std::sync::mpsc::Sender<Response>,
+        now: std::time::Instant,
+    ) {
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
             && !req.method.starts_with("supervise.");
         if !parked {
-            let _ = reply.send(self.handle_request(req));
+            let verb = annotation_verb(&req.method);
+            let before = self.message.clone();
+            let resp = self.handle_request(req);
+            if let (Some(verb), Some(r)) = (verb, &resp.result) {
+                self.agent_changed(r, verb, before.as_ref(), now);
+            }
+            let _ = reply.send(resp);
             return;
         }
         let summary = proposal_summary(&req);
@@ -4228,19 +4278,144 @@ impl App {
         ));
     }
 
+    /// An agent's `annotation.add` / `annotation.update` (socket or MCP,
+    /// never the TUI) left `result`: when the view does not show it, the bar
+    /// says so — `a17: box 3-5 added by agent (step 1, press n)` — and
+    /// changes within [`AGENT_NOTICE_GROUP`] of the last one join it
+    /// (`3 agent annotations not shown (step 1, press n)`). In presentation
+    /// mode nothing is drawn: it waits for the bar (t-155). An error the
+    /// request itself raised (a redact alert, a failed save) keeps the bar.
+    fn agent_changed(
+        &mut self,
+        result: &Value,
+        verb: &'static str,
+        before: Option<&(String, bool)>,
+        now: std::time::Instant,
+    ) {
+        if result.get("visible").and_then(Value::as_bool) != Some(false) {
+            return;
+        }
+        let Some(id) = mutated_id(result) else {
+            return;
+        };
+        if self.present {
+            if !self.agent_deferred.iter().any(|(i, _)| *i == id) {
+                self.agent_deferred.push((id, verb));
+            }
+            return;
+        }
+        if self
+            .message
+            .as_ref()
+            .is_some_and(|m| m.1 && Some(m) != before)
+        {
+            return;
+        }
+        let mut items = match self.agent_notice.take() {
+            Some(n)
+                if now.saturating_duration_since(n.last) < AGENT_NOTICE_GROUP
+                    && self.message.as_ref() == Some(&(n.text.clone(), false)) =>
+            {
+                n.items
+            }
+            _ => Vec::new(),
+        };
+        if !items.iter().any(|(i, _)| *i == id) {
+            items.push((id, verb));
+        }
+        let Some(text) = self.agent_notice_text(&items) else {
+            return;
+        };
+        self.info(text.clone());
+        self.agent_notice = Some(AgentNotice {
+            items,
+            last: now,
+            text,
+        });
+    }
+
+    /// The bar's text for agent changes (t-155), as the view stands now:
+    /// those it shows meanwhile are left out; `None` when it shows them all.
+    fn agent_notice_text(&self, items: &[(String, &'static str)]) -> Option<String> {
+        let step = self.doc.step;
+        let hidden: Vec<_> = items
+            .iter()
+            .filter_map(|(id, verb)| {
+                let a = self.doc.find_annotation(id)?;
+                let why = self.doc.hidden_reason(id, step)?;
+                Some((a, *verb, why))
+            })
+            .collect();
+        match hidden.as_slice() {
+            [] => None,
+            [(a, verb, why)] => {
+                let msg = format!("{}: {} {verb} by agent", a.id, shape_summary(a));
+                let tail = self.hidden_tail(why, &msg);
+                Some(msg + &tail)
+            }
+            many => {
+                let msg = format!("{} agent annotations not shown", many.len());
+                let first_later = many
+                    .iter()
+                    .filter_map(|(_, _, w)| match w {
+                        tiza_core::model::Hidden::Later(s) => Some(*s),
+                        _ => None,
+                    })
+                    .min();
+                let tail = match first_later {
+                    Some(s) => self.hidden_tail(&tiza_core::model::Hidden::Later(s), &msg),
+                    None => {
+                        let tails: Vec<String> = many
+                            .iter()
+                            .map(|(_, _, w)| self.hidden_tail(w, &msg))
+                            .collect();
+                        if tails.iter().all(|t| *t == tails[0]) {
+                            tails[0].clone()
+                        } else {
+                            String::new()
+                        }
+                    }
+                };
+                Some(msg + &tail)
+            }
+        }
+    }
+
+    /// The tail of a message about something the view does not show: the
+    /// t-132 hint when it appears later (` (step 1, press n)`), the file
+    /// when a link shows another one (` (src/queue.rs, not shown at step
+    /// 2)`), else the reason in words (t-155).
+    fn hidden_tail(&self, why: &tiza_core::model::Hidden, msg: &str) -> String {
+        use tiza_core::model::Hidden;
+        match why {
+            Hidden::Later(s) => step_hint(msg, *s, self.doc.step),
+            Hidden::OtherFile { file, step, .. } => format!(" ({file}, not shown at step {step})"),
+            other => format!(" (not shown: {other})"),
+        }
+    }
+
     /// Applies the first pending proposal (`y`).
     pub fn accept_proposal(&mut self) -> Option<String> {
         if self.proposals.is_empty() {
             return None;
         }
         let p = self.proposals.remove(0);
+        let mutates_annotation = annotation_verb(&p.req.method).is_some();
         let resp = self.handle_request(p.req);
         let ok = resp.error.is_none();
+        // Accepted but not on screen: the acceptance says where (t-155).
+        let tail = match (&resp.result, mutates_annotation) {
+            (Some(r), true) => mutated_id(r)
+                .and_then(|id| self.doc.hidden_reason(&id, self.doc.step))
+                .map(|why| self.hidden_tail(&why, &p.summary))
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
         let _ = p.reply.send(resp);
         self.decided.0 += 1;
         self.close_review_if_empty();
         Some(if ok {
-            format!("accepted p{}: {}", p.id, p.summary)
+            format!("accepted p{}: {}{tail}", p.id, p.summary)
         } else {
             format!("p{} accepted but failed: {}", p.id, p.summary)
         })
@@ -4762,6 +4937,11 @@ pub fn step_hint_start(msg: &str) -> Option<usize> {
     let i = msg.rfind(" (")?;
     let inner = msg[i + 2..].strip_suffix(')')?;
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    // ` (src/queue.rs, not shown at step 2)`: an agent change whose file a
+    // link hides (t-155).
+    if let Some((file, n)) = inner.rsplit_once(", not shown at step ") {
+        return (!file.is_empty() && digits(n)).then_some(i);
+    }
     let how = match inner.strip_prefix("step ") {
         Some(rest) => {
             let (n, how) = rest.split_once(", ")?;
@@ -4976,6 +5156,53 @@ pub enum MouseKind {
     Up,
     ScrollUp,
     ScrollDown,
+}
+
+/// `added` / `updated` for the methods that add or change one annotation
+/// (t-155), `None` for the rest.
+fn annotation_verb(method: &str) -> Option<&'static str> {
+    match method {
+        "annotation.add" => Some("added"),
+        "annotation.update" => Some("updated"),
+        _ => None,
+    }
+}
+
+/// The `id` of an `annotation.add` / `annotation.update` result.
+fn mutated_id(result: &Value) -> Option<String> {
+    result.get("id").and_then(Value::as_str).map(String::from)
+}
+
+/// An annotation in a few words, as the `:` command that makes it
+/// confirms it: `box 3-5`, `note L13`, `arrow L2 → L6` (t-155).
+pub fn shape_summary(a: &Annotation) -> String {
+    match &a.shape {
+        Shape::Box {
+            from_line, to_line, ..
+        } => format!("box {from_line}-{to_line}"),
+        Shape::Callout {
+            from_line, to_line, ..
+        } => match to_line {
+            Some(t) if t != from_line => format!("callout L{from_line}-{t}"),
+            _ => format!("callout L{from_line}"),
+        },
+        Shape::Note { line, .. } => format!("note L{line}"),
+        Shape::Arrow { from, to, .. } => format!("arrow L{} → L{}", from.line, to.line),
+        Shape::Highlight { span, .. } => format!("highlight L{}", span.line),
+        Shape::Mark { kind, span, .. } => format!("mark {kind} L{}", span.line),
+        Shape::Redact { span, .. } => format!("redact L{}", span.line),
+        Shape::Spotlight {
+            from_line,
+            to_line,
+            ids,
+            ..
+        } => match (from_line, to_line) {
+            (Some(f), Some(t)) if f != t => format!("spotlight L{f}-{t}"),
+            (Some(f), _) => format!("spotlight L{f}"),
+            _ if !ids.is_empty() => format!("spotlight {}", ids.join(", ")),
+            _ => "spotlight".into(),
+        },
+    }
 }
 
 /// One line describing an agent request for the review overlay.

@@ -505,7 +505,8 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             if app.pointer.is_some() {
                 app.clear_pointer();
             } else if app.present {
-                app.present = false;
+                // Like `P`: what the take did not show reaches the bar (t-155).
+                app.set_present(false);
             } else if app.selected.is_some() {
                 app.selected = None;
             } else if app.arrow_from.is_some() {

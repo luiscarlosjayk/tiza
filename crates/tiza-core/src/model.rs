@@ -738,6 +738,60 @@ pub struct View {
     pub selection: Option<(Anchor, Anchor)>,
 }
 
+/// Why an annotation is not drawn at a step ([`Document::hidden_reason`],
+/// t-155). `Display` gives the words the socket reply carries in `hidden`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Hidden {
+    /// No annotation has that id.
+    NoSuch(String),
+    /// A redact with `redact_from_step` that does not mask yet.
+    MasksFrom(u32),
+    /// A spotlight past its `until`.
+    SpotlightPast { from: u32, end: u32 },
+    /// It appears at a later step.
+    Later(u32),
+    /// Its file is not the one shown at `step` (t-105).
+    OtherFile {
+        file: String,
+        shown: String,
+        step: u32,
+    },
+    /// No line of it survived a patch.
+    Unanchored(u32),
+    /// Its lines fall outside the window shown at `step`.
+    Outside { step: u32, first: u32, last: u32 },
+}
+
+impl std::fmt::Display for Hidden {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Hidden::NoSuch(id) => write!(f, "no annotation {id}"),
+            Hidden::MasksFrom(s) => write!(f, "it masks from step {s}"),
+            Hidden::SpotlightPast { from, end } if from == end => {
+                write!(f, "a spotlight shows only at its step {end}")
+            }
+            Hidden::SpotlightPast { from, end } => {
+                write!(f, "a spotlight shows from step {from} to {end}")
+            }
+            Hidden::Later(s) => write!(f, "it appears at step {s}"),
+            Hidden::OtherFile { file, shown, step } => {
+                write!(
+                    f,
+                    "its file {file} is not shown at step {step} ({shown} is)"
+                )
+            }
+            Hidden::Unanchored(s) => write!(
+                f,
+                "it lost its anchor at step {s} (unanchored: no line of it survived a patch)"
+            ),
+            Hidden::Outside { step, first, last } => write!(
+                f,
+                "its lines are outside the code shown at step {step} ({first}-{last})"
+            ),
+        }
+    }
+}
+
 impl Document {
     pub fn from_code(code: &str, language: impl Into<String>, path: Option<String>) -> Self {
         let code = code.strip_prefix('\u{feff}').unwrap_or(code);
@@ -1610,74 +1664,77 @@ impl Document {
 
     /// Why annotation `id` is not on screen at `step`, in words (`appears
     /// at step 1`, `its file lib.rs is not shown at step 2`…), or `None`
-    /// when it is drawn there (t-155). Follows the same rules as the
-    /// layout: its file must be the one shown, its step reached (a
-    /// spotlight also not past its `until`, a redact masking from step 0
-    /// unless `redact_from_step`), its anchor kept and its lines inside the
-    /// window. An unknown id is reported as such.
+    /// when it is drawn there (t-155): [`Document::hidden_reason`] as text.
     pub fn why_hidden(&self, id: &str, step: u32) -> Option<String> {
+        self.hidden_reason(id, step).map(|h| h.to_string())
+    }
+
+    /// Why annotation `id` is not on screen at `step`, or `None` when it is
+    /// drawn there (t-155). Follows the same rules as the layout: its file
+    /// must be the one shown, its step reached (a spotlight also not past
+    /// its `until`, a redact masking from step 0 unless
+    /// `redact_from_step`), its anchor kept and its lines inside the
+    /// window. An unknown id is reported as such.
+    pub fn hidden_reason(&self, id: &str, step: u32) -> Option<Hidden> {
         let Some(a) = self.find_annotation(id) else {
-            return Some(format!("no annotation {id}"));
+            return Some(Hidden::NoSuch(id.to_string()));
         };
         match &a.shape {
             Shape::Redact { .. } => {
                 if !crate::redact::active(self, a, step) {
-                    return Some(format!("it masks from step {}", a.step));
+                    return Some(Hidden::MasksFrom(a.step));
                 }
             }
             Shape::Spotlight { until, .. } if step >= a.step => {
                 let end = until.unwrap_or(a.step);
                 if step > end {
-                    return Some(if end == a.step {
-                        format!("a spotlight shows only at its step {end}")
-                    } else {
-                        format!("a spotlight shows from step {} to {end}", a.step)
-                    });
+                    return Some(Hidden::SpotlightPast { from: a.step, end });
                 }
             }
-            _ if a.step > step => return Some(format!("it appears at step {}", a.step)),
+            _ if a.step > step => return Some(Hidden::Later(a.step)),
             _ => {}
         }
         let shown = self.shown_view_at(step);
         if a.file != shown.file {
-            let name = |f: &ViewKey| match f {
-                Some(f) => f.clone(),
-                // The main file as `code.file` names it, like a link does.
-                None => match &self.code_src {
-                    CodeSource::File { file, .. } => file.clone(),
-                    CodeSource::Embedded(_) => self
-                        .source
-                        .path
-                        .as_deref()
-                        .and_then(|p| std::path::Path::new(p).file_name())
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "the main file".into()),
-                },
-            };
-            return Some(format!(
-                "its file {} is not shown at step {step} ({} is)",
-                name(&a.file),
-                name(&shown.file)
-            ));
+            return Some(Hidden::OtherFile {
+                file: self.file_label(&a.file),
+                shown: self.file_label(&shown.file),
+                step,
+            });
         }
         let view = self.view_at(step);
         let Some(v) = view.doc.find_annotation(id) else {
-            return Some(format!(
-                "it lost its anchor at step {step} (unanchored: no line of it survived a patch)"
-            ));
+            return Some(Hidden::Unanchored(step));
         };
         let outside = v
             .shape
             .line_ranges()
             .iter()
             .any(|(f, t)| !view.doc.has_line(*f) || !view.doc.has_line(*t));
-        outside.then(|| {
-            format!(
-                "its lines are outside the code shown at step {step} ({}-{})",
-                view.doc.source.first_line,
-                view.doc.last_line()
-            )
+        outside.then(|| Hidden::Outside {
+            step,
+            first: view.doc.source.first_line,
+            last: view.doc.last_line(),
         })
+    }
+
+    /// A file as the document names it: a linked one by its path, the main
+    /// one as `code.file` names it (like a link does), or by its file name
+    /// when the code is embedded (`the main file` without one).
+    pub fn file_label(&self, f: &ViewKey) -> String {
+        match f {
+            Some(f) => f.clone(),
+            None => match &self.code_src {
+                CodeSource::File { file, .. } => file.clone(),
+                CodeSource::Embedded(_) => self
+                    .source
+                    .path
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "the main file".into()),
+            },
+        }
     }
 
     /// Validates a shape against the code of `file` as it is at `step`

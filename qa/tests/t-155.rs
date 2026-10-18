@@ -5,8 +5,16 @@
 //! - AC1 `annotation.add` / `annotation.update` replies carry `step` and
 //!   `visible` (whether it shows at the current step); MCP tool results say
 //!   it in words.
-//! - AC2 Optional (owner's call, not in this commit): a TUI message for an
-//!   agent's addition that is not visible.
+//! - AC2 (Luis, 2026-10-18 rework): when a socket/MCP call (not the TUI)
+//!   adds or changes an annotation the view does not show, the status bar
+//!   says so with the `:box`-style summary, ` by agent` and the t-132 tail:
+//!   `a17: box 3-5 added by agent (step 1, press n)`, `a4: note L13 updated
+//!   by agent (step 3, :step 3 shows it)`, `a9: note L17 added by agent
+//!   (src/queue.rs, not shown at step 2)`; several within 1 s share one
+//!   message (`3 agent annotations not shown (step 1, press n)`);
+//!   supervised mode adds the tail to the acceptance (`accepted p1: add box
+//!   L3-5 (step 1, press n)`); presentation mode draws nothing and tells
+//!   the bar when it ends.
 //! - AC3 schema/api.schema.json, docs/agent-guide.md, qa test, CHANGELOG.
 //!
 //! Corner cases: supervised mode (the reply is computed when the presenter
@@ -14,8 +22,9 @@
 //! a linked file not shown at the current step, or outside the window
 //! (t-105); a spotlight past its `until`; a redact masks from step 0.
 
+use std::sync::mpsc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
@@ -323,4 +332,249 @@ fn ac3_schema_guide_and_changelog() {
     assert!(guide.contains("\"visible\": false"));
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
     assert!(changelog.contains("(t-155)"));
+}
+
+// ---------- AC2: the presenter is told on the status bar ----------
+
+fn bar(live: &Live) -> String {
+    let screen = live.screen(100, 30);
+    screen.lines().last().unwrap_or_default().to_string()
+}
+
+fn info(live: &Live) -> String {
+    match live.message() {
+        Some((m, false)) => m,
+        other => panic!("expected an info message, got {other:?}"),
+    }
+}
+
+/// `method` over the socket path of the app at the injected clock `at`, so
+/// the 1 s grouping is tested without sleeping.
+fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
+    let method = method.to_string();
+    live.with(move |a| {
+        let (tx, rx) = mpsc::channel();
+        let req = tiza_core::protocol::Request {
+            id: json!(1),
+            method,
+            params,
+        };
+        a.handle_ipc_at(req, tx, at);
+        let resp = rx.recv().unwrap();
+        resp.result.unwrap_or_else(|| panic!("{:?}", resp.error))
+    })
+}
+
+#[test]
+fn ac2_an_agent_box_at_step_0_is_named_on_the_bar() {
+    let live = at_step_0("t155-ac2-box");
+    let r = live.api_ok(
+        "annotation.add",
+        json!({"type": "box", "from_line": 3, "to_line": 5}),
+    );
+    assert_eq!(r["visible"], json!(false), "{r}");
+    let want = "a1: box 3-5 added by agent (step 1, press n)";
+    assert_eq!(info(&live), want);
+    assert!(bar(&live).contains(want), "{}", bar(&live));
+
+    // The presenter's own `:box` keeps the t-132 confirmation: no «by agent».
+    live.command("box 2-3");
+    assert_eq!(info(&live), "a2: box 2-3 (step 1, press n)");
+
+    // A visible agent change says nothing new.
+    live.command("step 1");
+    let before = live.message();
+    let r = live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 2, "text": "x"}),
+    );
+    assert_eq!(r["visible"], json!(true), "{r}");
+    assert_eq!(live.message(), before);
+}
+
+#[test]
+fn ac2_an_agent_update_to_a_later_step() {
+    let live = Live::from_code(
+        &(1..=20)
+            .map(|i| format!("let x{i} = {i};\n"))
+            .collect::<String>(),
+        "rs",
+        "t155-ac2-update",
+    );
+    live.command("step 1");
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 13, "text": "here", "id": "a4"}),
+    );
+    let r = live.api_ok("annotation.update", json!({"id": "a4", "step": 3}));
+    assert_eq!(r["visible"], json!(false), "{r}");
+    assert_eq!(
+        info(&live),
+        "a4: note L13 updated by agent (step 3, :step 3 shows it)"
+    );
+}
+
+#[test]
+fn ac2_a_linked_file_not_shown_names_the_file() {
+    let live = open_demo("t155-ac2-link");
+    live.api_ok("step.set", json!({"step": 4}));
+    // Step 4 links src/stack.rs back: a note on queue.rs is not drawn.
+    let r = live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 17, "text": "FIFO", "file": "src/queue.rs"}),
+    );
+    assert_eq!(r["visible"], json!(false), "{r}");
+    let id = r["id"].as_str().unwrap().to_string();
+    let want = format!("{id}: note L17 added by agent (src/queue.rs, not shown at step 4)");
+    assert_eq!(info(&live), want);
+    // The bar keeps that tail when it has to cut (t-132).
+    assert_eq!(
+        tiza_tui::app::step_hint_start(&want),
+        Some(want.find(" (src/").unwrap())
+    );
+    let narrow = live.screen(84, 20);
+    let last = narrow.lines().last().unwrap();
+    assert!(
+        last.contains("(src/queue.rs, not shown at step 4)"),
+        "{last}"
+    );
+
+    // The main file hidden by a link is named as `code.file` names it.
+    // (More than 1 s later, or it would join the note's message.)
+    live.api_ok("step.set", json!({"step": 2}));
+    let later = Instant::now() + Duration::from_secs(5);
+    ipc_at(
+        &live,
+        "annotation.update",
+        json!({"id": "a1", "label": "LIFO"}),
+        later,
+    );
+    assert_eq!(
+        info(&live),
+        "a1: box 12-18 updated by agent (src/stack.rs, not shown at step 2)"
+    );
+}
+
+#[test]
+fn ac2_several_within_one_second_share_one_message() {
+    let live = at_step_0("t155-ac2-group");
+    let t0 = Instant::now();
+    let add = |line: u32, at: Instant| {
+        ipc_at(
+            &live,
+            "annotation.add",
+            json!({"type": "note", "line": line, "text": "x"}),
+            at,
+        )
+    };
+    add(2, t0);
+    assert_eq!(info(&live), "a1: note L2 added by agent (step 1, press n)");
+    add(3, t0 + Duration::from_millis(400));
+    assert_eq!(
+        info(&live),
+        "2 agent annotations not shown (step 1, press n)"
+    );
+    // One at step 3 joins too; the tail names the nearest step.
+    ipc_at(
+        &live,
+        "annotation.add",
+        json!({"type": "note", "line": 4, "text": "x", "step": 3}),
+        t0 + Duration::from_millis(1300),
+    );
+    assert_eq!(
+        info(&live),
+        "3 agent annotations not shown (step 1, press n)"
+    );
+    // More than 1 s after the last one: a message of its own.
+    add(6, t0 + Duration::from_millis(2400));
+    assert_eq!(info(&live), "a4: note L6 added by agent (step 1, press n)");
+
+    // A message of the presenter's in between starts afresh too.
+    let t1 = t0 + Duration::from_millis(2500);
+    live.command("theme dark");
+    add(7, t1);
+    assert_eq!(info(&live), "a5: note L7 added by agent (step 1, press n)");
+}
+
+#[test]
+fn ac2_supervised_acceptance_carries_the_tail() {
+    let live = at_step_0("t155-ac2-supervised");
+    live.command("supervise on");
+    let h = send_async(
+        &live.socket,
+        "annotation.add",
+        json!({"type": "box", "from_line": 3, "to_line": 5}),
+    );
+    wait_pending(&live, 1);
+    live.keys(&[KeyCode::Char('y')]);
+    let r = h.join().unwrap().result.expect("accepted");
+    assert_eq!(r["visible"], json!(false), "{r}");
+    assert_eq!(info(&live), "accepted p1: add box L3-5 (step 1, press n)");
+}
+
+#[test]
+fn ac2_presentation_mode_waits_for_the_bar() {
+    let live = at_step_0("t155-ac2-present");
+    live.keys(&[KeyCode::Char('P')]);
+    assert!(live.with(|a| a.present));
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "box", "from_line": 3, "to_line": 5}),
+    );
+    // Nothing on the take: no message, nothing on the last row.
+    assert!(
+        !live.message().is_some_and(|(m, _)| m.contains("by agent")),
+        "{:?}",
+        live.message()
+    );
+    let screen = live.screen(100, 30);
+    assert!(!screen.contains("by agent"), "{screen}");
+    // Leaving presentation mode tells the bar.
+    live.keys(&[KeyCode::Char('P')]);
+    assert_eq!(info(&live), "a1: box 3-5 added by agent (step 1, press n)");
+    assert!(bar(&live).contains("added by agent"), "{}", bar(&live));
+
+    // Esc ends it the same way; one the presenter reached meanwhile is not told.
+    live.keys(&[KeyCode::Char('P')]);
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 2, "text": "a"}),
+    );
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 6, "text": "b", "step": 2}),
+    );
+    live.keys(&[KeyCode::Char('n')]);
+    live.keys(&[KeyCode::Esc]);
+    assert!(!live.with(|a| a.present));
+    assert_eq!(info(&live), "a3: note L6 added by agent (step 2, press n)");
+}
+
+#[test]
+fn ac2_keeps_the_pointer_and_the_redact_alert_rows() {
+    let live = at_step_0("t155-ac2-rows");
+    // The live pointer (t-030) and a pending redact alert (t-135/t-156).
+    live.keys(&[KeyCode::Char('f')]);
+    live.with(|a| a.redact_alert("redact a9 widened: mark the value again".into()));
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 2, "text": "x"}),
+    );
+    let screen = live.screen(100, 30);
+    let rows: Vec<&str> = screen.lines().collect();
+    let last = rows[rows.len() - 1];
+    assert!(last.contains("POINTER"), "{last}");
+    assert!(
+        last.contains("a1: note L2 added by agent (step 1, press n)"),
+        "{last}"
+    );
+    assert!(
+        rows[rows.len() - 2].contains("redact a9 widened: mark the value again"),
+        "{screen}"
+    );
+    assert!(live.with(|a| a.pointer.is_some()));
+    assert_eq!(
+        live.with(|a| a.redact_alerts.clone()),
+        vec!["redact a9 widened: mark the value again".to_string()]
+    );
 }
