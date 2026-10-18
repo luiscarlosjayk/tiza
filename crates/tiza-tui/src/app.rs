@@ -1078,7 +1078,8 @@ impl App {
         fs::load_views(&mut doc, base.as_deref())?;
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_annotation(a)?;
+            doc.validate_annotation(a)
+                .map_err(|e| tiza_core::redact::Echo::new(&doc).error(e))?;
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -1474,13 +1475,10 @@ impl App {
     /// current step (shifted through the patches); one that lost its anchor
     /// keeps its authoring coordinates and is marked `(unanchored)`.
     pub fn list_lines(&self) -> Vec<String> {
+        let echo = tiza_core::redact::Echo::quoting(&self.doc);
+        let describe = |a: &Annotation| tiza_core::protocol::describe_with(a, &echo);
         if self.doc.moves.is_empty() {
-            return self
-                .doc
-                .annotations
-                .iter()
-                .map(tiza_core::protocol::describe)
-                .collect();
+            return self.doc.annotations.iter().map(describe).collect();
         }
         let view = self.doc.view_at(self.doc.step);
         self.doc
@@ -1488,10 +1486,10 @@ impl App {
             .iter()
             .map(|a| {
                 if view.unanchored.contains(&a.id) {
-                    format!("{} (unanchored)", tiza_core::protocol::describe(a))
+                    format!("{} (unanchored)", describe(a))
                 } else {
                     let shown = view.doc.find_annotation(&a.id).unwrap_or(a);
-                    tiza_core::protocol::describe(shown)
+                    describe(shown)
                 }
             })
             .collect()
@@ -2376,7 +2374,10 @@ impl App {
     pub fn selected_text(&self) -> Option<String> {
         let id = self.selected.as_ref()?;
         let a = self.doc.find_annotation(id)?;
-        Some(tiza_core::protocol::describe(a))
+        Some(tiza_core::protocol::describe_with(
+            a,
+            &tiza_core::redact::Echo::quoting(&self.doc),
+        ))
     }
 
     /// Quick edits on the selected annotation. Returns false if `key` is not one.
@@ -3228,7 +3229,11 @@ impl App {
         match result {
             Ok(msg) if !msg.is_empty() => self.info(msg),
             Ok(_) => {}
-            Err(e) => self.error(e.to_string()),
+            // The presenter's own targets are not repeated either (t-167).
+            Err(e) => {
+                let e = self.echo().written(command_words(input)).error(e);
+                self.error(e.to_string())
+            }
         }
         // Undo/redo bring annotations back as they were: no hint there.
         if !matches!(cmd, "undo" | "u" | "redo") {
@@ -4223,9 +4228,25 @@ impl App {
 
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
+        // What the agent wrote, for the error's echo filter (t-167).
+        let brings_redact = tiza_core::redact::json_has_redact(&req.params);
+        let written = if brings_redact || tiza_core::redact::has_redacts(&self.doc) {
+            let mut w = tiza_core::redact::json_strings(&req.params);
+            w.push(req.method.clone());
+            w
+        } else {
+            Vec::new()
+        };
         match self.dispatch(&req.method, req.params) {
             Ok(v) => Response::ok(id, v),
-            Err(e) => Response::err(id, e.code(), e.to_string()),
+            Err(e) => {
+                let e = self
+                    .echo()
+                    .redacted(brings_redact)
+                    .written(written)
+                    .error(e);
+                Response::err(id, e.code(), e.to_string())
+            }
         }
     }
 
@@ -4258,14 +4279,17 @@ impl App {
             let _ = reply.send(resp);
             return;
         }
-        let summary = proposal_summary(&req);
+        // The review list, the y/n/expiry messages and
+        // `supervise.status` all show this summary: on a document with
+        // redacts it quotes no target (t-167).
+        let summary = proposal_summary(&self.echo(), &req);
         let id = self.next_proposal;
         self.next_proposal += 1;
         self.proposals.push(Proposal {
             id,
             req,
             reply,
-            since: std::time::Instant::now(),
+            since: now,
             summary,
         });
         if !self.present && self.overlay == Overlay::None {
@@ -4464,9 +4488,14 @@ impl App {
     /// Expires proposals older than `PROPOSAL_TIMEOUT` (called every tick).
     /// Returns true when something changed.
     pub fn expire_proposals(&mut self) -> bool {
+        self.expire_proposals_at(std::time::Instant::now())
+    }
+
+    /// [`App::expire_proposals`] at `now` (tests pass their own clock).
+    pub fn expire_proposals_at(&mut self, now: std::time::Instant) -> bool {
         let mut expired = Vec::new();
         self.proposals.retain(|p| {
-            if p.since.elapsed() >= PROPOSAL_TIMEOUT {
+            if now.saturating_duration_since(p.since) >= PROPOSAL_TIMEOUT {
                 expired.push((p.id, p.req.id.clone(), p.reply.clone()));
                 false
             } else {
@@ -4519,10 +4548,25 @@ impl App {
         }
     }
 
+    /// The filter for every error and echo about the open document
+    /// (t-167): on a document with redacts no target is quoted.
+    pub fn echo(&self) -> tiza_core::redact::Echo {
+        tiza_core::redact::Echo::new(&self.doc)
+    }
+
     pub fn supervise_status(&self) -> Value {
+        // A method the API does not have is the agent's text (t-167).
+        let quoting = tiza_core::redact::Echo::quoting(&self.doc).active();
+        let method = |m: &str| -> String {
+            if quoting && !tiza_core::protocol::METHODS.iter().any(|(k, _)| *k == m) {
+                tiza_core::redact::ELIDED.into()
+            } else {
+                m.to_string()
+            }
+        };
         json!({
             "supervised": self.supervised,
-            "pending": self.proposals.iter().map(|p| json!({"id": p.id, "method": p.req.method, "summary": p.summary, "age_ms": p.since.elapsed().as_millis() as u64})).collect::<Vec<_>>(),
+            "pending": self.proposals.iter().map(|p| json!({"id": p.id, "method": method(&p.req.method), "summary": p.summary, "age_ms": p.since.elapsed().as_millis() as u64})).collect::<Vec<_>>(),
             "accepted": self.decided.0,
             "rejected": self.decided.1,
             "timeout_secs": PROPOSAL_TIMEOUT.as_secs(),
@@ -5207,16 +5251,21 @@ pub fn shape_summary(a: &Annotation) -> String {
     }
 }
 
-/// One line describing an agent request for the review overlay.
-pub fn proposal_summary(req: &Request) -> String {
+/// One line describing an agent request for the review overlay. It goes to
+/// the list, the y/n/expiry messages and `supervise.status` (t-167): on a
+/// document with redacts a `find` and a step id are quoted `«…»` and every
+/// other text the agent wrote (a label, an id) passes the copy rule of
+/// t-157 ([`tiza_core::redact::Echo`]).
+pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String {
     let p = &req.params;
-    let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let raw = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let s = |k: &str| echo.copies(&raw(k));
     let n = |k: &str| p.get(k).and_then(|v| v.as_u64());
     let place = |k: &str| -> String {
         match p.get(k) {
             Some(w) if w.is_object() => {
                 if let Some(f) = w.get("find").and_then(|v| v.as_str()) {
-                    format!("«{f}»")
+                    echo.quote(f)
                 } else if let Some(l) = w.get("line").and_then(|v| v.as_u64()) {
                     format!("L{l}")
                 } else {
@@ -5236,7 +5285,7 @@ pub fn proposal_summary(req: &Request) -> String {
     };
     match req.method.as_str() {
         "annotation.add" => {
-            let kind = s("type");
+            let kind = raw("type");
             let at = match kind.as_str() {
                 "box" | "callout" | "spotlight" => match (n("from_line"), n("to_line")) {
                     (Some(a), Some(b)) => format!("L{a}-{b}"),
@@ -5249,6 +5298,8 @@ pub fn proposal_summary(req: &Request) -> String {
             };
             let what = match kind.as_str() {
                 "mark" => format!("mark {}", s("kind")),
+                // A type no shape has is the agent's text (t-167).
+                k if echo.active() && !SHAPE_TYPES.contains(&k) => tiza_core::redact::ELIDED.into(),
                 k => k.to_string(),
             };
             format!("add {what} {at}{}", text("label") + &text("text"))
@@ -5273,10 +5324,14 @@ pub fn proposal_summary(req: &Request) -> String {
         "step.goto" => format!(
             "go to step {}",
             p.get("id")
-                .map(|v| v
-                    .as_str()
-                    .map(String::from)
-                    .unwrap_or_else(|| v.to_string()))
+                .map(|v| match v.as_str() {
+                    // A step id the agent wrote is quoted like a target.
+                    Some(id) if echo.active() && !id.trim().chars().all(|c| c.is_ascii_digit()) => {
+                        echo.quote(id)
+                    }
+                    Some(id) => id.to_string(),
+                    None => v.to_string(),
+                })
                 .unwrap_or_default()
         ),
         "step.prev" => "previous step".into(),
@@ -5285,14 +5340,50 @@ pub fn proposal_summary(req: &Request) -> String {
             (Some(l), _, _) => format!("point at L{l}"),
             (None, Some(a), Some(b)) => format!("point at L{a}-{b}"),
             (None, Some(a), None) => format!("point at L{a}"),
-            _ => format!("point at «{}»", s("find")),
+            _ => format!("point at {}", echo.quote(&s("find"))),
         },
         "pointer.clear" => "turn the pointer off".into(),
         "theme.set" => format!("theme {}", s("theme")),
         "follow.set" => "toggle follow mode".into(),
+        // A method the API does not have is the agent's text (t-167).
+        other
+            if echo.active()
+                && !tiza_core::protocol::METHODS
+                    .iter()
+                    .any(|(m, _)| *m == other) =>
+        {
+            tiza_core::redact::ELIDED.into()
+        }
         other => other.to_string(),
     }
 }
+
+/// The words of a `:` command line, as the redact filter reads what was
+/// written (t-167): the line, and its pieces split at blanks, quotes,
+/// `@`, `:` and `..` (`:box @'a'..@'b'`, `:hl 2:text`).
+fn command_words(input: &str) -> Vec<String> {
+    let mut out = vec![input.to_string()];
+    out.extend(
+        input
+            .replace("..", " ")
+            .split(|c: char| c.is_whitespace() || "'\"`@:".contains(c))
+            .filter(|w| !w.is_empty())
+            .map(String::from),
+    );
+    out
+}
+
+/// The `type`s of `annotation.add`.
+const SHAPE_TYPES: &[&str] = &[
+    "highlight",
+    "mark",
+    "box",
+    "arrow",
+    "note",
+    "callout",
+    "spotlight",
+    "redact",
+];
 
 /// Image formats `:export` can ask the binary for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

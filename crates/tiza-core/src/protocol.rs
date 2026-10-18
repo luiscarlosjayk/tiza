@@ -1316,9 +1316,16 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
 
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
+    describe_with(a, &crate::redact::Echo::default())
+}
+
+/// [`describe`] through the redact filter of the document `a` is in
+/// (t-167): on a document with a redact its range markers read `@«…»`
+/// (a marker may sit on the mask; quoting only the others would say which).
+pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
     let base = describe_shape(a);
     let base = match &a.markers {
-        Some(m) => format!("{base} @«{}»..@«{}»", m.start, m.end),
+        Some(m) => format!("{base} @{}..@{}", echo.quote(&m.start), echo.quote(&m.end)),
         None => base,
     };
     // The file it belongs to, when it is not the main one (t-105).

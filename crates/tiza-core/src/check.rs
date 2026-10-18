@@ -16,7 +16,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::layout::{
     LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_with, stable_geometry,
@@ -316,6 +315,9 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         ));
         return Report::new(width, out, None, None);
     }
+    // The values serde quotes in a parse error, on a document with a
+    // redact, go through the redact filter (t-167).
+    let guard = crate::redact::json_has_redact(&raw).then(|| crate::redact::json_strings(&raw));
     let migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
     let parsed: Result<Document, serde_json::Error> = if migrated {
         for (from, migrate) in crate::fs::MIGRATIONS {
@@ -336,7 +338,12 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
                 Finding::new(
                     Level::Error,
                     "schema",
-                    format!("does not follow the .tiza format: {e}"),
+                    match guard {
+                        Some(written) => crate::redact::Echo::closed()
+                            .written(written)
+                            .text(&format!("does not follow the .tiza format: {e}")),
+                        None => format!("does not follow the .tiza format: {e}"),
+                    },
                 )
                 .line(line),
             );
@@ -392,42 +399,10 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
     }
 }
 
-/// The texts under every mask at any step (the step-0 code and every step
-/// a move changes): at least four characters, longest first.
+/// The texts under every mask at any step (see
+/// [`crate::redact::masked_values`]).
 fn secrets(doc: &Document) -> Vec<String> {
-    if !crate::redact::has_redacts(doc) {
-        return Vec::new();
-    }
-    let mut out: BTreeSet<String> = BTreeSet::new();
-    let mut take = |d: &Document, step: u32| {
-        for a in &d.annotations {
-            if let Shape::Redact { span, .. } = &a.shape
-                && crate::redact::active(d, a, step)
-                && let Some(t) = d.line_text(span.line)
-            {
-                let g: Vec<&str> = t.graphemes(true).collect();
-                let (s, e) = (
-                    (span.start as usize).min(g.len()),
-                    (span.end as usize).min(g.len()),
-                );
-                let v = g[s..e].concat();
-                let v = v.trim();
-                if v.chars().count() >= 4 && !v.contains(crate::redact::MASK) {
-                    out.insert(v.to_string());
-                }
-            }
-        }
-    };
-    if doc.moves.is_empty() {
-        take(doc, u32::MAX);
-    } else {
-        for step in 0..=doc.max_step() {
-            take(&doc.view_at(step).doc, step);
-        }
-    }
-    let mut v: Vec<String> = out.into_iter().collect();
-    v.sort_by_key(|s| std::cmp::Reverse(s.len()));
-    v
+    crate::redact::masked_values(doc)
 }
 
 /// Takes every text under a mask out of the findings.

@@ -239,7 +239,21 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
             migrate(&mut raw);
         }
     }
-    let mut doc: Document = serde_json::from_value(raw)?;
+    // A document with a redact that does not parse: serde quotes the
+    // values it could not read, so its message goes through the redact
+    // filter before there is a document to ask (t-167).
+    let guard = crate::redact::json_has_redact(&raw).then(|| crate::redact::json_strings(&raw));
+    let mut doc: Document = match serde_json::from_value(raw) {
+        Ok(d) => d,
+        Err(e) => {
+            return Err(match guard {
+                Some(written) => crate::redact::Echo::closed()
+                    .written(written)
+                    .error(Error::Json(e)),
+                None => Error::Json(e),
+            });
+        }
+    };
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     load_views(&mut doc, base_dir)?;

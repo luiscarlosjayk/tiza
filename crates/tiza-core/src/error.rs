@@ -28,6 +28,10 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    /// A JSON error whose message went through the redact filter (t-167):
+    /// the same `invalid_json`, without the values serde quoted.
+    #[error("{0}")]
+    JsonText(String),
 }
 
 impl Error {
@@ -41,7 +45,7 @@ impl Error {
             Error::Invalid(_) => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",
-            Error::Json(_) => "invalid_json",
+            Error::Json(_) | Error::JsonText(_) => "invalid_json",
         }
     }
 }

@@ -16,6 +16,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
 
+use crate::Error;
 use crate::model::{Anchor, Annotation, Document, Shape, TextSpan};
 
 /// What a masked span shows (eight bullets, whatever the span's length).
@@ -678,6 +679,336 @@ pub fn looks_like_secret(text: &str) -> bool {
     !t.contains(char::is_whitespace) && t.chars().count() >= 20
 }
 
+/// The texts under every mask at any step (the step-0 code and every step
+/// a move changes): at least four characters, longest first. Only searched
+/// for, never shown (`tiza check`, [`Echo`]).
+pub fn masked_values(doc: &Document) -> Vec<String> {
+    if !has_redacts(doc) {
+        return Vec::new();
+    }
+    let mut out: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut take = |d: &Document, step: u32| {
+        for a in &d.annotations {
+            if let Shape::Redact { span, .. } = &a.shape
+                && active(d, a, step)
+                && let Some(t) = d.line_text(span.line)
+            {
+                let g: Vec<&str> = t.graphemes(true).collect();
+                let (s, e) = (
+                    (span.start as usize).min(g.len()),
+                    (span.end as usize).min(g.len()),
+                );
+                let v = g[s..e].concat();
+                let v = v.trim();
+                if v.chars().count() >= MIN_PIECE && !v.contains(MASK) {
+                    out.insert(v.to_string());
+                }
+            }
+        }
+    };
+    if doc.moves.is_empty() {
+        take(doc, u32::MAX);
+    } else {
+        for step in 0..=doc.max_step() {
+            take(&doc.view_at(step).doc, step);
+        }
+    }
+    let mut v: Vec<String> = out.into_iter().collect();
+    v.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    v
+}
+
+/// Every target text the document itself wrote (t-167): the `find`,
+/// `after`, `before`, `find_start`/`find_end` of its moves, the
+/// `from`/`to.find` of a `select`, the `rebind` finds, and the range
+/// markers of its annotations.
+pub fn document_targets(doc: &Document) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for m in &doc.moves {
+        out.extend(Document::move_targets(m).into_iter().map(|(_, t)| t));
+    }
+    for a in &doc.annotations {
+        if let Some(mk) = &a.markers {
+            out.push(mk.start.clone());
+            out.push(mk.end.clone());
+        }
+    }
+    out
+}
+
+/// What is left of a quoted target in an error or an echo (t-167).
+pub const ELIDED: &str = "«…»";
+
+/// The one filter for an error or an echo that can quote a target text
+/// the agent or the document wrote (t-167): `find`, `after`, `before`,
+/// `find_start`/`find_end`, `select`, `rebind`, range markers, `at.find`,
+/// `from`/`to.find`, a step id. On a document with any redact, nothing
+/// quotes such a text — not only when it falls under a mask: the
+/// difference between «…» and the text would tell the agent its text is
+/// under one (an oracle). Every text the request or the document wrote is
+/// taken out the same way, whatever it holds (so that is no oracle
+/// either), and then any token of the message holding a piece of
+/// [`MIN_PIECE`]+ characters of a masked value (the copy rule of t-157).
+/// Without redacts every text is quoted as before. `tiza check` and
+/// `move.add` say «…» the same way (t-154).
+#[derive(Debug, Clone, Default)]
+pub struct Echo {
+    active: bool,
+    written: Vec<String>,
+    values: Vec<String>,
+}
+
+/// A plain lowercase word (`note`, `dashed`, `secret`): the vocabulary of
+/// messages and of enum values, which the filter leaves where it stands
+/// unquoted — otherwise «a note needs `line`» would lose its words.
+fn plain_word(t: &str) -> bool {
+    !t.is_empty()
+        && t.chars()
+            .all(|c| c.is_ascii_lowercase() || matches!(c, '.' | '-' | '_'))
+}
+
+impl Echo {
+    /// The filter for errors and echoes about `doc` (inactive when it has
+    /// no redact), knowing the targets the document wrote.
+    pub fn new(doc: &Document) -> Echo {
+        if !has_redacts(doc) {
+            return Echo::default();
+        }
+        Echo {
+            active: true,
+            written: Vec::new(),
+            values: masked_values(doc),
+        }
+        .written(document_targets(doc))
+    }
+
+    /// Only the "is there a redact" half of [`Echo::new`], for listings
+    /// drawn every frame that need [`Echo::quote`] alone.
+    pub fn quoting(doc: &Document) -> Echo {
+        Echo {
+            active: has_redacts(doc),
+            ..Echo::default()
+        }
+    }
+
+    /// Always active, with no document to read values from: for errors
+    /// raised before there is one (a `.tiza` that does not parse, MCP
+    /// parameters that do not deserialize). Fail closed.
+    pub fn closed() -> Echo {
+        Echo {
+            active: true,
+            ..Echo::default()
+        }
+    }
+
+    /// Also active when the request itself carries a redact (a
+    /// `scene.put` or `scene.patch` that brings one): fail closed.
+    pub fn redacted(mut self, yes: bool) -> Echo {
+        self.active |= yes;
+        self
+    }
+
+    /// The texts the agent wrote (every string of its request, a command
+    /// line's words). Each counts as written and trimmed: a step id is
+    /// trimmed before it is looked up.
+    pub fn written<I, S>(mut self, texts: I) -> Echo
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        if !self.active {
+            return self;
+        }
+        for t in texts {
+            let t: String = t.into();
+            let trimmed = t.trim();
+            if !trimmed.is_empty() && trimmed.len() != t.len() {
+                self.written.push(trimmed.to_string());
+            }
+            if !t.is_empty() {
+                self.written.push(t);
+            }
+        }
+        self.written.sort_by_key(|t| std::cmp::Reverse(t.len()));
+        self.written.dedup();
+        self
+    }
+
+    /// Whether this filter changes anything (the document has a redact).
+    pub fn active(&self) -> bool {
+        self.active
+    }
+
+    /// A target as an echo quotes it: `«text»`, or [`ELIDED`].
+    pub fn quote(&self, text: &str) -> String {
+        if self.active {
+            ELIDED.into()
+        } else {
+            format!("«{text}»")
+        }
+    }
+
+    /// `text` with every copy, or piece of [`MIN_PIECE`]+ characters, of a
+    /// masked value taken out with its whole token (t-157), for the free
+    /// text an echo repeats (a label, a note).
+    pub fn copies(&self, text: &str) -> String {
+        self.take_out(text, false)
+    }
+
+    /// Every hit of a masked value in `text` (only whole copies with
+    /// `whole_only`) taken out with its whole token.
+    fn take_out(&self, text: &str, whole_only: bool) -> String {
+        let mut out = text.to_string();
+        for v in &self.values {
+            let mut tokens: Vec<(usize, usize)> = Vec::new();
+            for (b0, b1, whole) in value_hits(&out, v) {
+                if whole_only && !whole {
+                    continue;
+                }
+                let (t0, t1) = token_around(&out, b0, b1);
+                match tokens.last_mut() {
+                    Some(last) if t0 <= last.1 => last.1 = last.1.max(t1),
+                    _ => tokens.push((t0, t1)),
+                }
+            }
+            for (t0, t1) in tokens.into_iter().rev() {
+                out.replace_range(t0..t1, "…");
+            }
+        }
+        out
+    }
+
+    /// The copy rule on an error's tokens: a token (a run of
+    /// [`token_char`]s) holding a piece of a masked value goes, except a
+    /// plain lowercase word — the message's own words (`looks like a
+    /// secret`) may share a piece with a value. A whole copy goes anyway.
+    fn take_out_tokens(&self, text: &str) -> String {
+        if self.values.is_empty() {
+            return text.to_string();
+        }
+        let out = self.take_out(text, true);
+        let mut res = String::with_capacity(out.len());
+        let mut tok = String::new();
+        let flush = |tok: &mut String, res: &mut String| {
+            if !tok.is_empty() {
+                let hit =
+                    !plain_word(tok) && self.values.iter().any(|v| !value_hits(tok, v).is_empty());
+                res.push_str(if hit { "…" } else { tok });
+                tok.clear();
+            }
+        };
+        for c in out.chars() {
+            if token_char(c) {
+                tok.push(c);
+            } else {
+                flush(&mut tok, &mut res);
+                res.push(c);
+            }
+        }
+        flush(&mut tok, &mut res);
+        res
+    }
+
+    /// An error message or an echo with no target quoted, in this order:
+    /// a message that is a written text itself goes whole; every written
+    /// text quoted `«…»`, `"…"` (or as `{:?}` prints it), `` `…` `` or
+    /// `'…'` becomes [`ELIDED`]; every other `«…»` quote too (fail closed:
+    /// a target this filter was not told about); a written text of
+    /// [`MIN_PIECE`]+ characters that is not a plain lowercase word goes
+    /// wherever it stands (`unknown method: …`); and last the copy rule on
+    /// the tokens left.
+    pub fn text(&self, msg: &str) -> String {
+        if !self.active {
+            return msg.to_string();
+        }
+        if self.written.iter().any(|t| t == msg || t == msg.trim()) {
+            return "…".into();
+        }
+        let mut s = msg.to_string();
+        for t in &self.written {
+            for q in [
+                format!("«{t}»"),
+                format!("{t:?}"),
+                format!("\"{t}\""),
+                format!("`{t}`"),
+                format!("'{t}'"),
+            ] {
+                s = s.replace(&q, ELIDED);
+            }
+        }
+        let mut out = String::with_capacity(s.len());
+        let mut rest = s.as_str();
+        while let Some(k) = rest.find('«') {
+            out.push_str(&rest[..k]);
+            out.push_str(ELIDED);
+            let after = &rest[k + '«'.len_utf8()..];
+            rest = match after.find('»') {
+                Some(e) => &after[e + '»'.len_utf8()..],
+                None => "",
+            };
+        }
+        out.push_str(rest);
+        for t in &self.written {
+            // Its trimmed copy is in the list too (and keeps the blanks).
+            let untrimmed = t.trim().len() != t.len();
+            if t.chars().count() >= MIN_PIECE && !plain_word(t) && !untrimmed && t != ELIDED {
+                out = out.replace(t.as_str(), "…");
+            }
+        }
+        self.take_out_tokens(&out)
+    }
+
+    /// [`Echo::text`] on the message of an error, keeping its kind (and
+    /// so its `code`).
+    pub fn error(&self, e: Error) -> Error {
+        if !self.active {
+            return e;
+        }
+        match e {
+            // Without a «…» quote the message is the bare `find` itself.
+            Error::TextNotFound(s) if !s.contains('«') => Error::TextNotFound("…".into()),
+            Error::TextNotFound(s) => Error::TextNotFound(self.text(&s)),
+            Error::Invalid(s) => Error::Invalid(self.text(&s)),
+            Error::StepNotFound(s) => Error::StepNotFound(self.text(&s)),
+            Error::NotFound(s) => Error::NotFound(self.text(&s)),
+            Error::DuplicateId(s) => Error::DuplicateId(self.text(&s)),
+            // serde quotes the values it could not read (`invalid type:
+            // string "…"`, `unknown variant `…``).
+            Error::Json(j) => Error::JsonText(self.text(&j.to_string())),
+            Error::JsonText(s) => Error::JsonText(self.text(&s)),
+            other => other,
+        }
+    }
+}
+
+/// Every string in a JSON value (the texts an agent's request wrote).
+pub fn json_strings(v: &serde_json::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut stack = vec![v];
+    while let Some(v) = stack.pop() {
+        match v {
+            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Array(a) => stack.extend(a.iter()),
+            serde_json::Value::Object(o) => stack.extend(o.values()),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Whether a request carries a redact annotation (`"type": "redact"`
+/// anywhere: a `scene.put` document, a `scene.patch` annotation).
+pub fn json_has_redact(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::Array(a) => a.iter().any(json_has_redact),
+        serde_json::Value::Object(o) => {
+            o.get("type").and_then(|t| t.as_str()) == Some("redact")
+                || o.values().any(json_has_redact)
+        }
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -701,6 +1032,55 @@ mod tests {
                 pin: None,
             },
         }
+    }
+
+    #[test]
+    fn echo_quotes_no_target_on_a_document_with_redacts() {
+        let plain = doc("token=abc123SECRETxyz789\nport=1\n");
+        let e = Echo::new(&plain).written(["NOWHERE"]);
+        assert!(!e.active());
+        assert_eq!(
+            e.text("find «NOWHERE» (move #1)"),
+            "find «NOWHERE» (move #1)"
+        );
+        assert_eq!(e.quote("port"), "«port»");
+
+        let mut d = plain.clone();
+        d.annotations.push(redact("r1", 1, 6, 24, 0));
+        let e = Echo::new(&d).written(["x»SECRET", "nope\"q"]);
+        assert!(e.active());
+        // Any quote, under the mask or not; a quote with `»` inside.
+        assert_eq!(e.text("find «port» (move #1)"), "find «…» (move #1)");
+        assert_eq!(e.text("find «x»SECRET» here"), "find «…» here");
+        // Debug-quoted, the whole message, and an unclosed quote.
+        assert_eq!(
+            e.text("no step is named \"nope\\\"q\""),
+            "no step is named «…»"
+        );
+        assert_eq!(e.text("x»SECRET"), "…");
+        assert_eq!(e.text("start «abc"), "start «…»");
+        // A whole copy of the value goes with its token; an error's own
+        // words keep pieces they share with it.
+        assert_eq!(e.text("bad abc123SECRETxyz789, really"), "bad …, really");
+        // A token with a piece of the value goes; plain lowercase words
+        // (the message's own) stay, and so does the rest of the message.
+        assert_eq!(e.text("unknown color: 123SECRETx"), "unknown color: …");
+        assert_eq!(e.text("unknown variant `xyz789Q`"), "unknown variant `…`");
+        assert_eq!(e.text("a note needs `line`"), "a note needs `line`");
+        // A written text is taken out wherever it stands, trimmed too.
+        let e = e.clone().written([" Qq9-step"]);
+        assert_eq!(
+            e.text("no step is named \"Qq9-step\""),
+            "no step is named «…»"
+        );
+        assert_eq!(e.text("unknown method: Qq9-step"), "unknown method: …");
+        // The copy rule for free text: a piece of 4+ characters.
+        assert_eq!(e.copies("see 123SECRET now"), "see … now");
+        assert_eq!(e.quote("port"), ELIDED);
+        assert_eq!(
+            e.error(Error::TextNotFound("port".into())).to_string(),
+            "text \"…\" not found in the code"
+        );
     }
 
     #[test]

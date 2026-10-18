@@ -1446,6 +1446,40 @@ impl TizaServer {
 
 #[tool_handler]
 impl ServerHandler for TizaServer {
+    /// The tool router's call, with one change (t-167): arguments that do
+    /// not deserialize come back as `failed to deserialize parameters:
+    /// invalid type: string "…"`, raised here before the instance is asked,
+    /// so the server cannot know whether the document has a redact. It
+    /// fails closed: the values the agent sent are taken out of that
+    /// message, with or without redacts (the instance's own errors already
+    /// went through its filter).
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResponse, McpError> {
+        let written = request
+            .arguments
+            .as_ref()
+            .map(|a| tiza_core::redact::json_strings(&Value::Object(a.clone())))
+            .unwrap_or_default();
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        let mut resp = self.tool_router.call(tcc).await?;
+        if let rmcp::model::CallToolResponse::Complete(r) = &mut resp
+            && r.is_error == Some(true)
+        {
+            let echo = tiza_core::redact::Echo::closed().written(written);
+            for c in &mut r.content {
+                if let rmcp::model::ContentBlock::Text(t) = c
+                    && t.text.starts_with("failed to deserialize parameters")
+                {
+                    t.text = echo.text(&t.text);
+                }
+            }
+        }
+        Ok(resp)
+    }
+
     async fn list_resources(
         &self,
         _request: Option<PaginatedRequestParams>,

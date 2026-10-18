@@ -1122,7 +1122,8 @@ impl Document {
             Err(e) => {
                 self.code = self.base_code.clone();
                 self.source.first_line = self.base_first_line;
-                Some(e)
+                // The TUI shows it on a step change (`moves: …`, t-167).
+                Some(crate::redact::Echo::new(self).error(e))
             }
         }
     }
@@ -1303,7 +1304,7 @@ impl Document {
     /// The target texts of a move (`find`, `after`, `before`,
     /// `find_start`, `find_end`, a `select` or `rebind` `find`), with the
     /// field each comes from.
-    fn move_targets(m: &Move) -> Vec<(&'static str, String)> {
+    pub(crate) fn move_targets(m: &Move) -> Vec<(&'static str, String)> {
         let mut targets: Vec<(&'static str, String)> = Vec::new();
         let mut put = |what: &'static str, t: &Option<String>| {
             if let Some(t) = t {
@@ -1360,24 +1361,8 @@ impl Document {
     /// under a mask must not hand the text back (and every target is
     /// scrubbed alike, so the answer says nothing about the mask).
     pub(crate) fn scrub_targets(&self, m: &Move, e: Error) -> Error {
-        if !crate::redact::has_redacts(self) {
-            return e;
-        }
-        let targets = Self::move_targets(m);
-        let scrub = |s: String| -> String {
-            let mut s = s;
-            for (_, t) in &targets {
-                if !t.is_empty() {
-                    s = s.replace(&format!("«{t}»"), "«…»");
-                }
-            }
-            s
-        };
-        match e {
-            Error::TextNotFound(s) => Error::TextNotFound(scrub(s)),
-            Error::Invalid(s) => Error::Invalid(scrub(s)),
-            other => other,
-        }
+        let targets = Self::move_targets(m).into_iter().map(|(_, t)| t);
+        crate::redact::Echo::new(self).written(targets).error(e)
     }
 
     /// `move.add` refuses a `code.patch` whose content repeats a value that
@@ -1848,6 +1833,13 @@ impl Document {
     /// Tidies a document that came from a file: single-line texts (control
     /// characters become spaces), `step` within range, unique ids.
     pub fn normalize_loaded(&mut self) -> Result<(), Error> {
+        // A load error names moves and markers by their target texts: on a
+        // document with redacts none is quoted (t-167).
+        self.normalize_loaded_raw()
+            .map_err(|e| crate::redact::Echo::new(self).error(e))
+    }
+
+    fn normalize_loaded_raw(&mut self) -> Result<(), Error> {
         if self.code.is_empty() {
             // Every layout assumes at least one row (see `from_code`).
             self.code.push(String::new());
