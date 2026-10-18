@@ -6,11 +6,11 @@
   },
   "targets": {
     "aarch64-apple-darwin": {
-      "binary_bytes": 11374320,
-      "archive_bytes": 5820000,
-      "commit": "99fa2dd",
-      "measured": "2026-10-18",
-      "reason": "Luis's measurement on 99fa2dd with lto = \"fat\" alone (before t-134; the archive figure is gzip of the binary, 6.07 → 5.82 MB): replace with the first scripts/size-check.sh --update run on the Mac"
+      "binary_bytes": 11209360,
+      "archive_bytes": 5745699,
+      "commit": "452c576",
+      "measured": "2026-10-17",
+      "reason": "First Mac baseline (t-133): 452c576, lto = \"fat\", measured with scripts/size-check.sh on Luis's Mac"
     },
     "x86_64-unknown-linux-gnu": {
       "binary_bytes": 13158152,

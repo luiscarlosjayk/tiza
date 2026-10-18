@@ -22,6 +22,44 @@ Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-re
 
 `scripts/legibility.py` (t-072) is the YouTube-compression check: it renders a step, scales it to 1080p, round-trips it through H.264 with ffmpeg and measures the contrast every text color keeps. `qa/tests/t-072.rs` and the Mocha step of `qa/tests/t-119.rs` run it when python3 + Pillow + numpy + ffmpeg are installed (shared check `tiza_qa::legibility_tools_missing()`; otherwise they skip and print what is missing) and CI runs it in the `legibility` job (report and compressed frames as an artifact).
 
+## Size breakdown of the first baseline (t-133)
+
+Where the bytes of the release binary go, next to the baselines in `qa/budgets.json` and `qa/bench/baseline.json`. Measured on 2026-10-18 on Linux x86_64 at 5e57795 (fat LTO, the t-133 profile; the committed Linux baseline at 5ab5bb1 is 13,158,152 bytes, this tree is 13,171,048 stripped, +0.1 %) with `cargo-bloat 0.12.1`: `CARGO_PROFILE_RELEASE_STRIP=false cargo bloat --release -p tiza --bin tiza --crates -n 0` for the code, `size -A` on the stripped binary for the sections, and a byte search in the stripped binary for each embedded blob. The Mac binary (11,209,360 bytes) was not broken down; Mach-O has smaller unwind and relocation tables, so expect the same proportions with a smaller "other sections" row. cargo-bloat attributes code by symbol name: generic code lands in the crate that instantiates it (most of ratatui and serde shows up under `tiza_*` and `serde_core`), so the per-crate code rows are approximate.
+
+| Part of the 13.17 MB stripped binary | Bytes | Share |
+|---|---:|---:|
+| Code (`.text`) | 8,524,231 | 65 % |
+| Read-only data (`.rodata`) | 3,069,072 | 23 % |
+| Unwind tables (`.eh_frame`, `.eh_frame_hdr`, `.gcc_except_table`) | 937,652 | 7 % |
+| Relocations and vtables (`.data.rel.ro`, `.rela.dyn`) | 623,984 | 5 % |
+
+Code by area (cargo-bloat, `.text` only):
+
+| Area | Crates | Bytes |
+|---|---|---:|
+| SVG / PNG / GIF export and text shaping | usvg 420 K, harfrust 408 K, skrifa 245 K, tiny-skia 196 K, read-fonts 141 K, resvg 80 K, roxmltree 80 K, fontconfig-parser 67 K, fontdb 57 K, miniz_oxide 44 K, … | 1,885,041 |
+| Tiza's own crates | tiza-core 749 K, tiza-tui 418 K, tiza-mcp 268 K, tiza (cli) 206 K, tiza-export 56 K | 1,696,378 |
+| Rust standard library | std / core / alloc | 1,473,288 |
+| Serialization | serde_core 524 K, serde_json 366 K, schemars 198 K, serde 106 K | 1,194,155 |
+| Regex engines behind syntect's `regex-fancy` | regex-automata 373 K, regex-syntax 174 K, aho-corasick 140 K, fancy-regex 54 K, … | 775,168 |
+| MCP server and async runtime | rmcp 539 K, tokio 132 K, futures | 685,147 |
+| CLI parsing | clap_builder 257 K, … | 269,591 |
+| TUI (as attributed) | ratatui, crossterm, unicode-width, … | 124,523 |
+| Syntax highlighting code | syntect 59 K, two-face, bincode | 86,262 |
+| Everything else (35 crates) | toml 62 K, notify 42 K, toml_parser 27 K, anyhow 17 K, … | 268,677 |
+
+Embedded data inside `.rodata` (found byte for byte in the stripped binary):
+
+| Blob | Bytes |
+|---|---:|
+| two-face syntax set (`syntaxes-fancy-newlines.bin`, bat's grammars) | 959,011 |
+| JetBrains Mono Regular / Bold / Italic / BoldItalic (SVG/PNG export) | 1,108,400 |
+| TizaSymbols.ttf (symbols fallback) | 125,188 |
+| two-face themes (`themes.bin`) | 62,593 |
+| Rest of `.rodata` (strings, Unicode and font tables, constants) | ~813,880 |
+
+Not linked (checked): syntect's own default dumps, two-face's `no-newlines` and onig dumps, two-face's acknowledgements. Reading the table: about 3.1 MB (24 %) is export (shaping + rasterizing code and the five fonts), about 1.9 MB is highlighting (two-face grammars and themes + the regex engines + syntect), and 1.9 MB is MCP + serialization. `panic = "abort"` would remove most of the unwind tables (~0.9 MB here, ~1.6 MB measured on the Mac) and was discarded on purpose (see `[profile.release]` in `Cargo.toml`).
+
 ## Checklist for any card that adds or changes a `:` command (t-115)
 
 A typo must never close the app, leave the terminal broken or create something other than what was typed. Every rejection ends in a line that says how to go on (the expected shape, the valid values, or `:help`), and a success message appears only when the annotation is exactly what the user asked for. `qa/tests/t-115.rs` drives this table through the real command runner; add the new command's own rows there.

@@ -32,7 +32,7 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ## Installation
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, ~5.8 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
 
 ```sh
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza

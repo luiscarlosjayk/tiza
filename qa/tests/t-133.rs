@@ -406,28 +406,34 @@ fn ac2_bench_warns_on_a_slower_scenario_and_never_fails() {
 fn ac2_ac3_ac5_committed_bench_baseline_covers_every_scenario() {
     let b = read_json("qa/bench/baseline.json");
     assert_eq!(b["warn_pct"], 20);
-    let linux = &b["targets"]["x86_64-unknown-linux-gnu"];
-    for s in [
-        "version",
-        "render_txt_step7",
-        "render_png_step7",
-        "render_txt_rust_2000_lines",
-        "render_txt_typescript_3000_lines",
-        "render_gif_example",
-        "tui_first_frame",
-        "t054_frame_median",
-    ] {
+    // Same shape for every target, no fixed numbers: a baseline moves with
+    // `scripts/bench.sh --update-baseline --note …` and must not break this.
+    for t in ["x86_64-unknown-linux-gnu", "aarch64-apple-darwin"] {
+        let e = &b["targets"][t];
+        for s in [
+            "version",
+            "render_txt_step7",
+            "render_png_step7",
+            "render_txt_rust_2000_lines",
+            "render_txt_typescript_3000_lines",
+            "render_gif_example",
+            "tui_first_frame",
+            "t054_frame_median",
+        ] {
+            assert!(
+                e["scenarios"][s]["median_ms"].as_f64().unwrap_or(0.0) > 0.0,
+                "{t} baseline lacks {s}"
+            );
+        }
         assert!(
-            linux["scenarios"][s]["median_ms"].as_f64().unwrap() > 0.0,
-            "linux baseline lacks {s}"
+            e["cargo_install_cold_s"].as_f64().unwrap_or(0.0) > 0.0,
+            "{t} baseline lacks cargo_install_cold_s"
+        );
+        assert!(
+            !e["note"].as_str().unwrap_or("").trim().is_empty(),
+            "{t} baseline has no note"
         );
     }
-    assert!(linux["cargo_install_cold_s"].as_f64().unwrap() > 0.0);
-    assert!(!linux["note"].as_str().unwrap().is_empty());
-    // The Mac numbers of the card (2026-10-18) until the first run there.
-    let mac = &b["targets"]["aarch64-apple-darwin"];
-    assert_eq!(mac["scenarios"]["version"]["median_ms"], 3.0);
-    assert_eq!(mac["scenarios"]["t054_frame_median"]["median_ms"], 3.7);
 }
 
 #[test]
