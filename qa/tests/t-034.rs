@@ -98,10 +98,44 @@ fn ac2_the_caveats_are_there() {
     }
 }
 
+/// t-139: the tmux caveat names what each tested tmux version does with the
+/// colour query (checked in Docker: 3.5a answers it with the outer terminal's
+/// colours, 3.3a does not and Tiza stays dark) and claims nothing about the
+/// versions in between.
+#[test]
+fn ac2_the_tmux_caveat_names_each_tested_version() {
+    let s = section();
+    let tmux = s
+        .lines()
+        .find(|l| l.starts_with("- **tmux.**"))
+        .expect("tmux caveat");
+    for needle in [
+        "**tmux 3.5a**",
+        "answers Tiza's query with its colours",
+        "auto appearance works with no configuration",
+        "**tmux 3.3a**",
+        "Tiza stays dark",
+        "`--theme light`",
+        "upgrade tmux",
+        "Versions between 3.3a and 3.5a are not tested",
+        "`set -g allow-passthrough on` changes neither case",
+        "kill -WINCH $(pgrep tiza)",
+        "set -as terminal-features ',*:RGB'",
+    ] {
+        assert!(
+            tmux.contains(needle),
+            "tmux caveat lacks «{needle}»: {tmux}"
+        );
+    }
+    // The pre-t-139 claim, wrong for tmux 3.5a.
+    assert!(!tmux.contains("whatever answers is tmux itself"), "{tmux}");
+}
+
 #[test]
 fn ac2_the_colour_query_is_plain_osc_not_wrapped_for_tmux() {
-    // The README says `allow-passthrough` does not change the query: that
-    // holds only while the query is not a `ESC P tmux;` passthrough.
+    // The README says `allow-passthrough` changes neither tmux 3.3a nor 3.5a:
+    // that holds only while the query is not a `ESC P tmux;` passthrough
+    // (t-139: wrapped, 3.5a loses the answer).
     assert_eq!(
         tiza_tui::appearance::QUERY,
         "\x1b]11;?\x1b\\\x1b]10;?\x1b\\"
