@@ -14,6 +14,12 @@
 //!   `.tiza` with steps and links (`examples/tally-tour.tiza` over
 //!   `examples/tally/`) plus the exact prompt list.
 //! - AC4 A closing list of what each scenario needs that Tiza does not do yet.
+//!   After Luis's rework (2026-10-18) it names only what will be built
+//!   (t-166, t-168), and no scenario depends on a discarded feature: no
+//!   arrows between files or two files at once, no author metadata, no
+//!   resource notifications, no diff import, no `:redact auto` for agents,
+//!   no `--no-save` (the scenarios work on a copy and keep the sidecar the
+//!   TUI autosaves).
 //! - AC5 No marketing or channel tasks.
 //!
 //! The document is prose, so these tests pin what can drift: its shape, the
@@ -114,17 +120,63 @@ fn ac2_the_two_scenarios_luis_named_are_there() {
 }
 
 #[test]
-fn ac4_the_closing_list_of_gaps_is_there() {
+fn ac4_the_closing_list_names_only_what_will_be_built() {
     let text = doc();
     let start = text
-        .find("\n## What each scenario needs that Tiza does not do yet\n")
+        .find("\n## Planned changes that touch these scenarios\n")
         .expect("the closing section");
-    let rest = &text[start..];
+    let items: Vec<&str> = text[start..]
+        .lines()
+        .filter(|l| l.starts_with("- "))
+        .collect();
+    assert_eq!(items.len(), 2, "{items:?}");
+    assert!(items[0].contains("t-166"), "{items:?}");
+    assert!(items[1].contains("t-168"), "{items:?}");
+    assert!(scenarios().iter().all(|(t, _)| !t.starts_with("Planned")));
+}
+
+#[test]
+fn ac4_no_scenario_depends_on_a_discarded_feature() {
+    let text = doc();
+    let lower = text.to_lowercase();
+    for gone in [
+        "--no-save",
+        "split view",
+        "two files on screen",
+        "arrows between files",
+        "subscription",
+        "notification",
+        "import of a diff",
+        "scene get >",
+        "t-169",
+    ] {
+        assert!(
+            !lower.contains(gone),
+            "the catalogue still mentions «{gone}»"
+        );
+    }
+    // Agents never turn masking on or off: `:redact auto` is not in a script.
     assert!(
-        rest.lines().filter(|l| l.starts_with("- ")).count() >= 5,
-        "a list of gaps"
+        !text.contains(":redact auto"),
+        "scenario 6 builds the masks"
     );
-    assert!(scenarios().iter().all(|(t, _)| !t.starts_with("What each")));
+    let s = scenarios();
+    let body = |n: usize| &s[n - 1].1;
+    // Scenario 2: each agent signs its own labels and notes.
+    assert!(body(2).contains("author:") && body(2).contains("review:"));
+    // Scenario 4: the agent writes the moves from the diff.
+    assert!(body(4).contains("git diff") && body(4).contains("writes the moves"));
+    // Scenario 6: the .tiza is built with its masks before it is opened.
+    assert!(body(6).contains("demo.env.tiza") && body(6).contains("redact"));
+    // Every scenario that opens a sample opens a working copy.
+    for (title, b) in &s {
+        for line in b.lines() {
+            assert!(
+                !line.contains("`tiza examples/"),
+                "«{title}» opens examples/ itself: {line}"
+            );
+        }
+    }
 }
 
 #[test]
@@ -357,11 +409,10 @@ fn ac3_the_prompts_tool_calls_rebuild_the_shipped_example() {
     let (err, _, _) = mcp.call("set_step", json!({"step": 0}));
     assert!(!err);
 
-    // The live document, saved as a file, draws every step exactly as the
-    // shipped example does.
-    let scene = live.api_ok("scene.get", json!({}));
-    let built = scratch("t046-prompts").join("built.tiza");
-    std::fs::write(&built, scene["document"].to_string()).unwrap();
+    // What the TUI autosaved next to main.rs — the result the catalogue
+    // tells you to keep — draws every step exactly as the shipped example.
+    let built = live.with(|a| a.save_path.clone());
+    assert_eq!(built, main.with_file_name("main.rs.tiza"));
     let shipped = example("tally-tour.tiza");
     for step in 0..=5 {
         assert_eq!(
