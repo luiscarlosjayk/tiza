@@ -32,7 +32,7 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ## Installation
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Or from source (Rust ≥ 1.88):
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
 
 ```sh
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza
@@ -230,10 +230,6 @@ cargo run -- examples/ownership.rs
 ```
 
 Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with [rmcp](https://github.com/modelcontextprotocol/rust-sdk)), `tiza-export` (SVG/PNG with [resvg](https://github.com/linebender/resvg) and embedded fonts), `tiza` (the binary, in `crates/tiza-cli`). Decisions in [docs/adr](docs/adr). Dependency policy (maintained crates only, `cargo-deny` in CI): [docs/adr/0004-dependencias.md](docs/adr/0004-dependencias.md).
-
-## Name
-
-There is a Java library called [Tiza](https://github.com/Krassnig/Tiza) (drawing for beginners). They are unrelated; this project is a Rust terminal tool.
 
 ## License
 

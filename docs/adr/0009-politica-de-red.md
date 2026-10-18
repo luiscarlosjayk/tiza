@@ -1,6 +1,6 @@
 # ADR 0009: Network policy — the `tiza` binary never opens a connection
 
-- Status: proposed (2026-10-18, written for Luis's read; accepted once he signs it off on t-118)
+- Status: accepted (2026-10-18, Luis)
 - Board: t-118; read by t-117 (redaction) and by whichever card brings the first HTTP feature
 - Related: [ADR 0003](0003-api-socket-y-mcp.md) (the local API is a Unix socket, never TCP), [ADR 0004](0004-dependencias.md) (dependency policy, `cargo-deny`), [docs/research/demo-time.md](../research/demo-time.md) (the remote-control PWA was discarded on 2026-10-17)
 
