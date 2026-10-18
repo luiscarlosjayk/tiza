@@ -50,13 +50,16 @@ pub fn has_redacts(doc: &Document) -> bool {
 /// The document with every active mask applied: masked code lines, the
 /// redact spans narrowed to the mask, and the other annotations of those
 /// lines re-mapped. A document without redacts comes back unchanged.
+///
+/// Masks that overlap on a line (two redacts widened by a move, t-140) are
+/// drawn as one. A span that runs past the end of its line (a line being
+/// typed, t-140) shows no kept tail: the tail of a partial value is the
+/// start of the secret.
 pub fn masked(doc: &Document, step: u32) -> Document {
     let mut out = doc.clone();
     if !has_redacts(doc) {
         return out;
     }
-    // Per line, the active masks sorted by start; later ones first so the
-    // earlier columns stay valid while the text is rewritten.
     let mut by_line: std::collections::BTreeMap<u32, Vec<(usize, TextSpan, u8)>> =
         Default::default();
     for (i, a) in doc.annotations.iter().enumerate() {
@@ -69,8 +72,7 @@ pub fn masked(doc: &Document, step: u32) -> Document {
                 .push((i, *span, shown_tail(&a.shape)));
         }
     }
-    for (line, masks) in by_line.iter_mut() {
-        masks.sort_by_key(|(_, s, _)| std::cmp::Reverse(s.start));
+    for (line, masks) in by_line.iter() {
         let Some(idx) = line
             .checked_sub(doc.source.first_line)
             .map(|i| i as usize)
@@ -78,33 +80,36 @@ pub fn masked(doc: &Document, step: u32) -> Document {
         else {
             continue;
         };
-        for (ann_index, span, keep) in masks.iter() {
+        let len = out.code[idx].graphemes(true).count();
+        let spans: Vec<(usize, usize, u8, usize)> = masks
+            .iter()
+            .map(|(i, sp, keep)| {
+                let end = (sp.end as usize).min(len);
+                let keep = if (sp.end as usize) > len { 0 } else { *keep };
+                ((sp.start as usize).min(end), end, keep, *i)
+            })
+            .collect();
+        // Later groups first so the earlier columns stay valid while the
+        // text is rewritten.
+        for group in merge_groups(spans).into_iter().rev() {
             let text = out.code[idx].clone();
             let g: Vec<&str> = text.graphemes(true).collect();
-            let end = (span.end as usize).min(g.len());
-            let start = (span.start as usize).min(end);
-            if start == end {
-                continue;
-            }
-            let keep = (*keep as usize).min(end - start).min(8);
+            let (start, end, keep) = (group.start, group.end, group.keep);
+            let keep = (keep as usize).min(end - start).min(8);
             let tail: String = g[end - keep..end].concat();
-            let replacement = format!("{MASK}{tail}");
             let new_len = MASK_WIDTH + keep as u32;
-            out.code[idx] = format!(
-                "{}{}{}",
-                g[..start].concat(),
-                replacement,
-                g[end..].concat()
-            );
-            let old_len = (end - start) as u32;
-            let delta = new_len as i64 - old_len as i64;
+            out.code[idx] = format!("{}{MASK}{tail}{}", g[..start].concat(), g[end..].concat());
+            let delta = new_len as i64 - (end - start) as i64;
             let (s0, s1) = (start as u32, end as u32);
-            // The redact itself now covers the mask.
-            if let Shape::Redact { span: sp, .. } = &mut out.annotations[*ann_index].shape {
-                sp.end = s0 + new_len;
+            // The redacts of the group now cover the mask.
+            for &m in &group.members {
+                if let Shape::Redact { span: sp, .. } = &mut out.annotations[m].shape {
+                    sp.start = s0;
+                    sp.end = s0 + new_len;
+                }
             }
             for (j, a) in out.annotations.iter_mut().enumerate() {
-                if j == *ann_index {
+                if group.members.contains(&j) {
                     continue;
                 }
                 remap_shape(&mut a.shape, *line, s0, s1, delta);
@@ -114,22 +119,56 @@ pub fn masked(doc: &Document, step: u32) -> Document {
     out
 }
 
-/// Masks `code` with every redact in `annotations` (any step), without
-/// touching annotations: for text matching that must not see a secret
-/// (`moves::validate`), where only the lines matter.
-pub fn mask_lines(code: &[String], first_line: u32, annotations: &[Annotation]) -> Vec<String> {
-    let mut out = code.to_vec();
-    let mut spans: Vec<(u32, u32, u32, u8)> = annotations
-        .iter()
-        .filter_map(|a| match &a.shape {
-            Shape::Redact { span, .. } => {
-                Some((span.line, span.start, span.end, shown_tail(&a.shape)))
+/// Masks of one line merged where they overlap: the columns, the kept tail
+/// (none when several masks were merged) and the indexes they came from.
+struct MaskGroup {
+    start: usize,
+    end: usize,
+    keep: u8,
+    members: Vec<usize>,
+}
+
+fn merge_groups(mut spans: Vec<(usize, usize, u8, usize)>) -> Vec<MaskGroup> {
+    spans.retain(|(s, e, _, _)| s < e);
+    spans.sort_by_key(|(s, e, _, _)| (*s, *e));
+    let mut out: Vec<MaskGroup> = Vec::new();
+    for (s, e, keep, i) in spans {
+        match out.last_mut() {
+            Some(last) if s < last.end => {
+                last.end = last.end.max(e);
+                last.keep = 0;
+                last.members.push(i);
             }
-            _ => None,
-        })
-        .collect();
-    spans.sort_by_key(|(l, s, _, _)| (*l, std::cmp::Reverse(*s)));
-    for (line, start, end, keep) in spans {
+            _ => out.push(MaskGroup {
+                start: s,
+                end: e,
+                keep,
+                members: vec![i],
+            }),
+        }
+    }
+    out
+}
+
+/// One mask to draw on plain code lines: its line, grapheme columns and
+/// kept tail.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MaskSpan {
+    pub line: u32,
+    pub start: u32,
+    pub end: u32,
+    pub keep: u8,
+}
+
+/// `code` with `masks` drawn on it (merged where they overlap; no kept
+/// tail on a span that runs past its line). Only the lines change.
+pub fn mask_with(code: &[String], first_line: u32, masks: &[MaskSpan]) -> Vec<String> {
+    let mut out = code.to_vec();
+    let mut by_line: std::collections::BTreeMap<u32, Vec<MaskSpan>> = Default::default();
+    for m in masks {
+        by_line.entry(m.line).or_default().push(*m);
+    }
+    for (line, ms) in by_line {
         let Some(idx) = line
             .checked_sub(first_line)
             .map(|i| i as usize)
@@ -137,17 +176,49 @@ pub fn mask_lines(code: &[String], first_line: u32, annotations: &[Annotation]) 
         else {
             continue;
         };
-        let g: Vec<&str> = out[idx].graphemes(true).collect();
-        let end = (end as usize).min(g.len());
-        let start = (start as usize).min(end);
-        if start == end {
-            continue;
+        let g: Vec<String> = out[idx].graphemes(true).map(str::to_string).collect();
+        let len = g.len();
+        let spans: Vec<(usize, usize, u8, usize)> = ms
+            .iter()
+            .map(|m| {
+                let end = (m.end as usize).min(len);
+                let keep = if (m.end as usize) > len { 0 } else { m.keep };
+                ((m.start as usize).min(end), end, keep, 0)
+            })
+            .collect();
+        let mut text = String::new();
+        let mut prev = 0;
+        for group in merge_groups(spans) {
+            let keep = (group.keep as usize).min(group.end - group.start).min(8);
+            text.push_str(&g[prev..group.start].concat());
+            text.push_str(MASK);
+            text.push_str(&g[group.end - keep..group.end].concat());
+            prev = group.end;
         }
-        let keep = (keep as usize).min(end - start).min(8);
-        let tail: String = g[end - keep..end].concat();
-        out[idx] = format!("{}{MASK}{tail}{}", g[..start].concat(), g[end..].concat());
+        text.push_str(&g[prev..].concat());
+        out[idx] = text;
     }
     out
+}
+
+/// Masks `code` with every redact in `annotations` (any step), without
+/// touching annotations: for text matching that must not see a secret,
+/// where only the lines matter. The spans are taken as they are stored, so
+/// on a document with moves pass only the redacts of that code's step.
+pub fn mask_lines(code: &[String], first_line: u32, annotations: &[Annotation]) -> Vec<String> {
+    let masks: Vec<MaskSpan> = annotations
+        .iter()
+        .filter_map(|a| match &a.shape {
+            Shape::Redact { span, .. } => Some(MaskSpan {
+                line: span.line,
+                start: span.start,
+                end: span.end,
+                keep: shown_tail(&a.shape),
+            }),
+            _ => None,
+        })
+        .collect();
+    mask_with(code, first_line, &masks)
 }
 
 /// Whether `[start, end)` on `line` touches a redacted span (any step): a
@@ -168,8 +239,9 @@ pub fn masked_code(doc: &Document, step: u32) -> Vec<String> {
 }
 
 /// The step-0 code with every redact applied (what a save embeds, what
-/// `:embed` freezes), so a sidecar never carries a secret. Redacts are
-/// authored on the shown code; on a document without moves it is the base.
+/// `:embed` freezes), so a sidecar never carries a secret. On a document
+/// with moves only the redacts already there at step 0 are drawn (one
+/// marked on a line a move writes lives in that move's step, t-140).
 pub fn masked_base(doc: &Document) -> Vec<String> {
     if !has_redacts(doc) {
         return doc.base().to_vec();
@@ -179,9 +251,163 @@ pub fn masked_base(doc: &Document) -> Vec<String> {
     }
     let mut d = doc.clone();
     d.code = doc.base().to_vec();
+    d.source.first_line = doc.base_first();
+    d.annotations = base_redacts(doc, &None);
     d.moves.clear();
     d.base_code.clear();
     masked(&d, u32::MAX).code
+}
+
+/// The redacts of view `key` whose span is on that view's step-0 code: all
+/// of them without moves; with moves, those of step 0 (and, with
+/// `redact_from_step`, every one: their spans were marked at their own
+/// step, so masking them on the step-0 code can only mask more).
+pub fn base_redacts(doc: &Document, key: &Option<String>) -> Vec<Annotation> {
+    doc.annotations
+        .iter()
+        .filter(|a| &a.file == key && matches!(a.shape, Shape::Redact { .. }))
+        .filter(|a| doc.moves.is_empty() || a.step == 0 || doc.redact_from_step)
+        .cloned()
+        .collect()
+}
+
+/// What a reload, a paste or a move does to a redact (t-117, t-140): it
+/// fails CLOSED.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RedactFate {
+    /// It followed the text around it: the mask covers the value there now.
+    Followed(TextSpan),
+    /// It could not follow its text but its place is still there: the mask
+    /// covers the rest of its line, or (its line cannot be told apart) every
+    /// line of its hunk, whole. Never empty.
+    Widened(Vec<TextSpan>),
+    /// Its text is gone altogether: deleted with nothing in its place.
+    Dropped,
+}
+
+/// The literal text around mask `[start, end)` of an old line whose other
+/// masks are `others` (grapheme columns): before the first mask, between
+/// each pair, after the last — and which mask is this one. Masks that touch
+/// are merged.
+pub fn literals_around(
+    og: &[&str],
+    others: &[(usize, usize)],
+    start: usize,
+    end: usize,
+) -> (Vec<String>, usize) {
+    let mut spans: Vec<(usize, usize)> = others
+        .iter()
+        .map(|(s, e)| {
+            let e = (*e).min(og.len());
+            ((*s).min(e), e)
+        })
+        .filter(|(s, e)| s < e)
+        .collect();
+    spans.push((start, end));
+    spans.sort_unstable();
+    let mut masks: Vec<(usize, usize)> = Vec::new();
+    for (s, e) in spans {
+        match masks.last_mut() {
+            Some(last) if s <= last.1 => last.1 = last.1.max(e),
+            _ => masks.push((s, e)),
+        }
+    }
+    let k = masks
+        .iter()
+        .position(|(s, e)| *s <= start && end <= *e)
+        .unwrap_or(0);
+    let mut literals: Vec<String> = Vec::with_capacity(masks.len() + 1);
+    let mut prev = 0;
+    for (s, e) in &masks {
+        literals.push(og[prev..*s].concat());
+        prev = *e;
+    }
+    literals.push(og[prev..].concat());
+    (literals, k)
+}
+
+/// The grapheme spans of the masks on `line`, given the literal text around
+/// them on the old line (`literals[0]` before the first mask, `literals[i]`
+/// between masks `i-1` and `i`, the last one after the last mask). Leading
+/// indentation and trailing blanks are not part of the anchor; between two
+/// masks the first occurrence of the text that separated them is taken.
+/// `None` when the line no longer has that text around the masks.
+pub fn match_masks(line: &str, literals: &[String]) -> Option<Vec<(u32, u32)>> {
+    let n = literals.len().checked_sub(1)?;
+    let lead = line.len() - line.trim_start().len();
+    let first = literals[0].trim_start();
+    if !line[lead..].starts_with(first) {
+        return None;
+    }
+    let mut pos = lead + first.len();
+    let body_end = line.trim_end().len().max(pos);
+    let tail = literals[n].trim_end();
+    if !line[..body_end].ends_with(tail) || body_end - tail.len() < pos {
+        return None;
+    }
+    let end_all = body_end - tail.len();
+    let mut out = Vec::with_capacity(n);
+    for i in 0..n {
+        let s = pos;
+        let e = if i + 1 == n {
+            end_all
+        } else {
+            let lit = literals[i + 1].as_str();
+            let off = line[pos..end_all].find(lit)?;
+            pos += off + lit.len();
+            s + off
+        };
+        out.push((
+            crate::model::grapheme_index(line, s),
+            crate::model::grapheme_index(line, e),
+        ));
+    }
+    Some(out)
+}
+
+/// The rest of line `l` (text `text`) from the old start column of a mask
+/// to the end of the line — from earlier when the line shifted, so it never
+/// uncovers the start of a value: when the text before the mask is still
+/// there (after the indentation) the mask starts where that text ends now,
+/// and when it is not, where the new line first differs from the old one
+/// (`og`, nothing before that point moved). The whole line (from its first
+/// non-blank character) when that column no longer exists; `None` for a
+/// blank line (nothing left to hide).
+pub fn rest_of_line(text: &str, l: u32, og: &[&str], start: usize) -> Option<TextSpan> {
+    let ng: Vec<&str> = text.graphemes(true).collect();
+    let indent = |g: &[&str]| g.iter().take_while(|c| c.trim().is_empty()).count();
+    let (old_lead, new_lead) = (indent(og), indent(&ng));
+    let len = ng.len() - ng.iter().rev().take_while(|c| c.trim().is_empty()).count();
+    if new_lead >= len {
+        return None;
+    }
+    let start = start.min(og.len());
+    let before = og[old_lead.min(start)..start].concat();
+    let from = if ng[new_lead..].concat().starts_with(&before) {
+        start.min(new_lead + before.graphemes(true).count())
+    } else {
+        let common = og.iter().zip(&ng).take_while(|(a, b)| a == b).count();
+        start.min(common)
+    };
+    let from = if from >= len { new_lead } else { from };
+    Some(TextSpan {
+        line: l,
+        start: from as u32,
+        end: len as u32,
+    })
+}
+
+/// Line `l` (text `text`) from its first non-blank character to its last
+/// one; `None` when it is blank.
+pub fn whole_line(text: &str, l: u32) -> Option<TextSpan> {
+    let ng: Vec<&str> = text.graphemes(true).collect();
+    let lead = ng.iter().take_while(|c| c.trim().is_empty()).count();
+    let len = ng.len() - ng.iter().rev().take_while(|c| c.trim().is_empty()).count();
+    (lead < len).then_some(TextSpan {
+        line: l,
+        start: lead as u32,
+        end: len as u32,
+    })
 }
 
 /// Shifts or clamps a column anchor on `line` after `[s0, s1)` became a
@@ -402,6 +628,35 @@ mod tests {
         d.redact_from_step = true;
         assert!(masked(&d, 2).code[0].contains("sk-live"));
         assert!(!masked(&d, 3).code[0].contains("sk-live"));
+    }
+
+    #[test]
+    fn a_line_shorter_than_its_mask_shows_no_tail_and_overlaps_merge() {
+        // A value being typed: the tail of what is there so far would be
+        // the start of the secret.
+        let mut d = doc("API_KEY=sk-li\n");
+        d.annotations.push(redact("r1", 1, 8, 28, 4));
+        assert_eq!(masked(&d, 0).code[0], "API_KEY=••••••••");
+        // Two masks that overlap are drawn once.
+        let mut d = doc("token=abcdefghijklmnop end\n");
+        d.annotations.push(redact("r1", 1, 6, 16, 2));
+        d.annotations.push(redact("r2", 1, 10, 22, 0));
+        assert_eq!(masked(&d, 0).code[0], "token=•••••••• end");
+        let spans = [
+            MaskSpan {
+                line: 1,
+                start: 6,
+                end: 16,
+                keep: 0,
+            },
+            MaskSpan {
+                line: 1,
+                start: 10,
+                end: 22,
+                keep: 0,
+            },
+        ];
+        assert_eq!(mask_with(&d.code, 1, &spans)[0], "token=•••••••• end");
     }
 
     #[test]

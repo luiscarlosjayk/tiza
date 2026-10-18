@@ -294,8 +294,9 @@ impl<'a> Remap<'a> {
             ((s.start as usize).min(e), e)
         };
         let (start, end) = clamp(span);
-        // Every mask of this line (any step), merged where they touch.
-        let mut spans: Vec<(usize, usize)> = self
+        // Every mask of this line (any step), merged where they touch; the
+        // literal text between them anchors this one.
+        let others: Vec<(usize, usize)> = self
             .old
             .annotations
             .iter()
@@ -304,30 +305,8 @@ impl<'a> Remap<'a> {
                 Shape::Redact { span: s, .. } if s.line == span.line => Some(clamp(s)),
                 _ => None,
             })
-            .filter(|(s, e)| s < e)
             .collect();
-        spans.push((start, end));
-        spans.sort_unstable();
-        let mut masks: Vec<(usize, usize)> = Vec::new();
-        for (s, e) in spans {
-            match masks.last_mut() {
-                Some(last) if s <= last.1 => last.1 = last.1.max(e),
-                _ => masks.push((s, e)),
-            }
-        }
-        let k = masks
-            .iter()
-            .position(|(s, e)| *s <= start && end <= *e)
-            .unwrap_or(0);
-        // The literal text between the masks: before the first, between
-        // each pair, after the last.
-        let mut literals: Vec<String> = Vec::with_capacity(masks.len() + 1);
-        let mut prev = 0;
-        for (s, e) in &masks {
-            literals.push(og[prev..*s].concat());
-            prev = *e;
-        }
-        literals.push(og[prev..].concat());
+        let (literals, k) = tiza_core::redact::literals_around(&og, &others, start, end);
         let located = self.line(span.line);
         let new = self.new;
         let try_line = |l: u32| -> Option<TextSpan> {
@@ -536,103 +515,22 @@ impl<'a> Remap<'a> {
     }
 }
 
-/// What a reload or paste does to a redact (t-117, fail-closed).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RedactFate {
-    /// It followed the text around it: the mask covers the value there now.
-    Followed(TextSpan),
-    /// It could not follow its text but its place is still there: the mask
-    /// covers the rest of its line, or (its line cannot be told apart) every
-    /// line of its hunk, whole. Never empty.
-    Widened(Vec<TextSpan>),
-    /// Its text is gone altogether: deleted with nothing in its place.
-    Dropped,
-}
+/// What a reload or paste does to a redact (t-117, fail-closed); moves use
+/// the same rules (t-140), so the type and its helpers live in core.
+pub use tiza_core::redact::RedactFate;
 
-/// The rest of line `l` from the old start column of a mask to the end of
-/// the line — from earlier when the line shifted, so it never uncovers the
-/// start of a value: when the text before the mask is still there (after
-/// the indentation) the mask starts where that text ends now, and when it
-/// is not, where the new line first differs from the old one (nothing
-/// before that point moved). The whole line (from its first non-blank
-/// character) when that column no longer exists; `None` for a blank line
-/// (nothing left to hide).
+/// The rest of line `l` from the old start column of a mask (see
+/// [`tiza_core::redact::rest_of_line`]).
 fn rest_of_line(new: &Document, l: u32, og: &[&str], start: usize) -> Option<TextSpan> {
-    let text = new.line_text(l)?;
-    let ng: Vec<&str> = text.graphemes(true).collect();
-    let indent = |g: &[&str]| g.iter().take_while(|c| c.trim().is_empty()).count();
-    let (old_lead, new_lead) = (indent(og), indent(&ng));
-    let len = ng.len() - ng.iter().rev().take_while(|c| c.trim().is_empty()).count();
-    if new_lead >= len {
-        return None;
-    }
-    let before = og[old_lead.min(start)..start].concat();
-    let from = if ng[new_lead..].concat().starts_with(&before) {
-        start.min(new_lead + before.graphemes(true).count())
-    } else {
-        let common = og.iter().zip(&ng).take_while(|(a, b)| a == b).count();
-        start.min(common)
-    };
-    let from = if from >= len { new_lead } else { from };
-    Some(TextSpan {
-        line: l,
-        start: from as u32,
-        end: len as u32,
-    })
+    tiza_core::redact::rest_of_line(new.line_text(l)?, l, og, start)
 }
 
-/// Line `l` from its first non-blank character to its last one; `None`
-/// when it is blank.
+/// Line `l` from its first non-blank character to its last one.
 fn whole_line(new: &Document, l: u32) -> Option<TextSpan> {
-    let text = new.line_text(l)?;
-    let ng: Vec<&str> = text.graphemes(true).collect();
-    let lead = ng.iter().take_while(|c| c.trim().is_empty()).count();
-    let len = ng.len() - ng.iter().rev().take_while(|c| c.trim().is_empty()).count();
-    (lead < len).then_some(TextSpan {
-        line: l,
-        start: lead as u32,
-        end: len as u32,
-    })
+    tiza_core::redact::whole_line(new.line_text(l)?, l)
 }
 
-/// The grapheme spans of the masks on `line`, given the literal text around
-/// them on the old line (`literals[0]` before the first mask, `literals[i]`
-/// between masks `i-1` and `i`, the last one after the last mask). Leading
-/// indentation and trailing blanks are not part of the anchor; between two
-/// masks the first occurrence of the text that separated them is taken.
-/// `None` when the line no longer has that text around the masks.
-fn match_masks(line: &str, literals: &[String]) -> Option<Vec<(u32, u32)>> {
-    let n = literals.len().checked_sub(1)?;
-    let lead = line.len() - line.trim_start().len();
-    let first = literals[0].trim_start();
-    if !line[lead..].starts_with(first) {
-        return None;
-    }
-    let mut pos = lead + first.len();
-    let body_end = line.trim_end().len().max(pos);
-    let tail = literals[n].trim_end();
-    if !line[..body_end].ends_with(tail) || body_end - tail.len() < pos {
-        return None;
-    }
-    let end_all = body_end - tail.len();
-    let mut out = Vec::with_capacity(n);
-    for i in 0..n {
-        let s = pos;
-        let e = if i + 1 == n {
-            end_all
-        } else {
-            let lit = literals[i + 1].as_str();
-            let off = line[pos..end_all].find(lit)?;
-            pos += off + lit.len();
-            s + off
-        };
-        out.push((
-            tiza_core::model::grapheme_index(line, s),
-            tiza_core::model::grapheme_index(line, e),
-        ));
-    }
-    Some(out)
-}
+use tiza_core::redact::match_masks;
 
 /// Pairs `(i, j)` of equal lines, increasing in both, from an LCS of `a` and
 /// `b` after trimming their common prefix and suffix. When the middle is too

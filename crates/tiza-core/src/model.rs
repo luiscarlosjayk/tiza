@@ -626,7 +626,9 @@ impl Shape {
 pub struct Annotation {
     /// Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.
     pub id: String,
-    /// Step at which it appears (1-based).
+    /// Step at which it appears (1-based). A redact may say 0 on a document
+    /// with moves: it masks from step 0 anyway, and its step only says which
+    /// code its columns refer to (0: the untouched file, t-140).
     #[serde(default = "one")]
     pub step: u32,
     /// Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.
@@ -772,8 +774,11 @@ impl Document {
         // stays one portable file.
         for file in self.link_files() {
             if let Some(code) = self.view_code.get(&file) {
-                let masked =
-                    crate::redact::mask_lines(code, 1, &self.annotations_of(&Some(file.clone())));
+                let masked = crate::redact::mask_lines(
+                    code,
+                    1,
+                    &crate::redact::base_redacts(self, &Some(file.clone())),
+                );
                 self.views.insert(file, masked);
             }
         }
@@ -796,11 +801,14 @@ impl Document {
     }
 
     /// A copy ready for the wire (`scene.get`): the main code and every
-    /// linked file embedded and masked, the first line that of the main file.
+    /// linked file embedded and masked, the moves' content masked, the
+    /// first line that of the main file.
     pub fn embedded_copy(&self) -> Document {
         let mut d = self.clone();
         d.sync_code_src();
         d.embed_code();
+        // Move content masked where it lands under a redact (t-140).
+        d.moves = moves::masked_moves(self);
         d
     }
 
@@ -892,7 +900,11 @@ impl Document {
             Some(f) => self.view_code.get(f)?,
         };
         Some(if masked {
-            crate::redact::mask_lines(code, self.view_first_line(key), &self.annotations_of(key))
+            crate::redact::mask_lines(
+                code,
+                self.view_first_line(key),
+                &crate::redact::base_redacts(self, key),
+            )
         } else {
             code.to_vec()
         })
@@ -1048,14 +1060,145 @@ impl Document {
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         let mut trial = self.moves.clone();
         trial.push(m);
-        moves::validate(self, &trial, &self.annotations)?;
-        if self.moves.is_empty() {
-            self.base_code = self.code.clone();
-            self.base_first_line = self.source.first_line;
+        // Every redact is pinned to the earliest code that holds its line
+        // before the new move changes what "the code at its step" is, so
+        // the move is followed through, never read in its old columns; the
+        // move's targets are then matched with those masks drawn.
+        let mut framed = self.clone();
+        if framed.moves.is_empty() {
+            framed.base_code = framed.code.clone();
+            framed.base_first_line = framed.source.first_line;
         }
+        framed.reframe_redacts_with(&self.moves);
+        moves::validate(&framed, &trial, &framed.annotations)?;
+        let mut with = framed.clone();
+        with.moves = trial.clone();
+        with.check_move_content(trial.len() - 1)?;
+        *self = framed;
         self.moves = trial;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
+    }
+
+    /// Pins every redact (unless `redact_from_step`) to the earliest step
+    /// whose code already holds its line unchanged (step 0 for a line of
+    /// the file; the step of the move that wrote it otherwise), so later
+    /// moves — and moves added later at earlier steps — follow it from
+    /// there (t-140). Its `step` becomes that step: a redact is active from
+    /// step 0 whatever its step, so the step only says which code its
+    /// columns refer to.
+    pub fn reframe_redacts(&mut self) {
+        let moves = self.moves.clone();
+        self.reframe_redacts_with(&moves);
+    }
+
+    fn reframe_redacts_with(&mut self, moves: &[Move]) {
+        if self.redact_from_step || !crate::redact::has_redacts(self) {
+            return;
+        }
+        let mut d = self.clone();
+        d.moves = moves.to_vec();
+        if d.moves.is_empty() {
+            // Without moves every redact is on the step-0 code.
+            for a in &mut self.annotations {
+                if matches!(a.shape, Shape::Redact { .. }) {
+                    a.step = 0;
+                }
+            }
+            return;
+        }
+        for a in &mut self.annotations {
+            let Shape::Redact { span, .. } = &mut a.shape else {
+                continue;
+            };
+            if a.step == 0 {
+                continue;
+            }
+            let (frame, line) = moves::frame_of_line(&d, &a.file, a.step, span.line);
+            if frame < a.step {
+                a.step = frame;
+                span.line = line;
+            }
+        }
+    }
+
+    /// `move.add` refuses a `code.patch` whose content repeats a value that
+    /// is under a redact at that point, unless every copy lands under a
+    /// mask after the patch (t-140, AC6). The error never names the value.
+    fn check_move_content(&self, index: usize) -> Result<(), Error> {
+        let m = &self.moves[index];
+        let MoveAction::CodePatch(_) = &m.action else {
+            return Ok(());
+        };
+        if !crate::redact::has_redacts(self) {
+            return Ok(());
+        }
+        let Ok(p) = moves::project(self, &self.moves, m.at_step, false) else {
+            return Ok(());
+        };
+        let Some(ap) = p.patches.iter().find(|ap| ap.index == index) else {
+            return Ok(());
+        };
+        let copied: Vec<String> = p
+            .redacts
+            .iter()
+            .zip(&self.annotations)
+            .filter_map(|(r, a)| {
+                let r = r.as_ref()?;
+                (a.file == ap.file && r.copied_by.contains(&index)).then(|| a.id.clone())
+            })
+            .collect();
+        if copied.is_empty() {
+            return Ok(());
+        }
+        Err(Error::Invalid(format!(
+            "move #{} (step {}): its content repeats the value under redact {} where no mask covers it; it would show on screen — write the value in place of the masked one, or leave it out",
+            index + 1,
+            m.at_step,
+            copied.join(", ")
+        )))
+    }
+
+    /// Redacts a move widened or dropped at `step` (t-140): one notice
+    /// each, to say loudly when the presenter reaches that step (and on
+    /// `render --step N`). `cumulative`: every widened or dropped redact
+    /// at `step`, not only those of the moves of that step.
+    pub fn redact_notices_at(&self, step: u32, cumulative: bool) -> Vec<String> {
+        if self.moves.is_empty() || !crate::redact::has_redacts(self) {
+            return Vec::new();
+        }
+        let Ok(p) = moves::project(self, &self.moves, step, false) else {
+            return Vec::new();
+        };
+        let shown = p.shown.file.clone();
+        let mut out = Vec::new();
+        for (a, r) in self.annotations.iter().zip(&p.redacts) {
+            let Some(r) = r else { continue };
+            let Some(by) = r.by_move else { continue };
+            if a.file != shown || (!cumulative && self.moves[by].at_step != step) {
+                continue;
+            }
+            if r.dropped {
+                out.push(format!(
+                    "redact {} dropped: move #{} deleted its line",
+                    a.id,
+                    by + 1
+                ));
+                continue;
+            }
+            let lines: Vec<u32> = r.all().map(|s| s.line).collect();
+            let place = match (lines.first(), lines.last()) {
+                (Some(a), Some(b)) if a == b => format!("the rest of L{a}"),
+                (Some(a), Some(b)) => format!("L{a}-{b}"),
+                _ => continue,
+            };
+            out.push(format!(
+                "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
+                a.id,
+                by + 1
+            ));
+        }
+        out
     }
 
     /// Deletes the move at `index` (0-based).
@@ -1110,6 +1253,10 @@ impl Document {
                 if a.file != ap.file || a.step >= ap.at_step {
                     continue;
                 }
+                // Redacts are followed by the projection itself (t-140).
+                if matches!(a.shape, Shape::Redact { .. }) {
+                    continue;
+                }
                 let Some(cur) = slot.as_ref() else { continue };
                 *slot = match m.rebind.get(&a.id) {
                     Some(spec) => {
@@ -1147,21 +1294,66 @@ impl Document {
         };
         doc.step = step;
         let mut unanchored = Vec::new();
+        let mut extra: Vec<Annotation> = Vec::new();
         doc.annotations = self
             .annotations
             .iter()
             .zip(shapes)
-            .filter_map(|(a, s)| match s {
-                Some(shape) if a.file == proj.shown.file => Some(Annotation { shape, ..a.clone() }),
-                Some(_) => None,
-                None => {
-                    if a.step <= step {
-                        unanchored.push(a.id.clone());
+            .enumerate()
+            .filter_map(|(i, (a, s))| {
+                if let Shape::Redact {
+                    keep,
+                    label,
+                    widened,
+                    ..
+                } = &a.shape
+                {
+                    // Where the projection followed it (t-140); not there
+                    // yet when it was marked on a line a later move writes.
+                    if a.file != proj.shown.file {
+                        return None;
                     }
-                    None
+                    let r = proj.redacts.get(i)?.as_ref()?;
+                    if r.dropped {
+                        if a.step <= step {
+                            unanchored.push(a.id.clone());
+                        }
+                        return None;
+                    }
+                    let spans: Vec<TextSpan> = r.all().copied().collect();
+                    let widened = *widened || r.widened || spans.len() > 1;
+                    let mask = |span: TextSpan, id: String| Annotation {
+                        id,
+                        shape: Shape::Redact {
+                            span,
+                            keep: *keep,
+                            label: label.clone(),
+                            widened,
+                        },
+                        ..a.clone()
+                    };
+                    // One annotation per masked line: the redact's own id on
+                    // the first, derived ids (never a real one) on the rest.
+                    for (k, sp) in spans.iter().enumerate().skip(1) {
+                        extra.push(mask(*sp, format!("{}~{}", a.id, k + 1)));
+                    }
+                    return spans.first().map(|sp| mask(*sp, a.id.clone()));
+                }
+                match s {
+                    Some(shape) if a.file == proj.shown.file => {
+                        Some(Annotation { shape, ..a.clone() })
+                    }
+                    Some(_) => None,
+                    None => {
+                        if a.step <= step {
+                            unanchored.push(a.id.clone());
+                        }
+                        None
+                    }
                 }
             })
             .collect();
+        doc.annotations.extend(extra);
         View {
             doc,
             unanchored,
@@ -1331,6 +1523,7 @@ impl Document {
             self.base_code = self.code.clone();
             self.base_first_line = self.source.first_line;
             self.validate_moves()?;
+            self.reframe_redacts();
             if let Some(e) = self.sync_code_to_step() {
                 return Err(e);
             }
@@ -1501,7 +1694,9 @@ impl Document {
 
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
-        if ann.step == 0 {
+        // Step 0 is the untouched code: only a redact pinned there (t-140).
+        let pinned = matches!(ann.shape, Shape::Redact { .. }) && !self.moves.is_empty();
+        if ann.step == 0 && !pinned {
             ann.step = 1;
         }
         self.resolve_file(&mut ann)?;
@@ -1512,11 +1707,12 @@ impl Document {
         } else if self.find_annotation(&ann.id).is_some() {
             return Err(Error::DuplicateId(ann.id));
         }
-        if ann.step == 0 {
-            ann.step = 1;
-        }
         let id = ann.id.clone();
+        let redact = matches!(ann.shape, Shape::Redact { .. });
         self.annotations.push(ann);
+        if redact && !self.moves.is_empty() {
+            self.reframe_redacts();
+        }
         Ok(id)
     }
 
@@ -1524,12 +1720,16 @@ impl Document {
         self.resolve_file(&mut ann)?;
         self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
         sanitize_texts(&mut ann.shape);
+        let redact = matches!(ann.shape, Shape::Redact { .. });
         let slot = self
             .annotations
             .iter_mut()
             .find(|a| a.id == ann.id)
             .ok_or_else(|| Error::NotFound(ann.id.clone()))?;
         *slot = ann;
+        if redact && !self.moves.is_empty() {
+            self.reframe_redacts();
+        }
         Ok(())
     }
 
@@ -1593,6 +1793,18 @@ impl Document {
         }
         let occurrence = occurrence.max(1);
         let mut seen = 0;
+        // The masks where they are now: with moves, followed to this step
+        // (t-140); the stored spans refer to the code of their own step.
+        let masks: Vec<Annotation> = if self.moves.is_empty() {
+            Vec::new()
+        } else {
+            self.view_at(self.step).doc.annotations
+        };
+        let masks: &[Annotation] = if self.moves.is_empty() {
+            &self.annotations
+        } else {
+            &masks
+        };
         let search_line = |line: u32, seen: &mut u32| -> Option<TextSpan> {
             let t = self.line_text(line)?;
             let mut from = 0;
@@ -1603,7 +1815,7 @@ impl Document {
                 from = byte_start + text.len().max(1);
                 // A hit under a redact mask does not exist (t-117): a search
                 // must never confirm what the mask hides.
-                if crate::redact::overlaps_mask(&self.annotations, line, start, end) {
+                if crate::redact::overlaps_mask(masks, line, start, end) {
                     continue;
                 }
                 *seen += 1;

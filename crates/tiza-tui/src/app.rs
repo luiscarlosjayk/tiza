@@ -909,6 +909,12 @@ impl App {
                 if forward_one {
                     self.start_typing();
                 }
+                // A move of this step could not carry a redact with its
+                // text (t-140): loud, before anything is recorded.
+                let notices = self.doc.redact_notices_at(s, false);
+                if !notices.is_empty() {
+                    self.error(notices.join(" · "));
+                }
             }
             self.clamp_cursor();
             self.revision += 1;
@@ -1053,16 +1059,16 @@ impl App {
 
     /// `move.list` payload.
     pub fn move_list(&self) -> MoveList {
+        // Content masked where it lands under a redact (t-140).
+        let shown = tiza_core::moves::masked_moves(&self.doc);
         MoveList {
-            moves: self
-                .doc
-                .moves
-                .iter()
+            moves: shown
+                .into_iter()
                 .enumerate()
                 .map(|(i, m)| MoveListed {
                     index: i + 1,
-                    summary: tiza_core::protocol::describe_move(i + 1, m),
-                    r#move: m.clone(),
+                    summary: tiza_core::protocol::describe_move(i + 1, &m),
+                    r#move: m,
                 })
                 .collect(),
             unanchored: self.doc.unanchored(),
@@ -3902,7 +3908,21 @@ impl App {
                 // directory could not resolve a relative file reference.
                 // Masked (t-117): the embedded code an agent gets never holds
                 // a secret; linked files travel embedded too (t-105).
-                let document = self.doc.embedded_copy();
+                let mut document = self.doc.embedded_copy();
+                // A redact a move widened at this step says so (t-140).
+                if !self.doc.moves.is_empty() {
+                    let view = self.doc.view_at(self.doc.step);
+                    for a in &mut document.annotations {
+                        let now = view.doc.find_annotation(&a.id).map(|v| &v.shape);
+                        if let (
+                            Shape::Redact { widened, .. },
+                            Some(Shape::Redact { widened: true, .. }),
+                        ) = (&mut a.shape, now)
+                        {
+                            *widened = true;
+                        }
+                    }
+                }
                 serde_json::to_value(Scene {
                     revision: self.revision,
                     step: self.doc.step,

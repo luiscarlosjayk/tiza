@@ -353,7 +353,7 @@
         },
         "step": {
           "default": 1,
-          "description": "Step at which it appears (1-based).",
+          "description": "Step at which it appears (1-based). A redact may say 0 on a document\nwith moves: it masks from step 0 anyway, and its step only says which\ncode its columns refer to (0: the untouched file, t-140).",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"

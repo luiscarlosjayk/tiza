@@ -440,6 +440,23 @@ fn real_main() -> anyhow::Result<()> {
                     doc.max_step()
                 );
             }
+            // A redact a move widened or dropped (t-140): said once, on
+            // stderr, before the frames are written.
+            let notice_steps: Vec<u32> =
+                if animated || matches!(format, Format::Cast | Format::Tape) {
+                    (0..=doc.max_step()).collect()
+                } else {
+                    vec![step.min(doc.max_step())]
+                };
+            let mut said: Vec<String> = Vec::new();
+            for s in notice_steps {
+                for n in doc.redact_notices_at(s, true) {
+                    if !said.contains(&n) {
+                        eprintln!("tiza: {n}");
+                        said.push(n);
+                    }
+                }
+            }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             let l = layout(
                 &doc,
