@@ -830,7 +830,7 @@ fn rework2_a_marker_that_matches_more_than_once_warns_with_its_lines() {
         "{v}"
     );
     // Warnings: the document still passes.
-    let dir = scratch("t101-twice");
+    let dir = scratch("t101-twice-marker");
     let path = dir.join("twice.tiza");
     std::fs::write(
         &path,
