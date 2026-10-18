@@ -1248,9 +1248,6 @@ impl App {
             .iter()
             .map(|a| a.file.is_some().then(|| a.shape.clone()))
             .collect();
-        // Redacts that kept their columns only because the text around them
-        // changed (t-117): kept, but the presenter must look.
-        let mut by_columns: Vec<String> = Vec::new();
         for step in steps {
             let old_s = at_step(&old, step);
             let new_s = at_step(&d, step);
@@ -1258,9 +1255,6 @@ impl App {
             for (a, slot) in old.annotations.iter().zip(shapes.iter_mut()) {
                 if a.step == step && a.file.is_none() {
                     *slot = remap.shape(&a.shape);
-                    if remap.take_by_columns() {
-                        by_columns.push(a.id.clone());
-                    }
                 }
             }
         }
@@ -1273,7 +1267,6 @@ impl App {
                 None => false,
             };
             if !kept_one && is_redact {
-                by_columns.retain(|id| *id != a.id);
                 dropped_redacts.push(a.id.clone());
             }
         }
@@ -1289,21 +1282,11 @@ impl App {
         self.clamp_cursor();
         self.touch();
         // Loud, and it must outlive the reload's own message (t-117 AC5).
-        let mut notices: Vec<String> = Vec::new();
         if !dropped_redacts.is_empty() {
-            notices.push(format!(
+            self.redact_drop_notice = Some(format!(
                 "redact {} dropped: the line changed — check the screen before recording (u undoes the reload)",
                 dropped_redacts.join(", ")
             ));
-        }
-        if !by_columns.is_empty() {
-            notices.push(format!(
-                "redact {} kept by columns: the text around it changed — check the screen before recording",
-                by_columns.join(", ")
-            ));
-        }
-        if !notices.is_empty() {
-            self.redact_drop_notice = Some(notices.join(" · "));
         }
         crate::reanchor::Outcome {
             kept,

@@ -75,10 +75,6 @@ pub struct Remap<'a> {
     matched: Vec<(u32, u32)>,
     /// Trimmed text → new lines with that text.
     index: HashMap<&'a str, Vec<u32>>,
-    /// Set by the last [`Remap::shape`] of a redact that kept its columns
-    /// only because the text on both sides of it changed (see
-    /// [`Remap::redact`]); read with [`Remap::take_by_columns`].
-    by_columns: bool,
 }
 
 impl<'a> Remap<'a> {
@@ -109,14 +105,7 @@ impl<'a> Remap<'a> {
             new,
             matched,
             index,
-            by_columns: false,
         }
-    }
-
-    /// Whether the last redact re-anchored by [`Remap::shape`] fell back to
-    /// its columns (the caller warns: the screen must be checked).
-    pub fn take_by_columns(&mut self) -> bool {
-        std::mem::take(&mut self.by_columns)
     }
 
     /// Shift of the nearest matched line above `old_line` (or below, when
@@ -287,12 +276,12 @@ impl<'a> Remap<'a> {
     /// rotated value stays masked whatever its new length, and `keep=N`
     /// shows the tail of the NEW value.
     ///
-    /// When that text is gone: a redact that reached the end of its line
-    /// (an anchor, a whole line, a selection to the end) is dropped — the
-    /// caller says so loudly; one that stopped mid-line keeps its columns
-    /// when its line still exists and is long enough (the second value is
-    /// `true`, so the caller warns), and is dropped otherwise.
-    pub fn redact(&mut self, span: &TextSpan) -> Option<(TextSpan, bool)> {
+    /// When that text is gone — the text before it, or for a mask that
+    /// stopped mid-line (a selection) the text on either side of it — the
+    /// redact is dropped and the caller says so loudly. It never falls back
+    /// to its old columns: on a changed line they could uncover part of a
+    /// longer new value (Luis, 2026-10-18: the secret comes first).
+    pub fn redact(&mut self, span: &TextSpan) -> Option<TextSpan> {
         let old_text = self.old.line_text(span.line)?;
         let og: Vec<&str> = old_text.graphemes(true).collect();
         let clamp = |s: &TextSpan| {
@@ -337,7 +326,6 @@ impl<'a> Remap<'a> {
             prev = *e;
         }
         literals.push(og[prev..].concat());
-        let to_end_of_line = k + 1 == masks.len() && literals[k + 1].trim_end().is_empty();
         let located = self.line(span.line);
         let new = self.new;
         let try_line = |l: u32| -> Option<TextSpan> {
@@ -349,31 +337,14 @@ impl<'a> Remap<'a> {
             })
         };
         if let Some(found) = located.and_then(try_line) {
-            return Some((found, false));
+            return Some(found);
         }
         // The line moved and changed at once (a line added next to the
         // rotated one): the one line of its hunk that still has that text.
         let (_, hunk) = self.hunk(span.line);
         let mut hits = hunk.filter(|l| Some(*l) != located).filter_map(try_line);
-        if let Some(only) = hits.next()
-            && hits.next().is_none()
-        {
-            return Some((only, false));
-        }
-        if !to_end_of_line
-            && let Some(l) = located
-            && end as u32 <= self.new.line_len(l)
-        {
-            return Some((
-                TextSpan {
-                    line: l,
-                    start: start as u32,
-                    end: end as u32,
-                },
-                true,
-            ));
-        }
-        None
+        let only = hits.next()?;
+        hits.next().is_none().then_some(only)
     }
 
     /// New place of a point anchor: the word under it identifies it.
@@ -436,15 +407,11 @@ impl<'a> Remap<'a> {
                 style: style.clone(),
                 emphasis: *emphasis,
             },
-            Shape::Redact { span, keep, label } => {
-                let (span, by_columns) = self.redact(span)?;
-                self.by_columns = by_columns;
-                Shape::Redact {
-                    span,
-                    keep: *keep,
-                    label: label.clone(),
-                }
-            }
+            Shape::Redact { span, keep, label } => Shape::Redact {
+                span: self.redact(span)?,
+                keep: *keep,
+                label: label.clone(),
+            },
             Shape::Box {
                 from_line,
                 to_line,
@@ -1030,14 +997,13 @@ mod tests {
         // Same key, a longer new value; plus a line added above.
         let new = doc("# keys\n# rotated\nSTRIPE_KEY=sk_live_NEWVALUEzzzz9999extra\nNAME=demo\n");
         let mut r = Remap::new(&old, &new);
-        let (got, by_cols) = r.redact(&sp).unwrap();
-        assert!(!by_cols);
+        let got = r.redact(&sp).unwrap();
         assert_eq!(got.line, 3);
         assert_eq!(masked_text(&new, &got), "sk_live_NEWVALUEzzzz9999extra");
         // A shorter one, indented by a formatter.
         let new = doc("# keys\n  STRIPE_KEY=x1\nNAME=demo\n");
         let mut r = Remap::new(&old, &new);
-        let (got, _) = r.redact(&sp).unwrap();
+        let got = r.redact(&sp).unwrap();
         assert_eq!(masked_text(&new, &got), "x1");
         // The prefix itself gone: dropped (the caller says so loudly).
         let new = doc("# keys\nSTRIPE=sk_live_NEWVALUE\nNAME=demo\n");
@@ -1055,14 +1021,13 @@ mod tests {
         // A line inserted right after the rotated one: a 1→2 hunk.
         let new = doc("a\nTOKEN=brand-new-secret\nEXTRA=1\nb\n");
         let mut r = Remap::new(&old, &new);
-        let (got, by_cols) = r
+        let got = r
             .redact(&TextSpan {
                 line: 2,
                 start: 6,
                 end: 18,
             })
             .unwrap();
-        assert!(!by_cols);
         assert_eq!(
             (got.line, masked_text(&new, &got).as_str()),
             (2, "brand-new-secret")
@@ -1070,7 +1035,7 @@ mod tests {
     }
 
     #[test]
-    fn mid_line_redact_follows_both_sides_then_falls_back_to_columns() {
+    fn mid_line_redact_follows_both_sides_or_is_dropped() {
         // `{"token": "abc123", "user": "ana"}` with the value selected.
         let code = "{\"token\": \"abc123\", \"user\": \"ana\"}\n";
         let sp = TextSpan {
@@ -1081,15 +1046,14 @@ mod tests {
         let old = with_redacts(code, &[(1, 11, 17)]);
         let new = doc("{\"token\": \"zz-much-longer-99\", \"user\": \"ana\"}\n");
         let mut r = Remap::new(&old, &new);
-        let (got, by_cols) = r.redact(&sp).unwrap();
-        assert!(!by_cols);
+        let got = r.redact(&sp).unwrap();
         assert_eq!(masked_text(&new, &got), "zz-much-longer-99");
-        // Text on both sides changed, the line still long enough: columns.
+        // Text on both sides changed, the line still long enough for the
+        // old columns: dropped all the same, never kept by columns (they
+        // would uncover part of the longer value).
         let new = doc("{\"tok\": \"zz-much-longer-99\", \"usr\": 1}\n");
         let mut r = Remap::new(&old, &new);
-        let (got, by_cols) = r.redact(&sp).unwrap();
-        assert!(by_cols, "kept by columns: the caller warns");
-        assert_eq!((got.start, got.end), (11, 17));
+        assert_eq!(r.redact(&sp), None);
         // ... and too short for them: dropped.
         let new = doc("{}\n");
         let mut r = Remap::new(&old, &new);
@@ -1103,14 +1067,14 @@ mod tests {
         let old = with_redacts(code, &[(1, 21, 28), (1, 40, 45)]);
         let new = doc("URL=postgres://admin:s3cr3t-new@db/app?key=k-222-longer\n");
         let mut r = Remap::new(&old, &new);
-        let (p, _) = r
+        let p = r
             .redact(&TextSpan {
                 line: 1,
                 start: 21,
                 end: 28,
             })
             .unwrap();
-        let (k, _) = r
+        let k = r
             .redact(&TextSpan {
                 line: 1,
                 start: 40,

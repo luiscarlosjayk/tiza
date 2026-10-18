@@ -362,10 +362,11 @@ fn ac5_rotating_a_masked_value_by_paste_keeps_it_masked() {
 }
 
 #[test]
-fn ac5_column_redact_keeps_its_columns_with_a_notice() {
+fn ac5_column_redact_whose_surroundings_changed_is_dropped_loudly() {
     // A value selected mid-line (columns): the text on both sides follows
-    // it; when both sides change and the line is still long enough, the
-    // columns stay and the presenter is told to check the screen.
+    // it; when both sides change it is dropped with the loud notice, even
+    // though the line is still long enough for the old columns — they could
+    // uncover part of a longer value (Luis, 2026-10-18: the secret first).
     let dir = scratch("t117-columns");
     let src = dir.join("cfg.json");
     std::fs::write(&src, "{\"token\": \"abc123secret\", \"user\": \"ana\"}\n").unwrap();
@@ -388,16 +389,27 @@ fn ac5_column_redact_keeps_its_columns_with_a_notice() {
         .to_string();
     assert!(!code.contains("NEWvalue"), "{code}");
     assert!(code.contains("\"token\": \"••••••••\", \"user\""), "{code}");
-    // Both sides changed: columns kept, with the notice.
+    // Both sides changed, the line long enough for columns 11..23: dropped,
+    // loudly, never kept by columns.
     std::fs::write(&tmp, "{\"tok\": \"zzzzzzzzzzzzzzzzzz\", \"usr\": 1}\n").unwrap();
     std::fs::rename(&tmp, &src).unwrap();
     wait_reloads(&live, 2);
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.contains("redact a1 kept by columns: the text around it changed — check the screen before recording"),
+        err && msg
+            .contains("redact a1 dropped: the line changed — check the screen before recording"),
         "{msg}"
     );
-    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    assert!(!msg.contains("kept by columns"), "{msg}");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
+    let code = live.api_ok("code.get", json!({}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        !code.contains('•'),
+        "no mask left at the old columns: {code}"
+    );
 }
 
 #[test]
