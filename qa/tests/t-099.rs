@@ -40,6 +40,7 @@
 //! (`status.warnings`, `render` stderr, `tiza check`); an open `v` selection
 //! defers the auto-advance like the `:` line.
 
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
@@ -393,8 +394,13 @@ fn ac4_ac6_tiza_next_prev_goto_drive_the_instance_or_say_there_is_none() {
     }
 }
 
+/// Writes a two-step document with these `steps` and opens it. Each call gets
+/// its own scratch directory: three tests call it at once on parallel
+/// threads, and a shared one let them delete or read each other's file.
 fn load(steps: serde_json::Value) -> Result<Document, String> {
-    let dir = scratch("t099-load");
+    static CALLS: AtomicUsize = AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, Ordering::Relaxed);
+    let dir = scratch(&format!("t099-load-{n}"));
     let p = dir.join("d.tiza");
     std::fs::write(
         &p,
