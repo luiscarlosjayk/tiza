@@ -193,10 +193,10 @@ fn corner_linked_file_not_shown_and_outside_the_window() {
     let r = live.api_ok("annotation.update", json!({"id": "a1", "label": "LIFO"}));
     assert_eq!(r["step"], json!(1), "{r}");
     assert_eq!(r["visible"], json!(false), "{r}");
-    let why = r["hidden"].as_str().unwrap();
-    assert!(
-        why.starts_with("its file ") && why.contains("is not shown at step 2 (src/queue.rs is)"),
-        "{why}"
+    assert_eq!(
+        r["hidden"],
+        json!("its file src/stack.rs is not shown at step 2 (src/queue.rs is)"),
+        "{r}"
     );
     // A new note at step 2 belongs to queue.rs and shows.
     let r = live.api_ok(

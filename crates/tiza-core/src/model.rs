@@ -1642,13 +1642,17 @@ impl Document {
         if a.file != shown.file {
             let name = |f: &ViewKey| match f {
                 Some(f) => f.clone(),
-                None => self
-                    .source
-                    .path
-                    .as_deref()
-                    .and_then(|p| std::path::Path::new(p).file_name())
-                    .map(|n| n.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "the main file".into()),
+                // The main file as `code.file` names it, like a link does.
+                None => match &self.code_src {
+                    CodeSource::File { file, .. } => file.clone(),
+                    CodeSource::Embedded(_) => self
+                        .source
+                        .path
+                        .as_deref()
+                        .and_then(|p| std::path::Path::new(p).file_name())
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "the main file".into()),
+                },
             };
             return Some(format!(
                 "its file {} is not shown at step {step} ({} is)",
