@@ -111,31 +111,82 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     perms.set_readonly(true);
     std::fs::set_permissions(&path, perms.clone()).unwrap();
     let before = std::fs::read(&path).unwrap();
+    // (1) ONE notice on the first failed autosave, in the agreed words.
     live.command("note 1 first");
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.starts_with("read-only: could not save") && msg.contains("is read-only"),
+        err && msg.starts_with("read-only: could not save")
+            && msg.ends_with("— :w PATH to save elsewhere"),
         "{msg}"
     );
+    // (2) Then silence: the second annotation's own confirmation shows,
+    // and the bar carries the persistent indicator instead.
     live.command("note 2 second");
-    let (msg, _) = live.message().unwrap();
-    assert!(!msg.starts_with("read-only"), "only once: {msg}");
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        !err && msg.contains("note") && msg.contains("L2"),
+        "own message expected: {msg}"
+    );
     assert_eq!(live.with(|a| a.doc.annotations.len()), 10);
     assert_eq!(std::fs::read(&path).unwrap(), before, "untouched");
-    let bar = live.screen(120, 20).lines().last().unwrap().to_string();
+    let bar = live.screen(140, 20).lines().last().unwrap().to_string();
+    assert!(bar.contains("read-only • unsaved (:w)"), "{bar}");
     assert!(
-        bar.contains("could not save"),
-        "short form stays on the bar: {bar}"
+        !bar.contains("could not save"),
+        "no repeated error on the bar: {bar}"
     );
-    // `:q` refuses, `:w PATH` elsewhere works, then `:q` quits.
+    assert_eq!(
+        live.api_ok("status", serde_json::json!({}))["autosave"],
+        true
+    );
+    // (3) `:q` refuses while there are unsaved changes, `:q!` would discard.
     live.command("q");
     assert!(!live.with(|a| a.quit));
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.starts_with("unsaved (read-only): :q! discards"),
+        "{msg}"
+    );
+    // (4) Writable again: the next autosave succeeds, says so once, and the
+    // indicator goes away.
+    use std::os::unix::fs::PermissionsExt;
+    perms.set_mode(0o644);
+    std::fs::set_permissions(&path, perms).unwrap();
+    live.command("note 3 third");
+    let (msg, err) = live.message().unwrap();
+    assert!(!err && msg.starts_with("saved to "), "{msg}");
+    assert_ne!(std::fs::read(&path).unwrap(), before, "written now");
+    let bar = live.screen(140, 20).lines().last().unwrap().to_string();
+    assert!(
+        !bar.contains("read-only") && !bar.contains("unsaved"),
+        "{bar}"
+    );
+    live.command("note 4 fourth");
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.contains("L4"), "back to normal: {msg}");
+    live.command("q");
+    assert!(live.with(|a| a.quit));
+}
+
+#[test]
+fn ac3_read_only_then_w_elsewhere_clears_the_state() {
+    let dir = scratch("t110-readonly-w");
+    let path = dir.join("doc.tiza");
+    std::fs::copy(fixture("t-050/export.tiza"), &path).unwrap();
+    let doc = fs::open(path.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    let mut perms = std::fs::metadata(&path).unwrap().permissions();
+    perms.set_readonly(true);
+    std::fs::set_permissions(&path, perms.clone()).unwrap();
+    live.command("note 1 first");
+    assert!(live.message().unwrap().1);
     let elsewhere = dir.join("elsewhere.tiza");
     live.command(&format!("w {}", elsewhere.display()));
     assert!(elsewhere.exists());
+    let bar = live.screen(140, 20).lines().last().unwrap().to_string();
+    assert!(!bar.contains("read-only"), "{bar}");
     live.command("q");
     assert!(live.with(|a| a.quit));
-    // Writable again, so the scratch dir can be cleaned up.
     use std::os::unix::fs::PermissionsExt;
     perms.set_mode(0o644);
     std::fs::set_permissions(&path, perms).unwrap();

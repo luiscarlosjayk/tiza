@@ -486,7 +486,21 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.layout_stable && !app.present {
         left.push(Span::styled("  ⊞ stable", muted));
     }
-    if !app.autosave {
+    // One indicator for every way of not writing the sidecar (t-110): a
+    // read-only file, `--no-save`, `:autosave off`, a foreign `scene put`.
+    if app.save_error.is_some() {
+        left.push(Span::styled(
+            if app.dirty {
+                "  read-only • unsaved (:w)"
+            } else {
+                "  read-only"
+            },
+            Style::default()
+                .fg(rgb(th.error))
+                .bg(rgb(th.status_bg))
+                .add_modifier(Modifier::BOLD),
+        ));
+    } else if !app.autosave {
         let text = if app.dirty {
             "  unsaved (:w)"
         } else {
@@ -528,22 +542,19 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ));
     }
-    // What goes on the right, by priority: a failed save, then the last
-    // message, then the selection hint, then the key hints.
+    // What goes on the right, by priority: the last message, then the
+    // selection hint, then the key hints. A failed save is not repeated
+    // here: it was said once and the left indicator keeps it (t-110).
     let err_style = Style::default()
         .fg(rgb(th.error))
         .bg(rgb(th.status_bg))
         .add_modifier(Modifier::BOLD);
     let (right_text, right_style, essential): (String, Style, bool) =
         match (&app.save_error, &app.message) {
-            (Some(e), m) if m.as_ref().is_none_or(|(_, is_err)| !*is_err) => {
-                (format!("{e} "), err_style, true)
-            }
             (_, Some((m, is_err))) => {
                 (format!("{m} "), if *is_err { err_style } else { bar }, true)
             }
-            (Some(e), None) => (format!("{e} "), err_style, true),
-            (None, None) if app.selected.is_some() => (
+            (_, None) if app.selected.is_some() => (
                 format!(
                     "▸ {}   Enter label  e set  x delete  c color  +/- step  Tab next  Esc ",
                     app.selected_text().unwrap_or_default()
@@ -551,7 +562,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 accent,
                 true,
             ),
-            (None, None) => (
+            (_, None) => (
                 if matches!(app.mode, Mode::Select { .. }) {
                     "h hl  m mark  n note  C callout  b box  a arrow  s spot  Esc "
                 } else {

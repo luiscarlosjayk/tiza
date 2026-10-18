@@ -278,25 +278,35 @@ impl App {
         }
     }
 
+    /// Writes the sidecar. A sidecar that cannot be written (read-only
+    /// file or folder) puts the instance in the same state as `:autosave
+    /// off` — one rule for `--no-save`, `:autosave off`, a foreign `scene
+    /// put` and read-only (t-110, t-039): ONE notice on the first failed
+    /// autosave, then silence on the message line and the persistent
+    /// `read-only • unsaved (:w)` on the bar; `:q` refuses while there are
+    /// unsaved changes; the first autosave that works again says so.
     pub fn save(&mut self) -> Result<(), Error> {
         self.doc.theme = Some(self.theme.name);
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
-                self.save_error = None;
+                if self.save_error.take().is_some() {
+                    // Writable again: say it once, over the action's own
+                    // confirmation, and the bar indicator goes away.
+                    self.message = Some((format!("saved to {}", self.save_path.display()), false));
+                    self.save_warning_pending = true;
+                }
                 Ok(())
             }
             Err(e) => {
                 if self.save_error.is_none() {
-                    // Once, not on every autosave: the bar keeps the short
-                    // form on its right until a save succeeds.
                     self.error(format!(
-                        "read-only: could not save {} ({e}); :w PATH saves elsewhere",
+                        "read-only: could not save {} — :w PATH to save elsewhere",
                         self.save_path.display()
                     ));
                     self.save_warning_pending = true;
                 }
-                self.save_error = Some(format!("could not save {}: {e}", self.save_path.display()));
+                self.save_error = Some(e.to_string());
                 Err(e)
             }
         }
@@ -306,8 +316,11 @@ impl App {
     /// written, or ones made with autosave off (`force` ignores both).
     pub fn request_quit(&mut self, force: bool) {
         if !force && self.dirty {
-            if let Some(e) = &self.save_error {
-                self.error(format!(":q! quits anyway, :w PATH saves elsewhere ({e})"));
+            if self.save_error.is_some() {
+                self.error(format!(
+                    "unsaved (read-only): :q! discards, :w PATH saves elsewhere — {}",
+                    self.save_path.display()
+                ));
                 return;
             }
             if !self.autosave {
