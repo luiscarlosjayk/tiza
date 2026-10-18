@@ -104,6 +104,21 @@ pub struct Layout {
     pub clipped_code: Option<usize>,
     /// Whether labels and notes go to the right margin (false: under the line).
     pub labels_in_margin: bool,
+    /// Labels and notes drawn clipped with `…`, or left out for lack of
+    /// room, in drawing order (t-101: `tiza check` warns about them).
+    pub clipped_labels: Vec<ClippedLabel>,
+}
+
+/// One label the layout could not draw whole (t-101).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ClippedLabel {
+    /// The annotation it belongs to.
+    pub id: String,
+    /// The full text it would show (a mark's `legend: label`, a note's text).
+    pub text: String,
+    /// `true` when nothing of it was drawn (no free row or no room), not
+    /// even the start with `…`.
+    pub dropped: bool,
 }
 
 impl Layout {
@@ -130,6 +145,8 @@ struct ArrowInfo<'a> {
 /// Text waiting to be placed in the margin (or below) of a row.
 #[derive(Clone)]
 struct Label {
+    /// The annotation it belongs to (t-101: `tiza check` names clipped labels).
+    id: String,
     text: String,
     color: Rgb,
     note: bool,
@@ -333,8 +350,24 @@ struct Rail {
 }
 
 pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
+    layout_with(doc, theme, opts, None)
+}
+
+/// [`layout`] with the stable geometry already computed (it depends on the
+/// document, not on the width or the step): `tiza check` lays a document
+/// out at every step and many widths (t-101). Ignored unless `opts.stable`.
+pub fn layout_with(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+) -> Layout {
     let width = opts.width.max(20);
-    let stable = opts.stable.then(|| stable_geometry(doc, opts));
+    let stable = opts.stable.then(|| {
+        geometry
+            .cloned()
+            .unwrap_or_else(|| stable_geometry(doc, opts))
+    });
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.
@@ -621,9 +654,20 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
     let mut row_of_line = BTreeMap::new();
     // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
+    // Labels drawn with `…` or left out (t-101).
+    let mut clipped: Vec<ClippedLabel> = Vec::new();
+    let clip = |clipped: &mut Vec<ClippedLabel>, id: &str, text: &str, dropped: bool| {
+        if !clipped.iter().any(|c| c.id == id && c.text == text) {
+            clipped.push(ClippedLabel {
+                id: id.to_string(),
+                text: text.to_string(),
+                dropped,
+            });
+        }
+    };
     // Arrow labels drawn beside the code of their target line (narrow
     // mode, t-116): (line, glyph, text, colour).
-    let mut beside: Vec<(u32, String, String, Rgb)> = Vec::new();
+    let mut beside: Vec<(u32, String, String, Rgb, String)> = Vec::new();
     for line in doc.source.first_line..=doc.last_line() {
         let mut tops: Vec<usize> = (0..boxes.len())
             .filter(|&i| boxes[i].from == line)
@@ -653,6 +697,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 if !labels_in_margin && let Some(l) = label {
                     unders.push((
                         Label {
+                            id: a.id.clone(),
                             text: l.clone(),
                             color: color_of(a),
                             note: false,
@@ -706,10 +751,11 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                             display_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
                         let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
                         if need <= code_w {
-                            beside.push((line, glyph, l.clone(), color_of(a)));
+                            beside.push((line, glyph, l.clone(), color_of(a), a.id.clone()));
                         } else {
                             unders.push((
                                 Label {
+                                    id: a.id.clone(),
                                     text: l.clone(),
                                     color: color_of(a),
                                     note: false,
@@ -726,6 +772,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 if let Some((text, color, is_note)) = lbl {
                     unders.push((
                         Label {
+                            id: a.id.clone(),
                             text,
                             color,
                             note: is_note,
@@ -1005,6 +1052,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
         if labels_in_margin && let Some(l) = label {
             margin[y].push(Label {
+                id: a.id.clone(),
                 text: l,
                 color: color_of(a),
                 note: false,
@@ -1049,6 +1097,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 && vis.iter().any(|v| v.id == a.id)
             {
                 margin[y].push(Label {
+                    id: a.id.clone(),
                     text: l.clone(),
                     color: color_of(a),
                     note: false,
@@ -1095,6 +1144,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             let avail = rx.saturating_sub(lx + 4);
             canvas.put(lx + 1, top, g.h, box_style);
             canvas.put(lx + 2, top, " ", box_style);
+            if display_width(l, 4) > avail {
+                clip(&mut clipped, &b.ann.id, l, avail <= 1);
+            }
             let w = canvas.put_str_clipped(lx + 3, top, l, avail, box_style.bold());
             canvas.put(lx + 3 + w, top, " ", box_style);
         }
@@ -1205,6 +1257,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         );
         if labels_in_margin && let Some(l) = label {
             margin[yt].push(Label {
+                id: a.ann.id.clone(),
                 text: l.clone(),
                 color: arrow_color,
                 note: false,
@@ -1290,6 +1343,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
         if labels_in_margin && let Some(l) = label {
             margin[y].push(Label {
+                id: vis[*i].id.clone(),
                 text: l.clone(),
                 color: arrow_color,
                 note: false,
@@ -1328,6 +1382,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 && let Some(&y) = row_of_line.get(line)
             {
                 margin[y].push(Label {
+                    id: a.id.clone(),
                     text: text.clone(),
                     color: color_of(a),
                     note: true,
@@ -1348,14 +1403,18 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 code_x + 2
             }
         };
-        canvas.put_str_clipped(x, y, &lbl.text, width.saturating_sub(x), style.prose());
+        let avail = width.saturating_sub(x);
+        if display_width(&lbl.text, 4) > avail {
+            clip(&mut clipped, &lbl.id, &lbl.text, avail <= 1);
+        }
+        canvas.put_str_clipped(x, y, &lbl.text, avail, style.prose());
     }
     // Arrow labels beside the code of their target line (t-116): after the
     // code and the arrows, inside the code column, so a box border is never
     // touched. Several on one line follow each other.
     {
         let mut used: BTreeMap<u32, usize> = BTreeMap::new();
-        for (line, glyph, text, color) in &beside {
+        for (line, glyph, text, color, id) in &beside {
             let Some(&y) = row_of_line.get(line) else {
                 continue;
             };
@@ -1363,10 +1422,14 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             let x0 = code_x + text_w + 2 + used.get(line).copied().unwrap_or(0);
             let end = code_x + code_w;
             if x0 >= end {
+                clip(&mut clipped, id, text, true);
                 continue;
             }
             let gw = canvas.put_str_clipped(x0, y, glyph, end - x0, base.fg(*color).bold());
             let x1 = x0 + gw + 1;
+            if x1 >= end || display_width(text, 4) > end - x1 {
+                clip(&mut clipped, id, text, x1 + 1 >= end);
+            }
             let tw = if x1 < end {
                 canvas.put_str_clipped(x1, y, text, end - x1, base.fg(*color).italic().prose())
             } else {
@@ -1397,8 +1460,11 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             canvas.put(xx, y0, g.h, border);
         }
         canvas.put(x + w - 1, y0, g.tr, border);
+        // Whether the title had to be clipped (t-101).
+        let mut title_clipped = false;
         if let Some(t) = &c.title {
             canvas.put(x + 2, y0, " ", border);
+            title_clipped = display_width(t, 4) > w.saturating_sub(6);
             let tw = canvas.put_str_clipped(x + 3, y0, t, w.saturating_sub(6), border.bold());
             canvas.put(x + 3 + tw, y0, " ", border);
         }
@@ -1417,6 +1483,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             canvas.put(xx, yb, g.h, border);
         }
         canvas.put(x + w - 1, yb, g.br, border);
+        title_clipped
     };
     // Below: their rows already exist.
     for c in &callouts {
@@ -1425,8 +1492,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         }
         if let Some(y0) = rows.iter().position(|r| {
             *r == Row::Callout(callouts.iter().position(|x| std::ptr::eq(x, c)).unwrap(), 0)
-        }) {
-            draw_block(&mut canvas, c, code_x, y0, color_of(vis[c.idx]));
+        }) && draw_block(&mut canvas, c, code_x, y0, color_of(vis[c.idx]))
+        {
+            let t = c.title.as_deref().unwrap_or("");
+            clip(&mut clipped, &vis[c.idx].id, t, false);
         }
     }
     // Margin: reserve rows from the callout's first line.
@@ -1448,6 +1517,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                     continue;
                 };
                 margin[y0].push(Label {
+                    id: vis[c.idx].id.clone(),
                     text: text.clone(),
                     color: color_of(vis[c.idx]),
                     note: true,
@@ -1455,7 +1525,10 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                 });
                 continue;
             }
-            draw_block(&mut canvas, c, margin_x, y0, color_of(vis[c.idx]));
+            if draw_block(&mut canvas, c, margin_x, y0, color_of(vis[c.idx])) {
+                let t = c.title.as_deref().unwrap_or("");
+                clip(&mut clipped, &vis[c.idx].id, t, false);
+            }
             if margin_w.saturating_sub(c.width + 1) >= 14 {
                 shift[y0..y0 + h].fill(c.width + 1);
             } else {
@@ -1479,19 +1552,28 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
             let free = |r: usize, occupied: &[bool]| {
                 r < height && !occupied[r] && (!reserved[r] || r == y)
             };
-            for l in labels {
+            for (k, l) in labels.iter().enumerate() {
                 let prefix = if l.note { "┆ " } else { "" };
                 let style = if l.note {
                     base.fg(l.color).italic()
                 } else {
                     base.fg(l.color)
                 };
+                // No free row or no room: this label and the next ones
+                // of the line are left out (t-101 reports them).
+                let left_out = |clipped: &mut Vec<ClippedLabel>| {
+                    for l in &labels[k..] {
+                        clip(clipped, &l.id, &l.text, true);
+                    }
+                };
                 let Some(mut r) = (next_row..height).find(|&r| free(r, &occupied)) else {
+                    left_out(&mut clipped);
                     break;
                 };
                 let x0 = margin_x + shift[r];
                 let text_w = margin_w.saturating_sub(shift[r] + display_width(prefix, 4) + 1);
                 if text_w < 4 {
+                    left_out(&mut clipped);
                     break;
                 }
                 let pieces = wrap_words(&l.text, text_w);
@@ -1502,6 +1584,9 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
                         // rest of the text, clipped with an ellipsis.
                         if i > 0 {
                             let rest = pieces[i - 1..].join(" ");
+                            if display_width(&rest, 4) > text_w {
+                                clip(&mut clipped, &l.id, &l.text, false);
+                            }
                             canvas.put_str_clipped(px, r - 1, &rest, text_w, style.prose());
                         }
                         break;
@@ -1560,6 +1645,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
         code_x,
         clipped_code: (code_full_w > code_w).then_some(code_full_w),
         labels_in_margin,
+        clipped_labels: clipped,
     }
 }
 

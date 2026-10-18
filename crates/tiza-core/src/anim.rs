@@ -121,18 +121,30 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
         });
     }
     // Same size for every frame: pad with the theme background.
-    let height = out.iter().map(|f| f.canvas.height).max().unwrap_or(1);
-    let base = theme.base();
-    for f in &mut out {
-        if f.canvas.height < height {
-            let mut padded = Canvas::new_filled(f.canvas.width, height, base);
-            for (x, y, cell) in f.canvas.cells() {
-                padded.put(x, y, cell.sym.as_str(), cell.style);
-            }
-            f.canvas = padded;
-        }
+    let mut canvases: Vec<Canvas> = out.iter().map(|f| f.canvas.clone()).collect();
+    same_size(&mut canvases, theme);
+    for (f, c) in out.iter_mut().zip(canvases) {
+        f.canvas = c;
     }
     out
+}
+
+/// Pads every canvas with the theme background to the widest and tallest
+/// of them, so the frames of a take (or `render --all-steps`, t-101) all
+/// have the same pixel size.
+pub fn same_size(canvases: &mut [Canvas], theme: &Theme) {
+    let width = canvases.iter().map(|c| c.width).max().unwrap_or(1);
+    let height = canvases.iter().map(|c| c.height).max().unwrap_or(1);
+    let base = theme.base();
+    for c in canvases.iter_mut() {
+        if c.width < width || c.height < height {
+            let mut padded = Canvas::new_filled(width, height, base);
+            for (x, y, cell) in c.cells() {
+                padded.put(x, y, cell.sym.as_str(), cell.style);
+            }
+            *c = padded;
+        }
+    }
 }
 
 #[cfg(test)]

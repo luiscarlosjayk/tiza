@@ -44,7 +44,7 @@ fn ac1_handshake_tools_and_calls() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 28, "{names:?}"); // + goto_step (t-099)
+    assert_eq!(names.len(), 29, "{names:?}"); // + goto_step (t-099), check (t-101)
     for t in tools.as_array().unwrap() {
         assert!(
             !t["description"].as_str().unwrap_or("").is_empty(),

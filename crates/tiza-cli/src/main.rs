@@ -17,7 +17,7 @@ use tiza_core::{Theme, ThemeName};
 #[derive(Parser)]
 #[command(name = "tiza", version = tiza_core::VERSION_LONG, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
-    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
+    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza check demo.tiza           preflight before a take (anchors, moves, clipped labels)\n  tiza render demo.tiza --all-steps --out steps/   one PNG per step\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
 )]
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`), `.tiza` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
@@ -169,6 +169,9 @@ enum Cmd {
         /// Step to show (default: the document's current step, or all of them for a file)
         #[arg(long)]
         step: Option<u32>,
+        /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|txt|ansi|md` for others)
+        #[arg(long, conflicts_with = "step")]
+        all_steps: bool,
         /// Width in columns (default: 100, or the live terminal's width)
         #[arg(long)]
         width: Option<usize>,
@@ -228,6 +231,23 @@ enum Cmd {
         /// .gif: how many times it plays (0 = forever, the default)
         #[arg(long = "loop", default_value_t = 0)]
         loop_count: u16,
+    },
+    /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
+    /// step, linked files, ids, redacts a move widens or drops, annotations a move hides, labels
+    /// clipped with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
+    /// Writes nothing.
+    Check {
+        /// `.tiza` document, a source file with a `.tiza` sidecar, or `-` for stdin
+        file: String,
+        /// Width to check the labels at (default: 100, as `render`)
+        #[arg(long)]
+        width: Option<usize>,
+        /// Print the findings as JSON (for agents and scripts)
+        #[arg(long)]
+        json: bool,
+        /// Warnings fail too (exit 1)
+        #[arg(long)]
+        strict: bool,
     },
     /// Start the MCP server (stdio) that controls the live instance
     Mcp,
@@ -312,6 +332,7 @@ fn real_main() -> anyhow::Result<()> {
             file,
             out,
             step,
+            all_steps,
             width,
             format,
             theme,
@@ -336,25 +357,30 @@ fn real_main() -> anyhow::Result<()> {
             if let Some(n) = removed_font_flags_notice(brand_font, mono_labels) {
                 eprintln!("tiza: {n}");
             }
-            let format = format.unwrap_or_else(|| {
-                match std::path::Path::new(&out)
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(str::to_ascii_lowercase)
-                    .as_deref()
-                {
-                    Some("svg") => Format::Svg,
-                    Some("png") => Format::Png,
-                    Some("ansi") | Some("ans") => Format::Ansi,
-                    Some("md") | Some("markdown") => Format::Md,
-                    Some("cast") => Format::Cast,
-                    Some("tape") => Format::Tape,
-                    Some("gif") => Format::Gif,
-                    Some("mp4") | Some("m4v") | Some("mov") => Format::Mp4,
-                    Some("webm") => Format::Webm,
-                    _ => Format::Txt,
-                }
-            });
+            if all_steps && out == "-" {
+                bail!("--all-steps writes one file per step: pass a directory, --out steps/");
+            }
+            let format = format
+                .or(all_steps.then_some(Format::Png))
+                .unwrap_or_else(|| {
+                    match std::path::Path::new(&out)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .map(str::to_ascii_lowercase)
+                        .as_deref()
+                    {
+                        Some("svg") => Format::Svg,
+                        Some("png") => Format::Png,
+                        Some("ansi") | Some("ans") => Format::Ansi,
+                        Some("md") | Some("markdown") => Format::Md,
+                        Some("cast") => Format::Cast,
+                        Some("tape") => Format::Tape,
+                        Some("gif") => Format::Gif,
+                        Some("mp4") | Some("m4v") | Some("mov") => Format::Mp4,
+                        Some("webm") => Format::Webm,
+                        _ => Format::Txt,
+                    }
+                });
             // The document: a file, or the live instance's scene.
             let (doc, step, width) = match &file {
                 Some(f) => {
@@ -452,7 +478,7 @@ fn real_main() -> anyhow::Result<()> {
             // A redact a move widened or dropped (t-140): said once, on
             // stderr, before the frames are written.
             let notice_steps: Vec<u32> =
-                if animated || matches!(format, Format::Cast | Format::Tape) {
+                if all_steps || animated || matches!(format, Format::Cast | Format::Tape) {
                     (0..=doc.max_step()).collect()
                 } else {
                     vec![step.min(doc.max_step())]
@@ -472,6 +498,31 @@ fn real_main() -> anyhow::Result<()> {
                 eprintln!("tiza: {w}");
             }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
+            if all_steps {
+                let opts = LayoutOptions {
+                    width,
+                    step: 0,
+                    focus: None,
+                    line_numbers,
+                    tab_width: 4,
+                    typing: false,
+                    redact: true,
+                    stable: true,
+                    margin_cap,
+                };
+                let svg_opts = tiza_export::SvgOptions {
+                    font_size,
+                    margin_cells: margin,
+                    radius,
+                    embed_fonts: format == Format::Svg && !no_embed_fonts,
+                    title: doc.title.clone(),
+                };
+                let png_opts = tiza_export::PngOptions {
+                    scale,
+                    system_fonts,
+                };
+                return render_all_steps(&doc, &theme, &out, format, &opts, &svg_opts, &png_opts);
+            }
             let l = layout(
                 &doc,
                 &theme,
@@ -651,6 +702,56 @@ fn real_main() -> anyhow::Result<()> {
             println!("{label}");
             Ok(())
         }
+        Some(Cmd::Check {
+            file,
+            width,
+            json,
+            strict,
+        }) => {
+            let width = width
+                .map(tiza_core::layout::check_width)
+                .transpose()
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let opts = tiza_core::check::CheckOptions { width };
+            let (name, report) = if file == "-" {
+                let mut text = String::new();
+                std::io::stdin().read_to_string(&mut text)?;
+                let cwd = std::env::current_dir().ok();
+                (
+                    "stdin".to_string(),
+                    tiza_core::check::check_text(&text, cwd.as_deref(), &opts),
+                )
+            } else {
+                let path = std::path::PathBuf::from(&file);
+                let path = if fs::is_document_path(&path) {
+                    path
+                } else {
+                    let sidecar = fs::sidecar_path(&path);
+                    if !sidecar.exists() {
+                        bail!(
+                            "{file} is not a .tiza document and has no sidecar ({}): nothing to check",
+                            sidecar.display()
+                        );
+                    }
+                    sidecar
+                };
+                let report = tiza_core::check::check_path(&path, &opts)
+                    .with_context(|| format!("could not read {}", path.display()))?;
+                (path.display().to_string(), report)
+            };
+            let failed = !report.ok || (strict && report.warnings > 0);
+            let mut stdout = std::io::stdout();
+            if json {
+                writeln!(stdout, "{}", serde_json::to_string_pretty(&report)?)?;
+            } else {
+                write!(stdout, "{}", report.to_text(&name))?;
+            }
+            stdout.flush()?;
+            if failed {
+                std::process::exit(1);
+            }
+            Ok(())
+        }
         Some(Cmd::Mcp) => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(tiza_mcp::serve(socket_path))
@@ -747,6 +848,81 @@ fn call(
         bail!("{} ({})", e.message, e.code);
     }
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
+}
+
+/// `render --all-steps --out DIR/` (t-101): one file per step, step 0
+/// included, every canvas padded to the same size (the stable geometry of
+/// a take), named `step-00.png` … so they sort in step order.
+fn render_all_steps(
+    doc: &tiza_core::Document,
+    theme: &Theme,
+    out: &str,
+    format: Format,
+    opts: &LayoutOptions,
+    svg_opts: &tiza_export::SvgOptions,
+    png_opts: &tiza_export::PngOptions,
+) -> anyhow::Result<()> {
+    if !matches!(
+        format,
+        Format::Png | Format::Svg | Format::Txt | Format::Ansi | Format::Md
+    ) {
+        bail!(
+            "--all-steps writes still images (png, svg, txt, ansi, md); a .{0} already holds every step: `--out demo.{0}` without --all-steps",
+            format_ext(format)
+        );
+    }
+    let dir = std::path::Path::new(out);
+    if dir.is_file() {
+        bail!("--all-steps needs a directory, and {out} is a file");
+    }
+    std::fs::create_dir_all(dir).with_context(|| format!("could not create {out}"))?;
+    let last = tiza_core::check::last_step(doc);
+    let mut canvases: Vec<tiza_core::canvas::Canvas> = (0..=last)
+        .map(|step| {
+            layout(
+                doc,
+                theme,
+                &LayoutOptions {
+                    step,
+                    ..opts.clone()
+                },
+            )
+            .canvas
+        })
+        .collect();
+    tiza_core::anim::same_size(&mut canvases, theme);
+    let digits = last.to_string().len().max(2);
+    let mut size = String::new();
+    for (step, canvas) in canvases.iter().enumerate() {
+        let bytes: Vec<u8> = match format {
+            Format::Txt => (canvas.to_plain_text() + "\n").into_bytes(),
+            Format::Ansi => canvas.to_ansi().into_bytes(),
+            Format::Md => canvas.to_markdown(doc.title.as_deref()).into_bytes(),
+            _ => {
+                let svg = tiza_export::to_svg(canvas, theme, svg_opts);
+                if format == Format::Svg {
+                    svg.into_bytes()
+                } else {
+                    let png = tiza_export::to_png(&svg, png_opts)
+                        .context("could not rasterize the PNG")?;
+                    if size.is_empty() && png.len() > 24 {
+                        let w = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
+                        let h = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
+                        size = format!(", {w}×{h} px each");
+                    }
+                    png
+                }
+            }
+        };
+        let path = dir.join(format!("step-{step:0digits$}.{}", format_ext(format)));
+        write_atomically(&path.to_string_lossy(), &bytes)?;
+    }
+    eprintln!(
+        "wrote {} files to {} (steps 0-{last}{size})",
+        canvases.len(),
+        dir.display()
+    );
+    Ok(())
 }
 
 fn format_ext(f: Format) -> &'static str {

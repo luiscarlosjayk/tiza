@@ -1305,7 +1305,7 @@ impl Document {
     /// document with redacts (t-154): a «not found» for a target that is
     /// under a mask must not hand the text back (and every target is
     /// scrubbed alike, so the answer says nothing about the mask).
-    fn scrub_targets(&self, m: &Move, e: Error) -> Error {
+    pub(crate) fn scrub_targets(&self, m: &Move, e: Error) -> Error {
         if !crate::redact::has_redacts(self) {
             return e;
         }
@@ -1368,6 +1368,15 @@ impl Document {
     /// `render --step N`). `cumulative`: every widened or dropped redact
     /// at `step`, not only those of the moves of that step.
     pub fn redact_notices_at(&self, step: u32, cumulative: bool) -> Vec<String> {
+        self.redact_notices_by_id(step, cumulative)
+            .into_iter()
+            .map(|(_, n)| n)
+            .collect()
+    }
+
+    /// [`Document::redact_notices_at`] with the id of the redact each
+    /// notice is about (t-101: `tiza check` names it).
+    pub fn redact_notices_by_id(&self, step: u32, cumulative: bool) -> Vec<(String, String)> {
         if self.moves.is_empty() || !crate::redact::has_redacts(self) {
             return Vec::new();
         }
@@ -1383,10 +1392,9 @@ impl Document {
                 continue;
             }
             if r.dropped {
-                out.push(format!(
-                    "redact {} dropped: move #{} deleted its line",
-                    a.id,
-                    by + 1
+                out.push((
+                    a.id.clone(),
+                    format!("redact {} dropped: move #{} deleted its line", a.id, by + 1),
                 ));
                 continue;
             }
@@ -1397,10 +1405,13 @@ impl Document {
                 (Some(a), Some(b)) => format!("L{a}-{b}"),
                 _ => continue,
             };
-            out.push(format!(
-                "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
-                a.id,
-                by + 1
+            out.push((
+                a.id.clone(),
+                format!(
+                    "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
+                    a.id,
+                    by + 1
+                ),
             ));
         }
         out

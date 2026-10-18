@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "source": { "language": "rs", "first_line": 1 },
+  "code": ["fn main() {", "    println!(\"hi\");", "}"],
+  "annotations": []
+}

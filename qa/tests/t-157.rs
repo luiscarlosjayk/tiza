@@ -751,6 +751,31 @@ fn ac3_case13_save_quit_and_reopen() {
             &String::from_utf8_lossy(&o.stdout),
         );
     }
+    // `tiza check` of the reopened file (t-101): no error, and the redact
+    // the retargeted move widened is a warning with the TUI's own text,
+    // without the secret. (The retarget itself is said when the move that
+    // causes it is added or deleted; a saved file has no «before» to
+    // compare with, and t-101's acceptance criteria do not ask for it.)
+    for args in [
+        vec!["check", file.to_str().unwrap()],
+        vec!["check", file.to_str().unwrap(), "--json"],
+    ] {
+        let o = tiza(&args);
+        let out = String::from_utf8_lossy(&o.stdout).into_owned();
+        assert!(o.status.success(), "{out}");
+        assert!(
+            out.contains("redact a1 could not follow its text through move #"),
+            "{out}"
+        );
+        assert_no(&["LONGERvalue77", SECRET], "tiza check", &out);
+        assert_no(
+            &["LONGERvalue77", SECRET],
+            "tiza check stderr",
+            &String::from_utf8_lossy(&o.stderr),
+        );
+    }
+    let o = tiza(&["check", file.to_str().unwrap(), "--strict"]);
+    assert!(!o.status.success(), "the warning fails --strict");
 }
 
 #[test]

@@ -571,6 +571,14 @@ pub struct RenderParams {
     pub width: Option<u32>,
 }
 
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct CheckParams {
+    #[schemars(
+        description = "Width in columns to check the labels at; defaults to 100, as `tiza render`"
+    )]
+    pub width: Option<usize>,
+}
+
 #[derive(Debug, Clone)]
 pub struct TizaServer {
     socket: PathBuf,
@@ -682,6 +690,30 @@ impl TizaServer {
         if let Some(obj) = v.as_object_mut() {
             obj.insert("bridge".into(), bridge);
         }
+        Ok(text(pretty(&v)))
+    }
+
+    #[tool(
+        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (a redact a move widens or drops, an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped. Read-only; never quotes text under a redact. Run it before showing a document."
+    )]
+    async fn check(
+        &self,
+        Parameters(p): Parameters<CheckParams>,
+    ) -> Result<CallToolResult, McpError> {
+        let width = p
+            .width
+            .map(tiza_core::layout::check_width)
+            .transpose()
+            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+        let scene = self.call("scene.get", json!({})).await?;
+        let document = scene.get("document").cloned().unwrap_or(Value::Null);
+        let report = tiza_core::check::check_text(
+            &document.to_string(),
+            None,
+            &tiza_core::check::CheckOptions { width },
+        );
+        let v = serde_json::to_value(&report)
+            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         Ok(text(pretty(&v)))
     }
 
