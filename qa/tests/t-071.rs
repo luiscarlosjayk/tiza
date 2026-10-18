@@ -2,50 +2,51 @@
 //! at several real terminal sizes, compared with snapshots.
 //!
 //! Acceptance criteria:
-//! - AC1 `scripts/herdr-matrix.sh` opens Herdr panes at target sizes with
-//!   `herdr pane split --ratio` / `herdr pane resize` (80×24, 120×40, 75×50,
-//!   60×30 and as large as the base pane allows) and prints each pane's real
-//!   size.
+//! - AC1 `scripts/herdr-matrix.sh` opens Herdr panes whose TERMINAL (the size
+//!   Tiza sees) is the target, with `herdr pane split --ratio` / `herdr pane
+//!   resize` (80×24, 120×40, 75×50, 60×30 and as large as the base pane
+//!   allows), and prints each one's size as Tiza sees it and Herdr's rect.
 //! - AC2 In each pane it runs `tiza examples/ownership.rs.tiza --present
 //!   --step 7 --no-save` (plus normal-mode runs with the status bar), waits
 //!   for the first frame and saves `herdr pane read --source visible` to
-//!   `qa/herdr/<case>-<cols>x<rows>.txt`.
+//!   `qa/herdr/<case>-<cols>x<rows>.txt`, named by the size Tiza sees.
 //! - AC3 `--check` diffs the captures against the committed snapshots and
 //!   prints the panes that changed; `--update` rewrites them on purpose.
-//! - AC4 Closes the panes it created, also on errors; fails with a clear
-//!   message if Herdr is not installed or not running.
+//! - AC4 Works in a tab of its own (`herdr tab create`) that it closes at the
+//!   end, also on errors and Ctrl-C; `--base PANE` splits that pane instead
+//!   and closes every pane it opened; fails with a clear message if Herdr is
+//!   not installed or not running.
 //! - AC5 Documented in qa/README.md as a QA-round step (not `cargo test`).
 //!
-//! Herdr 0.9.5 has no `pane wait-output`: the script waits on conditions
-//! instead (the instance answering `tiza api status` on its own socket, then
-//! two identical `pane read`s). Sizes come from `herdr pane layout` (each
-//! pane's `rect.width/height`): every pane is split off at its target size
-//! (`--ratio` is the share the parent keeps), and a cell or two of error is
-//! fixed with `pane resize` in the direction that GROWS the pane resized —
-//! Herdr does not move an edge a pane does not share, so a pane at the right
-//! never shrinks with `resize right` (seen in Luis's QA on 2026-10-18, where
-//! the first version stayed at 180 columns). These tests drive the whole
-//! script with `TIZA_HERDR_FAKE`, which replaces every `herdr` call with a
-//! model that has that limitation: panes are real ptys of the modelled size
-//! running the real `tiza`, and `pane read` is that instance's live `tiza
-//! render`. What only a real Herdr shows (escape sequences through
-//! libghostty-vt, its exact rounding) is checked in Luis's QA round with
-//! `--update` / `--check`.
+//! Herdr's `pane layout` rect counts the pane's frame (Luis's QA on
+//! 2026-10-18 17:55: Tiza always saw 3 columns and 2 rows less than the rect,
+//! so the b9f34fa version tested 77×22 instead of 80×24). The script measures
+//! that frame on a probe pane (rect − `tiza api status`) and splits each pane
+//! at target + frame. These tests drive the whole script with
+//! `TIZA_HERDR_FAKE`, a model of Herdr 0.9.5: tabs (`tab create`/`tab
+//! close`), rects = terminal + frame (3×2 by default, configurable), a pane at
+//! the right that never shrinks with `resize right`; panes are real ptys of
+//! the terminal size running the real `tiza`, and `pane read` is that
+//! instance's live `tiza render`. What only a real Herdr shows (escape
+//! sequences through libghostty-vt, its exact rounding, its JSON) is checked
+//! in Luis's QA round with `--update` / `--check`.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use tiza_qa::{bin, example, scratch};
 
-const CASES: [(&str, &str); 7] = [
-    ("vt100", "80x24"),
-    ("wide", "120x40"),
-    ("zed-half", "75x50"),
-    ("narrow", "60x30"),
-    ("full", "188x60"),
-    ("normal", "120x40"),
-    ("normal-narrow", "60x30"),
+/// Case and the terminal size Tiza must see (`full` is the 200×60 tab less
+/// the 12 columns left to the base and the 3×2 frame).
+const CASES: [(&str, (u32, u32)); 7] = [
+    ("vt100", (80, 24)),
+    ("wide", (120, 40)),
+    ("zed-half", (75, 50)),
+    ("narrow", (60, 30)),
+    ("full", (185, 58)),
+    ("normal", (120, 40)),
+    ("normal-narrow", (60, 30)),
 ];
 
 fn script() -> PathBuf {
@@ -84,18 +85,36 @@ fn resizes(fake: &Path) -> Vec<(String, String)> {
         .collect()
 }
 
-/// Each case's line reports its target size twice: from Herdr's layout and,
-/// as a cross-check, from `tiza api status`.
-fn assert_sizes(r: &Run) {
-    for (case, size) in CASES {
+fn wxh((c, r): (u32, u32)) -> String {
+    format!("{c}x{r}")
+}
+
+/// Each case's line: target, the size Tiza sees (the target) and Herdr's
+/// rect, which is that plus the frame (`extra` gives a case more, for a pane
+/// whose frame differs from the measured one).
+fn assert_sizes(r: &Run, frame: (u32, u32), extra: impl Fn(&str) -> (u32, u32)) {
+    for (case, (c, rows)) in CASES {
         let line = r
             .stdout
             .lines()
             .find(|l| l.split_whitespace().next() == Some(case))
             .unwrap_or_else(|| panic!("no line for {case}:\n{}\n{}", r.stdout, r.stderr));
         let cols: Vec<&str> = line.split_whitespace().collect();
-        assert_eq!(cols[2..4], [size, size], "{case}: {line}\n{}", r.stderr);
+        let (ec, er) = extra(case);
+        let herdr = wxh((c + frame.0 + ec, rows + frame.1 + er));
+        assert_eq!(
+            cols[2..4],
+            [wxh((c, rows)), herdr],
+            "{case}: {line}\n{}",
+            r.stderr
+        );
+        let file = format!("{case}-{}.txt", wxh((c, rows)));
+        assert!(cols[4].ends_with(&file), "{case}: {line}");
     }
+}
+
+fn no_extra(_: &str) -> (u32, u32) {
+    (0, 0)
 }
 
 struct Run {
@@ -104,20 +123,23 @@ struct Run {
     stderr: String,
 }
 
-/// Runs the script with a hard deadline; output goes to files so a full pipe
-/// never stalls it.
-fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
-    let out = dir.join("stdout");
-    let err = dir.join("stderr");
-    let mut child = Command::new("bash")
+fn spawn(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Child {
+    Command::new("bash")
         .arg(script())
         .args(args)
         .envs(env.iter().copied())
+        .env_remove("HERDR_WORKSPACE_ID")
+        .env_remove("HERDR_PANE_ID")
         .stdin(Stdio::null())
-        .stdout(std::fs::File::create(&out).unwrap())
-        .stderr(std::fs::File::create(&err).unwrap())
+        .stdout(std::fs::File::create(dir.join("stdout")).unwrap())
+        .stderr(std::fs::File::create(dir.join("stderr")).unwrap())
         .spawn()
-        .expect("bash");
+        .expect("bash")
+}
+
+/// Waits for `child` with a hard deadline; output went to files so a full
+/// pipe never stalls it.
+fn finish(dir: &Path, mut child: Child, what: &str) -> Run {
     let deadline = Instant::now() + Duration::from_secs(180);
     let status = loop {
         if let Some(s) = child.try_wait().unwrap() {
@@ -132,19 +154,24 @@ fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
     };
     let r = Run {
         code: status.and_then(|s| s.code()),
-        stdout: std::fs::read_to_string(&out).unwrap_or_default(),
-        stderr: std::fs::read_to_string(&err).unwrap_or_default(),
+        stdout: std::fs::read_to_string(dir.join("stdout")).unwrap_or_default(),
+        stderr: std::fs::read_to_string(dir.join("stderr")).unwrap_or_default(),
     };
     assert!(
         status.is_some(),
-        "herdr-matrix.sh {args:?} timed out\n{}\n{}",
+        "herdr-matrix.sh {what} timed out\n{}\n{}",
         r.stdout,
         r.stderr
     );
     r
 }
 
-/// A fresh Herdr model: one base pane `p0` filling a 200×60 window.
+fn run(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
+    let child = spawn(dir, args, env);
+    finish(dir, child, &format!("{args:?}"))
+}
+
+/// A fresh Herdr model: the user's pane `p0` fills a 200×60 tab `w1:t1`.
 fn fake(dir: &Path) -> PathBuf {
     let f = dir.join("herdr");
     std::fs::create_dir_all(f.join("panes/p0")).unwrap();
@@ -153,24 +180,53 @@ fn fake(dir: &Path) -> PathBuf {
     f
 }
 
+fn matrix_args(dir: &Path, tiza: &str, args: &[&str]) -> Vec<String> {
+    let snaps = dir.join("snaps");
+    let mut all = vec![
+        "--tiza".to_owned(),
+        tiza.to_owned(),
+        "--snapshots".to_owned(),
+        snaps.to_str().unwrap().to_owned(),
+    ];
+    all.extend(args.iter().map(|a| (*a).to_owned()));
+    all
+}
+
 /// Runs the script against `fake` with the test's tiza binary.
 fn matrix(dir: &Path, fake: &Path, args: &[&str], env: &[(&str, &str)]) -> Run {
     let tiza = bin();
-    let snaps = dir.join("snaps");
-    let mut all = vec![
-        "--tiza",
-        tiza.to_str().unwrap(),
-        "--snapshots",
-        snaps.to_str().unwrap(),
-    ];
-    all.extend_from_slice(args);
+    let all = matrix_args(dir, tiza.to_str().unwrap(), args);
+    let all: Vec<&str> = all.iter().map(String::as_str).collect();
     let mut e = vec![("TIZA_HERDR_FAKE", fake.to_str().unwrap())];
     e.extend_from_slice(env);
     run(dir, &all, &e)
 }
 
-/// Every pane the script opened is closed: only the base pane is left, with
-/// its whole size back, and no process still runs from the model's panes.
+/// The script's own tab was created in the current pane's workspace, with
+/// the repository as cwd, and closed as the last thing it did.
+fn assert_tab_opened_and_closed(fake: &Path) {
+    let calls = calls(fake);
+    let create = format!(
+        "tab create --workspace w1 --cwd {} --label tiza-matrix",
+        root().display()
+    );
+    assert_eq!(
+        calls.iter().filter(|c| **c == create).count(),
+        1,
+        "{calls:#?}"
+    );
+    assert_eq!(calls.last().map(String::as_str), Some("tab close w1:t2"));
+    // The user's pane is never split, resized or run in.
+    assert!(
+        !calls
+            .iter()
+            .any(|c| c.starts_with("pane split p0 ") || c.contains("--pane p0 ")),
+        "{calls:#?}"
+    );
+}
+
+/// Every pane and tab the script opened is closed: only the user's pane is
+/// left, with its whole size, and no process still runs from the model.
 fn assert_cleaned(fake: &Path) {
     let panes: Vec<_> = std::fs::read_dir(fake.join("panes"))
         .unwrap()
@@ -180,8 +236,12 @@ fn assert_cleaned(fake: &Path) {
     assert_eq!(
         std::fs::read_to_string(fake.join("panes/p0/size")).unwrap(),
         "200 60\n",
-        "the base pane did not get its size back"
+        "the user's pane did not keep (or get back) its size"
     );
+    if let Ok(tabs) = std::fs::read_dir(fake.join("tabs")) {
+        let tabs: Vec<_> = tabs.map(|e| e.unwrap().file_name()).collect();
+        assert!(tabs.is_empty(), "tabs left open: {tabs:?}");
+    }
     let left = Command::new("pgrep")
         .args(["-f", fake.to_str().unwrap()])
         .output()
@@ -206,7 +266,10 @@ fn snapshot_names(dir: &Path) -> Vec<String> {
 }
 
 fn expected_names() -> Vec<String> {
-    let mut v: Vec<String> = CASES.iter().map(|(c, s)| format!("{c}-{s}.txt")).collect();
+    let mut v: Vec<String> = CASES
+        .iter()
+        .map(|(c, s)| format!("{c}-{}.txt", wxh(*s)))
+        .collect();
     v.sort();
     v
 }
@@ -223,9 +286,10 @@ fn changed_example(dir: &Path) -> PathBuf {
     p
 }
 
-/// Test steps 1–3: `--update` opens a pane per case, prints the real sizes,
-/// saves `<case>-<cols>x<rows>.txt` and closes every pane; `--check` right
-/// after finds no difference; a changed label lists every pane that changed.
+/// Test steps 1–3: `--update` works in a new tab, measures Herdr's frame,
+/// gives every case a pane whose terminal is the target, saves
+/// `<case>-<cols>x<rows>.txt` with that size and closes the tab; `--check`
+/// right after finds no difference; a changed label lists every pane.
 #[test]
 fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     let dir = scratch("t071-steps");
@@ -233,44 +297,54 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
 
     let r = matrix(&dir, &fake, &["--update"], &[]);
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
-    assert_sizes(&r);
+    assert!(r.stdout.contains("herdr frame: 3x2 cells"), "{}", r.stdout);
+    assert_sizes(&r, (3, 2), no_extra);
     assert_eq!(snapshot_names(&dir.join("snaps")), expected_names());
-    // Split at the target size: the ratio is what the base keeps (1 − 80/200
-    // for vt100, 1 − 24/60 for its rows), so no resize is needed at all.
-    let calls = calls(&fake);
+    // The probe pane, then each case split off the tab's root pane p1 at
+    // target + frame: 1 − 83/200 for vt100's columns, 1 − 26/60 for its rows,
+    // so no resize is needed at all.
+    let all_calls = calls(&fake);
+    for split in [
+        "pane split p1 --direction right --ratio 0.5 ",
+        "pane split p1 --direction right --ratio 0.5850 ",
+    ] {
+        assert!(
+            all_calls.iter().any(|c| c.starts_with(split)),
+            "{all_calls:#?}"
+        );
+    }
     assert!(
-        calls
+        all_calls
             .iter()
-            .any(|c| c.starts_with("pane split p0 --direction right --ratio 0.6000 ")),
-        "{calls:#?}"
+            .any(|c| c.contains("--direction down --ratio 0.5667")),
+        "{all_calls:#?}"
     );
     assert!(
-        calls
-            .iter()
-            .any(|c| c.contains("--direction down --ratio 0.6000")),
-        "{calls:#?}"
-    );
-    assert!(
-        !calls.iter().any(|c| c.starts_with("pane resize")),
-        "{calls:#?}"
+        !all_calls.iter().any(|c| c.starts_with("pane resize")),
+        "{all_calls:#?}"
     );
     let frame = std::fs::read_to_string(dir.join("snaps/vt100-80x24.txt")).unwrap();
     assert!(frame.contains("s is born"), "{frame}");
-    // Each case ran the document at step 7, presented or with the status bar.
+    // The probe, then each case at step 7, presented or with the status bar.
     let cmds = std::fs::read_to_string(fake.join("log")).unwrap();
     let cmds: Vec<&str> = cmds.lines().collect();
-    assert_eq!(cmds.len(), CASES.len(), "{cmds:#?}");
+    assert_eq!(cmds.len(), CASES.len() + 1, "{cmds:#?}");
+    assert!(cmds[0].contains("/frame.sock"), "{}", cmds[0]);
+    let cmds = &cmds[1..];
     let presented = cmds.iter().filter(|c| c.contains(" --present ")).count();
     assert_eq!(presented, 5, "{cmds:#?}");
-    for c in &cmds {
+    for c in cmds {
         assert!(c.contains("ownership.rs.tiza"), "{c}");
         assert!(c.contains("--step 7 --no-save --socket "), "{c}");
     }
+    assert_tab_opened_and_closed(&fake);
     assert_cleaned(&fake);
 
+    std::fs::remove_file(fake.join("calls")).unwrap();
     let r = matrix(&dir, &fake, &["--check"], &[]);
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
     assert!(r.stdout.contains("no differences"), "{}", r.stdout);
+    assert!(calls(&fake).contains(&"tab close w1:t3".to_owned()));
     assert_cleaned(&fake);
 
     let doc = changed_example(&dir);
@@ -302,6 +376,57 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     assert_cleaned(&fake);
 }
 
+/// AC1: the frame is measured, not assumed — with another frame (1×4) Tiza
+/// still sees the targets and Herdr's rects grow by 1×4.
+#[test]
+fn ac1_the_frame_is_measured() {
+    let dir = scratch("t071-frame");
+    let fake = fake(&dir);
+    let r = matrix(&dir, &fake, &[], &[("TIZA_HERDR_FAKE_FRAME", "1 4")]);
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert!(r.stdout.contains("herdr frame: 1x4 cells"), "{}", r.stdout);
+    // `full` keeps its 188 columns of rect: 187 for Tiza, and 56 rows.
+    for (case, (c, rows)) in CASES {
+        let want = if case == "full" { (187, 56) } else { (c, rows) };
+        let line = r
+            .stdout
+            .lines()
+            .find(|l| l.split_whitespace().next() == Some(case))
+            .unwrap();
+        let cols: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(
+            cols[2..4],
+            [wxh(want), wxh((want.0 + 1, want.1 + 4))],
+            "{line}"
+        );
+    }
+    assert_cleaned(&fake);
+}
+
+/// AC1: a pane whose frame is not the measured one (here every pane split
+/// off downwards has a frame of 3×3) is resized by the difference once Tiza
+/// reports its size, so Tiza still sees the target.
+#[test]
+fn ac1_a_pane_with_another_frame_is_resized() {
+    let dir = scratch("t071-frame-below");
+    let fake = fake(&dir);
+    let r = matrix(&dir, &fake, &[], &[("TIZA_HERDR_FAKE_FRAME_BELOW", "3 3")]);
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert!(r.stdout.contains("herdr frame: 3x2 cells"), "{}", r.stdout);
+    assert_sizes(&r, (3, 2), |case| (0, u32::from(case != "full")));
+    assert!(
+        r.stderr.contains("resizing the pane by the difference"),
+        "{}",
+        r.stderr
+    );
+    assert!(
+        resizes(&fake).iter().all(|(_, d)| d == "up"),
+        "{:#?}",
+        resizes(&fake)
+    );
+    assert_cleaned(&fake);
+}
+
 /// AC1: when a split misses by a couple of cells (here the model gives every
 /// new pane 2 cells too many), the pane is shrunk by growing its NEIGHBOUR
 /// towards it (`resize right|down` on the pane left of / above it), never by
@@ -319,12 +444,12 @@ fn ac1_too_big_is_shrunk_by_growing_the_neighbour() {
         &[("TIZA_HERDR_FAKE_SKEW", "2")],
     );
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
-    assert_sizes(&r);
+    assert_sizes(&r, (3, 2), no_extra);
     assert_eq!(snapshot_names(&out), expected_names());
     assert!(!dir.join("snaps").exists(), "a plain run wrote snapshots");
     let resizes = resizes(&fake);
     assert!(
-        resizes.iter().any(|(p, d)| p == "p0" && d == "right"),
+        resizes.iter().any(|(p, d)| p == "p1" && d == "right"),
         "{resizes:#?}"
     );
     assert!(resizes.iter().any(|(_, d)| d == "down"), "{resizes:#?}");
@@ -349,33 +474,78 @@ fn ac1_too_small_grows_the_pane_itself() {
         &[("TIZA_HERDR_FAKE_SKEW", "-2")],
     );
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
-    assert_sizes(&r);
+    assert_sizes(&r, (3, 2), no_extra);
     let resizes = resizes(&fake);
     assert!(resizes.iter().any(|(_, d)| d == "left"), "{resizes:#?}");
     assert!(resizes.iter().any(|(_, d)| d == "up"), "{resizes:#?}");
     assert!(
         resizes
             .iter()
-            .all(|(p, d)| p != "p0" && (d == "left" || d == "up")),
+            .all(|(p, d)| p != "p1" && (d == "left" || d == "up")),
         "{resizes:#?}"
     );
     assert_cleaned(&fake);
 }
 
-/// AC3 corner: a real size that differs from the snapshot's is a change, and
-/// a case without a snapshot asks for `--update`.
+/// AC4: `--base PANE` opens no tab and splits that pane; it gets its whole
+/// size back at the end.
+#[test]
+fn ac4_base_splits_the_given_pane() {
+    let dir = scratch("t071-base");
+    let fake = fake(&dir);
+    let out = dir.join("out");
+    let r = matrix(
+        &dir,
+        &fake,
+        &["--base", "p0", "--out", out.to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert_sizes(&r, (3, 2), no_extra);
+    let calls = calls(&fake);
+    assert!(!calls.iter().any(|c| c.starts_with("tab ")), "{calls:#?}");
+    assert!(
+        calls
+            .iter()
+            .any(|c| c.starts_with("pane split p0 --direction right --ratio 0.5850 ")),
+        "{calls:#?}"
+    );
+    assert_cleaned(&fake);
+}
+
+/// AC4: a `tab create` whose answer names neither the tab nor its root pane
+/// (Herdr's exact JSON is not known here): the root pane is found in `pane
+/// list`, the tab id in its `pane layout`, and the tab is still closed.
+#[test]
+fn ac4_tab_found_without_its_answer() {
+    let dir = scratch("t071-tab-quiet");
+    let fake = fake(&dir);
+    let r = matrix(&dir, &fake, &[], &[("TIZA_HERDR_FAKE_TAB_OUTPUT", "none")]);
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        r.stdout.contains("new tab w1:t2 (root pane p1)"),
+        "{}",
+        r.stdout
+    );
+    assert_sizes(&r, (3, 2), no_extra);
+    assert_tab_opened_and_closed(&fake);
+    assert_cleaned(&fake);
+}
+
+/// AC3 corner: a size that differs from the snapshot's is a change, and a
+/// case without a snapshot asks for `--update`.
 #[test]
 fn ac3_size_change_and_missing_snapshot() {
     let dir = scratch("t071-size");
     let fake = fake(&dir);
     let snaps = dir.join("snaps");
     std::fs::create_dir_all(&snaps).unwrap();
-    std::fs::write(snaps.join("vt100-81x24.txt"), "old\n").unwrap();
+    std::fs::write(snaps.join("vt100-77x22.txt"), "old\n").unwrap();
     let r = matrix(&dir, &fake, &["--check"], &[]);
     assert_eq!(r.code, Some(1), "{}\n{}", r.stdout, r.stderr);
     assert!(
         r.stdout
-            .contains("CHANGED vt100: size 81x24.txt → 80x24.txt"),
+            .contains("CHANGED vt100: size 77x22.txt → 80x24.txt"),
         "{}",
         r.stdout
     );
@@ -387,15 +557,56 @@ fn ac3_size_change_and_missing_snapshot() {
     assert_cleaned(&fake);
 }
 
-/// AC4: a failure half-way (here `pane read`) still closes every pane the
-/// script opened and stops their Tiza instances.
+/// AC4: a failure half-way (here `pane read`) still closes the tab, or with
+/// `--base` every pane the script opened, and stops their Tiza instances.
 #[test]
-fn ac4_failure_closes_the_panes() {
+fn ac4_failure_closes_the_tab_and_the_panes() {
     let dir = scratch("t071-fail");
     let fake = fake(&dir);
-    let r = matrix(&dir, &fake, &[], &[("TIZA_HERDR_FAKE_FAIL_READ", "1")]);
+    let fail = [("TIZA_HERDR_FAKE_FAIL_READ", "1")];
+    let r = matrix(&dir, &fake, &[], &fail);
     assert_eq!(r.code, Some(2), "{}\n{}", r.stdout, r.stderr);
     assert!(r.stderr.contains("herdr pane read"), "{}", r.stderr);
+    assert_tab_opened_and_closed(&fake);
+    assert_cleaned(&fake);
+
+    let r = matrix(&dir, &fake, &["--base", "p0"], &fail);
+    assert_eq!(r.code, Some(2), "{}\n{}", r.stdout, r.stderr);
+    assert_cleaned(&fake);
+}
+
+/// AC4: Ctrl-C half-way (SIGINT while a case's Tiza runs) closes the tab.
+#[test]
+fn ac4_ctrl_c_closes_the_tab() {
+    let dir = scratch("t071-int");
+    let fake = fake(&dir);
+    let tiza = bin();
+    let args = matrix_args(&dir, tiza.to_str().unwrap(), &[]);
+    let args: Vec<&str> = args.iter().map(String::as_str).collect();
+    let child = spawn(&dir, &args, &[("TIZA_HERDR_FAKE", fake.to_str().unwrap())]);
+    // Wait until the probe and the first case have started Tiza.
+    let deadline = Instant::now() + Duration::from_secs(60);
+    while std::fs::read_to_string(fake.join("log"))
+        .unwrap_or_default()
+        .lines()
+        .count()
+        < 2
+    {
+        assert!(Instant::now() < deadline, "no case started");
+        std::thread::park_timeout(Duration::from_millis(50));
+    }
+    let ok = Command::new("kill")
+        .args(["-INT", &child.id().to_string()])
+        .status()
+        .expect("kill");
+    assert!(ok.success());
+    let r = finish(&dir, child, "after SIGINT");
+    assert_eq!(r.code, Some(130), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        calls(&fake).contains(&"tab close w1:t2".to_owned()),
+        "{:#?}",
+        calls(&fake)
+    );
     assert_cleaned(&fake);
 }
 
@@ -437,6 +648,9 @@ fn ac5_documented() {
         "scripts/herdr-matrix.sh",
         "--check",
         "--update",
+        "--base",
+        "herdr tab create",
+        "frame",
         "not part of `cargo test`",
     ] {
         assert!(readme.contains(needle), "qa/README.md lacks {needle}");
