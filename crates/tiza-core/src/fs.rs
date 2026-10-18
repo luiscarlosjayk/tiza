@@ -472,8 +472,16 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
         // longer knows the value, so a label left as written would show
         // it in clear. Fail closed, like the code; a file reference keeps
         // the author's texts (the value is read from the file again).
-        crate::redact::Echo::quoting(&doc).shown_doc(&mut doc);
-        doc.code_src = CodeSource::Embedded(crate::redact::masked_base(&doc));
+        // The moves' content as it is shown (t-177): a copy of a value a
+        // move writes would be in clear in the reopened file.
+        // Everything from the real document first, then written together.
+        let filter = crate::redact::Echo::quoting(&doc);
+        let base = crate::redact::masked_base(&doc);
+        let annotations = crate::redact::embedded_annotations(&doc);
+        doc.moves = crate::moves::saved_moves(&doc).0;
+        doc.annotations = annotations;
+        filter.shown_doc(&mut doc);
+        doc.code_src = CodeSource::Embedded(base);
     }
     let json = serde_json::to_string_pretty(&doc)?;
     // The save is an atomic replace (temp file + rename), which would walk

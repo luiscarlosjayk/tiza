@@ -1817,6 +1817,31 @@ pub fn masked_moves(doc: &Document) -> Vec<Move> {
     out
 }
 
+/// The moves as a `.tiza` with embedded code writes them (t-174 AC10,
+/// t-177): [`masked_moves`] — the content as it is shown, masks drawn on
+/// it — so the reopened file, which no longer knows the values, shows
+/// exactly what the instance showed. With how many masks each move's
+/// content gained (index, count), for the notices.
+pub fn saved_moves(doc: &Document) -> (Vec<Move>, Vec<(usize, usize)>) {
+    let out = masked_moves(doc);
+    let mut changed = Vec::new();
+    for (i, (old, new)) in doc.moves.iter().zip(&out).enumerate() {
+        if let (MoveAction::CodePatch(a), MoveAction::CodePatch(b)) = (&old.action, &new.action)
+            && a.content != b.content
+        {
+            let count = |c: &Option<String>| {
+                c.as_deref()
+                    .map_or(0, |c| c.matches(crate::redact::MASK).count())
+            };
+            changed.push((
+                i,
+                count(&b.content).saturating_sub(count(&a.content)).max(1),
+            ));
+        }
+    }
+    (out, changed)
+}
+
 /// Validates every move against the code at its step: targets resolve to
 /// exactly one place, `at_step >= 1`, `rebind` ids exist and only on
 /// patches, linked files are loaded, cursors and selections exist.

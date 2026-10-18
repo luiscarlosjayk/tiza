@@ -70,8 +70,11 @@
 //! Only `scene.get` without `as_shown` (the explicit editing call) keeps
 //! the author's text as written. A `.tiza` whose code is embedded is saved
 //! with its code masked (t-117), so its texts are saved through
-//! [`Echo::shown_doc`] too (`fs::save_document`): reopened, it would no
-//! longer know the value. A file reference keeps the author's texts. The
+//! [`Echo::shown_doc`] too, its moves as shown (`moves::saved_moves`) and
+//! its redacts on their masks ([`embedded_annotations`]), all in
+//! `fs::save_document`, every write included (autosave, `:w`, `:embed`):
+//! reopened, it no longer knows the value and shows what was shown. The
+//! alert then says «saved masked» ([`saved_message`]). A file reference keeps the author's texts. The
 //! values an instance knew survive a `scene.put` of the masked copy in
 //! memory only ([`KnownValues`], [`carry_values`]).
 
@@ -321,6 +324,36 @@ pub fn masked_base(doc: &Document) -> Vec<String> {
     d.moves.clear();
     d.base_code.clear();
     masked(&d, u32::MAX).code
+}
+
+/// The annotations as they go with the masked step-0 code that a save and
+/// `scene.get` write (t-174 AC10): the redacts of the step-0 code cover
+/// exactly their mask (eight `•` plus the kept tail) instead of the real
+/// value's columns, and without moves the other annotations of those lines
+/// are re-mapped the same way. So the reopened (or re-put) document shows
+/// exactly what was shown — no extra `•` when the value was shorter than
+/// the mask, nothing shifted.
+pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
+    if !has_redacts(doc) {
+        return doc.annotations.clone();
+    }
+    if doc.moves.is_empty() {
+        return masked(doc, u32::MAX).annotations;
+    }
+    let mut d = doc.clone();
+    d.code = doc.base().to_vec();
+    d.source.first_line = doc.base_first();
+    d.annotations = base_redacts(doc, &None);
+    d.moves.clear();
+    d.base_code.clear();
+    let m = masked(&d, u32::MAX);
+    let mut out = doc.annotations.clone();
+    for a in &mut out {
+        if let Some(n) = m.annotations.iter().find(|n| n.id == a.id) {
+            a.shape = n.shape.clone();
+        }
+    }
+    out
 }
 
 /// The redacts of view `key` whose span is on that view's step-0 code: all
@@ -975,8 +1008,17 @@ pub struct MaskedText {
     /// Its step (an annotation's, or the named step's).
     pub step: Option<u32>,
     /// Which text: `label`, `text`, `title`, `kind`, `legend`, `glyph`,
-    /// `name`, `id`.
+    /// `name`, `key`, `id`.
     pub field: &'static str,
+    /// The document's code is embedded: Tiza writes this text masked when
+    /// it saves (AC10), which cannot be undone, and says so.
+    pub saved: bool,
+}
+
+/// [`shares_message`] for a document whose code is embedded: the text is
+/// saved masked (t-174 AC10, Luis's wording).
+pub fn saved_message(field: &str) -> String {
+    format!("its {field} shares text with a masked value; saved masked — reword it")
 }
 
 /// What the alert, `tiza check` and an agent's reply say about a text of
@@ -988,7 +1030,11 @@ pub fn shares_message(field: &str) -> String {
 impl MaskedText {
     /// `its label shares text with a masked value; masked on screen — reword the label`.
     pub fn message(&self) -> String {
-        shares_message(self.field)
+        if self.saved {
+            saved_message(self.field)
+        } else {
+            shares_message(self.field)
+        }
     }
 
     /// The alert: `a3: its label shares text with a masked value; masked on screen — reword the label`.
@@ -998,7 +1044,8 @@ impl MaskedText {
 
     /// What identifies it across changes (the TUI says each one once).
     pub fn key(&self) -> String {
-        format!("{}\u{0}{}", self.subject, self.field)
+        // The wording changes when the text will be saved masked: said again.
+        format!("{}\u{0}{}\u{0}{}", self.subject, self.field, self.saved)
     }
 }
 
@@ -1010,12 +1057,14 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
         return out;
     }
     let hit = |t: Option<&str>| t.is_some_and(|t| f.repeats(t));
+    let saved = matches!(doc.code_src, crate::model::CodeSource::Embedded(_));
     let mut push = |subject: String, id: Option<String>, step: Option<u32>, field| {
         out.push(MaskedText {
             subject,
             id,
             step,
             field,
+            saved,
         })
     };
     if hit(doc.title.as_deref()) {
@@ -1076,7 +1125,28 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
             }
         }
     }
+    // A move's content is not listed here: under its redact it is the
+    // secret itself (t-140), saved masked like the code; a copy elsewhere
+    // is said by the move's own notice (`masked a copy of its value on L7`)
+    // and by `:embed` ([`embed_notice`]).
     out
+}
+
+/// The info line of `:embed` (t-177 AC3): `embedded: masked 1 copy of a
+/// redacted value in move #3`, or `None` when no move's content changes.
+pub fn embed_notice(doc: &Document) -> Option<String> {
+    let changed = crate::moves::saved_moves(doc).1;
+    if changed.is_empty() {
+        return None;
+    }
+    let n: usize = changed.iter().map(|(_, c)| c).sum();
+    let moves: Vec<String> = changed.iter().map(|(i, _)| format!("#{}", i + 1)).collect();
+    Some(format!(
+        "embedded: masked {n} {} of a redacted value in {} {}",
+        if n == 1 { "copy" } else { "copies" },
+        if moves.len() == 1 { "move" } else { "moves" },
+        moves.join(", ")
+    ))
 }
 
 /// Every target text the document itself wrote (t-167): the `find`,

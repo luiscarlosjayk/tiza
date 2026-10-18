@@ -896,6 +896,9 @@ impl Document {
         d.embed_code();
         // Move content masked where it lands under a redact (t-140).
         d.moves = moves::masked_moves(self);
+        // The redacts cover the masked code exactly (t-174 AC10): a put of
+        // this copy shows what was shown.
+        d.annotations = crate::redact::embedded_annotations(self);
         d
     }
 

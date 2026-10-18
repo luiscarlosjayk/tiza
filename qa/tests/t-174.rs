@@ -38,6 +38,15 @@
 //!   new id that shares text with a masked value is refused
 //!   (`invalid_argument`, not quoted); one already in the file is masked
 //!   wherever ids are shown, and said.
+//! - AC10 (Luis, 2026-10-18, absorbs t-177): every write of a `.tiza` with
+//!   embedded code (autosave, `:w`, `:w PATH`, after `scene.put`/`patch`,
+//!   `:embed`) saves masked every copy of a value — move content, labels,
+//!   texts, titles, step titles, legends, glyphs, style names, ids — and
+//!   the reopened file shows exactly what the instance showed (`render
+//!   --all-steps --format txt` compared). Never silent: `a3: its label
+//!   shares text with a masked value; saved masked — reword it`, and
+//!   `:embed` says `embedded: masked 1 copy of a redacted value in move
+//!   #N`. A file-reference `.tiza` keeps the author's texts.
 //! - Review round 1: a move that writes a copy of the value says
 //!   `redact r1: masked a copy of its value on L7 (move #1)`, not «could
 //!   not follow … L1-7»; glyphs, Tab completion, `steps` warnings,
@@ -61,8 +70,10 @@ use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
 
 const VALUE: &str = "9vK7wPx3Lm";
 const MASK: &str = "••••••••";
-const LABEL_ALERT: &str =
-    "h1: its label shares text with a masked value; masked on screen — reword the label";
+/// The alert on a document whose code is embedded (it is saved masked,
+/// AC10); a file-reference document says «masked on screen — reword the
+/// label» instead.
+const LABEL_ALERT: &str = "h1: its label shares text with a masked value; saved masked — reword it";
 
 /// Every piece of 4 characters of the value (the t-157 rule).
 fn pieces() -> Vec<String> {
@@ -218,7 +229,7 @@ fn corner_no_letter_or_digit_piece_and_fail_closed_common_word() {
     assert_eq!(found.len(), 1);
     assert_eq!(
         found[0].notice(),
-        "document: its title shares text with a masked value; masked on screen — reword the title"
+        "document: its title shares text with a masked value; saved masked — reword it"
     );
 }
 
@@ -682,9 +693,7 @@ fn ac3_mcp_resources_and_tools_mask_and_add_note_says_masked() {
     );
     assert!(!err, "{raw}");
     assert!(
-        text.contains(
-            "n9: its text shares text with a masked value; masked on screen — reword the text."
-        ),
+        text.contains("n9: its text shares text with a masked value; saved masked — reword it."),
         "{text}"
     );
     assert!(text.contains("\"masked\": true"), "{text}");
@@ -698,9 +707,7 @@ fn ac3_mcp_resources_and_tools_mask_and_add_note_says_masked() {
     );
     let (_, status, _) = mcp.call("status", json!({}));
     assert!(
-        status.contains(
-            "n9: its text shares text with a masked value; masked on screen — reword the text"
-        ),
+        status.contains("n9: its text shares text with a masked value; saved masked — reword it"),
         "{status}"
     );
     // A label without a copy says nothing.
@@ -723,8 +730,7 @@ fn ac5_alert_once_per_text_and_check_warns_with_the_same_words() {
         alerts,
         [
             LABEL_ALERT.to_string(),
-            "n1: its text shares text with a masked value; masked on screen — reword the text"
-                .to_string()
+            "n1: its text shares text with a masked value; saved masked — reword it".to_string()
         ]
     );
     let screen = live.screen(120, 30);
@@ -755,7 +761,7 @@ fn ac5_alert_once_per_text_and_check_warns_with_the_same_words() {
         String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
     assert!(
         report.contains(
-            "warning: h1, step 1: its label shares text with a masked value; masked on screen — reword the label"
+            "warning: h1, step 1: its label shares text with a masked value; saved masked — reword it"
         ),
         "{report}"
     );
@@ -1168,9 +1174,10 @@ fn b6_style_set_and_define_style_reply_masked() {
     );
     assert_eq!(r["masked"], json!(true), "{r}");
     assert!(
-        r["masked_notice"].as_str().unwrap().contains(
-            "its legend shares text with a masked value; masked on screen — reword the legend"
-        ),
+        r["masked_notice"]
+            .as_str()
+            .unwrap()
+            .contains("its legend shares text with a masked value; saved masked — reword it"),
         "{r}"
     );
     assert_clean("style.set reply", &r.to_string());
@@ -1251,4 +1258,234 @@ fn a3_a_message_keeps_its_own_words_and_masks_document_text() {
         tiza_core::redact::shown("the value here", &d),
         format!("the {MASK} here")
     );
+}
+
+// ---------- AC10 (t-177): every write of embedded code, round trips ----------
+
+/// Every step as text, file by file, from `tiza render --all-steps`.
+fn all_steps(path: &Path, dir: &Path, name: &str) -> Vec<String> {
+    let out = dir.join(name);
+    let _ = std::fs::remove_dir_all(&out);
+    out_of(&[
+        "render",
+        path.to_str().unwrap(),
+        "--all-steps",
+        "--format",
+        "txt",
+        "--width",
+        "100",
+        "--out",
+        &format!("{}/", out.display()),
+    ]);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .map(|p| std::fs::read_to_string(p).unwrap())
+        .collect()
+}
+
+/// Every reader and export of AC3 on a reopened file, searched for any
+/// piece of `value`.
+fn reopened_is_clean(path: &Path, value: &str, name: &str) {
+    let c: Vec<char> = value.chars().collect();
+    let pieces: Vec<String> = c.windows(4).map(|w| w.iter().collect()).collect();
+    let clean = |what: &str, s: &str| {
+        for p in &pieces {
+            assert!(!s.contains(p.as_str()), "{what} shows «{p}»:\n{s}");
+        }
+    };
+    let saved = std::fs::read_to_string(path).unwrap();
+    clean("the saved .tiza", &saved);
+    let f = path.to_str().unwrap();
+    for fmt in ["txt", "ansi", "md", "cast", "tape"] {
+        let (out, err) = out_of(&["render", f, "--format", fmt]);
+        clean(&format!("render {fmt}"), &String::from_utf8_lossy(&out));
+        clean(&format!("render {fmt} stderr"), &err);
+    }
+    let (svg, _) = out_of(&["render", f, "--format", "svg", "--no-embed-fonts"]);
+    clean("render svg", &String::from_utf8_lossy(&svg));
+    let report = String::from_utf8_lossy(&tiza(&["check", f, "--json"]).stdout).into_owned();
+    clean("check", &report);
+    let doc = tiza_core::fs::open(f).unwrap().document;
+    let dir = scratch(name);
+    let live = Live::open(doc, dir.join("re.tiza"), dir.join("live.sock"));
+    let max = live.with(|a| a.doc.max_step());
+    for step in 0..=max {
+        live.with(move |a| a.set_step(step));
+        for (m, p) in [
+            ("render.text", json!({"width": 100})),
+            ("code.get", json!({})),
+            ("scene.list", json!({})),
+            ("status", json!({})),
+            ("scene.get", json!({})),
+            ("scene.get", json!({"as_shown": true})),
+        ] {
+            clean(
+                &format!("{m} at step {step}"),
+                &live.api_ok(m, p).to_string(),
+            );
+        }
+        clean(&format!("the screen at step {step}"), &live.screen(120, 30));
+    }
+    let mut mcp = McpClient::start(&live.socket);
+    for uri in [
+        "tiza://scene",
+        "tiza://render",
+        "tiza://render.md",
+        "tiza://code",
+    ] {
+        clean(
+            uri,
+            &mcp.request("resources/read", json!({"uri": uri}))
+                .to_string(),
+        );
+    }
+}
+
+#[test]
+fn ac10_autosave_of_the_card_fixture_round_trips_identical_and_clean() {
+    let dir = scratch("t174-ac10-autosave");
+    let path = dir.join("demo.tiza");
+    std::fs::copy(demo(), &path).unwrap();
+    let before = all_steps(&path, &dir, "before");
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    // Never silent: the alert says it will be saved masked.
+    let _ = live.screen(120, 30);
+    assert!(
+        live.with(|a| a.redact_alerts.clone())
+            .contains(&LABEL_ALERT.to_string()),
+        "the saved-masked alert"
+    );
+    // An autosave: a change that leaves every frame as it was.
+    live.api_ok("style.set", json!({"name": "unused", "glyph": "*"}));
+    drop(live);
+    assert_eq!(
+        all_steps(&path, &dir, "after"),
+        before,
+        "reopened = shown before"
+    );
+    reopened_is_clean(&path, VALUE, "t174-ac10-autosave-re");
+}
+
+/// t-177's repro: a file-reference document whose move writes
+/// `BACKUP=<value>` at step 4, with a label repeating the value.
+fn embed_probe(dir: &Path) -> PathBuf {
+    std::fs::write(
+        dir.join("main.env"),
+        format!("# main\nTOKEN={VALUE}\nHOST=db\nPORT=8080\n"),
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": {"file": "main.env"},
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 2, "end": 6}, "label": format!("was {VALUE}")},
+            {"id": "n2", "step": 2, "type": "note", "line": 3, "text": "the host"},
+            {"id": "n3", "step": 3, "type": "note", "line": 4, "text": "the port"}
+        ],
+        "moves": [
+            {"at_step": 4, "action": "code.patch", "op": "insert", "after": "PORT=8080", "content": format!("BACKUP={VALUE}")}
+        ]
+    });
+    write(dir, "doc", &doc)
+}
+
+#[test]
+fn ac10_embed_round_trips_identical_and_clean_t177() {
+    let dir = scratch("t174-ac10-embed");
+    let path = embed_probe(&dir);
+    let before = all_steps(&path, &dir, "before");
+    assert!(
+        before[4].contains(&format!("BACKUP={MASK}")),
+        "live masks the copy:\n{}",
+        before[4]
+    );
+    // A file reference keeps the author's text as written.
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains(&format!("BACKUP={VALUE}")));
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    let _ = live.screen(120, 30);
+    // On screen only, while the code is a file reference.
+    assert!(
+        live.with(|a| a.redact_alerts.clone()).contains(
+            &"h1: its label shares text with a masked value; masked on screen — reword the label"
+                .to_string()
+        ),
+        "{:?}",
+        live.with(|a| a.redact_alerts.clone())
+    );
+    live.command("embed");
+    let msg = live.message().unwrap().0;
+    assert!(
+        msg.contains("embedded: masked 1 copy of a redacted value in move #1"),
+        "{msg}"
+    );
+    assert_clean("the :embed message", &msg);
+    let alerts = live.with(|a| a.redact_alerts.clone());
+    assert!(alerts.contains(&LABEL_ALERT.to_string()), "{alerts:?}");
+    drop(live);
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains(&format!("BACKUP={MASK}")), "{saved}");
+    assert_eq!(
+        all_steps(&path, &dir, "after"),
+        before,
+        "reopened = shown before"
+    );
+    reopened_is_clean(&path, VALUE, "t174-ac10-embed-re");
+    // Re-embedding is idempotent.
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path.clone(), dir.join("live2.sock"));
+    live.command("embed");
+    drop(live);
+    assert_eq!(all_steps(&path, &dir, "again"), before);
+}
+
+#[test]
+fn ac10_live_get_put_then_save_round_trips_for_a_short_value() {
+    let short = "Ab3x9Kq";
+    let dir = scratch("t174-ac10-put");
+    let path = write(
+        &dir,
+        "short",
+        &json!({
+            "schema": 1, "source": {"language": "sh"},
+            "code": ["# demo", format!("PIN={short}"), "USER=ana"],
+            "annotations": [
+                {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 4, "end": 11}},
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 2, "end": 6}, "label": format!("was {short}")},
+                {"id": "n1", "step": 1, "type": "note", "line": 3, "text": format!("pin {short} rotated")}
+            ],
+            "moves": [{"at_step": 2, "action": "code.patch", "op": "insert", "after": "USER=ana", "content": format!("OLD={short}")}]
+        }),
+    );
+    let before = all_steps(&path, &dir, "before");
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    let scene = live.api_ok("scene.get", json!({}));
+    live.api_ok("scene.put", json!({"document": scene["document"]}));
+    // Saved after the put (autosave), and once more by hand.
+    live.command("w");
+    drop(live);
+    assert_eq!(
+        all_steps(&path, &dir, "after"),
+        before,
+        "reopened = shown before"
+    );
+    reopened_is_clean(&path, short, "t174-ac10-put-re");
 }

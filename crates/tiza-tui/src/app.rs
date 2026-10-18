@@ -2724,14 +2724,21 @@ impl App {
                 "note" | "n" => self.cmd_note(rest),
                 "embed" => {
                     self.doc.embed_code();
+                    // Copies of a value the moves write are frozen masked
+                    // too (t-177), and said; the labels' alerts follow.
+                    let masked = tiza_core::redact::embed_notice(&self.doc)
+                        .map(|n| format!("; {n}"))
+                        .unwrap_or_default();
                     self.touch();
                     // The code no longer comes from the file: there is
                     // nothing to follow (t-117; `:follow on` says the same).
                     if self.follow.is_some() {
                         self.set_follow(false)?;
-                        return Ok("code frozen inside the .tiza; follow off: edits on disk no longer reach the screen (:link and :follow on to resume)".into());
+                        return Ok(format!(
+                            "code frozen inside the .tiza{masked}; follow off: edits on disk no longer reach the screen (:link and :follow on to resume)"
+                        ));
                     }
-                    Ok("code frozen inside the .tiza".into())
+                    Ok(format!("code frozen inside the .tiza{masked}"))
                 }
                 "link" if !rest.is_empty() && self.doc.step >= 1 => {
                     // At a step: a `code.link` move that shows `path` (with
