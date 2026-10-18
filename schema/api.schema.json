@@ -35,6 +35,15 @@
           "app": {
             "type": "string"
           },
+          "auto_advance_ms": {
+            "description": "`auto_advance_ms` of the current step, when it has one.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
           "autosave": {
             "default": true,
             "description": "Whether every change is written to the sidecar as it happens\n(`--no-save`, `:autosave off` and a `scene.put` of another document\nturn it off; `:w` saves explicitly either way).",
@@ -74,6 +83,10 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
+          },
+          "loop": {
+            "description": "The document loops: past the last step comes step 0.",
+            "type": "boolean"
           },
           "margin": {
             "description": "Right-margin cap in cells (`:margin N`, document field); absent = dynamic.",
@@ -122,6 +135,23 @@
             "minimum": 0,
             "type": "integer"
           },
+          "step_id": {
+            "description": "The `id` and `title` of the current step, when `steps` names it\n(t-099); `step_label` is what the status line shows\n(`step 3/7 · Shared borrow`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "step_label": {
+            "default": "",
+            "type": "string"
+          },
+          "step_title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "supervised": {
             "description": "Supervised mode: mutations wait for the presenter's approval.",
             "type": "boolean"
@@ -137,7 +167,7 @@
             ]
           },
           "warnings": {
-            "description": "Human-readable warnings about the viewport (small terminal, clipped code).",
+            "description": "Human-readable warnings about the viewport (small terminal, clipped\ncode) and the document (a `steps` entry past the last step).",
             "items": {
               "type": "string"
             },
@@ -721,6 +751,10 @@
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
               },
+              "loop": {
+                "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
+                "type": "boolean"
+              },
               "margin": {
                 "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
                 "format": "uint16",
@@ -783,6 +817,13 @@
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "steps": {
+                "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+                "items": {
+                  "$ref": "#/$defs/NamedStep"
+                },
+                "type": "array"
               },
               "styles": {
                 "additionalProperties": {
@@ -1076,6 +1117,44 @@
                 ]
               }
             },
+            "type": "object"
+          },
+          "NamedStep": {
+            "description": "One named step.",
+            "properties": {
+              "auto_advance_ms": {
+                "description": "Go to the next step on its own this many milliseconds after the step\nis ready (its typing finished and its `wait` moves elapsed). The\nnative GIF/MP4 hold the step's frame this long instead of `--interval`.",
+                "format": "uint64",
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "step": {
+                "description": "The step this entry names (0 = the code alone). Explicit, so\nreordering the list or moving annotations never rebinds it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "title": {
+                "description": "Shown on the status line (`step 3/7 · Shared borrow`) and in `status`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "step"
+            ],
             "type": "object"
           },
           "OverrideValue": {
@@ -3387,6 +3466,10 @@
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
               },
+              "loop": {
+                "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
+                "type": "boolean"
+              },
               "margin": {
                 "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
                 "format": "uint16",
@@ -3449,6 +3532,13 @@
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
+              },
+              "steps": {
+                "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+                "items": {
+                  "$ref": "#/$defs/NamedStep"
+                },
+                "type": "array"
               },
               "styles": {
                 "additionalProperties": {
@@ -3742,6 +3832,44 @@
                 ]
               }
             },
+            "type": "object"
+          },
+          "NamedStep": {
+            "description": "One named step.",
+            "properties": {
+              "auto_advance_ms": {
+                "description": "Go to the next step on its own this many milliseconds after the step\nis ready (its typing finished and its `wait` moves elapsed). The\nnative GIF/MP4 hold the step's frame this long instead of `--interval`.",
+                "format": "uint64",
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "step": {
+                "description": "The step this entry names (0 = the code alone). Explicit, so\nreordering the list or moving annotations never rebinds it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "title": {
+                "description": "Shown on the status line (`step 3/7 · Shared borrow`) and in `status`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "step"
+            ],
             "type": "object"
           },
           "OverrideValue": {
@@ -4143,7 +4271,7 @@
       }
     },
     {
-      "description": "Partial change: step, theme, padding, title, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
+      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
       "method": "scene.patch",
       "params": {
         "$defs": {
@@ -4174,6 +4302,44 @@
             },
             "type": "object"
           },
+          "NamedStep": {
+            "description": "One named step.",
+            "properties": {
+              "auto_advance_ms": {
+                "description": "Go to the next step on its own this many milliseconds after the step\nis ready (its typing finished and its `wait` moves elapsed). The\nnative GIF/MP4 hold the step's frame this long instead of `--interval`.",
+                "format": "uint64",
+                "minimum": 1,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "step": {
+                "description": "The step this entry names (0 = the code alone). Explicit, so\nreordering the list or moving annotations never rebinds it.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "title": {
+                "description": "Shown on the status line (`step 3/7 · Shared borrow`) and in `status`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "step"
+            ],
+            "type": "object"
+          },
           "ThemeName": {
             "oneOf": [
               {
@@ -4200,6 +4366,13 @@
             "items": true,
             "type": [
               "array",
+              "null"
+            ]
+          },
+          "loop": {
+            "description": "`loop` on or off (t-099).",
+            "type": [
+              "boolean",
               "null"
             ]
           },
@@ -4248,6 +4421,16 @@
             "minimum": 0,
             "type": [
               "integer",
+              "null"
+            ]
+          },
+          "steps": {
+            "description": "Named steps (t-099): the whole list, replaced (`[]` clears it).",
+            "items": {
+              "$ref": "#/$defs/NamedStep"
+            },
+            "type": [
+              "array",
               "null"
             ]
           },
@@ -5268,22 +5451,55 @@
         "type": "object"
       },
       "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
+          "id": {
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the status line says: `step 3/7 · Shared borrow`.",
+            "type": "string"
+          },
           "max_step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
           },
           "revision": {
+            "format": "uint64",
+            "minimum": 0,
             "type": "integer"
           },
           "step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
+          },
+          "title": {
+            "description": "Its title, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "step",
+          "max_step",
+          "revision",
+          "label"
+        ],
+        "title": "StepReply",
         "type": "object"
       }
     },
     {
-      "description": "Advances one step",
+      "description": "Advances one step (past the last one, back to step 0 when the document has `loop: true`)",
       "method": "step.next",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -5292,17 +5508,50 @@
         "type": "object"
       },
       "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
+          "id": {
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the status line says: `step 3/7 · Shared borrow`.",
+            "type": "string"
+          },
           "max_step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
           },
           "revision": {
+            "format": "uint64",
+            "minimum": 0,
             "type": "integer"
           },
           "step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
+          },
+          "title": {
+            "description": "Its title, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "step",
+          "max_step",
+          "revision",
+          "label"
+        ],
+        "title": "StepReply",
         "type": "object"
       }
     },
@@ -5316,17 +5565,131 @@
         "type": "object"
       },
       "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
+          "id": {
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the status line says: `step 3/7 · Shared borrow`.",
+            "type": "string"
+          },
           "max_step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
           },
           "revision": {
+            "format": "uint64",
+            "minimum": 0,
             "type": "integer"
           },
           "step": {
+            "format": "uint32",
+            "minimum": 0,
             "type": "integer"
+          },
+          "title": {
+            "description": "Its title, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
+        "required": [
+          "step",
+          "max_step",
+          "revision",
+          "label"
+        ],
+        "title": "StepReply",
+        "type": "object"
+      }
+    },
+    {
+      "description": "Jumps to a named step by `id` (or a step number), recomputed from step 0 as if walked there, its typing complete; an unknown id is `not_found`",
+      "method": "step.goto",
+      "params": {
+        "$defs": {
+          "StepRef": {
+            "anyOf": [
+              {
+                "format": "uint32",
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "description": "A step named by its id or by its number."
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `step.goto` (t-099).",
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/StepRef",
+            "description": "The `id` of a named step (`\"borrow\"`), or a step number (`3` or\n`\"3\"`: a number always means a step number)."
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "StepGotoParams",
+        "type": "object"
+      },
+      "result": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
+        "properties": {
+          "id": {
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "label": {
+            "description": "What the status line says: `step 3/7 · Shared borrow`.",
+            "type": "string"
+          },
+          "max_step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "revision": {
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "title": {
+            "description": "Its title, when it has one.",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "step",
+          "max_step",
+          "revision",
+          "label"
+        ],
+        "title": "StepReply",
         "type": "object"
       }
     },

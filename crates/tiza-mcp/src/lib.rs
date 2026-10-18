@@ -535,6 +535,14 @@ pub struct StepParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+pub struct GotoStepParams {
+    #[schemars(
+        description = "The `id` of a named step (the document's `steps` list), or a step number as text (\"3\")."
+    )]
+    pub id: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct FocusParams {
     #[schemars(description = "First focused line; omit both to clear the focus")]
     pub from_line: Option<u32>,
@@ -693,12 +701,19 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the existing annotations (id, step, kind and where they are). An annotation of a linked file ends with its file in parentheses; one hidden by a patch says (unanchored)."
+        description = "Lists the existing annotations (id, step, kind and where they are), after a first line with the current step as the status line shows it (`step 3/7 · Shared borrow` on a named step). An annotation of a linked file ends with its file in parentheses; one hidden by a patch says (unanchored)."
     )]
     async fn list_annotations(
         &self,
         Parameters(_p): Parameters<Empty>,
     ) -> Result<CallToolResult, McpError> {
+        let st = self.call("status", json!({})).await?;
+        let header = st
+            .get("step_label")
+            .and_then(|l| l.as_str())
+            .filter(|l| !l.is_empty())
+            .map(|l| format!("# {l}\n"))
+            .unwrap_or_default();
         let v = self.call("scene.list", json!({})).await?;
         let lines: Vec<String> = v
             .as_array()
@@ -708,11 +723,14 @@ impl TizaServer {
                     .collect()
             })
             .unwrap_or_default();
-        Ok(text(if lines.is_empty() {
-            "(no annotations)".to_string()
-        } else {
-            lines.join("\n")
-        }))
+        Ok(text(format!(
+            "{header}{}",
+            if lines.is_empty() {
+                "(no annotations)".to_string()
+            } else {
+                lines.join("\n")
+            }
+        )))
     }
 
     #[tool(
@@ -1007,7 +1025,21 @@ impl TizaServer {
         )))
     }
 
-    #[tool(description = "Advances one step in the presentation.")]
+    #[tool(
+        description = "Jumps to a named step by its `id` (the document's `steps` list) or a step number: the code is recomputed from step 0 with every move up to that step, as if the presenter walked there, and its typing lands complete. An unknown id fails with not_found. Returns the step, its id/title and `label` (`step 3/7 · Shared borrow`)."
+    )]
+    async fn goto_step(
+        &self,
+        Parameters(p): Parameters<GotoStepParams>,
+    ) -> Result<CallToolResult, McpError> {
+        Ok(text(pretty(
+            &self.call("step.goto", json!({"id": p.id})).await?,
+        )))
+    }
+
+    #[tool(
+        description = "Advances one step in the presentation (past the last one, back to step 0 when the document has `loop: true`)."
+    )]
     async fn next_step(
         &self,
         Parameters(_p): Parameters<Empty>,
@@ -1380,7 +1412,7 @@ impl ServerHandler for TizaServer {
                  language-agnostic marks such as move, read, write, drop, scope) to explain it on video. Recommended flow: \
                  1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
                  3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text; \
-                 4) group into steps with `step` and advance with `next_step`; 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
+                 4) group into steps with `step` and advance with `next_step` (or `goto_step` to a named step); 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
                  Resources `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` give the same views without a tool call. \
                  Keep labels short: they are drawn in a ~100-column terminal.",
             )

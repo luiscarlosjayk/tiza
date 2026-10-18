@@ -86,6 +86,20 @@ pub struct Document {
     /// config file's and under `:theme`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme_overrides: Option<crate::theme::ThemeOverrides>,
+    /// Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and
+    /// an optional `auto_advance_ms`, bound to a step by its explicit
+    /// `step` number (never by the position in the list, so moving an
+    /// annotation to another step shifts nothing). Sparse; saved sorted by
+    /// `step`. Automation for recordings and booth loops, not speaker tools.
+    #[serde(
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "crate::steps::serialize_sorted"
+    )]
+    pub steps: Vec<crate::steps::NamedStep>,
+    /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
+    #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
+    pub looping: bool,
 }
 
 fn yes() -> bool {
@@ -757,6 +771,8 @@ impl Document {
             numbers: true,
             margin: None,
             theme_overrides: None,
+            steps: Vec::new(),
+            looping: false,
         }
     }
 
@@ -1706,6 +1722,7 @@ impl Document {
         if self.step > self.max_step() {
             self.step = self.max_step();
         }
+        crate::steps::normalize(&mut self.steps)?;
         // Embedded linked files (`views`) become loaded views; a file read
         // from disk by the loader (`fs::load_views`) is already there.
         for (file, code) in &self.views {

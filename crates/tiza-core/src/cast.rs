@@ -207,8 +207,15 @@ pub fn to_vhs_tape(
     let _ = writeln!(out, "Sleep 1s");
     let _ = writeln!(out, "Show");
     let _ = writeln!(out);
+    // A step with `auto_advance_ms` (t-099) moves on by itself in the real
+    // TUI: the tape holds it for its typing plus that time and sends no
+    // `n` for the next step (a key there would skip one).
+    let hold = |step: u32| match doc.auto_advance_ms(step) {
+        Some(ms) => format_secs((doc.typing_ms_at(step) + ms) as f64 / 1000.0),
+        None => step_sleep(doc, step, opts.interval),
+    };
     let _ = writeln!(out, "# step {first}");
-    let _ = writeln!(out, "Sleep {sleep}");
+    let _ = writeln!(out, "Sleep {}", hold(first));
     for step in (first + 1)..=last {
         let typing = doc.typing_ms_at(step);
         if typing > 0 {
@@ -216,8 +223,12 @@ pub fn to_vhs_tape(
         } else {
             let _ = writeln!(out, "# step {step}");
         }
-        let _ = writeln!(out, "Type \"n\"");
-        let _ = writeln!(out, "Sleep {}", step_sleep(doc, step, opts.interval));
+        if doc.auto_advance_ms(step - 1).is_some() {
+            let _ = writeln!(out, "# (auto-advance from step {})", step - 1);
+        } else {
+            let _ = writeln!(out, "Type \"n\"");
+        }
+        let _ = writeln!(out, "Sleep {}", hold(step));
     }
     // The last step stays one more interval (2× in all) before the tape
     // ends, so the GIF loop does not jump back to step 0 right away.

@@ -659,6 +659,61 @@ pub struct StepParams {
     pub step: u32,
 }
 
+/// Parameters of `step.goto` (t-099).
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StepGotoParams {
+    /// The `id` of a named step (`"borrow"`), or a step number (`3` or
+    /// `"3"`: a number always means a step number).
+    pub id: StepRef,
+}
+
+/// A step named by its id or by its number.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(untagged)]
+pub enum StepRef {
+    Number(u32),
+    Id(String),
+}
+
+impl StepRef {
+    pub fn as_text(&self) -> String {
+        match self {
+            StepRef::Number(n) => n.to_string(),
+            StepRef::Id(s) => s.clone(),
+        }
+    }
+}
+
+/// Result of `step.set`, `step.next`, `step.prev` and `step.goto`.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StepReply {
+    pub step: u32,
+    pub max_step: u32,
+    pub revision: u64,
+    /// The `id` of the step reached, when `steps` names it (t-099).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    /// Its title, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// What the status line says: `step 3/7 · Shared borrow`.
+    pub label: String,
+}
+
+impl StepReply {
+    pub fn of(doc: &Document, revision: u64) -> Self {
+        let named = doc.named_step(doc.step);
+        StepReply {
+            step: doc.step,
+            max_step: doc.max_step(),
+            revision,
+            id: named.and_then(|n| n.id.clone()),
+            title: named.and_then(|n| n.title.clone()),
+            label: doc.step_label(doc.step),
+        }
+    }
+}
+
 /// Response of `scene.get`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Scene {
@@ -715,6 +770,12 @@ pub struct PatchParams {
     /// `{"id": "a1", "deleted": true}` removes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Value>>,
+    /// Named steps (t-099): the whole list, replaced (`[]` clears it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub steps: Option<Vec<crate::steps::NamedStep>>,
+    /// `loop` on or off (t-099).
+    #[serde(default, rename = "loop", skip_serializing_if = "Option::is_none")]
+    pub looping: Option<bool>,
 }
 
 /// Distinguishes an absent field (`None`) from an explicit `null`
@@ -771,9 +832,25 @@ pub struct Status {
     pub annotations: usize,
     pub step: u32,
     pub max_step: u32,
+    /// The `id` and `title` of the current step, when `steps` names it
+    /// (t-099); `step_label` is what the status line shows
+    /// (`step 3/7 · Shared borrow`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_title: Option<String>,
+    #[serde(default)]
+    pub step_label: String,
+    /// `auto_advance_ms` of the current step, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auto_advance_ms: Option<u64>,
+    /// The document loops: past the last step comes step 0.
+    #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
+    pub looping: bool,
     pub cols: u16,
     pub rows: u16,
-    /// Human-readable warnings about the viewport (small terminal, clipped code).
+    /// Human-readable warnings about the viewport (small terminal, clipped
+    /// code) and the document (a `steps` entry past the last step).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
     /// Supervised mode: mutations wait for the presenter's approval.
@@ -865,7 +942,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.patch",
-        "Partial change: step, theme, padding, title, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
+        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
     ),
     (
         "move.add",
@@ -880,8 +957,15 @@ pub const METHODS: &[(&str, &str)] = &[
         "One entry per move with its index, summary and fields; plus the ids unanchored at the current step and the view shown (`file`, `first_line`, `last_line`)",
     ),
     ("step.set", "Sets the current presentation step"),
-    ("step.next", "Advances one step"),
+    (
+        "step.next",
+        "Advances one step (past the last one, back to step 0 when the document has `loop: true`)",
+    ),
     ("step.prev", "Goes back one step"),
+    (
+        "step.goto",
+        "Jumps to a named step by `id` (or a step number), recomputed from step 0 as if walked there, its typing complete; an unknown id is `not_found`",
+    ),
     (
         "focus.set",
         "Dims everything outside `from_line..to_line`; without lines, clears the focus",

@@ -17,7 +17,7 @@ use tiza_core::{Theme, ThemeName};
 #[derive(Parser)]
 #[command(name = "tiza", version = tiza_core::VERSION_LONG, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
 #[command(
-    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza mcp                       MCP server for agents\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
+    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
 )]
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`), `.tiza` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
@@ -216,7 +216,7 @@ enum Cmd {
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
-        /// .gif/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long)
+        /// .gif/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long). In a .gif/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
         #[arg(long, default_value_t = 2.0)]
         interval: f64,
         /// .gif/.mp4/.cast/.tape: start at the first annotated step instead of step 0 (code only)
@@ -235,6 +235,15 @@ enum Cmd {
     Scene {
         #[command(subcommand)]
         cmd: SceneCmd,
+    },
+    /// Go to the next step of the live instance (step 0 after the last one when the document loops); prints `step N/M · title`
+    Next,
+    /// Go to the previous step of the live instance
+    Prev,
+    /// Jump the live instance to a named step (`steps` in the .tiza) or a step number, as if walked there from step 0
+    Goto {
+        /// The `id` of a named step, or a step number
+        id: String,
     },
     /// Call a raw local API method: `tiza api status`, `tiza api annotation.add '{...}'`
     Api {
@@ -457,6 +466,11 @@ fn real_main() -> anyhow::Result<()> {
                     }
                 }
             }
+            // A `steps` entry past the last step is kept, never dropped in
+            // silence (t-099).
+            for w in doc.step_warnings() {
+                eprintln!("tiza: {w}");
+            }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             let l = layout(
                 &doc,
@@ -478,16 +492,26 @@ fn real_main() -> anyhow::Result<()> {
                 Format::Ansi => l.canvas.to_ansi().into_bytes(),
                 Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
                 Format::Gif | Format::Mp4 | Format::Webm => {
-                    let frames = tiza_core::anim::frames(
-                        &doc,
-                        &theme,
-                        &tiza_core::anim::AnimOptions {
-                            interval,
-                            width,
-                            line_numbers,
-                            from_zero: !skip_zero,
-                        },
-                    );
+                    let anim_opts = tiza_core::anim::AnimOptions {
+                        interval,
+                        width,
+                        line_numbers,
+                        from_zero: !skip_zero,
+                    };
+                    let frames = tiza_core::anim::frames(&doc, &theme, &anim_opts);
+                    // Which steps the document timed itself (t-099).
+                    let timed = tiza_core::anim::timed_steps(&doc, &anim_opts);
+                    let timed_note = match timed.as_slice() {
+                        [] => String::new(),
+                        [one] => format!(", step {one} timed by its auto_advance_ms"),
+                        many => format!(
+                            ", steps {} timed by their auto_advance_ms",
+                            many.iter()
+                                .map(|s| s.to_string())
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    };
                     let svg_opts = tiza_export::SvgOptions {
                         font_size,
                         margin_cells: margin,
@@ -514,7 +538,7 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the GIF")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frames, {}×{} px, {:.1} s per loop, {} colours{}",
+                            "wrote {out} ({} bytes): {} frames, {}×{} px, {:.1} s per loop, {} colours{}{timed_note}",
                             bytes.len(),
                             report.frames,
                             report.width,
@@ -530,7 +554,7 @@ fn real_main() -> anyhow::Result<()> {
                         return Ok(());
                     }
                     let bytes = encode_video(&frames, &theme, &svg_opts, &png_opts, format, &out)?;
-                    eprintln!("wrote {out} ({bytes} bytes)");
+                    eprintln!("wrote {out} ({bytes} bytes){timed_note}");
                     return Ok(());
                 }
                 Format::Cast | Format::Tape => {
@@ -601,6 +625,30 @@ fn real_main() -> anyhow::Result<()> {
                     _ => {}
                 }
             }
+            Ok(())
+        }
+        Some(cmd @ (Cmd::Next | Cmd::Prev | Cmd::Goto { .. })) => {
+            // Automation for scripts and editor tasks (t-099): the same
+            // socket as `tiza api`, no JSON to quote; no instance → exit 1.
+            let (method, params) = match cmd {
+                Cmd::Next => ("step.next", serde_json::json!({})),
+                Cmd::Prev => ("step.prev", serde_json::json!({})),
+                Cmd::Goto { id } => ("step.goto", serde_json::json!({"id": id})),
+                _ => unreachable!(),
+            };
+            let resp = call(&socket_path, method, params)?;
+            let label = resp
+                .get("label")
+                .and_then(|l| l.as_str())
+                .map(String::from)
+                .unwrap_or_else(|| {
+                    format!(
+                        "step {}/{}",
+                        resp.get("step").and_then(|v| v.as_u64()).unwrap_or(0),
+                        resp.get("max_step").and_then(|v| v.as_u64()).unwrap_or(0)
+                    )
+                });
+            println!("{label}");
             Ok(())
         }
         Some(Cmd::Mcp) => {

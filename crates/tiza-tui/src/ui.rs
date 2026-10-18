@@ -643,7 +643,17 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         Span::styled(" ╭▶ ", accent),
         Span::styled(mode, accent),
         Span::styled(
-            format!("  step {}/{}", app.doc.step, app.doc.max_step()),
+            // `step 3/7 · Shared borrow` on a named step (t-099); a long
+            // title is cut so the rest of the bar keeps its room.
+            match app.doc.step_title(app.doc.step) {
+                Some(t) => format!(
+                    "  step {}/{} · {}",
+                    app.doc.step,
+                    app.doc.max_step(),
+                    fit_message(t, 32)
+                ),
+                None => format!("  step {}/{}", app.doc.step, app.doc.max_step()),
+            },
             bar,
         ),
         Span::styled(format!("  {}×{}", app.size.0, app.size.1), muted),
@@ -930,6 +940,7 @@ fn help_lines() -> Vec<String> {
         "  :redact L | :redact L:ANCHOR [keep=N] | select + r   mask a secret everywhere (••••••••); :redact off|on (author only); :redact auto [--dry]",
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
+        "  :goto ID   jump to a named step (`steps` in the .tiza; `tiza goto ID` from a script)",
         "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
         "  :focus A-B | :focus     :theme dark|light     :lang rs | :lang auto     :title text",
         "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",

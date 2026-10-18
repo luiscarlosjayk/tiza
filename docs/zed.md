@@ -51,6 +51,20 @@ Shortcut in `~/.config/zed/keymap.json`:
 
 **Rust files need a Cargo workspace.** In a Rust buffer Zed resolves `$ZED_FILE` / `$ZED_ROW` through rust-analyzer, and when it fails to find a workspace («Failed to discover workspace») every task that uses them is hidden from the picker and the shortcut does nothing, with no error. Open a loose `.rs` file from a crate (a `Cargo.toml` next to it is enough); any other language works from anywhere.
 
+## Driving the demo from Zed (t-099)
+
+`tiza next`, `tiza prev` and `tiza goto ID` step the Tiza instance that is running (its session socket; add `--session NAME` for another), so a Zed task can advance the demo while Zed shows the code. **Not yet run in Zed** (written for t-099; check them before relying on them in a take):
+
+```json
+[
+  { "label": "Tiza: next step", "command": "tiza", "args": ["next"], "reveal": "never", "hide": "on_success" },
+  { "label": "Tiza: previous step", "command": "tiza", "args": ["prev"], "reveal": "never", "hide": "on_success" },
+  { "label": "Tiza: go to «borrow»", "command": "tiza", "args": ["goto", "borrow"], "reveal": "never", "hide": "on_success" }
+]
+```
+
+With nothing listening they exit 1 with `no Tiza instance is listening on …`, which Zed shows in the task's terminal. Bind them like any task (`"cmd-alt-right": ["task::Spawn", {"task_name": "Tiza: next step"}]`); pairing one with an editor action of your own is the ADR 0007 §6 idea.
+
 ## Gotchas
 
 - The task picker is `task: spawn` (option-shift-t on macOS); the command palette does not list tasks. Tasks that use `$ZED_SELECTED_TEXT` only appear while there is selected text.

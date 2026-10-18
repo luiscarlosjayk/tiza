@@ -19,6 +19,9 @@ pub enum Error {
     TextNotFound(String),
     #[error("{0}")]
     Invalid(String),
+    /// `step.goto` / `tiza goto` with an id no named step has (t-099).
+    #[error("{0}")]
+    StepNotFound(String),
     #[error(".tiza file with schema {found}; this version understands up to {supported}")]
     UnsupportedSchema { found: u32, supported: u32 },
     #[error(transparent)]
@@ -32,7 +35,7 @@ impl Error {
     pub fn code(&self) -> &'static str {
         match self {
             Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
-            Error::NotFound(_) => "not_found",
+            Error::NotFound(_) | Error::StepNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
             Error::TextNotFound(_) => "text_not_found",
             Error::Invalid(_) => "invalid_argument",

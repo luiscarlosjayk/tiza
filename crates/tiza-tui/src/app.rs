@@ -14,8 +14,8 @@ use tiza_core::model::{
 use tiza_core::moves::{self, Move};
 use tiza_core::protocol::{
     AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed, MoveMutated, Mutated,
-    PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status, StepParams,
-    UpdateParams, Where,
+    PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status, StepGotoParams,
+    StepParams, StepReply, UpdateParams, Where,
 };
 use tiza_core::theme::Theme;
 use tiza_core::{Error, fs};
@@ -172,6 +172,10 @@ pub struct App {
     pub follow: Option<crate::follow::Follow>,
     /// Typing animation of the step just reached (t-098).
     pub typing: Option<TypingState>,
+    /// When the current step became ready (reached, its typing finished
+    /// and its `wait` moves elapsed): the `auto_advance_ms` countdown runs
+    /// from here (t-099). `None` while typing or after it fired.
+    pub step_ready_at: Option<std::time::Instant>,
     /// Follow the host terminal's appearance (t-119): light or dark from
     /// OSC 11, re-asked on resize. Off once the document, `--theme`, `t`
     /// or `:theme NAME` fixes a theme; `:theme auto` turns it back on.
@@ -242,6 +246,7 @@ impl App {
             overlay_scroll: 0,
             follow: None,
             typing: None,
+            step_ready_at: Some(std::time::Instant::now()),
         };
         app.rebuild_theme();
         app
@@ -846,6 +851,7 @@ impl App {
         let other = doc.source.path != self.doc.source.path;
         self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
+        self.step_ready_at = Some(std::time::Instant::now());
         match self.doc.theme {
             Some(t) => self.set_theme_name(t, true),
             None => self.rebuild_theme(),
@@ -912,6 +918,13 @@ impl App {
         if let Some(t) = p.title {
             d.title = t.map(|t| t.trim().to_string()).filter(|t| !t.is_empty());
         }
+        if let Some(mut steps) = p.steps {
+            tiza_core::steps::normalize(&mut steps)?;
+            d.steps = steps;
+        }
+        if let Some(l) = p.looping {
+            d.looping = l;
+        }
         if let Some(pad) = p.padding {
             d.padding = pad;
         }
@@ -933,6 +946,10 @@ impl App {
             d.step = d.max_step();
         }
         self.history.record_with_step(&self.doc, "scene.patch");
+        // A new `auto_advance_ms` counts from now, not from the arrival.
+        if d.steps != self.doc.steps && self.typing.is_none() {
+            self.step_ready_at = Some(std::time::Instant::now());
+        }
         self.doc = d;
         match self.doc.theme {
             Some(t) => self.set_theme_name(t, true),
@@ -969,23 +986,78 @@ impl App {
         if self.step_to(step) {
             return String::new();
         }
-        format!("step {}/{}", self.doc.step, self.doc.max_step())
+        self.doc.step_label(self.doc.step)
     }
 
     pub fn set_step(&mut self, step: u32) {
         self.step_to(step);
     }
 
+    /// `n`, `→`, `:next`, `step.next` and the auto-advance: one step on, or
+    /// back to step 0 past the last one when the document loops (t-099).
+    pub fn next_step(&mut self) -> bool {
+        match self.doc.next_step_from(self.doc.step) {
+            Some(0) => self.step_to_with(0, true),
+            Some(n) => self.step_to(n),
+            // At the last step: as before, nothing moves.
+            None => self.step_to(self.doc.step + 1),
+        }
+    }
+
+    /// `step.goto`, MCP `goto_step`, `tiza goto ID`, `:goto ID` (t-099):
+    /// the step a named id (or a number) names, landed on exactly as `n`
+    /// would after a full replay — the document is recomputed from step 0
+    /// (moves, views, redacts), the typing of that step complete, and the
+    /// redact notices of every step on the way said once. Returns the step.
+    pub fn goto_step(&mut self, id: &str) -> Result<u32, Error> {
+        let s = self.doc.resolve_step(id)?;
+        self.step_to_with(s, true);
+        Ok(self.doc.step)
+    }
+
+    /// The `auto_advance_ms` countdown (t-099): when the current step has
+    /// one and has been ready that long, go to the next step. Deferred while
+    /// the command line or an overlay is open (it fires once they close),
+    /// never while a typed move or a `wait` is still running. `true` when
+    /// the screen changed.
+    pub fn auto_advance_tick(&mut self, now: std::time::Instant) -> bool {
+        if self.typing.is_some()
+            || matches!(self.mode, Mode::Command(_))
+            || self.overlay != Overlay::None
+        {
+            return false;
+        }
+        let (Some(ms), Some(ready)) = (self.doc.auto_advance_ms(self.doc.step), self.step_ready_at)
+        else {
+            return false;
+        };
+        if now.saturating_duration_since(ready) < std::time::Duration::from_millis(ms) {
+            return false;
+        }
+        // Fires once per arrival: a last step without `loop` stays put.
+        self.step_ready_at = None;
+        let before = (self.doc.step, self.revision);
+        self.next_step();
+        (self.doc.step, self.revision) != before
+    }
+
     /// Goes to `step` (moves applied, typing started going forward one).
     /// `true` when it said something loud on the bar: a move that does not
     /// apply, or a redact notice (t-140).
     fn step_to(&mut self, step: u32) -> bool {
+        self.step_to_with(step, false)
+    }
+
+    /// [`App::step_to`]; `jump` (goto, the loop back to step 0) lands with
+    /// the step's typing complete and says the redact notices of every step
+    /// up to it, as walking there would have.
+    fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
         self.finish_typing();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
         if s != self.doc.step {
-            let forward_one = s == self.doc.step + 1;
+            let forward_one = s == self.doc.step + 1 && !jump;
             self.doc.step = s;
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
@@ -1007,7 +1079,7 @@ impl App {
                 }
                 // A move of this step could not carry a redact with its
                 // text (t-140): loud, before anything is recorded.
-                let notices = self.doc.redact_notices_at(s, false);
+                let notices = self.doc.redact_notices_at(s, jump);
                 if !notices.is_empty() {
                     self.redact_alert(notices.join(" · "));
                     loud = true;
@@ -1015,6 +1087,8 @@ impl App {
             }
             self.clamp_cursor();
             self.revision += 1;
+            // The auto-advance countdown starts now, or when the typing ends.
+            self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
         }
         loud
     }
@@ -1078,6 +1152,8 @@ impl App {
     pub fn finish_typing(&mut self) {
         if let Some(t) = self.typing.take() {
             self.doc.code = t.plan.full;
+            // The step is ready: its auto-advance countdown starts (t-099).
+            self.step_ready_at = Some(std::time::Instant::now());
         }
     }
 
@@ -2133,6 +2209,7 @@ impl App {
         "embed",
         "focus",
         "export",
+        "goto",
         "help",
         "hl",
         "label",
@@ -2552,7 +2629,23 @@ impl App {
                         _ => Err(Error::Invalid("usage: :step N  |  :step ID N".into())),
                     }
                 }
-                "next" => Ok(self.step_message(self.doc.step + 1)),
+                "next" => {
+                    if self.next_step() {
+                        Ok(String::new())
+                    } else {
+                        Ok(self.doc.step_label(self.doc.step))
+                    }
+                }
+                "goto" => {
+                    let id = rest.trim();
+                    if id.is_empty() {
+                        return Err(Error::Invalid(
+                            "usage: :goto ID  (a named step, or a step number)".into(),
+                        ));
+                    }
+                    self.goto_step(id)?;
+                    Ok(self.doc.step_label(self.doc.step))
+                }
                 "prev" => Ok(self.step_message(self.doc.step.saturating_sub(1))),
                 "focus" | "f" => {
                     if rest.is_empty() {
@@ -4219,15 +4312,20 @@ impl App {
             "step.set" => {
                 let p: StepParams = parse(params)?;
                 self.set_step(p.step);
-                json!({"step": self.doc.step, "max_step": self.doc.max_step(), "revision": self.revision})
+                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.next" => {
-                self.set_step(self.doc.step + 1);
-                json!({"step": self.doc.step, "max_step": self.doc.max_step(), "revision": self.revision})
+                self.next_step();
+                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.prev" => {
                 self.set_step(self.doc.step.saturating_sub(1));
-                json!({"step": self.doc.step, "max_step": self.doc.max_step(), "revision": self.revision})
+                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+            }
+            "step.goto" => {
+                let p: StepGotoParams = parse(params)?;
+                self.goto_step(&p.id.as_text())?;
+                serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "render.text" => {
                 let width = match params.get("width").and_then(|w| w.as_u64()) {
@@ -4301,9 +4399,24 @@ impl App {
             annotations: self.doc.annotations.len(),
             step: self.doc.step,
             max_step: self.doc.max_step(),
+            step_id: self
+                .doc
+                .named_step(self.doc.step)
+                .and_then(|n| n.id.clone()),
+            step_title: self
+                .doc
+                .named_step(self.doc.step)
+                .and_then(|n| n.title.clone()),
+            step_label: self.doc.step_label(self.doc.step),
+            auto_advance_ms: self.doc.auto_advance_ms(self.doc.step),
+            looping: self.doc.looping,
             cols: self.size.0,
             rows: self.size.1,
-            warnings: self.viewport_warnings(),
+            warnings: {
+                let mut w = self.viewport_warnings();
+                w.extend(self.doc.step_warnings());
+                w
+            },
             supervised: self.supervised,
             autosave: self.autosave,
             pending: self.proposals.len(),
@@ -4675,6 +4788,15 @@ pub fn proposal_summary(req: &Request) -> String {
         "move.delete" => format!("delete move #{}", n("index").unwrap_or(0)),
         "step.set" => format!("go to step {}", n("step").unwrap_or(0)),
         "step.next" => "next step".into(),
+        "step.goto" => format!(
+            "go to step {}",
+            p.get("id")
+                .map(|v| v
+                    .as_str()
+                    .map(String::from)
+                    .unwrap_or_else(|| v.to_string()))
+                .unwrap_or_default()
+        ),
         "step.prev" => "previous step".into(),
         "focus.set" => "change the focus".into(),
         "theme.set" => format!("theme {}", s("theme")),

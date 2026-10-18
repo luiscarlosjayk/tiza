@@ -13,7 +13,8 @@ use crate::theme::Theme;
 #[derive(Debug, Clone)]
 pub struct AnimOptions {
     /// Seconds each step stays on screen (the last one twice as long, so a
-    /// loop does not cut the end short).
+    /// loop does not cut the end short). A step with `auto_advance_ms`
+    /// (t-099) stays that long instead: the document's own timing.
     pub interval: f64,
     pub width: usize,
     pub line_numbers: bool,
@@ -42,6 +43,15 @@ pub struct Frame {
     /// An intermediate frame of a typing animation (the step's annotations
     /// are not drawn yet).
     pub typing: bool,
+}
+
+/// Steps whose frame holds for their own `auto_advance_ms` instead of the
+/// interval (t-099), for the export's summary line.
+pub fn timed_steps(doc: &Document, opts: &AnimOptions) -> Vec<u32> {
+    let first = if opts.from_zero { 0 } else { 1 };
+    (first..=doc.max_step().max(first))
+        .filter(|s| doc.auto_advance_ms(*s).is_some())
+        .collect()
 }
 
 /// The frames of the take, in order, padded to the tallest one.
@@ -95,7 +105,14 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 });
             }
         }
-        let delay = if step == last { hold * 2 } else { hold };
+        // The document's own timing first (t-099, decided by Luis
+        // 2026-10-18): a named step's `auto_advance_ms` is how long its
+        // frame stays, after its typed frames, as in the TUI.
+        let delay = match doc.auto_advance_ms(step) {
+            Some(ms) => ms,
+            None if step == last => hold * 2,
+            None => hold,
+        };
         out.push(Frame {
             step,
             canvas: lay(doc, step, false),
@@ -165,5 +182,16 @@ mod tests {
         assert!(f[3].canvas.to_plain_text().contains("hello"));
         assert!(!f[1].canvas.to_plain_text().contains("fn b()"));
         assert!(f[2].canvas.to_plain_text().contains("fn b()"));
+        // t-099: `auto_advance_ms` is the step's duration, after its typing.
+        d.steps = vec![crate::steps::NamedStep {
+            step: 1,
+            id: Some("b".into()),
+            title: None,
+            auto_advance_ms: Some(3000),
+        }];
+        let f = frames(&d, &Theme::dark(), &AnimOptions::default());
+        let delays: Vec<u64> = f.iter().map(|f| f.delay_ms).collect();
+        assert_eq!(delays, vec![2000, 50, 3000, 4000]);
+        assert_eq!(timed_steps(&d, &AnimOptions::default()), vec![1]);
     }
 }

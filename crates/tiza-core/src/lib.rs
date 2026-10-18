@@ -21,6 +21,7 @@ pub mod protocol;
 pub mod redact;
 pub mod schema;
 pub mod socket;
+pub mod steps;
 pub mod theme;
 
 pub use error::Error;

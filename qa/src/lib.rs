@@ -104,6 +104,7 @@ impl Live {
                 app.follow_tick();
                 app.expire_proposals();
                 app.typing_tick();
+                app.auto_advance_tick(std::time::Instant::now());
                 app.present_message_tick(std::time::Instant::now());
                 match rx.recv_timeout(std::time::Duration::from_millis(10)) {
                     Ok(job) => job(&mut app),

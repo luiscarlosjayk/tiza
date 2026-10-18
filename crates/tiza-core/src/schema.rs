@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::model::{Document, MarkStyle};
 use crate::protocol::{
     AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveMutated, Mutated, PatchParams,
-    PutParams, Scene, SceneChanged, Status, StepParams, UpdateParams,
+    PutParams, Scene, SceneChanged, Status, StepGotoParams, StepParams, StepReply, UpdateParams,
 };
 
 /// Parameters of `supervise.set`.
@@ -155,7 +155,7 @@ pub fn document_schema() -> Value {
 pub fn api_schema() -> ApiSchema {
     let string = || serde_json::json!({"type": "string"});
     let text = || serde_json::json!({"type": "object", "properties": {"text": {"type": "string"}}});
-    let step_result = || serde_json::json!({"type": "object", "properties": {"step": {"type": "integer"}, "max_step": {"type": "integer"}, "revision": {"type": "integer"}}});
+    let step_result = schema::<StepReply>;
     let methods = METHODS
         .iter()
         .map(|(m, d)| {
@@ -180,6 +180,7 @@ pub fn api_schema() -> ApiSchema {
                 "move.list" => (schema::<NoParams>(), schema::<MoveList>()),
                 "step.set" => (schema::<StepParams>(), step_result()),
                 "step.next" | "step.prev" => (schema::<NoParams>(), step_result()),
+                "step.goto" => (schema::<StepGotoParams>(), step_result()),
                 "focus.set" => (schema::<FocusParams>(), serde_json::json!({"type": "object", "properties": {"focus": {}, "revision": {"type": "integer"}}})),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
                 "render.text" => (schema::<RenderParams>(), text()),

@@ -32,6 +32,8 @@ struct Snapshot {
     numbers: bool,
     margin: Option<u16>,
     theme_overrides: Option<crate::theme::ThemeOverrides>,
+    steps: Vec<crate::steps::NamedStep>,
+    looping: bool,
 }
 
 impl Snapshot {
@@ -54,6 +56,8 @@ impl Snapshot {
             numbers: doc.numbers,
             margin: doc.margin,
             theme_overrides: doc.theme_overrides.clone(),
+            steps: doc.steps.clone(),
+            looping: doc.looping,
         }
     }
 
@@ -75,6 +79,8 @@ impl Snapshot {
         doc.numbers = self.numbers;
         doc.margin = self.margin;
         doc.theme_overrides = self.theme_overrides;
+        doc.steps = self.steps;
+        doc.looping = self.looping;
         if let Some(step) = self.step {
             doc.step = step;
         }

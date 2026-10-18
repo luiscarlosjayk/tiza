@@ -87,6 +87,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }
+    // A `steps` entry past the last step is kept, never dropped in
+    // silence (t-099).
+    if let Some(w) = app.doc.step_warnings().first() {
+        app.error(w.clone());
+    }
     if opts.follow
         && let Err(e) = app.set_follow(true)
     {
@@ -218,6 +223,9 @@ fn event_loop(
             needs_draw = true;
         }
         if app.typing_tick() {
+            needs_draw = true;
+        }
+        if app.auto_advance_tick(std::time::Instant::now()) {
             needs_draw = true;
         }
         if app.present_message_tick(std::time::Instant::now()) {
@@ -455,7 +463,9 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('h') => app.move_col(-1),
         KeyCode::Char('l') => app.move_col(1),
         // ←/→ advance the steps (a clicker sends them); h/l move the column.
-        KeyCode::Right => app.set_step(app.doc.step + 1),
+        KeyCode::Right => {
+            app.next_step();
+        }
         KeyCode::Left => app.set_step(app.doc.step.saturating_sub(1)),
         KeyCode::Char('w') => app.word_forward(),
         KeyCode::Char('e') => app.word_end(),
@@ -472,7 +482,9 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('K') => app.move_cursor(-(app.size.1 as i64) / 2),
         KeyCode::Char('g') | KeyCode::Home => app.cursor_line = app.doc.source.first_line,
         KeyCode::Char('G') | KeyCode::End => app.cursor_line = app.doc.last_line(),
-        KeyCode::Char('n') | KeyCode::PageDown => app.set_step(app.doc.step + 1),
+        KeyCode::Char('n') | KeyCode::PageDown => {
+            app.next_step();
+        }
         KeyCode::Char('p') | KeyCode::PageUp => app.set_step(app.doc.step.saturating_sub(1)),
         KeyCode::Char('u') => app.undo(),
         KeyCode::Char('U') => app.redo(),

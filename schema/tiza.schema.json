@@ -667,6 +667,44 @@
       },
       "type": "object"
     },
+    "NamedStep": {
+      "description": "One named step.",
+      "properties": {
+        "auto_advance_ms": {
+          "description": "Go to the next step on its own this many milliseconds after the step\nis ready (its typing finished and its `wait` moves elapsed). The\nnative GIF/MP4 hold the step's frame this long instead of `--interval`.",
+          "format": "uint64",
+          "minimum": 1,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "What `step.goto {id}`, MCP `goto_step` and `tiza goto ID` jump to.\nUnique, no blanks, and not all digits (a number means a step number).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "step": {
+          "description": "The step this entry names (0 = the code alone). Explicit, so\nreordering the list or moving annotations never rebinds it.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "title": {
+          "description": "Shown on the status line (`step 3/7 · Shared borrow`) and in `status`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "step"
+      ],
+      "type": "object"
+    },
     "OverrideValue": {
       "anyOf": [
         {
@@ -1006,6 +1044,10 @@
       "$ref": "#/$defs/CodeSource",
       "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
     },
+    "loop": {
+      "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
+      "type": "boolean"
+    },
     "margin": {
       "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
       "format": "uint16",
@@ -1068,6 +1110,13 @@
       "format": "uint32",
       "minimum": 0,
       "type": "integer"
+    },
+    "steps": {
+      "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+      "items": {
+        "$ref": "#/$defs/NamedStep"
+      },
+      "type": "array"
     },
     "styles": {
       "additionalProperties": {
