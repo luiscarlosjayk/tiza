@@ -41,8 +41,8 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
     assert!(text.starts_with("<svg xmlns="));
     assert_eq!(
         text.matches("@font-face").count(),
-        9,
-        "4 JetBrains Mono faces + symbols + 4 Tiza Serif faces (t-068)"
+        5,
+        "4 JetBrains Mono faces + symbols (the serif left in t-134)"
     );
     assert!(text.contains("<title>t-050 export"));
     assert!(text.contains("hot path"), "mark legend");

@@ -24,8 +24,10 @@ pub struct CellStyle {
     pub bold: bool,
     pub dim: bool,
     pub italic: bool,
-    /// Prose (notes, labels, legends): exporters may set it in the brand
-    /// serif instead of the monospace grid font. Terminals ignore it.
+    /// Prose (notes, labels, legends). The SVG exporter keeps a label's
+    /// leading mark glyphs in their own run so the words stay on the grid
+    /// (until t-134 it could also set the words in a brand serif).
+    /// Terminals ignore it.
     pub prose: bool,
 }
 

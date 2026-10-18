@@ -23,12 +23,6 @@ pub struct SvgOptions {
     pub embed_fonts: bool,
     /// Optional `<title>`.
     pub title: Option<String>,
-    /// Set notes, labels and legends in the brand serif (Tiza Serif, a
-    /// Libron subset, with a little letter-spacing) instead of the
-    /// monospace grid font. Code, boxes and arrows stay monospace. Off (the
-    /// default since t-068's review: the monospace reads better at 1080p):
-    /// everything monospace, as in the terminal.
-    pub brand_font: bool,
 }
 
 impl Default for SvgOptions {
@@ -39,7 +33,6 @@ impl Default for SvgOptions {
             radius: 12.0,
             embed_fonts: true,
             title: None,
-            brand_font: false,
         }
     }
 }
@@ -131,12 +124,15 @@ fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
     out
 }
 
-/// A prose run that starts with symbol glyphs (a mark's `━▶`, `╳`, `✎▶`)
-/// is split: the glyphs stay a monospace run on the grid, the words become
-/// the prose run. resvg picks one font for a whole run when some family has
-/// every glyph, so leaving `━▶ move` together would set the words in the
-/// monospace too.
-fn split_prose(runs: Vec<Run>) -> Vec<Run> {
+/// A label run (`CellStyle.prose`: notes, labels, legends) that starts with
+/// symbol glyphs (a mark's `━▶`, `╳`, `✎▶`) is split in two: the glyphs get
+/// their own run pinned to their cells and the words start on the next cell.
+/// Each run is stretched to its cells with `textLength`, and a glyph from the
+/// fallback font is not exactly one cell wide; in one run, the difference
+/// would be spread over the words and shift them off the grid. (Before t-134
+/// the words could also be set in the brand serif; the split stays because
+/// the exported image is the same as with it.)
+fn split_glyph_prefix(runs: Vec<Run>) -> Vec<Run> {
     let mut out = Vec::with_capacity(runs.len());
     for r in runs {
         if !r.style.prose {
@@ -185,7 +181,7 @@ fn split_prose(runs: Vec<Run>) -> Vec<Run> {
     out
 }
 
-/// Letters, digits, spaces and ASCII punctuation: what the serif sets.
+/// Letters, digits, spaces and ASCII punctuation: the words of a label.
 fn is_prose_char(c: char) -> bool {
     c.is_alphanumeric() || c == ' ' || (c.is_ascii_punctuation() && c != '|')
 }
@@ -229,22 +225,6 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         o.font_size
     );
     s.push_str(".b{font-weight:700}.i{font-style:italic}.d{opacity:.55}\n");
-    if o.brand_font {
-        // Prose keeps its natural width (no textLength): the serif is
-        // narrower than the grid and the margin has room to the right.
-        // Font size slightly up so the x-height matches the monospace, and
-        // some letter-spacing: Libron is tight at this size and the
-        // italics clump without it.
-        let _ = writeln!(
-            s,
-            ".p{{font-family:\"{}\",\"{}\",\"{}\",Georgia,\"Times New Roman\",serif;font-size:{:.2}px;letter-spacing:{:.3}em}}",
-            fonts::PROSE_FAMILY,
-            fonts::FAMILY,
-            fonts::SYMBOLS_FAMILY,
-            o.font_size * fonts::PROSE_SCALE,
-            fonts::PROSE_TRACKING
-        );
-    }
     s.push_str("</style>\n");
     // Background.
     let _ = writeln!(
@@ -277,7 +257,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let ascent = o.font_size * fonts::ASCENT_EM;
     for y in 0..canvas.height {
         let base_y = g.margin + y as f32 * g.cell_h + ascent;
-        for r in split_prose(runs(canvas, y)) {
+        for r in split_glyph_prefix(runs(canvas, y)) {
             if r.text.trim().is_empty() {
                 continue;
             }
@@ -291,28 +271,14 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
             if r.style.dim {
                 class.push_str("d ");
             }
-            let prose = o.brand_font && r.style.prose;
-            if prose {
-                class.push_str("p ");
-            }
-            if prose {
-                let _ = write!(
-                    s,
-                    r#"<text x="{:.2}" y="{:.2}" fill="{}""#,
-                    g.margin + r.x as f32 * g.cell_w,
-                    base_y,
-                    hex(r.style.fg.unwrap_or(theme.fg))
-                );
-            } else {
-                let _ = write!(
-                    s,
-                    r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
-                    g.margin + r.x as f32 * g.cell_w,
-                    base_y,
-                    r.cells as f32 * g.cell_w,
-                    hex(r.style.fg.unwrap_or(theme.fg))
-                );
-            }
+            let _ = write!(
+                s,
+                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
+                g.margin + r.x as f32 * g.cell_w,
+                base_y,
+                r.cells as f32 * g.cell_w,
+                hex(r.style.fg.unwrap_or(theme.fg))
+            );
             if !class.is_empty() {
                 let _ = write!(s, r#" class="{}""#, class.trim_end());
             }
