@@ -51,3 +51,72 @@ pub const FACES: &[Face] = &[
         data: include_bytes!("../assets/fonts/TizaSymbols.ttf"),
     },
 ];
+
+/// Index in [`FACES`] of the JetBrains Mono face for a text style.
+pub fn mono_face(bold: bool, italic: bool) -> usize {
+    match (bold, italic) {
+        (false, false) => 0,
+        (true, false) => 1,
+        (false, true) => 2,
+        (true, true) => 3,
+    }
+}
+
+/// Index in [`FACES`] of the symbols fallback.
+pub const SYMBOLS_FACE: usize = 4;
+
+/// Character maps of [`FACES`], in the same order, to ask which face draws a
+/// character (t-130: the SVG embeds only the faces a frame uses).
+pub struct Coverage {
+    maps: Vec<Option<skrifa::charmap::Charmap<'static>>>,
+}
+
+impl Coverage {
+    pub fn new() -> Self {
+        use skrifa::MetadataProvider as _;
+        Self {
+            maps: FACES
+                .iter()
+                .map(|f| skrifa::FontRef::new(f.data).ok().map(|r| r.charmap()))
+                .collect(),
+        }
+    }
+
+    /// Whether face `face` (an index in [`FACES`]) has a glyph for `ch`.
+    pub fn has(&self, face: usize, ch: char) -> bool {
+        self.maps
+            .get(face)
+            .and_then(Option::as_ref)
+            .and_then(|m| m.map(ch))
+            .is_some_and(|g| g.to_u32() != 0)
+    }
+}
+
+impl Default for Coverage {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn face_indexes_match_the_table() {
+        for (bold, italic) in [(false, false), (true, false), (false, true), (true, true)] {
+            let f = &FACES[mono_face(bold, italic)];
+            assert_eq!(f.family, FAMILY);
+            assert_eq!(f.weight == 700, bold);
+            assert_eq!(f.italic, italic);
+        }
+        assert_eq!(FACES[SYMBOLS_FACE].family, SYMBOLS_FAMILY);
+    }
+
+    #[test]
+    fn coverage_tells_the_symbols_the_mono_lacks() {
+        let c = Coverage::new();
+        assert!(c.has(0, 'a') && c.has(0, '─') && c.has(3, 'a'));
+        assert!(!c.has(0, '★') && c.has(SYMBOLS_FACE, '★'));
+    }
+}

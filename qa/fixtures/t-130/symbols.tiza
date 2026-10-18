@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "title": "t-130 symbols: a star the main font lacks",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": [
+    "fn main() {",
+    "    let s = 1; // ★ starred",
+    "}"
+  ],
+  "annotations": []
+}

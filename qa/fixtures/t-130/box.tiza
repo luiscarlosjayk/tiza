@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "title": "t-130 box: a box title (bold), no symbols",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": [
+    "fn main() {",
+    "    let s = String::from(\"hello\");",
+    "    println!(\"{s}\");",
+    "}"
+  ],
+  "annotations": [
+    { "id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 3, "label": "owner" }
+  ]
+}

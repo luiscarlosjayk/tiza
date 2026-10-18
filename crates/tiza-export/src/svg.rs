@@ -19,7 +19,9 @@ pub struct SvgOptions {
     /// Corner radius of the background, in px (0 for a plain rectangle).
     pub radius: f32,
     /// Embed the fonts as `@font-face` data URIs so the SVG renders the same
-    /// everywhere (~1.2 MB). Off, the SVG relies on the viewer's fonts.
+    /// everywhere: the regular face always, the bold/italic faces and the
+    /// symbols fallback only when the frame uses them (~0.37 MB each in
+    /// base64). Off, the SVG relies on the viewer's fonts.
     pub embed_fonts: bool,
     /// Optional `<title>`.
     pub title: Option<String>,
@@ -186,10 +188,98 @@ fn is_prose_char(c: char) -> bool {
     c.is_alphanumeric() || c == ' ' || (c.is_ascii_punctuation() && c != '|')
 }
 
+/// Which of [`fonts::FACES`] a frame draws with (t-130). The regular face is
+/// always in; bold, italic and bold italic only when a run with that style
+/// has text; the symbols fallback only when a character is missing from the
+/// run's JetBrains Mono face and the symbols font has it (the browser falls
+/// back per character, in the order of the `font-family` list).
+#[derive(Debug)]
+struct FacesUsed([bool; 5]);
+
+impl FacesUsed {
+    fn new() -> Self {
+        let mut used = [false; 5];
+        used[fonts::mono_face(false, false)] = true;
+        Self(used)
+    }
+
+    fn add(&mut self, coverage: &fonts::Coverage, r: &Run) {
+        let face = fonts::mono_face(r.style.bold, r.style.italic);
+        self.0[face] = true;
+        if !self.0[fonts::SYMBOLS_FACE]
+            && r.text
+                .chars()
+                .any(|ch| !coverage.has(face, ch) && coverage.has(fonts::SYMBOLS_FACE, ch))
+        {
+            self.0[fonts::SYMBOLS_FACE] = true;
+        }
+    }
+}
+
 /// Renders the canvas as a standalone SVG document.
 pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let g = geometry(canvas, o);
-    let mut s = String::with_capacity(64 * 1024);
+    // Text runs first: the `<style>` above them embeds only the faces they use.
+    let mut body = String::with_capacity(64 * 1024);
+    let coverage = o.embed_fonts.then(fonts::Coverage::new);
+    let mut used = FacesUsed::new();
+    // Cell backgrounds, merged per run.
+    for y in 0..canvas.height {
+        for r in runs(canvas, y) {
+            if let Some(bg) = r.style.bg
+                && bg != theme.bg
+            {
+                let _ = writeln!(
+                    body,
+                    r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}"/>"#,
+                    g.margin + r.x as f32 * g.cell_w,
+                    g.margin + y as f32 * g.cell_h,
+                    r.cells as f32 * g.cell_w,
+                    g.cell_h,
+                    hex(bg)
+                );
+            }
+        }
+    }
+    // Text runs.
+    let ascent = o.font_size * fonts::ASCENT_EM;
+    for y in 0..canvas.height {
+        let base_y = g.margin + y as f32 * g.cell_h + ascent;
+        for r in split_glyph_prefix(runs(canvas, y)) {
+            if r.text.trim().is_empty() {
+                continue;
+            }
+            if let Some(c) = &coverage {
+                used.add(c, &r);
+            }
+            let mut class = String::new();
+            if r.style.bold {
+                class.push_str("b ");
+            }
+            if r.style.italic {
+                class.push_str("i ");
+            }
+            if r.style.dim {
+                class.push_str("d ");
+            }
+            let _ = write!(
+                body,
+                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
+                g.margin + r.x as f32 * g.cell_w,
+                base_y,
+                r.cells as f32 * g.cell_w,
+                hex(r.style.fg.unwrap_or(theme.fg))
+            );
+            if !class.is_empty() {
+                let _ = write!(body, r#" class="{}""#, class.trim_end());
+            }
+            body.push_str(r#" xml:space="preserve">"#);
+            escape(&r.text, &mut body);
+            body.push_str("</text>\n");
+        }
+    }
+
+    let mut s = String::with_capacity(body.len() + if o.embed_fonts { 2 << 20 } else { 1024 });
     let _ = write!(
         s,
         r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}">"#,
@@ -202,10 +292,10 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         escape(t, &mut s);
         s.push_str("</title>\n");
     }
-    // Styles: font faces (optional) and the shared text attributes.
+    // Styles: font faces (optional, only those the runs use) and the shared text attributes.
     s.push_str("<style>\n");
     if o.embed_fonts {
-        for f in fonts::FACES {
+        for (f, _) in fonts::FACES.iter().zip(used.0).filter(|(_, u)| *u) {
             let b64 = base64::engine::general_purpose::STANDARD.encode(f.data);
             let _ = writeln!(
                 s,
@@ -235,58 +325,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         o.radius,
         hex(theme.bg)
     );
-    // Cell backgrounds, merged per run.
-    for y in 0..canvas.height {
-        for r in runs(canvas, y) {
-            if let Some(bg) = r.style.bg
-                && bg != theme.bg
-            {
-                let _ = writeln!(
-                    s,
-                    r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}"/>"#,
-                    g.margin + r.x as f32 * g.cell_w,
-                    g.margin + y as f32 * g.cell_h,
-                    r.cells as f32 * g.cell_w,
-                    g.cell_h,
-                    hex(bg)
-                );
-            }
-        }
-    }
-    // Text runs.
-    let ascent = o.font_size * fonts::ASCENT_EM;
-    for y in 0..canvas.height {
-        let base_y = g.margin + y as f32 * g.cell_h + ascent;
-        for r in split_glyph_prefix(runs(canvas, y)) {
-            if r.text.trim().is_empty() {
-                continue;
-            }
-            let mut class = String::new();
-            if r.style.bold {
-                class.push_str("b ");
-            }
-            if r.style.italic {
-                class.push_str("i ");
-            }
-            if r.style.dim {
-                class.push_str("d ");
-            }
-            let _ = write!(
-                s,
-                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
-                g.margin + r.x as f32 * g.cell_w,
-                base_y,
-                r.cells as f32 * g.cell_w,
-                hex(r.style.fg.unwrap_or(theme.fg))
-            );
-            if !class.is_empty() {
-                let _ = write!(s, r#" class="{}""#, class.trim_end());
-            }
-            s.push_str(r#" xml:space="preserve">"#);
-            escape(&r.text, &mut s);
-            s.push_str("</text>\n");
-        }
-    }
+    s.push_str(&body);
     s.push_str("</svg>\n");
     s
 }
@@ -328,6 +367,56 @@ mod tests {
         assert_eq!(g.cell_w, 9.6);
         assert!(svg.contains(&format!(r#"width="{}""#, g.width)));
         let embedded = to_svg(&c, &th, &SvgOptions::default());
-        assert!(embedded.matches("@font-face").count() == fonts::FACES.len());
+        assert_eq!(embedded.matches("@font-face").count(), 1, "regular only");
+    }
+
+    fn faces(svg: &str) -> Vec<String> {
+        svg.lines()
+            .filter(|l| l.starts_with("@font-face"))
+            .map(|l| l.split(";src:").next().unwrap().to_string())
+            .collect()
+    }
+
+    #[test]
+    fn only_the_faces_the_frame_draws_are_embedded() {
+        let th = Theme::dark();
+        let o = SvgOptions::default();
+        let face = |w: u16, style: &str| {
+            format!("@font-face{{font-family:\"JetBrains Mono\";font-weight:{w};font-style:{style}")
+        };
+        let symbols = "@font-face{font-family:\"Tiza Symbols\";font-weight:400;font-style:normal";
+        // Plain text: regular only.
+        let mut c = Canvas::new(20, 3);
+        c.put_str(0, 0, "let x = 1; ─│┌", CellStyle::new());
+        assert_eq!(faces(&to_svg(&c, &th, &o)), vec![face(400, "normal")]);
+        // A bold run brings the bold face; a bold run of spaces does not.
+        c.put_str(0, 1, "   ", CellStyle::new().bold());
+        assert_eq!(faces(&to_svg(&c, &th, &o)).len(), 1);
+        c.put_str(0, 1, "Title", CellStyle::new().bold());
+        assert_eq!(
+            faces(&to_svg(&c, &th, &o)),
+            vec![face(400, "normal"), face(700, "normal")]
+        );
+        // Italic and bold italic, each its own face.
+        c.put_str(6, 1, "note", CellStyle::new().italic());
+        c.put_str(11, 1, "both", CellStyle::new().bold().italic());
+        assert_eq!(
+            faces(&to_svg(&c, &th, &o)),
+            vec![
+                face(400, "normal"),
+                face(700, "normal"),
+                face(400, "italic"),
+                face(700, "italic")
+            ]
+        );
+        // A symbol JetBrains Mono lacks brings the fallback.
+        c.put_str(0, 2, "★ hot", CellStyle::new());
+        assert_eq!(faces(&to_svg(&c, &th, &o)).last().unwrap(), symbols);
+        // `--no-embed-fonts`: none at all.
+        let none = SvgOptions {
+            embed_fonts: false,
+            ..Default::default()
+        };
+        assert!(faces(&to_svg(&c, &th, &none)).is_empty());
     }
 }

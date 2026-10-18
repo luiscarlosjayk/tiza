@@ -51,6 +51,8 @@ jsonschema = { version = "0.59.0", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+# Character coverage of the embedded faces (t-130): the SVG embeds only the faces it draws. Already in the tree through usvg.
+skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 # Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm.
 rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs"] }
 # Theme override files (t-119): `~/.config/tiza/config.toml`, `--theme-file`. Parse only.

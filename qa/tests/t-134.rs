@@ -60,8 +60,8 @@ fn ac1_no_serif_in_the_default_svg_and_one_text_path() {
     assert_eq!(s.matches("Tiza Serif").count(), 0);
     assert_eq!(
         s.matches("@font-face").count(),
-        5,
-        "4 JetBrains Mono faces + symbols"
+        4,
+        "regular, bold, italic + symbols: the faces step 7 draws (t-130; no bold italic text)"
     );
     assert!(!s.contains(".p{") && !s.contains("class=\"p"));
     assert!(!s.contains("letter-spacing"));

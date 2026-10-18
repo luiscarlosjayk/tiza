@@ -2776,6 +2776,7 @@ dependencies = [
  "base64 0.23.1",
  "gif",
  "resvg",
+ "skrifa",
  "thiserror 2.0.21",
  "tiza-core",
  "unicode-segmentation",
