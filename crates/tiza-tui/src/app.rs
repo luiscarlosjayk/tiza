@@ -2,6 +2,7 @@
 //! keyboard and the local API go through here, so an agent and the presenter
 //! do exactly the same thing.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -370,6 +371,50 @@ impl App {
     pub fn error(&mut self, msg: impl Into<String>) {
         self.save_warning_pending = false;
         self.message = Some((msg.into(), true));
+    }
+
+    /// Every annotation id with its step: taken before an action so
+    /// [`App::add_step_hint`] can tell which ones it added or moved (t-132).
+    fn annotation_steps(&self) -> HashMap<String, u32> {
+        self.doc
+            .annotations
+            .iter()
+            .map(|a| (a.id.clone(), a.step))
+            .collect()
+    }
+
+    /// An action that added (or moved) annotations to a step after the one
+    /// on screen — a new one at step 0 goes to step 1 (t-079), `:step ID N`
+    /// past the view — ends its confirmation saying where they went and how
+    /// to get there: `a17: box 3-5 (step 1, press n)` (t-132). Only a new
+    /// info message gets it; errors, an unchanged message and a message that
+    /// already carries the hint are left alone.
+    fn add_step_hint(
+        &mut self,
+        before: &HashMap<String, u32>,
+        prev_message: Option<&(String, bool)>,
+    ) {
+        let shown = self.doc.step;
+        let Some(target) = self
+            .doc
+            .annotations
+            .iter()
+            .filter(|a| before.get(&a.id) != Some(&a.step) && a.step > shown)
+            .map(|a| a.step)
+            .min()
+        else {
+            return;
+        };
+        let Some((msg, false)) = &self.message else {
+            return;
+        };
+        if prev_message.is_some_and(|p| p.0 == *msg) || step_hint_start(msg).is_some() {
+            return;
+        }
+        let hint = step_hint(msg, target, shown);
+        if let Some((m, _)) = &mut self.message {
+            m.push_str(&hint);
+        }
     }
 
     /// The layout every reader gets (render.text, screen captures): masks on.
@@ -1699,6 +1744,14 @@ impl App {
 
     /// Applies an action key to the current selection. Returns false if the key is not one.
     pub fn select_action(&mut self, key: char) -> bool {
+        let before = self.annotation_steps();
+        let prev_message = self.message.clone();
+        let handled = self.select_action_inner(key);
+        self.add_step_hint(&before, prev_message.as_ref());
+        handled
+    }
+
+    fn select_action_inner(&mut self, key: char) -> bool {
         let Some(sel) = self.selection() else {
             return false;
         };
@@ -1887,6 +1940,14 @@ impl App {
 
     /// Quick edits on the selected annotation. Returns false if `key` is not one.
     pub fn selected_action(&mut self, key: char) -> bool {
+        let before = self.annotation_steps();
+        let prev_message = self.message.clone();
+        let handled = self.selected_action_inner(key);
+        self.add_step_hint(&before, prev_message.as_ref());
+        handled
+    }
+
+    fn selected_action_inner(&mut self, key: char) -> bool {
         let Some(id) = self.selected.clone() else {
             return false;
         };
@@ -2096,6 +2157,8 @@ impl App {
             Some((c, r)) => (c, r.trim()),
             None => (input, ""),
         };
+        let before = self.annotation_steps();
+        let prev_message = self.message.clone();
         let mut exec = || -> Result<String, Error> {
             match cmd {
                 "q" | "quit" => {
@@ -2715,6 +2778,10 @@ impl App {
             Ok(msg) if !msg.is_empty() => self.info(msg),
             Ok(_) => {}
             Err(e) => self.error(e.to_string()),
+        }
+        // Undo/redo bring annotations back as they were: no hint there.
+        if !matches!(cmd, "undo" | "u" | "redo") {
+            self.add_step_hint(&before, prev_message.as_ref());
         }
     }
 
@@ -4180,6 +4247,64 @@ impl App {
         }
         out
     }
+}
+
+/// The tail [`App::add_step_hint`] appends: ` (step 1, press n)` when the
+/// annotation is one step ahead, ` (step 3, :step 3 shows it)` further on;
+/// just ` (press n)` / ` (:step 3 shows it)` when `msg` already names the
+/// step (`a3 now appears at step 3`).
+pub fn step_hint(msg: &str, target: u32, shown: u32) -> String {
+    let how = if target == shown + 1 {
+        "press n".to_string()
+    } else {
+        format!(":step {target} shows it")
+    };
+    if names_step(msg, target) {
+        format!(" ({how})")
+    } else {
+        format!(" (step {target}, {how})")
+    }
+}
+
+/// Whether `msg` contains `step N` as whole words.
+fn names_step(msg: &str, n: u32) -> bool {
+    let needle = format!("step {n}");
+    msg.match_indices(&needle).any(|(i, _)| {
+        let before_ok = msg[..i]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_alphanumeric() && c != ':');
+        let after_ok = msg[i + needle.len()..]
+            .chars()
+            .next()
+            .is_none_or(|c| !c.is_ascii_digit());
+        before_ok && after_ok
+    })
+}
+
+/// Byte index where a [`step_hint`] tail starts in `msg`, if it ends with
+/// one: the status bar and the presentation line keep that tail when they
+/// cut a long message (t-132).
+pub fn step_hint_start(msg: &str) -> Option<usize> {
+    let i = msg.rfind(" (")?;
+    let inner = msg[i + 2..].strip_suffix(')')?;
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let how = match inner.strip_prefix("step ") {
+        Some(rest) => {
+            let (n, how) = rest.split_once(", ")?;
+            if !digits(n) {
+                return None;
+            }
+            how
+        }
+        None => inner,
+    };
+    let ok = how == "press n"
+        || how
+            .strip_prefix(":step ")
+            .and_then(|r| r.strip_suffix(" shows it"))
+            .is_some_and(digits);
+    ok.then_some(i)
 }
 
 pub fn theme_label(t: ThemeName) -> &'static str {

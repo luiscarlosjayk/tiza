@@ -428,6 +428,39 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
     frame.set_cursor_position((area.x + cx, area.y));
 }
 
+/// `m` cut to `room` cells with an ellipsis, keeping the beginning — the
+/// useful part of a message. A step hint at the end (`(step 1, press n)`,
+/// t-132) survives the cut when it fits with at least one cell of the rest:
+/// `a17: box 3-… (step 1, press n)`.
+pub fn fit_message(m: &str, room: usize) -> String {
+    if m.width() <= room {
+        return m.to_string();
+    }
+    if room == 0 {
+        return String::new();
+    }
+    let cut = |s: &str, max: usize| {
+        let mut out = String::new();
+        let mut w = 0;
+        for g in s.graphemes(true) {
+            if w + g.width() > max {
+                break;
+            }
+            out.push_str(g);
+            w += g.width();
+        }
+        out
+    };
+    if let Some(i) = crate::app::step_hint_start(m) {
+        let (head, tail) = m.split_at(i);
+        let tw = tail.width();
+        if tw + 2 <= room {
+            return format!("{}…{tail}", cut(head, room - tw - 1).trim_end());
+        }
+    }
+    format!("{}…", cut(m, room - 1))
+}
+
 /// The result of the command just run, on the last row in presentation
 /// mode, for [`crate::app::PRESENT_MESSAGE_TTL`] (t-107): the status bar's
 /// text on the command line's row, nothing else of the bar.
@@ -450,19 +483,8 @@ fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
         .set_style(area, Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg)));
     // Keep the beginning, with an ellipsis, as the status bar does.
     let room = (area.width as usize).saturating_sub(2);
-    let text = if m.width() <= room {
-        m.clone()
-    } else if room >= 2 {
-        let mut cut = String::new();
-        let mut w = 0;
-        for g in m.graphemes(true) {
-            if w + g.width() > room - 1 {
-                break;
-            }
-            cut.push_str(g);
-            w += g.width();
-        }
-        format!("{cut}…")
+    let text = if room >= 2 {
+        fit_message(m, room)
     } else {
         String::new()
     };
@@ -679,17 +701,8 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             right.push(Span::styled(right_text, right_style));
         } else if room >= 4 {
             // Keep the beginning: that is where the useful part of a message is.
-            let mut cut = String::new();
-            let mut w = 0;
-            for g in right_text.graphemes(true) {
-                let gw = g.width();
-                if w + gw > room - 2 {
-                    break;
-                }
-                cut.push_str(g);
-                w += gw;
-            }
-            right.push(Span::styled(format!("{cut}… "), right_style));
+            let cut = fit_message(right_text.trim_end_matches(' '), room - 1);
+            right.push(Span::styled(format!("{cut} "), right_style));
         }
     } else if right_text.width() <= room {
         right.push(Span::styled(right_text, right_style));
