@@ -422,3 +422,305 @@ fn ac3_the_prompts_tool_calls_rebuild_the_shipped_example() {
         );
     }
 }
+
+/// The JSON that scenario 12 passes to `tiza scene patch '…'`.
+fn scenario_12_patch() -> Value {
+    let s = scenarios();
+    let body = &s[11].1;
+    let start = body
+        .find("tiza scene patch '")
+        .expect("scenario 12 patches the steps")
+        + "tiza scene patch '".len();
+    let len = body[start..].find('\'').expect("the closing quote");
+    serde_json::from_str(&body[start..start + len]).expect("scenario 12's patch is JSON")
+}
+
+/// Waits (10 s at most) until `cond` holds.
+fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let start = std::time::Instant::now();
+    while !cond() {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "waiting: {what}"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
+#[test]
+fn scenario_12_starts_by_itself_and_loops_round_again() {
+    // QA 2 (2026-10-18): without an entry for step 0 the tour neither
+    // started on its own nor went on after wrapping back to step 0.
+    let patch = scenario_12_patch();
+    assert_eq!(patch["loop"], true, "{patch}");
+    let shipped: Value =
+        serde_json::from_str(&std::fs::read_to_string(example("tally-tour.tiza")).unwrap())
+            .unwrap();
+    let max_step = shipped["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["step"].as_u64())
+        .max()
+        .unwrap();
+    let steps = patch["steps"].as_array().unwrap();
+    for n in 0..=max_step {
+        let entry = steps.iter().find(|e| e["step"] == n);
+        assert!(
+            entry.is_some_and(|e| e["auto_advance_ms"].as_u64().is_some_and(|ms| ms > 0)),
+            "step {n} has no auto_advance_ms in scenario 12's patch: {patch}"
+        );
+    }
+
+    // A live copy of the tour, as scenario 12 opens it.
+    let main = tally_copy("t046-s12");
+    let tour = main
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("tally-tour.tiza");
+    std::fs::copy(example("tally-tour.tiza"), &tour).unwrap();
+    let opened = tiza_core::fs::open(tour.to_str().unwrap()).unwrap();
+    let live = Live::open(
+        opened.document,
+        opened.save_path,
+        tour.with_file_name("live.sock"),
+    );
+    assert_eq!(live.with(|a| a.doc.step), 0);
+    // The same shape with short durations, right after opening: with no key
+    // it walks every step, wraps to 0 and starts the next pass.
+    let mut fast = patch.clone();
+    for e in fast["steps"].as_array_mut().unwrap() {
+        e["auto_advance_ms"] = json!(30);
+    }
+    live.api_ok("scene.patch", fast);
+    let mut seen = vec![live.with(|a| a.doc.step)];
+    wait_until("a whole pass and the start of the next", || {
+        let now = live.with(|a| a.doc.step);
+        if seen.last() != Some(&now) {
+            seen.push(now);
+        }
+        seen.ends_with(&[5, 0, 1])
+    });
+    let first = seen.iter().position(|&s| s == 0).unwrap();
+    assert_eq!(&seen[first..], &[0, 1, 2, 3, 4, 5, 0, 1], "{seen:?}");
+    // Then the patch as written: the copy keeps it, and the GIF holds
+    // every step for its duration.
+    live.api_ok("scene.patch", patch.clone());
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&tour).unwrap()).unwrap();
+    assert_eq!(
+        saved["steps"], patch["steps"],
+        "the copy keeps the durations"
+    );
+    assert_eq!(saved["loop"], true);
+    let gif = tour.with_file_name("loop.gif");
+    let out = tiza(&[
+        "render",
+        tour.to_str().unwrap(),
+        "--out",
+        gif.to_str().unwrap(),
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    // The summary line goes to stderr, like every `render` to a file.
+    let summary = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        summary.contains("steps 0, 1, 2, 3, 4, 5 timed by their auto_advance_ms"),
+        "{summary}"
+    );
+}
+
+#[test]
+fn scenario_6_asks_for_redacts_without_a_label() {
+    // QA 2 (2026-10-18): an agent labelled the masks, and the notes the
+    // second prompt puts on those lines had no room and were not drawn.
+    let s = scenarios();
+    let prompt1 = s[5]
+        .1
+        .lines()
+        .find(|l| l.starts_with("- To the agent, before Tiza is open"))
+        .expect("scenario 6's first prompt");
+    assert!(
+        prompt1.to_lowercase().contains("give the redacts no label"),
+        "{prompt1}"
+    );
+    // Why: the same take with labelled masks loses its notes.
+    let dir = scratch("t046-s6");
+    std::fs::create_dir_all(&dir).unwrap();
+    let env = [
+        ("DATABASE_URL=postgres://app:", "hunter2", "@db.local/app"),
+        ("API_TOKEN=", "tok_demo_0000000000000000", ""),
+        ("LOG_LEVEL=info", "", ""),
+    ];
+    let text: String = env.iter().map(|(a, v, b)| format!("{a}{v}{b}\n")).collect();
+    std::fs::write(dir.join("demo.env"), text).unwrap();
+    // The span of each secret value, from the text before it (0-based
+    // columns, end exclusive), as the prompt asks the agent to compute it.
+    let span = |line: usize| {
+        let (before, value, _) = env[line - 1];
+        json!({"line": line, "start": before.len(), "end": before.len() + value.len()})
+    };
+    let notes = [
+        (1, "where the app's Postgres lives"),
+        (2, "the token the API client sends"),
+        (3, "how chatty the logs are"),
+    ];
+    for labelled in [false, true] {
+        let mut r1 = json!({"id": "r1", "type": "redact", "step": 0, "span": span(1)});
+        let mut r2 = json!({"id": "r2", "type": "redact", "step": 0, "span": span(2)});
+        if labelled {
+            r1["label"] = json!("database password");
+            r2["label"] = json!("API token");
+        }
+        let mut annotations = vec![r1, r2];
+        for (line, text) in notes {
+            annotations.push(json!({"id": format!("a{line}"), "type": "note", "step": 1, "line": line, "text": text}));
+        }
+        let path = dir.join("demo.env.tiza");
+        let d = json!({"schema": 1, "source": {"first_line": 1}, "code": {"file": "demo.env"}, "annotations": annotations});
+        std::fs::write(&path, d.to_string()).unwrap();
+        let frame = render_step(&path, 1);
+        let drawn = notes.iter().filter(|(_, t)| frame.contains(t)).count();
+        // Exactly the value is masked: the text around it stays, and no
+        // piece of a value (two characters in a row) is left on its line.
+        for (n, (before, value, after)) in env.iter().take(2).enumerate() {
+            let masked = format!("{before}••••••••{after}");
+            let line = frame
+                .lines()
+                .find(|l| l.contains(before))
+                .unwrap_or_else(|| panic!("line {} is not drawn:\n{frame}", n + 1));
+            // The code as drawn: from the key to the first blank after it.
+            let at = line.find(before).unwrap();
+            let code: String = line[at..]
+                .chars()
+                .take_while(|c| !c.is_whitespace())
+                .collect();
+            assert_eq!(code, masked, "line {}: {line}", n + 1);
+            let shown = &code[before.len()..];
+            let chars: Vec<char> = value.chars().collect();
+            for w in chars.windows(2) {
+                let piece: String = w.iter().collect();
+                assert!(
+                    !shown.contains(&piece),
+                    "a piece of the value «{piece}» shows: {line}"
+                );
+            }
+        }
+        if labelled {
+            assert!(
+                drawn < notes.len(),
+                "labelled masks: {drawn} notes drawn\n{frame}"
+            );
+        } else {
+            assert_eq!(drawn, notes.len(), "unlabelled masks:\n{frame}");
+        }
+    }
+}
+
+#[test]
+fn scenario_4_makes_the_review_folder_before_writing_into_it() {
+    let s = scenarios();
+    let body = &s[3].1;
+    let show = body
+        .find("git show HEAD~1:src/lib.rs > /tmp/review/")
+        .expect("scenario 4 writes the old version into /tmp/review");
+    let mkdir = body
+        .find("mkdir -p /tmp/review &&")
+        .expect("mkdir -p /tmp/review");
+    assert!(mkdir < show, "the folder is made first");
+}
+
+#[test]
+fn every_copy_of_tally_starts_fresh() {
+    // `cp -r` onto a folder that exists copies into /tmp/tally/tally, and
+    // the next scenario would open the previous one's sidecar.
+    let text = doc();
+    let cp = "cp -r examples/tally /tmp/tally";
+    let mut n = 0;
+    for (at, _) in text.match_indices(cp) {
+        n += 1;
+        assert!(
+            text[..at].ends_with("rm -rf /tmp/tally && "),
+            "a copy of tally without rm -rf first: …{}",
+            &text[at.saturating_sub(40)..at + cp.len()]
+        );
+    }
+    assert!(n >= 7, "{n} copies");
+}
+
+#[test]
+fn scenario_3_reads_the_take_where_its_setup_leaves_it() {
+    let s = scenarios();
+    let body = &s[2].1;
+    // Two sources, one variable: the sidecar of scenario 1, or the finished
+    // take next to the copied folder (it names tally/src/main.rs relative
+    // to itself, so it cannot become main.rs's sidecar).
+    assert!(body.contains("`W=/tmp/tally/src/main.rs.tiza`"), "{body}");
+    assert!(
+        body.contains("cp examples/tally-tour.tiza /tmp/` and `W=/tmp/tally-tour.tiza`"),
+        "{body}"
+    );
+    let agent_b = body
+        .lines()
+        .find(|l| l.starts_with("- Agent B"))
+        .expect("agent B's lines");
+    for cmd in [
+        "tiza check \"$W\"",
+        "tiza render \"$W\"",
+        "tiza \"$W\" --session b",
+    ] {
+        assert!(agent_b.contains(cmd), "{agent_b}");
+    }
+    assert!(!agent_b.contains("main.rs.tiza"), "{agent_b}");
+}
+
+#[test]
+fn the_t166_list_names_exactly_the_scenarios_that_use_code_link() {
+    let s = scenarios();
+    let using: Vec<usize> = s
+        .iter()
+        .enumerate()
+        .filter(|(_, (_, body))| {
+            body.lines()
+                .find(|l| l.starts_with("**Features:**"))
+                .is_some_and(|l| l.contains("code.link"))
+        })
+        .map(|(i, _)| i + 1)
+        .collect();
+    let text = doc();
+    let item = text
+        .lines()
+        .find(|l| l.starts_with("- **t-166"))
+        .expect("the t-166 item");
+    let listed: Vec<usize> = item[item.find("** (").unwrap() + 4..item.find(").").unwrap()]
+        .split(", ")
+        .map(|n| n.parse().unwrap())
+        .collect();
+    assert_eq!(listed, using, "{item}");
+}
+
+#[test]
+fn scenario_10_ends_as_the_example_does() {
+    let s = scenarios();
+    let body = &s[9].1;
+    let d: Value =
+        serde_json::from_str(&std::fs::read_to_string(example("stack-and-queue.tiza")).unwrap())
+            .unwrap();
+    // The comparing note on stack.rs's peek is quoted as the example has it.
+    let peek = d["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["step"] == 4 && a["type"] == "note")
+        .expect("the note on peek");
+    assert!(body.contains(peek["text"].as_str().unwrap()), "{body}");
+    // The last move is the narrower window of queue.rs, in the script too.
+    let last = d["moves"].as_array().unwrap().last().unwrap();
+    assert_eq!(last["file"], "src/queue.rs");
+    let lines = last["lines"].as_str().unwrap();
+    assert!(body.contains(&format!("(lines {lines})")), "{body}");
+    let script = body.lines().find(|l| l.starts_with("**Script:**")).unwrap();
+    assert!(script.contains("last, link queue.rs again"), "{script}");
+}

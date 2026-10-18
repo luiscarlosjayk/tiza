@@ -23,13 +23,13 @@ Each scenario gives: **For** (the audience), **Setup** (a sample under `examples
 
 Common setup for every scenario with an agent: Tiza in one terminal, the agent in another, and the MCP server registered once (`claude mcp add tiza -- tiza mcp`, or the `.mcp.json` in the README). Before any take, `tiza check FILE` (or the `check` tool) and a look at `redact_alerts` in `status`.
 
-**Work on a copy, and keep what Tiza saves.** Copy the sample to a working folder first (`cp -r examples/tally /tmp/tally`) and open the copy normally. The TUI writes every change to the `.tiza` sidecar next to the file it opened (`/tmp/tally/src/main.rs` → `/tmp/tally/src/main.rs.tiza`) as it happens, the agent's changes included: that sidecar *is* the result. Keep it, render it, or hand it to another agent; it references the copied files by relative path, so move the whole folder with it (or run `:embed` in the TUI to store every file inside it). Opening the copy, never `examples/` itself, keeps the repository clean.
+**Work on a copy, and keep what Tiza saves.** Copy the sample to a working folder first (`rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`) and open the copy normally. Start from a fresh copy every time: `cp -r` onto a folder that already exists copies into `/tmp/tally/tally` instead, and you would open the previous scenario's sidecar. The TUI writes every change to the `.tiza` sidecar next to the file it opened (`/tmp/tally/src/main.rs` → `/tmp/tally/src/main.rs.tiza`) as it happens, the agent's changes included: that sidecar *is* the result. Keep it, render it, or hand it to another agent; it references the copied files by relative path, so move the whole folder with it (or run `:embed` in the TUI to store every file inside it). Opening the copy, never `examples/` itself, keeps the repository clean.
 
 ## 1. A codebase tour across a few files
 
 **For:** someone who has never seen the code — a viewer, a new teammate, or you on your first day in a repository.
 
-**Setup:** `examples/tally/`, a real four-file Rust CLI (a tiny `wc`: `main.rs` wires `args.rs`, `count.rs` and `report.rs`; `cargo run -- --by-words src/*.rs` inside it works). Copy it and open its entry point: `cp -r examples/tally /tmp/tally`, then `tiza /tmp/tally/src/main.rs` in a terminal 130 columns wide (the width the take is checked and rendered at, so the code's long lines fit; the labels alone fit from 55).
+**Setup:** `examples/tally/`, a real four-file Rust CLI (a tiny `wc`: `main.rs` wires `args.rs`, `count.rs` and `report.rs`; `cargo run -- --by-words src/*.rs` inside it works). Copy it and open its entry point: `rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`, then `tiza /tmp/tally/src/main.rs` in a terminal 130 columns wide (the width the take is checked and rendered at, so the code's long lines fit; the labels alone fit from 55).
 
 **Script:** you ask the agent to show you the program file by file. One file is on screen at a time, and each file is explained at its own step: the agent reads `get_code`, links the file at its step with `add_move {action: "code.link"}`, draws on it while it is shown, and says in a label or a note where the flow goes next (`1 parse the flags` on the call in `main.rs`, then `args.rs` at step 2). It comes back to `main.rs` for a summary. The exact prompts are in the [worked example](#worked-example-a-tour-of-tally).
 
@@ -46,7 +46,7 @@ Common setup for every scenario with an agent: Tiza in one terminal, the agent i
 Copy the sample and open the bare file, with the agent connected:
 
 ```sh
-cp -r examples/tally /tmp/tally
+rm -rf /tmp/tally && cp -r examples/tally /tmp/tally
 tiza /tmp/tally/src/main.rs
 ```
 
@@ -75,7 +75,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** a reviewing agent, and the person watching two agents talk through code — a review, or knowledge passing between a coding agent and a checking one.
 
-**Setup:** `examples/tally/` copied to a working folder (`cp -r examples/tally /tmp/tally`), Tiza on `tiza /tmp/tally/src/args.rs`. Two agent sessions (two Claude Code terminals) with the same `tiza` MCP server registered: each starts its own `tiza mcp`, and both talk to the one instance (the socket serves several clients at once). Optionally `:supervise on`, so every change from either agent waits for your `y`/`n`.
+**Setup:** `examples/tally/` copied to a working folder (`rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`), Tiza on `tiza /tmp/tally/src/args.rs`. Two agent sessions (two Claude Code terminals) with the same `tiza` MCP server registered: each starts its own `tiza mcp`, and both talk to the one instance (the socket serves several clients at once). Optionally `:supervise on`, so every change from either agent waits for your `y`/`n`.
 
 **Script:** annotations carry no author, so each agent signs its own: an id prefix (`a-`, `rev-`) for the tools, and the role at the start of every label and note for the audience (`author: …`, `review: …`).
 - To agent A (the author): `You want to add a --by-lines flag to tally. Explain the change on Tiza instead of editing the file: at step 1 box the current flag handling; at step 2 add the new branch as a code.patch move (op insert after the line with "sort = Sort::Words;", typing "line"), and annotate the new lines at step 2. Prefix every id with "a-" and start every label and note with "author:". Leave the view on step 2.`
@@ -92,16 +92,16 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** the next agent (or teammate) who opens this code tomorrow without the conversation that explained it.
 
-**Setup:** the sidecar a tour left behind: `/tmp/tally/src/main.rs.tiza` after scenario 1, or a copy of the finished take (`cp -r examples/tally /tmp/tally` and `cp examples/tally-tour.tiza /tmp/`).
+**Setup:** the walkthrough a tour left behind, in a shell variable: `W=/tmp/tally/src/main.rs.tiza`, the sidecar scenario 1 autosaved, or the finished take, `rm -rf /tmp/tally && cp -r examples/tally /tmp/tally && cp examples/tally-tour.tiza /tmp/` and `W=/tmp/tally-tour.tiza` (it names `tally/src/main.rs` relative to itself, so it stays next to the `tally` folder).
 
 **Script:**
 - Agent A, after a tour like scenario 1, has nothing to export: the TUI autosaved every step to `/tmp/tally/src/main.rs.tiza`. Hand over the folder (the sidecar names `args.rs`, `count.rs` and `report.rs` by relative path). If the code will change before B reads it, run `:embed` in the TUI first: the sidecar then stores every linked file under `views`.
-- Agent B, in a new session and with no TUI: `tiza check /tmp/tally/src/main.rs.tiza`, then `tiza render /tmp/tally/src/main.rs.tiza --all-steps --format md --out walkthrough-md/` and read `step-01.md` … in order. Or open it in an instance of its own (`tiza /tmp/tally/src/main.rs.tiza --session b`, with `tiza mcp --session b`) and read `tiza://render.md` after each `goto_step`.
+- Agent B, in a new session and with no TUI: `tiza check "$W"`, then `tiza render "$W" --all-steps --format md --out walkthrough-md/` and read `step-01.md` … in order. Or open it in an instance of its own (`tiza "$W" --session b`, with `tiza mcp --session b`) and read `tiza://render.md` after each `goto_step`.
 - To agent B: `Read the walkthrough step by step and answer: where would a --by-lines flag go, and which files change?`
 
 **What the audience sees:** mostly the second agent's answer, quoting frames of a tour it never watched; as a video, the Markdown frames scrolling in a terminal or an editor.
 
-**Features:** the autosaved sidecar, `:embed` (`views`), `tiza check`, `render --all-steps --format md`, `--session`, `goto_step`, the `tiza://` resources.
+**Features:** the autosaved sidecar of a `code.link` tour, `:embed` (`views`), `tiza check`, `render --all-steps --format md`, `--session`, `goto_step`, the `tiza://` resources.
 
 **Recording:** better as a written example (the frames are text) than as a video; under a minute if recorded.
 
@@ -109,7 +109,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** a reviewer reading a pull request, or a viewer watching a refactor.
 
-**Setup:** `examples/ownership-moves.rs.tiza`, where step 2 types a borrow and a `len` helper into the code and step 4 replaces the call with `t.len()` and deletes the helper (it embeds its code, so `cp examples/ownership-moves.rs.tiza /tmp/` and `tiza /tmp/ownership-moves.rs.tiza` is enough). For your own change, open the old version of the file from a working folder (`git show HEAD~1:src/lib.rs > /tmp/review/lib.rs`, then `tiza /tmp/review/lib.rs`) and keep `git diff HEAD~1 -- src/lib.rs` at hand for the agent.
+**Setup:** `examples/ownership-moves.rs.tiza`, where step 2 types a borrow and a `len` helper into the code and step 4 replaces the call with `t.len()` and deletes the helper (it embeds its code, so `cp examples/ownership-moves.rs.tiza /tmp/` and `tiza /tmp/ownership-moves.rs.tiza` is enough). For your own change, open the old version of the file from a working folder (`mkdir -p /tmp/review && git show HEAD~1:src/lib.rs > /tmp/review/lib.rs`, then `tiza /tmp/review/lib.rs`) and keep `git diff HEAD~1 -- src/lib.rs` at hand for the agent.
 
 **Script:** Tiza does not read diffs; the agent writes the moves from one. `Run git diff HEAD~1 -- src/lib.rs and read it. Write each hunk as an add_move code.patch at its own step (op insert, replace or delete, typing "line"), oldest hunk first, targeting lines by the visible text around them (after, find) rather than by number; annotate the new code at the step where it exists; if an annotation goes (unanchored) after a replace, give the move a rebind. Then call check and walk the steps with goto_step to confirm the last one matches the new file.`
 
@@ -140,7 +140,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 **Setup:** examples ship no secrets on purpose; make a throwaway file with fake values: `mkdir -p /tmp/config && printf 'DATABASE_URL=postgres://app:hunter2@db.local/app\nAPI_TOKEN=tok_demo_0000000000000000\nLOG_LEVEL=info\n' > /tmp/config/demo.env`. Do not open it yet: the masks go in first, so the values are never on screen, not even for a frame.
 
 **Script:**
-- To the agent, before Tiza is open: `Build the sidecar /tmp/config/demo.env.tiza with the masks already in it: a .tiza document (schema 1, source {first_line: 1}, code {file: "demo.env"}) with one redact annotation per secret value, the password inside DATABASE_URL and the value of API_TOKEN, each with step 0 and a span {line, start, end} that starts right after the text before the value (columns count from 0, end exclusive). Never put a value into a label. Then run tiza check /tmp/config/demo.env.tiza and tiza render /tmp/config/demo.env.tiza --out - and show me that no value is visible (a warning that step 1 has nothing new is expected until the notes go in).`
+- To the agent, before Tiza is open: `Build the sidecar /tmp/config/demo.env.tiza with the masks already in it: a .tiza document (schema 1, source {first_line: 1}, code {file: "demo.env"}) with one redact annotation per secret value, the password inside DATABASE_URL and the value of API_TOKEN, each with step 0 and a span {line, start, end} that starts right after the text before the value (columns count from 0, end exclusive). Give the redacts no label: a labelled one takes the room the notes on its line need. Never put a value into a label. Then run tiza check /tmp/config/demo.env.tiza and tiza render /tmp/config/demo.env.tiza --out - and show me that no value is visible (a warning that step 1 has nothing new is expected until the notes go in).`
 - You: `tiza /tmp/config/demo.env`. Tiza prefers the sidecar next to the file, so the masks are on from the first frame (`◆ redacted` on the bar).
 - To the agent: `Call status and check redact_alerts is empty, then get_code. Explain each setting at step 1 with a note on its line. Never quote a masked value; if you spot a secret that is not masked, stop and tell me before anything is recorded.`
 
@@ -154,7 +154,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** a viewer watching code being written, with the explanation keeping up.
 
-**Setup:** a copy of `examples/tally/` (`cp -r examples/tally /tmp/tally`), open in the editor and in `tiza /tmp/tally/src/args.rs --follow`. Zed integration: `docs/zed.md`.
+**Setup:** a copy of `examples/tally/` (`rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`), open in the editor and in `tiza /tmp/tally/src/args.rs --follow`. Zed integration: `docs/zed.md`.
 
 **Script:** you add a `--by-lines` flag in the editor and save after each piece; after each save, to the agent: `list_annotations: re-add what the reload dropped, and mark the lines I just added.` Or ask it once to `set_follow` on and keep the annotations up to date.
 
@@ -198,9 +198,9 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **Setup:** `examples/stack-and-queue.tiza` over `examples/src/stack.rs` and `examples/src/queue.rs`. To replay it, copy the three together (`mkdir -p /tmp/sq/src && cp examples/stack-and-queue.tiza /tmp/sq/ && cp examples/src/stack.rs examples/src/queue.rs /tmp/sq/src/`) and open `tiza /tmp/sq/stack-and-queue.tiza`.
 
-**Script:** one file per step, the comparison carried by the notes. `Walk me through the stack and the queue, one file at a time: box push/pop in stack.rs; link queue.rs at the next step and box enqueue/dequeue, with a note that says which end each one uses; select push_back to pop_front and pause; then link back to stack.rs and add a note on peek that says how queue.rs's peek differs.`
+**Script:** one file per step, the comparison carried by the notes. `Walk me through the stack and the queue, one file at a time: box push/pop in stack.rs; link queue.rs at the next step and box enqueue/dequeue, with a note that says which end each one uses; select push_back to pop_front and pause; then link back to stack.rs and add a note on peek that says what it has in common with queue.rs's peek; last, link queue.rs again with only the lines of enqueue and dequeue.`
 
-**What the audience sees:** each file in its own steps with its own boxes and notes; going back to `stack.rs` brings its annotations back as they were, plus the comparing note; a narrower window of `queue.rs` at the end.
+**What the audience sees:** each file in its own steps with its own boxes and notes; going back to `stack.rs` brings its annotations back as they were, plus the comparing note (`same signature in both files: a shared borrow`); at the end, `queue.rs` again in a narrower window (lines 17-23), its box still drawn.
 
 **Features:** `code.link` back and forth, `lines` windows, `select`, `cursor`, `wait`.
 
@@ -210,7 +210,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** whoever asked in an issue, a pull request, a chat or a doc — no video at all.
 
-**Setup:** any file, for example `examples/tally/src/count.rs` from the working copy (`cp -r examples/tally /tmp/tally`, then `tiza /tmp/tally/src/count.rs`).
+**Setup:** any file, for example `examples/tally/src/count.rs` from the working copy (`rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`, then `tiza /tmp/tally/src/count.rs`).
 
 **Script:** `Someone asks why tally counts "a   b" as two words. Answer with one annotated frame: highlight split_whitespace() and add a note, then export_image to /tmp/answer.md (and /tmp/answer.png for the issue).`
 
@@ -224,13 +224,13 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** passers-by at a booth or a meetup screen; a recording with no one pressing keys.
 
-**Setup:** a copy of the finished tour: `cp -r examples/tally /tmp/tally && cp examples/tally-tour.tiza /tmp/`, opened with `tiza /tmp/tally-tour.tiza --present`.
+**Setup:** a copy of the finished tour: `rm -rf /tmp/tally && cp -r examples/tally /tmp/tally && cp examples/tally-tour.tiza /tmp/`, opened with `tiza /tmp/tally-tour.tiza --present`.
 
-**Script:** from another terminal, give every step a duration and loop it: `tiza scene patch '{"steps":[{"step":1,"id":"main","title":"main.rs: parse, count, report","auto_advance_ms":4000},{"step":2,"id":"args","title":"args.rs: one flag, by hand","auto_advance_ms":4000},{"step":3,"id":"count","title":"count.rs: one pass","auto_advance_ms":4000},{"step":4,"id":"report","title":"report.rs: sort, then print","auto_advance_ms":4000},{"step":5,"id":"recap","title":"Back in main.rs","auto_advance_ms":6000}],"loop":true}'` (the list replaces the old one; the copy keeps the durations, so the next start loops on its own). For an editor-driven take instead, bind `tiza next`, `tiza prev` and `tiza goto recap` to keys (`docs/zed.md`).
+**Script:** from another terminal, give every step a duration, step 0 included, and loop it: `tiza scene patch '{"steps":[{"step":0,"id":"intro","auto_advance_ms":2000},{"step":1,"id":"main","title":"main.rs: parse, count, report","auto_advance_ms":4000},{"step":2,"id":"args","title":"args.rs: one flag, by hand","auto_advance_ms":4000},{"step":3,"id":"count","title":"count.rs: one pass","auto_advance_ms":4000},{"step":4,"id":"report","title":"report.rs: sort, then print","auto_advance_ms":4000},{"step":5,"id":"recap","title":"Back in main.rs","auto_advance_ms":6000}],"loop":true}'` (the list replaces the old one). Step 0 needs its entry too: without an `auto_advance_ms` there, the tour does not start by itself and stops when the loop comes back to it. The copy keeps the durations, so the next start loops on its own. For an editor-driven take instead, bind `tiza next`, `tiza prev` and `tiza goto recap` to keys (`docs/zed.md`).
 
-**What the audience sees:** the tour playing by itself, step 5 back to step 0, forever.
+**What the audience sees:** the tour playing by itself: step 0 for 2 s, steps 1-4 for 4 s each, the recap for 6 s, then back to step 0 and round again, forever (24 s a loop).
 
-**Features:** `auto_advance_ms`, `loop`, presentation mode, `tiza next|prev|goto`; the native GIF and MP4 hold such a step for exactly its `auto_advance_ms`.
+**Features:** `auto_advance_ms`, `loop`, presentation mode over a `code.link` tour, `tiza next|prev|goto`; the native GIF and MP4 hold such a step for exactly its `auto_advance_ms`.
 
 **Recording:** none needed for the booth. For a video, `tiza render /tmp/tally-tour.tiza --out loop.gif` holds each step exactly its `auto_advance_ms`.
 
@@ -238,5 +238,5 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 Nothing above waits on these; they change how a script can be written once they land.
 
-- **t-166, exporting the live instance of a multi-file document** (1, 2, 3, 5, 10, 12). Today `tiza render` with no FILE, and the MCP `export_image`, do not load the files a `code.link` move shows: render the `.tiza` file (the sidecar the TUI autosaved) instead of the live instance, as the scripts do. Once it lands, both export the instance as it is on screen.
+- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Today `tiza render` with no FILE, and the MCP `export_image`, do not load the files a `code.link` move shows: render the `.tiza` file (the sidecar the TUI autosaved) instead of the live instance, as the scripts do. Once it lands, both export the instance as it is on screen.
 - **t-168, masks only the presenter removes** (6). Agents may add a `redact`, and an agent will not be able to delete, clear or narrow one over the socket or the MCP; the presenter keeps every way to remove one in the TUI. Until then, scenario 6's script tells the agent not to touch a mask.
