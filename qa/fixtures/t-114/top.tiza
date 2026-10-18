@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "title": "t-114: a box that starts at line 1",
+  "source": { "language": "rs" },
+  "code": { "file": "top.rs" },
+  "step": 1,
+  "annotations": [
+    { "id": "a1", "step": 1, "type": "box", "from_line": 1, "to_line": 4, "label": "first" },
+    { "id": "a2", "step": 1, "type": "box", "from_line": 6, "to_line": 8, "label": "lower" }
+  ]
+}

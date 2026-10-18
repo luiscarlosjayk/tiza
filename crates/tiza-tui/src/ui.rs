@@ -139,8 +139,29 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
-    // Keep the cursor visible.
+    // Keep the cursor visible — with the virtual rows that belong to its
+    // line: the title rows of boxes that open on it (above) and the rows
+    // under it (emphasis, labels, bottom borders) when they fit (t-114).
+    // Otherwise a box whose first line is the first visible row loses its
+    // top border and title.
     if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {
+        let mut top = row;
+        while top > 0 && matches!(layout.rows[top - 1], tiza_core::layout::Row::BoxTop(_)) {
+            top -= 1;
+        }
+        let mut bottom = row;
+        while bottom + 1 < layout.rows.len()
+            && !matches!(layout.rows[bottom + 1], tiza_core::layout::Row::Code(_))
+            && bottom + 1 - top < visible
+        {
+            bottom += 1;
+        }
+        if top < app.scroll {
+            app.scroll = top;
+        } else if visible > 0 && bottom >= app.scroll + visible {
+            app.scroll = bottom + 1 - visible;
+        }
+        // The cursor row itself always wins over its trailing rows.
         if row < app.scroll {
             app.scroll = row;
         } else if visible > 0 && row >= app.scroll + visible {
