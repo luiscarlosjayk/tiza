@@ -470,19 +470,16 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
     live.command("theme file /nonexistent.toml");
     assert!(live.message().unwrap().1);
     // Every text role of the file reads at 4.5:1 on its background before
-    // compression (the script measures after; it runs when ffmpeg is here).
+    // compression (the script measures after; it runs only when ffmpeg and
+    // python3 with Pillow + numpy are here, otherwise the test says what is missing).
     let ov = tiza_core::theme::load_theme_file(&file).unwrap();
     let (th, notes) = tiza_core::Theme::resolve(ThemeName::Dark, true, None, Some(&ov));
     assert!(notes.is_empty(), "nothing should be pushed: {notes:?}");
     for c in [th.fg, th.muted, th.accent, th.note, th.error] {
         assert!(tiza_core::theme::contrast(c, th.bg) >= 4.5, "{c:?}");
     }
-    let have_ffmpeg = std::process::Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    if have_ffmpeg {
+    let missing = tiza_qa::legibility_tools_missing();
+    if missing.is_empty() {
         let r = std::process::Command::new("python3")
             .args([
                 "scripts/legibility.py",
@@ -505,7 +502,8 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
         );
     } else {
         eprintln!(
-            "t-119: ffmpeg missing here; the Mocha legibility run is part of the local gate on a machine with it"
+            "t-119: SKIPPED the Mocha legibility check (scripts/legibility.py): it did not run here; missing: {}",
+            missing.join(", ")
         );
     }
     // The CLI loads it too.

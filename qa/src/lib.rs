@@ -534,3 +534,35 @@ pub fn pty_script_with_deadline(
     );
     run.stdout
 }
+
+/// What `scripts/legibility.py` (t-072) needs and this machine lacks:
+/// `ffmpeg`, and `python3 -I -c "import PIL, numpy"` (Pillow and numpy are
+/// QA-only dependencies, never installed by the tests). Empty means the
+/// pipeline can run; otherwise each entry names one missing piece, for the
+/// skip notice of the tests that run the script (t-072, t-119).
+pub fn legibility_tools_missing() -> Vec<&'static str> {
+    let ok = |cmd: &str, args: &[&str]| {
+        Command::new(cmd)
+            .args(args)
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    };
+    let mut missing = Vec::new();
+    if !ok("ffmpeg", &["-version"]) {
+        missing.push("ffmpeg");
+    }
+    if !ok("python3", &["-I", "-c", "import PIL, numpy"]) {
+        if !ok("python3", &["-I", "-c", "pass"]) {
+            missing.push("python3");
+        } else {
+            if !ok("python3", &["-I", "-c", "import PIL"]) {
+                missing.push("Pillow (python3 -I -c \"import PIL\")");
+            }
+            if !ok("python3", &["-I", "-c", "import numpy"]) {
+                missing.push("numpy (python3 -I -c \"import numpy\")");
+            }
+        }
+    }
+    missing
+}

@@ -20,7 +20,7 @@ When a ticket is done, its card gets: acceptance criteria, manual test steps, co
 
 Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-regressions`; commit that file when proptest adds a seed so the case is replayed first on every run.
 
-`scripts/legibility.py` (t-072) is the YouTube-compression check: it renders a step, scales it to 1080p, round-trips it through H.264 with ffmpeg and measures the contrast every text color keeps. `qa/tests/t-072.rs` runs it when python3 + Pillow + numpy + ffmpeg are installed and CI runs it in the `legibility` job (report and compressed frames as an artifact).
+`scripts/legibility.py` (t-072) is the YouTube-compression check: it renders a step, scales it to 1080p, round-trips it through H.264 with ffmpeg and measures the contrast every text color keeps. `qa/tests/t-072.rs` and the Mocha step of `qa/tests/t-119.rs` run it when python3 + Pillow + numpy + ffmpeg are installed (shared check `tiza_qa::legibility_tools_missing()`; otherwise they skip and print what is missing) and CI runs it in the `legibility` job (report and compressed frames as an artifact).
 
 ## Checklist for any card that adds or changes a `:` command (t-115)
 

@@ -83,17 +83,7 @@ fn ac1_every_theme_role_passes_before_compression() {
 }
 
 fn tools_available() -> bool {
-    let ffmpeg = std::process::Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    let py = std::process::Command::new("python3")
-        .args(["-I", "-c", "import PIL, numpy"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false);
-    ffmpeg && py
+    tiza_qa::legibility_tools_missing().is_empty()
 }
 
 #[test]
