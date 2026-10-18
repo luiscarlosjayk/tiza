@@ -10,6 +10,8 @@ cargo test -p tiza-qa --test t-050 -- ac3 --nocapture
 
 Test data lives in `qa/fixtures/t-XXX/` (never in `examples/`, which are the demos people open). `tiza_qa` (in `src/lib.rs`) gives the helpers: `bin()` builds and locates the `tiza` binary, `tiza_ok(&[…])` runs it, `fixture("t-092/callouts.tiza")`, `scratch(name)` for output, and `Live` — a headless instance with the real `App` and the real socket server, so a test can call the API (`live.api_ok("annotation.add", json!({…}))`), press keys (`live.keys(&[KeyCode::Char('V')])`), run `:` commands and read the screen (`live.screen(100, 30)`).
 
+Tests that need a real terminal use `tiza_qa::pty_script(dir, name, body, args)`: it prepends `src/pty.py` to the test's Python body and runs it with a hard wall-clock timeout on the Rust side. The prelude's `Pty` class never blocks: reads go through `select`, `wait_for(pred, timeout, what)` waits on what the child printed (never `time.sleep`), `finish()` kills a child that does not exit, and a SIGALRM backstop ends the script at its deadline. A child that stops answering fails the test in seconds instead of hanging `cargo test` (t-119). Never write a bare `os.read` loop on a pty or call `Command::output()` on an interactive child.
+
 `McpClient` (in `src/lib.rs`) is a real JSON-RPC client over stdio for `tiza mcp`: handshake, `tools/list`, one `tools/call` at a time with the reply read in order, so reconnection and errors can be observed (t-070).
 
 Render snapshots (t-053) live in `qa/tests/snapshots/` (insta): one `-symbols` and one `-styles` file per case. When a render changes on purpose, run `INSTA_UPDATE=always cargo test -p tiza-qa --test t-053` (or `cargo insta review`) and commit the updated `.snap` files with the change.

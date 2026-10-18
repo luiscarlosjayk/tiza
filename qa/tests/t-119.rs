@@ -20,61 +20,68 @@ use serde_json::json;
 use tiza_core::ThemeName;
 use tiza_qa::{Live, example, scratch, tiza, tiza_ok};
 
+// Body of the pty script (`tiza_qa::PTY_PRELUDE` gives `Pty`, `plain`):
+// every step waits on what the screen shows, never on the clock. The
+// start-up answer is queued in the pty before Tiza starts, as if the
+// terminal had answered at once: the product's 100 ms window is real
+// behaviour, but whether a loaded test machine wakes this script inside it
+// is not what the test is about (t-131). The answer after a resize goes
+// through the key stream, which has no window, so it is sent on the query.
 const PTY: &str = r#"
-import os, pty, subprocess, sys, time, fcntl, termios, struct, re, signal
 binary, doc, first, second = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
-master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
-def ctty():
-    os.setsid(); fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 env = dict(os.environ, TIZA_CONFIG="/nonexistent/config.toml")
-p = subprocess.Popen([binary, doc, "--no-socket", "--no-save"], stdin=slave, stdout=slave,
-                     stderr=slave, close_fds=True, preexec_fn=ctty, env=env)
-os.close(slave)
+env.pop("TIZA_NO_OSC", None)
 def answer(bg):
-    if bg != "none":
-        os.write(master, f"\x1b]11;rgb:{bg}\x1b\\\x1b]10;rgb:8080/8080/8080\x1b\\".encode())
-out = b""; t0 = time.time(); stage = 0; t_query = None
-while time.time() - t0 < 10:
-    try: chunk = os.read(master, 65536)
-    except OSError: break
-    if not chunk: break
-    out += chunk
-    if stage == 0 and b"\x1b]11;?" in out:
-        t_query = time.time(); answer(first); stage = 1; time.sleep(0.8)
-        if second == "skip":
-            os.write(master, b":q\r"); stage = 3
-        else:
-            fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 118, 0, 0))
-            os.killpg(p.pid, signal.SIGWINCH)
-    elif stage == 1 and out.count(b"\x1b]11;?") >= 2:
-        answer(second); stage = 2; time.sleep(0.8)
-        os.write(master, b"jj:q\r"); stage = 3
-try: p.wait(timeout=5)
-except Exception: p.kill(); p.wait()
-text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", out.decode(errors="replace"))
-print("QUERIES", out.count(b"\x1b]11;?"))
+    return f"\x1b]11;rgb:{bg}\x1b\\\x1b]10;rgb:8080/8080/8080\x1b\\".encode()
+def theme_of(bg):
+    return "dark" if bg == "none" or int(bg[:2], 16) < 0x80 else "light"
+def shows(label, since=0):
+    return lambda out: label in plain(out[since:])
+s = Pty([binary, doc, "--no-socket", "--no-save"], 30, 120, env=env, ctty=True, raw=True,
+        seed=b"" if first == "none" else answer(first))
+ok = s.wait_for(lambda out: b"\x1b]11;?" in out, 10, "start-up OSC 11 query")
+t_query = time.monotonic()
+ok = ok and s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame")
+t_frame = time.monotonic()
+ok = ok and s.wait_for(shows(theme_of(first) + "·auto"), 10, "status bar " + theme_of(first))
+if ok and second != "skip":
+    # A SIGWINCH that lands before crossterm's event source exists is lost
+    # (its handler is installed on the first poll): open and close the help
+    # first, so the resize is only sent once keys are being read.
+    s.send(b"?")
+    ok = s.wait_for(shows("keys and commands"), 10, "help overlay (event loop reading keys)")
+    s.send(b"?")
+if ok and second != "skip":
+    s.resize(30, 118)
+    ok = s.wait_for(lambda out: out.count(b"\x1b]11;?") >= 2, 10, "query after the resize")
+    if ok:
+        mark = len(s.out)
+        s.send(answer(second))
+        s.wait_for(shows(theme_of(second) + "·auto", mark), 10, "status bar " + theme_of(second))
+s.send(b":q\r")
+code = s.finish(5)
+text = plain(s.out)
+print("QUERIES", s.out.count(b"\x1b]11;?"))
 i, j = text.find("dark·auto"), text.find("light·auto")
 print("DARK_AT", i, "LIGHT_AT", j)
-print("STARTUP_MS", int((t_query - t0) * 1000) if t_query else -1)
-print("EXIT", p.returncode)
+print("STARTUP_MS", int((t_frame - t_query) * 1000))
+print("EXIT", code)
 "#;
 
 fn pty_run(dir: &std::path::Path, doc: &std::path::Path, first: &str, second: &str) -> String {
-    let script = dir.join("osc.py");
-    std::fs::write(&script, PTY).unwrap();
-    let out = std::process::Command::new("python3")
-        .args([
-            "-I",
-            script.to_str().unwrap(),
+    let out = tiza_qa::pty_script(
+        dir,
+        "osc.py",
+        PTY,
+        &[
             tiza_qa::bin().to_str().unwrap(),
             doc.to_str().unwrap(),
             first,
             second,
-        ])
-        .output()
-        .expect("python3");
-    String::from_utf8_lossy(&out.stdout).into_owned()
+        ],
+    );
+    assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
+    out
 }
 
 fn plain_source(dir: &std::path::Path) -> std::path::PathBuf {
@@ -116,8 +123,8 @@ fn ac1_the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
         dark_at >= 0 && light_at > dark_at,
         "dark first, then light: {out}"
     );
-    // No answer at all (CI, a pipe): dark, and the start-up query cost
-    // well under a second.
+    // No answer at all (CI, a pipe): dark, and the start-up query costs
+    // well under a second (query sent → first frame; the window is 100 ms).
     let out = pty_run(&dir, &src, "none", "skip");
     assert!(
         !out.contains("DARK_AT -1") && out.contains("LIGHT_AT -1") && out.contains("EXIT 0"),
@@ -131,6 +138,68 @@ fn ac1_the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
         .parse()
         .unwrap();
     assert!((0..1500).contains(&ms), "{out}");
+}
+
+#[test]
+fn harness_a_silent_or_stuck_child_fails_in_seconds_instead_of_hanging() {
+    // The QA round on macOS found the old harness blocked forever in
+    // `os.read` once the child stopped writing. Each layer must end on its
+    // own, fast.
+    let dir = scratch("t119-harness");
+    let limit = std::time::Duration::from_secs(15);
+    // 1. A child that never writes and never exits: `wait_for` gives up at
+    //    its timeout and `finish` kills it.
+    let t = std::time::Instant::now();
+    let out = tiza_qa::pty_script(
+        &dir,
+        "silent.py",
+        r#"
+s = Pty(["sleep", "600"], 10, 40)
+print("SAW", s.wait_for(lambda out: b"never" in out, 1.0, "output from a silent child"))
+print("EXIT", s.finish(1.0))
+"#,
+        &[],
+    );
+    assert!(
+        out.contains("SAW False")
+            && out.contains("WAIT_TIMEOUT output from a silent child")
+            && out.contains("CHILD_KILLED")
+            && out.contains("EXIT -9"),
+        "{out}"
+    );
+    assert!(t.elapsed() < limit, "{:?}", t.elapsed());
+    // 2. A body that blocks by mistake (a raw blocking read): the SIGALRM
+    //    backstop ends the script at its deadline and kills the child.
+    let t = std::time::Instant::now();
+    let out = tiza_qa::pty_script_with_deadline(
+        &dir,
+        "blocking.py",
+        r#"
+s = Pty(["sleep", "600"], 10, 40)
+os.set_blocking(s.master, True)
+os.read(s.master, 1)
+print("UNREACHABLE")
+"#,
+        &[],
+        1,
+    );
+    assert!(
+        out.contains("PTY_DEADLINE") && !out.contains("UNREACHABLE"),
+        "{out}"
+    );
+    assert!(t.elapsed() < limit, "{:?}", t.elapsed());
+    // 3. A Python process that hangs outside the prelude: the Rust side kills
+    //    it at its wall-clock timeout and keeps what it printed.
+    let script = dir.join("stuck.py");
+    std::fs::write(
+        &script,
+        "import sys, time\nprint('started', flush=True)\ntime.sleep(600)\n",
+    )
+    .unwrap();
+    let run = tiza_qa::python(&script, &[], std::time::Duration::from_secs(2));
+    assert!(run.timed_out(), "{run:?}");
+    assert!(run.stdout.contains("started"), "{run:?}");
+    assert!(run.elapsed < limit, "{:?}", run.elapsed);
 }
 
 #[test]

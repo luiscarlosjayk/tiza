@@ -629,46 +629,22 @@ fn ac9_no_leak_through_errors_crash_line_or_smoke() {
     );
     // --smoke in a pty: the frame drawn is masked.
     let dir = src.parent().unwrap();
-    let script = dir.join("smoke.py");
-    std::fs::write(
-        &script,
+    let all = tiza_qa::pty_script(
+        dir,
+        "smoke.py",
         r#"
-import os, pty, subprocess, sys, time, fcntl, termios, struct, re
 binary, doc = sys.argv[1], sys.argv[2]
-master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
 env = dict(os.environ, TIZA_TEST_PANIC="1")
-p = subprocess.Popen(["bash", "-c", f"{binary} {doc} --no-socket --no-save; echo EXIT=$?"],
-                     stdin=slave, stdout=slave, stderr=slave, close_fds=True, start_new_session=True, env=env)
-os.close(slave)
-time.sleep(1.5)
-os.write(master, b":panic\r")
-out = b""; t = time.time()
-while time.time() - t < 20:
-    try:
-        chunk = os.read(master, 65536)
-    except OSError:
-        break
-    if not chunk:
-        break
-    out += chunk
-    if b"EXIT=" in out:
-        break
-p.wait(timeout=10)
-sys.stdout.write(out.decode(errors="replace"))
+s = Pty(["bash", "-c", f"{binary} {doc} --no-socket --no-save; echo EXIT=$?"], 30, 100, env=env)
+# Keys typed before the first frame would be read by the start-up OSC query.
+if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
+    s.send(b":panic\r")
+s.wait_for(lambda out: b"EXIT=" in out, 20, "EXIT=")
+s.finish(10)
+sys.stdout.write(s.out.decode(errors="replace"))
 "#,
-    )
-    .unwrap();
-    let out = std::process::Command::new("python3")
-        .args([
-            "-I",
-            script.to_str().unwrap(),
-            tiza_qa::bin().to_str().unwrap(),
-            sidecar.to_str().unwrap(),
-        ])
-        .output()
-        .expect("python3");
-    let all = String::from_utf8_lossy(&out.stdout).to_string();
+        &[tiza_qa::bin().to_str().unwrap(), sidecar.to_str().unwrap()],
+    );
     assert!(all.contains("tiza crashed:"), "{all}");
     assert_clean("pty output incl. the crash line", &all);
     assert!(

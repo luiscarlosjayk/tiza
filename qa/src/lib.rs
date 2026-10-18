@@ -404,3 +404,133 @@ impl Drop for McpClient {
         let _ = self.child.wait();
     }
 }
+
+/// What a Python helper run returned. `status` is `None` when it was killed
+/// at its wall-clock deadline.
+#[derive(Debug)]
+pub struct PyRun {
+    pub stdout: String,
+    pub stderr: String,
+    pub status: Option<std::process::ExitStatus>,
+    pub elapsed: std::time::Duration,
+}
+
+impl PyRun {
+    pub fn timed_out(&self) -> bool {
+        self.status.is_none()
+    }
+}
+
+/// Runs `python3 -I script args…` with a hard wall-clock `timeout`: past it
+/// the process is killed and the run comes back with `status: None`, so a
+/// stuck child fails a test in seconds instead of hanging `cargo test`.
+/// stdout/stderr are drained on their own threads (a full pipe never stalls
+/// the child) and whatever was printed before the kill is kept.
+pub fn python(script: &Path, args: &[&str], timeout: std::time::Duration) -> PyRun {
+    python_env(script, args, timeout, &[])
+}
+
+fn python_env(
+    script: &Path,
+    args: &[&str],
+    timeout: std::time::Duration,
+    env: &[(&str, String)],
+) -> PyRun {
+    use std::io::Read;
+    use std::process::Stdio;
+    let start = std::time::Instant::now();
+    let mut child = Command::new("python3")
+        .arg("-I")
+        .arg(script)
+        .args(args)
+        .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("python3");
+    let (done_tx, done_rx) = mpsc::channel::<()>();
+    let drain = |mut r: Box<dyn Read + Send>, tx: mpsc::Sender<()>| {
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = r.read_to_end(&mut buf);
+            let _ = tx.send(());
+            String::from_utf8_lossy(&buf).into_owned()
+        })
+    };
+    let out = drain(Box::new(child.stdout.take().unwrap()), done_tx.clone());
+    let err = drain(Box::new(child.stderr.take().unwrap()), done_tx);
+    // Both pipes reach EOF when python exits (its pty children never inherit
+    // them: `close_fds=True`), so waiting on the two readers is waiting on it.
+    let mut finished = true;
+    for _ in 0..2 {
+        let left = timeout.saturating_sub(start.elapsed());
+        if done_rx.recv_timeout(left).is_err() {
+            finished = false;
+            break;
+        }
+    }
+    let status = if finished {
+        Some(child.wait().expect("wait python3"))
+    } else {
+        let _ = child.kill();
+        let _ = child.wait();
+        None
+    };
+    PyRun {
+        stdout: out.join().unwrap_or_default(),
+        stderr: err.join().unwrap_or_default(),
+        status,
+        elapsed: start.elapsed(),
+    }
+}
+
+/// The Python prelude of every pty test (`qa/src/pty.py`): a `Pty` class whose
+/// reads are all `select`-bounded, `wait_for(pred, timeout)` instead of
+/// sleeps, `finish()` that kills a child that does not exit, and a SIGALRM
+/// backstop at `TIZA_PTY_DEADLINE` seconds.
+pub const PTY_PRELUDE: &str = include_str!("pty.py");
+
+/// Default hard deadline of one pty script, Python side (seconds). The Rust
+/// side kills the interpreter 10 s after it.
+pub const PTY_DEADLINE_S: u64 = 40;
+
+/// Writes `PTY_PRELUDE` + `body` to `dir/name`, runs it with `args` and
+/// returns its stdout. Panics with everything captured if the run had to be
+/// killed or Python itself failed.
+pub fn pty_script(dir: &Path, name: &str, body: &str, args: &[&str]) -> String {
+    pty_script_with_deadline(dir, name, body, args, PTY_DEADLINE_S)
+}
+
+/// `pty_script` with its own Python-side deadline (seconds).
+pub fn pty_script_with_deadline(
+    dir: &Path,
+    name: &str,
+    body: &str,
+    args: &[&str],
+    deadline_s: u64,
+) -> String {
+    let script = dir.join(name);
+    std::fs::write(&script, format!("{PTY_PRELUDE}\n{body}")).unwrap();
+    let run = python_env(
+        &script,
+        args,
+        std::time::Duration::from_secs(deadline_s + 10),
+        &[("TIZA_PTY_DEADLINE", deadline_s.to_string())],
+    );
+    assert!(
+        !run.timed_out(),
+        "pty script {name} killed after {:?}\nstdout:\n{}\nstderr:\n{}",
+        run.elapsed,
+        run.stdout,
+        run.stderr
+    );
+    assert!(
+        run.stderr.trim().is_empty() || run.status.is_some_and(|s| s.success()),
+        "pty script {name} failed ({:?}):\n{}\nstdout:\n{}",
+        run.status,
+        run.stderr,
+        run.stdout
+    );
+    run.stdout
+}

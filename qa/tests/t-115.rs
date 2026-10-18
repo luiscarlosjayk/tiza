@@ -257,33 +257,20 @@ fn ac2_a_panic_restores_the_terminal_and_says_where_the_work_is() {
     // the hidden `:panic` command.
     let dir = scratch("t115-panic");
     std::fs::write(dir.join("src.rs"), CODE).unwrap();
-    let script = dir.join("panic.py");
-    std::fs::write(
-        &script,
+    let stdout = tiza_qa::pty_script(
+        &dir,
+        "panic.py",
         r#"
-import os, pty, subprocess, sys, time, fcntl, termios, struct, re
 binary, source = sys.argv[1], sys.argv[2]
-master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 100, 0, 0))
 env = dict(os.environ, TIZA_TEST_PANIC="1")
-p = subprocess.Popen(["bash", "-c", f"{binary} {source} --no-socket --no-save; echo EXIT=$?"],
-                     stdin=slave, stdout=slave, stderr=slave, close_fds=True, start_new_session=True, env=env)
-os.close(slave)
-time.sleep(1.5)
-os.write(master, b":panic\r")
-out = b""; t = time.time()
-while time.time() - t < 20:
-    try:
-        chunk = os.read(master, 65536)
-    except OSError:
-        break
-    if not chunk:
-        break
-    out += chunk
-    if b"EXIT=" in out:
-        break
-p.wait(timeout=10)
-text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", out.decode(errors="replace"))
+s = Pty(["bash", "-c", f"{binary} {source} --no-socket --no-save; echo EXIT=$?"], 30, 100, env=env)
+# Keys typed before the first frame would be read by the start-up OSC query.
+if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
+    s.send(b":panic\r")
+s.wait_for(lambda out: b"EXIT=" in out, 20, "EXIT=")
+s.finish(10)
+out = s.out
+text = plain(out)
 print("ALTSCREEN_OUT" if b"\x1b[?1049l" in out else "no-restore")
 print("CURSOR_SHOWN" if b"\x1b[?25h" in out else "no-cursor")
 print("PASTE_OFF" if b"\x1b[?2004l" in out else "no-paste-off")
@@ -291,18 +278,11 @@ i = text.find("tiza crashed:")
 print(text[i:i+400].replace("\n", " ") if i >= 0 else "NO-CRASH-LINE")
 print(text[text.find("EXIT="):].strip())
 "#,
-    )
-    .unwrap();
-    let out = std::process::Command::new("python3")
-        .args([
-            "-I",
-            script.to_str().unwrap(),
+        &[
             tiza_qa::bin().to_str().unwrap(),
             dir.join("src.rs").to_str().unwrap(),
-        ])
-        .output()
-        .expect("python3");
-    let stdout = String::from_utf8_lossy(&out.stdout);
+        ],
+    );
     assert!(stdout.contains("ALTSCREEN_OUT"), "{stdout}");
     assert!(stdout.contains("CURSOR_SHOWN"), "{stdout}");
     assert!(stdout.contains("PASTE_OFF"), "{stdout}");

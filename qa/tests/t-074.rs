@@ -283,47 +283,26 @@ fn ac4_smoke_flag_draws_one_frame_and_exits_cleanly() {
     // A pty via Python (always on the runners): stdin is a pipe, so keys come
     // from /dev/tty. The frame must contain the code and the exit code be 0.
     let dir = scratch("t074-smoke");
-    let script = dir.join("smoke.py");
-    std::fs::write(
-        &script,
+    let stdout = tiza_qa::pty_script(
+        &dir,
+        "smoke.py",
         r#"
-import os, pty, subprocess, sys, time, fcntl, termios, struct, re
 binary, source = sys.argv[1], sys.argv[2]
-master, slave = pty.openpty()
-fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
-p = subprocess.Popen(["bash", "-c", f"cat {source} | {binary} --smoke --no-socket; echo EXIT=$?"],
-                     stdin=slave, stdout=slave, stderr=slave, close_fds=True, start_new_session=True)
-os.close(slave)
-out = b""; t = time.time()
-while time.time() - t < 30:
-    try:
-        chunk = os.read(master, 65536)
-    except OSError:
-        break
-    if not chunk:
-        break
-    out += chunk
-    if b"EXIT=" in out:
-        break
-p.wait(timeout=10)
-text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", out.decode(errors="replace"))
+s = Pty(["bash", "-c", f"cat {source} | {binary} --smoke --no-socket; echo EXIT=$?"], 40, 120)
+s.wait_for(lambda out: b"EXIT=" in out, 30, "EXIT=")
+s.finish(10)
+out = s.out
+text = plain(out)
 print("ALTSCREEN_IN" if b"\x1b[?1049h" in out else "no-altscreen")
 print("ALTSCREEN_OUT" if b"\x1b[?1049l" in out else "no-restore")
 print("CODE" if "impl" in text else "no-code")
 print(text[text.find("EXIT="):].strip())
 "#,
-    )
-    .unwrap();
-    let out = std::process::Command::new("python3")
-        .args([
-            "-I",
-            script.to_str().unwrap(),
+        &[
             tiza_qa::bin().to_str().unwrap(),
             fixture("t-011/repeated.rs").to_str().unwrap(),
-        ])
-        .output()
-        .expect("python3");
-    let stdout = String::from_utf8_lossy(&out.stdout);
+        ],
+    );
     assert!(stdout.contains("ALTSCREEN_IN"), "{stdout}");
     assert!(
         stdout.contains("ALTSCREEN_OUT"),
