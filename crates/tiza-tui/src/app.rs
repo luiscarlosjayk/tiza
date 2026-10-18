@@ -136,6 +136,12 @@ pub struct App {
     /// A reload or paste widened (fail-closed) or dropped a redact: shown as an error after the
     /// reload's own message, so it is never missed.
     redact_drop_notice: Option<String>,
+    /// Loud redact notices still to be read (t-135): a reload or paste that
+    /// widened or dropped a redact (t-117), a step whose move did (t-140).
+    /// `ui::draw` puts them whole on their own rows above the status bar —
+    /// never cut, whatever the bar holds — until the next key; a later
+    /// reload or message never replaces them (a new notice is added).
+    pub redact_alerts: Vec<String>,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
@@ -221,6 +227,7 @@ impl App {
             redact_shown: true,
             layout_stable: false,
             redact_drop_notice: None,
+            redact_alerts: Vec::new(),
             save_error: None,
             save_warning_pending: false,
             padding_override: None,
@@ -371,6 +378,31 @@ impl App {
     pub fn error(&mut self, msg: impl Into<String>) {
         self.save_warning_pending = false;
         self.message = Some((msg.into(), true));
+    }
+
+    /// A loud redact notice (t-117, t-140): the error message, as before,
+    /// and a pending alert drawn whole above the bar until the next key
+    /// (t-135). An alert already pending stays; the same text is not
+    /// repeated.
+    pub fn redact_alert(&mut self, notice: String) {
+        self.error(notice.clone());
+        if !self.redact_alerts.contains(&notice) {
+            self.redact_alerts.push(notice);
+        }
+    }
+
+    /// The presenter pressed a key with the alerts on screen: they have been
+    /// seen (t-135). `true` when there was something to hide.
+    pub fn dismiss_redact_alerts(&mut self) -> bool {
+        let had = !self.redact_alerts.is_empty();
+        self.redact_alerts.clear();
+        had
+    }
+
+    /// Whether `msg` is one of the pending redact alerts, already drawn whole
+    /// above the bar (the bar and the presentation row then skip it).
+    pub fn is_redact_alert(&self, msg: &str) -> bool {
+        self.redact_alerts.iter().any(|a| a == msg)
     }
 
     /// Every annotation id with its step: taken before an action so
@@ -958,7 +990,7 @@ impl App {
                 // text (t-140): loud, before anything is recorded.
                 let notices = self.doc.redact_notices_at(s, false);
                 if !notices.is_empty() {
-                    self.error(notices.join(" · "));
+                    self.redact_alert(notices.join(" · "));
                 }
             }
             self.clamp_cursor();
@@ -1260,7 +1292,7 @@ impl App {
             ));
         }
         if let Some(n) = self.redact_drop_notice.take() {
-            self.error(n);
+            self.redact_alert(n);
         }
         Ok(())
     }
@@ -1546,7 +1578,7 @@ impl App {
             }
         ));
         if let Some(n) = self.redact_drop_notice.take() {
-            self.error(n);
+            self.redact_alert(n);
         }
         true
     }
