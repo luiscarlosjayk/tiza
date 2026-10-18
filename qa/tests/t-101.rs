@@ -1009,8 +1009,9 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
 
 // Second rework (QA 2 on d2057db, scenarios A-H from Luis): the cleanup
 // removed `step-1.png` and `step-3.png` of the user's. It only ever
-// removes names Tiza could have written: `step-` + at least 2 digits +
-// `.` + the format being written, lowercase, a regular file.
+// removes names this run's scheme writes: `step-` + exactly the run's
+// number of digits (the last step's, at least 2) + `.` + the format
+// being written, lowercase, a regular file.
 
 /// `tiza render examples/ownership.rs.tiza --all-steps --out <out> <extra>`:
 /// (exit code, stderr). The example has steps 0-7.
@@ -1080,10 +1081,11 @@ fn rework6_a_names_tiza_never_writes_survive_byte_for_byte() {
 }
 
 #[test]
-fn rework6_b_f_leftovers_of_its_format_go_and_are_named() {
+fn rework6_b_f_leftovers_of_its_format_and_width_go_and_are_named() {
     let out = scratch("t101-r2-b").join("steps");
     std::fs::create_dir_all(&out).unwrap();
-    // B: an earlier, longer run; F: a 100+ / 1000+ step document's names.
+    // B: an earlier, longer run. F: names of a 100+ / 1000+ step document
+    // are another width: they stay, unnamed (QA 2: the safer rule).
     for f in [
         "step-07.png",
         "step-09.png",
@@ -1096,15 +1098,20 @@ fn rework6_b_f_leftovers_of_its_format_go_and_are_named() {
     let (code, err) = all_steps(&out, &[]);
     assert_eq!(code, 0, "{err}");
     assert!(
-        err.contains(
-            "removed 4 files from an earlier run: step-000.png, step-0123.png, step-09.png, step-10.png"
-        ),
+        err.contains("removed 2 files from an earlier run: step-09.png, step-10.png"),
         "{err}"
     );
     // step-07.png was overwritten, not removed.
-    assert!(!err.contains("step-07"), "{err}");
+    for f in ["step-07", "step-000", "step-0123", "another run"] {
+        assert!(!err.contains(f), "{f}: {err}");
+    }
+    for f in ["step-000.png", "step-0123.png"] {
+        assert_eq!(std::fs::read(out.join(f)).unwrap(), b"old", "{f}");
+    }
     assert_ne!(std::fs::read(out.join("step-07.png")).unwrap(), b"old");
-    let want: Vec<String> = (0..=7).map(|s| format!("step-{s:02}.png")).collect();
+    let mut want: Vec<String> = (0..=7).map(|s| format!("step-{s:02}.png")).collect();
+    want.extend(["step-000.png".to_string(), "step-0123.png".to_string()]);
+    want.sort();
     assert_eq!(names_in(&out), want);
 }
 

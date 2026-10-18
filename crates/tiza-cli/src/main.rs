@@ -916,7 +916,7 @@ fn render_all_steps(
     let names: Vec<String> = (first..=last)
         .map(|step| format!("step-{step:0digits$}.{ext}"))
         .collect();
-    let (stale, odd) = stale_step_files(dir, &names);
+    let (stale, odd) = stale_step_files(dir, &names, digits);
     let mut size = String::new();
     for (step, canvas) in canvases.iter().enumerate().skip(first as usize) {
         let bytes: Vec<u8> = match format {
@@ -1037,19 +1037,20 @@ fn name_list(names: &[String]) -> String {
     }
 }
 
-/// Whether `f` is a name `--all-steps` can write: `step-` + at least two
-/// digits (Tiza pads to the last step's width, never fewer than 2, and a
-/// document has no step limit, so `step-0123.png` is one too) + `.` + a
-/// still format, lowercase. `step-1.png`, `STEP-05.PNG`, `step-05.png.bak`
-/// or `step-5a.png` are the user's.
-fn is_step_name(f: &str) -> bool {
+/// Whether `f` is a name this `--all-steps` run's scheme writes: `step-` +
+/// exactly `digits` digits (the last step's width, never fewer than 2) +
+/// `.` + a still format, lowercase. `step-1.png`, `STEP-05.PNG`,
+/// `step-05.png.bak` or `step-5a.png` are the user's; `step-0123.png` next
+/// to a 7-step take is a name only a 1000+ step document writes, so it is
+/// not this run's to judge and stays, unnamed.
+fn is_step_name(f: &str, digits: usize) -> bool {
     let Some(rest) = f.strip_prefix("step-") else {
         return false;
     };
     let Some((num, ext)) = rest.split_once('.') else {
         return false;
     };
-    num.len() >= 2
+    num.len() == digits
         && num.bytes().all(|b| b.is_ascii_digit())
         && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
 }
@@ -1058,7 +1059,11 @@ fn is_step_name(f: &str) -> bool {
 /// writing `names` does not write, sorted: the regular files, and the rest
 /// (directories, symlinks, …), which are never removed and are described
 /// (`step-08.png (a directory)`). Names that are not UTF-8 are skipped.
-fn stale_step_files(dir: &std::path::Path, names: &[String]) -> (Vec<String>, Vec<String>) {
+fn stale_step_files(
+    dir: &std::path::Path,
+    names: &[String],
+    digits: usize,
+) -> (Vec<String>, Vec<String>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return (Vec::new(), Vec::new());
     };
@@ -1068,7 +1073,7 @@ fn stale_step_files(dir: &std::path::Path, names: &[String]) -> (Vec<String>, Ve
         let Some(f) = e.file_name().to_str().map(str::to_string) else {
             continue;
         };
-        if !is_step_name(&f) || names.contains(&f) {
+        if !is_step_name(&f, digits) || names.contains(&f) {
             continue;
         }
         // `file_type` does not follow symlinks.
