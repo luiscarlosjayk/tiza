@@ -222,7 +222,7 @@ enum Cmd {
         /// .gif/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long). In a .gif/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
         #[arg(long, default_value_t = 2.0)]
         interval: f64,
-        /// .gif/.mp4/.cast/.tape: start at the first annotated step instead of step 0 (code only)
+        /// .gif/.mp4/.cast/.tape and --all-steps: start at step 1 instead of step 0 (the bare code)
         #[arg(long)]
         skip_zero: bool,
         /// .cast/.tape: recording title (default: the document's)
@@ -248,6 +248,12 @@ enum Cmd {
         /// Warnings fail too (exit 1)
         #[arg(long)]
         strict: bool,
+        /// `check` never talks to the live instance: the global `--socket`
+        /// and `--session` are accepted (and ignored) but left out of its help.
+        #[arg(long, hide = true)]
+        socket: Option<PathBuf>,
+        #[arg(long, hide = true)]
+        session: Option<String>,
     },
     /// Start the MCP server (stdio) that controls the live instance
     Mcp,
@@ -522,7 +528,9 @@ fn real_main() -> anyhow::Result<()> {
                     scale,
                     system_fonts,
                 };
-                return render_all_steps(&doc, &theme, &out, format, &opts, &svg_opts, &png_opts);
+                return render_all_steps(
+                    &doc, &theme, &out, format, &opts, &svg_opts, &png_opts, skip_zero,
+                );
             }
             let l = layout(
                 &doc,
@@ -709,6 +717,7 @@ fn real_main() -> anyhow::Result<()> {
             width,
             json,
             strict,
+            ..
         }) => {
             let width = width
                 .map(tiza_core::layout::check_width)
@@ -855,6 +864,7 @@ fn call(
 /// `render --all-steps --out DIR/` (t-101): one file per step, step 0
 /// included, every canvas padded to the same size (the stable geometry of
 /// a take), named `step-00.png` … so they sort in step order.
+#[allow(clippy::too_many_arguments)]
 fn render_all_steps(
     doc: &tiza_core::Document,
     theme: &Theme,
@@ -863,6 +873,7 @@ fn render_all_steps(
     opts: &LayoutOptions,
     svg_opts: &tiza_export::SvgOptions,
     png_opts: &tiza_export::PngOptions,
+    skip_zero: bool,
 ) -> anyhow::Result<()> {
     if !matches!(
         format,
@@ -877,8 +888,15 @@ fn render_all_steps(
     if dir.is_file() {
         bail!("--all-steps needs a directory, and {out} is a file");
     }
-    std::fs::create_dir_all(dir).with_context(|| format!("could not create {out}"))?;
     let last = tiza_core::check::last_step(doc);
+    // `--skip-zero` leaves out step 0 (the bare code), as in a .gif.
+    let first: u32 = if skip_zero { 1 } else { 0 };
+    if first > last {
+        bail!(
+            "--skip-zero leaves nothing to write: this document only has step 0 (no annotations or moves)"
+        );
+    }
+    std::fs::create_dir_all(dir).with_context(|| format!("could not create {out}"))?;
     let mut canvases: Vec<tiza_core::canvas::Canvas> = (0..=last)
         .map(|step| {
             layout(
@@ -894,8 +912,13 @@ fn render_all_steps(
         .collect();
     tiza_core::anim::same_size(&mut canvases, theme);
     let digits = last.to_string().len().max(2);
+    let ext = format_ext(format);
+    let names: Vec<String> = (first..=last)
+        .map(|step| format!("step-{step:0digits$}.{ext}"))
+        .collect();
+    let stale = stale_step_files(dir, &names);
     let mut size = String::new();
-    for (step, canvas) in canvases.iter().enumerate() {
+    for (step, canvas) in canvases.iter().enumerate().skip(first as usize) {
         let bytes: Vec<u8> = match format {
             Format::Txt => (canvas.to_plain_text() + "\n").into_bytes(),
             Format::Ansi => canvas.to_ansi().into_bytes(),
@@ -910,21 +933,89 @@ fn render_all_steps(
                     if size.is_empty() && png.len() > 24 {
                         let w = u32::from_be_bytes([png[16], png[17], png[18], png[19]]);
                         let h = u32::from_be_bytes([png[20], png[21], png[22], png[23]]);
-                        size = format!(", {w}×{h} px each");
+                        size = format!(", {w}×{h} px");
                     }
                     png
                 }
             }
         };
-        let path = dir.join(format!("step-{step:0digits$}.{}", format_ext(format)));
+        let path = dir.join(format!("step-{step:0digits$}.{ext}"));
         write_atomically(&path.to_string_lossy(), &bytes)?;
     }
+    // Images of an earlier run that this one did not overwrite (a document
+    // that had more steps): a `step-%02d` glob would pick them up.
+    let (same, other): (Vec<String>, Vec<String>) = stale
+        .into_iter()
+        .partition(|f| f.ends_with(&format!(".{ext}")));
+    for f in &same {
+        std::fs::remove_file(dir.join(f)).with_context(|| format!("could not remove {f}"))?;
+    }
+    let n = names.len();
+    let steps = if first == last {
+        format!("step {last}")
+    } else {
+        format!("steps {first}-{last}")
+    };
+    if n > 1 && !size.is_empty() {
+        size.push_str(" each");
+    }
     eprintln!(
-        "wrote {} files to {} (steps 0-{last}{size})",
-        canvases.len(),
+        "wrote {n} file{} to {} ({steps}{size})",
+        if n == 1 { "" } else { "s" },
         dir.display()
     );
+    if !same.is_empty() {
+        eprintln!(
+            "tiza: removed {} from an earlier run: {}",
+            files_word(same.len()),
+            same.join(", ")
+        );
+    }
+    if !other.is_empty() {
+        eprintln!(
+            "tiza: {} also holds {} of another run, left as {}: {}",
+            dir.display(),
+            files_word(other.len()),
+            if other.len() == 1 {
+                "it is"
+            } else {
+                "they are"
+            },
+            other.join(", ")
+        );
+    }
     Ok(())
+}
+
+fn files_word(n: usize) -> String {
+    format!("{n} file{}", if n == 1 { "" } else { "s" })
+}
+
+/// The `step-NN.<ext>` files in `dir` (any of the still formats) that a
+/// run writing `names` does not write, sorted.
+fn stale_step_files(dir: &std::path::Path, names: &[String]) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .filter_map(|e| e.file_name().to_str().map(str::to_string))
+        .filter(|f| {
+            let Some(rest) = f.strip_prefix("step-") else {
+                return false;
+            };
+            let Some((num, ext)) = rest.split_once('.') else {
+                return false;
+            };
+            !num.is_empty()
+                && num.bytes().all(|b| b.is_ascii_digit())
+                && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
+                && !names.contains(f)
+        })
+        .collect();
+    out.sort();
+    out
 }
 
 fn format_ext(f: Format) -> &'static str {

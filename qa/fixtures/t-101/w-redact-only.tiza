@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "title": "One redact and nothing else (QA 2's w-redact-only.tiza)",
+  "source": { "language": "ini", "first_line": 1 },
+  "code": ["[api]", "token=abc123SECRETxyz789", "region=eu-west-1"],
+  "annotations": [
+    { "id": "r1", "step": 1, "type": "redact", "span": { "line": 2, "start": 6, "end": 24 } }
+  ]
+}

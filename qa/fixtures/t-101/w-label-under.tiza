@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "title": "A label under a redact (QA 2's w-label-under.tiza)",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": ["fn main() {", "    let key = \"abc123SECRETxyz789\";", "    call(key);", "}"],
+  "annotations": [
+    { "id": "r1", "step": 1, "type": "redact", "span": { "line": 2, "start": 15, "end": 33 },
+      "label": "the key the payments service handed us last week, never on video" },
+    { "id": "h1", "step": 1, "type": "highlight", "span": { "line": 2, "start": 15, "end": 33 },
+      "label": "the key the payments service handed us last week, never on video" },
+    { "id": "n1", "step": 2, "type": "note", "line": 3,
+      "text": "call() sends it to the payments service, which answers with a session we keep around" }
+  ]
+}

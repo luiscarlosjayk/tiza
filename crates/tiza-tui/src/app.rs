@@ -89,6 +89,7 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "scene.list",
     "style.list",
     "render.text",
+    "check",
     "follow.status",
     "move.list",
 ];
@@ -4563,6 +4564,19 @@ impl App {
                 let p: StepGotoParams = parse(params)?;
                 self.goto_step(&p.id.as_text())?;
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
+            }
+            "check" => {
+                let p: tiza_core::schema::CheckParams = parse(params)?;
+                let width = p.width.map(tiza_core::layout::check_width).transpose()?;
+                // On the document the instance holds, never on the masked
+                // copy an agent reads: masks change the columns. Only the
+                // report leaves, and it never quotes a secret.
+                let base = self.save_path.parent().map(Path::to_path_buf);
+                serde_json::to_value(tiza_core::check::check_document(
+                    &self.doc,
+                    base.as_deref(),
+                    &tiza_core::check::CheckOptions { width },
+                ))?
             }
             "render.text" => {
                 let width = match params.get("width").and_then(|w| w.as_u64()) {

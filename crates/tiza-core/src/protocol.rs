@@ -1121,6 +1121,10 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     ("render.text", "Returns the current canvas as plain text"),
     (
+        "check",
+        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the real code and linked files inside the instance, so a redact neither breaks a span nor hides a problem; the report never quotes text under a mask. `{width?}` (default 100)",
+    ),
+    (
         "follow.set",
         "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
     ),

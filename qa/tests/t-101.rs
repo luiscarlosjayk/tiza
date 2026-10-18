@@ -25,6 +25,16 @@
 //!   without its text.
 //! - AC7 Docs: README, agent guide, CHANGELOG; this file.
 //!
+//!
+//! Rework (2026-10-18, QA 2): the MCP `check` runs inside the instance on
+//! the real code (it checked the masked copy: false span errors on every
+//! document with a redact, and a label under a mask quoted), compared here
+//! with `tiza check --json`; a marker that matches more than once is a
+//! warning with its lines; a marker under a mask answers like one that
+//! does not exist; `--all-steps` removes its own stale `step-NN` files and
+//! honours `--skip-zero`; the narrowest-width line says when a narrower
+//! width is clean too.
+//!
 //! Corner cases: zero annotations → one image (step 0); `--all-steps` with
 //! `--out -` → error; `check` writes nothing and needs no terminal; a
 //! finding never quotes a secret; a missing linked file → one error per
@@ -398,11 +408,16 @@ fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         ),
         "{plain}"
     );
-    assert_eq!(plain.matches("is clipped").count(), 2, "{plain}");
+    assert_eq!(plain.matches("is clipped with").count(), 2, "{plain}");
     assert!(
         plain
             .trim_end()
-            .ends_with("narrowest width with no clipped label: 108 (any width from 108 up; `tiza render --width 108`)"),
+            .ends_with("no label is clipped at 108 or wider (`tiza render --width 108`)"),
+        "{plain}"
+    );
+    // The step a clipped label names is the first one it is clipped at.
+    assert!(
+        plain.contains("at width 100, first at step 3, then at steps 5-7"),
         "{plain}"
     );
     let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", "100"]);
@@ -422,7 +437,7 @@ fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
     );
     // At 108 nothing is clipped, and the renders agree: no «…» at any step.
     let (_, at108, _) = check(&[file, "--width", "108"]);
-    assert!(!at108.contains("is clipped"), "{at108}");
+    assert!(!at108.contains("is clipped with"), "{at108}");
     for s in 0..=7 {
         let step = s.to_string();
         let r = tiza(&[
@@ -549,7 +564,8 @@ fn ac5_step3_render_all_steps_writes_one_png_per_step_of_one_size() {
     assert!(sizes.iter().all(|s| *s == sizes[0]), "{sizes:?}");
     let err = String::from_utf8_lossy(&r.stderr);
     assert!(
-        err.contains("wrote 8 files") && err.contains(&format!("{}×{} px", sizes[0].0, sizes[0].1)),
+        err.contains("wrote 8 files")
+            && err.contains(&format!("{}×{} px each", sizes[0].0, sizes[0].1)),
         "{err}"
     );
     // Step 7 is the same picture `render --step 7` draws.
@@ -684,4 +700,309 @@ fn corner_check_writes_nothing_and_needs_no_terminal() {
     assert!(o.status.success());
     let v: Value = serde_json::from_slice(&o.stdout).unwrap();
     assert_eq!(v["max_step"], 0);
+}
+
+/// The secret of the rework fixtures (QA 2's `w-*.tiza`).
+const W_SECRET: &str = "abc123SECRETxyz789";
+
+/// The report of the MCP `check` of `file` opened in a live instance.
+fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
+    let dir = scratch(name);
+    let doc = fs::open(file.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    let mut mcp = McpClient::start(&live.socket);
+    let (err, out, _) = mcp.call("check", args);
+    assert!(!err, "{out}");
+    serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+}
+
+#[test]
+fn rework1_mcp_check_is_the_cli_check_on_documents_with_redacts() {
+    for (name, args, cli) in [
+        ("w-redact-only", json!({}), vec![]),
+        ("w-label-under", json!({}), vec![]),
+        ("w-label-under", json!({"width": 60}), vec!["--width", "60"]),
+        ("markers", json!({}), vec![]),
+    ] {
+        let file = fixture(&format!("t-101/{name}.tiza"));
+        let (_, want) = check_json(&file, &cli);
+        let got = mcp_check(&format!("t101-mcp-{name}"), &file, args);
+        assert_eq!(got, want, "{name} {cli:?}: MCP\n{got}\nCLI\n{want}");
+        assert_no(W_SECRET, &format!("MCP check of {name}"), &got.to_string());
+    }
+    // QA 2's case: one redact, nothing else, is clean (it gave
+    // `range 6..24 does not fit on line 2 (it has 14 graphemes)`).
+    let v = mcp_check(
+        "t101-mcp-only",
+        &fixture("t-101/w-redact-only.tiza"),
+        json!({}),
+    );
+    assert_eq!(
+        (v["ok"].clone(), v["errors"].clone()),
+        (json!(true), json!(0)),
+        "{v}"
+    );
+    // A label under a redact is named without its text, as the CLI does.
+    let v = mcp_check(
+        "t101-mcp-under",
+        &fixture("t-101/w-label-under.tiza"),
+        json!({"width": 60}),
+    );
+    let label = "the key the payments service handed us last week";
+    assert!(!v.to_string().contains(label), "{v}");
+    let under: Vec<Value> = with_code(&findings(&v), "clipped_label")
+        .into_iter()
+        .filter(|f| f["id"] == "r1" || f["id"] == "h1")
+        .collect();
+    assert_eq!(under.len(), 2, "{v}");
+    for f in under {
+        assert!(f.get("text").is_none(), "{f}");
+        assert!(
+            f["message"].as_str().unwrap().contains("under a redact"),
+            "{f}"
+        );
+    }
+}
+
+/// Every 6-character piece of `value` that holds a digit is absent.
+#[track_caller]
+fn assert_no(value: &str, what: &str, s: &str) {
+    let c: Vec<char> = value.chars().collect();
+    for i in 0..=c.len() - 6 {
+        let p: String = c[i..i + 6].iter().collect();
+        if p.chars().any(|ch| ch.is_ascii_digit()) {
+            assert!(!s.contains(&p), "{what} shows «{p}» of the secret:\n{s}");
+        }
+    }
+}
+
+#[test]
+fn rework1_the_live_check_sees_unsaved_changes_and_linked_files() {
+    // The instance checks what it holds, not the file on disk.
+    let dir = scratch("t101-mcp-live");
+    let doc = fs::open(fixture("t-101/w-redact-only.tiza").to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "n9", "step": 2, "type": "note", "line": 3, "text": "eu only"}),
+    );
+    let v = live.api_ok("check", json!({}));
+    assert_eq!(v["max_step"], 2, "{v}");
+    assert_eq!(v["ok"], true, "{v}");
+    let r = live.api("check", json!({"width": 3}));
+    assert!(r.error.is_some_and(|e| e.message.contains("width=3")));
+    // A linked file: the message names it.
+    let (_, cli) = check_json(&fixture("t-101/linked.tiza"), &[]);
+    let got = mcp_check("t101-mcp-linked", &fixture("t-101/linked.tiza"), json!({}));
+    assert_eq!(got, cli);
+    let (_, out, _) = check(&[fixture("t-101/linked.tiza").to_str().unwrap()]);
+    assert!(
+        out.contains(
+            "error: q1, step 2, src/queue.rs, L9: line 9 does not exist (src/queue.rs spans 1 to 3)"
+        ),
+        "{out}"
+    );
+}
+
+#[test]
+fn rework2_a_marker_that_matches_more_than_once_warns_with_its_lines() {
+    let (_, v) = check_json(&fixture("t-101/markers.tiza"), &[]);
+    let b1: Vec<Value> = findings(&v)
+        .into_iter()
+        .filter(|f| f["id"] == "b1")
+        .collect();
+    assert_eq!(b1.len(), 2, "{v}");
+    assert!(
+        b1.iter()
+            .all(|f| f["level"] == "warning" && f["code"] == "marker")
+    );
+    assert_eq!(
+        b1[0]["message"],
+        "start marker «open(» matches 2 times (L3, L6): the range takes the first one (L3); make it unique, or an edit above it can move the range"
+    );
+    assert!(
+        b1[1]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("end marker «}» matches 2 times after the start (L4, L7)"),
+        "{v}"
+    );
+    // Warnings: the document still passes.
+    let dir = scratch("t101-twice");
+    let path = dir.join("twice.tiza");
+    std::fs::write(
+        &path,
+        json!({"schema": 1, "source": {"language": "rs"},
+               "code": ["fn a() {", "    go();", "}", "fn b() {", "    go();", "}"],
+               "annotations": [{"id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 3,
+                                "markers": {"start": "go()", "end": "}"}}]})
+        .to_string(),
+    )
+    .unwrap();
+    let (code, out, _) = check(&[path.to_str().unwrap()]);
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        out.contains("warning: b1, step 1, L2: start marker «go()» matches 2 times (L2, L5)"),
+        "{out}"
+    );
+    let (code, _, _) = check(&[path.to_str().unwrap(), "--strict"]);
+    assert_eq!(code, 1);
+}
+
+#[test]
+fn rework3_a_marker_under_a_mask_answers_like_one_that_does_not_exist() {
+    let (_, v) = check_json(&fixture("t-101/markers.tiza"), &[]);
+    let msg = |id: &str| -> String {
+        let f: Vec<Value> = findings(&v).into_iter().filter(|f| f["id"] == id).collect();
+        assert_eq!(f.len(), 1, "{id}: {v}");
+        assert_eq!(f[0]["level"], "error");
+        f[0]["message"].as_str().unwrap().to_string()
+    };
+    // b2's start marker is (part of) the masked value, b3's is nowhere.
+    assert_eq!(msg("b2"), msg("b3"));
+    // b4's end marker is under the mask, b5's is nowhere.
+    assert_eq!(msg("b4"), msg("b5"));
+    assert!(
+        msg("b2").starts_with("start marker «…» matches nothing"),
+        "{v}"
+    );
+    assert_no(W_SECRET, "check --json", &v.to_string());
+    let (_, out, err) = check(&[fixture("t-101/markers.tiza").to_str().unwrap()]);
+    assert_no(W_SECRET, "check", &(out + &err));
+}
+
+#[test]
+fn rework4_all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
+    let dir = scratch("t101-rerun");
+    let out = dir.join("steps");
+    std::fs::create_dir_all(&out).unwrap();
+    // An earlier run of a longer document, an SVG run, and a file of the user's.
+    for f in ["step-08.txt", "step-09.txt", "step-03.svg", "notes.txt"] {
+        std::fs::write(out.join(f), "old").unwrap();
+    }
+    let file = example("ownership.rs.tiza");
+    let run = |extra: &[&str]| {
+        let mut args = vec![
+            "render",
+            file.to_str().unwrap(),
+            "--all-steps",
+            "--format",
+            "txt",
+            "--out",
+            out.to_str().unwrap(),
+        ];
+        args.extend_from_slice(extra);
+        let r = tiza(&args);
+        assert!(r.status.success(), "{}", String::from_utf8_lossy(&r.stderr));
+        String::from_utf8_lossy(&r.stderr).into_owned()
+    };
+    let err = run(&[]);
+    assert!(
+        err.contains("removed 2 files from an earlier run: step-08.txt, step-09.txt"),
+        "{err}"
+    );
+    assert!(
+        err.contains("also holds 1 file of another run, left as it is: step-03.svg"),
+        "{err}"
+    );
+    let names: Vec<String> = listing(&out).into_iter().map(|(n, _)| n).collect();
+    let mut want: Vec<String> = (0..=7).map(|s| format!("step-{s:02}.txt")).collect();
+    want.extend(["notes.txt".to_string(), "step-03.svg".to_string()]);
+    want.sort();
+    assert_eq!(names, want);
+    // `--skip-zero`: from step 1, and step-00 of the run before goes.
+    let err = run(&["--skip-zero"]);
+    assert!(
+        err.contains("wrote 7 files") && err.contains("(steps 1-7)"),
+        "{err}"
+    );
+    assert!(err.contains("step-00.txt"), "{err}");
+    assert!(!out.join("step-00.txt").exists());
+    assert!(out.join("step-01.txt").exists() && out.join("notes.txt").exists());
+    // One file: singular. A document with only step 0 and --skip-zero: refused.
+    let zero = fixture("t-101/zero.tiza");
+    let r = tiza(&[
+        "render",
+        zero.to_str().unwrap(),
+        "--all-steps",
+        "--out",
+        dir.join("one").to_str().unwrap(),
+    ]);
+    let err = String::from_utf8_lossy(&r.stderr);
+    assert!(
+        err.contains("wrote 1 file to") && err.contains("(step 0, "),
+        "{err}"
+    );
+    assert!(!err.contains("each"), "{err}");
+    let r = tiza(&[
+        "render",
+        zero.to_str().unwrap(),
+        "--all-steps",
+        "--skip-zero",
+        "--out",
+        dir.join("none").to_str().unwrap(),
+    ]);
+    assert!(!r.status.success());
+    assert!(String::from_utf8_lossy(&r.stderr).contains("--skip-zero leaves nothing to write"));
+    assert!(!dir.join("none").exists());
+}
+
+#[test]
+fn rework4_check_help_has_no_socket_or_session() {
+    let o = tiza(&["check", "--help"]);
+    let help = String::from_utf8_lossy(&o.stdout);
+    assert!(
+        help.contains("--width") && help.contains("--strict"),
+        "{help}"
+    );
+    assert!(
+        !help.contains("--socket") && !help.contains("--session"),
+        "{help}"
+    );
+    // Still accepted (and ignored), before or after the command.
+    let file = example("ownership.rs.tiza");
+    let (code, _, err) = check(&[file.to_str().unwrap(), "--socket", "/nonexistent.sock"]);
+    assert_eq!(code, 0, "{err}");
+    let o = tiza(&["--session", "x", "check", file.to_str().unwrap()]);
+    assert!(o.status.success());
+    // Commands that talk to the instance keep them in their help.
+    let o = tiza(&["api", "--help"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("--socket"));
+}
+
+#[test]
+fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
+    let file = example("ownership.rs.tiza");
+    let file = file.to_str().unwrap();
+    // 85: no label clipped (notes under the lines), below 108.
+    let (code, out, _) = check(&[file, "--width", "85"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("0 errors, 0 warnings"), "{out}");
+    assert!(
+        out.trim_end().ends_with(
+            "no label is clipped at 108 or wider; 79-93 are clean too (notes go under the lines below 94 columns)"
+        ),
+        "{out}"
+    );
+    // 66: no label clipped, but the code is cut (QA 2: line 4 below 79).
+    let (_, out, _) = check(&[file, "--width", "66"]);
+    assert!(
+        out.contains(
+            "no label is clipped at width 66, but code lines are: the code needs 79 columns"
+        ),
+        "{out}"
+    );
+    assert!(out.contains("79-93 are clean too"), "{out}");
+    let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", "85"]);
+    assert_eq!(
+        v["narrower"],
+        json!({"clean": [[79, 93]], "code_fits_from": 79, "margin_from": 94})
+    );
+    // At 100 labels are clipped and at 108 nothing is: no `narrower`.
+    for w in ["100", "108"] {
+        let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", w]);
+        assert!(v.get("narrower").is_none(), "{w}: {v}");
+    }
 }

@@ -6096,6 +6096,207 @@
       }
     },
     {
+      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the real code and linked files inside the instance, so a redact neither breaks a span nor hides a problem; the report never quotes text under a mask. `{width?}` (default 100)",
+      "method": "check",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Parameters of `check` (t-101).",
+        "properties": {
+          "width": {
+            "description": "Columns to check the labels at; defaults to 100, as `tiza render`.",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "title": "CheckParams",
+        "type": "object"
+      },
+      "result": {
+        "$defs": {
+          "Finding": {
+            "description": "One problem `check` found.",
+            "properties": {
+              "code": {
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.",
+                "type": "string"
+              },
+              "file": {
+                "description": "The linked file it is in (absent: the document's main file).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "id": {
+                "description": "The annotation id (`a3`) or the move (`move #2`, 1-based as in\n`move.list`) the finding is about.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "level": {
+                "$ref": "#/$defs/Level"
+              },
+              "line": {
+                "description": "The code line of the anchor or the move target; for a `schema`\nfinding, the line of the `.tiza` itself.",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "step": {
+                "description": "The step it happens at (the first one, when it lasts several).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "text": {
+                "description": "`clipped_label` only: the full label text (absent when the label is\nunder a redact: never quoted).",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "level",
+              "code",
+              "message"
+            ],
+            "type": "object"
+          },
+          "Level": {
+            "enum": [
+              "error",
+              "warning"
+            ],
+            "type": "string"
+          },
+          "Narrower": {
+            "description": "The widths below `min_clean_width` where a take shows every label\nwhole: below the width at which labels go to the right margin, notes\nand labels go under their lines and fit again, until the code itself\nno longer fits.",
+            "properties": {
+              "clean": {
+                "description": "Width ranges `[from, to]` (inclusive) below `min_clean_width` where\nno label and no code line is clipped at any step.",
+                "items": {
+                  "items": {
+                    "format": "uint",
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              "code_fits_from": {
+                "description": "Narrowest width at which no code line is clipped at any step.",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              },
+              "margin_from": {
+                "description": "Width from which labels and notes go to the right margin (below it\nthey go under the lines).",
+                "format": "uint",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "clean"
+            ],
+            "type": "object"
+          }
+        },
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "description": "Everything `check` found about one document.",
+        "properties": {
+          "errors": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/$defs/Finding"
+            },
+            "type": "array"
+          },
+          "max_step": {
+            "description": "Last step of the document (`None` when it could not be loaded).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "min_clean_width": {
+            "description": "Narrowest width from which no label is clipped at any step (every\nwidth from it up shows them whole), with the stable geometry of a\ntake (`None`: the document could not be loaded, or even width 400\nclips a label).",
+            "format": "uint",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "narrower": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Narrower"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Only when `width` is below `min_clean_width` and no label is clipped\nthere (labels go under the lines on narrow takes): which narrower\nwidths are clean too."
+          },
+          "ok": {
+            "description": "No errors (warnings do not count; `--strict` makes them count).",
+            "type": "boolean"
+          },
+          "warnings": {
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "width": {
+            "description": "The width the labels were checked at.",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "errors",
+          "warnings",
+          "width",
+          "findings"
+        ],
+        "title": "Report",
+        "type": "object"
+      }
+    },
+    {
       "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
       "method": "follow.set",
       "params": {

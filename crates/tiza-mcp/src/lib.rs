@@ -718,7 +718,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (a redact a move widens or drops, an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped. Read-only; never quotes text under a redact. Run it before showing a document."
+        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (a redact a move widens or drops, an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning. Runs inside the instance on the real code, so redacts change nothing; read-only, and never quotes text under a redact. Run it before showing a document."
     )]
     async fn check(
         &self,
@@ -729,16 +729,12 @@ impl TizaServer {
             .map(tiza_core::layout::check_width)
             .transpose()
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
-        let scene = self.call("scene.get", json!({})).await?;
-        let document = scene.get("document").cloned().unwrap_or(Value::Null);
-        let report = tiza_core::check::check_text(
-            &document.to_string(),
-            None,
-            &tiza_core::check::CheckOptions { width },
-        );
-        let v = serde_json::to_value(&report)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        Ok(text(pretty(&v)))
+        // The instance checks the document it holds, real code and all, and
+        // sends back only the report (t-101): checking the masked copy of
+        // `scene.get` here would see a redact's eight bullets instead of the
+        // value and report spans that do not fit.
+        let report = self.call("check", json!({ "width": width })).await?;
+        Ok(text(pretty(&report)))
     }
 
     #[tool(

@@ -65,6 +65,14 @@ pub struct RenderParams {
     pub width: Option<usize>,
 }
 
+/// Parameters of `check` (t-101).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct CheckParams {
+    /// Columns to check the labels at; defaults to 100, as `tiza render`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub width: Option<usize>,
+}
+
 /// Parameters of `focus.set`: omit both to clear the focus.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct FocusParams {
@@ -187,6 +195,7 @@ pub fn api_schema() -> ApiSchema {
                 "pointer.clear" => (schema::<NoParams>(), schema::<crate::protocol::PointerReply>()),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
                 "render.text" => (schema::<RenderParams>(), text()),
+                "check" => (schema::<CheckParams>(), schema::<crate::check::Report>()),
                 "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),
                 "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),
                 "supervise.set" => (schema::<SuperviseParams>(), schema::<SuperviseStatus>()),

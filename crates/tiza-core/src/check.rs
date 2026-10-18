@@ -16,6 +16,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::Serialize;
+use unicode_segmentation::UnicodeSegmentation;
 
 use crate::layout::{
     LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_with, stable_geometry,
@@ -149,7 +150,44 @@ pub struct Report {
     /// take (`None`: the document could not be loaded, or even width 400
     /// clips a label).
     pub min_clean_width: Option<usize>,
+    /// Only when `width` is below `min_clean_width` and no label is clipped
+    /// there (labels go under the lines on narrow takes): which narrower
+    /// widths are clean too.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub narrower: Option<Narrower>,
     pub findings: Vec<Finding>,
+}
+
+/// The widths below `min_clean_width` where a take shows every label
+/// whole: below the width at which labels go to the right margin, notes
+/// and labels go under their lines and fit again, until the code itself
+/// no longer fits.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
+pub struct Narrower {
+    /// Width ranges `[from, to]` (inclusive) below `min_clean_width` where
+    /// no label and no code line is clipped at any step.
+    pub clean: Vec<[usize; 2]>,
+    /// Narrowest width at which no code line is clipped at any step.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code_fits_from: Option<usize>,
+    /// Width from which labels and notes go to the right margin (below it
+    /// they go under the lines).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub margin_from: Option<usize>,
+}
+
+/// `79-93`, `30-40, 79-93`.
+fn ranges_text(r: &[[usize; 2]]) -> String {
+    r.iter()
+        .map(|[a, b]| {
+            if a == b {
+                a.to_string()
+            } else {
+                format!("{a}-{b}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 impl Report {
@@ -169,6 +207,7 @@ impl Report {
             width,
             max_step,
             min_clean_width: clean,
+            narrower: None,
             findings,
         }
     }
@@ -193,14 +232,42 @@ impl Report {
             }
         ));
         if self.max_step.is_some() {
-            out.push_str(&match self.min_clean_width {
-                Some(w) => format!(
-                    "narrowest width with no clipped label: {w} (any width from {w} up; `tiza render --width {w}`)\n"
-                ),
-                None => format!(
+            match (self.min_clean_width, &self.narrower) {
+                (Some(w), Some(n)) => {
+                    let width = self.width;
+                    if n.code_fits_from.is_some_and(|c| width < c) {
+                        out.push_str(&format!(
+                            "no label is clipped at width {width}, but code lines are: the code needs {} columns\n",
+                            n.code_fits_from.unwrap_or(w)
+                        ));
+                    }
+                    let under = n
+                        .margin_from
+                        .map(|m| format!(" (notes go under the lines below {m} columns)"))
+                        .unwrap_or_default();
+                    out.push_str(&if n.clean.is_empty() {
+                        format!(
+                            "no label is clipped at {w} or wider; no narrower width shows every label and every code line whole\n"
+                        )
+                    } else {
+                        format!(
+                            "no label is clipped at {w} or wider; {} {} clean too{under}\n",
+                            ranges_text(&n.clean),
+                            if n.clean.len() == 1 && n.clean[0][0] == n.clean[0][1] {
+                                "is"
+                            } else {
+                                "are"
+                            }
+                        )
+                    });
+                }
+                (Some(w), None) => out.push_str(&format!(
+                    "no label is clipped at {w} or wider (`tiza render --width {w}`)\n"
+                )),
+                (None, _) => out.push_str(&format!(
                     "no width up to {MAX_WIDTH} shows every label whole: shorten the labels\n"
-                ),
-            });
+                )),
+            }
         }
         out
     }
@@ -286,7 +353,139 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     let doc = tidy(doc, &missing, &mut out);
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);
-    Report::new(width, out, Some(max), clean)
+    // Last line of defence (t-117): whatever a finding says, the text under
+    // a mask never leaves `check`.
+    scrub_secrets(&doc, &mut out);
+    let mut report = Report::new(width, out, Some(max), clean);
+    if let Some(c) = clean
+        && width < c
+        && !report.findings.iter().any(|f| f.code == "clipped_label")
+    {
+        report.narrower = Some(narrower(&doc, &Theme::dark(), c));
+    }
+    report
+}
+
+/// Checks a document already loaded in memory — the live one of a TUI, for
+/// the socket's `check` (t-101): the same checks as `tiza check` on the
+/// file, on the real (unmasked) code and linked files the TUI holds, not on
+/// the masked copy an agent reads. Only the report leaves; it never quotes
+/// text under a redact. `base_dir` resolves relative files the document
+/// names but did not load.
+pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
+    let mut d = doc.clone();
+    d.sync_code_src();
+    d.code_src = crate::model::CodeSource::Embedded(d.base().to_vec());
+    for file in d.link_files() {
+        if let Some(code) = d.view_code.get(&file) {
+            d.views.insert(file, code.clone());
+        }
+    }
+    match serde_json::to_string(&d) {
+        Ok(text) => check_text(&text, base_dir, opts),
+        Err(e) => Report::new(
+            opts.width.unwrap_or(DEFAULT_WIDTH),
+            vec![Finding::new(Level::Error, "schema", e.to_string())],
+            None,
+            None,
+        ),
+    }
+}
+
+/// The texts under every mask at any step (the step-0 code and every step
+/// a move changes): at least four characters, longest first.
+fn secrets(doc: &Document) -> Vec<String> {
+    if !crate::redact::has_redacts(doc) {
+        return Vec::new();
+    }
+    let mut out: BTreeSet<String> = BTreeSet::new();
+    let mut take = |d: &Document, step: u32| {
+        for a in &d.annotations {
+            if let Shape::Redact { span, .. } = &a.shape
+                && crate::redact::active(d, a, step)
+                && let Some(t) = d.line_text(span.line)
+            {
+                let g: Vec<&str> = t.graphemes(true).collect();
+                let (s, e) = (
+                    (span.start as usize).min(g.len()),
+                    (span.end as usize).min(g.len()),
+                );
+                let v = g[s..e].concat();
+                let v = v.trim();
+                if v.chars().count() >= 4 && !v.contains(crate::redact::MASK) {
+                    out.insert(v.to_string());
+                }
+            }
+        }
+    };
+    if doc.moves.is_empty() {
+        take(doc, u32::MAX);
+    } else {
+        for step in 0..=doc.max_step() {
+            take(&doc.view_at(step).doc, step);
+        }
+    }
+    let mut v: Vec<String> = out.into_iter().collect();
+    v.sort_by_key(|s| std::cmp::Reverse(s.len()));
+    v
+}
+
+/// Takes every text under a mask out of the findings.
+fn scrub_secrets(doc: &Document, out: &mut [Finding]) {
+    let secrets = secrets(doc);
+    if secrets.is_empty() {
+        return;
+    }
+    for f in out {
+        for s in &secrets {
+            if f.message.contains(s.as_str()) {
+                f.message = f.message.replace(s.as_str(), "…");
+            }
+            if f.text.as_deref().is_some_and(|t| t.contains(s.as_str())) {
+                f.text = None;
+            }
+        }
+    }
+}
+
+/// Which widths below `min_clean` are clean too (see [`Narrower`]).
+fn narrower(doc: &Document, theme: &Theme, min_clean: usize) -> Narrower {
+    let geometry = stable_geometry(doc, &take_options(doc, MAX_WIDTH, 0));
+    let mut clean: Vec<[usize; 2]> = Vec::new();
+    let mut code_fits_from = None;
+    let mut margin_from = None;
+    for w in MIN_WIDTH..min_clean {
+        let (mut labels_ok, mut code_ok, mut margin) = (true, true, false);
+        for step in 0..=last_step(doc) {
+            let l = layout_with(doc, theme, &take_options(doc, w, step), Some(&geometry));
+            labels_ok &= l.clipped_labels.is_empty();
+            code_ok &= l.clipped_code.is_none();
+            if step == 0 {
+                margin = l.labels_in_margin;
+            }
+        }
+        if code_ok {
+            code_fits_from.get_or_insert(w);
+        } else {
+            code_fits_from = None;
+        }
+        if margin {
+            margin_from.get_or_insert(w);
+        } else {
+            margin_from = None;
+        }
+        if labels_ok && code_ok {
+            match clean.last_mut() {
+                Some(r) if r[1] + 1 == w => r[1] = w,
+                _ => clean.push([w, w]),
+            }
+        }
+    }
+    Narrower {
+        clean,
+        code_fits_from,
+        margin_from,
+    }
 }
 
 /// Loads every linked file; one error per file that cannot be read (not
@@ -568,12 +767,13 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                 } else {
                     e
                 };
-                let msg = move_message(e, i, trial[i].at_step);
+                let file = d.shown_view_at(trial[i].at_step).file;
+                let msg = in_file(move_message(e, i, trial[i].at_step), &file);
                 out.push(
                     Finding::new(Level::Error, "move", msg.clone())
                         .id(format!("move #{}", i + 1))
                         .step(trial[i].at_step)
-                        .file(d.shown_view_at(trial[i].at_step).file)
+                        .file(file)
                         .line(first_line_in(&msg)),
                 );
                 broken[i] = true;
@@ -597,12 +797,13 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         d.moves = only.clone();
         if let Err(e) = moves::validate(&d, &only, &d.annotations) {
             let e = if redacted { d.scrub_targets(&m, e) } else { e };
-            let msg = move_message(e, i, m.at_step);
+            let file = d.shown_view_at(m.at_step).file;
+            let msg = in_file(move_message(e, i, m.at_step), &file);
             out.push(
                 Finding::new(Level::Error, "rebind", msg)
                     .id(format!("move #{}", i + 1))
                     .step(m.at_step)
-                    .file(d.shown_view_at(m.at_step).file),
+                    .file(file),
             );
             trial[i].rebind.clear();
         }
@@ -618,6 +819,149 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         doc.step = doc.max_step();
     }
     doc
+}
+
+/// A message about a linked file says which one: «src/queue.rs spans 1 to
+/// 30», not «the document spans…» (the document's own file keeps it).
+fn in_file(msg: String, file: &Option<String>) -> String {
+    match file {
+        Some(f) => msg.replace("(the document spans ", &format!("({f} spans ")),
+        None => msg,
+    }
+}
+
+/// The code a marker of `a` is looked for in: its file at its step, with
+/// the masks of that step drawn on it (t-154's rule for move targets): a
+/// marker whose text is under a redact is simply not there, with the same
+/// answer as text that does not exist.
+fn marker_code(doc: &Document, a: &crate::model::Annotation) -> Document {
+    let mut d = doc.clone();
+    if let Ok((code, first)) = doc.view_code_at(&a.file, a.step) {
+        d.moves.clear();
+        d.base_code.clear();
+        d.code = code;
+        d.source.first_line = first;
+    }
+    if crate::redact::has_redacts(doc) {
+        let masks: Vec<crate::model::Annotation> = if doc.moves.is_empty() {
+            doc.annotations
+                .iter()
+                .filter(|r| r.file == a.file && crate::redact::active(doc, r, a.step))
+                .cloned()
+                .collect()
+        } else if doc.shown_view_at(a.step).file == a.file {
+            let v = doc.view_at(a.step).doc;
+            v.annotations
+                .iter()
+                .filter(|r| crate::redact::active(&v, r, a.step))
+                .cloned()
+                .collect()
+        } else {
+            crate::redact::base_redacts(doc, &a.file)
+        };
+        d.code = crate::redact::mask_lines(&d.code, d.source.first_line, &masks);
+    }
+    // The masks are drawn on the lines: nothing else to skip.
+    d.annotations.clear();
+    d
+}
+
+/// The lines `text` is on in `d`, once per hit, from line `from` (and,
+/// on that line, from grapheme column `col`).
+fn hits(d: &Document, text: &str, from: u32, col: u32) -> Vec<u32> {
+    let mut out = Vec::new();
+    for line in from..=d.last_line() {
+        let Some(t) = d.line_text(line) else {
+            continue;
+        };
+        let t = if line == from {
+            crate::model::grapheme_byte_offset(t, col).map_or("", |b| &t[b..])
+        } else {
+            t
+        };
+        out.extend(std::iter::repeat_n(line, t.matches(text).count()));
+    }
+    out
+}
+
+/// `L3, L6` (a line hit twice is named twice: `L3, L3`).
+fn lines_text(lines: &[u32]) -> String {
+    lines
+        .iter()
+        .map(|l| format!("L{l}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// A range made from two markers (t-097): an error when it cannot be found
+/// again, a warning when a marker matches more than once (the range takes
+/// the first match, so an edit above it can move it). On a document with
+/// redacts the markers are matched on the masked code and an error never
+/// quotes them (t-154).
+fn check_markers(
+    doc: &Document,
+    a: &crate::model::Annotation,
+    m: &crate::model::RangeMarkers,
+    redacted: bool,
+    out: &mut Vec<Finding>,
+) {
+    let d = marker_code(doc, a);
+    let finding = |level, msg: String| {
+        Finding::new(level, "marker", msg)
+            .id(a.id.clone())
+            .step(a.step)
+            .file(a.file.clone())
+            .line(anchor_line(&a.shape))
+    };
+    match d.resolve_markers(&m.start, &m.end) {
+        Err(e) => {
+            let mut msg = match e {
+                crate::Error::TextNotFound(t) => format!("{t} matches nothing"),
+                other => other.to_string(),
+            };
+            if redacted {
+                for t in [&m.start, &m.end] {
+                    msg = msg.replace(&format!("«{t}»"), "«…»");
+                }
+                msg.push_str(
+                    " (on a document with redacts, text under a mask counts as not there)",
+                );
+            }
+            out.push(finding(
+                Level::Error,
+                format!("{msg}: the range cannot be found again when the code changes"),
+            ));
+        }
+        Ok((from, to)) => {
+            // Both markers were found on the masked code: what they match is
+            // on screen, so quoting them gives nothing away.
+            let starts = hits(&d, &m.start, d.source.first_line, 0);
+            if starts.len() > 1 {
+                out.push(finding(
+                    Level::Warning,
+                    format!(
+                        "start marker «{}» matches {} times ({}): the range takes the first one (L{from}); make it unique, or an edit above it can move the range",
+                        m.start,
+                        starts.len(),
+                        lines_text(&starts)
+                    ),
+                ));
+            }
+            let s = d.find_text(&m.start, 1, None);
+            let ends = s.map_or_else(Vec::new, |s| hits(&d, &m.end, s.line, s.end));
+            if ends.len() > 1 {
+                out.push(finding(
+                    Level::Warning,
+                    format!(
+                        "end marker «{}» matches {} times after the start ({}): the range ends at the first one (L{to}); make it unique, or an edit inside the range can move its end",
+                        m.end,
+                        ends.len(),
+                        lines_text(&ends)
+                    ),
+                ));
+            }
+        }
+    }
 }
 
 /// The line an annotation is anchored on (its first line).
@@ -773,7 +1117,7 @@ fn check_loaded(
                 "anchor"
             };
             out.push(
-                Finding::new(Level::Error, code, e.to_string())
+                Finding::new(Level::Error, code, in_file(e.to_string(), &a.file))
                     .id(a.id.clone())
                     .step(a.step)
                     .file(a.file.clone())
@@ -782,35 +1126,7 @@ fn check_loaded(
             continue;
         }
         if let Some(m) = &a.markers {
-            let mut d = doc.clone();
-            if let Ok((code, first)) = doc.view_code_at(&a.file, a.step) {
-                d.moves.clear();
-                d.base_code.clear();
-                d.code = code;
-                d.source.first_line = first;
-            }
-            if let Err(e) = d.resolve_markers(&m.start, &m.end) {
-                let mut msg = match e {
-                    crate::Error::TextNotFound(t) => format!("{t} matches nothing"),
-                    other => other.to_string(),
-                };
-                if redacted {
-                    for t in [&m.start, &m.end] {
-                        msg = msg.replace(&format!("«{t}»"), "«…»");
-                    }
-                }
-                out.push(
-                    Finding::new(
-                        Level::Error,
-                        "marker",
-                        format!("{msg}: the range cannot be found again when the code changes"),
-                    )
-                    .id(a.id.clone())
-                    .step(a.step)
-                    .file(a.file.clone())
-                    .line(anchor_line(&a.shape)),
-                );
-            }
+            check_markers(doc, a, m, redacted, out);
         }
     }
     // ---- redacts a move widened or dropped (the TUI's own words) ----
@@ -917,11 +1233,16 @@ fn check_loaded(
         } else {
             "is clipped with «…»"
         };
-        let when = format!(
-            "at width {width} (step{} {})",
-            if steps.len() == 1 { "" } else { "s" },
-            steps_text(&steps)
-        );
+        // The step the finding names is the first one it is clipped at.
+        let when = match steps.as_slice() {
+            [one] => format!("at width {width}, only at step {one}"),
+            [first, rest @ ..] => format!(
+                "at width {width}, first at step {first}, then at step{} {}",
+                if rest.len() == 1 { "" } else { "s" },
+                steps_text(rest)
+            ),
+            [] => format!("at width {width}"),
+        };
         let message = if secret {
             format!("a label under a redact {how} {when}")
         } else {
