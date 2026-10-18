@@ -1,6 +1,5 @@
 //! Canvas → SVG.
 
-use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 use base64::Engine as _;
@@ -21,10 +20,8 @@ pub struct SvgOptions {
     pub radius: f32,
     /// Embed the fonts as `@font-face` data URIs so the SVG renders the same
     /// everywhere: the regular face always, the bold/italic faces and the
-    /// symbols fallback only when the frame uses them (t-130), each one
-    /// subset to the characters it draws plus their GSUB/GPOS closure
-    /// (t-137: tens of KB instead of ~0.37 MB per face in base64). Off, the
-    /// SVG relies on the viewer's fonts.
+    /// symbols fallback only when the frame uses them (~0.37 MB each in
+    /// base64). Off, the SVG relies on the viewer's fonts.
     pub embed_fonts: bool,
     /// Optional `<title>`.
     pub title: Option<String>,
@@ -196,76 +193,27 @@ fn is_prose_char(c: char) -> bool {
 /// has text; the symbols fallback only when a character is missing from the
 /// run's JetBrains Mono face and the symbols font has it (the browser falls
 /// back per character, in the order of the `font-family` list).
-///
-/// Since t-137 it also keeps, per face, the characters that face draws, so
-/// each embedded face is subset to them ([`fonts::subset`]): every character
-/// of a run goes to the run's JetBrains Mono face (what it lacks is simply not
-/// in its `cmap`), and the characters it lacks that the symbols font has go
-/// to the symbols face, mirroring the browser's per-character fallback.
 #[derive(Debug)]
-struct FacesUsed([Option<BTreeSet<char>>; 5]);
+struct FacesUsed([bool; 5]);
 
 impl FacesUsed {
     fn new() -> Self {
-        let mut used: [Option<BTreeSet<char>>; 5] = Default::default();
-        used[fonts::mono_face(false, false)] = Some(BTreeSet::new());
+        let mut used = [false; 5];
+        used[fonts::mono_face(false, false)] = true;
         Self(used)
     }
 
     fn add(&mut self, coverage: &fonts::Coverage, r: &Run) {
         let face = fonts::mono_face(r.style.bold, r.style.italic);
-        let chars = shaper_chars(&r.text);
-        let mono = self.0[face].get_or_insert_with(BTreeSet::new);
-        mono.extend(chars.iter().copied());
-        for &ch in &chars {
-            if !coverage.has(face, ch) && coverage.has(fonts::SYMBOLS_FACE, ch) {
-                self.0[fonts::SYMBOLS_FACE]
-                    .get_or_insert_with(BTreeSet::new)
-                    .insert(ch);
-            }
+        self.0[face] = true;
+        if !self.0[fonts::SYMBOLS_FACE]
+            && r.text
+                .chars()
+                .any(|ch| !coverage.has(face, ch) && coverage.has(fonts::SYMBOLS_FACE, ch))
+        {
+            self.0[fonts::SYMBOLS_FACE] = true;
         }
     }
-}
-
-/// The characters a browser's shaper may look up in a font to draw `text`
-/// (t-137), so a face subset to them draws it exactly like the whole face.
-/// Before shaping, HarfBuzz decomposes each cluster and recomposes it pairwise
-/// with whatever the font covers: `e` + U+0301 is drawn as the font's `é`
-/// when it has one, `é` as `e` + the mark when it does not, and `ǘ` may come
-/// out as `ü` + U+0301. Hence the text itself, its full decomposition, and
-/// every composition reachable by adding the marks one at a time to the
-/// starter. The space is always in (HarfBuzz draws the other spaces with it
-/// when a font lacks them). Characters a face lacks just stay out of its
-/// `cmap`, so a superset costs a few bytes and never a glyph.
-fn shaper_chars(text: &str) -> BTreeSet<char> {
-    use unicode_normalization::UnicodeNormalization as _;
-    use unicode_normalization::char::{compose, is_combining_mark};
-
-    let mut out: BTreeSet<char> = text.chars().collect();
-    out.insert(' ');
-    for g in text.graphemes(true) {
-        let nfd: Vec<char> = g.nfd().collect();
-        out.extend(nfd.iter().copied());
-        out.extend(g.nfc());
-        // Starter + marks, composing in order as far as each step allows.
-        let mut i = 0;
-        while i < nfd.len() {
-            let mut acc = nfd[i];
-            for &m in nfd[i + 1..].iter().take_while(|&&c| is_combining_mark(c)) {
-                if let Some(c) = compose(acc, m) {
-                    acc = c;
-                    out.insert(c);
-                }
-                // A mark that does not compose with what came before can still
-                // compose with the bare starter (HarfBuzz tries each mark).
-                if let Some(c) = compose(nfd[i], m) {
-                    out.insert(c);
-                }
-            }
-            i += 1;
-        }
-    }
-    out
 }
 
 /// Renders the canvas as a standalone SVG document.
@@ -347,12 +295,8 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     // Styles: font faces (optional, only those the runs use) and the shared text attributes.
     s.push_str("<style>\n");
     if o.embed_fonts {
-        for (i, chars) in used.0.iter().enumerate() {
-            let Some(chars) = chars else { continue };
-            let f = &fonts::FACES[i];
-            let data = fonts::subset(i, chars);
-            let b64 =
-                base64::engine::general_purpose::STANDARD.encode(data.as_deref().unwrap_or(f.data));
+        for (f, _) in fonts::FACES.iter().zip(used.0).filter(|(_, u)| *u) {
+            let b64 = base64::engine::general_purpose::STANDARD.encode(f.data);
             let _ = writeln!(
                 s,
                 "@font-face{{font-family:\"{}\";font-weight:{};font-style:{};src:url(data:font/ttf;base64,{}) format(\"truetype\");}}",
@@ -474,50 +418,5 @@ mod tests {
             ..Default::default()
         };
         assert!(faces(&to_svg(&c, &th, &none)).is_empty());
-    }
-
-    #[test]
-    fn shaper_chars_cover_what_harfbuzz_composes_and_decomposes() {
-        let s = shaper_chars("e\u{301}");
-        assert!(
-            s.contains(&'é'),
-            "e + U+0301 is drawn as é when the font has it"
-        );
-        let s = shaper_chars("é");
-        assert!(
-            s.contains(&'e') && s.contains(&'\u{301}'),
-            "é falls back to e + mark"
-        );
-        // ǘ = u + U+0308 + U+0301: the shaper may stop at ü + U+0301.
-        let s = shaper_chars("ǘ");
-        assert!(s.contains(&'ü') && s.contains(&'u') && s.contains(&'\u{301}'));
-        assert!(shaper_chars("ab").contains(&' '), "the space is always in");
-    }
-
-    #[test]
-    fn each_face_is_subset_to_the_characters_its_runs_draw() {
-        let mut c = Canvas::new(30, 2);
-        let th = Theme::dark();
-        c.put_str(0, 0, "fn f() -> u8", CellStyle::new());
-        c.put_str(0, 1, "★ bold", CellStyle::new().bold());
-        let svg = to_svg(&c, &th, &SvgOptions::default());
-        assert!(svg.len() < 120_000, "{} bytes: faces not subset", svg.len());
-        let mut used = FacesUsed::new();
-        let cov = fonts::Coverage::new();
-        for y in 0..2 {
-            for r in runs(&c, y) {
-                used.add(&cov, &r);
-            }
-        }
-        let regular = used.0[0].as_ref().unwrap();
-        assert!(regular.contains(&'>') && !regular.contains(&'★'));
-        let bold = used.0[fonts::mono_face(true, false)].as_ref().unwrap();
-        assert!(bold.contains(&'b') && !bold.contains(&'n'));
-        let sym = used.0[fonts::SYMBOLS_FACE].as_ref().unwrap();
-        assert_eq!(
-            sym.iter().collect::<String>(),
-            "★",
-            "only what the mono lacks"
-        );
     }
 }

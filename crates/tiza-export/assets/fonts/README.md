@@ -4,7 +4,7 @@ Compiled into the binary (`fonts.rs`) and used only by `tiza render --format svg
 
 | Files | Family | License | Used for |
 |---|---|---|---|
-| `JetBrainsMono-{Regular,Bold,Italic,BoldItalic}.ttf` | JetBrains Mono 2.304, the four faces complete (not subset; the SVG export subsets a copy in memory to the characters each frame draws, t-137) | [OFL 1.1](LICENSE-JetBrainsMono-OFL.txt) | everything: code, line numbers, box drawing, arrows, titles, notes, labels and legends |
+| `JetBrainsMono-{Regular,Bold,Italic,BoldItalic}.ttf` | JetBrains Mono 2.304, the four faces complete (not subset) | [OFL 1.1](LICENSE-JetBrainsMono-OFL.txt) | everything: code, line numbers, box drawing, arrows, titles, notes, labels and legends |
 | `TizaSymbols.ttf` | DejaVu Sans Mono 2.37, subset to U+2000–2BFF and U+1F300–1FAFF, renamed | [DejaVu license](LICENSE-TizaSymbols-DejaVu.txt) (Bitstream Vera + public domain) | fallback for symbols JetBrains Mono lacks (★ ✎ ⇄ …) |
 
 Provenance and the subset command of the symbols font: `pyftsubset DejaVuSansMono.ttf --unicodes="U+2000-2BFF,U+1F300-1FAFF" --no-hinting`, then the family renamed to *Tiza Symbols* with fontTools.

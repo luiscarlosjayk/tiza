@@ -13,11 +13,11 @@
       "reason": "First Mac baseline (t-133): 452c576, lto = \"fat\", measured with scripts/size-check.sh on Luis's Mac"
     },
     "x86_64-unknown-linux-gnu": {
-      "binary_bytes": 14488856,
-      "archive_bytes": 6948589,
-      "commit": "99099b0",
+      "binary_bytes": 13264232,
+      "archive_bytes": 6378953,
+      "commit": "7f71f9f",
       "measured": "2026-10-18",
-      "reason": "t-137: SVG font subsetting in memory (skera 0.4.0 + write-fonts, hb-subset port: ~0.68 MB code, plus read-fonts layout parsing and unicode-normalization); +1.25 MB binary vs 99099b0 (13,242,208), step-7 SVG 1.30 MB -> 0.15 MB"
+      "reason": "t-137 reverted: SVG font subsetting (skera + write-fonts, unicode-normalization) removed; the SVG embeds whole the faces it draws again (t-130)"
     }
   }
 }
