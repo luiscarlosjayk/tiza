@@ -900,6 +900,77 @@ pub struct Mutated {
     pub revision: u64,
 }
 
+/// Result of `annotation.add` / `annotation.update` (t-155): the id and
+/// revision of [`Mutated`], plus where the annotation stands against the
+/// view at the moment the change is applied. In supervised mode that is
+/// when the presenter accepts the proposal, so `shown_step` may differ from
+/// the step the agent saw when it asked; the view can move again right
+/// after, so read it as a snapshot, not as a promise.
+#[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct AnnotationMutated {
+    pub id: String,
+    pub revision: u64,
+    /// The annotation's step (where it appears; a new one at step 0 goes to 1).
+    pub step: u32,
+    /// Title (or id) of that step when it is a named step (t-099).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub step_title: Option<String>,
+    /// The step the view was showing when the change was applied.
+    pub shown_step: u32,
+    /// Whether the annotation is drawn at `shown_step`: its step reached,
+    /// its file shown (a `code.link` may show another one, t-105), its
+    /// anchor kept and its lines inside the window.
+    pub visible: bool,
+    /// Why it is not visible, in words (`it appears at step 1`, `its file
+    /// lib.rs is not shown at step 2 (main.rs is)`…); absent when visible.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hidden: Option<String>,
+}
+
+impl AnnotationMutated {
+    pub fn of(doc: &Document, id: String, revision: u64) -> Self {
+        let step = doc.find_annotation(&id).map(|a| a.step).unwrap_or(0);
+        let hidden = doc.why_hidden(&id, doc.step);
+        AnnotationMutated {
+            step_title: doc.step_title(step).map(String::from),
+            shown_step: doc.step,
+            visible: hidden.is_none(),
+            hidden,
+            step,
+            id,
+            revision,
+        }
+    }
+
+    /// One sentence for the MCP tools: `a17 added at step 1; not visible
+    /// now: the view is at step 0 (next_step shows it).`
+    pub fn sentence(&self, verb: &str) -> String {
+        let at = match &self.step_title {
+            Some(t) => format!("step {} ({t})", self.step),
+            None => format!("step {}", self.step),
+        };
+        match &self.hidden {
+            None => format!(
+                "{} {verb} at {at}; visible now (the view is at step {}).",
+                self.id, self.shown_step
+            ),
+            Some(why) => {
+                let how = if self.step == self.shown_step + 1 && why.starts_with("it appears") {
+                    " (next_step shows it)".to_string()
+                } else if self.step > self.shown_step && why.starts_with("it appears") {
+                    format!(" (set_step {} shows it)", self.step)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "{} {verb} at {at}; not visible now: the view is at step {} and {why}{how}.",
+                    self.id, self.shown_step
+                )
+            }
+        }
+    }
+}
+
 /// Supported methods, for `api.methods` and for the help.
 pub const METHODS: &[(&str, &str)] = &[
     ("ping", "Checks that the instance responds"),

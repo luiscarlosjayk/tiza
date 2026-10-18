@@ -8,8 +8,9 @@ use serde_json::Value;
 
 use crate::model::{Document, MarkStyle};
 use crate::protocol::{
-    AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveMutated, Mutated, PatchParams,
-    PutParams, Scene, SceneChanged, Status, StepGotoParams, StepParams, StepReply, UpdateParams,
+    AddParams, AnnotationMutated, IdParams, METHODS, MoveIndexParams, MoveList, MoveMutated,
+    Mutated, PatchParams, PutParams, Scene, SceneChanged, Status, StepGotoParams, StepParams,
+    StepReply, UpdateParams,
 };
 
 /// Parameters of `supervise.set`.
@@ -167,8 +168,8 @@ pub fn api_schema() -> ApiSchema {
                 "code.get" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"language": string(), "first_line": {"type": "integer"}, "last_line": {"type": "integer"}, "text": string()}})),
                 "scene.get" => (schema::<NoParams>(), schema::<Scene>()),
                 "scene.list" => (schema::<NoParams>(), serde_json::json!({"type": "array", "items": string()})),
-                "annotation.add" => (schema::<AddParams>(), schema::<Mutated>()),
-                "annotation.update" => (schema::<UpdateParams>(), schema::<Mutated>()),
+                "annotation.add" => (schema::<AddParams>(), schema::<AnnotationMutated>()),
+                "annotation.update" => (schema::<UpdateParams>(), schema::<AnnotationMutated>()),
                 "annotation.delete" => (schema::<IdParams>(), schema::<Mutated>()),
                 "style.set" => (schema::<StyleSetParams>(), serde_json::json!({"type": "object", "properties": {"name": string(), "revision": {"type": "integer"}}})),
                 "style.list" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"document": {"type": "object"}, "builtin": {"type": "array"}, "aliases": {"type": "array"}}})),

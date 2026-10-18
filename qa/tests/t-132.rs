@@ -12,7 +12,7 @@
 //! Corner cases: `:step ID N` past the view gets the same hint; messages cut
 //! with `…` on narrow terminals keep the step hint visible when possible.
 //! The socket/MCP reply carries no message (`{id, revision}`), so it is
-//! unchanged.
+//! unchanged here (t-155 later added `step`, `shown_step`, `visible`).
 
 use crossterm::event::KeyCode;
 use serde_json::json;
@@ -166,8 +166,13 @@ fn corner_socket_reply_is_unchanged_and_ac2_holds() {
         "annotation.add",
         json!({"type": "box", "from_line": 2, "to_line": 3, "label": "hi"}),
     );
+    // No message on the wire; t-155 added where it stands against the view.
     let keys: Vec<&String> = r.as_object().unwrap().keys().collect();
-    assert_eq!(keys, ["id", "revision"]);
+    assert_eq!(
+        keys,
+        ["hidden", "id", "revision", "shown_step", "step", "visible"]
+    );
+    assert_eq!(r["visible"], json!(false));
     assert_eq!(step(&live), 0);
     assert_eq!(live.with(|a| a.doc.annotations[0].step), 1);
 }

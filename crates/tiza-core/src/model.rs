@@ -1608,6 +1608,74 @@ impl Document {
         self.view_at(self.step).unanchored
     }
 
+    /// Why annotation `id` is not on screen at `step`, in words (`appears
+    /// at step 1`, `its file lib.rs is not shown at step 2`…), or `None`
+    /// when it is drawn there (t-155). Follows the same rules as the
+    /// layout: its file must be the one shown, its step reached (a
+    /// spotlight also not past its `until`, a redact masking from step 0
+    /// unless `redact_from_step`), its anchor kept and its lines inside the
+    /// window. An unknown id is reported as such.
+    pub fn why_hidden(&self, id: &str, step: u32) -> Option<String> {
+        let Some(a) = self.find_annotation(id) else {
+            return Some(format!("no annotation {id}"));
+        };
+        match &a.shape {
+            Shape::Redact { .. } => {
+                if !crate::redact::active(self, a, step) {
+                    return Some(format!("it masks from step {}", a.step));
+                }
+            }
+            Shape::Spotlight { until, .. } if step >= a.step => {
+                let end = until.unwrap_or(a.step);
+                if step > end {
+                    return Some(if end == a.step {
+                        format!("a spotlight shows only at its step {end}")
+                    } else {
+                        format!("a spotlight shows from step {} to {end}", a.step)
+                    });
+                }
+            }
+            _ if a.step > step => return Some(format!("it appears at step {}", a.step)),
+            _ => {}
+        }
+        let shown = self.shown_view_at(step);
+        if a.file != shown.file {
+            let name = |f: &ViewKey| match f {
+                Some(f) => f.clone(),
+                None => self
+                    .source
+                    .path
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "the main file".into()),
+            };
+            return Some(format!(
+                "its file {} is not shown at step {step} ({} is)",
+                name(&a.file),
+                name(&shown.file)
+            ));
+        }
+        let view = self.view_at(step);
+        let Some(v) = view.doc.find_annotation(id) else {
+            return Some(format!(
+                "it lost its anchor at step {step} (unanchored: no line of it survived a patch)"
+            ));
+        };
+        let outside = v
+            .shape
+            .line_ranges()
+            .iter()
+            .any(|(f, t)| !view.doc.has_line(*f) || !view.doc.has_line(*t));
+        outside.then(|| {
+            format!(
+                "its lines are outside the code shown at step {step} ({}-{})",
+                view.doc.source.first_line,
+                view.doc.last_line()
+            )
+        })
+    }
+
     /// Validates a shape against the code of `file` as it is at `step`
     /// (annotations are authored against the code at their own step, with
     /// real file line numbers, whatever window is shown).

@@ -602,6 +602,16 @@ fn text(v: impl ToString) -> CallToolResult {
     CallToolResult::success(vec![ContentBlock::text(v.to_string())])
 }
 
+/// The reply of `annotation.add` / `annotation.update` with a first line
+/// that says in words whether the annotation shows at the current step
+/// (t-155), then the JSON.
+fn annotation_reply(v: &Value, verb: &str) -> CallToolResult {
+    match serde_json::from_value::<tiza_core::protocol::AnnotationMutated>(v.clone()) {
+        Ok(m) => text(format!("{}\n{}", m.sentence(verb), pretty(v))),
+        Err(_) => text(pretty(v)),
+    }
+}
+
 fn pretty(v: &Value) -> String {
     serde_json::to_string_pretty(v).unwrap_or_default()
 }
@@ -777,7 +787,7 @@ impl TizaServer {
             params[k] = v;
         }
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -802,7 +812,7 @@ impl TizaServer {
             }
         }
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -818,7 +828,7 @@ impl TizaServer {
                 json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id, "color": p.color}),
             )
             .await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -833,7 +843,7 @@ impl TizaServer {
             params["emphasis"] = e;
         }
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -845,7 +855,7 @@ impl TizaServer {
     ) -> Result<CallToolResult, McpError> {
         let params = json!({"type": "redact", "at": p.at, "keep": p.keep.unwrap_or(0), "label": p.label, "step": p.step, "id": p.id});
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -860,7 +870,7 @@ impl TizaServer {
             params["emphasis"] = e;
         }
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -888,7 +898,7 @@ impl TizaServer {
             params["emphasis"] = e;
         }
         let v = self.call("annotation.update", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "updated"))
     }
 
     #[tool(
@@ -931,7 +941,7 @@ impl TizaServer {
             params[k] = v;
         }
         let v = self.call("annotation.add", params).await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -947,7 +957,7 @@ impl TizaServer {
                 json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id}),
             )
             .await?;
-        Ok(text(pretty(&v)))
+        Ok(annotation_reply(&v, "added"))
     }
 
     #[tool(
@@ -1443,7 +1453,7 @@ impl ServerHandler for TizaServer {
                 "Tiza is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes, callouts and \
                  language-agnostic marks such as move, read, write, drop, scope) to explain it on video. Recommended flow: \
                  1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
-                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text; \
+                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text — each result starts with a sentence saying whether it shows at the step on screen (`visible`, and `hidden` with why); \
                  4) group into steps with `step` and advance with `next_step` (or `goto_step` to a named step); 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
                  Resources `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` give the same views without a tool call. \
                  Keep labels short: they are drawn in a ~100-column terminal.",

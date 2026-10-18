@@ -13,9 +13,9 @@ use tiza_core::model::{
 };
 use tiza_core::moves::{self, Move};
 use tiza_core::protocol::{
-    AddParams, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed, MoveMutated, Mutated,
-    PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status, StepGotoParams,
-    StepParams, StepReply, UpdateParams, Where,
+    AddParams, AnnotationMutated, IdParams, METHODS, MoveIndexParams, MoveList, MoveListed,
+    MoveMutated, Mutated, PatchParams, PutParams, Request, Response, Scene, SceneChanged, Status,
+    StepGotoParams, StepParams, StepReply, UpdateParams, Where,
 };
 use tiza_core::theme::Theme;
 use tiza_core::{Error, fs};
@@ -4223,18 +4223,13 @@ impl App {
                 let p: AddParams = parse(params)?;
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
-                serde_json::to_value(Mutated {
-                    id,
-                    revision: self.revision,
-                })?
+                // Where it stands against the view right now (t-155).
+                serde_json::to_value(AnnotationMutated::of(&self.doc, id, self.revision))?
             }
             "annotation.update" => {
                 let p: UpdateParams = parse(params)?;
                 self.update_annotation(&p)?;
-                serde_json::to_value(Mutated {
-                    id: p.id,
-                    revision: self.revision,
-                })?
+                serde_json::to_value(AnnotationMutated::of(&self.doc, p.id, self.revision))?
             }
             "style.set" => {
                 let name = params

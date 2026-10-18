@@ -2107,8 +2107,15 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of a mutation.",
+        "description": "Result of `annotation.add` / `annotation.update` (t-155): the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
+          "hidden": {
+            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`…); absent when visible.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -2116,13 +2123,39 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "shown_step": {
+            "description": "The step the view was showing when the change was applied.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "description": "The annotation's step (where it appears; a new one at step 0 goes to 1).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_title": {
+            "description": "Title (or id) of that step when it is a named step (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visible": {
+            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one, t-105), its\nanchor kept and its lines inside the window.",
+            "type": "boolean"
           }
         },
         "required": [
           "id",
-          "revision"
+          "revision",
+          "step",
+          "shown_step",
+          "visible"
         ],
-        "title": "Mutated",
+        "title": "AnnotationMutated",
         "type": "object"
       }
     },
@@ -2869,8 +2902,15 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of a mutation.",
+        "description": "Result of `annotation.add` / `annotation.update` (t-155): the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
+          "hidden": {
+            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`…); absent when visible.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },
@@ -2878,13 +2918,39 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "shown_step": {
+            "description": "The step the view was showing when the change was applied.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step": {
+            "description": "The annotation's step (where it appears; a new one at step 0 goes to 1).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "step_title": {
+            "description": "Title (or id) of that step when it is a named step (t-099).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "visible": {
+            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one, t-105), its\nanchor kept and its lines inside the window.",
+            "type": "boolean"
           }
         },
         "required": [
           "id",
-          "revision"
+          "revision",
+          "step",
+          "shown_step",
+          "visible"
         ],
-        "title": "Mutated",
+        "title": "AnnotationMutated",
         "type": "object"
       }
     },
