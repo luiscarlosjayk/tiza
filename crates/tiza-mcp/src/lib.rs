@@ -1226,7 +1226,9 @@ impl TizaServer {
         };
         let is_png = format == "png";
         let mut scene: tiza_core::protocol::Scene =
-            serde_json::from_value(self.call("scene.get", json!({})).await?)
+            // A reader's copy (t-174): titles and labels repeating a
+            // masked value come masked, like the code.
+            serde_json::from_value(self.call("scene.get", json!({"as_shown": true})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         tiza_core::fs::resolve_code(&mut scene.document, None)
             .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -1377,7 +1379,7 @@ const RESOURCES: &[(&str, &str, &str, &str)] = &[
     (
         "tiza://scene",
         "scene",
-        "The live document as JSON (code embedded, annotations, styles, step, theme).",
+        "The live document as JSON (code embedded, annotations, styles, step, theme), as readers see it: code under a redact and any text repeating it masked. Read-only: to edit, read the document with `tiza scene get` / socket `scene.get`.",
         "application/json",
     ),
     (
@@ -1404,7 +1406,11 @@ impl TizaServer {
     async fn resource_text(&self, uri: &str) -> Result<String, McpError> {
         match uri {
             "tiza://scene" => {
-                let v = self.call("scene.get", json!({})).await?;
+                // A resource is a reader (t-174): clients may pull it into
+                // an agent's context on their own and nothing writes back
+                // from it, so its texts come masked; editing reads the
+                // `scene.get` call.
+                let v = self.call("scene.get", json!({"as_shown": true})).await?;
                 Ok(pretty(&v))
             }
             "tiza://code" => {

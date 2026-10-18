@@ -122,9 +122,13 @@ impl Document {
     }
 
     /// What the status line shows after the number: the title, else the id.
-    pub fn step_title(&self, step: u32) -> Option<&str> {
+    pub fn step_title(&self, step: u32) -> Option<String> {
         let n = self.named_step(step)?;
-        n.title.as_deref().or(n.id.as_deref())
+        // Shown text: a title that repeats a masked value is masked (t-174).
+        n.title
+            .as_deref()
+            .or(n.id.as_deref())
+            .map(|t| crate::redact::shown(t, self))
     }
 
     /// `step 3/7`, or `step 3/7 · Shared borrow` on a named step.
@@ -203,7 +207,8 @@ impl Document {
         let name = |n: &NamedStep| {
             n.id.as_deref()
                 .or(n.title.as_deref())
-                .map(|t| format!(" «{t}»"))
+                // Shown text (t-174).
+                .map(|t| format!(" «{}»", crate::redact::shown(t, self)))
                 .unwrap_or_default()
         };
         let mut out: Vec<String> = self

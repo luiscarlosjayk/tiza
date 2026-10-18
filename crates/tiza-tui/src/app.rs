@@ -158,6 +158,10 @@ pub struct App {
     /// never cut, whatever the bar holds — until the next key; a later
     /// reload or message never replaces them (a new notice is added).
     pub redact_alerts: Vec<String>,
+    /// The revision [`App::note_masked_texts`] last looked at (t-174).
+    masked_checked: Option<u64>,
+    /// The texts repeating a masked value already said (t-174).
+    masked_said: Vec<String>,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
@@ -263,6 +267,8 @@ impl App {
             layout_stable: false,
             redact_drop_notice: None,
             redact_alerts: Vec::new(),
+            masked_checked: None,
+            masked_said: Vec::new(),
             save_error: None,
             save_warning_pending: false,
             padding_override: None,
@@ -412,12 +418,39 @@ impl App {
             self.save_warning_pending = false;
             return;
         }
-        self.message = Some((msg.into(), false));
+        self.message = Some((self.shown(&msg.into()), false));
     }
 
     pub fn error(&mut self, msg: impl Into<String>) {
         self.save_warning_pending = false;
-        self.message = Some((msg.into(), true));
+        self.message = Some((self.shown(&msg.into()), true));
+    }
+
+    /// Document-derived text as the bar, the alerts and the exports show
+    /// it (t-174): a copy of a masked value is masked
+    /// ([`tiza_core::redact::shown`]).
+    pub fn shown(&self, text: &str) -> String {
+        tiza_core::redact::shown(text, &self.doc)
+    }
+
+    /// Says once, on the alert row (t-135), each text of the document that
+    /// repeats a masked value (t-174): `a3: its label repeats masked text;
+    /// masked on screen — fix the label`. Checked once per revision; a
+    /// text fixed and broken again is said again.
+    pub fn note_masked_texts(&mut self) {
+        if self.masked_checked == Some(self.revision) {
+            return;
+        }
+        self.masked_checked = Some(self.revision);
+        let found = tiza_core::redact::masked_texts(&self.doc);
+        let keys: Vec<String> = found.iter().map(|m| m.key()).collect();
+        self.masked_said.retain(|k| keys.contains(k));
+        for (m, k) in found.into_iter().zip(keys) {
+            if !self.masked_said.contains(&k) {
+                self.masked_said.push(k);
+                self.redact_alert(m.notice());
+            }
+        }
     }
 
     /// A loud redact notice (t-117, t-140): the error message, as before,
@@ -425,6 +458,7 @@ impl App {
     /// (t-135). An alert already pending stays; the same text is not
     /// repeated.
     pub fn redact_alert(&mut self, notice: String) {
+        let notice = self.shown(&notice);
         self.error(notice.clone());
         if !self.redact_alerts.contains(&notice) {
             self.redact_alerts.push(notice);
@@ -734,6 +768,7 @@ impl App {
     fn touch(&mut self) {
         self.revision += 1;
         self.dirty = true;
+        self.note_masked_texts();
         if self.autosave {
             // `save` records the failure in `save_error`, apart from `message`,
             // so a later info message cannot hide it.
@@ -3505,6 +3540,7 @@ impl App {
         // A terminal theme (or `reset` tokens) has no palette in a file:
         // the export uses the dark/light theme and the message says so.
         let (theme, theme_notice) = theme.for_export();
+        let title = self.doc.title.as_deref().map(|t| self.shown(t));
         let l = layout(
             &self.doc,
             &theme,
@@ -3525,7 +3561,8 @@ impl App {
         let bytes = match format {
             ExportFormat::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
             ExportFormat::Ansi => l.canvas.to_ansi().into_bytes(),
-            ExportFormat::Md => l.canvas.to_markdown(self.doc.title.as_deref()).into_bytes(),
+            // The title is shown text (t-174).
+            ExportFormat::Md => l.canvas.to_markdown(title.as_deref()).into_bytes(),
             ExportFormat::Svg | ExportFormat::Png => {
                 let f = if format == ExportFormat::Svg {
                     ImageFormat::Svg
@@ -3537,7 +3574,7 @@ impl App {
                         "SVG/PNG export is not available in this build; use `tiza render`".into(),
                     )
                 })?;
-                exporter(&l.canvas, &theme, f, self.doc.title.as_deref()).map_err(Error::Invalid)?
+                exporter(&l.canvas, &theme, f, title.as_deref()).map_err(Error::Invalid)?
             }
         };
         std::fs::write(&path, &bytes)
@@ -4237,7 +4274,11 @@ impl App {
         } else {
             Vec::new()
         };
-        match self.dispatch(&req.method, req.params) {
+        let result = self.dispatch(&req.method, req.params);
+        // An agent's text repeating a masked value is said on the alert
+        // row and in `status.redact_alerts` right away (t-174).
+        self.note_masked_texts();
+        match result {
             Ok(v) => Response::ok(id, v),
             Err(e) => {
                 let e = self
@@ -4632,11 +4673,22 @@ impl App {
                 json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.doc.shown_view_at(self.doc.step).label(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
             }
             "scene.get" => {
+                let p: tiza_core::protocol::SceneGetParams = if params.is_null() {
+                    Default::default()
+                } else {
+                    parse(params)?
+                };
                 // On the wire the code travels embedded: a client in another
                 // directory could not resolve a relative file reference.
                 // Masked (t-117): the embedded code an agent gets never holds
                 // a secret; linked files travel embedded too (t-105).
                 let mut document = self.doc.embedded_copy();
+                // A reader's copy (`tiza://scene`, the exports): every text
+                // repeating a masked value masked too (t-174). Without it
+                // the author's text, as written: the editing call.
+                if p.as_shown {
+                    tiza_core::redact::Echo::quoting(&self.doc).shown_doc(&mut document);
+                }
                 // A redact a move widened at this step says so (t-140).
                 if !self.doc.moves.is_empty() {
                     let view = self.doc.view_at(self.doc.step);
@@ -4727,11 +4779,16 @@ impl App {
                 self.touch();
                 json!({"name": name, "style": st, "revision": self.revision})
             }
-            "style.list" => json!({
-                "document": self.doc.styles,
+            "style.list" => {
+                // Style names and legends are shown text (t-174).
+                let mut shown = self.doc.clone();
+                tiza_core::redact::Echo::quoting(&self.doc).shown_doc(&mut shown);
+                json!({
+                "document": shown.styles,
                 "builtin": BUILTIN_KINDS.iter().map(|(k, g, l, c)| json!({"kind": k, "glyph": g, "legend": l, "color": c})).collect::<Vec<_>>(),
                 "aliases": tiza_core::model::KIND_ALIASES.iter().map(|(a, k)| json!({"alias": a, "kind": k})).collect::<Vec<_>>(),
-            }),
+                })
+            }
             "supervise.set" => {
                 let on = params
                     .get("enabled")
@@ -4871,14 +4928,15 @@ impl App {
             annotations: self.doc.annotations.len(),
             step: self.doc.step,
             max_step: self.doc.max_step(),
+            // Shown text (t-174): a title or id repeating a masked value.
             step_id: self
                 .doc
                 .named_step(self.doc.step)
-                .and_then(|n| n.id.clone()),
+                .and_then(|n| n.id.as_deref().map(|t| self.shown(t))),
             step_title: self
                 .doc
                 .named_step(self.doc.step)
-                .and_then(|n| n.title.clone()),
+                .and_then(|n| n.title.as_deref().map(|t| self.shown(t))),
             step_label: self.doc.step_label(self.doc.step),
             auto_advance_ms: self.doc.auto_advance_ms(self.doc.step),
             looping: self.doc.looping,

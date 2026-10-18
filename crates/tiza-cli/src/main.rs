@@ -412,10 +412,12 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
                 None => {
+                    // A reader's copy (t-174): texts repeating a masked
+                    // value come masked, like the code.
                     let mut scene: tiza_core::protocol::Scene = serde_json::from_value(call(
                         &socket_path,
                         "scene.get",
-                        serde_json::json!({}),
+                        serde_json::json!({"as_shown": true}),
                     )?)
                     .context("unexpected scene.get response")?;
                     fs::resolve_code(&mut scene.document, None)
@@ -434,6 +436,14 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
+            // Every text an export shows or embeds (the SVG `<title>`, the
+            // md heading, the `.cast` header, labels and notes) repeating a
+            // masked value is masked, like the code (t-174); said once on
+            // stderr, never quoted.
+            for m in tiza_core::redact::masked_texts(&doc) {
+                eprintln!("tiza: {}", m.notice());
+            }
+            let doc = tiza_core::redact::shown_doc(&doc);
             // The gutter: the document's `numbers` field (t-112) unless a
             // flag forces it for this export.
             let line_numbers = if no_numbers {

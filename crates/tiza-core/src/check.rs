@@ -41,7 +41,8 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.
+    /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,
+    /// `masked_text` (a label, note or title repeating a masked value, t-174).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -358,6 +359,23 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     }
     let missing = load_links(&mut doc, base_dir, &mut out);
     let doc = tidy(doc, &missing, &mut out);
+    // A text that repeats a masked value is masked on every surface; said
+    // here, never quoted (t-174).
+    for m in crate::redact::masked_texts(&doc) {
+        let f = Finding::new(
+            Level::Warning,
+            "masked_text",
+            match (&m.id, m.step) {
+                (Some(_), _) | (None, Some(_)) => m.message(),
+                (None, None) => m.notice(),
+            },
+        );
+        out.push(match (m.id, m.step) {
+            (Some(id), Some(step)) => f.id(id).step(step),
+            (None, Some(step)) => f.step(step),
+            _ => f,
+        });
+    }
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);
     // Last line of defence (t-117): whatever a finding says, the text under

@@ -754,15 +754,31 @@ pub struct StepReply {
 impl StepReply {
     pub fn of(doc: &Document, revision: u64) -> Self {
         let named = doc.named_step(doc.step);
+        // Shown text (t-174): a title or id repeating a masked value is masked.
+        let shown = |t: &Option<String>| t.as_deref().map(|t| crate::redact::shown(t, doc));
         StepReply {
             step: doc.step,
             max_step: doc.max_step(),
             revision,
-            id: named.and_then(|n| n.id.clone()),
-            title: named.and_then(|n| n.title.clone()),
+            id: named.and_then(|n| shown(&n.id)),
+            title: named.and_then(|n| shown(&n.title)),
             label: doc.step_label(doc.step),
         }
     }
+}
+
+/// Parameters of `scene.get`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SceneGetParams {
+    /// The scene as readers get it (t-174): every text that repeats a
+    /// masked value — a label, a note, a title, a step title — masked like
+    /// the code. What the `tiza://scene` resource and the exports read.
+    /// Without it, `scene.get` is the editing call: the author's text as
+    /// written (the code under a redact is masked either way). Edit from
+    /// `scene.get`, never from `tiza://scene`.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub as_shown: bool,
 }
 
 /// Response of `scene.get`.
@@ -1033,14 +1049,25 @@ pub struct AnnotationMutated {
     /// lib.rs is not shown at step 2 (main.rs is)`…); absent when visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden: Option<String>,
+    /// Its text (label, note, callout text or title) repeats a masked value
+    /// (t-174): accepted, but masked on every surface; fix it. The text is
+    /// never quoted back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub masked: bool,
 }
 
 impl AnnotationMutated {
     pub fn of(doc: &Document, id: String, revision: u64) -> Self {
         let step = doc.find_annotation(&id).map(|a| a.step).unwrap_or(0);
         let hidden = doc.why_hidden(&id, doc.step);
+        let masked = doc.find_annotation(&id).is_some_and(|a| {
+            let mut shown = a.shape.clone();
+            crate::redact::Echo::quoting(doc).shown_shape(&mut shown);
+            shown != a.shape
+        });
         AnnotationMutated {
-            step_title: doc.step_title(step).map(String::from),
+            masked,
+            step_title: doc.step_title(step),
             shown_step: doc.step,
             visible: hidden.is_none(),
             hidden,
@@ -1053,6 +1080,17 @@ impl AnnotationMutated {
     /// One sentence for the MCP tools: `a17 added at step 1; not visible
     /// now: the view is at step 0 (next_step shows it).`
     pub fn sentence(&self, verb: &str) -> String {
+        let s = self.sentence_where(verb);
+        if self.masked {
+            format!(
+                "{s} Its text repeats masked text: it is masked on every surface — fix the label."
+            )
+        } else {
+            s
+        }
+    }
+
+    fn sentence_where(&self, verb: &str) -> String {
         let at = match &self.step_title {
             Some(t) => format!("step {} ({t})", self.step),
             None => format!("step {}", self.step),
@@ -1097,7 +1135,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.get",
-        "Full document with annotations and current step (code embedded)",
+        "Full document with annotations and current step (code embedded, masked); the author's text as written, or with `as_shown` every text repeating a masked value masked as readers see it",
     ),
     (
         "scene.list",
@@ -1322,8 +1360,14 @@ pub fn describe(a: &Annotation) -> String {
 /// [`describe`] through the redact filter of the document `a` is in
 /// (t-167): on a document with a redact its range markers read `@«…»`
 /// (a marker may sit on the mask; quoting only the others would say which).
+///
+/// Its texts (labels, notes, callout texts and titles, mark kinds) are
+/// shown text (t-174): a copy of a masked value is masked, before a long
+/// callout text is cut with «…».
 pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
-    let base = describe_shape(a);
+    let mut shown = a.clone();
+    echo.shown_shape(&mut shown.shape);
+    let base = describe_shape(&shown);
     let base = match &a.markers {
         Some(m) => format!("{base} @{}..@{}", echo.quote(&m.start), echo.quote(&m.end)),
         None => base,

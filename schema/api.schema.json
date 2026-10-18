@@ -360,12 +360,19 @@
       }
     },
     {
-      "description": "Full document with annotations and current step (code embedded)",
+      "description": "Full document with annotations and current step (code embedded, masked); the author's text as written, or with `as_shown` every text repeating a masked value masked as readers see it",
       "method": "scene.get",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Parameters of `code.get` (none).",
-        "title": "NoParams",
+        "additionalProperties": false,
+        "description": "Parameters of `scene.get`.",
+        "properties": {
+          "as_shown": {
+            "description": "The scene as readers get it (t-174): every text that repeats a\nmasked value — a label, a note, a title, a step title — masked like\nthe code. What the `tiza://scene` resource and the exports read.\nWithout it, `scene.get` is the editing call: the author's text as\nwritten (the code under a redact is masked either way). Edit from\n`scene.get`, never from `tiza://scene`.",
+            "type": "boolean"
+          }
+        },
+        "title": "SceneGetParams",
         "type": "object"
       },
       "result": {
@@ -2168,6 +2175,10 @@
           "id": {
             "type": "string"
           },
+          "masked": {
+            "description": "Its text (label, note, callout text or title) repeats a masked value\n(t-174): accepted, but masked on every surface; fix it. The text is\nnever quoted back.",
+            "type": "boolean"
+          },
           "revision": {
             "format": "uint64",
             "minimum": 0,
@@ -2962,6 +2973,10 @@
           },
           "id": {
             "type": "string"
+          },
+          "masked": {
+            "description": "Its text (label, note, callout text or title) repeats a masked value\n(t-174): accepted, but masked on every surface; fix it. The text is\nnever quoted back.",
+            "type": "boolean"
           },
           "revision": {
             "format": "uint64",
@@ -6110,7 +6125,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,\n`masked_text` (a label, note or title repeating a masked value, t-174).",
                 "type": "string"
               },
               "file": {

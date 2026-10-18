@@ -10,8 +10,58 @@
 //! the real text, never its length. Other annotations on the same line are
 //! shifted by the difference, and anything overlapping the masked span is
 //! clamped to it (the redact wins: nothing under it is readable).
+//!
+//! # The output filter (t-167, t-174)
+//!
+//! The code is masked by [`masked`]; every *other* text Tiza draws or hands
+//! out that comes from the document or from an agent's request goes
+//! through one filter, [`Echo`], and nothing else decides how such a text
+//! is shown:
+//!
+//! - document-derived text — [`shown`] / [`Echo::shown`] (a whole text) and
+//!   [`shown_doc`] / [`Echo::shown_doc`] (every text of a document): any
+//!   copy of a masked value, whole or a piece of [`MIN_PIECE`]+ characters
+//!   with a letter or digit, is masked with its whole token, with the same
+//!   eight bullets as the code (the copy rule of t-157). The values are
+//!   those under every redact at any step, so a label is masked from step
+//!   0 even with `redact_from_step`. Fail closed: a common word that shares
+//!   a piece with the value (`pass` of `passw0rd!`) is masked too.
+//! - errors and echoes of a target — [`Echo::text`] / [`Echo::error`] /
+//!   [`Echo::quote`] (t-167): on a document with any redact no target text
+//!   is quoted (`«…»`).
+//!
+//! The values are computed once per change of the code, the redacts or the
+//! moves (a small cache keyed by them, [`Echo::new`]), never per frame.
+//!
+//! Where each output calls it (the known formatting sites; `qa/tests/t-174.rs`
+//! greps for them):
+//!
+//! - every label, note, callout text and title, box label, arrow label, mark
+//!   legend and style name the layout draws: `layout::layout_with` masks the
+//!   document it lays out — the TUI, `render` (PNG, SVG, GIF, MP4, txt, md,
+//!   ansi, `.cast`), `render.text`, `tiza://render`, `tiza://render.md`;
+//! - step titles and ids: `Document::step_title` / `step_label` (status bar,
+//!   `status`, `step.*` replies, `tiza next`), `StepReply::of`,
+//!   `AnnotationMutated::of`;
+//! - the document title and the rest of a document handed to a reader:
+//!   `tiza render FILE` (the SVG `<title>`, the md heading, the `.cast`
+//!   header) masks the loaded document with [`shown_doc`]; the instance
+//!   answers `scene.get {"as_shown": true}` (the `tiza://scene` resource,
+//!   MCP `export_image`, `tiza render` of the live instance) the same way;
+//!   the TUI's own exports pass the title through [`Echo::shown`];
+//! - `scene.list` / `list_annotations` / `:list` / the selection line:
+//!   `protocol::describe_with`;
+//! - status-bar messages and notices: `App::info` / `App::error` /
+//!   `App::redact_alert`;
+//! - supervised mode (review list, accepted/rejected/expired messages,
+//!   `supervise.status`): `proposal_summary`, with [`Echo::copies`];
+//! - errors over the socket, the MCP, the CLI and on load: [`Echo::error`].
+//!
+//! Only `scene.get` without `as_shown` (the explicit editing call) and the
+//! saved `.tiza` keep the author's text as written: the file is the
+//! author's, like the code under a redact.
 
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use regex::Regex;
 use unicode_segmentation::UnicodeSegmentation;
@@ -718,6 +768,225 @@ pub fn masked_values(doc: &Document) -> Vec<String> {
     v
 }
 
+/// A key for what [`masked_values`] reads: the code (the step-0 code and
+/// the linked files when there are moves), the redacts and the moves.
+fn values_key(doc: &Document) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    if doc.moves.is_empty() {
+        doc.code.hash(&mut h);
+        doc.source.first_line.hash(&mut h);
+    } else {
+        doc.base().hash(&mut h);
+        doc.base_first().hash(&mut h);
+        doc.view_code.hash(&mut h);
+        serde_json::to_string(&doc.moves)
+            .unwrap_or_default()
+            .hash(&mut h);
+    }
+    doc.redact_from_step.hash(&mut h);
+    for a in &doc.annotations {
+        if matches!(a.shape, Shape::Redact { .. }) {
+            serde_json::to_string(a).unwrap_or_default().hash(&mut h);
+        }
+    }
+    h.finish()
+}
+
+/// [`masked_values`], computed once per change of what it reads (t-174):
+/// the layout asks for every frame, the TUI's bar and lists too, and with
+/// moves the values take a projection per step.
+pub fn masked_values_cached(doc: &Document) -> Arc<Vec<String>> {
+    static CACHE: Mutex<Vec<(u64, Arc<Vec<String>>)>> = Mutex::new(Vec::new());
+    if !has_redacts(doc) {
+        return Arc::default();
+    }
+    let key = values_key(doc);
+    if let Ok(mut c) = CACHE.lock()
+        && let Some(i) = c.iter().position(|(k, _)| *k == key)
+    {
+        let hit = c.remove(i);
+        let v = hit.1.clone();
+        c.push(hit);
+        return v;
+    }
+    let v = Arc::new(masked_values(doc));
+    if let Ok(mut c) = CACHE.lock() {
+        if c.len() >= 32 {
+            c.remove(0);
+        }
+        c.push((key, v.clone()));
+    }
+    v
+}
+
+/// `text` with every copy of `values`, whole or a piece of [`MIN_PIECE`]+
+/// characters (t-157), masked with its whole token by [`MASK`] (t-174).
+/// Line by line, so a token whose end is unclear runs to the end of its
+/// line, not of a whole note. A `«`/`»` around the token stays.
+fn mask_copies(text: &str, values: &[String]) -> Option<String> {
+    if values.is_empty() || text.is_empty() {
+        return None;
+    }
+    let mut changed = false;
+    let mut lines: Vec<String> = Vec::new();
+    for line in text.split('\n') {
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        for v in values {
+            for (b0, b1, _) in value_hits(line, v) {
+                let (mut t0, mut t1) = token_around(line, b0, b1);
+                while t0 < b0 && line[t0..].starts_with('«') {
+                    t0 += '«'.len_utf8();
+                }
+                while t1 > b1 && line[..t1].ends_with('»') {
+                    t1 -= '»'.len_utf8();
+                }
+                ranges.push((t0, t1));
+            }
+        }
+        if ranges.is_empty() {
+            lines.push(line.to_string());
+            continue;
+        }
+        changed = true;
+        ranges.sort_unstable();
+        let mut merged: Vec<(usize, usize)> = Vec::new();
+        for (a, b) in ranges {
+            match merged.last_mut() {
+                Some(last) if a <= last.1 => last.1 = last.1.max(b),
+                _ => merged.push((a, b)),
+            }
+        }
+        let mut out = line.to_string();
+        for (a, b) in merged.into_iter().rev() {
+            out.replace_range(a..b, MASK);
+        }
+        lines.push(out);
+    }
+    changed.then(|| lines.join("\n"))
+}
+
+/// The one function for document-derived text (t-174): `text` as Tiza
+/// shows it or hands it to a reader, with every copy of a value masked in
+/// `doc` taken out (see the module docs). Unchanged on a document without
+/// redacts.
+pub fn shown(text: &str, doc: &Document) -> String {
+    Echo::quoting(doc).shown(text)
+}
+
+/// `doc` with every text a reader can see masked by [`shown`]: its title,
+/// step titles and ids, labels, notes, callout texts and titles, mark
+/// legends and style names. The code and the redacts are left as they are
+/// ([`masked`] does those). Unchanged on a document without redacts.
+pub fn shown_doc(doc: &Document) -> Document {
+    let mut d = doc.clone();
+    Echo::quoting(doc).shown_doc(&mut d);
+    d
+}
+
+/// A text of the document that repeats a masked value (t-174): drawn
+/// masked, and said once — by the TUI's alert row (t-135) and as a `tiza
+/// check` warning — without ever quoting it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MaskedText {
+    /// Who holds it: an annotation id, `step N`, `document`, `style NAME`
+    /// (shown text itself).
+    pub subject: String,
+    /// The annotation it is in, when it is in one.
+    pub id: Option<String>,
+    /// Its step (an annotation's, or the named step's).
+    pub step: Option<u32>,
+    /// Which text: `label`, `text`, `title`, `kind`, `legend`, `id`.
+    pub field: &'static str,
+}
+
+impl MaskedText {
+    /// `its label repeats masked text; masked on screen — fix the label`.
+    pub fn message(&self) -> String {
+        format!(
+            "its {0} repeats masked text; masked on screen — fix the {0}",
+            self.field
+        )
+    }
+
+    /// The alert: `a3: its label repeats masked text; masked on screen — fix the label`.
+    pub fn notice(&self) -> String {
+        format!("{}: {}", self.subject, self.message())
+    }
+
+    /// What identifies it across changes (the TUI says each one once).
+    pub fn key(&self) -> String {
+        format!("{}\u{0}{}", self.subject, self.field)
+    }
+}
+
+/// Every text of `doc` that [`shown`] masks, in document order.
+pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
+    let f = Echo::quoting(doc);
+    let mut out = Vec::new();
+    if f.values.is_empty() {
+        return out;
+    }
+    let hit = |t: Option<&str>| t.is_some_and(|t| f.repeats(t));
+    let mut push = |subject: String, id: Option<String>, step: Option<u32>, field| {
+        out.push(MaskedText {
+            subject,
+            id,
+            step,
+            field,
+        })
+    };
+    if hit(doc.title.as_deref()) {
+        push("document".into(), None, None, "title");
+    }
+    for n in &doc.steps {
+        for (t, field) in [(&n.title, "title"), (&n.id, "id")] {
+            if hit(t.as_deref()) {
+                push(format!("step {}", n.step), None, Some(n.step), field);
+            }
+        }
+    }
+    for (k, st) in &doc.styles {
+        let name = f.shown_kind(k);
+        if name != *k {
+            push(format!("style {name}"), None, None, "name");
+        }
+        if hit(st.legend.as_deref()) {
+            push(format!("style {name}"), None, None, "legend");
+        }
+    }
+    for a in &doc.annotations {
+        let mut fields: Vec<(Option<&str>, &'static str)> = Vec::new();
+        match &a.shape {
+            Shape::Highlight { label, .. }
+            | Shape::Box { label, .. }
+            | Shape::Arrow { label, .. }
+            | Shape::Redact { label, .. } => fields.push((label.as_deref(), "label")),
+            Shape::Mark {
+                kind, label, style, ..
+            } => {
+                if crate::model::builtin_kind(kind).is_none() {
+                    fields.push((Some(kind), "kind"));
+                }
+                fields.push((label.as_deref(), "label"));
+                fields.push((style.legend.as_deref(), "legend"));
+            }
+            Shape::Note { text, .. } => fields.push((Some(text), "text")),
+            Shape::Callout { text, title, .. } => {
+                fields.push((Some(text), "text"));
+                fields.push((title.as_deref(), "title"));
+            }
+            Shape::Spotlight { .. } => {}
+        }
+        for (t, field) in fields {
+            if hit(t) {
+                push(f.shown(&a.id), Some(a.id.clone()), Some(a.step), field);
+            }
+        }
+    }
+    out
+}
+
 /// Every target text the document itself wrote (t-167): the `find`,
 /// `after`, `before`, `find_start`/`find_end` of its moves, the
 /// `from`/`to.find` of a `select`, the `rebind` finds, and the range
@@ -755,7 +1024,7 @@ pub const ELIDED: &str = "«…»";
 pub struct Echo {
     active: bool,
     written: Vec<String>,
-    values: Vec<String>,
+    values: Arc<Vec<String>>,
 }
 
 /// A plain lowercase word (`note`, `dashed`, `secret`): the vocabulary of
@@ -777,17 +1046,22 @@ impl Echo {
         Echo {
             active: true,
             written: Vec::new(),
-            values: masked_values(doc),
+            values: masked_values_cached(doc),
         }
         .written(document_targets(doc))
     }
 
-    /// Only the "is there a redact" half of [`Echo::new`], for listings
-    /// drawn every frame that need [`Echo::quote`] alone.
+    /// [`Echo::new`] without the document's targets, for listings drawn
+    /// every frame that need [`Echo::quote`] and [`Echo::shown`] alone (the
+    /// values come from the cache).
     pub fn quoting(doc: &Document) -> Echo {
+        if !has_redacts(doc) {
+            return Echo::default();
+        }
         Echo {
-            active: has_redacts(doc),
-            ..Echo::default()
+            active: true,
+            written: Vec::new(),
+            values: masked_values_cached(doc),
         }
     }
 
@@ -848,6 +1122,96 @@ impl Echo {
         }
     }
 
+    /// Document-derived text as it is shown (t-174, see [`shown`]): every
+    /// copy of a masked value, whole or a piece, masked with its whole
+    /// token by the eight bullets of the code.
+    pub fn shown(&self, text: &str) -> String {
+        mask_copies(text, &self.values).unwrap_or_else(|| text.to_string())
+    }
+
+    /// Whether [`Echo::shown`] changes `text` (it repeats masked text).
+    pub fn repeats(&self, text: &str) -> bool {
+        !self.values.is_empty() && self.values.iter().any(|v| !value_hits(text, v).is_empty())
+    }
+
+    fn shown_opt(&self, t: &mut Option<String>) {
+        if let Some(s) = t
+            && let Some(m) = mask_copies(s, &self.values)
+        {
+            *s = m;
+        }
+    }
+
+    fn shown_str(&self, s: &mut String) {
+        if let Some(m) = mask_copies(s, &self.values) {
+            *s = m;
+        }
+    }
+
+    /// A mark's `kind` or a style name: masked like any text, but a
+    /// built-in kind stays (it names a style, it is no secret).
+    fn shown_kind(&self, k: &str) -> String {
+        if crate::model::builtin_kind(k).is_some() {
+            k.to_string()
+        } else {
+            self.shown(k)
+        }
+    }
+
+    /// The texts of one annotation's shape, masked in place.
+    pub fn shown_shape(&self, shape: &mut Shape) {
+        if self.values.is_empty() {
+            return;
+        }
+        match shape {
+            Shape::Highlight { label, .. }
+            | Shape::Box { label, .. }
+            | Shape::Arrow { label, .. }
+            | Shape::Redact { label, .. } => self.shown_opt(label),
+            Shape::Mark {
+                kind, label, style, ..
+            } => {
+                *kind = self.shown_kind(kind);
+                self.shown_opt(label);
+                self.shown_opt(&mut style.legend);
+            }
+            Shape::Note { text, .. } => self.shown_str(text),
+            Shape::Callout { text, title, .. } => {
+                self.shown_str(text);
+                self.shown_opt(title);
+            }
+            Shape::Spotlight { .. } => {}
+        }
+    }
+
+    /// Every text of `doc` a reader can see, masked in place (see
+    /// [`shown_doc`]).
+    pub fn shown_doc(&self, doc: &mut Document) {
+        if self.values.is_empty() {
+            return;
+        }
+        self.shown_opt(&mut doc.title);
+        for a in &mut doc.annotations {
+            self.shown_shape(&mut a.shape);
+        }
+        if doc.styles.keys().any(|k| self.repeats(k))
+            || doc
+                .styles
+                .values()
+                .any(|st| st.legend.as_deref().is_some_and(|l| self.repeats(l)))
+        {
+            let styles = std::mem::take(&mut doc.styles);
+            for (k, mut st) in styles {
+                self.shown_opt(&mut st.legend);
+                doc.styles.entry(self.shown_kind(&k)).or_insert(st);
+            }
+        }
+        for n in &mut doc.steps {
+            self.shown_opt(&mut n.title);
+            self.shown_opt(&mut n.id);
+        }
+    }
+
     /// `text` with every copy, or piece of [`MIN_PIECE`]+ characters, of a
     /// masked value taken out with its whole token (t-157), for the free
     /// text an echo repeats (a label, a note).
@@ -859,7 +1223,7 @@ impl Echo {
     /// `whole_only`) taken out with its whole token.
     fn take_out(&self, text: &str, whole_only: bool) -> String {
         let mut out = text.to_string();
-        for v in &self.values {
+        for v in self.values.iter() {
             let mut tokens: Vec<(usize, usize)> = Vec::new();
             for (b0, b1, whole) in value_hits(&out, v) {
                 if whole_only && !whole {

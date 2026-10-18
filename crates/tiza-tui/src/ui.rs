@@ -114,6 +114,9 @@ pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, 
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    // A text repeating a masked value is said once (t-174); a no-op until
+    // the revision changes.
+    app.note_masked_texts();
     let area = frame.area();
     app.size = (area.width, area.height);
     if area.width == 0 || area.height == 0 {
@@ -654,7 +657,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                     "  step {}/{} · {}",
                     app.doc.step,
                     app.doc.max_step(),
-                    fit_message(t, 32)
+                    fit_message(&t, 32)
                 ),
                 None => format!("  step {}/{}", app.doc.step, app.doc.max_step()),
             },

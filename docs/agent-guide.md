@@ -112,6 +112,8 @@ The presenter may turn on `:supervise`: then every mutating call (add, update, d
 
 If your client supports MCP resources, `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
 
+`tiza://scene` is a reader's copy (t-174): any text that repeats a masked value — a label, a note, a callout, a step title, the document title — comes masked (`was ••••••••`), as on screen, because a client may attach a resource to your context on its own and nothing is written back from it. The socket's `scene.get` (`tiza scene get`) is the editing call: it returns the author's text as written (the code under a redact is masked either way); `scene.get {"as_shown": true}` gives the reader's copy. So edit from `scene.get`, never from `tiza://scene`: a document rebuilt from the resource and sent back with `scene.put` would write the bullets into the labels. If a label you add repeats a masked value, the reply says `"masked": true` ("Its text repeats masked text: it is masked on every surface — fix the label"); the presenter sees an alert and `check` warns (`masked_text`). Write labels that do not repeat what a redact hides.
+
 ## Idempotency
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
