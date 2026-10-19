@@ -41,10 +41,7 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,
-    /// `masked_text` (a label, note or title repeating a masked value, or
-    /// holding masked text, t-174), `clear_value` (an embedded `.tiza`
-    /// nobody saved in Tiza holds a masked value in clear, t-174).
+    /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -133,18 +130,6 @@ impl Finding {
 pub struct CheckOptions {
     /// Width to check the labels at; `None`: [`DEFAULT_WIDTH`].
     pub width: Option<usize>,
-    /// The `.tiza`'s file name, which the warnings about an embedded file
-    /// nobody saved in Tiza name (`demo.tiza still holds it in clear`);
-    /// `None`: `the file`.
-    pub name: Option<String>,
-    /// What the `.tiza` holds of the texts the filter masks, when the
-    /// caller knows it (the live instance, [`crate::redact::Kept`]); `None`:
-    /// as a reader finds the file ([`crate::redact::Kept::reading`]).
-    pub kept: Option<crate::redact::Kept>,
-    /// The linked files the `.tiza` holds in `views` when the caller knows
-    /// them (the live instance, whose report freezes every linked file);
-    /// `None`: the document's own `views`.
-    pub frozen: Option<Vec<String>>,
 }
 
 /// Everything `check` found about one document.
@@ -170,11 +155,6 @@ pub struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub narrower: Option<Narrower>,
     pub findings: Vec<Finding>,
-    /// The masked values of the document (in memory only, never written
-    /// or printed): [`Report::to_text`] masks the file name with them.
-    #[serde(skip)]
-    #[schemars(skip)]
-    pub values: crate::redact::KnownValues,
 }
 
 /// The widths below `min_clean_width` where a take shows every label
@@ -228,7 +208,6 @@ impl Report {
             min_clean_width: clean,
             narrower: None,
             findings,
-            values: Default::default(),
         }
     }
 
@@ -241,8 +220,6 @@ impl Report {
             out.push('\n');
         }
         let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
-        // The file's name is shown text (t-174 review: `9vK7wPx3Lm.tiza`).
-        let name = crate::redact::shown_with(name, &self.values.0);
         out.push_str(&format!(
             "{name}: {}, {}{}\n",
             plural(self.errors, "error"),
@@ -308,26 +285,11 @@ pub fn last_step(doc: &Document) -> u32 {
 /// Checks a `.tiza` read from disk (its relative files resolve next to it).
 pub fn check_path(path: &Path, opts: &CheckOptions) -> Result<Report, crate::Error> {
     let text = std::fs::read_to_string(path)?;
-    let mut opts = opts.clone();
-    if opts.name.is_none() {
-        opts.name = path.file_name().map(|n| n.to_string_lossy().into_owned());
-    }
-    Ok(check_text(&text, path.parent(), &opts))
+    Ok(check_text(&text, path.parent(), opts))
 }
 
 /// Checks the text of a `.tiza`; `base_dir` resolves its relative files.
 pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
-    check_text_with(text, base_dir, opts, &Default::default())
-}
-
-/// [`check_text`] knowing the values a live instance keeps in memory
-/// ([`crate::redact::KnownValues`], t-174): a `.tiza` text never holds them.
-fn check_text_with(
-    text: &str,
-    base_dir: Option<&Path>,
-    opts: &CheckOptions,
-    known: &crate::redact::KnownValues,
-) -> Report {
     let width = opts.width.unwrap_or(DEFAULT_WIDTH);
     let mut out: Vec<Finding> = Vec::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -389,7 +351,6 @@ fn check_text_with(
         }
     };
     doc.schema = SCHEMA_VERSION;
-    doc.known_values = known.clone();
     // ---- the code ----
     if let Err(e) = crate::fs::resolve_code(&mut doc, base_dir) {
         out.push(Finding::new(Level::Error, "code", e.to_string()));
@@ -404,85 +365,12 @@ fn check_text_with(
     }
     let missing = load_links(&mut doc, base_dir, &mut out);
     let doc = tidy(doc, &missing, &mut out);
-    // A text that repeats a masked value is masked on every surface; said
-    // here, never quoted (t-174).
-    let kept = opts.kept.clone().unwrap_or_else(|| {
-        crate::redact::Kept::reading(&doc, opts.name.as_deref().unwrap_or("the file"))
-    });
-    for m in crate::redact::masked_texts(&doc, &kept) {
-        let f = Finding::new(
-            Level::Warning,
-            "masked_text",
-            match (&m.id, m.step) {
-                (Some(_), _) | (None, Some(_)) => m.message(),
-                (None, None) => m.notice(),
-            },
-        );
-        out.push(match (m.id, m.step) {
-            (Some(id), Some(step)) => f.id(id).step(step),
-            (None, Some(step)) => f.step(step),
-            _ => f,
-        });
-    }
-    // An embedded `.tiza` nobody saved in Tiza (written by hand or by
-    // another tool) that holds a value under a redact in clear: Tiza would
-    // save it masked (t-174 rework point 3).
-    let frozen: Vec<String> = opts
-        .frozen
-        .clone()
-        .unwrap_or_else(|| doc.views.keys().cloned().collect());
-    let clear = match &kept {
-        crate::redact::Kept::InClear { file } => Some((file.clone(), true)),
-        // A reader of a file reference: its frozen linked files still count.
-        crate::redact::Kept::OnScreen if opts.kept.is_none() => Some((
-            crate::redact::shown(opts.name.as_deref().unwrap_or("the file"), &doc),
-            false,
-        )),
-        _ => None,
-    };
-    if let Some((file, main)) = &clear {
-        let (ids, moves) = crate::redact::values_in_clear(&doc, *main, &frozen);
-        for id in ids {
-            out.push(
-                Finding::new(
-                    Level::Warning,
-                    "clear_value",
-                    if *main {
-                        format!(
-                            "the embedded code holds the value under this redact in clear; {file} still holds it — open and save it in Tiza"
-                        )
-                    } else {
-                        // A file reference keeps what it holds when saved;
-                        // `:embed` freezes everything masked, but embeds the
-                        // main code too, and the message says so.
-                        format!(
-                            "the linked file frozen in `views` holds the value under this redact in clear; {file} still holds it — drop it from `views` (Tiza then reads the file), or :embed in Tiza (which embeds the main code too)"
-                        )
-                    },
-                )
-                .id(crate::redact::shown(&id, &doc)),
-            );
-        }
-        for i in moves {
-            out.push(
-                Finding::new(
-                    Level::Warning,
-                    "clear_value",
-                    format!(
-                        "its content holds a masked value in clear; {file} still holds it — open and save it in Tiza"
-                    ),
-                )
-                .id(format!("move #{}", i + 1)),
-            );
-        }
-    }
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);
     // Last line of defence (t-117): whatever a finding says, the text under
     // a mask never leaves `check`.
     scrub_secrets(&doc, &mut out);
     let mut report = Report::new(width, out, Some(max), clean);
-    report.values = crate::redact::KnownValues(crate::redact::all_values(&doc));
     if let Some(c) = clean
         && width < c
         && !report.findings.iter().any(|f| f.code == "clipped_label")
@@ -499,11 +387,6 @@ fn check_text_with(
 /// text under a redact. `base_dir` resolves relative files the document
 /// names but did not load.
 pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
-    let mut opts = opts.clone();
-    if opts.frozen.is_none() {
-        opts.frozen = Some(doc.views.keys().cloned().collect());
-    }
-    let opts = &opts;
     let mut d = doc.clone();
     d.sync_code_src();
     d.code_src = crate::model::CodeSource::Embedded(d.base().to_vec());
@@ -513,7 +396,7 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
         }
     }
     match serde_json::to_string(&d) {
-        Ok(text) => check_text_with(&text, base_dir, opts, &doc.known_values),
+        Ok(text) => check_text(&text, base_dir, opts),
         Err(e) => Report::new(
             opts.width.unwrap_or(DEFAULT_WIDTH),
             vec![Finding::new(Level::Error, "schema", e.to_string())],
@@ -523,29 +406,11 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
     }
 }
 
-/// The texts under every mask at any step (see
-/// [`crate::redact::masked_values`]).
-fn secrets(doc: &Document) -> Vec<String> {
-    crate::redact::all_values(doc).to_vec()
-}
-
 /// Takes every text under a mask out of the findings.
 fn scrub_secrets(doc: &Document, out: &mut [Finding]) {
-    let secrets = secrets(doc);
+    let secrets = crate::redact::masked_values(doc);
     if secrets.is_empty() {
         return;
-    }
-    // Shown text (t-174): an id, a message or a clipped label sharing text
-    // with a masked value is masked, as on screen.
-    let filter = crate::redact::Echo::for_messages(doc);
-    for f in out.iter_mut() {
-        if let Some(id) = &mut f.id {
-            *id = filter.shown(id);
-        }
-        f.message = filter.shown_message(&f.message);
-        if let Some(t) = &mut f.text {
-            *t = filter.shown(t);
-        }
     }
     for f in out {
         for s in &secrets {

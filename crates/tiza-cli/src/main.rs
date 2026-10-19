@@ -388,8 +388,6 @@ fn real_main() -> anyhow::Result<()> {
                     }
                 });
             // The document: a file, or the live instance's scene.
-            // The `.tiza` a reader's warnings name (t-174 rework point 3).
-            let mut tiza_name: Option<String> = None;
             // The live instance's `.tiza` and whether it autosaves: what a
             // `.tape` of it opens (t-166).
             let mut live_document: Option<(Option<String>, bool)> = None;
@@ -406,15 +404,6 @@ fn real_main() -> anyhow::Result<()> {
                     if let Some(n) = &opened.notice {
                         eprintln!("tiza: {n}");
                     }
-                    tiza_name = Some(if f == "-" {
-                        "the document".to_string()
-                    } else {
-                        opened
-                            .save_path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().into_owned())
-                            .unwrap_or_else(|| f.clone())
-                    });
                     override_language(
                         &mut opened.document,
                         lang.as_deref().or(cli.lang.as_deref()),
@@ -426,12 +415,10 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
                 None => {
-                    // A reader's copy (t-174): texts repeating a masked
-                    // value come masked, like the code.
                     let mut scene: tiza_core::protocol::Scene = serde_json::from_value(call(
                         &socket_path,
                         "scene.get",
-                        serde_json::json!({"as_shown": true}),
+                        serde_json::json!({}),
                     )?)
                     .context("unexpected scene.get response")?;
                     // Its linked files too, as the instance shows them
@@ -454,23 +441,6 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
-            // Every text an export shows or embeds (the SVG `<title>`, the
-            // md heading, the `.cast` header, labels and notes) repeating a
-            // masked value is masked, like the code (t-174); said once on
-            // stderr, never quoted.
-            // A file nobody saved here: an embedded one still holds the
-            // value in clear (never «saved masked»). A text Tiza saved
-            // masked is said by `tiza check` and on opening, not by a render.
-            let kept = match &tiza_name {
-                Some(n) => tiza_core::redact::Kept::reading(&doc, n),
-                None => tiza_core::redact::Kept::OnScreen,
-            };
-            for m in tiza_core::redact::masked_texts(&doc, &kept) {
-                if !m.held {
-                    eprintln!("tiza: {}", m.notice());
-                }
-            }
-            let doc = tiza_core::redact::shown_doc(&doc);
             // The gutter: the document's `numbers` field (t-112) unless a
             // flag forces it for this export.
             let line_numbers = if no_numbers {
@@ -677,11 +647,6 @@ fn real_main() -> anyhow::Result<()> {
                             // The instance's own `.tiza` (t-166; it typed
                             // `tiza scene.tiza`, a file that does not exist).
                             (None, Some((Some(d), autosave))) => {
-                                if d.contains(tiza_core::redact::MASK) {
-                                    bail!(
-                                        "the path of the live document repeats a masked value, so a tape cannot name it: render the .tiza file instead (`tiza render FILE --out demo.tape`)"
-                                    );
-                                }
                                 // Relative to the tape's folder, where `vhs`
                                 // runs it, never the absolute path with the
                                 // home in it (t-166 verification).
@@ -806,10 +771,7 @@ fn real_main() -> anyhow::Result<()> {
                 .map(tiza_core::layout::check_width)
                 .transpose()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let opts = tiza_core::check::CheckOptions {
-                width,
-                ..Default::default()
-            };
+            let opts = tiza_core::check::CheckOptions { width };
             let (name, report) = if file == "-" {
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text)?;

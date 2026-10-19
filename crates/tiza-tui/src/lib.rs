@@ -134,13 +134,12 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     ratatui::restore();
     if app.dirty && app.save().is_err() {
         // The terminal is restored by now: say it where it will be read.
-        // Through the output filter, like every message (t-174).
         let msg = format!(
             "could not save {}: {}",
             app.save_path.display(),
             app.save_error.as_deref().unwrap_or("unknown error")
         );
-        eprintln!("tiza: {}", app.shown_message(&msg));
+        eprintln!("tiza: {msg}");
     }
     drop(ipc);
     result

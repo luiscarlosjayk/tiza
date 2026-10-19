@@ -985,14 +985,7 @@ impl TizaServer {
                 json!({"name": p.name, "glyph": p.glyph, "legend": p.legend, "color": p.color}),
             )
             .await?;
-        // The instance says when a text of it shares text with a masked
-        // value (t-174); the sentence first, never the text.
-        Ok(text(
-            match v.get("masked_notice").and_then(|n| n.as_str()) {
-                Some(n) => format!("{n}.\n{}", pretty(&v)),
-                None => pretty(&v),
-            },
-        ))
+        Ok(text(pretty(&v)))
     }
 
     #[tool(
@@ -1257,9 +1250,7 @@ impl TizaServer {
             None => None,
         };
         let mut scene: tiza_core::protocol::Scene =
-            // A reader's copy (t-174): titles and labels repeating a
-            // masked value come masked, like the code.
-            serde_json::from_value(self.call("scene.get", json!({"as_shown": true})).await?)
+            serde_json::from_value(self.call("scene.get", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         // Its linked files too, as the instance shows them (t-166): an
         // export never draws another file than the TUI, in silence.
@@ -1574,11 +1565,7 @@ impl TizaServer {
     async fn resource_text(&self, uri: &str) -> Result<String, McpError> {
         match uri {
             "tiza://scene" => {
-                // A resource is a reader (t-174): clients may pull it into
-                // an agent's context on their own and nothing writes back
-                // from it, so its texts come masked; editing reads the
-                // `scene.get` call.
-                let v = self.call("scene.get", json!({"as_shown": true})).await?;
+                let v = self.call("scene.get", json!({})).await?;
                 Ok(pretty(&v))
             }
             "tiza://code" => {

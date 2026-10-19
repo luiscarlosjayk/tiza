@@ -371,10 +371,6 @@ pub fn layout_with(
     geometry: Option<&StableGeometry>,
 ) -> Layout {
     let width = opts.width.max(20);
-    // The output filter (t-174), from the whole document: the values under
-    // every redact at any step (cached, not computed per frame).
-    let filter =
-        (opts.redact && crate::redact::has_redacts(doc)).then(|| crate::redact::Echo::quoting(doc));
     let stable = opts.stable.then(|| {
         geometry
             .cloned()
@@ -397,18 +393,9 @@ pub fn layout_with(
     };
     // Redaction (t-117): the one place every rendered surface goes through.
     // From here on the code holds the masks and nothing under them.
-    // Then every label, note, title and style name repeating a masked value
-    // is masked too (t-174), even at a step whose code has no redact.
-    let mut masked_doc;
+    let masked_doc;
     let doc = if opts.redact && crate::redact::has_redacts(doc) {
         masked_doc = crate::redact::masked(doc, opts.step);
-        if let Some(f) = &filter {
-            f.shown_texts(&mut masked_doc);
-        }
-        &masked_doc
-    } else if let Some(f) = &filter {
-        masked_doc = doc.clone();
-        f.shown_texts(&mut masked_doc);
         &masked_doc
     } else {
         doc

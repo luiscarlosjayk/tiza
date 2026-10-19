@@ -128,11 +128,7 @@ impl Document {
     /// What the status line shows after the number: the title, else the id.
     pub fn step_title(&self, step: u32) -> Option<String> {
         let n = self.named_step(step)?;
-        // Shown text: a title that repeats a masked value is masked (t-174).
-        n.title
-            .as_deref()
-            .or(n.id.as_deref())
-            .map(|t| crate::redact::shown(t, self))
+        n.title.clone().or_else(|| n.id.clone())
     }
 
     /// `step 3/7`, or `step 3/7 · Shared borrow` on a named step.
@@ -211,8 +207,7 @@ impl Document {
         let name = |n: &NamedStep| {
             n.id.as_deref()
                 .or(n.title.as_deref())
-                // Shown text (t-174).
-                .map(|t| format!(" «{}»", crate::redact::shown(t, self)))
+                .map(|t| format!(" «{t}»"))
                 .unwrap_or_default()
         };
         let mut out: Vec<String> = self
@@ -227,10 +222,6 @@ impl Document {
                 )
             })
             .collect();
-        // Shown text (t-174): a step's title, id or unknown key repeating a
-        // masked value is masked.
-        let shown = |s: String| crate::redact::shown_message(&s, self);
-        out = out.into_iter().map(shown).collect();
         for n in self.steps.iter().filter(|n| !n.unknown.is_empty()) {
             let keys: Vec<String> = n.unknown.keys().map(|k| format!("`{k}`")).collect();
             out.push(format!(
@@ -241,7 +232,7 @@ impl Document {
                 keys.join(", ")
             ));
         }
-        out.into_iter().map(shown).collect()
+        out
     }
 }
 

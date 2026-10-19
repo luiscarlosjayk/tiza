@@ -754,32 +754,21 @@ pub struct StepReply {
 impl StepReply {
     pub fn of(doc: &Document, revision: u64) -> Self {
         let named = doc.named_step(doc.step);
-        // Shown text (t-174): a title or id repeating a masked value is masked.
-        let shown = |t: &Option<String>| t.as_deref().map(|t| crate::redact::shown(t, doc));
         StepReply {
             step: doc.step,
             max_step: doc.max_step(),
             revision,
-            id: named.and_then(|n| shown(&n.id)),
-            title: named.and_then(|n| shown(&n.title)),
+            id: named.and_then(|n| n.id.clone()),
+            title: named.and_then(|n| n.title.clone()),
             label: doc.step_label(doc.step),
         }
     }
 }
 
-/// Parameters of `scene.get`.
+/// Parameters of `scene.get`: none.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
-pub struct SceneGetParams {
-    /// The scene as readers get it (t-174): every text that repeats a
-    /// masked value — a label, a note, a title, a step title — masked like
-    /// the code. What the `tiza://scene` resource and the exports read.
-    /// Without it, `scene.get` is the editing call: the author's text as
-    /// written (the code under a redact is masked either way). Edit from
-    /// `scene.get`, never from `tiza://scene`.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub as_shown: bool,
-}
+pub struct SceneGetParams {}
 
 /// Response of `scene.get`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1055,39 +1044,19 @@ pub struct AnnotationMutated {
     /// lib.rs is not shown at step 2 (main.rs is)`…); absent when visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden: Option<String>,
-    /// One of its texts (label, note, callout text or title, kind, glyph)
-    /// shares text with a masked value (t-174): accepted, but masked on
-    /// every surface; reword it. The text is never quoted back.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub masked: bool,
-    /// Which text, in the alert's words: `a3: its label shares text with a
-    /// masked value; masked on screen — reword the label`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub masked_notice: Option<String>,
 }
 
 impl AnnotationMutated {
-    /// `kept`: what the instance's `.tiza` holds of the texts it masks
-    /// ([`crate::redact::Kept`]): the reply says «saved masked» only after
-    /// a real write.
-    pub fn of(doc: &Document, id: String, revision: u64, kept: &crate::redact::Kept) -> Self {
+    pub fn of(doc: &Document, id: String, revision: u64) -> Self {
         let step = doc.find_annotation(&id).map(|a| a.step).unwrap_or(0);
         let hidden = doc.why_hidden(&id, doc.step);
-        let notices: Vec<String> = crate::redact::masked_texts(doc, kept)
-            .into_iter()
-            .filter(|m| !m.held && m.id.as_deref() == Some(id.as_str()))
-            .map(|m| m.notice())
-            .collect();
         AnnotationMutated {
-            masked: !notices.is_empty(),
-            masked_notice: (!notices.is_empty()).then(|| notices.join(" · ")),
             step_title: doc.step_title(step),
             shown_step: doc.step,
             visible: hidden.is_none(),
             hidden,
             step,
-            // Shown text (t-174): an id from the file repeating a value.
-            id: crate::redact::shown(&id, doc),
+            id,
             revision,
         }
     }
@@ -1095,14 +1064,6 @@ impl AnnotationMutated {
     /// One sentence for the MCP tools: `a17 added at step 1; not visible
     /// now: the view is at step 0 (next_step shows it).`
     pub fn sentence(&self, verb: &str) -> String {
-        let s = self.sentence_where(verb);
-        match &self.masked_notice {
-            Some(n) if self.masked => format!("{s} {n}."),
-            _ => s,
-        }
-    }
-
-    fn sentence_where(&self, verb: &str) -> String {
         let at = match &self.step_title {
             Some(t) => format!("step {} ({t})", self.step),
             None => format!("step {}", self.step),
@@ -1147,7 +1108,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.get",
-        "Full document with annotations and current step (code embedded, masked); the author's text as written, or with `as_shown` every text repeating a masked value masked as readers see it",
+        "Full document with annotations and current step (code embedded, masked: the code under a redact never travels)",
     ),
     (
         "scene.list",
@@ -1291,28 +1252,18 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
     describe_move_with(index, m, &crate::redact::Echo::default())
 }
 
-/// [`describe_move`] through the output filter of its document (t-174):
-/// on a document with a redact its targets read «…» (t-167) and the rest
-/// is shown text.
+/// [`describe_move`] through the filter of its document (t-167): on a
+/// document with a redact its targets read «…».
 pub fn describe_move_with(
     index: usize,
     m: &crate::moves::Move,
     echo: &crate::redact::Echo,
 ) -> String {
-    echo.shown_message(&describe_move_raw(index, m, echo))
-}
-
-fn describe_move_raw(index: usize, m: &crate::moves::Move, echo: &crate::redact::Echo) -> String {
     use crate::moves::{MoveAction, PatchOp, Typing};
     let p = match &m.action {
         MoveAction::CodePatch(p) => p,
         MoveAction::CodeLink(l) => {
-            // A file name is shown text (t-174 review).
-            return format!(
-                "#{index} [step {}] code.link {}",
-                m.at_step,
-                echo.shown(&l.label())
-            );
+            return format!("#{index} [step {}] code.link {}", m.at_step, l.label());
         }
         MoveAction::Cursor(c) => {
             return format!(
@@ -1376,11 +1327,7 @@ fn describe_move_raw(index: usize, m: &crate::moves::Move, echo: &crate::redact:
     } else {
         format!(
             " rebind {}",
-            m.rebind
-                .keys()
-                .map(|k| echo.shown(k))
-                .collect::<Vec<_>>()
-                .join(",")
+            m.rebind.keys().cloned().collect::<Vec<_>>().join(",")
         )
     };
     format!(
@@ -1397,33 +1344,17 @@ pub fn describe(a: &Annotation) -> String {
 /// [`describe`] through the redact filter of the document `a` is in
 /// (t-167): on a document with a redact its range markers read `@«…»`
 /// (a marker may sit on the mask; quoting only the others would say which).
-///
-/// Its texts (labels, notes, callout texts and titles, mark kinds) are
-/// shown text (t-174): a copy of a masked value is masked, before a long
-/// callout text is cut with «…».
 pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
-    let mut shown = a.clone();
-    echo.shown_shape(&mut shown.shape);
-    // Its id and the ids a spotlight names are document text too.
-    shown.id = echo.shown(&shown.id);
-    if let Shape::Spotlight { ids, .. } = &mut shown.shape {
-        for id in ids {
-            *id = echo.shown(id);
-        }
-    }
-    let base = describe_shape(&shown);
+    let base = describe_shape(a);
     let base = match &a.markers {
         Some(m) => format!("{base} @{}..@{}", echo.quote(&m.start), echo.quote(&m.end)),
         None => base,
     };
     // The file it belongs to, when it is not the main one (t-105).
-    let line = match &a.file {
-        // A file name is shown text, whole (t-174 review: `(beefcake.env)`).
-        Some(f) => format!("{base} ({})", echo.shown(f)),
+    match &a.file {
+        Some(f) => format!("{base} ({f})"),
         None => base,
-    };
-    // The rest: Tiza's own words stay.
-    echo.shown_message(&line)
+    }
 }
 
 fn describe_shape(a: &Annotation) -> String {

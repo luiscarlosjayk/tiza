@@ -114,9 +114,6 @@ pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, 
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
-    // A text repeating a masked value is said once (t-174); a no-op until
-    // the revision changes.
-    app.note_masked_texts();
     let area = frame.area();
     app.size = (area.width, area.height);
     if area.width == 0 || area.height == 0 {
@@ -640,8 +637,6 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 .map(|f| f.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "(stdin)".into());
-    // A file name is shown text (t-174 rework point 4).
-    let file = app.shown(&file);
     // While a `code.link` shows another file, name it (with its window).
     let file = app.shown_view().map(|l| format!("↪ {l}")).unwrap_or(file);
     let mut left = vec![

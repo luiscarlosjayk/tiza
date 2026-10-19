@@ -660,3 +660,249 @@ fn corner_a_linked_file_with_its_own_redact() {
     assert_no_value("saved with the linked file frozen", &saved);
     assert!(saved.contains("TOKEN=••••••••"), "{saved}");
 }
+
+// ---------- ported from qa/tests/t-174.rs (its filter of texts is gone) ----------
+
+fn write(dir: &std::path::Path, name: &str, doc: &Value) -> std::path::PathBuf {
+    let p = dir.join(format!("{name}.tiza"));
+    std::fs::write(&p, serde_json::to_string_pretty(doc).unwrap()).unwrap();
+    p
+}
+
+/// `tiza render --all-steps` as text, one string per step.
+fn all_steps(path: &std::path::Path, dir: &std::path::Path, name: &str, fmt: &str) -> Vec<String> {
+    let out = dir.join(name);
+    let _ = std::fs::remove_dir_all(&out);
+    let o = tiza(&[
+        "render",
+        path.to_str().unwrap(),
+        "--all-steps",
+        "--format",
+        fmt,
+        "--width",
+        "100",
+        "--out",
+        &format!("{}/", out.display()),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .map(|p| std::fs::read_to_string(p).unwrap())
+        .collect()
+}
+
+/// Opens `path` in a live instance, changes something harmless (so it
+/// autosaves) and closes it.
+fn autosave(path: &std::path::Path, sock: &str) {
+    let d = fs::open(path.to_str().unwrap()).unwrap().document;
+    let live = Live::open(d, path.to_path_buf(), path.parent().unwrap().join(sock));
+    live.api_ok("style.set", json!({"name": "unused", "glyph": "*"}));
+}
+
+#[test]
+fn ac1_a_redact_made_at_any_step_masks_from_step_zero() {
+    // Was t-174 rc5: the redact masks step 0 whatever step it was made at.
+    let doc = json!({
+        "schema": 1, "source": {"language": "sh"},
+        "code": ["# x", format!("TOKEN={VALUE}"), "USER=ana"],
+        "annotations": [{"id": "n1", "step": 2, "type": "note", "line": 3, "text": "the user"}]
+    });
+    for via in ["add at step 2", "add with step 0", ":redact at step 1"] {
+        let dir = scratch(&format!("t183-step0-{}", via.replace([' ', ':'], "-")));
+        let d = fs::parse_document(&doc.to_string(), None).unwrap();
+        let live = Live::open(d, dir.join("doc.tiza"), dir.join("live.sock"));
+        match via {
+            "add at step 2" => {
+                live.api_ok("step.set", json!({"step": 2}));
+                live.api_ok(
+                    "annotation.add",
+                    json!({"type": "redact", "at": {"line": 2, "find": "TOKEN="}}),
+                );
+            }
+            "add with step 0" => {
+                live.api_ok(
+                    "annotation.add",
+                    json!({"type": "redact", "step": 0, "at": {"line": 2, "find": "TOKEN="}}),
+                );
+            }
+            _ => live.command("redact 2:TOKEN="),
+        }
+        live.api_ok("step.set", json!({"step": 0}));
+        for (surface, s) in readers(&live) {
+            assert_no_value(&format!("{via}: {surface} at step 0"), &s);
+        }
+        live.command("w");
+        let saved = std::fs::read_to_string(dir.join("doc.tiza")).unwrap();
+        assert_no_value(&format!("{via}: the saved .tiza"), &saved);
+    }
+}
+
+/// A file reference whose line 1 is `KEY=<value> tail end`, masked.
+fn tail_doc(name: &str, value: &str) -> Live {
+    let dir = scratch(name);
+    let src = dir.join("tail.env");
+    std::fs::write(&src, format!("KEY={value} tail end\nX=1\n")).unwrap();
+    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, dir.join("tail.env.tiza"), dir.join("live.sock"));
+    live.command(&format!("redact 1@4..{}", 4 + value.chars().count()));
+    let (msg, err) = live.message().unwrap();
+    assert!(!err, "{msg}");
+    live
+}
+
+#[test]
+fn corner_columns_on_the_masked_copy_come_back_on_the_real_code() {
+    // Was t-174 rc1: an agent places annotations on the copy scene.get
+    // hands out (`KEY=•••••••• tail end`); they land on the real code:
+    // before the mask the same column, after it shifted, inside it on the
+    // mask's edges, so nothing is uncovered.
+    for value in ["ab1Xz", "Zq8wR4tY7uV2mK6YqA8m"] {
+        let n = value.chars().count() as u32;
+        for via in ["patch", "put"] {
+            let live = tail_doc(&format!("t183-cols-{via}-{n}"), value);
+            // Copy columns: `KEY=` 0..4, the mask 4..12, ` tail` from 13.
+            let anns = vec![
+                json!({"id": "before", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 3}}),
+                json!({"id": "inside", "step": 1, "type": "highlight", "span": {"line": 1, "start": 6, "end": 9}}),
+                json!({"id": "after", "step": 1, "type": "highlight", "span": {"line": 1, "start": 13, "end": 17}}),
+                json!({"id": "arrow", "step": 1, "type": "arrow", "from": {"line": 1, "col": 13}, "to": {"line": 2, "col": 0}}),
+            ];
+            if via == "put" {
+                let mut doc = live.api_ok("scene.get", json!({}))["document"].clone();
+                doc["annotations"].as_array_mut().unwrap().extend(anns);
+                live.api_ok("scene.put", json!({"document": doc}));
+            } else {
+                live.api_ok("scene.patch", json!({"annotations": anns}));
+            }
+            let span = |id: &str| {
+                let id = id.to_string();
+                live.with(move |a| match &a.doc.find_annotation(&id).unwrap().shape {
+                    tiza_core::Shape::Highlight { span, .. } => (span.start, span.end),
+                    tiza_core::Shape::Arrow { from, .. } => (from.col, from.col),
+                    _ => unreachable!(),
+                })
+            };
+            assert_eq!(span("before"), (0, 3), "{via} {n}");
+            assert_eq!(span("inside"), (4, 4 + n), "{via} {n}: inside → the value");
+            assert_eq!(span("after"), (5 + n, 9 + n), "{via} {n}: `tail` again");
+            assert_eq!(span("arrow"), (5 + n, 5 + n), "{via} {n}");
+            let line = live.with(|a| a.doc.code[0].clone());
+            assert_eq!(line, format!("KEY={value} tail end"), "the real code stays");
+            let text = render_text(&live);
+            let c: Vec<char> = value.chars().collect();
+            for w in c.windows(4) {
+                let p: String = w.iter().collect();
+                assert!(!text.contains(&p), "{via} {n} shows «{p}»");
+            }
+        }
+    }
+}
+
+/// Was t-174's `shifted_by_a_move`: annotations after the mask on the
+/// masked line and on lines a move shifted.
+fn shifted_doc(value: &str) -> Value {
+    let line = format!("TOKEN={value} # tail");
+    let tail = line.chars().count() as u32 - 4;
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", line, "X=1"],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 6 + value.chars().count() as u32}},
+            {"id": "h0", "step": 1, "type": "highlight", "span": {"line": 3, "start": tail, "end": tail + 4}, "label": "the tail"},
+            {"id": "h1", "step": 2, "type": "highlight", "span": {"line": 3, "start": tail, "end": tail + 4}, "label": "the tail"},
+            {"id": "m1", "step": 3, "type": "mark", "kind": "warn", "span": {"line": 3, "start": tail, "end": tail + 4}},
+            {"id": "a1", "step": 3, "type": "arrow", "from": {"line": 3, "col": tail}, "to": {"line": 4, "col": 0}}
+        ],
+        "moves": [
+            {"at_step": 1, "action": "code.patch", "op": "insert", "before": "# demo", "content": "# PROD"},
+            {"at_step": 3, "action": "code.patch", "op": "replace", "find": "X=1", "content": "X=2"}
+        ]
+    })
+}
+
+#[test]
+fn corner_annotations_after_the_mask_keep_their_place_through_a_save_and_a_put() {
+    // Was t-174 r2_4 and r3_3: an embedded save writes the line masked;
+    // reopened (or put back from scene.get), every step looks the same.
+    for value in ["Ab3x9", "Zq8wR4tY7uV2"] {
+        let dir = scratch(&format!("t183-shift-{}", value.len()));
+        let path = write(&dir, "shift", &shifted_doc(value));
+        let before: Vec<Vec<String>> = ["txt", "ansi"]
+            .iter()
+            .map(|f| all_steps(&path, &dir, &format!("b-{f}"), f))
+            .collect();
+        autosave(&path, "save.sock");
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert!(!saved.contains(value), "{saved}");
+        let after: Vec<Vec<String>> = ["txt", "ansi"]
+            .iter()
+            .map(|f| all_steps(&path, &dir, &format!("a-{f}"), f))
+            .collect();
+        assert_eq!(after, before, "value of {}: save and reopen", value.len());
+        let p2 = write(&dir, "put", &shifted_doc(value));
+        let d = fs::open(p2.to_str().unwrap()).unwrap().document;
+        let live = Live::open(d, p2.clone(), dir.join("put.sock"));
+        let scene = live.api_ok("scene.get", json!({}));
+        live.api_ok("scene.put", json!({"document": scene["document"]}));
+        live.command("w");
+        drop(live);
+        let after_put: Vec<Vec<String>> = ["txt", "ansi"]
+            .iter()
+            .map(|f| all_steps(&p2, &dir, &format!("p-{f}"), f))
+            .collect();
+        assert_eq!(after_put, before, "value of {}: get → put", value.len());
+    }
+}
+
+#[test]
+fn ac5_embed_round_trips_identical() {
+    // Was t-174 ac10 (t-177): `:embed` of a file reference, reopened,
+    // shows every step as before; embedding again changes nothing.
+    let dir = scratch("t183-embed");
+    std::fs::write(
+        dir.join("main.env"),
+        format!("# main\nTOKEN={VALUE}\nHOST=db\nPORT=8080\n"),
+    )
+    .unwrap();
+    let path = write(
+        &dir,
+        "doc",
+        &json!({
+            "schema": 1,
+            "source": {"language": "sh"},
+            "code": {"file": "main.env"},
+            "annotations": [
+                {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 18}},
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "start": 0, "end": 5}, "label": "the token"},
+                {"id": "n2", "step": 2, "type": "note", "line": 3, "text": "the host"},
+                {"id": "n3", "step": 3, "type": "note", "line": 4, "text": "the port"}
+            ],
+            "moves": [
+                {"at_step": 4, "action": "code.patch", "op": "insert", "after": "PORT=8080", "content": "BACKUP=on"}
+            ]
+        }),
+    );
+    let before = all_steps(&path, &dir, "before", "txt");
+    for (i, sock) in ["one.sock", "two.sock"].iter().enumerate() {
+        let doc = fs::open(path.to_str().unwrap()).unwrap().document;
+        let live = Live::open(doc, path.clone(), dir.join(sock));
+        live.command("embed");
+        assert!(!live.message().unwrap().1);
+        drop(live);
+        let saved = std::fs::read_to_string(&path).unwrap();
+        assert_no_value("the embedded .tiza", &saved);
+        assert!(saved.contains("TOKEN=••••••••"), "{saved}");
+        assert_eq!(
+            all_steps(&path, &dir, &format!("after-{i}"), "txt"),
+            before,
+            "embed #{}: reopened = shown before",
+            i + 1
+        );
+    }
+}

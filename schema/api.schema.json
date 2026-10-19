@@ -367,18 +367,12 @@
       }
     },
     {
-      "description": "Full document with annotations and current step (code embedded, masked); the author's text as written, or with `as_shown` every text repeating a masked value masked as readers see it",
+      "description": "Full document with annotations and current step (code embedded, masked: the code under a redact never travels)",
       "method": "scene.get",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "Parameters of `scene.get`.",
-        "properties": {
-          "as_shown": {
-            "description": "The scene as readers get it (t-174): every text that repeats a\nmasked value — a label, a note, a title, a step title — masked like\nthe code. What the `tiza://scene` resource and the exports read.\nWithout it, `scene.get` is the editing call: the author's text as\nwritten (the code under a redact is masked either way). Edit from\n`scene.get`, never from `tiza://scene`.",
-            "type": "boolean"
-          }
-        },
+        "description": "Parameters of `scene.get`: none.",
         "title": "SceneGetParams",
         "type": "object"
       },
@@ -2182,17 +2176,6 @@
           "id": {
             "type": "string"
           },
-          "masked": {
-            "description": "One of its texts (label, note, callout text or title, kind, glyph)\nshares text with a masked value (t-174): accepted, but masked on\nevery surface; reword it. The text is never quoted back.",
-            "type": "boolean"
-          },
-          "masked_notice": {
-            "description": "Which text, in the alert's words: `a3: its label shares text with a\nmasked value; masked on screen — reword the label`.",
-            "type": [
-              "string",
-              "null"
-            ]
-          },
           "revision": {
             "format": "uint64",
             "minimum": 0,
@@ -2987,17 +2970,6 @@
           },
           "id": {
             "type": "string"
-          },
-          "masked": {
-            "description": "One of its texts (label, note, callout text or title, kind, glyph)\nshares text with a masked value (t-174): accepted, but masked on\nevery surface; reword it. The text is never quoted back.",
-            "type": "boolean"
-          },
-          "masked_notice": {
-            "description": "Which text, in the alert's words: `a3: its label shares text with a\nmasked value; masked on screen — reword the label`.",
-            "type": [
-              "string",
-              "null"
-            ]
           },
           "revision": {
             "format": "uint64",
@@ -6156,7 +6128,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,\n`masked_text` (a label, note or title repeating a masked value, or\nholding masked text, t-174), `clear_value` (an embedded `.tiza`\nnobody saved in Tiza holds a masked value in clear, t-174).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.",
                 "type": "string"
               },
               "file": {

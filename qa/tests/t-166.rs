@@ -7,9 +7,9 @@
 //!   the `.tiza` does, so every step draws the file the live TUI shows:
 //!   `--step N --format md` of every step (step 0 included, with no column
 //!   shift), `--all-steps` and the GIF are the same as `tiza render FILE`.
-//!   The instance sends them already loaded and masked (`scene.get
-//!   {"as_shown": true}` embeds them under `views`, t-174): nothing is read
-//!   from the client's directory.
+//!   The instance sends them already loaded and masked (`scene.get`
+//!   embeds them under `views`): nothing is read from the client's
+//!   directory.
 //! - AC2 Same for the MCP `export_image` (png compared with the file's
 //!   render, md, gif).
 //! - AC3 A missing or unreadable linked file is a clear error naming it
@@ -705,7 +705,7 @@ fn corner_a_live_document_with_no_tiza_and_a_move_add_code_link() {
     assert!(md.contains(&args_line), "step 1 must show args.rs:\n{md}");
     // The same as rendering the instance's own copy (code and views
     // embedded) as a file, at every step.
-    let scene = live.api_ok("scene.get", json!({"as_shown": true}));
+    let scene = live.api_ok("scene.get", json!({}));
     let copy = cwd.join("copy.tiza");
     std::fs::write(&copy, serde_json::to_string(&scene["document"]).unwrap()).unwrap();
     for step in 0..=1 {
