@@ -195,7 +195,7 @@ fn corner_several_notices_pending_at_once_oldest_first() {
 const FILE: &str = "# config\ntoken=abc123secret\nport=8080\n";
 const VALUE: &str = "abc123secret";
 const LONG: &str = "token=abc123secretLONGERvalue77";
-const RETARGET: &str = "move #1 (step 2) now replaces L2 «# config» instead of «token=…»: check it";
+const RETARGET: &str = "move #1, step 2 now replaces L2 «# config» instead of «token=…»: check it";
 
 fn normal(name: &str) -> Live {
     let dir = scratch(name);

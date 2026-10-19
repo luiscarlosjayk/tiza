@@ -1474,7 +1474,7 @@ impl ServerHandler for TizaServer {
         let written = request
             .arguments
             .as_ref()
-            .map(|a| tiza_core::redact::json_strings(&Value::Object(a.clone())))
+            .map(|a| tiza_core::redact::json_written(&Value::Object(a.clone())))
             .unwrap_or_default();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         let mut resp = self.tool_router.call(tcc).await?;

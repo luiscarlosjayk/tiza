@@ -1964,6 +1964,7 @@ impl Echo {
         if !self.active {
             return msg.to_string();
         }
+        let msg = &scrub_unknown_field(msg);
         let Some(k) = msg.rfind(", expected ") else {
             return self.text(msg);
         };
@@ -1999,6 +2000,12 @@ impl Echo {
             Error::Invalid(s) => Error::Invalid(self.text(&s)),
             Error::StepNotFound(s) => Error::StepNotFound(self.text(&s)),
             Error::NotFound(s) => Error::NotFound(self.text(&s)),
+            Error::MoveNotFound(s) => Error::MoveNotFound(self.text(&s)),
+            // The numbers the request wrote are not repeated (t-167 review).
+            e @ (Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. }) => {
+                Error::RangeText(self.text(&e.to_string()))
+            }
+            Error::RangeText(s) => Error::RangeText(self.text(&s)),
             Error::DuplicateId(s) => Error::DuplicateId(self.text(&s)),
             // serde quotes the values it could not read (`invalid type:
             // string "…"`, `unknown variant `…``).
@@ -2015,22 +2022,60 @@ impl Echo {
 /// names stays). For socket parameters and `scene.patch` annotations.
 pub fn serde_message(e: &serde_json::Error, request: &serde_json::Value) -> String {
     Echo::closed()
-        .written(json_strings(request))
+        .written(json_written(request))
         .serde_text(&e.to_string())
 }
 
-/// Every string in a JSON value (the texts an agent's request wrote).
+/// Every string in a JSON value, object keys included (the texts an
+/// agent's request or a document wrote; a key is written text too: t-167
+/// review, `unknown field `…``).
 pub fn json_strings(v: &serde_json::Value) -> Vec<String> {
+    json_texts(v, false)
+}
+
+/// [`json_strings`] plus every number, as JSON writes it: everything an
+/// agent's request wrote, for the error filter of a request (t-167
+/// review: `move #…`, `line … does not exist` repeat no number sent).
+pub fn json_written(v: &serde_json::Value) -> Vec<String> {
+    json_texts(v, true)
+}
+
+fn json_texts(v: &serde_json::Value, numbers: bool) -> Vec<String> {
     let mut out = Vec::new();
     let mut stack = vec![v];
     while let Some(v) = stack.pop() {
         match v {
             serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::Number(n) if numbers => out.push(n.to_string()),
             serde_json::Value::Array(a) => stack.extend(a.iter()),
-            serde_json::Value::Object(o) => stack.extend(o.values()),
+            serde_json::Value::Object(o) => {
+                out.extend(o.keys().cloned());
+                stack.extend(o.values());
+            }
             _ => {}
         }
     }
+    out
+}
+
+/// serde's `unknown field `x`` without `x`, with or without redacts: the
+/// name of a field that is not one is never repeated (t-167 review); the
+/// list of the expected ones stays.
+fn scrub_unknown_field(msg: &str) -> String {
+    const K: &str = "unknown field `";
+    let mut out = String::with_capacity(msg.len());
+    let mut rest = msg;
+    while let Some(k) = rest.find(K) {
+        out.push_str(&rest[..k]);
+        out.push_str("unknown field ");
+        out.push_str(ELIDED);
+        let after = &rest[k + K.len()..];
+        rest = match after.find('`') {
+            Some(e) => &after[e + 1..],
+            None => "",
+        };
+    }
+    out.push_str(rest);
     out
 }
 
@@ -2070,6 +2115,30 @@ mod tests {
                 pin: None,
             },
         }
+    }
+
+    #[test]
+    fn keys_and_numbers_are_written_and_unknown_fields_are_never_named() {
+        let req = serde_json::json!({"a": {"123SECRETx": 1}, "n": 4821, "s": "x"});
+        let mut w = json_written(&req);
+        w.sort();
+        assert_eq!(w, ["1", "123SECRETx", "4821", "a", "n", "s", "x"]);
+        let mut st = json_strings(&req);
+        st.sort();
+        assert_eq!(st, ["123SECRETx", "a", "n", "s", "x"]);
+        assert_eq!(
+            scrub_unknown_field("unknown field `999NOTHINx`, expected `line` or `find`"),
+            "unknown field «…», expected `line` or `find`"
+        );
+        let e = Echo::closed().written(json_written(&req));
+        assert_eq!(
+            e.serde_text("unknown field `zzz`, expected one of `line`, `find`"),
+            "unknown field «…», expected one of `line`, `find`"
+        );
+        assert_eq!(
+            e.text("move #4821 does not exist"),
+            "move #… does not exist"
+        );
     }
 
     #[test]

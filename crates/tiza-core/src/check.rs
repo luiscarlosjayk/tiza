@@ -581,10 +581,10 @@ fn placeholder(at_step: u32) -> Move {
     }
 }
 
-/// A move's error without the `move #N (step S)` the finding already
+/// A move's error without the `move #N, step S` the finding already
 /// names.
 fn move_message(e: crate::Error, index: usize, at_step: u32) -> String {
-    let tag = format!("move #{} (step {at_step})", index + 1);
+    let tag = format!("move #{}, step {at_step}", index + 1);
     match e {
         crate::Error::MoveNoMatch { what, .. } => {
             format!("{what} matches nothing in the code at this step")
@@ -712,7 +712,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                     Finding::new(
                         Level::Error,
                         "unknown_id",
-                        format!("rebind names unknown annotation `{id}`"),
+                        format!("rebind names unknown annotation «{id}»"),
                     )
                     .id(name.clone())
                     .step(m.at_step),
@@ -723,7 +723,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                     Finding::new(
                         Level::Error,
                         "rebind",
-                        format!("rebind `{id}` says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)"),
+                        format!("rebind «{id}» says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)"),
                     )
                     .id(name.clone())
                     .step(m.at_step),

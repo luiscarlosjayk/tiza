@@ -906,10 +906,15 @@ impl App {
         if let Some(c) = &color
             && self.theme.named_color(c).is_none()
         {
-            return Err(Error::Invalid(format!(
-                "unknown color (use {} or #rrggbb)",
-                tiza_core::theme::PALETTE.join(", ")
-            )));
+            return Err(Error::Invalid(unknown_color()));
+        }
+        // A mark's inline style color too (t-167 review): checked like the
+        // annotation's, without repeating it.
+        if let Shape::Mark { style, .. } = &shape
+            && let Some(c) = &style.color
+            && self.theme.named_color(c).is_none()
+        {
+            return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         self.history.record(&self.doc, "add");
         let step = step.unwrap_or(self.doc.step).max(1);
@@ -1538,7 +1543,7 @@ impl App {
         let i = index
             .checked_sub(1)
             .filter(|i| *i < self.doc.moves.len())
-            .ok_or_else(|| Error::NotFound(format!("move #{index}")))?;
+            .ok_or_else(|| Error::MoveNotFound(format!("#{index}")))?;
         self.history
             .record(&self.doc, format!("move #{index} deleted"));
         let (m, notices) = self.doc.delete_move_noting(i)?;
@@ -3537,6 +3542,9 @@ impl App {
                         .map_err(|_| Error::Invalid("step= must be a number".into()))?;
                 }
                 "width" => {
+                    // With redacts the number goes (`width=…: use a number
+                    // between …`): the bar counts what follows `=` as
+                    // written (t-167 review), the option name stays.
                     width = tiza_core::layout::check_width(v.parse::<usize>().map_err(|_| {
                         Error::Invalid(format!(
                             "width= must be a number between {} and {}",
@@ -3588,10 +3596,9 @@ impl App {
                     path.display()
                 ))
             } else {
-                Error::Invalid(format!(
-                    "{}: the extension picks the format (.txt .ansi .md .svg .png)",
-                    path.display()
-                ))
+                Error::Invalid(
+                    "the path's extension picks the format (.txt .ansi .md .svg .png)".into(),
+                )
             }
         })?;
         // A terminal theme (or `reset` tokens) has no palette in a file:
@@ -4324,7 +4331,7 @@ impl App {
         // What the agent wrote, for the error's echo filter (t-167).
         let brings_redact = tiza_core::redact::json_has_redact(&req.params);
         let written = if brings_redact || tiza_core::redact::has_redacts(&self.doc) {
-            let mut w = tiza_core::redact::json_strings(&req.params);
+            let mut w = tiza_core::redact::json_written(&req.params);
             w.push(req.method.clone());
             w
         } else {
@@ -4965,11 +4972,24 @@ impl App {
                     .get("to_line")
                     .and_then(|v| v.as_u64())
                     .map(|v| v as u32);
-                self.focus = match (a, b) {
+                let focus = match (a, b) {
                     (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
                     (Some(a), None) => Some((a, a)),
                     _ => None,
                 };
+                // Like `:focus`: the first line must exist, the last one is
+                // clamped (t-167 review: the reply repeated any number sent).
+                let (first, last) = (self.doc.source.first_line, self.doc.last_line());
+                if let Some((a, _)) = focus
+                    && (a < first || a > last)
+                {
+                    return Err(Error::LineOutOfRange {
+                        line: a,
+                        first,
+                        last,
+                    });
+                }
+                self.focus = focus.map(|(a, b)| (a, b.min(last)));
                 self.revision += 1;
                 json!({"focus": self.focus, "revision": self.revision})
             }
@@ -5526,13 +5546,18 @@ pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String
 /// `@`, `:` and `..` (`:box @'a'..@'b'`, `:hl 2:text`).
 fn command_words(input: &str) -> Vec<String> {
     let mut out = vec![input.to_string()];
-    out.extend(
-        input
-            .replace("..", " ")
-            .split(|c: char| c.is_whitespace() || "'\"`@:".contains(c))
-            .filter(|w| !w.is_empty())
-            .map(String::from),
-    );
+    for w in input
+        .replace("..", " ")
+        .split(|c: char| c.is_whitespace() || "'\"`@:=".contains(c))
+        .filter(|w| !w.is_empty())
+    {
+        out.push(w.to_string());
+        // The numbers of a range (`5555-5555`) are written too (t-167
+        // review): the error names a line, not the range.
+        if w.contains('-') && w.chars().any(|c| c.is_ascii_digit()) {
+            out.extend(w.split('-').filter(|p| !p.is_empty()).map(String::from));
+        }
+    }
     out
 }
 

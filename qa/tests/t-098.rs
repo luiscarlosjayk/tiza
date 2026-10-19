@@ -137,7 +137,7 @@ fn ac1_move_add_validates_against_the_code_at_its_step() {
     assert!(r.error.is_some());
     // rebind must name existing annotations.
     let r = live.api("move.add", json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "let a", "rebind": {"zz": {"at": {"find": "let b"}}}}));
-    assert!(r.error.unwrap().message.contains("unknown annotation `zz`"));
+    assert!(r.error.unwrap().message.contains("unknown annotation «zz»"));
     // Nothing was added by the failures; a valid one lands at index 1.
     assert_eq!(
         live.api_ok("move.list", json!({}))["moves"]
@@ -433,7 +433,7 @@ fn ac2_annotations_are_authored_against_the_code_at_their_step() {
     let e = r.error.unwrap();
     assert!(
         e.message
-            .contains("move #3 (step 4): rebind `m` «nowhere» matches 0 times"),
+            .contains("move #3, step 4: rebind «m» «nowhere» matches 0 times"),
         "{}",
         e.message
     );
@@ -717,7 +717,7 @@ fn ac1_load_time_errors_name_the_move() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("move #1 (step 1)") && err.contains("matches 2 times"),
+        err.contains("move #1, step 1") && err.contains("matches 2 times"),
         "{err}"
     );
     // A move whose position runs past the code.
@@ -856,7 +856,7 @@ fn ac8_occurrence_over_the_whole_code_at_that_step() {
     let r = live.api("move.add", json!({"at_step": 2, "action": "code.patch", "op": "delete", "find": "let", "occurrence": 3}));
     let e = r.error.unwrap();
     assert!(
-        e.message.contains("move #2 (step 2)")
+        e.message.contains("move #2, step 2")
             && e.message.contains("occurrence 3 asked, only 2 matches"),
         "{}",
         e.message
@@ -889,7 +889,7 @@ fn ac8_rebind_find_must_match_once_or_carry_occurrence() {
     let e = r.error.unwrap();
     assert!(
         e.message
-            .contains("move #1 (step 2): rebind `h` «= 1;» matches 2 times"),
+            .contains("move #1, step 2: rebind «h» «= 1;» matches 2 times"),
         "{}",
         e.message
     );
@@ -1074,7 +1074,7 @@ fn rebind_with_no_target_or_an_unknown_key_is_a_load_error() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("move #1 (step 2): rebind `m1` says nowhere to go"),
+        err.contains("move #1, step 2: rebind «m1» says nowhere to go"),
         "{err}"
     );
     // The right spelling loads and the mark follows.
@@ -1101,7 +1101,7 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
     );
     let err = r.error.unwrap().message;
     assert!(
-        err.contains("move #2 (step 3)") && err.contains("line 7 does not exist"),
+        err.contains("move #2, step 3") && err.contains("line 7 does not exist"),
         "{err}"
     );
     let dir = scratch("t098-render-step");

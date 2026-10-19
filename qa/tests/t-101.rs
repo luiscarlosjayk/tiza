@@ -219,7 +219,7 @@ fn ac2_every_error_of_a_broken_file_at_once() {
         get("unknown_id", "move #3")["message"]
             .as_str()
             .unwrap()
-            .contains("`zz`")
+            .contains("«zz»")
     );
     // A move target that matches twice, one that matches nothing: both.
     assert!(

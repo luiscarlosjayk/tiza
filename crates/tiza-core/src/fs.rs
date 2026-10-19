@@ -310,7 +310,7 @@ pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Err
             continue;
         }
         let code = load_view_file(&file, base_dir)
-            .map_err(|e| Error::Invalid(format!("move #{} (step {at_step}): {e}", i + 1)))?;
+            .map_err(|e| Error::Invalid(format!("move #{}, step {at_step}: {e}", i + 1)))?;
         doc.view_code.insert(key, code);
     }
     Ok(())

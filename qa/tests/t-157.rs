@@ -10,7 +10,7 @@
 //! - AC2 Never silent: adding or deleting a move that changes which line a
 //!   later `code.patch` hits names the retargeted move (bar notice,
 //!   `notices` of move.add/move.delete, MCP text) without quoting masked
-//!   text: «move #1 (step 2) now replaces L2 «# config» instead of
+//!   text: «move #1, step 2 now replaces L2 «# config» instead of
 //!   «token=…»: check it».
 //! - AC3 Every view at every step: screen (authoring and presentation),
 //!   code.get, render.text, scene.get (the moves' `content` included),
@@ -154,7 +154,7 @@ fn retarget(live: &Live, content: &str) -> serde_json::Value {
     live.api_ok("move.add", insert(1, "1", "# payments"))
 }
 
-const NOTICE: &str = "move #1 (step 2) now replaces L2 «# config» instead of «token=…»: check it";
+const NOTICE: &str = "move #1, step 2 now replaces L2 «# config» instead of «token=…»: check it";
 
 #[test]
 fn ac3_case01_the_description_in_a_real_terminal() {
@@ -205,7 +205,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "f
     s.wait_for(lambda out: "undone:move#2added" in squeezed(mark)(out), 10, "undo")
     mark = len(s.out)
     s.send(b"U")
-    if s.wait_for(lambda out: "move#1(step2)nowreplacesL2" in squeezed(mark)(out), 10,
+    if s.wait_for(lambda out: "move#1,step2nowreplacesL2" in squeezed(mark)(out), 10,
                   "bar notice after redo"):
         print("REDO_NOTICE", flush=True)
     s.send(b"P")
@@ -226,7 +226,7 @@ print("SCREEN", plain(s.out).replace("\n", " "))
     // from its own step, by design.)
     assert_no(&["LONGER-tail99"], "pty run", &out);
     assert!(
-        out.contains("move #1 (step 2) now replaces L2 «# config» instead of «token=…»"),
+        out.contains("move #1, step 2 now replaces L2 «# config» instead of «token=…»"),
         "{out}"
     );
     assert!(out.contains("token=••••••••"), "{out}");
@@ -426,7 +426,7 @@ fn ac1_case04_the_earlier_move_deletes_a_line() {
     );
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L2 «port=8080» instead of «token=…»: check it"]
+        vec!["move #1, step 2 now replaces L2 «port=8080» instead of «token=…»: check it"]
     );
     assert_eq!(lines_at(&live, 2), vec!["token=••••••••", "token=••••••••"]);
     assert_every_step(&live, &["LONGERvalue77", SECRET], "delete above");
@@ -439,7 +439,7 @@ fn ac1_case05_one_line_becomes_two_and_a_range_target() {
     let reply = live.api_ok("move.add", replace(1, "1", "# config\n# payments"));
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L2 «# payments» instead of «token=…»: check it"]
+        vec!["move #1, step 2 now replaces L2 «# payments» instead of «token=…»: check it"]
     );
     assert_eq!(lines_at(&live, 2)[1], "token=••••••••");
     assert_every_step(&live, &["LONGERvalue77", SECRET], "one line becomes two");
@@ -456,7 +456,7 @@ fn ac1_case05_one_line_becomes_two_and_a_range_target() {
     let reply = live.api_ok("move.add", replace(1, "1", "# config\n# payments"));
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L2-3 «# payments…» instead of «token=…»: check it"]
+        vec!["move #1, step 2 now replaces L2-3 «# payments…» instead of «token=…»: check it"]
     );
     let at2 = lines_at(&live, 2);
     assert!(at2.contains(&"token=••••••••".to_string()), "{at2:?}");
@@ -598,7 +598,7 @@ fn ac1_case09_a_redact_made_with_redact_auto() {
     let reply = live.api_ok("move.add", insert(1, "1", "# payments"));
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L2 «# config» instead of «API_KEY=…»: check it"]
+        vec!["move #1, step 2 now replaces L2 «# config» instead of «API_KEY=…»: check it"]
     );
     assert_eq!(lines_at(&live, 2)[1], "API_KEY=••••••••");
     assert_every_step(&live, &["LONGERvalue77", SECRET], ":redact auto");
@@ -670,7 +670,7 @@ fn ac2_case11_undo_and_redo() {
     live.keys(&[KeyCode::Esc]);
     assert!(live.with(|a| a.redact_alerts.is_empty()));
     let reply = live.api_ok("move.delete", json!({"index": 2}));
-    let back = "move #1 (step 2) now replaces L2 «token=…» instead of «# config»: check it";
+    let back = "move #1, step 2 now replaces L2 «token=…» instead of «# config»: check it";
     assert_eq!(notices(&reply), vec![back.to_string()]);
     live.keys(&[KeyCode::Char('u')]);
     assert!(live.with(|a| a.redact_alerts.is_empty()));
@@ -717,7 +717,7 @@ fn ac2_case12_an_agent_retargets_it_over_mcp() {
     let (err, out, _) = mcp.call("delete_move", json!({"index": 2}));
     assert!(!err, "{out}");
     assert!(
-        out.contains("move #1 (step 2) now replaces L2 «token=…» instead of «# config»: check it"),
+        out.contains("move #1, step 2 now replaces L2 «token=…» instead of «# config»: check it"),
         "{out}"
     );
     assert_every_step(&live, &["LONGERvalue77", SECRET], "MCP");
@@ -801,7 +801,7 @@ fn ac1_case14_a_linked_file_with_its_own_redact() {
     assert_eq!(
         notices(&reply),
         vec![
-            "move #2 (step 2) now replaces L2 of config.ini «# config» instead of «token=…»: check it"
+            "move #2, step 2 now replaces L2 of config.ini «# config» instead of «token=…»: check it"
         ]
     );
     assert_eq!(
@@ -844,7 +844,7 @@ fn ac2_case15_negative_cases() {
     let reply = live.api_ok("move.add", insert(1, "1", "# payments"));
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L4 «port=8080» instead of «debug=true»: check it"]
+        vec!["move #1, step 2 now replaces L4 «port=8080» instead of «debug=true»: check it"]
     );
     assert_eq!(
         lines_at(&live, 2),
@@ -865,7 +865,7 @@ fn ac2_case15_negative_cases() {
     let reply = live.api_ok("move.add", insert(1, "1", "top"));
     assert_eq!(
         notices(&reply),
-        vec!["move #1 (step 2) now replaces L2 «a» instead of «b»: check it"]
+        vec!["move #1, step 2 now replaces L2 «a» instead of «b»: check it"]
     );
     // An earlier move that keeps the line count and the target line: no notice.
     let reply = live.api_ok("move.add", replace(1, "3", "C"));

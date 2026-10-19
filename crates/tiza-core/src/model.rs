@@ -1366,7 +1366,7 @@ impl Document {
         for (what, t) in Self::move_targets(m) {
             if crate::redact::looks_like_secret(&t) {
                 return Err(Error::Invalid(format!(
-                    "move #{} (step {}): its `{what}` text looks like a secret, and the moves would save it — target the line by `position`, or by the text before the secret",
+                    "move #{}, step {}: its `{what}` text looks like a secret, and the moves would save it — target the line by `position`, or by the text before the secret",
                     index + 1,
                     m.at_step
                 )));
@@ -1414,7 +1414,7 @@ impl Document {
             return Ok(());
         }
         Err(Error::Invalid(format!(
-            "move #{} (step {}): its content repeats the value under redact {} where no mask covers it; it would show on screen — write the value in place of the masked one, or leave it out",
+            "move #{}, step {}: its content repeats the value under redact {} where no mask covers it; it would show on screen — write the value in place of the masked one, or leave it out",
             index + 1,
             m.at_step,
             copied.join(", ")
@@ -1568,7 +1568,7 @@ impl Document {
     /// (t-154). The others pinned to a move keep their place in its lines.
     pub fn delete_move_noting(&mut self, index: usize) -> Result<(Move, Vec<String>), Error> {
         if index >= self.moves.len() {
-            return Err(Error::NotFound(format!("move #{}", index + 1)));
+            return Err(Error::MoveNotFound(format!("#{}", index + 1)));
         }
         let moves = self.moves.clone();
         self.pin_redacts_with(&moves, None);
@@ -2286,17 +2286,11 @@ impl Document {
         let s = self
             .find_text(start, 1, None)
             .ok_or_else(|| Error::NoMatch(format!("start marker «{start}»")))?;
-        // Same line, after the start text?
-        if let Some(t) = self.line_text(s.line)
-            && let Some(byte_end) = grapheme_byte_offset(t, s.end)
-            && t[byte_end..].contains(end)
-        {
-            return Ok((s.line, s.line));
-        }
-        for line in (s.line + 1)..=self.last_line() {
-            if self.line_text(line).is_some_and(|t| t.contains(end)) {
-                return Ok((s.line, line));
-            }
+        // Same line after the start text, or a later line. Searched like the
+        // start, under the masks (t-167 review): a hit under a redact does
+        // not exist, or the end marker answers what the mask hides.
+        if let Some(e) = self.find_text_after(end, s.line, s.end) {
+            return Ok((s.line, e.line));
         }
         if self.find_text(end, 1, None).is_some() {
             return Err(Error::Invalid(format!(
@@ -2308,6 +2302,53 @@ impl Document {
             "end marker «{end}» (after line {})",
             s.line
         )))
+    }
+
+    /// The first hit of `text` not under a mask that starts at or after
+    /// grapheme `col` of `line`, or on a later line.
+    pub fn find_text_after(&self, text: &str, line: u32, col: u32) -> Option<TextSpan> {
+        if text.is_empty() {
+            return None;
+        }
+        let masks = self.search_masks();
+        for l in line..=self.last_line() {
+            let Some(t) = self.line_text(l) else {
+                continue;
+            };
+            let mut from = if l == line {
+                grapheme_byte_offset(t, col).unwrap_or(t.len())
+            } else {
+                0
+            };
+            while from <= t.len() {
+                let Some(pos) = t[from..].find(text) else {
+                    break;
+                };
+                let byte_start = from + pos;
+                let start = grapheme_index(t, byte_start);
+                let end = grapheme_index(t, byte_start + text.len());
+                if !crate::redact::overlaps_mask(&masks, l, start, end) {
+                    return Some(TextSpan {
+                        line: l,
+                        start,
+                        end,
+                    });
+                }
+                // Overlapping hits too: the next one may start inside this one.
+                from = byte_start + t[byte_start..].chars().next().map_or(1, char::len_utf8);
+            }
+        }
+        None
+    }
+
+    /// The masks a search skips: where they are now, followed to this
+    /// step when there are moves (t-140).
+    fn search_masks(&self) -> Vec<Annotation> {
+        if self.moves.is_empty() {
+            self.annotations.clone()
+        } else {
+            self.view_at(self.step).doc.annotations
+        }
     }
 
     pub fn find_text(

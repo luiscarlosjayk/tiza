@@ -541,7 +541,7 @@ fn ac5_embed_stores_every_view_and_a_missing_file_names_the_move() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("move #1 (step 2)")
+        err.contains("move #1, step 2")
             && err.contains("src/queue.rs")
             && err.contains("could not read"),
         "{err}"
@@ -775,7 +775,7 @@ fn corner_rebind_only_on_patches_and_bad_windows_name_the_move() {
     let out = tiza(&["render", bad.to_str().unwrap(), "--out", "-"]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        err.contains("move #1 (step 1)") && err.contains("A-B"),
+        err.contains("move #1, step 1") && err.contains("A-B"),
         "{err}"
     );
     // Embedded views load without any file on disk; a window past the end is clamped.

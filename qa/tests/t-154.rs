@@ -399,7 +399,7 @@ fn corner_undo_and_redo_of_move_add_restore_the_pins() {
 
 #[test]
 fn corner_a_linked_file_with_its_own_redact() {
-    // main.rs links queue.env at step 1; move #2 (step 2) writes the token
+    // main.rs links queue.env at step 1; move #2, step 2 writes the token
     // in queue.env, marked there at step 2; a move at step 1 (after the
     // link) then inserts a line at the top of queue.env.
     let dir = scratch("t154-link");

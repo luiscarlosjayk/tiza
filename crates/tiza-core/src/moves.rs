@@ -1720,7 +1720,7 @@ pub fn retarget_notices(
             }
         };
         out.push(format!(
-            "move #{} (step {}) now {what}: check it",
+            "move #{}, step {} now {what}: check it",
             j + 1,
             n.at_step
         ));
@@ -1875,7 +1875,7 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
         }
         if !m.rebind.is_empty() && !matches!(m.action, MoveAction::CodePatch(_)) {
             return Err(Error::Invalid(format!(
-                "move #{} (step {}): rebind only applies to code.patch, not {}",
+                "move #{}, step {}: rebind only applies to code.patch, not {}",
                 i + 1,
                 m.at_step,
                 m.action.name()
@@ -1884,14 +1884,14 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
         for (id, spec) in &m.rebind {
             if !annotations.iter().any(|a| &a.id == id) {
                 return Err(Error::Invalid(format!(
-                    "move #{} (step {}): rebind names unknown annotation `{id}`",
+                    "move #{}, step {}: rebind names unknown annotation «{id}»",
                     i + 1,
                     m.at_step
                 )));
             }
             if spec.is_empty() {
                 return Err(Error::Invalid(format!(
-                    "move #{} (step {}): rebind `{id}` says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)",
+                    "move #{}, step {}: rebind «{id}» says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)",
                     i + 1,
                     m.at_step
                 )));
@@ -1925,7 +1925,7 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
                 };
                 if let Some(why) = bad {
                     return Err(Error::Invalid(format!(
-                        "move #{} (step {}): rebind `{id}` {why}",
+                        "move #{}, step {}: rebind «{id}» {why}",
                         ap.index + 1,
                         m.at_step
                     )));
@@ -1952,7 +1952,7 @@ fn name_move(e: Error, index: usize, at_step: u32) -> Error {
             what,
         },
         e @ Error::MoveNoMatch { .. } => e,
-        other => Error::Invalid(format!("move #{} (step {}): {other}", index + 1, at_step)),
+        other => Error::Invalid(format!("move #{}, step {}: {other}", index + 1, at_step)),
     }
 }
 
@@ -2607,7 +2607,7 @@ mod tests {
             .unwrap_err()
             .to_string();
         assert!(
-            e.contains("move #5 (step 1)") && e.contains("occurrence"),
+            e.contains("move #5, step 1") && e.contains("occurrence"),
             "{e}"
         );
         let e = d
@@ -2616,7 +2616,7 @@ mod tests {
             ))
             .unwrap_err()
             .to_string();
-        assert!(e.contains("move #5 (step 1)"), "{e}");
+        assert!(e.contains("move #5, step 1"), "{e}");
     }
 
     #[test]

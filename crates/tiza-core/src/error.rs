@@ -13,6 +13,14 @@ pub enum Error {
     },
     #[error("annotation {0} does not exist")]
     NotFound(String),
+    /// A move that does not exist (`move.delete`): `move #N does not exist`.
+    #[error("move {0} does not exist")]
+    MoveNotFound(String),
+    /// A range error whose message went through the redact filter (t-167
+    /// review): the same `out_of_range`, without the numbers the request
+    /// wrote.
+    #[error("{0}")]
+    RangeText(String),
     #[error("an annotation with id {0} already exists")]
     DuplicateId(String),
     /// A bare text that matches nothing (`at.find`, a `find` an agent sent).
@@ -53,8 +61,10 @@ impl Error {
     /// Stable code for the API (socket/MCP): clients branch on it, not on the message.
     pub fn code(&self) -> &'static str {
         match self {
-            Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
-            Error::NotFound(_) | Error::StepNotFound(_) => "not_found",
+            Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } | Error::RangeText(_) => {
+                "out_of_range"
+            }
+            Error::NotFound(_) | Error::StepNotFound(_) | Error::MoveNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
                 "text_not_found"
