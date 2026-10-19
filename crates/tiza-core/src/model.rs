@@ -16,6 +16,44 @@ use crate::redact::RedactFate;
 /// Schema version of the `.tiza` file.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// The last step a document can have (t-166): annotations, moves and
+/// `steps` entries name steps 0 to this. A take is laid out over every
+/// step (the stable geometry, the masked values, `check`, a GIF), so an
+/// unbounded step number made one export cost seconds per million empty
+/// steps; real takes have tens.
+pub const MAX_STEP: u32 = 999;
+
+/// The longest hold a document or an export asks for, in milliseconds
+/// (t-166): a `wait` move, a step's `auto_advance_ms`, a `code.patch`'s
+/// typing time per unit, the `--interval` of a recording. One hour; a
+/// longer one is a typo (or an attack on the encoder) and is refused.
+pub const MAX_HOLD_MS: u64 = 3_600_000;
+
+/// The largest `source.first_line` (t-166): line numbers are `u32`, and a
+/// first line near its end overflowed as soon as a line was counted after
+/// it.
+pub const MAX_FIRST_LINE: u32 = 1_000_000_000;
+
+/// `step` of `what` within 0..=[`MAX_STEP`] (t-166).
+pub fn check_step(step: u32, what: &str) -> Result<(), Error> {
+    if step > MAX_STEP {
+        return Err(Error::Invalid(format!(
+            "{what}: step {step} is past the last step a document can have ({MAX_STEP})"
+        )));
+    }
+    Ok(())
+}
+
+/// A hold of `ms` milliseconds for `what` within [`MAX_HOLD_MS`] (t-166).
+pub fn check_hold_ms(ms: u64, what: &str) -> Result<(), Error> {
+    if ms > MAX_HOLD_MS {
+        return Err(Error::Invalid(format!(
+            "{what}: {ms} ms is longer than the longest hold ({MAX_HOLD_MS} ms, one hour)"
+        )));
+    }
+    Ok(())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
 pub struct Document {
     pub schema: u32,
@@ -1264,7 +1302,7 @@ impl Document {
                 MoveAction::Wait(w) => w.ms,
                 _ => 0,
             })
-            .sum()
+            .fold(0u64, u64::saturating_add)
     }
 
     /// Milliseconds the `wait` moves of `step` add up to.
@@ -1276,7 +1314,7 @@ impl Document {
                 MoveAction::Wait(w) => w.ms,
                 _ => 0,
             })
-            .sum()
+            .fold(0u64, u64::saturating_add)
     }
 
     /// Whether any move is applied at the current step (`at_step <= step`).
@@ -1362,6 +1400,9 @@ impl Document {
     /// new move shifted the code its `position` counts on), named without
     /// quoting masked text.
     pub fn add_move_noting(&mut self, m: Move) -> Result<(usize, Vec<String>), Error> {
+        let what = format!("move #{}", self.moves.len() + 1);
+        check_step(m.at_step, &what)?;
+        moves::check_move_bounds(&m, &what)?;
         // Every redact is pinned to the code its columns refer to before
         // the new move changes what "the code at its step" is (t-140,
         // t-154), so the move is followed through, never read in its old
@@ -2091,7 +2132,10 @@ impl Document {
 
     /// Last absolute line of the document.
     pub fn last_line(&self) -> u32 {
-        self.source.first_line + self.code.len().saturating_sub(1) as u32
+        // Saturating (t-166): a document never gets here with a first line
+        // past [`MAX_FIRST_LINE`], and this never overflows if one does.
+        let len = u32::try_from(self.code.len().saturating_sub(1)).unwrap_or(u32::MAX);
+        self.source.first_line.saturating_add(len)
     }
 
     pub fn has_line(&self, line: u32) -> bool {
@@ -2116,6 +2160,41 @@ impl Document {
     }
 
     /// Highest step used by any annotation or move (at least 1).
+    /// The steps, up to `last`, at which what a take draws can change
+    /// (t-166): 0, each annotation's step and the one after it (a spotlight
+    /// shows only at its own), each move's step. Every other step draws
+    /// exactly as the last of these before it, so a loop over the take that
+    /// looks for a maximum, a union or the first step of something visits
+    /// only these, and costs the same whatever the number of empty steps.
+    pub fn change_steps(&self, last: u32) -> Vec<u32> {
+        let mut out: Vec<u32> = std::iter::once(0)
+            .chain(
+                self.annotations
+                    .iter()
+                    .flat_map(|a| [a.step, a.step.saturating_add(1)]),
+            )
+            .chain(self.moves.iter().map(|m| m.at_step))
+            .filter(|s| *s <= last)
+            .collect();
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    /// [`Document::change_steps`] with the run of steps each one stands
+    /// for: `(step, steps it draws like)`, the runs covering 0..=`last`.
+    pub fn change_runs(&self, last: u32) -> Vec<(u32, std::ops::RangeInclusive<u32>)> {
+        let steps = self.change_steps(last);
+        steps
+            .iter()
+            .enumerate()
+            .map(|(i, s)| {
+                let end = steps.get(i + 1).map_or(last, |n| n - 1);
+                (*s, *s..=end)
+            })
+            .collect()
+    }
+
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()
@@ -2149,10 +2228,11 @@ impl Document {
         // A load error names moves and markers by their target texts: on a
         // document with redacts none is quoted (t-167).
         self.normalize_loaded_raw()
-            .map_err(|e| crate::redact::Echo::new(self).error(e))
+            .map_err(|e| crate::redact::Echo::loading(self).error(e))
     }
 
     fn normalize_loaded_raw(&mut self) -> Result<(), Error> {
+        self.check_bounds()?;
         if self.code.is_empty() {
             // Every layout assumes at least one row (see `from_code`).
             self.code.push(String::new());
@@ -2199,6 +2279,28 @@ impl Document {
                 return Err(e);
             }
         }
+        Ok(())
+    }
+
+    /// The numbers a loaded or put document may hold (t-166): steps within
+    /// [`MAX_STEP`], holds within [`MAX_HOLD_MS`], a first line within
+    /// [`MAX_FIRST_LINE`]. Ids and numbers only, never document text.
+    pub fn check_bounds(&self) -> Result<(), Error> {
+        if self.source.first_line > MAX_FIRST_LINE {
+            return Err(Error::Invalid(format!(
+                "source.first_line {} is past the largest first line ({MAX_FIRST_LINE})",
+                self.source.first_line
+            )));
+        }
+        for a in &self.annotations {
+            check_step(a.step, &format!("annotation {}", a.id))?;
+        }
+        for (i, m) in self.moves.iter().enumerate() {
+            let what = format!("move #{}", i + 1);
+            check_step(m.at_step, &what)?;
+            moves::check_move_bounds(m, &what)?;
+        }
+        // `steps` entries: in `steps::normalize`, which every path runs.
         Ok(())
     }
 
@@ -2373,6 +2475,7 @@ impl Document {
         if ann.step == 0 && !pinned {
             ann.step = 1;
         }
+        check_step(ann.step, &format!("annotation {}", ann.id))?;
         self.resolve_file(&mut ann)?;
         // A redact that comes pinned (an agent's `scene.get` → `scene.patch`
         // round trip, t-154) is checked on the code it is pinned to.
@@ -2429,6 +2532,7 @@ impl Document {
     }
 
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
+        check_step(ann.step, &format!("annotation {}", ann.id))?;
         self.resolve_file(&mut ann)?;
         // A redact whose span, pin and file did not change (its label or
         // `keep` did) stays where it is pinned (t-154); a new span is on

@@ -228,7 +228,8 @@ impl Patch {
         if self.typing == Typing::Instant {
             return 0;
         }
-        typing_units(&self.content_lines(), self.typing) as u64 * self.speed().max(1)
+        (typing_units(&self.content_lines(), self.typing) as u64)
+            .saturating_mul(self.speed().max(1))
     }
 }
 
@@ -1865,6 +1866,20 @@ pub fn saved_moves(doc: &Document) -> (Vec<Move>, Vec<(usize, usize)>) {
 /// Validates every move against the code at its step: targets resolve to
 /// exactly one place, `at_step >= 1`, `rebind` ids exist and only on
 /// patches, linked files are loaded, cursors and selections exist.
+/// The numbers a move may hold (t-166): a `wait` and a `code.patch`'s
+/// typing speed within [`crate::model::MAX_HOLD_MS`], so no export of the
+/// take can hang on its holds or overflow adding them up.
+pub fn check_move_bounds(m: &Move, what: &str) -> Result<(), Error> {
+    match &m.action {
+        MoveAction::Wait(w) => crate::model::check_hold_ms(w.ms, &format!("{what}, wait")),
+        MoveAction::CodePatch(p) => match p.speed_ms {
+            Some(ms) => crate::model::check_hold_ms(ms, &format!("{what}, speed_ms")),
+            None => Ok(()),
+        },
+        _ => Ok(()),
+    }
+}
+
 pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> Result<(), Error> {
     for (i, m) in moves.iter().enumerate() {
         if m.at_step == 0 {

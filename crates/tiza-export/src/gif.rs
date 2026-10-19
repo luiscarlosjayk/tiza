@@ -134,7 +134,12 @@ pub fn to_gif(
             }
             // A hold longer than the format's 655 s is split into frames
             // of the same rectangle.
-            let mut cs = frames[i].1.max(MIN_DELAY_MS).div_ceil(10);
+            // Bounded (t-166): a hold past an hour is a bug upstream, and
+            // u64::MAX ms would be 2.8e14 frames of 655 s.
+            let mut cs = frames[i]
+                .1
+                .clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)
+                .div_ceil(10);
             loop {
                 let this = cs.min(MAX_DELAY_CS);
                 enc.write_frame(&gif::Frame {
@@ -161,8 +166,12 @@ pub fn to_gif(
     }
     let duration_ms = frames
         .iter()
-        .map(|(_, d)| (*d).max(MIN_DELAY_MS).div_ceil(10) * 10)
-        .sum();
+        .map(|(_, d)| {
+            (*d).clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)
+                .div_ceil(10)
+                * 10
+        })
+        .fold(0u64, u64::saturating_add);
     Ok((
         out,
         GifReport {

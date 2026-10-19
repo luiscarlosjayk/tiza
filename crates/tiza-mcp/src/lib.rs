@@ -345,7 +345,9 @@ pub struct ExportParams {
         description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, or .gif (an animated GIF of every step, drawn by Tiza itself)"
     )]
     pub path: String,
-    #[schemars(description = "Step to show; defaults to the current one")]
+    #[schemars(
+        description = "Step to show; defaults to the current one. Past the last step, the last is exported and the reply says so in `warning`"
+    )]
     pub step: Option<u32>,
     #[schemars(description = "Width in columns; defaults to the live terminal's width")]
     pub width: Option<usize>,
@@ -354,7 +356,7 @@ pub struct ExportParams {
     #[schemars(description = "PNG/GIF device scale (default 2)")]
     pub scale: Option<f32>,
     #[schemars(
-        description = "GIF: seconds each step stays on screen (default 2; the last one twice as long)"
+        description = "GIF: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)"
     )]
     pub interval: Option<f64>,
     #[schemars(
@@ -1207,7 +1209,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Exports the scene to a file: .png or .svg (embedded fonts) for thumbnails and posts, .txt (plain box-drawing text), .ansi (24-bit colors, for `cat`) or .md (fenced block for a README, an issue or a chat). Renders from the live document without touching the TUI."
+        description = "Exports the scene to a file: .png or .svg (embedded fonts) for thumbnails and posts, .txt (plain box-drawing text), .ansi (24-bit colors, for `cat`) or .md (fenced block for a README, an issue or a chat), or .gif (every step). Renders from the live document without touching the TUI, linked files included. Always answers: with the file written, or with an error (one that takes longer than 120 s is abandoned and nothing is written). A step past the last one exports the last and says so in `warning`."
     )]
     async fn export_image(
         &self,
@@ -1231,7 +1233,29 @@ impl TizaServer {
                 ));
             }
         };
-        let is_png = format == "png";
+        // Every number is checked before anything is drawn (t-166).
+        let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
+        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
+        let font_size =
+            tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
+        let interval = tiza_core::anim::check_interval(p.interval.unwrap_or(2.0)).map_err(bad)?;
+        let width = match p.width {
+            Some(w) => Some(tiza_core::layout::check_width(w).map_err(bad)?),
+            None => None,
+        };
+        let theme_name = match p.theme.as_deref() {
+            Some(t) => match t.trim().to_ascii_lowercase().as_str() {
+                "dark" | "oscuro" => Some(tiza_core::ThemeName::Dark),
+                "light" | "claro" => Some(tiza_core::ThemeName::Light),
+                _ => {
+                    return Err(McpError::invalid_params(
+                        "unknown theme (dark, light)",
+                        None,
+                    ));
+                }
+            },
+            None => None,
+        };
         let mut scene: tiza_core::protocol::Scene =
             // A reader's copy (t-174): titles and labels repeating a
             // masked value come masked, like the code.
@@ -1245,68 +1269,127 @@ impl TizaServer {
         let status: tiza_core::protocol::Status =
             serde_json::from_value(self.call("status", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        let theme_name = match p.theme.as_deref() {
-            Some(t) => match t.trim().to_ascii_lowercase().as_str() {
-                "dark" | "oscuro" => tiza_core::ThemeName::Dark,
-                "light" | "claro" => tiza_core::ThemeName::Light,
-                _ => {
-                    return Err(McpError::invalid_params(
-                        "unknown theme (dark, light)",
-                        None,
-                    ));
-                }
-            },
-            None => scene.document.theme.unwrap_or(tiza_core::ThemeName::Dark),
+        let job = ExportJob {
+            path: p.path,
+            format,
+            asked_step: p.step.unwrap_or(scene.step),
+            width: width.unwrap_or((status.cols as usize).saturating_sub(2).max(40)),
+            theme_name,
+            scale,
+            font_size,
+            interval,
+            skip_zero: p.skip_zero.unwrap_or(false),
+            doc: scene.document,
+            abandoned: Default::default(),
         };
+        // Drawn and encoded on a blocking thread with a deadline (t-166):
+        // the server keeps answering `status` and `tools/list` meanwhile,
+        // and the call always answers.
+        let abandoned = job.abandoned.clone();
+        let deadline = export_deadline();
+        let handle = tokio::task::spawn_blocking(move || job.run());
+        match tokio::time::timeout(deadline, handle).await {
+            Ok(Ok(r)) => r,
+            // A panic in the render: never its text (it may quote the
+            // document, t-167).
+            Ok(Err(e)) if e.is_panic() => Err(panicked("tool export_image", e.into_panic())),
+            Ok(Err(_)) => Err(McpError::internal_error("export_image was cancelled", None)),
+            Err(_) => {
+                abandoned.store(true, std::sync::atomic::Ordering::SeqCst);
+                Err(McpError::internal_error(
+                    format!(
+                        "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif; `tiza render` in a terminal has no deadline",
+                        deadline.as_secs_f64()
+                    ),
+                    None,
+                ))
+            }
+        }
+    }
+}
+
+/// How long one `export_image` may take (t-166): 120 s, or
+/// `TIZA_MCP_EXPORT_TIMEOUT_MS` (used by the tests). Past it the call
+/// answers an error and the render's result is dropped.
+fn export_deadline() -> std::time::Duration {
+    std::env::var("TIZA_MCP_EXPORT_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .map(std::time::Duration::from_millis)
+        .unwrap_or(std::time::Duration::from_secs(120))
+}
+
+/// A panic on purpose, for the tests that check every call answers
+/// (t-166): `TIZA_MCP_PANIC_FOR_TESTS` names the place (`tool:<name>` in
+/// the call itself, `export:render` in the export's blocking render).
+fn panic_for_tests(place: &str) {
+    if std::env::var("TIZA_MCP_PANIC_FOR_TESTS").is_ok_and(|v| v == place) {
+        panic!("TIZA_MCP_PANIC_FOR_TESTS={place}");
+    }
+}
+
+/// One `export_image`, everything it needs owned, so it runs on a
+/// blocking thread.
+struct ExportJob {
+    path: String,
+    format: &'static str,
+    asked_step: u32,
+    width: usize,
+    theme_name: Option<tiza_core::ThemeName>,
+    scale: f32,
+    font_size: f32,
+    interval: f64,
+    skip_zero: bool,
+    doc: tiza_core::Document,
+    /// Set when the deadline passed: the result is not written.
+    abandoned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl ExportJob {
+    fn run(self) -> Result<CallToolResult, McpError> {
+        panic_for_tests("export:render");
+        let doc = &self.doc;
+        let format = self.format;
+        let is_png = format == "png";
+        let is_gif = format == "gif";
+        let last = doc.max_step();
+        // A step past the last one: the last, said in the reply (t-166),
+        // as `tiza render` says it on stderr.
+        let step = self.asked_step.min(last);
+        let warning = (!is_gif && self.asked_step > last).then(|| {
+            format!(
+                "step {} does not exist (the document has steps 0 to {last}); exported step {last}",
+                self.asked_step
+            )
+        });
+        let theme_name = self
+            .theme_name
+            .unwrap_or(doc.theme.unwrap_or(tiza_core::ThemeName::Dark));
         // The document's overrides apply; a terminal theme or `reset`
         // tokens have no palette in a file and fall back (t-119).
-        let (theme, _) = tiza_core::Theme::resolve(
-            theme_name,
-            true,
-            None,
-            scene.document.theme_overrides.as_ref(),
-        );
+        let (theme, _) =
+            tiza_core::Theme::resolve(theme_name, true, None, doc.theme_overrides.as_ref());
         let (theme, _notice) = theme.for_export();
         let layout = tiza_core::layout::layout(
-            &scene.document,
+            doc,
             &theme,
             &tiza_core::layout::LayoutOptions {
-                width: match p.width {
-                    Some(w) => tiza_core::layout::check_width(w)
-                        .map_err(|e| McpError::invalid_params(e.to_string(), None))?,
-                    None => (status.cols as usize).saturating_sub(2).max(40),
-                },
-                step: p.step.unwrap_or(scene.step),
+                width: self.width,
+                step,
                 focus: None,
                 pointer: None,
-                line_numbers: scene.document.numbers,
+                line_numbers: doc.numbers,
                 tab_width: 4,
                 typing: false,
                 redact: true,
                 stable: true,
-                margin_cap: scene.document.margin.map(usize::from),
+                margin_cap: doc.margin.map(usize::from),
             },
         );
-        let bytes = match format {
-            "txt" => Some((layout.canvas.to_plain_text() + "\n").into_bytes()),
-            "ansi" => Some(layout.canvas.to_ansi().into_bytes()),
-            "md" => Some(
-                layout
-                    .canvas
-                    .to_markdown(scene.document.title.as_deref())
-                    .into_bytes(),
-            ),
-            _ => None,
-        };
-        let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
-        let is_gif = format == "gif";
-        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
-        let font_size =
-            tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
         let svg_opts = tiza_export::SvgOptions {
-            font_size,
+            font_size: self.font_size,
             embed_fonts: !is_png,
-            title: scene.document.title.clone(),
+            title: doc.title.clone(),
             ..Default::default()
         };
         let too_big = |e: tiza_export::Error| match e {
@@ -1314,68 +1397,78 @@ impl TizaServer {
             other => McpError::internal_error(other.to_string(), None),
         };
         let mut gif_frames = 0usize;
-        let bytes = if let Some(b) = bytes {
-            b
-        } else if is_gif {
-            // Every step, the typed moves between them, one geometry for the
-            // take, masks on (t-120).
-            let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
-                &scene.document,
-                &theme,
-                &tiza_core::anim::AnimOptions {
-                    interval: p.interval.unwrap_or(2.0),
-                    width: layout.canvas.width,
-                    line_numbers: scene.document.numbers,
-                    from_zero: !p.skip_zero.unwrap_or(false),
-                },
-            )
-            .into_iter()
-            .map(|f| (f.canvas, f.delay_ms))
-            .collect();
-            gif_frames = frames.len();
-            let (bytes, _) = tiza_export::to_gif(
-                &frames,
-                &theme,
-                &tiza_export::GifOptions {
-                    svg: tiza_export::SvgOptions {
-                        embed_fonts: false,
-                        title: None,
-                        ..svg_opts.clone()
+        let bytes = match format {
+            "txt" => (layout.canvas.to_plain_text() + "\n").into_bytes(),
+            "ansi" => layout.canvas.to_ansi().into_bytes(),
+            "md" => layout.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
+            "gif" => {
+                // Every step, the typed moves between them, one geometry
+                // for the take, masks on (t-120).
+                let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
+                    doc,
+                    &theme,
+                    &tiza_core::anim::AnimOptions {
+                        interval: self.interval,
+                        width: layout.canvas.width,
+                        line_numbers: doc.numbers,
+                        from_zero: !self.skip_zero,
                     },
-                    png: tiza_export::PngOptions {
-                        scale,
+                )
+                .into_iter()
+                .map(|f| (f.canvas, f.delay_ms))
+                .collect();
+                gif_frames = frames.len();
+                tiza_export::to_gif(
+                    &frames,
+                    &theme,
+                    &tiza_export::GifOptions {
+                        svg: tiza_export::SvgOptions {
+                            embed_fonts: false,
+                            title: None,
+                            ..svg_opts.clone()
+                        },
+                        png: tiza_export::PngOptions {
+                            scale: self.scale,
+                            system_fonts: false,
+                        },
+                        repeat: None,
+                    },
+                )
+                .map_err(too_big)?
+                .0
+            }
+            "png" => {
+                let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
+                tiza_export::to_png(
+                    &svg,
+                    &tiza_export::PngOptions {
+                        scale: self.scale,
                         system_fonts: false,
                     },
-                    repeat: None,
-                },
-            )
-            .map_err(too_big)?;
-            bytes
-        } else if is_png {
-            let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
-            tiza_export::to_png(
-                &svg,
-                &tiza_export::PngOptions {
-                    scale,
-                    system_fonts: false,
-                },
-            )
-            .map_err(too_big)?
-        } else {
-            tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes()
+                )
+                .map_err(too_big)?
+            }
+            _ => tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes(),
         };
-        std::fs::write(&p.path, &bytes).map_err(|e| {
-            McpError::internal_error(format!("could not write {}: {e}", p.path), None)
+        // Past the deadline the caller already answered: write nothing.
+        if self.abandoned.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err(McpError::internal_error("abandoned", None));
+        }
+        std::fs::write(&self.path, &bytes).map_err(|e| {
+            McpError::internal_error(format!("could not write {}: {e}", self.path), None)
         })?;
         let mut reply = json!({
-            "path": p.path,
+            "path": self.path,
             "bytes": bytes.len(),
             "format": format,
-            "step": p.step.unwrap_or(scene.step),
+            "step": step,
         });
+        if let Some(w) = warning {
+            reply["warning"] = json!(w);
+        }
         if is_gif {
             reply["frames"] = json!(gif_frames);
-            reply["steps"] = json!(format!("0-{}", scene.document.max_step()));
+            reply["steps"] = json!(format!("0-{last}"));
             reply.as_object_mut().unwrap().remove("step");
         }
         Ok(text(pretty(&reply)))
@@ -1483,9 +1576,12 @@ impl ServerHandler for TizaServer {
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         // Every call answers (t-166): a panic while it runs (a bug) is an
         // error reply, never a call left waiting forever.
-        let mut resp = answer_always(self.tool_router.call(tcc))
-            .await
-            .map_err(|p| panicked(&format!("tool {tool}"), p))??;
+        let mut resp = answer_always(async {
+            panic_for_tests(&format!("tool:{tool}"));
+            self.tool_router.call(tcc).await
+        })
+        .await
+        .map_err(|p| panicked(&format!("tool {tool}"), p))??;
         if let rmcp::model::CallToolResponse::Complete(r) = &mut resp
             && r.is_error == Some(true)
         {

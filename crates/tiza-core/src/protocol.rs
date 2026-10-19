@@ -940,6 +940,12 @@ pub struct Status {
     /// turn it off; `:w` saves explicitly either way).
     #[serde(default = "yes")]
     pub autosave: bool,
+    /// The `.tiza` this instance saves to (absolute, as shown text: a name
+    /// repeating a masked value is masked), when it exists on disk; absent
+    /// before the first save. What a `.tape` of the live instance opens
+    /// (t-166).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub document: Option<String>,
     /// Whether the line-number gutter is shown (`:numbers`, document field).
     #[serde(default = "yes")]
     pub numbers: bool,

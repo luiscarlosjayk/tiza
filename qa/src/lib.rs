@@ -294,6 +294,8 @@ pub struct McpClient {
     /// call the server never answers fails the test at a deadline instead
     /// of hanging `cargo test` (t-166).
     lines: mpsc::Receiver<String>,
+    /// Replies that arrived while waiting for another one.
+    early: std::collections::HashMap<u64, serde_json::Value>,
     next_id: u64,
     /// The `initialize` result (capabilities, instructions, serverInfo).
     init: serde_json::Value,
@@ -302,9 +304,15 @@ pub struct McpClient {
 impl McpClient {
     /// Starts `tiza mcp --socket <socket>` and completes `initialize`.
     pub fn start(socket: &Path) -> McpClient {
+        McpClient::start_with_env(socket, &[])
+    }
+
+    /// [`McpClient::start`] with extra environment variables for the server.
+    pub fn start_with_env(socket: &Path, env: &[(&str, &str)]) -> McpClient {
         use std::io::{BufRead, Write};
         let mut child = Command::new(bin())
             .args(["mcp", "--socket", socket.to_str().unwrap()])
+            .envs(env.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::null())
@@ -330,6 +338,7 @@ impl McpClient {
             child,
             stdin,
             lines,
+            early: Default::default(),
             next_id: 1,
             init: serde_json::Value::Null,
         };
@@ -367,6 +376,14 @@ impl McpClient {
         params: serde_json::Value,
         timeout: std::time::Duration,
     ) -> Option<serde_json::Value> {
+        let id = self.send(method, params);
+        self.reply_within(id, timeout)
+    }
+
+    /// Sends one JSON-RPC request without waiting: its id, for
+    /// [`McpClient::reply_within`]. Several can be in flight at once (t-166:
+    /// a slow export must not hold up `status`).
+    pub fn send(&mut self, method: &str, params: serde_json::Value) -> u64 {
         use std::io::Write;
         let id = self.next_id;
         self.next_id += 1;
@@ -375,6 +392,19 @@ impl McpClient {
         self.stdin.write_all(msg.to_string().as_bytes()).unwrap();
         self.stdin.write_all(b"\n").unwrap();
         self.stdin.flush().unwrap();
+        id
+    }
+
+    /// The reply to request `id`, waiting at most `timeout`; replies to
+    /// other requests that arrive meanwhile are kept for their own call.
+    pub fn reply_within(
+        &mut self,
+        id: u64,
+        timeout: std::time::Duration,
+    ) -> Option<serde_json::Value> {
+        if let Some(v) = self.early.remove(&id) {
+            return Some(v);
+        }
         let until = std::time::Instant::now() + timeout;
         loop {
             let left = until.saturating_duration_since(std::time::Instant::now());
@@ -382,13 +412,17 @@ impl McpClient {
                 Ok(line) => line,
                 Err(mpsc::RecvTimeoutError::Timeout) => return None,
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
-                    panic!("tiza mcp closed its stdout before answering {method}")
+                    panic!("tiza mcp closed its stdout before answering request {id}")
                 }
             };
-            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
-                && v["id"] == id
-            {
-                return Some(v);
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line) {
+                match v["id"].as_u64() {
+                    Some(got) if got == id => return Some(v),
+                    Some(other) => {
+                        self.early.insert(other, v);
+                    }
+                    None => {}
+                }
             }
         }
     }

@@ -45,6 +45,21 @@ pub struct Frame {
     pub typing: bool,
 }
 
+/// Validates the seconds each step of a recording stays (`--interval`,
+/// `export_image {interval}`): a finite number from 0 to one hour
+/// ([`crate::model::MAX_HOLD_MS`]) (t-166: `1e308` overflowed, `1e7` hung
+/// the GIF encoder).
+pub fn check_interval(secs: f64) -> Result<f64, crate::Error> {
+    let max = crate::model::MAX_HOLD_MS as f64 / 1000.0;
+    if secs.is_finite() && (0.0..=max).contains(&secs) {
+        Ok(secs)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "interval={secs}: use a number of seconds between 0 and {max}"
+        )))
+    }
+}
+
 /// Steps whose frame holds for their own `auto_advance_ms` instead of the
 /// interval (t-099), for the export's summary line.
 pub fn timed_steps(doc: &Document, opts: &AnimOptions) -> Vec<u32> {
@@ -58,7 +73,10 @@ pub fn timed_steps(doc: &Document, opts: &AnimOptions) -> Vec<u32> {
 pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
     let first = if opts.from_zero { 0 } else { 1 };
     let last = doc.max_step().max(first);
-    let hold = (opts.interval.max(0.0) * 1000.0).round() as u64;
+    // Bounded by the callers (`check_interval`); saturating anyway, so a
+    // caller that forgets cannot overflow (t-166).
+    let max = crate::model::MAX_HOLD_MS;
+    let hold = ((opts.interval.max(0.0) * 1000.0).round() as u64).min(max);
     let lay = |d: &Document, step: u32, typing: bool| {
         layout(
             d,
@@ -101,7 +119,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 out.push(Frame {
                     step,
                     canvas: lay(&d, step, true),
-                    delay_ms: delay,
+                    delay_ms: delay.min(max),
                     typing: true,
                 });
             }
@@ -110,8 +128,8 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
         // 2026-10-18): a named step's `auto_advance_ms` is how long its
         // frame stays, after its typed frames, as in the TUI.
         let delay = match doc.auto_advance_ms(step) {
-            Some(ms) => ms,
-            None if step == last => hold * 2,
+            Some(ms) => ms.min(max),
+            None if step == last => hold.saturating_mul(2),
             None => hold,
         };
         out.push(Frame {

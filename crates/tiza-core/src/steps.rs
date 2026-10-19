@@ -60,6 +60,10 @@ pub fn normalize(steps: &mut [NamedStep]) -> Result<(), Error> {
     let mut ids = std::collections::BTreeSet::new();
     let mut numbers = std::collections::BTreeSet::new();
     for n in steps.iter_mut() {
+        crate::model::check_step(n.step, "steps")?;
+        if let Some(ms) = n.auto_advance_ms {
+            crate::model::check_hold_ms(ms, &format!("steps: auto_advance_ms of step {}", n.step))?;
+        }
         if !numbers.insert(n.step) {
             return Err(Error::Invalid(format!(
                 "steps: two entries name step {} (one entry per step)",

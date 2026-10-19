@@ -1237,7 +1237,8 @@ pub fn masked_values(doc: &Document) -> Vec<String> {
         // The projected code of every step, never the code in memory: a
         // move being typed shows part of its content, and the cache key
         // ([`values_key`]) holds what the projection reads, not that.
-        for step in 0..=doc.max_step() {
+        // Only the steps where something changes (t-166).
+        for step in doc.change_steps(doc.max_step()) {
             take(&doc.projected_view_at(step).doc, step);
         }
         // And every redact on a file's own lines, of the main file or of a
@@ -1948,6 +1949,20 @@ impl Echo {
             return Echo::default();
         }
         Echo::with_values(all_values(doc)).written(document_targets(doc))
+    }
+
+    /// [`Echo::new`] for a document still being loaded (t-166): its code is
+    /// resolved but [`Document::normalize_loaded`] has not set the step-0
+    /// code of a document with moves yet, which the masked values are read
+    /// from; so an error raised while loading never quotes them.
+    pub fn loading(doc: &Document) -> Echo {
+        if doc.moves.is_empty() || !doc.base_code.is_empty() {
+            return Echo::new(doc);
+        }
+        let mut probe = doc.clone();
+        probe.base_code = probe.code.clone();
+        probe.base_first_line = probe.source.first_line;
+        Echo::new(&probe)
     }
 
     /// [`Echo::new`] without the document's targets, for listings drawn

@@ -395,6 +395,13 @@ fn check_text_with(
         out.push(Finding::new(Level::Error, "code", e.to_string()));
         return Report::new(width, out, None, None);
     }
+    // ---- the numbers (t-166): a step past the cap or a first line near
+    // `u32::MAX` is one error, before anything is laid out step by step.
+    if let Err(e) = doc.check_bounds() {
+        let e = crate::redact::Echo::loading(&doc).error(e);
+        out.push(Finding::new(Level::Error, "bounds", e.to_string()));
+        return Report::new(width, out, None, None);
+    }
     let missing = load_links(&mut doc, base_dir, &mut out);
     let doc = tidy(doc, &missing, &mut out);
     // A text that repeats a masked value is masked on every surface; said
@@ -560,7 +567,7 @@ fn narrower(doc: &Document, theme: &Theme, min_clean: usize) -> Narrower {
     let mut margin_from = None;
     for w in MIN_WIDTH..min_clean {
         let (mut labels_ok, mut code_ok, mut margin) = (true, true, false);
-        for step in 0..=last_step(doc) {
+        for step in doc.change_steps(last_step(doc)) {
             let l = layout_with(doc, theme, &take_options(doc, w, step), Some(&geometry));
             labels_ok &= l.clipped_labels.is_empty();
             code_ok &= l.clipped_code.is_none();
@@ -1110,13 +1117,15 @@ fn clipped_at(
     first_only: bool,
 ) -> Vec<((String, String, bool), Vec<u32>)> {
     let mut out: Vec<((String, String, bool), Vec<u32>)> = Vec::new();
-    for step in 0..=last_step(doc) {
+    // Laid out once per step where something changes (t-166); a label is
+    // clipped at every step of that step's run.
+    for (step, run) in doc.change_runs(last_step(doc)) {
         let l = layout_with(doc, theme, &take_options(doc, width, step), Some(geometry));
         for c in l.clipped_labels {
             let key = (c.id, c.text, c.dropped);
             match out.iter_mut().find(|(k, _)| k.0 == key.0 && k.1 == key.1) {
-                Some((_, steps)) => steps.push(step),
-                None => out.push((key, vec![step])),
+                Some((_, steps)) => steps.extend(run.clone()),
+                None => out.push((key, run.clone().collect())),
             }
         }
         if first_only && !out.is_empty() {
@@ -1236,7 +1245,7 @@ fn check_loaded(
     // ---- redacts a move widened or dropped (the TUI's own words) ----
     let mut said: BTreeSet<String> = BTreeSet::new();
     let mut moved: BTreeSet<String> = BTreeSet::new();
-    for step in 1..=max {
+    for step in doc.change_steps(max).into_iter().filter(|s| *s >= 1) {
         for (id, n) in doc.redact_notices_by_id(step, true) {
             if said.insert(n.clone()) {
                 let a = doc.find_annotation(&id);
@@ -1275,9 +1284,9 @@ fn check_loaded(
     // ---- annotations a move hides ----
     if !doc.moves.is_empty() {
         let mut hidden: BTreeMap<String, Vec<u32>> = BTreeMap::new();
-        for step in 0..=max {
+        for (step, run) in doc.change_runs(max) {
             for id in doc.view_at(step).unanchored {
-                hidden.entry(id).or_default().push(step);
+                hidden.entry(id).or_default().extend(run.clone());
             }
         }
         for a in &doc.annotations {

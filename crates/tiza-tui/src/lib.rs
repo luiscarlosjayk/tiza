@@ -114,6 +114,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
 
     install_crash_hook(&app.save_path);
     let mut terminal = ratatui::init();
+    spare_answered_requests();
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
@@ -188,6 +189,19 @@ fn install_crash_hook(save_path: &std::path::Path) {
         eprintln!(
             "tiza crashed: {reason}{at}.{work} Please report it with the command you typed: https://github.com/luiscarlosjayk/tiza/issues"
         );
+    }));
+}
+
+/// Wraps the hooks `ratatui::init` chained on top of the crash hook
+/// (t-166): a panic while a socket request is answered is caught by
+/// `App::handle_request` and answered as an error, and the TUI keeps
+/// running, so its screen is not restored and nothing is printed over it.
+fn spare_answered_requests() {
+    let inner = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        if !crate::app::answering_request() {
+            inner(info);
+        }
     }));
 }
 

@@ -96,6 +96,13 @@
             "minimum": 0,
             "type": "integer"
           },
+          "document": {
+            "description": "The `.tiza` this instance saves to (absolute, as shown text: a name\nrepeating a masked value is masked), when it exists on disk; absent\nbefore the first save. What a `.tape` of the live instance opens\n(t-166).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "file": {
             "description": "The file shown: the source file, or the one a `code.link` move\nleft up at the current step (t-105).",
             "type": [

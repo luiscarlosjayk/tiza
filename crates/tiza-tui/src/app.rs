@@ -93,6 +93,18 @@ pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 /// presentation mode, where there is no status bar to keep it (t-107).
 pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
+thread_local! {
+    static ANSWERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether this thread is answering a socket request inside
+/// [`App::handle_request`]'s guard (t-166): the crash hook then leaves the
+/// terminal as it is, since the panic is caught, answered as an error and
+/// the TUI keeps running.
+pub fn answering_request() -> bool {
+    ANSWERING.with(|a| a.get())
+}
+
 /// Methods that never change the document or the view: they bypass supervision.
 pub const READ_ONLY_METHODS: &[&str] = &[
     "ping",
@@ -1236,6 +1248,9 @@ impl App {
     /// (the instance cannot resolve a file reference meant for another
     /// directory); the theme follows the document; one undo step.
     pub fn put_scene(&mut self, mut doc: Document) -> Result<SceneChanged, Error> {
+        // Its numbers first (t-166): a first line near `u32::MAX` or a step
+        // past the cap is refused before anything counts with them.
+        doc.check_bounds()?;
         // `scene.get` hands out the code masked: what comes back no longer
         // holds the values, so the ones this instance knew are kept (in
         // memory only) and its labels stay masked (t-174).
@@ -2669,7 +2684,7 @@ impl App {
             'e' => self.mode = Mode::Command(format!("set {id} ")),
             '+' | '-' => {
                 let step = if key == '+' {
-                    a.step + 1
+                    a.step.saturating_add(1)
                 } else {
                     a.step.saturating_sub(1).max(1)
                 };
@@ -4483,7 +4498,55 @@ impl App {
 
     // ---------- local API ----------
 
+    /// Answers one socket request (t-166): a panic while it runs (a bug)
+    /// answers an `internal` error instead of closing the presenter's TUI,
+    /// as the release profile's `panic = "unwind"` promises. A mutating
+    /// request that panicked is dropped whole: the document goes back to
+    /// what it was before it (and is saved again when autosave is on, in
+    /// case the request saved a half-done change); the view (step,
+    /// selection, scroll) is clamped to it. The crash hook leaves the
+    /// terminal alone meanwhile ([`answering_request`]); the panic's text
+    /// is never shown or returned (it may quote the document, t-167).
     pub fn handle_request(&mut self, req: Request) -> Response {
+        let id = req.id.clone();
+        let method = req.method.clone();
+        let mutating = !READ_ONLY_METHODS.contains(&method.as_str());
+        let before = mutating.then(|| self.doc.clone());
+        let revision = self.revision;
+        let was = ANSWERING.with(|a| a.replace(true));
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.answer(req)));
+        ANSWERING.with(|a| a.set(was));
+        match r {
+            Ok(resp) => resp,
+            Err(_) => {
+                if let Some(doc) = before {
+                    self.doc = doc;
+                    self.selected = None;
+                    self.clamp_cursor();
+                    if self.revision != revision {
+                        self.touch();
+                    }
+                }
+                let msg = format!(
+                    "{}: a bug in Tiza stopped this request (a panic){}; please report it",
+                    if tiza_core::protocol::METHODS.iter().any(|m| m.0 == method) {
+                        method.as_str()
+                    } else {
+                        "request"
+                    },
+                    if mutating {
+                        ", and the document is as it was before it"
+                    } else {
+                        ""
+                    }
+                );
+                self.error(msg.clone());
+                Response::err(id, "internal", msg)
+            }
+        }
+    }
+
+    fn answer(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         // What the agent wrote, for the error's echo filter (t-167).
         let brings_redact = tiza_core::redact::json_has_redact(&req.params);
@@ -4495,6 +4558,13 @@ impl App {
             Vec::new()
         };
         let result = self.dispatch(&req.method, req.params);
+        // A panic on purpose after the request did its work, for the test
+        // that a caught panic leaves the document as it was (t-166).
+        if std::env::var("TIZA_PANIC_FOR_TESTS")
+            .is_ok_and(|v| v == format!("request:{}", req.method))
+        {
+            panic!("TIZA_PANIC_FOR_TESTS");
+        }
         // An agent's text repeating a masked value is said on the alert
         // row and in `status.redact_alerts` right away (t-174).
         self.note_masked_texts();
@@ -5261,6 +5331,11 @@ impl App {
             redact_alerts: self.redact_alerts.clone(),
             supervised: self.supervised,
             autosave: self.autosave,
+            document: self.save_path.is_file().then(|| {
+                let p =
+                    std::path::absolute(&self.save_path).unwrap_or_else(|_| self.save_path.clone());
+                self.shown(&p.to_string_lossy())
+            }),
             pending: self.proposals.len(),
             numbers: self.doc.numbers,
             margin: self.doc.margin,

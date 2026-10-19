@@ -230,7 +230,9 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
     // Each arrow's span in the coordinates of the last step it is drawn at
     // (moves shift them together with the code, so the overlaps hold).
     let mut arrow_span: Vec<(String, u32, u32)> = Vec::new();
-    for step in 0..=last {
+    // Only the steps where something changes (t-166): the others draw
+    // like the last of these before them.
+    for step in doc.change_steps(last) {
         let projected;
         let d = if doc.moves.is_empty() {
             doc

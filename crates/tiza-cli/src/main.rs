@@ -390,6 +390,9 @@ fn real_main() -> anyhow::Result<()> {
             // The document: a file, or the live instance's scene.
             // The `.tiza` a reader's warnings name (t-174 rework point 3).
             let mut tiza_name: Option<String> = None;
+            // The live instance's `.tiza` and whether it autosaves: what a
+            // `.tape` of it opens (t-166).
+            let mut live_document: Option<(Option<String>, bool)> = None;
             let (doc, step, width) = match &file {
                 Some(f) => {
                     let mut opened = if f == "-" {
@@ -443,6 +446,7 @@ fn real_main() -> anyhow::Result<()> {
                     )?)
                     .context("unexpected status response")?;
                     let live_w = (status.cols as usize).saturating_sub(2).max(40);
+                    live_document = Some((status.document.clone(), status.autosave));
                     (
                         scene.document,
                         step.unwrap_or(scene.step),
@@ -486,6 +490,10 @@ fn real_main() -> anyhow::Result<()> {
                 ),
                 None => doc.margin.map(usize::from),
             };
+            // A hold past one hour (or not a number) is refused (t-166):
+            // `1e308` overflowed and `1e7` hung the GIF encoder.
+            let interval =
+                tiza_core::anim::check_interval(interval).map_err(|e| anyhow::anyhow!("{e}"))?;
             let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
             // Scale 2 for stills and the GIF (t-121: long italic notes are soft
             // at 1); video stays at 1, the player scales it.
@@ -663,7 +671,27 @@ fn real_main() -> anyhow::Result<()> {
                     if format == Format::Cast {
                         tiza_core::cast::to_asciicast(&doc, &theme, &opts).into_bytes()
                     } else {
-                        let document_path = file.clone().unwrap_or_else(|| "scene.tiza".into());
+                        let document_path = match (&file, &live_document) {
+                            (Some(f), _) => f.clone(),
+                            // The instance's own `.tiza` (t-166; it typed
+                            // `tiza scene.tiza`, a file that does not exist).
+                            (None, Some((Some(d), autosave))) => {
+                                if d.contains(tiza_core::redact::MASK) {
+                                    bail!(
+                                        "the path of the live document repeats a masked value, so a tape cannot name it: render the .tiza file instead (`tiza render FILE --out demo.tape`)"
+                                    );
+                                }
+                                if !autosave {
+                                    eprintln!(
+                                        "tiza: the tape opens {d}, which this instance does not autosave: save it (:w) first so it holds what is on screen"
+                                    );
+                                }
+                                d.clone()
+                            }
+                            (None, _) => bail!(
+                                "the live document has no .tiza on disk yet for the tape to open: save it in Tiza (:w) or render a .tiza file"
+                            ),
+                        };
                         let gif = if out == "-" {
                             "demo.gif".to_string()
                         } else {

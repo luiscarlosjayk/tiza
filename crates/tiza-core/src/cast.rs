@@ -130,7 +130,7 @@ fn step_sleep(doc: &Document, step: u32, interval: f64) -> String {
     if typing == 0 {
         return format_secs(interval);
     }
-    let needed = (typing + TYPING_MARGIN_MS) as f64 / 1000.0;
+    let needed = typing.saturating_add(TYPING_MARGIN_MS) as f64 / 1000.0;
     format_secs(needed.max(interval))
 }
 
