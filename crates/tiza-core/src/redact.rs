@@ -31,7 +31,8 @@
 //!   is quoted (`«…»`).
 //!
 //! The values are computed once per change of the code, the redacts or the
-//! moves (a small cache keyed by them, [`Echo::new`]), never per frame.
+//! moves (a small cache keyed by them that lives in the document and its
+//! clones, [`ValuesCache`], [`Echo::new`]), never per frame.
 //!
 //! Where each output calls it (the known formatting sites; `qa/tests/t-174.rs`
 //! greps for them):
@@ -994,30 +995,78 @@ fn values_key(doc: &Document) -> u64 {
     h.finish()
 }
 
+/// How many [`values_key`]s one document keeps ([`ValuesCache`]): its own,
+/// the masked copies the layout draws, a few edits back.
+const VALUES_CACHE_LEN: usize = 32;
+
+/// The values [`masked_values_cached`] computed for a document, by
+/// [`values_key`] (t-174). It lives in the document, not in the process:
+/// two documents never share or evict each other's entries, even with the
+/// same code. Its clones (the masked copy the layout draws, the undo
+/// history) share it, as they share what it is computed from. In memory
+/// only (never serialized; Debug shows how many entries, never a value),
+/// and compared as always equal so it never makes two documents differ.
+#[derive(Clone, Default)]
+pub struct ValuesCache(Arc<Mutex<ValuesEntries>>);
+
+/// The entries of a [`ValuesCache`], least recently used first.
+type ValuesEntries = Vec<(u64, Arc<Vec<String>>)>;
+
+impl std::fmt::Debug for ValuesCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = self.0.lock().map(|c| c.len()).unwrap_or_default();
+        write!(f, "ValuesCache({n} entries)")
+    }
+}
+
+impl PartialEq for ValuesCache {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl ValuesCache {
+    /// The entries, even after a panic elsewhere held the lock: they are
+    /// only ever whole (a push or a remove), so a poisoned lock must not
+    /// turn every frame into a recomputation.
+    fn entries(&self) -> std::sync::MutexGuard<'_, ValuesEntries> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The values under `key`, made the most recent.
+    fn get(c: &mut ValuesEntries, key: u64) -> Option<Arc<Vec<String>>> {
+        let i = c.iter().position(|(k, _)| *k == key)?;
+        let hit = c.remove(i);
+        let v = hit.1.clone();
+        c.push(hit);
+        Some(v)
+    }
+}
+
 /// [`masked_values`], computed once per change of what it reads (t-174):
 /// the layout asks for every frame, the TUI's bar and lists too, and with
-/// moves the values take a projection per step.
+/// moves the values take a projection per step. Kept in the document's
+/// own [`ValuesCache`]; two threads that miss the same key at once keep
+/// the first result, so every caller gets the same values.
 pub fn masked_values_cached(doc: &Document) -> Arc<Vec<String>> {
-    static CACHE: Mutex<Vec<(u64, Arc<Vec<String>>)>> = Mutex::new(Vec::new());
     if !has_redacts(doc) {
         return Arc::default();
     }
     let key = values_key(doc);
-    if let Ok(mut c) = CACHE.lock()
-        && let Some(i) = c.iter().position(|(k, _)| *k == key)
-    {
-        let hit = c.remove(i);
-        let v = hit.1.clone();
-        c.push(hit);
+    let cache = &doc.values_cache;
+    if let Some(v) = ValuesCache::get(&mut cache.entries(), key) {
         return v;
     }
+    // Computed without the lock: a projection per step can take a while.
     let v = Arc::new(masked_values(doc));
-    if let Ok(mut c) = CACHE.lock() {
-        if c.len() >= 32 {
-            c.remove(0);
-        }
-        c.push((key, v.clone()));
+    let mut c = cache.entries();
+    if let Some(first) = ValuesCache::get(&mut c, key) {
+        return first;
     }
+    if c.len() >= VALUES_CACHE_LEN {
+        c.remove(0);
+    }
+    c.push((key, v.clone()));
     v
 }
 

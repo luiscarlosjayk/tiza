@@ -107,6 +107,12 @@ pub struct Document {
     #[serde(skip)]
     #[schemars(skip)]
     pub known_values: crate::redact::KnownValues,
+    /// The values under its masks, computed once per change of the code,
+    /// the redacts or the moves (t-174): this document's own cache, shared
+    /// with its clones, never with another document. In memory only.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub values_cache: crate::redact::ValuesCache,
 }
 
 fn yes() -> bool {
@@ -835,6 +841,7 @@ impl Document {
             steps: Vec::new(),
             looping: false,
             known_values: Default::default(),
+            values_cache: Default::default(),
         }
     }
 
