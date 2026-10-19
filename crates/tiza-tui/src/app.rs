@@ -721,7 +721,7 @@ impl App {
                     Some(l) => {
                         let l = check(l)?;
                         if !hits.contains(&l) {
-                            return Err(Error::TextNotFound(format!("«{text}» on line {l}")));
+                            return Err(Error::NoMatch(format!("find «{text}» on line {l}")));
                         }
                         l
                     }
@@ -729,7 +729,7 @@ impl App {
                         let mut lines = hits.clone();
                         lines.dedup();
                         match lines.as_slice() {
-                            [] => return Err(Error::TextNotFound(format!("«{text}»"))),
+                            [] => return Err(Error::NoMatch(format!("find «{text}»"))),
                             [l] => *l,
                             many => {
                                 return Err(Error::Invalid(format!(
@@ -907,7 +907,7 @@ impl App {
             && self.theme.named_color(c).is_none()
         {
             return Err(Error::Invalid(format!(
-                "unknown color: {c} (use {} or #rrggbb)",
+                "unknown color (use {} or #rrggbb)",
                 tiza_core::theme::PALETTE.join(", ")
             )));
         }
@@ -1017,7 +1017,7 @@ impl App {
                 ann.color = Some(c.trim().to_string());
             } else {
                 return Err(Error::Invalid(format!(
-                    "unknown color: {c} (use {} or #rrggbb)",
+                    "unknown color (use {} or #rrggbb)",
                     tiza_core::theme::PALETTE.join(", ")
                 )));
             }
@@ -1224,8 +1224,12 @@ impl App {
                     deleted.push(id);
                     continue;
                 }
-                let ann: Annotation = serde_json::from_value(v)
-                    .map_err(|e| Error::Invalid(format!("annotation {id}: {e}")))?;
+                let ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
+                    Error::Invalid(format!(
+                        "annotation {id}: {}",
+                        tiza_core::redact::serde_message(&e, &v)
+                    ))
+                })?;
                 d.annotations.retain(|a| a.id != id);
                 d.add(ann)?;
                 if existed {
@@ -2810,9 +2814,7 @@ impl App {
                     }),
                     "on" | "yes" | "start" => self.set_follow(true),
                     "off" | "no" | "stop" => self.set_follow(false),
-                    other => Err(Error::Invalid(format!(
-                        "usage: :follow [on|off], got {other}"
-                    ))),
+                    _ => Err(Error::Invalid("usage: :follow [on|off]".into())),
                 },
                 "until" => {
                     let (id, n) = split_first(rest);
@@ -3051,9 +3053,7 @@ impl App {
                         other => match Self::parse_theme_name(other) {
                             Some(name) => self.set_theme_name(name, true),
                             None => {
-                                return Err(Error::Invalid(format!(
-                                    "unknown theme: {other} (dark, light, terminal, auto, file PATH; :theme alone toggles)"
-                                )));
+                                return Err(Error::Invalid("unknown theme (dark, light, terminal, auto, file PATH; :theme alone toggles)".to_string()));
                             }
                         },
                     }
@@ -3303,12 +3303,12 @@ impl App {
                     panic!("forced by :panic (TIZA_TEST_PANIC)")
                 }
                 other => Err(Error::Invalid(match nearest_commands(other) {
-                    v if v.is_empty() => format!("unknown command: {other} (try :help)"),
+                    v if v.is_empty() => "unknown command (try :help)".to_string(),
                     v if v.len() == 1 => {
-                        format!("unknown command: {other} — did you mean :{}?", v[0])
+                        format!("unknown command — did you mean :{}?", v[0])
                     }
                     v => format!(
-                        "unknown command: {other} — did you mean {}?",
+                        "unknown command — did you mean {}?",
                         v.iter()
                             .map(|c| format!(":{c}"))
                             .collect::<Vec<_>>()
@@ -3534,12 +3534,12 @@ impl App {
                 "step" => {
                     step = v
                         .parse()
-                        .map_err(|_| Error::Invalid(format!("step={v}: not a number")))?;
+                        .map_err(|_| Error::Invalid("step= must be a number".into()))?;
                 }
                 "width" => {
                     width = tiza_core::layout::check_width(v.parse::<usize>().map_err(|_| {
                         Error::Invalid(format!(
-                            "width={v}: use a number between {} and {}",
+                            "width= must be a number between {} and {}",
                             tiza_core::layout::MIN_WIDTH,
                             tiza_core::layout::MAX_WIDTH
                         ))
@@ -3548,7 +3548,7 @@ impl App {
                 "theme" => {
                     let name = Self::parse_theme_name(&v)
                         .filter(|n| *n != ThemeName::Terminal)
-                        .ok_or_else(|| Error::Invalid(format!("theme={v}: dark or light")))?;
+                        .ok_or_else(|| Error::Invalid("theme= must be dark or light".into()))?;
                     theme = Theme::resolve(
                         name,
                         self.host_dark.unwrap_or(true),
@@ -3558,9 +3558,9 @@ impl App {
                     .0;
                 }
                 _ => {
-                    return Err(Error::Invalid(format!(
-                        "unknown option {k}= (step, width, theme)"
-                    )));
+                    return Err(Error::Invalid(
+                        "unknown option (step, width, theme)".to_string(),
+                    ));
                 }
             }
         }
@@ -3694,10 +3694,10 @@ impl App {
                 "label" | "text" | "title" => p.label = Some(v.clone()),
                 "color" => p.color = Some(v.clone()),
                 "step" => {
-                    p.step =
-                        Some(v.parse().map_err(|_| {
-                            Error::Invalid(format!("step must be a number, got {v}"))
-                        })?)
+                    p.step = Some(
+                        v.parse()
+                            .map_err(|_| Error::Invalid("step must be a number".into()))?,
+                    )
                 }
                 "stroke" | "route" | "heads" | "start" | "end" if !is_arrow => {
                     return Err(Error::Invalid(format!(
@@ -3756,10 +3756,10 @@ impl App {
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" | "style" => emphasis = parse_emphasis(v)?,
-                other => {
-                    return Err(Error::Invalid(format!(
-                        "unknown key `{other}` for :hl (emphasis=fill|underline|brackets|strike)"
-                    )));
+                _ => {
+                    return Err(Error::Invalid(
+                        "unknown key for :hl (emphasis=fill|underline|brackets|strike)".to_string(),
+                    ));
                 }
             }
         }
@@ -3798,10 +3798,11 @@ impl App {
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" => emphasis = parse_emphasis(v)?,
-                other => {
-                    return Err(Error::Invalid(format!(
-                        "unknown key `{other}` for :mark (emphasis=fill|underline|brackets|strike)"
-                    )));
+                _ => {
+                    return Err(Error::Invalid(
+                        "unknown key for :mark (emphasis=fill|underline|brackets|strike)"
+                            .to_string(),
+                    ));
                 }
             }
         }
@@ -3831,7 +3832,7 @@ impl App {
                     .any(|c| c.is_alphanumeric() && c.is_ascii())
             {
                 return Err(Error::Invalid(format!(
-                    "unknown mark kind: {kind_tok} (kinds: {}; or define one with :style, or use a glyph/emoji)",
+                    "unknown mark kind (kinds: {}; or define one with :style, or use a glyph/emoji)",
                     self.doc.kind_names().join(" ")
                 )));
             }
@@ -3846,7 +3847,7 @@ impl App {
         };
         if let Some(c) = color {
             if self.theme.named_color(&c).is_none() {
-                return Err(Error::Invalid(format!("unknown color: {c}")));
+                return Err(Error::Invalid(unknown_color()));
             }
             style.color = Some(c);
         }
@@ -3938,14 +3939,14 @@ impl App {
                 "legend" | "l" | "text" => st.legend = Some(v),
                 "color" | "c" => {
                     if self.theme.named_color(&v).is_none() {
-                        return Err(Error::Invalid(format!("unknown color: {v}")));
+                        return Err(Error::Invalid(unknown_color()));
                     }
                     st.color = Some(v);
                 }
-                other => {
-                    return Err(Error::Invalid(format!(
-                        "unknown style field: {other} (glyph, legend, color)"
-                    )));
+                _ => {
+                    return Err(Error::Invalid(
+                        "unknown style field (glyph, legend, color)".to_string(),
+                    ));
                 }
             }
         }
@@ -4050,12 +4051,12 @@ impl App {
                         .parse::<u8>()
                         .ok()
                         .filter(|n| *n <= 8)
-                        .ok_or_else(|| Error::Invalid(format!("keep={v}: use 0 to 8")))?;
+                        .ok_or_else(|| Error::Invalid("keep= must be 0 to 8".into()))?;
                 }
-                other => {
-                    return Err(Error::Invalid(format!(
-                        "unknown key `{other}` for :redact (keep=N)"
-                    )));
+                _ => {
+                    return Err(Error::Invalid(
+                        "unknown key for :redact (keep=N)".to_string(),
+                    ));
                 }
             }
         }
@@ -4245,9 +4246,7 @@ impl App {
             let (tok, after) = split_first(rest);
             if let Some(name) = tok.strip_prefix('@') {
                 placement = tiza_core::model::Placement::parse(name).ok_or_else(|| {
-                    Error::Invalid(format!(
-                        "unknown placement @{name}: use @below, @margin or @auto"
-                    ))
+                    Error::Invalid("unknown placement: use @below, @margin or @auto".into())
                 })?;
                 rest = after;
             } else if tok.starts_with("title=") {
@@ -4672,9 +4671,19 @@ impl App {
     }
 
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, Error> {
+        // Parameters that do not deserialize: serde quotes the value it
+        // could not read (`unknown variant `x``, `invalid type: string
+        // "x"`); that value is taken out with or without redacts, like the
+        // MCP's own deserialization errors, and serde's list of valid names
+        // stays (t-167 rework).
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
-            serde_json::from_value(v)
-                .map_err(|e| Error::Invalid(format!("invalid parameters: {e}")))
+            T::deserialize(&v).map_err(|e| {
+                Error::Invalid(format!(
+                    "{}{}",
+                    tiza_core::redact::INVALID_PARAMETERS,
+                    tiza_core::redact::serde_message(&e, &v)
+                ))
+            })
         }
         Ok(match method {
             // Plain "pong": `status` already carries `protocol`.
@@ -4830,7 +4839,7 @@ impl App {
                 }
                 if let Some(c) = get("color") {
                     if self.theme.named_color(&c).is_none() {
-                        return Err(Error::Invalid(format!("unknown color: {c}")));
+                        return Err(Error::Invalid(unknown_color()));
                     }
                     st.color = Some(c);
                 }
@@ -4984,16 +4993,20 @@ impl App {
                     Some(other) => match Self::parse_theme_name(other) {
                         Some(name) => self.set_theme_name(name, true),
                         None => {
-                            return Err(Error::Invalid(format!(
-                                "unknown theme: {other} (dark, light, terminal, auto, toggle)"
-                            )));
+                            return Err(Error::Invalid(
+                                "unknown theme (dark, light, terminal, auto, toggle)".to_string(),
+                            ));
                         }
                     },
                 }
                 self.touch();
                 json!({"theme": self.theme.name, "auto": self.theme_auto, "revision": self.revision})
             }
-            other => return Err(Error::Invalid(format!("unknown method: {other}"))),
+            _ => {
+                return Err(Error::Invalid(
+                    "unknown method (`api.methods` lists them)".into(),
+                ));
+            }
         })
     }
 
@@ -5189,12 +5202,20 @@ fn opt(s: &str) -> Option<String> {
     }
 }
 
+/// The error for a color that is neither a palette name nor `#rrggbb`:
+/// it lists the valid names and never repeats the one given (t-167
+/// rework: a closed value's error quotes nothing the caller wrote).
+fn unknown_color() -> String {
+    format!(
+        "unknown color (use {} or #rrggbb)",
+        tiza_core::theme::PALETTE.join(", ")
+    )
+}
+
 /// `fill|underline|brackets|strike` → [`Emphasis`], with the options on error.
 fn parse_emphasis(v: &str) -> Result<Emphasis, Error> {
     Emphasis::parse(v).ok_or_else(|| {
-        Error::Invalid(format!(
-            "unknown emphasis: {v} (fill, underline, brackets, strike)"
-        ))
+        Error::Invalid("unknown emphasis (fill, underline, brackets, strike)".to_string())
     })
 }
 
@@ -5614,29 +5635,24 @@ pub fn apply_border_kv(
     match k {
         "border" | "stroke" => {
             bs.border = Stroke::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown border: {v} (use {})",
-                    Stroke::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown border (use {})", Stroke::NAMES.join(", ")))
             })?
         }
         "corners" | "route" => {
             bs.corners = Route::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown corners: {v} (use {})",
-                    Route::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown corners (use {})", Route::NAMES.join(", ")))
             })?
         }
         "fill" => {
-            bs.fill = Some(BorderStyle::parse_fill(v).ok_or_else(|| {
-                Error::Invalid(format!("fill must be yes|tint or no|none, got {v}"))
-            })?)
+            bs.fill = Some(
+                BorderStyle::parse_fill(v)
+                    .ok_or_else(|| Error::Invalid("fill must be yes|tint or no|none".into()))?,
+            )
         }
-        other => {
-            return Err(Error::Invalid(format!(
-                "unknown key: {other} (border, corners, fill)"
-            )));
+        _ => {
+            return Err(Error::Invalid(
+                "unknown key (border, corners, fill)".to_string(),
+            ));
         }
     }
     Ok(())
@@ -5648,18 +5664,12 @@ pub fn apply_line_kv(ls: &mut tiza_core::model::LineStyle, k: &str, v: &str) -> 
     match k {
         "stroke" => {
             ls.stroke = Stroke::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown stroke: {v} (use {})",
-                    Stroke::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown stroke (use {})", Stroke::NAMES.join(", ")))
             })?
         }
         "route" => {
             ls.route = Route::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown route: {v} (use {})",
-                    Route::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown route (use {})", Route::NAMES.join(", ")))
             })?
         }
         "heads" => {
@@ -5672,24 +5682,18 @@ pub fn apply_line_kv(ls: &mut tiza_core::model::LineStyle, k: &str, v: &str) -> 
         }
         "start" => {
             ls.heads.start = Head::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown head: {v} (use {})",
-                    Head::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown {k} head (use {})", Head::NAMES.join(", ")))
             })?
         }
         "end" => {
             ls.heads.end = Head::parse(v).ok_or_else(|| {
-                Error::Invalid(format!(
-                    "unknown head: {v} (use {})",
-                    Head::NAMES.join(", ")
-                ))
+                Error::Invalid(format!("unknown {k} head (use {})", Head::NAMES.join(", ")))
             })?
         }
-        other => {
-            return Err(Error::Invalid(format!(
-                "unknown key: {other} (stroke, route, heads, start, end)"
-            )));
+        _ => {
+            return Err(Error::Invalid(
+                "unknown key (stroke, route, heads, start, end)".to_string(),
+            ));
         }
     }
     Ok(())

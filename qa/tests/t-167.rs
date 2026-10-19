@@ -23,6 +23,23 @@
 //!   any piece of 4+ characters of the masked value and holds none.
 //! - AC3 This file; CHANGELOG (Fixed).
 //!
+//! Rework 1 (QA 21:50 on 08d0da6, with t-174's rework point 2):
+//! - R1 A closed value that is none of its names (a color, `border`,
+//!   `corners`, `stroke`, `route`, a head, `emphasis`, `placement`, a mark
+//!   `kind`, `theme`, a move's `action`/`op`/`typing`/`position`/`lines`,
+//!   a method or command name) is answered with the valid names only, never
+//!   with what was sent, redact or not: the 31 MCP tools, the socket
+//!   methods and the `:` bar, also for a lowercase piece (`mango-quartz`)
+//!   of a masked lowercase value (`zebra-mango-quartz`).
+//! - R2 serde's list of valid names (`expected one of `highlight`, `box`,
+//!   …`) is not filtered; only the value received is.
+//! - R3 A target that matches nothing reads like `tiza check`: `move #2,
+//!   step 3: find «…» matches nothing in the code at this step` (quoted
+//!   text without redacts), on load and from `move.add`.
+//! - Decisions: `annotation … does not exist` stays «…» on a document with
+//!   redacts (quoting ids that share no piece with the value would be the
+//!   id oracle of t-179); `:list` elides move targets like markers.
+//!
 //! Corner cases: a target that only partly overlaps the mask is «…» too;
 //! a document without redacts keeps quoting its targets as before.
 //!
@@ -40,6 +57,9 @@ use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
 
 const VALUE: &str = "abc123SECRETxyz789";
 const ELIDED: &str = "«…»";
+/// The load error of the card's repro, in the words of `tiza check`
+/// (rework, point 3).
+const MOVE2_ELIDED: &str = "move #2, step 3: find «…» matches nothing in the code at this step";
 
 fn code() -> Vec<String> {
     vec![
@@ -183,7 +203,7 @@ fn ac1_render_and_check_of_the_card_repro_say_elided() {
     let f = fixture("t-167/w-redact.tiza");
     let f = f.to_str().unwrap();
     let e = stderr(&["render", f, "--out", "-"]);
-    assert!(e.contains("find «…» (move #2, step 3)"), "{e}");
+    assert!(e.contains(MOVE2_ELIDED), "{e}");
     assert_clean("tiza render", &e);
     let out = tiza(&["check", f]);
     let report =
@@ -236,7 +256,10 @@ fn corner_without_redacts_load_errors_still_quote_the_target() {
     let m = patch(json!({"op": "replace", "find": "NOWHERE123", "content": "x"}));
     let p = write(&dir, "nowhere", &document(false, vec![m]));
     let e = stderr(&["render", p.to_str().unwrap(), "--out", "-"]);
-    assert!(e.contains("find «NOWHERE123» (move #1, step 2)"), "{e}");
+    assert!(
+        e.contains("move #1, step 2: find «NOWHERE123» matches nothing in the code at this step"),
+        "{e}"
+    );
     let m = patch(
         json!({"op": "replace", "find_start": "region", "find_end": "SECRETxyz789", "content": "x"}),
     );
@@ -270,7 +293,7 @@ print("PLAIN", plain(raw).replace("\n", " "))
         ],
     );
     assert!(out.contains("RAW_CLEAN"), "{out}");
-    assert!(out.contains("find «…» (move #2, step 3)"), "{out}");
+    assert!(out.contains(MOVE2_ELIDED), "{out}");
 }
 
 // ---------- AC1/AC2: socket and MCP echoes ----------
@@ -890,6 +913,570 @@ fn review7_pieces_quoted_any_other_way_are_taken_out() {
         json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "sk_live_51Hx9QeLkT2mNpR8vWzYa"}),
     );
     assert!(msg.contains("looks like a secret"), "{msg}");
+}
+
+// ---------- Rework 1 (QA 21:50, coordinator 20:15; t-174 rework point 2) ----------
+//
+// A closed value (a parameter with a fixed set of names) that is not one
+// of them is answered with the valid names and never with what was sent,
+// redact or not, on every channel: the 31 MCP tools, the socket methods
+// and the `:` bar. Three instances: no redact, the card's redact, and a
+// masked value made of lowercase words (`zebra-mango-quartz`, sending
+// `mango-quartz`: the message's lowercase-word exception let it through).
+
+/// What is sent as a closed value: a plain canary, a piece of the card's
+/// value and a lowercase piece of [`LOWER`].
+const CANARY: &str = "Zq7Canary9x";
+const LOWER: &str = "zebra-mango-quartz";
+const LOWER_PIECE: &str = "mango-quartz";
+
+/// Every MCP tool (the test fails when one is added, so its parameters get
+/// classified below).
+const TOOLS: [&str; 31] = [
+    "add_arrow",
+    "add_box",
+    "add_callout",
+    "add_mark",
+    "add_move",
+    "add_note",
+    "add_spotlight",
+    "check",
+    "clear_annotations",
+    "clear_pointer",
+    "define_style",
+    "delete_annotation",
+    "delete_move",
+    "export_image",
+    "get_code",
+    "goto_step",
+    "highlight",
+    "list_annotations",
+    "list_kinds",
+    "list_moves",
+    "next_step",
+    "point_at",
+    "prev_step",
+    "redact",
+    "render_text",
+    "set_focus",
+    "set_follow",
+    "set_step",
+    "set_theme",
+    "status",
+    "update_annotation",
+];
+
+/// Parameters that take free text (a target, a label, an id, a path):
+/// their echo is the subject of AC1 (targets) and t-174 (labels), and they
+/// are swept with values by t-175's canary.
+const FREE: [&str; 21] = [
+    "label",
+    "text",
+    "title",
+    "id",
+    "find",
+    "find_start",
+    "find_end",
+    "after",
+    "before",
+    "content",
+    "file",
+    "path",
+    "name",
+    "glyph",
+    "legend",
+    "ids",
+    "at",
+    "from",
+    "to",
+    "rebind",
+    "style",
+];
+
+/// (tool, closed parameter, a valid call it is put into).
+fn mcp_closed(dir: &Path) -> Vec<(&'static str, &'static str, Value)> {
+    let png = dir.join("x.txt").to_str().unwrap().to_string();
+    let arrow = json!({"from": {"line": 1}, "to": {"line": 4}});
+    let boxed = json!({"from_line": 1, "to_line": 4});
+    let callout = json!({"from_line": 1, "to_line": 4, "text": "hi"});
+    let mark = json!({"kind": "move", "at": {"line": 4}});
+    let mv = json!({"at_step": 2, "op": "insert", "position": "4", "content": "x=1"});
+    let hl = json!({"at": {"line": 4}});
+    let mut out = Vec::new();
+    for p in ["color", "stroke", "route", "head_start", "head_end"] {
+        out.push(("add_arrow", p, arrow.clone()));
+    }
+    for p in ["color", "border", "corners"] {
+        out.push(("add_box", p, boxed.clone()));
+    }
+    for p in ["color", "border", "corners", "placement"] {
+        out.push(("add_callout", p, callout.clone()));
+    }
+    for p in ["color", "emphasis", "kind"] {
+        out.push(("add_mark", p, mark.clone()));
+    }
+    for p in ["action", "op", "typing", "position", "lines"] {
+        let mut base = mv.clone();
+        if p == "lines" {
+            base = json!({"at_step": 2, "action": "code.link", "file": "other.ini"});
+        }
+        out.push(("add_move", p, base));
+    }
+    out.push(("add_note", "color", json!({"line": 1, "text": "n"})));
+    out.push((
+        "define_style",
+        "color",
+        json!({"name": "st1", "glyph": "*"}),
+    ));
+    out.push(("export_image", "theme", json!({"path": png})));
+    for p in ["color", "emphasis"] {
+        out.push(("highlight", p, hl.clone()));
+    }
+    out.push(("set_theme", "theme", json!({})));
+    for (id, ps) in [
+        ("h1", &["color", "emphasis"][..]),
+        ("b1", &["border", "corners"][..]),
+        ("a1", &["stroke", "route", "head_start", "head_end"][..]),
+    ] {
+        for p in ps {
+            out.push(("update_annotation", p, json!({"id": id})));
+        }
+    }
+    out
+}
+
+/// A document whose line 2 is `token=<value>`, masked (or not), with a
+/// highlight h1, a box b1 and an arrow a1 to update.
+fn live_valued(value: &str, redacted: bool, name: &str) -> Live {
+    let dir = scratch(name);
+    let mut anns = vec![
+        highlight(),
+        json!({"id": "b1", "step": 1, "type": "box", "from_line": 1, "to_line": 4}),
+        json!({"id": "a1", "step": 1, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}}),
+    ];
+    if redacted {
+        let end = 6 + value.chars().count();
+        anns.insert(
+            0,
+            json!({"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": end}}),
+        );
+    }
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "ini", "first_line": 1},
+        "code": ["[api]", format!("token={value}"), "region=eu-west-1", "port=8080"],
+        "annotations": anns,
+    });
+    let doc = tiza_core::fs::parse_document(&doc.to_string(), None).unwrap();
+    // A file `code.link` can show, for its `lines`.
+    std::fs::write(dir.join("other.ini"), "a=1\nb=2\n").unwrap();
+    Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"))
+}
+
+/// The three instances and what each sends as a closed value.
+fn closed_instances(tag: &str) -> Vec<(Live, Vec<&'static str>, &'static str)> {
+    vec![
+        (
+            live_valued(VALUE, false, &format!("t167-{tag}-plain")),
+            vec![CANARY],
+            VALUE,
+        ),
+        (
+            live_valued(VALUE, true, &format!("t167-{tag}-redact")),
+            vec![CANARY, "SECRETxyz789"],
+            VALUE,
+        ),
+        (
+            live_valued(LOWER, true, &format!("t167-{tag}-lower")),
+            vec![LOWER_PIECE, CANARY],
+            LOWER,
+        ),
+    ]
+}
+
+/// Neither `sent` nor any piece of 4 characters of it (nor of the masked
+/// value) is in `msg`.
+#[track_caller]
+fn assert_no_echo(what: &str, msg: &str, sent: &str, value: &str) {
+    for s in [sent, value] {
+        let c: Vec<char> = s.chars().collect();
+        for i in 0..=c.len().saturating_sub(4) {
+            let p: String = c[i..(i + 4).min(c.len())].iter().collect();
+            assert!(!msg.contains(&p), "{what} repeats «{p}» of «{s}»:\n{msg}");
+        }
+    }
+}
+
+#[test]
+fn rework1_every_mcp_tool_answers_a_closed_value_without_repeating_it() {
+    let dir = scratch("t167-rw1-mcp");
+    for (live, sent, value) in closed_instances("rw1-mcp") {
+        let mut mcp = McpClient::start(&live.socket);
+        // Every tool and every string parameter is classified.
+        let tools = mcp.tools();
+        let tools = tools.as_array().expect("tools");
+        let mut names: Vec<String> = tools
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_string())
+            .collect();
+        names.sort();
+        assert_eq!(
+            names,
+            TOOLS.to_vec(),
+            "the MCP tools changed: classify the new one"
+        );
+        let closed = mcp_closed(&dir);
+        for t in tools {
+            let name = t["name"].as_str().unwrap();
+            let props = t["inputSchema"]["properties"]
+                .as_object()
+                .cloned()
+                .unwrap_or_default();
+            for (p, schema) in &props {
+                let stringy = schema.to_string().contains("\"string\"")
+                    || schema.get("$ref").is_some()
+                    || schema.get("anyOf").is_some();
+                if !stringy {
+                    continue;
+                }
+                let known = FREE.contains(&p.as_str())
+                    || closed.iter().any(|(tl, cp, _)| *tl == name && cp == p)
+                    || (name == "goto_step" && p == "id");
+                assert!(known, "{name}.{p}: classify it as free text or closed");
+            }
+        }
+        for (tool, param, base) in &closed {
+            for v in &sent {
+                let mut args = base.clone();
+                args[*param] = json!(v);
+                let (is_err, text, raw) = mcp.call(tool, args.clone());
+                assert!(is_err, "{tool} {args}: accepted ({raw})");
+                assert_no_echo(&format!("MCP {tool}.{param}"), &text, v, value);
+                assert!(
+                    text.contains("unknown") || text.contains("use ") || text.contains("expected"),
+                    "{tool}.{param}: the valid names are not said: {text}"
+                );
+            }
+        }
+        // An unknown resource: the URI asked is not repeated either.
+        let r = mcp.request(
+            "resources/read",
+            json!({"uri": format!("tiza://{}", sent[0])}),
+        );
+        assert_no_echo("resources/read", &r.to_string(), sent[0], value);
+    }
+}
+
+/// (method, params with `V` where the closed value goes).
+fn socket_closed() -> Vec<(&'static str, Value)> {
+    let v = json!("V");
+    vec![
+        ("annotation.add", json!({"type": v, "at": {"line": 4}})),
+        (
+            "annotation.add",
+            json!({"type": "highlight", "at": {"line": 4}, "color": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "highlight", "at": {"line": 4}, "emphasis": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "mark", "kind": v, "at": {"line": 4}}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "mark", "kind": "move", "at": {"line": 4}, "emphasis": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "arrow", "from": {"line": 1}, "to": {"line": 4}, "stroke": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "arrow", "from": {"line": 1}, "to": {"line": 4}, "route": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "arrow", "from": {"line": 1}, "to": {"line": 4}, "heads": {"start": v}}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "arrow", "from": {"line": 1}, "to": {"line": 4}, "heads": {"end": v}}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "box", "from_line": 1, "to_line": 4, "border": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "box", "from_line": 1, "to_line": 4, "corners": v}),
+        ),
+        (
+            "annotation.add",
+            json!({"type": "callout", "from_line": 1, "to_line": 4, "text": "x", "placement": v}),
+        ),
+        ("annotation.update", json!({"id": "h1", "color": v})),
+        ("annotation.update", json!({"id": "h1", "emphasis": v})),
+        ("annotation.update", json!({"id": "b1", "border": v})),
+        ("annotation.update", json!({"id": "b1", "corners": v})),
+        ("annotation.update", json!({"id": "a1", "stroke": v})),
+        ("annotation.update", json!({"id": "a1", "route": v})),
+        (
+            "annotation.update",
+            json!({"id": "a1", "heads": {"start": v}}),
+        ),
+        (
+            "annotation.update",
+            json!({"id": "a1", "heads": {"end": v}}),
+        ),
+        (
+            "annotation.update",
+            json!({"id": "h1", "shape": {"type": v, "at": {"line": 4}}}),
+        ),
+        ("scene.patch", json!({"theme": v})),
+        (
+            "scene.patch",
+            json!({"annotations": [{"id": "n9", "step": 1, "type": v, "line": 1}]}),
+        ),
+        (
+            "scene.patch",
+            json!({"annotations": [{"id": "n9", "step": 1, "type": "box", "from_line": 1, "to_line": 4, "border": v}]}),
+        ),
+        ("move.add", json!({"at_step": 2, "action": v})),
+        (
+            "move.add",
+            json!({"at_step": 2, "action": "code.patch", "op": v, "position": "4", "content": "x"}),
+        ),
+        (
+            "move.add",
+            json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "4", "content": "x", "typing": v}),
+        ),
+        (
+            "move.add",
+            json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": v, "content": "x"}),
+        ),
+        (
+            "move.add",
+            json!({"at_step": 2, "action": "code.link", "file": "other.ini", "lines": v}),
+        ),
+        ("theme.set", json!({"theme": v})),
+        (
+            "style.set",
+            json!({"name": "st1", "glyph": "*", "color": v}),
+        ),
+        ("V", json!({})),
+    ]
+}
+
+/// `V` in `params` (and as the method) replaced by `sent`.
+fn with_value(method: &str, params: &Value, sent: &str) -> (String, Value) {
+    let p: Value = serde_json::from_str(
+        &params
+            .to_string()
+            .replace("\"V\"", &json!(sent).to_string()),
+    )
+    .unwrap();
+    (method.replace('V', sent), p)
+}
+
+#[test]
+fn rework1_socket_methods_answer_a_closed_value_without_repeating_it() {
+    for (live, sent, value) in closed_instances("rw1-socket") {
+        for (method, params) in socket_closed() {
+            for s in &sent {
+                let (m, p) = with_value(method, &params, s);
+                let (_, msg) = err(&live, &m, p.clone());
+                assert_no_echo(&format!("{m} {params}"), &msg, s, value);
+            }
+        }
+        // scene.put of a document with a closed value that is not one.
+        let mut doc = live.api_ok("scene.get", json!({}))["document"].clone();
+        for s in &sent {
+            doc["theme"] = json!(s);
+            let (_, msg) = err(&live, "scene.put", json!({"document": doc.clone()}));
+            assert_no_echo("scene.put theme", &msg, s, value);
+            assert!(msg.contains("`dark`, `light`"), "{msg}");
+        }
+    }
+}
+
+#[test]
+fn rework1_the_bar_answers_a_closed_value_without_repeating_it() {
+    for (live, sent, value) in closed_instances("rw1-bar") {
+        for s in &sent {
+            for cmd in [
+                format!("theme {s}"),
+                format!("hl 4 emphasis={s}"),
+                format!("box 1-4 border={s}"),
+                format!("box 1-4 corners={s}"),
+                format!("box 1-4 fill={s}"),
+                format!("arrow 1 4 stroke={s}"),
+                format!("arrow 1 4 route={s}"),
+                format!("arrow 1 4 start={s}"),
+                format!("arrow 1 4 end={s}"),
+                format!("style st1 glyph=* color={s}"),
+                format!("mark {s} 4"),
+                format!("hl 4 {s}=1"),
+                format!("follow {s}"),
+                s.to_string(),
+            ] {
+                live.command(&cmd);
+                let m = format!("{:?}", live.message());
+                assert!(m.contains("true"), ":{cmd} was not an error: {m}");
+                assert_no_echo(&format!(":{cmd}"), &m, s, value);
+            }
+        }
+    }
+}
+
+// ---------- Rework 2: serde's list of valid names stays whole ----------
+
+#[test]
+fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
+    let dir = scratch("t167-rw2");
+    let target = live(false, "t167-rw2-live");
+    let sock = target.socket.to_str().unwrap().to_string();
+    let types = "expected one of `highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `redact`, `spotlight`";
+    let actions = "expected one of `code.patch`, `code.link`, `cursor`, `select`, `wait`";
+    let ops = "expected one of `insert`, `replace`, `delete`";
+    // The document says `box`, `note` and `redact` itself: they stay.
+    let extra = vec![
+        json!({"id": "b2", "step": 1, "type": "box", "from_line": 1, "to_line": 2}),
+        json!({"id": "n2", "step": 1, "type": "note", "line": 1, "text": "x"}),
+    ];
+    for (name, ann, mv, want) in [
+        (
+            "type",
+            Some(json!({"id": "z1", "step": 1, "type": "SECRETxyz789", "line": 1})),
+            None,
+            types,
+        ),
+        (
+            "action",
+            None,
+            Some(json!({"at_step": 2, "action": "SECRETxyz789"})),
+            actions,
+        ),
+        (
+            "op",
+            None,
+            Some(patch(
+                json!({"op": "SECRETxyz789", "find": "port", "content": "x"}),
+            )),
+            ops,
+        ),
+        (
+            "plain-op",
+            None,
+            Some(patch(json!({"op": "zap", "find": "port", "content": "x"}))),
+            ops,
+        ),
+    ] {
+        let mut doc = document(true, mv.into_iter().collect());
+        let anns = doc["annotations"].as_array_mut().unwrap();
+        anns.extend(extra.clone());
+        anns.extend(ann);
+        let p = write(&dir, name, &doc);
+        let ps = p.to_str().unwrap();
+        let e = stderr(&["render", ps, "--out", "-"]);
+        assert!(e.contains(want), "{name}: render: {e}");
+        assert!(e.contains("unknown variant «…»"), "{name}: render: {e}");
+        assert_clean(&format!("{name}: render"), &e);
+        let out = tiza(&["check", ps]);
+        let report = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr);
+        assert!(report.contains(want), "{name}: check: {report}");
+        let e = stderr(&["--socket", &sock, "scene", "put", ps]);
+        assert!(e.contains(want), "{name}: tiza scene put: {e}");
+        let (_, msg) = err(&target, "scene.put", json!({"document": doc}));
+        assert!(msg.contains(want), "{name}: scene.put: {msg}");
+    }
+    // Over the socket, on an instance with redacts: the patch says `box`.
+    let live = live(true, "t167-rw2-socket");
+    let (_, msg) = err(
+        &live,
+        "scene.patch",
+        json!({"annotations": [
+            {"id": "b3", "step": 1, "type": "box", "from_line": 1, "to_line": 2},
+            {"id": "z3", "step": 1, "type": "SECRETxyz789", "line": 1}
+        ]}),
+    );
+    assert!(msg.contains(types), "{msg}");
+    assert_clean("scene.patch", &msg);
+}
+
+// ---------- Rework 3: the load error in the words of `tiza check` ----------
+
+#[test]
+fn rework3_a_move_that_matches_nothing_reads_like_tiza_check() {
+    let dir = scratch("t167-rw3");
+    for (redacted, find, quoted) in [(true, VALUE, ELIDED), (false, "NOWHERE123", "«NOWHERE123»")]
+    {
+        let m = patch(json!({"op": "replace", "find": find, "content": "x"}));
+        let p = write(&dir, &format!("r{redacted}"), &document(redacted, vec![m]));
+        let ps = p.to_str().unwrap();
+        let want = format!(
+            "could not open {ps}: move #1, step 2: find {quoted} matches nothing in the code at this step"
+        );
+        let e = stderr(&["render", ps, "--out", "-"]);
+        assert!(e.contains(&want), "{e}");
+        assert!(!e.contains("text \""), "{e}");
+        let out = tiza(&["check", ps]);
+        let report = String::from_utf8_lossy(&out.stdout).into_owned();
+        assert!(
+            report.contains(&format!(
+                "move #1, step 2: find {quoted} matches nothing in the code at this step"
+            )),
+            "{report}"
+        );
+        // The socket's move.add, same words.
+        let live = live(redacted, &format!("t167-rw3-{redacted}"));
+        let mut mv = patch(json!({"op": "replace", "find": find, "content": "x"}));
+        mv["at_step"] = json!(1);
+        let (code, msg) = err(&live, "move.add", mv);
+        assert_eq!(code, "text_not_found");
+        assert_eq!(
+            msg,
+            format!("move #1, step 1: find {quoted} matches nothing in the code at this step")
+        );
+    }
+    // A marker that matches nothing is a phrase too, not a quoted text.
+    let live = live(false, "t167-rw3-marker");
+    let (_, msg) = err(
+        &live,
+        "annotation.add",
+        json!({"type": "box", "find_start": "NOWHERE123", "find_end": "port"}),
+    );
+    assert_eq!(msg, "start marker «NOWHERE123» matches nothing in the code");
+}
+
+// ---------- Rework, optional: `:list` and the id of a missing annotation ----------
+
+#[test]
+fn rework_optional_list_elides_move_targets_like_markers() {
+    let live = live(true, "t167-rwo");
+    live.api_ok(
+        "move.add",
+        patch(json!({"at_step": 2, "op": "replace", "find": "region=eu-west-1", "content": "region=x"})),
+    );
+    live.command("list");
+    let screen = live.screen(120, 30);
+    assert!(screen.contains("code.patch replace «…»"), "{screen}");
+    let row = screen.lines().find(|l| l.contains("code.patch")).unwrap();
+    assert!(!row.contains("region"), "{row}");
+    let moves = live.api_ok("move.list", json!({})).to_string();
+    assert!(moves.contains("replace «…»"), "{moves}");
+    // Decision: a missing id stays «…» on a document with redacts —
+    // quoting it unless it shares a piece with the value would answer
+    // which pieces do (the id oracle t-179 tracks).
+    let (code, msg) = err(
+        &live,
+        "annotation.update",
+        json!({"id": "zz9", "color": "red"}),
+    );
+    assert_eq!(code, "not_found");
+    assert!(!msg.contains("zz9"), "{msg}");
 }
 
 #[test]

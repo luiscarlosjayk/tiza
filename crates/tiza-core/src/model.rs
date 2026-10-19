@@ -2048,7 +2048,7 @@ impl Document {
                 check_span(span)?;
                 if self.resolve_style(kind, style).is_none() {
                     return Err(Error::Invalid(format!(
-                        "unknown mark kind: {kind} (use one of {}, a style from this document, or an inline style with a glyph)",
+                        "unknown mark kind (use one of {}, a style from this document, or an inline style with a glyph)",
                         BUILTIN_KINDS
                             .iter()
                             .map(|(k, ..)| *k)
@@ -2285,7 +2285,7 @@ impl Document {
         }
         let s = self
             .find_text(start, 1, None)
-            .ok_or_else(|| Error::TextNotFound(format!("start marker «{start}»")))?;
+            .ok_or_else(|| Error::NoMatch(format!("start marker «{start}»")))?;
         // Same line, after the start text?
         if let Some(t) = self.line_text(s.line)
             && let Some(byte_end) = grapheme_byte_offset(t, s.end)
@@ -2304,7 +2304,7 @@ impl Document {
                 s.line
             )));
         }
-        Err(Error::TextNotFound(format!(
+        Err(Error::NoMatch(format!(
             "end marker «{end}» (after line {})",
             s.line
         )))

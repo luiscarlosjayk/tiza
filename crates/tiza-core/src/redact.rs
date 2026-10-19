@@ -1398,6 +1398,25 @@ pub fn document_targets(doc: &Document) -> Vec<String> {
 /// What is left of a quoted target in an error or an echo (t-167).
 pub const ELIDED: &str = "«…»";
 
+/// How a socket error for parameters that do not deserialize starts: the
+/// rest is serde's message, filtered with [`Echo::serde_text`].
+pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
+
+/// Whether an `invalid_argument` message carries serde's words (socket
+/// parameters, a `scene.patch` annotation) and so serde's list of valid
+/// names, which [`Echo::serde_text`] keeps.
+fn is_serde_message(s: &str) -> bool {
+    s.starts_with(INVALID_PARAMETERS)
+        || [
+            "unknown variant ",
+            "unknown field ",
+            "invalid type: ",
+            "invalid value: ",
+        ]
+        .iter()
+        .any(|m| s.contains(m))
+}
+
 /// The one filter for an error or an echo that can quote a target text
 /// the agent or the document wrote (t-167): `find`, `after`, `before`,
 /// `find_start`/`find_end`, `select`, `rebind`, range markers, `at.find`,
@@ -1844,19 +1863,29 @@ impl Echo {
 
     /// The copy rule on an error's tokens: a token (a run of
     /// [`token_char`]s) holding a piece of a masked value goes, except a
-    /// plain lowercase word — the message's own words (`looks like a
-    /// secret`) may share a piece with a value. A whole copy goes anyway.
+    /// plain lowercase word of the message's own template (`looks like a
+    /// secret`), which may share a piece with a value. A whole copy goes
+    /// anyway, and so does a plain word the request, the command line or
+    /// the document wrote (t-167 rework, t-174 rework point 2: `mango-quartz`
+    /// of a masked `zebra-mango-quartz`) — only Tiza's fixed words stay.
     fn take_out_tokens(&self, text: &str) -> String {
         if self.values.is_empty() {
             return text.to_string();
         }
+        let written_word = |tok: &str| {
+            self.doc_words.iter().any(|w| w == tok)
+                || self
+                    .written
+                    .iter()
+                    .any(|t| t.split(|c: char| !token_char(c)).any(|w| w == tok))
+        };
         let out = self.take_out(text, true);
         let mut res = String::with_capacity(out.len());
         let mut tok = String::new();
         let flush = |tok: &mut String, res: &mut String| {
             if !tok.is_empty() {
-                let hit =
-                    !plain_word(tok) && self.values.iter().any(|v| !value_hits(tok, v).is_empty());
+                let hit = (!plain_word(tok) || written_word(tok))
+                    && self.values.iter().any(|v| !value_hits(tok, v).is_empty());
                 res.push_str(if hit { "…" } else { tok });
                 tok.clear();
             }
@@ -1922,6 +1951,33 @@ impl Echo {
         self.take_out_tokens(&out)
     }
 
+    /// [`Echo::text`] on a serde message (`unknown variant `x`, expected
+    /// one of `highlight`, `box`, …`), keeping serde's list of what it
+    /// expected (t-167 rework): those are Tiza's own fixed names, and
+    /// filtering them as written texts (the document says `"box"`) made the
+    /// message claim `box` is not valid. Only the part before the last
+    /// `, expected ` holds the value received, and it is filtered whole; in
+    /// the list a plain lowercase name stays even when written, everything
+    /// else goes through the filter as usual (a value is always before
+    /// serde's own `expected`, so the last one is serde's).
+    pub fn serde_text(&self, msg: &str) -> String {
+        if !self.active {
+            return msg.to_string();
+        }
+        let Some(k) = msg.rfind(", expected ") else {
+            return self.text(msg);
+        };
+        let (head, tail) = msg.split_at(k);
+        // serde's list never holds a Tiza quote: a tail that does is a
+        // written text that happens to say `, expected ` — filtered whole.
+        if tail.contains(['«', '»', '"']) {
+            return self.text(msg);
+        }
+        let mut names = self.clone();
+        names.written.retain(|t| !plain_word(t));
+        format!("{}{}", self.text(head), names.text(tail))
+    }
+
     /// [`Echo::text`] on the message of an error, keeping its kind (and
     /// so its `code`).
     pub fn error(&self, e: Error) -> Error {
@@ -1932,17 +1988,35 @@ impl Echo {
             // Without a «…» quote the message is the bare `find` itself.
             Error::TextNotFound(s) if !s.contains('«') => Error::TextNotFound("…".into()),
             Error::TextNotFound(s) => Error::TextNotFound(self.text(&s)),
+            Error::NoMatch(s) => Error::NoMatch(self.text(&s)),
+            Error::MoveNoMatch { index, step, what } => Error::MoveNoMatch {
+                index,
+                step,
+                what: self.text(&what),
+            },
+            // serde's own list of valid names stays (t-167 rework).
+            Error::Invalid(s) if is_serde_message(&s) => Error::Invalid(self.serde_text(&s)),
             Error::Invalid(s) => Error::Invalid(self.text(&s)),
             Error::StepNotFound(s) => Error::StepNotFound(self.text(&s)),
             Error::NotFound(s) => Error::NotFound(self.text(&s)),
             Error::DuplicateId(s) => Error::DuplicateId(self.text(&s)),
             // serde quotes the values it could not read (`invalid type:
             // string "…"`, `unknown variant `…``).
-            Error::Json(j) => Error::JsonText(self.text(&j.to_string())),
-            Error::JsonText(s) => Error::JsonText(self.text(&s)),
+            Error::Json(j) => Error::JsonText(self.serde_text(&j.to_string())),
+            Error::JsonText(s) => Error::JsonText(self.serde_text(&s)),
             other => other,
         }
     }
+}
+
+/// serde's message for a request value it could not read, without the
+/// values the request wrote, with or without redacts (t-167 rework: a
+/// closed value's error never repeats what was sent; serde's list of valid
+/// names stays). For socket parameters and `scene.patch` annotations.
+pub fn serde_message(e: &serde_json::Error, request: &serde_json::Value) -> String {
+    Echo::closed()
+        .written(json_strings(request))
+        .serde_text(&e.to_string())
 }
 
 /// Every string in a JSON value (the texts an agent's request wrote).
@@ -1996,6 +2070,39 @@ mod tests {
                 pin: None,
             },
         }
+    }
+
+    #[test]
+    fn echo_keeps_serdes_list_and_masks_written_lowercase_pieces() {
+        // t-167 rework point 2: the document says `box`; serde's list stays.
+        let mut d = doc("token=zebra-mango-quartz\nport=1\n");
+        d.annotations.push(redact("r1", 1, 6, 24, 0));
+        let e = Echo::new(&d).written(["box", "note", "Zq7"]);
+        let msg =
+            "unknown variant `Zq7`, expected one of `highlight`, `box`, `note` at line 3 column 9";
+        assert_eq!(
+            e.serde_text(msg),
+            "unknown variant «…», expected one of `highlight`, `box`, `note` at line 3 column 9"
+        );
+        assert_eq!(
+            e.error(Error::Invalid(format!("{INVALID_PARAMETERS}{msg}")))
+                .to_string(),
+            format!(
+                "{INVALID_PARAMETERS}unknown variant «…», expected one of `highlight`, `box`, `note` at line 3 column 9"
+            )
+        );
+        // A tail holding a Tiza quote is not serde's: filtered whole.
+        assert_eq!(e.serde_text("find «a, expected zz» here"), "find «…» here");
+        // t-174 rework point 2: a lowercase piece of the value that the
+        // request wrote goes, unquoted or not; Tiza's own words stay.
+        let e = Echo::new(&d).written(["mango-quartz"]);
+        assert_eq!(
+            e.text("unknown theme: mango-quartz (dark, light)"),
+            "unknown theme: … (dark, light)"
+        );
+        // Without a redact the filter changes nothing.
+        let plain = doc("port=1\n");
+        assert_eq!(Echo::new(&plain).serde_text(msg), msg);
     }
 
     #[test]

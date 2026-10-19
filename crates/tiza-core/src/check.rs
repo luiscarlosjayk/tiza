@@ -353,7 +353,7 @@ fn check_text_with(
                     match guard {
                         Some(written) => crate::redact::Echo::closed()
                             .written(written)
-                            .text(&format!("does not follow the .tiza format: {e}")),
+                            .serde_text(&format!("does not follow the .tiza format: {e}")),
                         None => format!("does not follow the .tiza format: {e}"),
                     },
                 )
@@ -586,12 +586,10 @@ fn placeholder(at_step: u32) -> Move {
 fn move_message(e: crate::Error, index: usize, at_step: u32) -> String {
     let tag = format!("move #{} (step {at_step})", index + 1);
     match e {
-        crate::Error::TextNotFound(t) => {
-            let t = t
-                .strip_suffix(&format!(" (move #{}, step {at_step})", index + 1))
-                .unwrap_or(&t);
-            format!("{t} matches nothing in the code at this step")
+        crate::Error::MoveNoMatch { what, .. } => {
+            format!("{what} matches nothing in the code at this step")
         }
+        crate::Error::NoMatch(what) => format!("{what} matches nothing in the code at this step"),
         other => {
             let m = other.to_string();
             m.strip_prefix(&format!("{tag}: "))
@@ -933,7 +931,9 @@ fn check_markers(
     match d.resolve_markers(&m.start, &m.end) {
         Err(e) => {
             let mut msg = match e {
-                crate::Error::TextNotFound(t) => format!("{t} matches nothing"),
+                crate::Error::NoMatch(t) | crate::Error::TextNotFound(t) => {
+                    format!("{t} matches nothing")
+                }
                 other => other.to_string(),
             };
             if redacted {

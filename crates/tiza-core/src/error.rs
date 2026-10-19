@@ -15,8 +15,23 @@ pub enum Error {
     NotFound(String),
     #[error("an annotation with id {0} already exists")]
     DuplicateId(String),
+    /// A bare text that matches nothing (`at.find`, a `find` an agent sent).
     #[error("text {0:?} not found in the code")]
     TextNotFound(String),
+    /// A target named with its role, quoted the Tiza way (`find «x»`,
+    /// `start marker «x»`), that matches nothing (t-167: never put inside
+    /// another pair of quotes as if the phrase were the text searched).
+    #[error("{0} matches nothing in the code")]
+    NoMatch(String),
+    /// A move's target that matches nothing at its step, in the words of
+    /// `tiza check`: `move #2, step 3: find «x» matches nothing in the code
+    /// at this step` (t-167). `index` is 1-based; `what` names the target.
+    #[error("move #{index}, step {step}: {what} matches nothing in the code at this step")]
+    MoveNoMatch {
+        index: usize,
+        step: u32,
+        what: String,
+    },
     #[error("{0}")]
     Invalid(String),
     /// `step.goto` / `tiza goto` with an id no named step has (t-099).
@@ -41,7 +56,9 @@ impl Error {
             Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
             Error::NotFound(_) | Error::StepNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
-            Error::TextNotFound(_) => "text_not_found",
+            Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
+                "text_not_found"
+            }
             Error::Invalid(_) => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",

@@ -133,8 +133,10 @@ fn ac3_unknown_uri_and_no_instance_are_errors() {
     let mut mcp = McpClient::start(&live.socket);
     let v = mcp.request("resources/read", json!({"uri": "tiza://nope"}));
     let msg = v["error"]["message"].as_str().unwrap_or("");
+    // The URI asked is not repeated (t-167 rework: an unknown name among a
+    // fixed set is answered with the valid ones only).
     assert!(
-        msg.contains("tiza://nope") && msg.contains("tiza://scene"),
+        msg.contains("unknown resource") && !msg.contains("nope") && msg.contains("tiza://scene"),
         "{v}"
     );
     assert_eq!(

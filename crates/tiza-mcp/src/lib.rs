@@ -134,7 +134,7 @@ fn border_style_json(
     if let Some(b) = border {
         let v = Stroke::parse(b).ok_or_else(|| {
             McpError::invalid_params(
-                format!("unknown border: {b} (use {})", Stroke::NAMES.join(", ")),
+                format!("unknown border (use {})", Stroke::NAMES.join(", ")),
                 None,
             )
         })?;
@@ -143,7 +143,7 @@ fn border_style_json(
     if let Some(c) = corners {
         let v = Route::parse(c).ok_or_else(|| {
             McpError::invalid_params(
-                format!("unknown corners: {c} (use {})", Route::NAMES.join(", ")),
+                format!("unknown corners (use {})", Route::NAMES.join(", ")),
                 None,
             )
         })?;
@@ -164,7 +164,7 @@ fn emphasis_json(e: &Option<String>) -> Result<Option<Value>, McpError> {
             .ok_or_else(|| {
                 McpError::invalid_params(
                     format!(
-                        "unknown emphasis: {e} (use {})",
+                        "unknown emphasis (use {})",
                         tiza_core::model::Emphasis::NAMES.join(", ")
                     ),
                     None,
@@ -186,7 +186,7 @@ fn line_style_json(
     if let Some(s) = stroke {
         let v = Stroke::parse(s).ok_or_else(|| {
             McpError::invalid_params(
-                format!("unknown stroke: {s} (use {})", Stroke::NAMES.join(", ")),
+                format!("unknown stroke (use {})", Stroke::NAMES.join(", ")),
                 None,
             )
         })?;
@@ -195,7 +195,7 @@ fn line_style_json(
     if let Some(r) = route {
         let v = Route::parse(r).ok_or_else(|| {
             McpError::invalid_params(
-                format!("unknown route: {r} (use {})", Route::NAMES.join(", ")),
+                format!("unknown route (use {})", Route::NAMES.join(", ")),
                 None,
             )
         })?;
@@ -207,7 +207,7 @@ fn line_style_json(
             if let Some(v) = val {
                 let hv = Head::parse(v).ok_or_else(|| {
                     McpError::invalid_params(
-                        format!("unknown head: {v} (use {})", Head::NAMES.join(", ")),
+                        format!("unknown {key} head (use {})", Head::NAMES.join(", ")),
                         None,
                     )
                 })?;
@@ -939,9 +939,9 @@ impl TizaServer {
             None | Some("margin") => "margin",
             Some("below") => "below",
             Some("auto") => "auto",
-            Some(other) => {
+            Some(_) => {
                 return Err(McpError::invalid_params(
-                    format!("unknown placement: {other} (margin, below, auto)"),
+                    "unknown placement (margin, below, auto)",
                     None,
                 ));
             }
@@ -1248,7 +1248,7 @@ impl TizaServer {
                 "light" | "claro" => tiza_core::ThemeName::Light,
                 _ => {
                     return Err(McpError::invalid_params(
-                        format!("unknown theme: {t} (dark, light)"),
+                        "unknown theme (dark, light)",
                         None,
                     ));
                 }
@@ -1446,9 +1446,9 @@ impl TizaServer {
                 out.push_str("\n```\n");
                 Ok(out)
             }
-            other => Err(McpError::resource_not_found(
+            _ => Err(McpError::resource_not_found(
                 format!(
-                    "unknown resource {other}; available: {}",
+                    "unknown resource; available: {}",
                     RESOURCES.iter().map(|r| r.0).collect::<Vec<_>>().join(", ")
                 ),
                 None,
@@ -1486,7 +1486,7 @@ impl ServerHandler for TizaServer {
                 if let rmcp::model::ContentBlock::Text(t) = c
                     && t.text.starts_with("failed to deserialize parameters")
                 {
-                    t.text = echo.text(&t.text);
+                    t.text = echo.serde_text(&t.text);
                 }
             }
         }

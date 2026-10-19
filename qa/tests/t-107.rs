@@ -154,7 +154,9 @@ fn ac2_unknown_command_tells_the_presenter_and_expires_by_itself() {
     live.type_text(":foo");
     live.keys(&[KeyCode::Enter]);
     let row = last_row(&live, 70, 14);
-    assert!(row.starts_with(" unknown command: foo"), "{row:?}");
+    // The name typed is not repeated (t-167 rework).
+    assert!(row.starts_with(" unknown command"), "{row:?}");
+    assert!(!row.contains("foo"), "{row:?}");
     // Drawn as an error (the theme's error color, bold).
     let (_, styles) = live.snapshot(70, 14);
     let err = live.with(|a| a.theme.error);

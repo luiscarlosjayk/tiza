@@ -99,13 +99,13 @@ fn ac4_ac5_ac6_ac8_table_of_typos_is_rejected_with_a_way_forward() {
         ("lang rs rs rs", "usage: :lang ID"),
         (
             "callout 7-9 @bogus txt",
-            "unknown placement @bogus: use @below, @margin or @auto",
+            "unknown placement: use @below, @margin or @auto",
         ),
         // AC7: nearest command
-        ("bx 3-5", "unknown command: bx — did you mean :box?"),
+        ("bx 3-5", "unknown command — did you mean :box?"),
         ("stpe 2", "did you mean :step, :style?"),
         ("colr a1 red", "did you mean :color?"),
-        ("zzzzzz", "unknown command: zzzzzz (try :help)"),
+        ("zzzzzz", "unknown command (try :help)"),
     ] {
         rejected(&live, cmd, expect);
     }
@@ -295,5 +295,5 @@ print(text[text.find("EXIT="):].strip())
     assert!(stdout.contains("EXIT=101"), "{stdout}");
     // Without the env var the command does not exist.
     let live = fresh("t115-nopanic");
-    rejected(&live, "panic", "unknown command: panic");
+    rejected(&live, "panic", "unknown command");
 }

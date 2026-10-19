@@ -89,9 +89,9 @@ impl Link {
             None => Ok(None),
             Some(s) => {
                 let (a, b) = parse_position(s).map_err(|_| {
-                    Error::Invalid(format!(
-                        "code.link lines «{s}»: use a line or A-B (a window of the file)"
-                    ))
+                    Error::Invalid(
+                        "code.link lines: use a line or A-B (a window of the file)".into(),
+                    )
                 })?;
                 if a == 0 {
                     return Err(Error::Invalid(format!(
@@ -301,7 +301,7 @@ fn find_unique(
     }
     let hits = matches_of(code, first_line, text);
     if hits.is_empty() {
-        return Err(Error::TextNotFound(format!("{what} «{text}»")));
+        return Err(Error::NoMatch(format!("{what} «{text}»")));
     }
     match occurrence {
         Some(0) => Err(Error::Invalid(format!(
@@ -334,12 +334,14 @@ fn parse_position(s: &str) -> Result<(u32, u32), Error> {
     let parts: Vec<&str> = s.split(['-', ':']).map(str::trim).collect();
     let nums: Result<Vec<u32>, _> = parts.iter().map(|p| p.parse::<u32>()).collect();
     match nums
-        .map_err(|_| Error::Invalid(format!("position «{s}»: use a line or A-B")))?
+        .map_err(|_| Error::Invalid("position: use a line or A-B".into()))?
         .as_slice()
     {
         [a] => Ok((*a, *a)),
         [a, b] if a <= b => Ok((*a, *b)),
-        _ => Err(Error::Invalid(format!("position «{s}»: use a line or A-B"))),
+        // Never the text received (t-167 rework): a malformed value is not
+        // repeated.
+        _ => Err(Error::Invalid("position: use a line or A-B".into())),
     }
 }
 
@@ -792,7 +794,7 @@ fn resolve_point(
     d.source.first_line = first_line;
     let span = d
         .find_text(text, w.occurrence.unwrap_or(1), w.line)
-        .ok_or_else(|| Error::TextNotFound(format!("{what} «{text}»")))?;
+        .ok_or_else(|| Error::NoMatch(format!("{what} «{text}»")))?;
     Ok(Anchor {
         line: span.line,
         col: if end { span.end } else { span.start },
@@ -1939,9 +1941,17 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
 /// failed is a later one than the one just added or edited.
 fn name_move(e: Error, index: usize, at_step: u32) -> Error {
     match e {
-        Error::TextNotFound(t) => {
-            Error::TextNotFound(format!("{t} (move #{}, step {})", index + 1, at_step))
-        }
+        Error::TextNotFound(t) => Error::MoveNoMatch {
+            index: index + 1,
+            step: at_step,
+            what: format!("text «{t}»"),
+        },
+        Error::NoMatch(what) => Error::MoveNoMatch {
+            index: index + 1,
+            step: at_step,
+            what,
+        },
+        e @ Error::MoveNoMatch { .. } => e,
         other => Error::Invalid(format!("move #{} (step {}): {other}", index + 1, at_step)),
     }
 }
@@ -2445,7 +2455,7 @@ mod tests {
             find: Some("q".into()),
             ..patch(PatchOp::Delete)
         };
-        assert!(matches!(p.resolve(&c, 1), Err(Error::TextNotFound(_))));
+        assert!(matches!(p.resolve(&c, 1), Err(Error::NoMatch(_))));
     }
 
     #[test]

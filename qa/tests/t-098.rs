@@ -182,7 +182,8 @@ fn ac1_move_add_validates_against_the_code_at_its_step() {
     let e = r.error.unwrap();
     assert_eq!(e.code, "text_not_found");
     assert!(
-        e.message.contains("after «let b = 2;» (move #1, step 2)"),
+        e.message
+            .contains("move #1, step 2: after «let b = 2;» matches nothing"),
         "{}",
         e.message
     );
