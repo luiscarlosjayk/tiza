@@ -40,7 +40,9 @@ pub fn bin() -> PathBuf {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let status = Command::new(env!("CARGO"))
-            .args(["build", "-p", "tiza", "--quiet"])
+            // The test hooks (t-166) are in the binary the tests run and
+            // never in a release build.
+            .args(["build", "-p", "tiza", "--features", "test-hooks", "--quiet"])
             .args(if profile_dir().ends_with("release") {
                 vec!["--release"]
             } else {

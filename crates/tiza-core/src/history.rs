@@ -10,6 +10,8 @@ use crate::moves::Move;
 
 #[derive(Debug, Clone)]
 struct Snapshot {
+    /// When it was put on the undo stack (rising), for [`History::rollback`].
+    id: u64,
     /// What the edit after this snapshot did (`note a3`, `reload #54`…),
     /// so `u` can say what it undid.
     label: String,
@@ -39,6 +41,7 @@ struct Snapshot {
 impl Snapshot {
     fn take(doc: &Document, label: String, with_step: bool) -> Self {
         Self {
+            id: 0,
             label,
             step: with_step.then_some(doc.step),
             code: doc.code.clone(),
@@ -95,6 +98,16 @@ impl Snapshot {
 pub struct History {
     undo: Vec<Snapshot>,
     redo: Vec<Snapshot>,
+    /// Ids handed to the entries put on the undo stack.
+    seq: u64,
+}
+
+/// Where the history stood before a request (t-166): see
+/// [`History::rollback`].
+#[derive(Debug, Clone)]
+pub struct Checkpoint {
+    newest: u64,
+    redo: Vec<Snapshot>,
 }
 
 impl History {
@@ -112,7 +125,9 @@ impl History {
         self.push(Snapshot::take(doc, label.into(), true));
     }
 
-    fn push(&mut self, snapshot: Snapshot) {
+    fn push(&mut self, mut snapshot: Snapshot) {
+        self.seq += 1;
+        snapshot.id = self.seq;
         self.undo.push(snapshot);
         if self.undo.len() > Self::MAX {
             self.undo.remove(0);
@@ -146,8 +161,30 @@ impl History {
     pub fn redo(&mut self, doc: &mut Document) -> Option<String> {
         let next = self.redo.pop()?;
         let label = next.label.clone();
-        self.undo.push(next.swap(doc));
+        let mut back = next.swap(doc);
+        self.seq += 1;
+        back.id = self.seq;
+        self.undo.push(back);
         Some(label)
+    }
+
+    /// Where the history stands now, to go back to it with
+    /// [`History::rollback`].
+    pub fn checkpoint(&self) -> Checkpoint {
+        Checkpoint {
+            newest: self.undo.last().map_or(0, |s| s.id),
+            redo: self.redo.clone(),
+        }
+    }
+
+    /// Forgets the entries recorded since `c` and brings back its redo
+    /// stack (t-166): a request that panicked leaves no undo entry behind
+    /// (an entry the cap of 200 pushed out meanwhile is not brought back).
+    pub fn rollback(&mut self, c: Checkpoint) {
+        while self.undo.last().is_some_and(|s| s.id > c.newest) {
+            self.undo.pop();
+        }
+        self.redo = c.redo;
     }
 
     pub fn can_undo(&self) -> bool {

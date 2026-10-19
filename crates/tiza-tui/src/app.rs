@@ -95,6 +95,158 @@ pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_s
 
 thread_local! {
     static ANSWERING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// Where the last caught request panic happened and its message, for
+    /// `panics.log` (set by the crash hook).
+    static LAST_PANIC: std::cell::RefCell<Option<(String, String)>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Called by the crash hook for a panic [`App::handle_request`] catches
+/// (t-166): keeps its place and message for `panics.log`.
+pub fn note_request_panic(info: &std::panic::PanicHookInfo<'_>) {
+    let at = info
+        .location()
+        .map(|l| format!("{}:{}", l.file(), l.line()))
+        .unwrap_or_else(|| "unknown place".into());
+    let message = info
+        .payload()
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| info.payload().downcast_ref::<String>().cloned())
+        .unwrap_or_default();
+    LAST_PANIC.with(|p| *p.borrow_mut() = Some((at, message)));
+}
+
+/// What one socket request may change in the [`App`] (t-166), taken
+/// before it runs and put back if it panics, so a dropped request leaves
+/// nothing behind: not its document, not a typing animation that would
+/// keep drawing the code it wrote, not an undo entry.
+struct RequestState {
+    doc: Document,
+    save_path: PathBuf,
+    history: tiza_core::history::Checkpoint,
+    theme: Theme,
+    theme_auto: bool,
+    mode: Mode,
+    overlay: Overlay,
+    overlay_scroll: usize,
+    present: bool,
+    focus: Option<(u32, u32)>,
+    cursor_line: u32,
+    cursor_col: u32,
+    pending_sel: Option<Selection>,
+    arrow_from: Option<tiza_core::Anchor>,
+    selected: Option<String>,
+    scroll: usize,
+    message: Option<(String, bool)>,
+    dirty: bool,
+    autosave: bool,
+    redact_shown: bool,
+    layout_stable: bool,
+    redact_drop_notice: Option<String>,
+    redact_alerts: Vec<String>,
+    masked_checked: Option<u64>,
+    masked_said: Vec<(String, String)>,
+    wrote: bool,
+    foreign: bool,
+    padding_override: Option<(u16, u16)>,
+    supervised: bool,
+    typing: Option<TypingState>,
+    step_ready_at: Option<std::time::Instant>,
+    pointer: Option<tiza_core::protocol::PointerAt>,
+    pointer_seen: ((u32, u32), Option<u32>),
+    agent_notice: Option<AgentNotice>,
+    agent_deferred: Vec<(String, &'static str)>,
+    following: bool,
+}
+
+impl RequestState {
+    fn take(app: &App) -> RequestState {
+        RequestState {
+            doc: app.doc.clone(),
+            save_path: app.save_path.clone(),
+            history: app.history.checkpoint(),
+            theme: app.theme.clone(),
+            theme_auto: app.theme_auto,
+            mode: app.mode.clone(),
+            overlay: app.overlay,
+            overlay_scroll: app.overlay_scroll,
+            present: app.present,
+            focus: app.focus,
+            cursor_line: app.cursor_line,
+            cursor_col: app.cursor_col,
+            pending_sel: app.pending_sel,
+            arrow_from: app.arrow_from,
+            selected: app.selected.clone(),
+            scroll: app.scroll,
+            message: app.message.clone(),
+            dirty: app.dirty,
+            autosave: app.autosave,
+            redact_shown: app.redact_shown,
+            layout_stable: app.layout_stable,
+            redact_drop_notice: app.redact_drop_notice.clone(),
+            redact_alerts: app.redact_alerts.clone(),
+            masked_checked: app.masked_checked,
+            masked_said: app.masked_said.clone(),
+            wrote: app.wrote,
+            foreign: app.foreign,
+            padding_override: app.padding_override,
+            supervised: app.supervised,
+            typing: app.typing.clone(),
+            step_ready_at: app.step_ready_at,
+            pointer: app.pointer,
+            pointer_seen: app.pointer_seen,
+            agent_notice: app.agent_notice.clone(),
+            agent_deferred: app.agent_deferred.clone(),
+            following: app.follow.is_some(),
+        }
+    }
+
+    fn restore(self, app: &mut App) {
+        app.doc = self.doc;
+        app.save_path = self.save_path;
+        app.history.rollback(self.history);
+        app.theme = self.theme;
+        app.theme_auto = self.theme_auto;
+        app.mode = self.mode;
+        app.overlay = self.overlay;
+        app.overlay_scroll = self.overlay_scroll;
+        app.present = self.present;
+        app.focus = self.focus;
+        app.cursor_line = self.cursor_line;
+        app.cursor_col = self.cursor_col;
+        app.pending_sel = self.pending_sel;
+        app.arrow_from = self.arrow_from;
+        app.selected = self.selected;
+        app.scroll = self.scroll;
+        app.message = self.message;
+        app.dirty = self.dirty;
+        app.autosave = self.autosave;
+        app.redact_shown = self.redact_shown;
+        app.layout_stable = self.layout_stable;
+        app.redact_drop_notice = self.redact_drop_notice;
+        app.redact_alerts = self.redact_alerts;
+        app.masked_checked = self.masked_checked;
+        app.masked_said = self.masked_said;
+        app.wrote = self.wrote;
+        app.foreign = self.foreign;
+        app.padding_override = self.padding_override;
+        app.supervised = self.supervised;
+        app.typing = self.typing;
+        app.step_ready_at = self.step_ready_at;
+        app.pointer = self.pointer;
+        app.pointer_seen = self.pointer_seen;
+        app.agent_notice = self.agent_notice;
+        app.agent_deferred = self.agent_deferred;
+        // Follow holds a file watcher: stopped, or started again.
+        match (self.following, app.follow.is_some()) {
+            (false, true) => app.follow = None,
+            (true, false) => {
+                let _ = app.set_follow(true);
+            }
+            _ => {}
+        }
+        app.clamp_cursor();
+    }
 }
 
 /// Whether this thread is answering a socket request inside
@@ -4500,50 +4652,89 @@ impl App {
 
     /// Answers one socket request (t-166): a panic while it runs (a bug)
     /// answers an `internal` error instead of closing the presenter's TUI,
-    /// as the release profile's `panic = "unwind"` promises. A mutating
-    /// request that panicked is dropped whole: the document goes back to
-    /// what it was before it (and is saved again when autosave is on, in
-    /// case the request saved a half-done change); the view (step,
-    /// selection, scroll) is clamped to it. The crash hook leaves the
-    /// terminal alone meanwhile ([`answering_request`]); the panic's text
-    /// is never shown or returned (it may quote the document, t-167).
+    /// as the release profile's `panic = "unwind"` promises. The request is
+    /// dropped whole: everything it could change in the instance — the
+    /// document, the view (step, cursor, selection, scroll, focus, pointer,
+    /// a typing animation it started), the mode and overlays, theme, save
+    /// path and autosave, follow, supervision, the alerts — goes back to
+    /// what it was ([`RequestState`]), the undo entries it recorded are
+    /// forgotten, and the document is saved again when the request had
+    /// saved a half-done change. The crash hook leaves the terminal alone
+    /// meanwhile ([`answering_request`]); the panic's place and message,
+    /// through the redact filter, go to `panics.log` in Tiza's runtime
+    /// directory, and nothing of it is shown or returned (it may quote the
+    /// document, t-167).
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         let method = req.method.clone();
         let mutating = !READ_ONLY_METHODS.contains(&method.as_str());
-        let before = mutating.then(|| self.doc.clone());
+        // A read-only method changes nothing to put back (and `status` is
+        // polled often: no copy of the document for it).
+        let before = mutating.then(|| RequestState::take(self));
         let revision = self.revision;
         let was = ANSWERING.with(|a| a.replace(true));
         let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.answer(req)));
         ANSWERING.with(|a| a.set(was));
-        match r {
-            Ok(resp) => resp,
-            Err(_) => {
-                if let Some(doc) = before {
-                    self.doc = doc;
-                    self.selected = None;
-                    self.clamp_cursor();
-                    if self.revision != revision {
-                        self.touch();
-                    }
-                }
-                let msg = format!(
-                    "{}: a bug in Tiza stopped this request (a panic){}; please report it",
-                    if tiza_core::protocol::METHODS.iter().any(|m| m.0 == method) {
-                        method.as_str()
-                    } else {
-                        "request"
-                    },
-                    if mutating {
-                        ", and the document is as it was before it"
-                    } else {
-                        ""
-                    }
-                );
-                self.error(msg.clone());
-                Response::err(id, "internal", msg)
-            }
+        if let Ok(resp) = r {
+            return resp;
         }
+        if let Some(before) = before {
+            before.restore(self);
+        }
+        if self.revision != revision {
+            // The request saved or announced a change that is gone now:
+            // a new revision, and the file as the document is again.
+            self.touch();
+        }
+        let known = tiza_core::protocol::METHODS.iter().any(|m| m.0 == method);
+        let what = if known { method.as_str() } else { "request" };
+        let log = self.log_request_panic(what);
+        let msg = format!(
+            "{what}: a bug in Tiza stopped this request (a panic){}; please report it{}",
+            if mutating {
+                ", and nothing of it was kept"
+            } else {
+                ""
+            },
+            match &log {
+                Some(p) => format!(" (details in {})", p.display()),
+                None => String::new(),
+            }
+        );
+        self.error(msg.clone());
+        Response::err(id, "internal", msg)
+    }
+
+    /// Appends one line about a request's panic to `panics.log` in Tiza's
+    /// runtime directory (owner only, like the sockets): the time, the
+    /// version, the request, where it panicked and its message through the
+    /// redact filter. Returns the log's path when it was written.
+    fn log_request_panic(&self, what: &str) -> Option<PathBuf> {
+        let (at, message) = LAST_PANIC
+            .with(|p| p.borrow_mut().take())
+            .unwrap_or_else(|| ("unknown place".into(), String::new()));
+        let message = self.echo().text(&message);
+        let path = tiza_core::socket::runtime_dir().join("panics.log");
+        tiza_core::socket::prepare_dir(&path).ok()?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        use std::io::Write;
+        let mut f = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+            .ok()?;
+        writeln!(
+            f,
+            "{stamp} tiza {} ({}) pid {}: {what} panicked at {at}: {message}",
+            tiza_core::VERSION,
+            tiza_core::GIT_SHA,
+            std::process::id()
+        )
+        .ok()?;
+        Some(path)
     }
 
     fn answer(&mut self, req: Request) -> Response {
@@ -4558,12 +4749,12 @@ impl App {
             Vec::new()
         };
         let result = self.dispatch(&req.method, req.params);
-        // A panic on purpose after the request did its work, for the test
-        // that a caught panic leaves the document as it was (t-166).
-        if std::env::var("TIZA_PANIC_FOR_TESTS")
-            .is_ok_and(|v| v == format!("request:{}", req.method))
-        {
-            panic!("TIZA_PANIC_FOR_TESTS");
+        // Test hook (t-166), only with the `test-hooks` feature: a panic on
+        // purpose after the request did its work, for the tests that a
+        // caught panic leaves the instance as it was.
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == format!("request:{}", req.method)) {
+            panic!("TIZA_TEST_HOOK at {}", req.method);
         }
         // An agent's text repeating a masked value is said on the alert
         // row and in `status.redact_alerts` right away (t-174).

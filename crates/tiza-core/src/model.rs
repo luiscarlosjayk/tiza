@@ -44,6 +44,16 @@ pub fn check_step(step: u32, what: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// How a bounds error names an annotation: by its id, or `annotation`
+/// alone for one that has none yet (t-166: not `annotation : step …`).
+fn annotation_what(id: &str) -> String {
+    if id.trim().is_empty() {
+        "annotation".into()
+    } else {
+        format!("annotation {id}")
+    }
+}
+
 /// A hold of `ms` milliseconds for `what` within [`MAX_HOLD_MS`] (t-166).
 pub fn check_hold_ms(ms: u64, what: &str) -> Result<(), Error> {
     if ms > MAX_HOLD_MS {
@@ -2293,7 +2303,7 @@ impl Document {
             )));
         }
         for a in &self.annotations {
-            check_step(a.step, &format!("annotation {}", a.id))?;
+            check_step(a.step, &annotation_what(&a.id))?;
         }
         for (i, m) in self.moves.iter().enumerate() {
             let what = format!("move #{}", i + 1);
@@ -2475,7 +2485,7 @@ impl Document {
         if ann.step == 0 && !pinned {
             ann.step = 1;
         }
-        check_step(ann.step, &format!("annotation {}", ann.id))?;
+        check_step(ann.step, &annotation_what(&ann.id))?;
         self.resolve_file(&mut ann)?;
         // A redact that comes pinned (an agent's `scene.get` → `scene.patch`
         // round trip, t-154) is checked on the code it is pinned to.
@@ -2532,7 +2542,7 @@ impl Document {
     }
 
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
-        check_step(ann.step, &format!("annotation {}", ann.id))?;
+        check_step(ann.step, &annotation_what(&ann.id))?;
         self.resolve_file(&mut ann)?;
         // A redact whose span, pin and file did not change (its label or
         // `keep` did) stays where it is pinned (t-154); a new span is on

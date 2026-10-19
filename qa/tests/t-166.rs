@@ -30,6 +30,13 @@
 //!   running with the document as before; R5 `check` at the cap; R6 a step
 //!   past the last one is said; R7 the live `.tape` opens the instance's
 //!   `.tiza`; R8 a real MCP panic (test hook) answers an error.
+//! - Verification of 33e9a4e (`v1`…`v6`, and `r7`): V1 a dropped request
+//!   puts back the whole instance state (no typing animation drawing a
+//!   masked value); V2 the hooks only with the `test-hooks` feature; V3 no
+//!   undo entry left; V4 the panic logged in `panics.log`; V5 an export
+//!   caught at its deadline writes nothing (temporary + rename under the
+//!   deadline's lock); V6 no empty id in a bounds error; V7 (r7) the live
+//!   `.tape` names its document relative to the tape's folder.
 //!
 //! Corner cases: a linked file deleted while the TUI is open (the instance
 //! keeps the code it shows, so the live export draws it and a render of the
@@ -1171,7 +1178,7 @@ fn r4_a_panic_in_a_request_never_closes_the_tui() {
         r##"
 import json
 binary, doc, sock = sys.argv[1], sys.argv[2], sys.argv[3]
-env = dict(os.environ, TIZA_PANIC_FOR_TESTS="request:annotation.add")
+env = dict(os.environ, TIZA_TEST_HOOK="request:annotation.add")
 def api(*args):
     r = subprocess.run([binary, "api", *args, "--socket", sock], capture_output=True, text=True, timeout=20)
     return r.returncode, r.stdout + r.stderr
@@ -1202,7 +1209,7 @@ s.finish(5)
         "{out}"
     );
     assert!(
-        !add.contains("TIZA_PANIC_FOR_TESTS"),
+        !add.contains("TIZA_TEST_HOOK"),
         "the panic's text leaked: {out}"
     );
     assert!(
@@ -1266,8 +1273,25 @@ fn r7_a_live_tape_opens_the_instances_document() {
         ],
     );
     let text = std::fs::read_to_string(&tape).unwrap();
+    // Relative to the tape's folder (t-166 verification point 7), never
+    // the absolute path with the home in it, and said in a comment.
     let abs = std::path::absolute(&path).unwrap();
-    assert!(text.contains(abs.to_str().unwrap()), "{text}");
+    let rel = format!(
+        "../{}/doc.tiza",
+        path.parent()
+            .unwrap()
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+    );
+    assert!(text.contains(&format!("Type \"tiza {rel} ")), "{text}");
+    assert!(!text.contains(abs.to_str().unwrap()), "{text}");
+    assert!(
+        text.contains(&format!(
+            "# Opens the live instance's document as {rel}, relative to this tape's folder"
+        )),
+        "{text}"
+    );
     assert!(!text.contains("scene.tiza"), "{text}");
     // An instance with no `.tiza` on disk yet: a clear error, no tape.
     let dir = scratch("r7-unsaved");
@@ -1303,8 +1327,7 @@ fn r8_a_panic_in_an_mcp_call_answers_an_error() {
             json!({"path": dir.join("x.md").to_str().unwrap()}),
         ),
     ] {
-        let mut mcp =
-            McpClient::start_with_env(&live.socket, &[("TIZA_MCP_PANIC_FOR_TESTS", place)]);
+        let mut mcp = McpClient::start_with_env(&live.socket, &[("TIZA_MCP_TEST_HOOK", place)]);
         let v = mcp
             .request_within(
                 "tools/call",
@@ -1317,11 +1340,309 @@ fn r8_a_panic_in_an_mcp_call_answers_an_error() {
             msg.contains(&format!("tool {tool} call failed with a bug in Tiza")),
             "{v}"
         );
-        assert!(!msg.contains("TIZA_MCP_PANIC_FOR_TESTS"), "{v}");
+        assert!(!msg.contains("TIZA_MCP_TEST_HOOK"), "{v}");
         let v = mcp.request(
             "tools/call",
             json!({"name": "list_annotations", "arguments": {}}),
         );
         assert!(v["error"].is_null(), "the server must keep answering: {v}");
     }
+}
+
+// ---------- Verification of 33e9a4e (one test per point, `v1`…`v7`) ----------
+
+/// The value of the typed-move document: a masked key the move's content
+/// writes twice (once in another case).
+const KEY: &str = "hx7kq2wz9pml";
+
+fn typed_doc(dir: &Path) -> PathBuf {
+    let doc = json!({
+        "schema": 1,
+        "title": "Keys",
+        "source": {"language": "sh", "first_line": 1},
+        "code": ["# deploy", format!("KEY={KEY}"), "run"],
+        "step": 0,
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 4, "end": 16}}
+        ],
+        "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "find": "run",
+            "content": format!("run --key {KEY} --again {}", KEY.to_uppercase()),
+            "typing": "char", "speed_ms": 20}]
+    });
+    let path = dir.join("keys.tiza");
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    path
+}
+
+/// Pieces of 4 of the key, either case: what must never reach the screen.
+fn key_pieces() -> Vec<String> {
+    let k: Vec<char> = KEY.chars().collect();
+    let mut out: Vec<String> = k.windows(4).map(|w| w.iter().collect()).collect();
+    out.extend(out.clone().iter().map(|p| p.to_uppercase()));
+    out
+}
+
+/// Runs the real TUI on `doc` with the request hook on `method` (the old
+/// name too, so the test fails the same way on a build before it), calls
+/// `method` with `params`, then runs `after` (Python) and prints its lines.
+fn panic_run(dir: &Path, doc: &Path, method: &str, params: &str, after: &str) -> String {
+    let sock = dir.join("live.sock");
+    let body = format!(
+        r##"
+import json
+binary, doc, sock, runtime = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
+hook = "request:{method}"
+env = dict(os.environ, TIZA_TEST_HOOK=hook, TIZA_PANIC_FOR_TESTS=hook, XDG_RUNTIME_DIR=runtime)
+def api(*args):
+    r = subprocess.run([binary, "api", *args, "--socket", sock], capture_output=True, text=True, timeout=20)
+    return r.returncode, r.stdout + r.stderr
+s = Pty([binary, "--socket", sock, doc], 30, 120, env=env)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
+    s.settle(0.3)
+    before = len(s.out)
+    code, text = api("{method}", '{params}')
+    print("REPLY", code, text.replace("\n", " "), flush=True)
+{after}
+s.kill()
+s.finish(5)
+"##
+    );
+    let runtime = dir.join("run");
+    std::fs::create_dir_all(&runtime).unwrap();
+    tiza_qa::pty_script(
+        dir,
+        "panic.py",
+        &body,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            doc.to_str().unwrap(),
+            sock.to_str().unwrap(),
+            runtime.to_str().unwrap(),
+        ],
+    )
+}
+
+/// V1: a panicking `step.next` on a step whose move types copies of a
+/// masked value: the instance goes back whole — no typing animation of the
+/// dropped request keeps drawing the value in clear.
+#[test]
+fn v1_a_dropped_request_leaves_no_animation_drawing_the_value() {
+    let dir = scratch("v1");
+    let doc = typed_doc(&dir);
+    let out = panic_run(
+        &dir,
+        &doc,
+        "step.next",
+        "{}",
+        r##"
+    s.settle(2.0)
+    # What a viewer reads: the text without escape sequences (the typed
+    # characters land one by one between cursor moves).
+    print("AFTER", json.dumps(plain(s.out[before:])), flush=True)
+    print("RAW", json.dumps(s.out[before:].decode(errors="replace")), flush=True)
+    code, text = api("status")
+    print("STEP", json.loads(text)["step"] if code == 0 else text, flush=True)
+"##,
+    );
+    let reply = out
+        .lines()
+        .find(|l| l.starts_with("REPLY"))
+        .unwrap_or_else(|| panic!("{out}"));
+    assert!(reply.contains("internal"), "{out}");
+    assert!(out.contains("STEP 0"), "{out}");
+    for what in ["AFTER", "RAW"] {
+        let after = out
+            .lines()
+            .find(|l| l.starts_with(what))
+            .unwrap_or_else(|| panic!("{out}"));
+        for p in key_pieces() {
+            assert!(
+                !after.contains(&p),
+                "the screen shows «{p}» after the panic:\n{after}"
+            );
+        }
+    }
+}
+
+/// V2: the hooks are only in a build with the test-only `test-hooks`
+/// feature (the tests' binary): every place that reads one of their
+/// environment variables is behind `#[cfg(feature = "test-hooks")]`, no
+/// crate turns it on by default, and the old unguarded names are gone.
+#[test]
+fn v2_the_test_hooks_are_never_in_a_release_build() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let mut seen = 0;
+    for file in [
+        "crates/tiza-tui/src/app.rs",
+        "crates/tiza-mcp/src/lib.rs",
+        "crates/tiza-cli/src/main.rs",
+        "crates/tiza-core/src/model.rs",
+    ] {
+        let text = std::fs::read_to_string(root.join(file)).unwrap();
+        assert!(
+            !text.contains("TIZA_PANIC_FOR_TESTS") && !text.contains("TIZA_MCP_PANIC_FOR_TESTS"),
+            "{file} still reads an unguarded hook"
+        );
+        let lines: Vec<&str> = text.lines().collect();
+        for (i, l) in lines.iter().enumerate() {
+            if !l.contains("std::env::var(\"TIZA_TEST_HOOK\")")
+                && !l.contains("std::env::var(\"TIZA_MCP_TEST_HOOK\")")
+                && !l.contains("std::env::var(\"TIZA_MCP_EXPORT_TIMEOUT_MS\")")
+            {
+                continue;
+            }
+            seen += 1;
+            let guarded = lines[i.saturating_sub(3)..i]
+                .iter()
+                .any(|p| p.contains("#[cfg(feature = \"test-hooks\")]"));
+            assert!(
+                guarded,
+                "{file}:{}: a hook outside #[cfg(feature = \"test-hooks\")]",
+                i + 1
+            );
+        }
+    }
+    assert_eq!(seen, 3, "the three hooks");
+    for manifest in [
+        "crates/tiza-tui/Cargo.toml",
+        "crates/tiza-mcp/Cargo.toml",
+        "crates/tiza-cli/Cargo.toml",
+    ] {
+        let text = std::fs::read_to_string(root.join(manifest)).unwrap();
+        assert!(text.contains("test-hooks = ["), "{manifest}");
+        assert!(
+            !text.contains("default ="),
+            "{manifest} has default features"
+        );
+    }
+}
+
+/// V3: the dropped request leaves no undo entry: the first `u` says there
+/// is nothing to undo.
+#[test]
+fn v3_a_dropped_request_leaves_no_undo_entry() {
+    let dir = scratch("v3");
+    let doc = dir.join("doc.tiza");
+    std::fs::write(&doc, serde_json::to_string_pretty(&small_doc()).unwrap()).unwrap();
+    let out = panic_run(
+        &dir,
+        &doc,
+        "annotation.add",
+        r#"{"type": "note", "line": 4, "text": "added"}"#,
+        r##"
+    mark = len(s.out)
+    s.send(b"u")
+    s.wait_for(lambda out: "nothing to undo" in plain(out[mark:]) or "undone" in plain(out[mark:]), 10, "the undo message")
+    print("UNDO", "nothing" if "nothing to undo" in plain(s.out[mark:]) else "undid something", flush=True)
+"##,
+    );
+    assert!(out.contains("REPLY 1") && out.contains("internal"), "{out}");
+    assert!(out.contains("UNDO nothing"), "{out}");
+}
+
+/// V4: the caught panic leaves a trace: one line in `panics.log` in Tiza's
+/// runtime directory with the request and where it panicked, and the reply
+/// names the log.
+#[test]
+fn v4_a_caught_panic_is_logged() {
+    let dir = scratch("v4");
+    let doc = dir.join("doc.tiza");
+    std::fs::write(&doc, serde_json::to_string_pretty(&small_doc()).unwrap()).unwrap();
+    let out = panic_run(
+        &dir,
+        &doc,
+        "annotation.add",
+        r#"{"type": "note", "line": 4, "text": "added"}"#,
+        "",
+    );
+    let log = dir.join("run/tiza/panics.log");
+    let text = std::fs::read_to_string(&log).unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert_eq!(text.lines().count(), 1, "{text}");
+    assert!(
+        text.contains("annotation.add panicked at crates/tiza-tui/src/app.rs:"),
+        "{text}"
+    );
+    pieces_absent("panics.log", &text);
+    assert!(
+        out.contains(&format!("details in {}", log.display())),
+        "{out}"
+    );
+}
+
+/// V5: a write the deadline catches is abandoned whole: the export is
+/// written next to its target and renamed under the lock the deadline
+/// takes, so an «abandoned: nothing was written» reply means just that,
+/// and no temporary file is left.
+#[test]
+fn v5_an_export_caught_by_its_deadline_writes_nothing() {
+    let (path, live) = live_doc("v5", &small_doc());
+    let dir = path.parent().unwrap().to_path_buf();
+    let md = dir.join("late.md");
+    let mut mcp = McpClient::start_with_env(
+        &live.socket,
+        &[
+            ("TIZA_MCP_EXPORT_TIMEOUT_MS", "300"),
+            ("TIZA_MCP_TEST_HOOK", "export:slow-write"),
+        ],
+    );
+    let (err, text) = export(&mut mcp, json!({"path": md.to_str().unwrap()}));
+    assert!(err && text.contains("nothing was written"), "{text}");
+    // The render ends 0.8 s after it was held: still nothing, no temporary.
+    let settle = std::time::Instant::now() + Duration::from_millis(1500);
+    while std::time::Instant::now() < settle {
+        assert!(!md.exists(), "written after the deadline");
+        std::thread::yield_now();
+    }
+    let left: Vec<String> = std::fs::read_dir(&dir)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".tmp"))
+        .collect();
+    assert!(left.is_empty(), "{left:?}");
+    // With room to finish, the same held write lands, and no temporary.
+    let mut mcp =
+        McpClient::start_with_env(&live.socket, &[("TIZA_MCP_TEST_HOOK", "export:slow-write")]);
+    let (err, text) = export(&mut mcp, json!({"path": md.to_str().unwrap()}));
+    assert!(!err, "{text}");
+    assert!(md.exists());
+    assert!(
+        std::fs::read_dir(&dir).unwrap().all(|e| !e
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .ends_with(".tmp"))
+    );
+    // A target that blocks its writer (a named pipe nobody reads): the
+    // export is written to a temporary next to it and renamed over it, so
+    // it never stalls on the target until its deadline and then says
+    // «nothing was written» while the write is still under way.
+    let fifo = dir.join("pipe.md");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .unwrap();
+    assert!(made.success());
+    let mut mcp =
+        McpClient::start_with_env(&live.socket, &[("TIZA_MCP_EXPORT_TIMEOUT_MS", "5000")]);
+    let (err, text) = export(&mut mcp, json!({"path": fifo.to_str().unwrap()}));
+    assert!(!err, "{text}");
+    assert!(std::fs::metadata(&fifo).unwrap().is_file());
+    assert!(std::fs::read_to_string(&fifo).unwrap().contains("```text"));
+}
+
+/// V6: an annotation with no id yet is named `annotation`, not
+/// `annotation ` with an empty id.
+#[test]
+fn v6_a_bounds_error_never_shows_an_empty_id() {
+    let (_, live) = live_doc("v6", &small_doc());
+    let (_, msg) = api_err(
+        &live,
+        "annotation.add",
+        json!({"type": "note", "line": 3, "text": "x", "step": 1000}),
+    );
+    assert!(
+        // The number the agent sent is elided on a document with a redact.
+        msg.starts_with("annotation: step ") && msg.contains("is past the last step"),
+        "{msg}"
+    );
 }

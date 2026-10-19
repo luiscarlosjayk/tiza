@@ -8,6 +8,12 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[features]
+# Test-only hooks (t-166): environment variables that make a request
+# panic on purpose or shorten the MCP export deadline. `qa`'s `bin()`
+# builds the test binary with it; a release build never has it.
+test-hooks = []
+
 [dependencies]
 tiza-core.workspace = true
 ratatui.workspace = true

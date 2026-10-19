@@ -4,7 +4,7 @@
 //! output, `-` for stdin/stdout, notices on stderr and exit 1 on error.
 
 use std::io::{IsTerminal, Read, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, bail};
 use clap::{Parser, Subcommand, ValueEnum};
@@ -671,6 +671,7 @@ fn real_main() -> anyhow::Result<()> {
                     if format == Format::Cast {
                         tiza_core::cast::to_asciicast(&doc, &theme, &opts).into_bytes()
                     } else {
+                        let mut tape_note: Option<String> = None;
                         let document_path = match (&file, &live_document) {
                             (Some(f), _) => f.clone(),
                             // The instance's own `.tiza` (t-166; it typed
@@ -681,12 +682,27 @@ fn real_main() -> anyhow::Result<()> {
                                         "the path of the live document repeats a masked value, so a tape cannot name it: render the .tiza file instead (`tiza render FILE --out demo.tape`)"
                                     );
                                 }
+                                // Relative to the tape's folder, where `vhs`
+                                // runs it, never the absolute path with the
+                                // home in it (t-166 verification).
+                                let base = if out == "-" {
+                                    std::env::current_dir()?
+                                } else {
+                                    let o = std::path::absolute(&out)?;
+                                    o.parent().map(Path::to_path_buf).unwrap_or(o)
+                                };
+                                let rel = relative_to(Path::new(d), &base)
+                                    .to_string_lossy()
+                                    .into_owned();
                                 if !autosave {
                                     eprintln!(
-                                        "tiza: the tape opens {d}, which this instance does not autosave: save it (:w) first so it holds what is on screen"
+                                        "tiza: the tape opens {rel}, which this instance does not autosave: save it (:w) first so it holds what is on screen"
                                     );
                                 }
-                                d.clone()
+                                tape_note = Some(format!(
+                                    "# Opens the live instance's document as {rel}, relative to this tape's folder: run vhs from there"
+                                ));
+                                rel
                             }
                             (None, _) => bail!(
                                 "the live document has no .tiza on disk yet for the tape to open: save it in Tiza (:w) or render a .tiza file"
@@ -700,8 +716,14 @@ fn real_main() -> anyhow::Result<()> {
                                 .to_string_lossy()
                                 .into_owned()
                         };
-                        tiza_core::cast::to_vhs_tape(&doc, &theme, &document_path, &gif, &opts)
-                            .into_bytes()
+                        let mut tape =
+                            tiza_core::cast::to_vhs_tape(&doc, &theme, &document_path, &gif, &opts);
+                        if let Some(note) = tape_note
+                            && let Some(nl) = tape.find('\n')
+                        {
+                            tape.insert_str(nl + 1, &format!("{note}\n"));
+                        }
+                        tape.into_bytes()
                     }
                 }
                 Format::Svg | Format::Png => {
@@ -924,6 +946,26 @@ fn call(
         bail!("{} ({})", e.message, e.code);
     }
     Ok(resp.result.unwrap_or(serde_json::Value::Null))
+}
+
+/// `path` relative to `base` (both absolute): `doc.tiza`, `../demo/doc.tiza`
+/// (t-166: a live `.tape` names the document from its own folder). Paths
+/// with nothing in common come back as they are.
+fn relative_to(path: &Path, base: &Path) -> PathBuf {
+    let p: Vec<_> = path.components().collect();
+    let b: Vec<_> = base.components().collect();
+    let common = p.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    if common == 0 {
+        return path.to_path_buf();
+    }
+    let mut out = PathBuf::new();
+    for _ in common..b.len() {
+        out.push("..");
+    }
+    for c in &p[common..] {
+        out.push(c);
+    }
+    out
 }
 
 /// `render --all-steps --out DIR/` (t-101): one file per step, step 0

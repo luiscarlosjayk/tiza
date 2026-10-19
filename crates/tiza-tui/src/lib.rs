@@ -195,11 +195,15 @@ fn install_crash_hook(save_path: &std::path::Path) {
 /// Wraps the hooks `ratatui::init` chained on top of the crash hook
 /// (t-166): a panic while a socket request is answered is caught by
 /// `App::handle_request` and answered as an error, and the TUI keeps
-/// running, so its screen is not restored and nothing is printed over it.
+/// running, so its screen is not restored and nothing is printed over it
+/// (the panic is logged in `panics.log` instead).
 fn spare_answered_requests() {
     let inner = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
-        if !crate::app::answering_request() {
+        if crate::app::answering_request() {
+            // Caught and answered: its place and message go to panics.log.
+            crate::app::note_request_panic(info);
+        } else {
             inner(info);
         }
     }));

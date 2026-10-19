@@ -1280,51 +1280,89 @@ impl TizaServer {
             interval,
             skip_zero: p.skip_zero.unwrap_or(false),
             doc: scene.document,
-            abandoned: Default::default(),
+            phase: Default::default(),
         };
         // Drawn and encoded on a blocking thread with a deadline (t-166):
         // the server keeps answering `status` and `tools/list` meanwhile,
         // and the call always answers.
-        let abandoned = job.abandoned.clone();
+        let phase = job.phase.clone();
         let deadline = export_deadline();
-        let handle = tokio::task::spawn_blocking(move || job.run());
-        match tokio::time::timeout(deadline, handle).await {
-            Ok(Ok(r)) => r,
+        let mut handle = tokio::task::spawn_blocking(move || job.run());
+        let joined = match tokio::time::timeout(deadline, &mut handle).await {
+            Ok(joined) => joined,
+            Err(_) => {
+                // Past the deadline: abandoned, unless the file is already
+                // in place (it was renamed just now), then that answer.
+                let written = {
+                    let mut ph = phase.lock().unwrap_or_else(|e| e.into_inner());
+                    if *ph != ExportPhase::Written {
+                        *ph = ExportPhase::Abandoned;
+                    }
+                    *ph == ExportPhase::Written
+                };
+                if written {
+                    handle.await
+                } else {
+                    return Err(McpError::internal_error(
+                        format!(
+                            "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif; `tiza render` in a terminal has no deadline",
+                            deadline.as_secs_f64()
+                        ),
+                        None,
+                    ));
+                }
+            }
+        };
+        match joined {
+            Ok(r) => r,
             // A panic in the render: never its text (it may quote the
             // document, t-167).
-            Ok(Err(e)) if e.is_panic() => Err(panicked("tool export_image", e.into_panic())),
-            Ok(Err(_)) => Err(McpError::internal_error("export_image was cancelled", None)),
-            Err(_) => {
-                abandoned.store(true, std::sync::atomic::Ordering::SeqCst);
-                Err(McpError::internal_error(
-                    format!(
-                        "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif; `tiza render` in a terminal has no deadline",
-                        deadline.as_secs_f64()
-                    ),
-                    None,
-                ))
-            }
+            Err(e) if e.is_panic() => Err(panicked("tool export_image", e.into_panic())),
+            Err(_) => Err(McpError::internal_error("export_image was cancelled", None)),
         }
     }
 }
 
-/// How long one `export_image` may take (t-166): 120 s, or
-/// `TIZA_MCP_EXPORT_TIMEOUT_MS` (used by the tests). Past it the call
-/// answers an error and the render's result is dropped.
-fn export_deadline() -> std::time::Duration {
-    std::env::var("TIZA_MCP_EXPORT_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.trim().parse::<u64>().ok())
-        .map(std::time::Duration::from_millis)
-        .unwrap_or(std::time::Duration::from_secs(120))
+/// Where an `export_image` render stands (t-166): the deadline and the
+/// rename of the finished file take the same lock, so the reply never says
+/// «nothing was written» about a file that was.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum ExportPhase {
+    #[default]
+    Running,
+    Abandoned,
+    Written,
 }
 
-/// A panic on purpose, for the tests that check every call answers
-/// (t-166): `TIZA_MCP_PANIC_FOR_TESTS` names the place (`tool:<name>` in
-/// the call itself, `export:render` in the export's blocking render).
-fn panic_for_tests(place: &str) {
-    if std::env::var("TIZA_MCP_PANIC_FOR_TESTS").is_ok_and(|v| v == place) {
-        panic!("TIZA_MCP_PANIC_FOR_TESTS={place}");
+/// How long one `export_image` may take (t-166): 120 s, fixed. A build
+/// with the `test-hooks` feature (the tests' binary, never a release)
+/// reads `TIZA_MCP_EXPORT_TIMEOUT_MS`. Past it the call answers an error
+/// and nothing is written.
+fn export_deadline() -> std::time::Duration {
+    #[cfg(feature = "test-hooks")]
+    if let Some(ms) = std::env::var("TIZA_MCP_EXPORT_TIMEOUT_MS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+    {
+        return std::time::Duration::from_millis(ms);
+    }
+    std::time::Duration::from_secs(120)
+}
+
+/// Test hooks (t-166), only in a build with the `test-hooks` feature:
+/// `TIZA_MCP_TEST_HOOK` names a place — `tool:<name>` panics in the call
+/// itself, `export:render` in the export's blocking render, and
+/// `export:slow-write` holds the finished export 800 ms before it is
+/// written (a slow disk at the deadline).
+#[allow(unused_variables)]
+fn test_hook(place: &str) {
+    #[cfg(feature = "test-hooks")]
+    if std::env::var("TIZA_MCP_TEST_HOOK").is_ok_and(|v| v == place) {
+        if place == "export:slow-write" {
+            std::thread::sleep(std::time::Duration::from_millis(800));
+        } else {
+            panic!("TIZA_MCP_TEST_HOOK={place}");
+        }
     }
 }
 
@@ -1341,13 +1379,13 @@ struct ExportJob {
     interval: f64,
     skip_zero: bool,
     doc: tiza_core::Document,
-    /// Set when the deadline passed: the result is not written.
-    abandoned: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    /// Shared with the deadline: see [`ExportPhase`].
+    phase: std::sync::Arc<std::sync::Mutex<ExportPhase>>,
 }
 
 impl ExportJob {
     fn run(self) -> Result<CallToolResult, McpError> {
-        panic_for_tests("export:render");
+        test_hook("export:render");
         let doc = &self.doc;
         let format = self.format;
         let is_png = format == "png";
@@ -1450,13 +1488,40 @@ impl ExportJob {
             }
             _ => tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes(),
         };
-        // Past the deadline the caller already answered: write nothing.
-        if self.abandoned.load(std::sync::atomic::Ordering::SeqCst) {
+        test_hook("export:slow-write");
+        // Written next to the target and renamed under the lock the
+        // deadline takes (t-166): past the deadline nothing appears, and
+        // the reply never says «nothing was written» about a file that was.
+        let target = std::path::Path::new(&self.path);
+        let tmp = target.with_file_name(format!(
+            ".{}.tiza-{}.tmp",
+            target
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            std::process::id()
+        ));
+        if *self.phase.lock().unwrap_or_else(|e| e.into_inner()) == ExportPhase::Abandoned {
             return Err(McpError::internal_error("abandoned", None));
         }
-        std::fs::write(&self.path, &bytes).map_err(|e| {
+        std::fs::write(&tmp, &bytes).map_err(|e| {
             McpError::internal_error(format!("could not write {}: {e}", self.path), None)
         })?;
+        {
+            let mut ph = self.phase.lock().unwrap_or_else(|e| e.into_inner());
+            if *ph == ExportPhase::Abandoned {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(McpError::internal_error("abandoned", None));
+            }
+            if let Err(e) = std::fs::rename(&tmp, target) {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(McpError::internal_error(
+                    format!("could not write {}: {e}", self.path),
+                    None,
+                ));
+            }
+            *ph = ExportPhase::Written;
+        }
         let mut reply = json!({
             "path": self.path,
             "bytes": bytes.len(),
@@ -1577,7 +1642,7 @@ impl ServerHandler for TizaServer {
         // Every call answers (t-166): a panic while it runs (a bug) is an
         // error reply, never a call left waiting forever.
         let mut resp = answer_always(async {
-            panic_for_tests(&format!("tool:{tool}"));
+            test_hook(&format!("tool:{tool}"));
             self.tool_router.call(tcc).await
         })
         .await
