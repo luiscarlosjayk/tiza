@@ -894,11 +894,12 @@ impl Document {
         let mut d = self.clone();
         d.sync_code_src();
         d.embed_code();
+        // The redacts cover the masked code exactly (t-174 AC10): a put of
+        // this copy shows what was shown (its linked files are frozen in
+        // `views` now, so theirs too).
+        d.annotations = crate::redact::embedded_annotations(&d);
         // Move content masked where it lands under a redact (t-140).
         d.moves = moves::masked_moves(self);
-        // The redacts cover the masked code exactly (t-174 AC10): a put of
-        // this copy shows what was shown.
-        d.annotations = crate::redact::embedded_annotations(self);
         d
     }
 

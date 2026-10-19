@@ -162,6 +162,9 @@ pub struct App {
     masked_checked: Option<u64>,
     /// The texts repeating a masked value already said (t-174).
     masked_said: Vec<String>,
+    /// Words the document wrote in this session that share text with a
+    /// masked value (t-174): masked in messages even once they are gone.
+    seen_words: Vec<String>,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
@@ -269,6 +272,7 @@ impl App {
             redact_alerts: Vec::new(),
             masked_checked: None,
             masked_said: Vec::new(),
+            seen_words: Vec::new(),
             save_error: None,
             save_warning_pending: false,
             padding_override: None,
@@ -290,6 +294,11 @@ impl App {
             agent_deferred: Vec::new(),
         };
         app.rebuild_theme();
+        // The document's own words that share text with a value, from the
+        // start: a message may name one after it is gone (t-174).
+        app.seen_words = tiza_core::redact::Echo::for_messages(&app.doc)
+            .doc_words()
+            .to_vec();
         app
     }
 
@@ -447,7 +456,11 @@ impl App {
     /// A message for the bar or an alert ([`tiza_core::redact::shown_message`]):
     /// the message's own lowercase words stay.
     pub fn shown_message(&self, text: &str) -> String {
-        tiza_core::redact::shown_message(text, &self.doc)
+        // With the words of every earlier state of this session: undo,
+        // redo and a deletion name an annotation that is gone.
+        tiza_core::redact::Echo::for_messages(&self.doc)
+            .with_words(&self.seen_words)
+            .shown_message(text)
     }
 
     /// Says once, on the alert row (t-135), each text of the document that
@@ -459,6 +472,13 @@ impl App {
             return;
         }
         self.masked_checked = Some(self.revision);
+        // The document's own words that share text with a value, kept for
+        // the messages about it once they are gone (in memory only).
+        for w in tiza_core::redact::Echo::for_messages(&self.doc).doc_words() {
+            if !self.seen_words.contains(w) {
+                self.seen_words.push(w.clone());
+            }
+        }
         let found = tiza_core::redact::masked_texts(&self.doc);
         let keys: Vec<String> = found.iter().map(|m| m.key()).collect();
         self.masked_said.retain(|k| keys.contains(k));
@@ -4822,14 +4842,14 @@ impl App {
                 // Shown text (t-174): a name, legend or glyph sharing text
                 // with a masked value comes back masked, and says so.
                 let filter = tiza_core::redact::Echo::quoting(&self.doc);
+                let shown_name = filter
+                    .style_names(&self.doc)
+                    .get(name)
+                    .cloned()
+                    .unwrap_or_else(|| name.to_string());
                 let mut shown = self.doc.clone();
-                shown.styles.retain(|k, _| k == name);
                 filter.shown_doc(&mut shown);
-                let (shown_name, shown_st) = shown
-                    .styles
-                    .into_iter()
-                    .next()
-                    .unwrap_or((name.to_string(), st.clone()));
+                let shown_st = shown.styles.get(&shown_name).cloned().unwrap_or(st.clone());
                 let notices: Vec<String> = tiza_core::redact::masked_texts(&self.doc)
                     .into_iter()
                     .filter(|m| m.subject == format!("style {shown_name}"))

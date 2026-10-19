@@ -341,11 +341,25 @@ pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
         return masked(doc, u32::MAX).annotations;
     }
     let mut out = doc.annotations.clone();
-    // The views at each step, to tell which annotations sit on a line as
-    // it is in the step-0 code (columns on the same text as the mask).
-    let mut views: std::collections::BTreeMap<u32, Document> = Default::default();
+    // The projection at each step: an annotation's columns are on the code
+    // at the end of its own step (ADR 0007 §3d), its lines shifted by the
+    // moves before it.
+    let mut projections: std::collections::BTreeMap<u32, Option<crate::moves::Projection>> =
+        Default::default();
     let mut keys: Vec<Option<String>> = vec![None];
-    keys.extend(doc.view_code.keys().cloned().map(Some));
+    // A linked file read from disk again on reopening keeps its real
+    // columns (t-174 review 3): only one frozen in `views` is masked.
+    keys.extend(
+        doc.view_code
+            .keys()
+            .filter(|k| {
+                doc.views
+                    .keys()
+                    .any(|v| doc.view_key(v).as_ref() == Some(*k))
+            })
+            .cloned()
+            .map(Some),
+    );
     for key in keys {
         let redacts = base_redacts(doc, &key);
         if redacts.is_empty() {
@@ -364,48 +378,103 @@ pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
             .collect();
         let base_text =
             |l: u32| -> Option<String> { code.get(l.checked_sub(first)? as usize).cloned() };
-        let mut others: Vec<Annotation> = Vec::new();
-        for a in doc.annotations.iter().filter(|a| a.file == key) {
-            if matches!(a.shape, Shape::Redact { .. }) {
-                continue;
-            }
-            let on: Vec<u32> = a
-                .shape
-                .line_ranges()
-                .iter()
-                .flat_map(|(f, t)| *f..=*t)
-                .filter(|l| lines.contains(l))
-                .collect();
-            if on.is_empty() {
-                continue;
-            }
-            // Its columns are on the step-0 text of those lines only when
-            // no move changed them before its step.
-            let v = views
-                .entry(a.step)
-                .or_insert_with(|| doc.view_at(a.step).doc);
-            let same = on.iter().all(|l| {
-                v.annotations.iter().any(|x| x.id == a.id)
-                    && v.line_text(*l).map(str::to_string) == base_text(*l)
-            });
-            if same {
-                others.push(a.clone());
-            }
-        }
         let mut d = doc.clone();
-        d.code = code;
+        d.code = code.clone();
         d.source.first_line = first;
-        d.annotations = redacts.into_iter().chain(others).collect();
         d.moves.clear();
         d.base_code.clear();
+        d.annotations = redacts.clone();
         let m = masked(&d, u32::MAX);
+        for r in out.iter_mut().filter(|a| a.file == key) {
+            if let Some(n) = m.annotations.iter().find(|n| n.id == r.id) {
+                r.shape = n.shape.clone();
+            }
+        }
         for a in out.iter_mut().filter(|a| a.file == key) {
-            if let Some(n) = m.annotations.iter().find(|n| n.id == a.id) {
-                a.shape = n.shape.clone();
+            if !matches!(
+                a.shape,
+                Shape::Highlight { .. } | Shape::Mark { .. } | Shape::Arrow { .. }
+            ) {
+                continue;
+            }
+            // Its step's code and where each step-0 line went by then.
+            let proj = projections
+                .entry(a.step)
+                .or_insert_with(|| crate::moves::project(doc, &doc.moves, a.step, false).ok());
+            let Some(proj) = proj.as_ref() else { continue };
+            let Some(at_step) = proj.codes.get(&key) else {
+                continue;
+            };
+            let to_step = |b: u32| -> Option<u32> {
+                let mut l = b;
+                for ap in proj.patches.iter().filter(|p| p.file == key) {
+                    l = ap.map.get_column_anchor(l)?;
+                }
+                Some(l)
+            };
+            let text_at =
+                |l: u32| -> Option<&String> { at_step.get(l.checked_sub(first)? as usize) };
+            // Step line → step-0 line, for the redacted lines whose text is
+            // still the same at its step.
+            let back: Vec<(u32, u32)> = lines
+                .iter()
+                .filter_map(|b| {
+                    let l = to_step(*b)?;
+                    (text_at(l).cloned() == base_text(*b)).then_some((l, *b))
+                })
+                .collect();
+            if back.is_empty() {
+                continue;
+            }
+            // On the step-0 lines (others out of the way), masked, back.
+            const AWAY: u32 = u32::MAX / 2;
+            let to_base = |l: u32| {
+                back.iter()
+                    .find(|(s, _)| *s == l)
+                    .map_or(AWAY + l, |(_, b)| *b)
+            };
+            let from_base = |l: u32| {
+                if l >= AWAY {
+                    l - AWAY
+                } else {
+                    back.iter().find(|(_, b)| *b == l).map_or(l, |(s, _)| *s)
+                }
+            };
+            let mut probe = a.clone();
+            let touched = map_column_lines(&mut probe.shape, to_base);
+            if !touched {
+                continue;
+            }
+            let mut d1 = d.clone();
+            d1.annotations = redacts.iter().cloned().chain([probe]).collect();
+            let m1 = masked(&d1, u32::MAX);
+            if let Some(n) = m1.annotations.last() {
+                let mut shape = n.shape.clone();
+                map_column_lines(&mut shape, from_base);
+                a.shape = shape;
             }
         }
     }
     out
+}
+
+/// Moves the lines of a shape's column anchors through `f`; `true` when
+/// one of them landed on a line `f` knows (below `u32::MAX / 2`).
+fn map_column_lines(shape: &mut Shape, f: impl Fn(u32) -> u32) -> bool {
+    let mut touched = false;
+    let mut go = |l: &mut u32| {
+        *l = f(*l);
+        touched |= *l < u32::MAX / 2;
+    };
+    match shape {
+        Shape::Highlight { span, .. } | Shape::Mark { span, .. } => go(&mut span.line),
+        Shape::Arrow { from, to, .. } => {
+            go(&mut from.line);
+            go(&mut to.line);
+        }
+        _ => {}
+    }
+    touched
 }
 
 /// The redacts of view `key` whose span is on that view's step-0 code: all
@@ -1191,8 +1260,9 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
             push(format!("step {}", n.step), None, Some(n.step), "key");
         }
     }
+    let style_names = f.style_names(doc);
     for (k, st) in &doc.styles {
-        let name = f.shown_kind(k);
+        let name = style_names.get(k).cloned().unwrap_or_else(|| k.clone());
         if name != *k {
             push(format!("style {name}"), None, None, "name");
         }
@@ -1349,6 +1419,27 @@ impl Echo {
             e.doc_words = Arc::new(document_words(doc, &e));
         }
         e
+    }
+
+    /// The document words this filter masks in messages.
+    pub fn doc_words(&self) -> &[String] {
+        &self.doc_words
+    }
+
+    /// Also masks `words` in messages: words an earlier state of the
+    /// document wrote (an annotation since deleted, named by undo/redo).
+    pub fn with_words(mut self, words: &[String]) -> Echo {
+        if words.is_empty() || self.values.is_empty() {
+            return self;
+        }
+        let mut all: Vec<String> = self.doc_words.to_vec();
+        for w in words {
+            if !all.contains(w) {
+                all.push(w.clone());
+            }
+        }
+        self.doc_words = Arc::new(all);
+        self
     }
 
     /// Always active, with no document to read values from: for errors
@@ -1550,6 +1641,17 @@ impl Echo {
         renamed
     }
 
+    /// The masked, unique name of every style of `doc` whose name shares
+    /// text with a masked value (built-in kinds stay).
+    pub fn style_names(&self, doc: &Document) -> std::collections::HashMap<String, String> {
+        self.unique_ids(
+            doc.styles
+                .keys()
+                .map(String::as_str)
+                .filter(|k| crate::model::builtin_kind(k).is_none()),
+        )
+    }
+
     fn shown_doc_with(&self, doc: &mut Document, ids: bool) {
         if self.values.is_empty() {
             return;
@@ -1570,8 +1672,20 @@ impl Echo {
                 *id = self.shown(id);
             }
         };
+        let styles = self.style_names(doc);
         for a in &mut doc.annotations {
+            let kind = match &a.shape {
+                Shape::Mark { kind, .. } => Some(kind.clone()),
+                _ => None,
+            };
             self.shown_shape(&mut a.shape);
+            // A style name masked like the others: unique, so a mark still
+            // names its own style.
+            if let (Some(k), Shape::Mark { kind, .. }) = (kind, &mut a.shape)
+                && let Some(n) = styles.get(k.trim())
+            {
+                *kind = n.clone();
+            }
             if ids {
                 rename(&mut a.id);
                 if let Shape::Spotlight { ids, .. } = &mut a.shape {
@@ -1602,11 +1716,12 @@ impl Echo {
                     || st.glyph.as_deref().is_some_and(|g| self.repeats(g))
             })
         {
-            let styles = std::mem::take(&mut doc.styles);
-            for (k, mut st) in styles {
+            let old = std::mem::take(&mut doc.styles);
+            for (k, mut st) in old {
                 self.shown_opt(&mut st.legend);
                 self.shown_opt(&mut st.glyph);
-                doc.styles.entry(self.shown_kind(&k)).or_insert(st);
+                let name = styles.get(&k).cloned().unwrap_or(k);
+                doc.styles.insert(name, st);
             }
         }
         // Step ids, unique the same way (`goto` names them, t-099).

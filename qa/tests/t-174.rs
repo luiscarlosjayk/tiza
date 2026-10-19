@@ -1855,3 +1855,181 @@ fn r2_9_one_alert_per_masked_id_and_each_copy_with_its_move() {
     );
     assert_clean("stderr", &err);
 }
+
+// ---------- review round 3 ----------
+
+#[test]
+fn r3_1_a_linked_file_read_from_disk_keeps_its_real_columns() {
+    let long = "Zq8wR4tY7uV2mK6YqA8m";
+    let dir = scratch("t174-r3-1");
+    std::fs::write(
+        dir.join("lib.env"),
+        format!("# lib\nLIBKEY={long}\nMODE=x\n"),
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# main", "USER=ana"],
+        "annotations": [
+            {"id": "r2", "step": 0, "type": "redact", "file": "lib.env", "span": {"line": 2, "start": 7, "end": 27}},
+            {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the user"}
+        ],
+        "moves": [{"at_step": 2, "action": "code.link", "file": "lib.env"}]
+    });
+    let path = write(&dir, "linked", &doc);
+    let before = all_steps(&path, &dir, "before");
+    autosave(&dir, "linked", &doc);
+    let after = all_steps(&path, &dir, "after");
+    assert_eq!(after, before, "reopened = shown before");
+    let c: Vec<char> = long.chars().collect();
+    for frame in &after {
+        for w in c.windows(4) {
+            let p: String = w.iter().collect();
+            assert!(!frame.contains(&p), "«{p}» shows:\n{frame}");
+        }
+    }
+}
+
+#[test]
+fn r3_2_messages_about_a_deleted_annotation_mask_its_id() {
+    let live = live_of(&wordy_doc(), "t174-r3-2");
+    live.command("del beef");
+    let msg = format!("{:?}", live.message());
+    assert!(msg.contains("deleted"), "{msg}");
+    assert_no_wordy("the delete message", &msg);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_no_wordy("the undo message", &format!("{:?}", live.message()));
+    live.keys(&[crossterm::event::KeyCode::Char('U')]);
+    let msg = format!("{:?}", live.message());
+    assert!(msg.contains("redone"), "{msg}");
+    assert_no_wordy("the redo message", &msg);
+    assert_no_wordy("the screen", &live.screen(120, 30));
+}
+
+/// Moves that insert a line above the redacted one before the step of the
+/// annotations after the value.
+fn shifted_by_a_move(value: &str) -> Value {
+    let line = format!("TOKEN={value} # tail");
+    let tail = line.chars().count() as u32 - 4;
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", line, "X=1"],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 6 + value.chars().count() as u32}},
+            {"id": "h1", "step": 2, "type": "highlight", "span": {"line": 3, "start": tail, "end": tail + 4}, "label": "the tail"},
+            {"id": "m1", "step": 3, "type": "mark", "kind": "warn", "span": {"line": 3, "start": tail, "end": tail + 4}},
+            {"id": "a1", "step": 3, "type": "arrow", "from": {"line": 3, "col": tail}, "to": {"line": 4, "col": 0}}
+        ],
+        "moves": [
+            {"at_step": 1, "action": "code.patch", "op": "insert", "before": "# demo", "content": "# PROD"},
+            {"at_step": 3, "action": "code.patch", "op": "replace", "find": "X=1", "content": "X=2"}
+        ]
+    })
+}
+
+#[test]
+fn r3_3_annotations_on_lines_moves_shifted_keep_their_place() {
+    for value in ["Ab3x9", "Zq8wR4tY7uV2"] {
+        let dir = scratch(&format!("t174-r3-3-{}", value.len()));
+        let path = write(&dir, "shift", &shifted_by_a_move(value));
+        let before: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&path, &dir, &format!("b-{f}"), f))
+            .collect();
+        autosave(&dir, "shift", &shifted_by_a_move(value));
+        let after: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&path, &dir, &format!("a-{f}"), f))
+            .collect();
+        assert_eq!(
+            after,
+            before,
+            "value of {}: save and reopen moved something",
+            value.len()
+        );
+        let p2 = write(&dir, "put", &shifted_by_a_move(value));
+        let d = tiza_core::fs::open(p2.to_str().unwrap()).unwrap().document;
+        let live = Live::open(d, p2.clone(), dir.join("put.sock"));
+        let scene = live.api_ok("scene.get", json!({}));
+        live.api_ok("scene.put", json!({"document": scene["document"]}));
+        live.command("w");
+        drop(live);
+        let after_put: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&p2, &dir, &format!("p-{f}"), f))
+            .collect();
+        assert_eq!(
+            after_put,
+            before,
+            "value of {}: get → put moved something",
+            value.len()
+        );
+    }
+}
+
+#[test]
+fn r3_4_masked_style_names_stay_unique() {
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", format!("KEY={WORDY}"), "A=1", "B=2"],
+        "styles": {
+            "beef": {"glyph": "★", "legend": "first"},
+            "coffee": {"glyph": "◆", "legend": "second"}
+        },
+        "annotations": [
+            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 4, "end": 20}},
+            {"id": "m1", "step": 1, "type": "mark", "kind": "beef", "span": {"line": 3, "start": 0, "end": 3}},
+            {"id": "m2", "step": 1, "type": "mark", "kind": "coffee", "span": {"line": 4, "start": 0, "end": 3}}
+        ]
+    });
+    let live = live_of(&doc, "t174-r3-4");
+    live.with(|a| a.set_step(1));
+    let text = live.api_ok("render.text", json!({"width": 100}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(
+        text.contains("★ first") && text.contains("◆ second"),
+        "{text}"
+    );
+    assert_no_wordy("render.text", &text);
+    let shown = live.api_ok("scene.get", json!({"as_shown": true}));
+    assert_eq!(
+        shown["document"]["styles"].as_object().unwrap().len(),
+        2,
+        "{shown}"
+    );
+    let r = live.api_ok(
+        "style.set",
+        json!({"name": "coffee", "glyph": "◆", "legend": "second"}),
+    );
+    let other = live.api_ok(
+        "style.set",
+        json!({"name": "beef", "glyph": "★", "legend": "first"}),
+    );
+    assert_ne!(r["name"], other["name"], "{r} {other}");
+    assert_ne!(r["masked_notice"], other["masked_notice"], "{r} {other}");
+    assert_no_wordy("style.set", &format!("{r} {other}"));
+    let dir = scratch("t174-r3-4-save");
+    let path = autosave(&dir, "styles", &doc);
+    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    // Both kept (plus the `unused` one the autosave added).
+    let styles = saved["styles"].as_object().unwrap();
+    assert!(
+        styles.contains_key(MASK) && styles.contains_key(&format!("{MASK}-2")),
+        "{saved}"
+    );
+    let (txt, _) = out_of(&[
+        "render",
+        path.to_str().unwrap(),
+        "--format",
+        "txt",
+        "--step",
+        "1",
+    ]);
+    let txt = String::from_utf8_lossy(&txt).into_owned();
+    assert!(txt.contains("★ first") && txt.contains("◆ second"), "{txt}");
+}
