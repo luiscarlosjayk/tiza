@@ -825,57 +825,160 @@ fn fold(c: char) -> char {
     c.to_lowercase().next().unwrap_or(c)
 }
 
+/// A text as the copy rule reads it: each character folded
+/// ([`fold`]) with its byte offset.
+fn folded(text: &str) -> Vec<(usize, char)> {
+    text.char_indices().map(|(i, c)| (i, fold(c))).collect()
+}
+
+/// One masked value prepared for the copy rule once (t-174 review: the
+/// filter runs on every frame): its folded characters and its folded
+/// pieces of [`MIN_PIECE`] characters with a letter or digit. Never
+/// printed (Debug says nothing of it).
+#[derive(Clone, Default)]
+pub struct Needle {
+    chars: Vec<char>,
+    pieces: std::collections::HashSet<[char; MIN_PIECE]>,
+}
+
+impl std::fmt::Debug for Needle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Needle")
+    }
+}
+
+/// The window of `MIN_PIECE` characters at `k`.
+fn window(t: &[(usize, char)], k: usize) -> [char; MIN_PIECE] {
+    let mut w = ['\0'; MIN_PIECE];
+    for (i, c) in w.iter_mut().enumerate() {
+        *c = t[k + i].1;
+    }
+    w
+}
+
+impl Needle {
+    pub fn new(value: &str) -> Needle {
+        let chars: Vec<char> = value.chars().map(fold).collect();
+        let mut pieces = std::collections::HashSet::new();
+        if chars.len() > MIN_PIECE {
+            for w in chars.windows(MIN_PIECE) {
+                if w.iter().any(|c| c.is_alphanumeric()) {
+                    let mut a = ['\0'; MIN_PIECE];
+                    a.copy_from_slice(w);
+                    pieces.insert(a);
+                }
+            }
+        }
+        Needle { chars, pieces }
+    }
+
+    /// [`value_hits`] on a text already [`folded`] (`len`: its bytes).
+    fn hits(&self, t: &[(usize, char)], len: usize) -> Vec<(usize, usize, bool)> {
+        let mut hits: Vec<(usize, usize, bool)> = Vec::new();
+        let v = &self.chars;
+        if v.is_empty() || t.len() < v.len().min(MIN_PIECE) {
+            return hits;
+        }
+        // Byte end of the char at `k`.
+        let end = |k: usize| t.get(k + 1).map_or(len, |x| x.0);
+        let mut k = 0;
+        while k + v.len() <= t.len() {
+            if t[k..k + v.len()].iter().zip(v).all(|(a, b)| a.1 == *b) {
+                hits.push((t[k].0, end(k + v.len() - 1), true));
+                k += v.len();
+            } else {
+                k += 1;
+            }
+        }
+        if !self.pieces.is_empty() {
+            // Overlapping copies of a piece (`aaaa` in `aaaaa`) too.
+            for k in 0..t.len().saturating_sub(MIN_PIECE - 1) {
+                if self.pieces.contains(&window(t, k)) {
+                    hits.push((t[k].0, end(k + MIN_PIECE - 1), false));
+                }
+            }
+        }
+        hits.sort_unstable();
+        let mut out: Vec<(usize, usize, bool)> = Vec::new();
+        for (s, e, whole) in hits {
+            match out.last_mut() {
+                Some(last) if s <= last.1 => {
+                    last.1 = last.1.max(e);
+                    last.2 |= whole;
+                }
+                _ => out.push((s, e, whole)),
+            }
+        }
+        out
+    }
+}
+
+/// Every masked value of a filter prepared once ([`Needle`]), and every
+/// window of [`MIN_PIECE`] characters of any of them: a text with none of
+/// those windows holds no copy, which is what most texts are, and is
+/// answered with one pass over it.
+#[derive(Clone, Default)]
+struct Needles {
+    list: Vec<Needle>,
+    any: std::collections::HashSet<[char; MIN_PIECE]>,
+}
+
+impl std::fmt::Debug for Needles {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Needles({})", self.list.len())
+    }
+}
+
+impl Needles {
+    fn of(values: &[String]) -> Needles {
+        let list: Vec<Needle> = values.iter().map(|v| Needle::new(v)).collect();
+        let mut any = std::collections::HashSet::new();
+        for n in &list {
+            for w in n.chars.windows(MIN_PIECE) {
+                let mut a = ['\0'; MIN_PIECE];
+                a.copy_from_slice(w);
+                any.insert(a);
+            }
+        }
+        Needles { list, any }
+    }
+
+    /// Whether the folded text `t` may hold a copy at all.
+    fn may_hold(&self, t: &[(usize, char)]) -> bool {
+        !self.list.is_empty()
+            && t.len() >= MIN_PIECE
+            && (0..=t.len() - MIN_PIECE).any(|k| self.any.contains(&window(t, k)))
+    }
+
+    /// The hits of each value in `text`, in the values' order (empty when
+    /// it holds none).
+    fn hits(&self, text: &str) -> Vec<Vec<(usize, usize, bool)>> {
+        let t = folded(text);
+        if !self.may_hold(&t) {
+            return Vec::new();
+        }
+        self.list.iter().map(|n| n.hits(&t, text.len())).collect()
+    }
+
+    fn any_hit(&self, text: &str) -> bool {
+        self.hits(text).iter().any(|h| !h.is_empty())
+    }
+
+    fn holds_whole(&self, text: &str) -> bool {
+        self.hits(text).iter().flatten().any(|h| h.2)
+    }
+}
+
 /// Byte ranges of `text` that hold `value` (t-157): every copy of the
 /// whole value, and every run made of pieces of it of [`MIN_PIECE`]+
 /// characters, merged where they touch; `true` when the range holds the
 /// whole value. Without case (t-174 rework, Luis's decision A): fail
 /// closed. Only searched for, never shown.
 pub fn value_hits(text: &str, value: &str) -> Vec<(usize, usize, bool)> {
-    let mut hits: Vec<(usize, usize, bool)> = Vec::new();
     if value.is_empty() || text.is_empty() {
-        return hits;
+        return Vec::new();
     }
-    let t: Vec<(usize, char)> = text.char_indices().map(|(i, c)| (i, fold(c))).collect();
-    let v: Vec<char> = value.chars().map(fold).collect();
-    // Byte end of the char at `k`.
-    let end = |k: usize| t.get(k + 1).map_or(text.len(), |x| x.0);
-    let at = |k: usize, w: &[char]| {
-        k + w.len() <= t.len() && t[k..k + w.len()].iter().zip(w).all(|(a, b)| a.1 == *b)
-    };
-    let mut k = 0;
-    while k + v.len() <= t.len() {
-        if at(k, &v) {
-            hits.push((t[k].0, end(k + v.len() - 1), true));
-            k += v.len();
-        } else {
-            k += 1;
-        }
-    }
-    if v.len() > MIN_PIECE {
-        let pieces: std::collections::HashSet<&[char]> = v
-            .windows(MIN_PIECE)
-            .filter(|w| w.iter().any(|c| c.is_alphanumeric()))
-            .collect();
-        let tc: Vec<char> = t.iter().map(|x| x.1).collect();
-        // Overlapping copies of a piece (`aaaa` in `aaaaa`) too.
-        for k in 0..tc.len().saturating_sub(MIN_PIECE - 1) {
-            if pieces.contains(&tc[k..k + MIN_PIECE]) {
-                hits.push((t[k].0, end(k + MIN_PIECE - 1), false));
-            }
-        }
-    }
-    hits.sort_unstable();
-    let mut out: Vec<(usize, usize, bool)> = Vec::new();
-    for (s, e, whole) in hits {
-        match out.last_mut() {
-            Some(last) if s <= last.1 => {
-                last.1 = last.1.max(e);
-                last.2 |= whole;
-            }
-            _ => out.push((s, e, whole)),
-        }
-    }
-    out
+    Needle::new(value).hits(&folded(text), text.len())
 }
 
 /// Whether `text` holds a whole copy of `value`, without case (the copy
@@ -1286,6 +1389,8 @@ impl PartialEq for KnownValues {
     }
 }
 
+impl Eq for KnownValues {}
+
 /// Every value the filter masks for `doc`: those under its redacts at any
 /// step (cached) and those it was told about ([`KnownValues`]), longest
 /// first. Empty on a document without redacts.
@@ -1318,29 +1423,28 @@ pub fn carry_values(from: &Document, to: &mut Document) {
     to.known_values = KnownValues(Arc::new(all));
 }
 
-/// `text` with every copy of `values`, whole or a piece of [`MIN_PIECE`]+
-/// characters (t-157), masked with its whole token by [`MASK`] (t-174).
-/// Line by line, so a token whose end is unclear runs to the end of its
-/// line, not of a whole note. A `«`/`»` around the token stays.
-fn mask_copies(text: &str, values: &[String]) -> Option<String> {
-    if values.is_empty() || text.is_empty() {
+/// `text` with every copy of the values of `needles`, whole or a piece of
+/// [`MIN_PIECE`]+ characters (t-157), masked with its whole token by
+/// [`MASK`] (t-174). Line by line, so a token whose end is unclear runs to
+/// the end of its line, not of a whole note. A `«`/`»` around the token
+/// stays.
+fn mask_copies(text: &str, needles: &Needles) -> Option<String> {
+    if needles.list.is_empty() || text.is_empty() {
         return None;
     }
     let mut changed = false;
     let mut lines: Vec<String> = Vec::new();
     for line in text.split('\n') {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
-        for v in values {
-            for (b0, b1, _) in value_hits(line, v) {
-                let (mut t0, mut t1) = token_around(line, b0, b1);
-                while t0 < b0 && line[t0..].starts_with('«') {
-                    t0 += '«'.len_utf8();
-                }
-                while t1 > b1 && line[..t1].ends_with('»') {
-                    t1 -= '»'.len_utf8();
-                }
-                ranges.push((t0, t1));
+        for (b0, b1, _) in needles.hits(line).into_iter().flatten() {
+            let (mut t0, mut t1) = token_around(line, b0, b1);
+            while t0 < b0 && line[t0..].starts_with('«') {
+                t0 += '«'.len_utf8();
             }
+            while t1 > b1 && line[..t1].ends_with('»') {
+                t1 -= '»'.len_utf8();
+            }
+            ranges.push((t0, t1));
         }
         if ranges.is_empty() {
             lines.push(line.to_string());
@@ -1362,6 +1466,13 @@ fn mask_copies(text: &str, values: &[String]) -> Option<String> {
         lines.push(out);
     }
     changed.then(|| lines.join("\n"))
+}
+
+/// `text` with every copy of `values` masked, as [`shown`] does for a
+/// document's values (for a text outside a document: the name of the file
+/// `tiza check` reports on).
+pub fn shown_with(text: &str, values: &[String]) -> String {
+    mask_copies(text, &Needles::of(values)).unwrap_or_else(|| text.to_string())
 }
 
 /// The one function for document-derived text (t-174): `text` as Tiza
@@ -1393,7 +1504,12 @@ fn document_words(doc: &Document, f: &Echo) -> Vec<String> {
         .into_iter()
         .chain(doc.steps.iter().flat_map(|n| n.unknown.keys().cloned()))
     {
-        for tok in s.split(|c: char| !token_char(c)) {
+        // A path's names count one by one (`beefcake.env` of
+        // `/home/x/beefcake.env`): a message names a file by its name.
+        for tok in s
+            .split(|c: char| !token_char(c))
+            .chain(s.split(|c: char| !token_char(c) || c == '/' || c == '\\'))
+        {
             if plain_word(tok) && f.repeats(tok) && !out.iter().any(|o| o == tok) {
                 out.push(tok.to_string());
             }
@@ -1653,17 +1769,23 @@ pub fn masked_texts(doc: &Document, kept: &Kept) -> Vec<MaskedText> {
 /// point 3: written by hand or by another tool; Tiza never writes one):
 /// the redacts whose value is in clear in the step-0 code or in a linked
 /// file frozen in `views`, by id, and the moves whose content holds a copy
-/// of one, by index. Empty for a file reference (the file holds the code
-/// by design) and for a `.tiza` Tiza saved.
-pub fn values_in_clear(doc: &Document) -> (Vec<String>, Vec<usize>) {
+/// of one, by index. A file reference holds its main code by design; a
+/// `.tiza` Tiza saved holds none.
+///
+/// `main`: the main code is embedded (checked with the moves); `frozen`:
+/// the linked files held in `views` (checked whatever the main code is).
+pub fn values_in_clear(doc: &Document, main: bool, frozen: &[String]) -> (Vec<String>, Vec<usize>) {
     let mut ids = Vec::new();
-    if !doc.is_embedded() || !has_redacts(doc) {
+    if !has_redacts(doc) {
         return (ids, Vec::new());
     }
-    let mut keys: Vec<Option<String>> = vec![None];
+    let mut keys: Vec<Option<String>> = Vec::new();
+    if main {
+        keys.push(None);
+    }
     keys.extend(
-        doc.views
-            .keys()
+        frozen
+            .iter()
             .filter_map(|f| doc.view_key(f))
             .filter(|k| doc.view_code.contains_key(k))
             .map(Some),
@@ -1693,11 +1815,15 @@ pub fn values_in_clear(doc: &Document) -> (Vec<String>, Vec<usize>) {
             }
         }
     }
-    let moves = crate::moves::saved_moves(doc)
-        .1
-        .into_iter()
-        .map(|(i, _)| i)
-        .collect();
+    let moves = if main {
+        crate::moves::saved_moves(doc)
+            .1
+            .into_iter()
+            .map(|(i, _)| i)
+            .collect()
+    } else {
+        Vec::new()
+    };
     (ids, moves)
 }
 
@@ -1770,7 +1896,7 @@ fn is_serde_message(s: &str) -> bool {
 /// [`MIN_PIECE`]+ characters of a masked value (the copy rule of t-157).
 /// Without redacts every text is quoted as before. `tiza check` and
 /// `move.add` say «…» the same way (t-154).
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct Echo {
     active: bool,
     written: Vec<String>,
@@ -1778,6 +1904,21 @@ pub struct Echo {
     /// Plain words the document wrote that share text with a value
     /// ([`document_words`]): never kept by [`Echo::shown_message`].
     doc_words: Arc<Vec<String>>,
+    /// `values` prepared once ([`Needles`]).
+    needles: Arc<Needles>,
+}
+
+/// Says how many values and texts it holds, never which.
+impl std::fmt::Debug for Echo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Echo(active: {}, {} values, {} written)",
+            self.active,
+            self.values.len(),
+            self.written.len()
+        )
+    }
 }
 
 /// A plain lowercase word (`note`, `dashed`, `secret`): the vocabulary of
@@ -1796,13 +1937,7 @@ impl Echo {
         if !has_redacts(doc) {
             return Echo::default();
         }
-        Echo {
-            active: true,
-            written: Vec::new(),
-            values: all_values(doc),
-            ..Echo::default()
-        }
-        .written(document_targets(doc))
+        Echo::with_values(all_values(doc)).written(document_targets(doc))
     }
 
     /// [`Echo::new`] without the document's targets, for listings drawn
@@ -1812,10 +1947,16 @@ impl Echo {
         if !has_redacts(doc) {
             return Echo::default();
         }
+        Echo::with_values(all_values(doc))
+    }
+
+    /// An active filter for `values`, prepared once.
+    fn with_values(values: Arc<Vec<String>>) -> Echo {
         Echo {
             active: true,
             written: Vec::new(),
-            values: all_values(doc),
+            needles: Arc::new(Needles::of(&values)),
+            values,
             ..Echo::default()
         }
     }
@@ -1912,7 +2053,7 @@ impl Echo {
     /// copy of a masked value, whole or a piece, masked with its whole
     /// token by the eight bullets of the code.
     pub fn shown(&self, text: &str) -> String {
-        mask_copies(text, &self.values).unwrap_or_else(|| text.to_string())
+        mask_copies(text, &self.needles).unwrap_or_else(|| text.to_string())
     }
 
     /// A message Tiza writes that may carry document text (the bar, an
@@ -1934,7 +2075,7 @@ impl Echo {
             rest = &rest[start..];
             let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
             let tok = &rest[..end];
-            let whole = self.values.iter().any(|v| holds_value(tok, v));
+            let whole = self.needles.holds_whole(tok);
             if !tok.is_empty()
                 && plain_word(tok)
                 && !whole
@@ -1951,19 +2092,19 @@ impl Echo {
 
     /// Whether [`Echo::shown`] changes `text` (it shares text with a masked value).
     pub fn repeats(&self, text: &str) -> bool {
-        !self.values.is_empty() && self.values.iter().any(|v| !value_hits(text, v).is_empty())
+        !self.values.is_empty() && self.needles.any_hit(text)
     }
 
     fn shown_opt(&self, t: &mut Option<String>) {
         if let Some(s) = t
-            && let Some(m) = mask_copies(s, &self.values)
+            && let Some(m) = mask_copies(s, &self.needles)
         {
             *s = m;
         }
     }
 
     fn shown_str(&self, s: &mut String) {
-        if let Some(m) = mask_copies(s, &self.values) {
+        if let Some(m) = mask_copies(s, &self.needles) {
             *s = m;
         }
     }
@@ -2172,6 +2313,60 @@ impl Echo {
         }
     }
 
+    /// The file names of a reader's copy (`scene.get {"as_shown": true}`,
+    /// `tiza://scene`) masked (t-174 review): the source path, the keys of
+    /// `views`, the files `code.link` moves and annotations name. Each name
+    /// that shares text with a masked value gets one masked name, unique
+    /// among them and the same everywhere it is named (a link to the main
+    /// file takes the masked source path), so the copy still renders.
+    pub fn shown_files(&self, doc: &mut Document) {
+        if self.values.is_empty() {
+            return;
+        }
+        let main = doc.source.path.clone();
+        // Every key as the document resolves it, before anything is renamed.
+        let link_keys: Vec<Option<String>> = doc
+            .moves
+            .iter()
+            .map(|m| match &m.action {
+                crate::moves::MoveAction::CodeLink(l) => doc.view_key(&l.file),
+                _ => None,
+            })
+            .collect();
+        let mut names: Vec<String> = main.iter().cloned().collect();
+        names.extend(doc.views.keys().cloned());
+        names.extend(link_keys.iter().flatten().cloned());
+        names.extend(doc.annotations.iter().filter_map(|a| a.file.clone()));
+        let renamed = self.unique_ids(names.iter().map(String::as_str));
+        let rename = |n: &str| renamed.get(n).cloned().unwrap_or_else(|| n.to_string());
+        let new_main = main.as_deref().map(rename);
+        doc.source.path = new_main.clone();
+        if let crate::model::CodeSource::File { file, .. } = &mut doc.code_src {
+            *file = self.shown(file);
+        }
+        let views = std::mem::take(&mut doc.views);
+        for (k, v) in views {
+            doc.views.insert(rename(&k), v);
+        }
+        for a in &mut doc.annotations {
+            if let Some(f) = &mut a.file {
+                *f = rename(f);
+            }
+        }
+        for (m, key) in doc.moves.iter_mut().zip(link_keys) {
+            if let crate::moves::MoveAction::CodeLink(l) = &mut m.action {
+                l.file = match key {
+                    Some(k) => rename(&k),
+                    // The main file: by its (masked) path.
+                    None if self.repeats(&l.file) => {
+                        new_main.clone().unwrap_or_else(|| MASK.into())
+                    }
+                    None => l.file.clone(),
+                };
+            }
+        }
+    }
+
     /// `text` with every copy, or piece of [`MIN_PIECE`]+ characters, of a
     /// masked value taken out with its whole token (t-157), for the free
     /// text an echo repeats (a label, a note).
@@ -2183,9 +2378,9 @@ impl Echo {
     /// `whole_only`) taken out with its whole token.
     fn take_out(&self, text: &str, whole_only: bool) -> String {
         let mut out = text.to_string();
-        for v in self.values.iter() {
+        for n in self.needles.list.iter() {
             let mut tokens: Vec<(usize, usize)> = Vec::new();
-            for (b0, b1, whole) in value_hits(&out, v) {
+            for (b0, b1, whole) in n.hits(&folded(&out), out.len()) {
                 if whole_only && !whole {
                     continue;
                 }
@@ -2225,8 +2420,7 @@ impl Echo {
         let mut tok = String::new();
         let flush = |tok: &mut String, res: &mut String| {
             if !tok.is_empty() {
-                let hit = (!plain_word(tok) || written_word(tok))
-                    && self.values.iter().any(|v| !value_hits(tok, v).is_empty());
+                let hit = (!plain_word(tok) || written_word(tok)) && self.needles.any_hit(tok);
                 res.push_str(if hit { "…" } else { tok });
                 tok.clear();
             }

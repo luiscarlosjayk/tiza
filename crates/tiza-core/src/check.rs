@@ -141,6 +141,10 @@ pub struct CheckOptions {
     /// caller knows it (the live instance, [`crate::redact::Kept`]); `None`:
     /// as a reader finds the file ([`crate::redact::Kept::reading`]).
     pub kept: Option<crate::redact::Kept>,
+    /// The linked files the `.tiza` holds in `views` when the caller knows
+    /// them (the live instance, whose report freezes every linked file);
+    /// `None`: the document's own `views`.
+    pub frozen: Option<Vec<String>>,
 }
 
 /// Everything `check` found about one document.
@@ -166,6 +170,11 @@ pub struct Report {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub narrower: Option<Narrower>,
     pub findings: Vec<Finding>,
+    /// The masked values of the document (in memory only, never written
+    /// or printed): [`Report::to_text`] masks the file name with them.
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub values: crate::redact::KnownValues,
 }
 
 /// The widths below `min_clean_width` where a take shows every label
@@ -219,6 +228,7 @@ impl Report {
             min_clean_width: clean,
             narrower: None,
             findings,
+            values: Default::default(),
         }
     }
 
@@ -231,6 +241,8 @@ impl Report {
             out.push('\n');
         }
         let plural = |n: usize, w: &str| format!("{n} {w}{}", if n == 1 { "" } else { "s" });
+        // The file's name is shown text (t-174 review: `9vK7wPx3Lm.tiza`).
+        let name = crate::redact::shown_with(name, &self.values.0);
         out.push_str(&format!(
             "{name}: {}, {}{}\n",
             plural(self.errors, "error"),
@@ -408,16 +420,37 @@ fn check_text_with(
     // An embedded `.tiza` nobody saved in Tiza (written by hand or by
     // another tool) that holds a value under a redact in clear: Tiza would
     // save it masked (t-174 rework point 3).
-    if let crate::redact::Kept::InClear { file, .. } = &kept {
-        let (ids, moves) = crate::redact::values_in_clear(&doc);
+    let frozen: Vec<String> = opts
+        .frozen
+        .clone()
+        .unwrap_or_else(|| doc.views.keys().cloned().collect());
+    let clear = match &kept {
+        crate::redact::Kept::InClear { file } => Some((file.clone(), true)),
+        // A reader of a file reference: its frozen linked files still count.
+        crate::redact::Kept::OnScreen if opts.kept.is_none() => Some((
+            crate::redact::shown(opts.name.as_deref().unwrap_or("the file"), &doc),
+            false,
+        )),
+        _ => None,
+    };
+    if let Some((file, main)) = &clear {
+        let (ids, moves) = crate::redact::values_in_clear(&doc, *main, &frozen);
         for id in ids {
             out.push(
                 Finding::new(
                     Level::Warning,
                     "clear_value",
-                    format!(
-                        "the embedded code holds the value under this redact in clear; {file} still holds it — open and save it in Tiza"
-                    ),
+                    if *main {
+                        format!(
+                            "the embedded code holds the value under this redact in clear; {file} still holds it — open and save it in Tiza"
+                        )
+                    } else {
+                        // A file reference keeps what it holds when saved:
+                        // `:embed` freezes everything masked.
+                        format!(
+                            "the linked file frozen in `views` holds the value under this redact in clear; {file} still holds it — open it in Tiza and :embed it"
+                        )
+                    },
                 )
                 .id(crate::redact::shown(&id, &doc)),
             );
@@ -441,6 +474,7 @@ fn check_text_with(
     // a mask never leaves `check`.
     scrub_secrets(&doc, &mut out);
     let mut report = Report::new(width, out, Some(max), clean);
+    report.values = crate::redact::KnownValues(crate::redact::all_values(&doc));
     if let Some(c) = clean
         && width < c
         && !report.findings.iter().any(|f| f.code == "clipped_label")
@@ -457,6 +491,11 @@ fn check_text_with(
 /// text under a redact. `base_dir` resolves relative files the document
 /// names but did not load.
 pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
+    let mut opts = opts.clone();
+    if opts.frozen.is_none() {
+        opts.frozen = Some(doc.views.keys().cloned().collect());
+    }
+    let opts = &opts;
     let mut d = doc.clone();
     d.sync_code_src();
     d.code_src = crate::model::CodeSource::Embedded(d.base().to_vec());

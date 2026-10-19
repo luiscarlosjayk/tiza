@@ -911,82 +911,193 @@ impl Document {
     }
 
     /// A `scene.put` of the copy `scene.get` handed out ([`embedded_copy`]),
-    /// put back on what this document reads from disk (t-174 rework 1):
-    /// the masked code of a file reference becomes the reference again
-    /// (with its real code), a linked file frozen only for the wire reads
-    /// from its file again, and the annotations and moves that came back as
-    /// the copy had them take their real columns and content again. An
-    /// annotation the agent moved on such a file keeps its place, its
-    /// columns mapped from the masked line to the real one. Without this a
-    /// put turned a file reference into an embedded `.tiza` and its save
-    /// masked the author's texts for good. A document whose code is not
-    /// the copy's (another code, another source) is left as it came.
+    /// put back on what this document reads from disk (t-174 rework 1 and
+    /// its review): the masked code of a file reference becomes the
+    /// reference again (with its real code), a linked file read from disk
+    /// or frozen in `views` gets its own code back, the annotations take
+    /// their real columns again ([`Document::columns_from_copy`]) and the
+    /// moves whose content the copy masked get it back, matched by their
+    /// content, wherever they moved in the list. Without this a put turned a
+    /// file reference into an embedded `.tiza` and its save masked the
+    /// author's texts for good.
+    ///
+    /// Fails CLOSED with `invalid_argument`, never quoting a value:
+    /// - a file reference (or a linked file read from disk) whose code
+    ///   comes back neither as the copy nor as the real code (an edited
+    ///   copy, or one older than a reload): the document follows its file;
+    /// - a redact of the copy that comes back narrower, on another line or
+    ///   not at all, where the real code goes back under it;
+    /// - a move whose masked content matches no move of this document.
+    ///
+    /// A document from another source is left as it came.
     ///
     /// [`embedded_copy`]: Document::embedded_copy
-    pub fn restore_copy(&self, put: &mut Document) {
+    pub fn restore_copy(&self, put: &mut Document) -> Result<(), Error> {
         if put.source.path != self.source.path {
-            return;
+            return Ok(());
         }
         let copy = self.embedded_copy();
-        let mut restored: Vec<ViewKey> = Vec::new();
-        if matches!(self.code_src, CodeSource::File { .. }) && put.code_src == copy.code_src {
+        let echo = crate::redact::Echo::quoting(self);
+        // Keys whose code goes back to the real one, and whether the put
+        // brought it masked (its columns are the copy's then).
+        let mut restored: Vec<(ViewKey, bool)> = Vec::new();
+        if let CodeSource::File { file, .. } = &self.code_src {
+            let masked = put.code_src == copy.code_src;
+            let real = put.code_src == CodeSource::Embedded(self.base().to_vec());
+            if !masked && !real {
+                return Err(Error::Invalid(format!(
+                    "scene.put: this document follows {} and the code sent is not its code as this instance has it (an edited copy, or one older than a reload): edit the file, or scene.get again (:embed first to replace the code)",
+                    echo.shown(file)
+                )));
+            }
             put.code_src = self.code_src.clone();
             put.code = self.base().to_vec();
             put.source.first_line = self.base_first();
-            restored.push(None);
+            restored.push((None, masked));
         }
-        // Linked files: the ones this document did not hold in `views`
-        // (read from disk) go back to their real code.
+        // Linked files: each back to its own code, read from disk or frozen
+        // in `views` (the copy froze them all for the wire).
         for (file, code) in &copy.views {
-            if self.views.contains_key(file) || put.views.get(file) != Some(code) {
-                continue;
-            }
             let Some(key) = self.view_key(file) else {
                 continue;
             };
             let Some(real) = self.view_code.get(&key) else {
                 continue;
             };
-            put.views.remove(file);
-            put.view_code.insert(key.clone(), real.clone());
-            restored.push(Some(key));
-        }
-        if restored.is_empty() {
-            return;
-        }
-        let key_of = |a: &Annotation| a.file.as_deref().and_then(|f| self.view_key(f));
-        // Annotations as the copy had them take their real columns again;
-        // the ones the agent placed or moved on the masked copy are mapped.
-        let mut moved: Vec<usize> = Vec::new();
-        for (i, a) in put.annotations.iter_mut().enumerate() {
-            if !restored.contains(&key_of(a)) {
+            let frozen = self.views.get(file);
+            let sent = put.views.get(file);
+            let masked = sent == Some(code);
+            let as_real = sent == Some(real) || (frozen.is_some() && sent == frozen);
+            if !masked && !as_real {
+                if frozen.is_none() && sent.is_some() {
+                    return Err(Error::Invalid(format!(
+                        "scene.put: {} is read from its file and the code sent for it is not its code as this instance has it: edit the file, or scene.get again",
+                        echo.shown(file)
+                    )));
+                }
+                // Frozen and edited (embedded code, the agent's to change),
+                // or left out (read from disk again): as it came.
                 continue;
             }
-            match (copy.find_annotation(&a.id), self.find_annotation(&a.id)) {
-                (Some(c), Some(o))
-                    if crate::redact::columns(&a.shape) == crate::redact::columns(&c.shape) =>
-                {
-                    crate::redact::set_columns(&mut a.shape, &o.shape);
+            match frozen {
+                Some(f) => {
+                    put.views.insert(file.clone(), f.clone());
                 }
-                _ => moved.push(i),
+                None => {
+                    put.views.remove(file);
+                }
             }
+            put.view_code.insert(key.clone(), real.clone());
+            restored.push((Some(key), masked));
         }
+        if restored.is_empty() {
+            return Ok(());
+        }
+        let key_of = |a: &Annotation| a.file.as_deref().and_then(|f| self.view_key(f));
+        // The annotations of a code that came back masked: on the real
+        // columns again.
         let anns: Vec<(ViewKey, &mut Annotation)> = put
             .annotations
             .iter_mut()
-            .enumerate()
-            .filter(|(i, _)| moved.contains(i))
-            .map(|(_, a)| (key_of(a), a))
+            .filter_map(|a| {
+                let k = key_of(a);
+                restored.contains(&(k.clone(), true)).then_some((k, a))
+            })
             .collect();
-        crate::redact::unmask_columns(self, anns);
-        // The moves the copy masked, as they were.
-        for (i, m) in put.moves.iter_mut().enumerate() {
-            if copy.moves.get(i) == Some(m)
-                && let Some(o) = self.moves.get(i)
-            {
-                *m = o.clone();
+        self.columns_from_copy(&copy, anns);
+        // A redact over the real code never comes back narrower or gone.
+        for o in &self.annotations {
+            let Shape::Redact { span: real, .. } = &o.shape else {
+                continue;
+            };
+            // Only where the code came back masked: a put of the real code
+            // (`tiza scene put FILE`) saw the value anyway.
+            if !restored.iter().any(|(k, m)| *k == o.file && *m) {
+                continue;
+            }
+            let covers = put.find_annotation(&o.id).is_some_and(|a| {
+                key_of(a) == o.file
+                    && matches!(&a.shape, Shape::Redact { span, .. }
+                        if span.line == real.line && span.start <= real.start && span.end >= real.end)
+            });
+            if !covers {
+                return Err(Error::Invalid(format!(
+                    "scene.put: redact {} does not come back over its value (narrower, on another line or left out), and the real code would show under it: send it as scene.get gave it, or delete it first with annotation.delete",
+                    echo.shown(&o.id)
+                )));
             }
         }
+        // The moves whose content the copy masked get it back, matched by
+        // content (the agent may insert, delete, reorder or move them).
+        let masked_moves: Vec<usize> = (0..self.moves.len().min(copy.moves.len()))
+            .filter(|&j| self.moves[j] != copy.moves[j])
+            .collect();
+        let mut used: Vec<usize> = Vec::new();
+        let content = |m: &Move| match &m.action {
+            MoveAction::CodePatch(p) => p.content.clone(),
+            _ => None,
+        };
+        // Exact copies first, then the same content elsewhere.
+        for exact in [true, false] {
+            for m in put.moves.iter_mut() {
+                let Some(c) = content(m) else { continue };
+                if !c.contains(crate::redact::MASK) {
+                    continue;
+                }
+                let found = masked_moves.iter().copied().find(|j| {
+                    !used.contains(j)
+                        && content(&copy.moves[*j]).as_deref() == Some(c.as_str())
+                        && (!exact || copy.moves[*j] == *m)
+                });
+                if let Some(j) = found
+                    && let (MoveAction::CodePatch(p), MoveAction::CodePatch(real)) =
+                        (&mut m.action, &self.moves[j].action)
+                {
+                    p.content = real.content.clone();
+                    used.push(j);
+                }
+            }
+        }
+        // Masked content left over (a duplicate, an edit of the bullets):
+        // it would replace the real content for good.
+        for (i, m) in put.moves.iter().enumerate() {
+            if let Some(c) = content(m)
+                && c.contains(crate::redact::MASK)
+                && !self
+                    .moves
+                    .iter()
+                    .any(|o| content(o).as_deref() == Some(c.as_str()))
+            {
+                return Err(Error::Invalid(format!(
+                    "scene.put: move #{} carries content masked for the wire that matches no move of this document: send it as scene.get gave it, or write its content again",
+                    i + 1
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// Annotations placed on the masked copy `copy` of this document
+    /// ([`Document::embedded_copy`], what `scene.get` hands out), each with
+    /// its file's key, put on the real columns of this document (a
+    /// `scene.put` or `scene.patch` of that copy, t-174 review): one that
+    /// comes back with the copy's columns takes its real ones; one the
+    /// agent moved or added is mapped from the masked line to the real one
+    /// ([`crate::redact::unmask_columns`]).
+    pub fn columns_from_copy(&self, copy: &Document, anns: Vec<(ViewKey, &mut Annotation)>) {
+        let mut moved: Vec<(ViewKey, &mut Annotation)> = Vec::new();
+        for (k, a) in anns {
+            match (copy.find_annotation(&a.id), self.find_annotation(&a.id)) {
+                (Some(c), Some(o))
+                    if c.file == o.file
+                        && crate::redact::columns(&a.shape) == crate::redact::columns(&c.shape) =>
+                {
+                    crate::redact::set_columns(&mut a.shape, &o.shape);
+                }
+                _ => moved.push((k, a)),
+            }
+        }
+        crate::redact::unmask_columns(self, moved);
     }
 
     // ---- moves (ADR 0007, t-098) and views (t-105) ----

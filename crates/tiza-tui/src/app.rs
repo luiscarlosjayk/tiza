@@ -161,7 +161,7 @@ pub struct App {
     /// The revision [`App::note_masked_texts`] last looked at (t-174).
     masked_checked: Option<u64>,
     /// The texts repeating a masked value already said (t-174).
-    masked_said: Vec<String>,
+    masked_said: Vec<(String, String)>,
     /// Words the document wrote in this session that share text with a
     /// masked value (t-174): masked in messages even once they are gone.
     seen_words: Vec<String>,
@@ -491,11 +491,22 @@ impl App {
         }
         let found = tiza_core::redact::masked_texts(&self.doc, &self.kept());
         let keys: Vec<String> = found.iter().map(|m| m.key()).collect();
-        self.masked_said.retain(|k| keys.contains(k));
+        // A text said in other words before (`… still holds it in clear`,
+        // now `… saved masked`) or fixed since: its pending alert goes, so
+        // the rows never say two things of one text (t-174 review).
+        let stale: Vec<String> = self
+            .masked_said
+            .iter()
+            .filter(|(k, _)| !keys.contains(k))
+            .map(|(_, n)| n.clone())
+            .collect();
+        self.masked_said.retain(|(k, _)| keys.contains(k));
+        self.redact_alerts.retain(|a| !stale.contains(a));
         for (m, k) in found.into_iter().zip(keys) {
-            if !self.masked_said.contains(&k) {
-                self.masked_said.push(k);
-                self.redact_alert(m.notice());
+            if !self.masked_said.iter().any(|(s, _)| *s == k) {
+                let notice = self.shown_message(&m.notice());
+                self.masked_said.push((k, notice.clone()));
+                self.redact_alert(notice);
             }
         }
     }
@@ -508,6 +519,10 @@ impl App {
     pub fn kept(&self) -> tiza_core::redact::Kept {
         use tiza_core::redact::Kept;
         if !self.doc.is_embedded() {
+            return Kept::OnScreen;
+        }
+        // The last write failed: what is on screen was not written.
+        if self.save_error.is_some() {
             return Kept::OnScreen;
         }
         if self.wrote {
@@ -880,6 +895,7 @@ impl App {
                     self.masked_checked = None;
                 }
                 if self.save_error.take().is_some() {
+                    self.masked_checked = None;
                     // Writable again: say it once, over the action's own
                     // confirmation, and the bar indicator goes away.
                     let msg = format!("saved to {}", self.save_path.display());
@@ -895,6 +911,10 @@ impl App {
                         self.save_path.display()
                     ));
                     self.save_warning_pending = true;
+                }
+                if self.save_error.is_none() {
+                    // Not written: the alerts no longer say «saved masked».
+                    self.masked_checked = None;
                 }
                 self.save_error = Some(e.to_string());
                 Err(e)
@@ -1198,7 +1218,7 @@ impl App {
         // from disk) goes back on that file: the put must not turn it into
         // an embedded `.tiza` whose save masks the author's texts for good
         // (t-174 rework 1, AC4/AC10).
-        self.doc.restore_copy(&mut doc);
+        self.doc.restore_copy(&mut doc)?;
         if doc.code.is_empty() {
             match &doc.code_src {
                 tiza_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
@@ -1264,6 +1284,12 @@ impl App {
                 d.styles.insert(name, st);
             }
         }
+        // `scene.get` hands out the masked copy: an annotation sent back
+        // from it is on the copy's columns, put back on the real ones, and
+        // a redact never comes back narrower than the value under it
+        // (t-174 review: `STRIPE=••••••••4eC3…`).
+        let copy = (p.annotations.is_some() && tiza_core::redact::has_redacts(&self.doc))
+            .then(|| self.doc.embedded_copy());
         if let Some(anns) = p.annotations {
             for v in anns {
                 let id = v
@@ -1289,12 +1315,33 @@ impl App {
                     deleted.push(id);
                     continue;
                 }
-                let ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
+                let mut ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
                     Error::Invalid(format!(
                         "annotation {id}: {}",
                         tiza_core::redact::serde_message(&e, &v)
                     ))
                 })?;
+                if let Some(copy) = &copy {
+                    let key = ann.file.as_deref().and_then(|f| self.doc.view_key(f));
+                    self.doc.columns_from_copy(copy, vec![(key, &mut ann)]);
+                    if let Some(Annotation {
+                        shape: Shape::Redact { span: real, .. },
+                        file,
+                        ..
+                    }) = self.doc.find_annotation(&id)
+                    {
+                        let covers = ann.file.as_deref().and_then(|f| self.doc.view_key(f))
+                            == *file
+                            && matches!(&ann.shape, Shape::Redact { span, .. }
+                                if span.line == real.line && span.start <= real.start && span.end >= real.end);
+                        if !covers {
+                            return Err(Error::Invalid(format!(
+                                "scene.patch: redact {} does not come back over its value (narrower or on another line), and the code under it would show: send it as scene.get gave it, or delete it with annotation.delete",
+                                self.shown(&id)
+                            )));
+                        }
+                    }
+                }
                 d.annotations.retain(|a| a.id != id);
                 d.add(ann)?;
                 if existed {
@@ -1654,10 +1701,18 @@ impl App {
             moves: shown
                 .into_iter()
                 .enumerate()
-                .map(|(i, m)| MoveListed {
-                    index: i + 1,
-                    summary: tiza_core::protocol::describe_move_with(i + 1, &m, &echo),
-                    r#move: m,
+                .map(|(i, mut m)| {
+                    let summary = tiza_core::protocol::describe_move_with(i + 1, &m, &echo);
+                    // A linked file's name is shown text (t-174 review); the
+                    // targets stay as written (the editing structure).
+                    if let tiza_core::moves::MoveAction::CodeLink(l) = &mut m.action {
+                        l.file = echo.shown(&l.file);
+                    }
+                    MoveListed {
+                        index: i + 1,
+                        summary,
+                        r#move: m,
+                    }
                 })
                 .collect(),
             unanchored: self.doc.unanchored(),
@@ -2157,15 +2212,16 @@ impl App {
     /// `follow.status` payload.
     pub fn follow_status(&self) -> Value {
         match &self.follow {
+            // A file name is shown text (t-174 review).
             Some(f) => json!({
                 "enabled": true,
-                "path": f.path.display().to_string(),
+                "path": self.shown(&f.path.display().to_string()),
                 "reloads": f.reloads,
                 "last_reload": f.last_reload_clock,
                 "missing": f.missing,
             }),
             None => {
-                json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())})
+                json!({"enabled": false, "path": self.source_file().map(|p| self.shown(&p.display().to_string()))})
             }
         }
     }
@@ -4800,7 +4856,7 @@ impl App {
                     })?;
                 let msg = self.set_follow(enabled)?;
                 let mut st = self.follow_status();
-                st["message"] = json!(msg);
+                st["message"] = json!(self.shown_message(&msg));
                 st
             }
             "api.methods" => json!(
@@ -4850,6 +4906,12 @@ impl App {
                             *widened = true;
                         }
                     }
+                }
+                // A reader's copy names no file that shares text with a
+                // masked value (t-174 review): renamed alike everywhere, so
+                // it still renders.
+                if p.as_shown {
+                    tiza_core::redact::Echo::quoting(&self.doc).shown_files(&mut document);
                 }
                 serde_json::to_value(Scene {
                     revision: self.revision,
@@ -5042,6 +5104,7 @@ impl App {
                         width,
                         name: None,
                         kept: Some(self.kept()),
+                        frozen: None,
                     },
                 ))?
             }

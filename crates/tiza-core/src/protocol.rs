@@ -1301,7 +1301,12 @@ fn describe_move_raw(index: usize, m: &crate::moves::Move, echo: &crate::redact:
     let p = match &m.action {
         MoveAction::CodePatch(p) => p,
         MoveAction::CodeLink(l) => {
-            return format!("#{index} [step {}] code.link {}", m.at_step, l.label());
+            // A file name is shown text (t-174 review).
+            return format!(
+                "#{index} [step {}] code.link {}",
+                m.at_step,
+                echo.shown(&l.label())
+            );
         }
         MoveAction::Cursor(c) => {
             return format!(
