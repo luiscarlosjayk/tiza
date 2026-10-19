@@ -988,7 +988,12 @@ impl App {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         self.history.record(&self.doc, "add");
-        let step = step.unwrap_or(self.doc.step).max(1);
+        // A redact is born at the step being viewed, step 0 included, and
+        // keeps an explicit `"step": 0` (t-174 review: with
+        // `redact_from_step` one born at step 1 left step 0 in clear).
+        let redact = matches!(shape, Shape::Redact { .. });
+        let step = step.unwrap_or(self.doc.step);
+        let step = if redact { step } else { step.max(1) };
         let kind = shape.kind_name();
         // Marking the value again over a widened redact (t-117) replaces
         // it: the precise mask takes over, the widened state goes away.
@@ -1027,6 +1032,22 @@ impl App {
             Ok(id) => {
                 self.history.label_last(format!("{kind} {id}"));
                 self.touch();
+                // With `redact_from_step`, a redact that does not mask the
+                // step on screen (it was given a later one) says so, loud,
+                // as the API's `hidden` does: the value shows there. (A
+                // redact pinned to a line a later move writes hides nothing
+                // yet: there is no value there to show.)
+                if redact
+                    && self.doc.redact_from_step
+                    && step > self.doc.step
+                    && let Some(why) = self.doc.why_hidden(&id, self.doc.step)
+                {
+                    let shown = self.shown(&id);
+                    self.redact_alert(format!(
+                        "redact {shown} does not mask step {}: {why} — the value shows there",
+                        self.doc.step
+                    ));
+                }
                 Ok(id)
             }
             Err(e) => {

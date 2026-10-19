@@ -3354,3 +3354,70 @@ fn rc4_an_annotations_file_is_masked_in_the_lists() {
     live.keys(&[crossterm::event::KeyCode::Char('L')]);
     assert_no_wordy(":list", &live.screen(140, 40));
 }
+
+// Third check: with `redact_from_step`, a new redact made while step 0 is
+// shown masks step 0 (it was born at step 1, the value in clear at 0).
+#[test]
+fn rc5_a_new_redact_masks_the_step_it_is_made_at_zero_included() {
+    let doc = json!({
+        "schema": 1, "source": {"language": "sh"},
+        "redact_from_step": true,
+        "code": ["# x", format!("TOKEN={VALUE}"), "USER=ana"],
+        "annotations": [{"id": "n1", "step": 2, "type": "note", "line": 3, "text": "the user"}]
+    });
+    for via in ["add", "add step 0", ":redact"] {
+        let live = live_of(&doc, &format!("t174-rc5-{}", via.replace([' ', ':'], "-")));
+        let first = if via == "add step 0" { 1 } else { 0 };
+        live.with(move |a| a.set_step(first));
+        match via {
+            "add" => {
+                let r = live.api_ok(
+                    "annotation.add",
+                    json!({"type": "redact", "at": {"line": 2, "find": "TOKEN="}}),
+                );
+                assert!(r.get("hidden").is_none(), "{r}");
+            }
+            "add step 0" => {
+                live.api_ok(
+                    "annotation.add",
+                    json!({"type": "redact", "step": 0, "at": {"line": 2, "find": "TOKEN="}}),
+                );
+            }
+            _ => live.command("redact 2:TOKEN="),
+        }
+        assert_eq!(
+            live.with(|a| a
+                .doc
+                .annotations
+                .iter()
+                .find(|x| matches!(x.shape, tiza_core::model::Shape::Redact { .. }))
+                .map(|x| x.step)),
+            Some(0),
+            "{via}"
+        );
+        live.with(|a| a.set_step(0));
+        assert_clean(
+            &format!("code.get at step 0 ({via})"),
+            &live.api_ok("code.get", json!({})).to_string(),
+        );
+        assert_clean(
+            &format!("the screen at step 0 ({via})"),
+            &live.screen(120, 20),
+        );
+        live.command("w");
+        let saved = std::fs::read_to_string(live.with(|a| a.save_path.clone())).unwrap();
+        assert_clean(&format!("the saved .tiza ({via})"), &saved);
+    }
+    // A redact that does not mask the step on screen says so in the TUI too.
+    let live = live_of(&doc, "t174-rc5-later");
+    live.with(|a| a.set_step(0));
+    live.api_ok(
+        "annotation.add",
+        json!({"type": "redact", "step": 2, "at": {"line": 2, "find": "TOKEN="}}),
+    );
+    let alerts = live.with(|a| a.redact_alerts.clone()).join("\n");
+    assert!(
+        alerts.contains("does not mask step 0: it masks from step 2"),
+        "{alerts}"
+    );
+}

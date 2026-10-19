@@ -188,6 +188,11 @@ s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
     api("step.set", {"step": 2})
     api("annotation.add", {"type": "redact", "step": 2, "at": {"line": 2, "col": 6, "end": 18}})
+    # The redact masks from step 2 (`redact_from_step`), not step 1 on
+    # screen: the TUI says so on an alert row (t-174); a key dismisses it.
+    s.wait_for(lambda out: b"does not mask step 1" in out, 10, "redact alert")
+    s.send(b"\x1b")
+    s.settle(0.3)
     api("move.add", {"at_step": 2, "action": "code.patch", "op": "replace", "position": "2",
                      "content": "token=abc123secretLONGER-tail99"})
     api("move.add", {"at_step": 1, "action": "code.patch", "op": "insert", "position": "1",
