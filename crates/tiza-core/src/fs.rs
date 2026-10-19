@@ -303,10 +303,97 @@ pub fn view_path(file: &str, base_dir: Option<&Path>) -> PathBuf {
     std::path::absolute(&full).unwrap_or(full)
 }
 
+/// Whether two paths name one file: the same path once `.`/`..` are
+/// resolved, the same canonical path, or (Unix) the same device and inode
+/// — a symlink, a hard link, or another case of the name on a
+/// case-insensitive disk (APFS).
+fn same_file(a: &Path, b: &Path) -> bool {
+    let lexical = |p: &Path| Document::normalize_file(&p.to_string_lossy());
+    if lexical(a) == lexical(b) {
+        return true;
+    }
+    if let (Ok(x), Ok(y)) = (std::fs::canonicalize(a), std::fs::canonicalize(b))
+        && x == y
+    {
+        return true;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if let (Ok(x), Ok(y)) = (std::fs::metadata(a), std::fs::metadata(b)) {
+            return x.dev() == y.dev() && x.ino() == y.ino();
+        }
+    }
+    false
+}
+
+/// The name `file` should go by in `doc` (t-183 review A1): an alias of the
+/// main file or of a file in `known` (`../dir/app.env`, its absolute path,
+/// a symlink, `APP.env` on a case-insensitive disk) becomes that file's
+/// own name, so it shows that file's code with its masks — never a view of
+/// its own without them. Otherwise `file` normalized.
+pub fn canonical_link(
+    doc: &Document,
+    file: &str,
+    base_dir: Option<&Path>,
+    known: &[String],
+) -> String {
+    let f = Document::normalize_file(file);
+    if doc.view_key(&f).is_none() {
+        return f;
+    }
+    let target = view_path(&f, base_dir);
+    if let CodeSource::File { file: main, .. } = &doc.code_src
+        && let Some(path) = source_file(doc, base_dir)
+        && same_file(&target, &path)
+    {
+        return main.clone();
+    }
+    if let Some(p) = &doc.source.path
+        && same_file(&target, &view_path(p, base_dir))
+    {
+        return p.clone();
+    }
+    known
+        .iter()
+        .find(|k| **k != f && same_file(&target, &view_path(k, base_dir)))
+        .cloned()
+        .unwrap_or(f)
+}
+
+/// Every `code.link` of `doc`, and every annotation's `file`, by the name
+/// [`canonical_link`] gives it: the first name a file goes by wins.
+pub fn canonicalize_links(doc: &mut Document, base_dir: Option<&Path>) {
+    let mut known: Vec<String> = doc.views.keys().cloned().collect();
+    known.extend(doc.view_code.keys().cloned());
+    for i in 0..doc.moves.len() {
+        let crate::moves::MoveAction::CodeLink(l) = &doc.moves[i].action else {
+            continue;
+        };
+        let name = canonical_link(doc, &l.file, base_dir, &known);
+        if let Some(k) = doc.view_key(&name)
+            && !known.contains(&k)
+        {
+            known.push(k);
+        }
+        if let crate::moves::MoveAction::CodeLink(l) = &mut doc.moves[i].action {
+            l.file = name;
+        }
+    }
+    for i in 0..doc.annotations.len() {
+        if let Some(f) = doc.annotations[i].file.clone() {
+            let name = canonical_link(doc, &f, base_dir, &known);
+            doc.annotations[i].file = doc.view_key(&name);
+        }
+    }
+}
+
 /// Loads the code of every file the document's `code.link` moves name
 /// (t-105): from the embedded `views` when present, else from disk next to
 /// the document. A missing file is an error naming the move and the path.
+/// Aliases of one file are one view first ([`canonicalize_links`]).
 pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
+    canonicalize_links(doc, base_dir);
     let links: Vec<(usize, u32, String)> = doc
         .moves
         .iter()

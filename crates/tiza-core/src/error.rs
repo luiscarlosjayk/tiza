@@ -4,12 +4,15 @@ use thiserror::Error;
 pub enum Error {
     #[error("line {line} does not exist (the document spans {first} to {last})")]
     LineOutOfRange { line: u32, first: u32, last: u32 },
-    #[error("range {start}..{end} does not fit on line {line} (it has {len} graphemes)")]
+    /// `len`: the graphemes of the line, `None` when it is not said (a
+    /// document with a redact, t-183 review A3: the length of a masked
+    /// line would measure the value).
+    #[error("range {start}..{end} does not fit on line {line}{}", graphemes(*len))]
     SpanOutOfRange {
         line: u32,
         start: u32,
         end: u32,
-        len: u32,
+        len: Option<u32>,
     },
     #[error("annotation {0} does not exist")]
     NotFound(String),
@@ -68,6 +71,11 @@ impl Error {
             Error::Json(_) | Error::JsonText(_) => "invalid_json",
         }
     }
+}
+
+fn graphemes(len: Option<u32>) -> String {
+    len.map(|n| format!(" (it has {n} graphemes)"))
+        .unwrap_or_default()
 }
 
 /// What is left of a value or a target an error does not repeat.

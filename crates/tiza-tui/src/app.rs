@@ -1079,6 +1079,43 @@ impl App {
         removed
     }
 
+    /// An agent's columns are on the code as `code.get` shows it, masked
+    /// (t-183 review A3): the shape is checked on that masked copy — an
+    /// error says the length of the line as shown, never of a masked value,
+    /// and a column between the mask and the real end of the line is
+    /// refused or accepted whatever the value — and then put on the real
+    /// columns ([`Document::unmask_annotations`]).
+    fn agent_shape(
+        &self,
+        shape: Shape,
+        file: &Option<String>,
+        step: Option<u32>,
+    ) -> Result<Shape, Error> {
+        if !tiza_core::redact::has_redacts(&self.doc) {
+            return Ok(shape);
+        }
+        let redact = matches!(shape, Shape::Redact { .. });
+        let step = step.unwrap_or(self.doc.step);
+        let step = if redact { step } else { step.max(1) };
+        let file = match file {
+            Some(f) => self.doc.view_key(f),
+            None if !self.doc.moves.is_empty() => self.doc.shown_view_at(step).file,
+            None => None,
+        };
+        let mut ann = Annotation {
+            id: String::new(),
+            step,
+            color: None,
+            markers: None,
+            file,
+            shape,
+        };
+        let copy = self.doc.masked_view();
+        copy.validate_annotation(&ann)?;
+        self.doc.unmask_annotations(&copy, [&mut ann]);
+        Ok(ann.shape)
+    }
+
     pub fn update_annotation(&mut self, p: &UpdateParams) -> Result<(), Error> {
         let mut ann = self
             .doc
@@ -1107,7 +1144,7 @@ impl App {
         }
         if let Some(spec) = &p.shape {
             let (shape, markers) = spec.resolve_with_markers(&self.doc)?;
-            ann.shape = shape;
+            ann.shape = self.agent_shape(shape, &ann.file, Some(ann.step))?;
             ann.markers = markers;
         }
         if let Some(mv) = &p.mv {
@@ -1627,10 +1664,15 @@ impl App {
 
     /// Adds a move (validated against the code at its step). Undoable. A
     /// `code.link` reads its file next to the document first (t-105).
-    pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+    pub fn add_move(&mut self, mut m: Move) -> Result<usize, Error> {
         self.finish_typing();
-        if let tiza_core::moves::MoveAction::CodeLink(l) = &m.action {
+        if let tiza_core::moves::MoveAction::CodeLink(l) = &mut m.action {
             let base = self.save_path.parent().map(Path::to_path_buf);
+            // An alias of a file the document shows is that file, with its
+            // masks (t-183 review A1).
+            let mut known = self.doc.link_files();
+            known.extend(self.doc.view_code.keys().cloned());
+            l.file = fs::canonical_link(&self.doc, &l.file, base.as_deref(), &known);
             fs::load_view(&mut self.doc, &l.file, base.as_deref())?;
         }
         self.history.record(&self.doc, "move added");
@@ -1960,7 +2002,7 @@ impl App {
         let mut whole_redacts: Vec<(String, String)> = Vec::new();
         // Lines of a hunk a whole-line redact also covers: added after every
         // other annotation, so their new ids never take an old one's.
-        let mut extra: Vec<Annotation> = Vec::new();
+        let mut extra: Vec<(String, Annotation)> = Vec::new();
         for (i, (a, shape)) in old.annotations.iter().zip(shapes).enumerate() {
             let is_redact = matches!(a.shape, Shape::Redact { .. });
             if let (Some(spans), Shape::Redact { label, .. }) = (whole[i].take(), &a.shape) {
@@ -1980,10 +2022,13 @@ impl App {
                 };
                 let mut spans = spans.into_iter();
                 let first = spans.next();
-                let kept_one = first.is_some_and(|sp| d.add(mask(sp, a.id.clone())).is_ok());
+                // A mask a reload carries is never refused by the guard of
+                // moves (t-183 review A2): a move that now hits it is
+                // reported below, and its step shows the file's own code.
+                let kept_one = first.is_some_and(|sp| d.add_mask(mask(sp, a.id.clone())).is_ok());
                 if kept_one {
                     whole_redacts.push((a.id.clone(), place));
-                    extra.extend(spans.map(|sp| mask(sp, String::new())));
+                    extra.extend(spans.map(|sp| (a.id.clone(), mask(sp, String::new()))));
                 } else {
                     dropped_redacts.push(a.id.clone());
                 }
@@ -1991,6 +2036,7 @@ impl App {
             }
             // `add` validates against the code at the annotation's step.
             let kept_one = match shape {
+                Some(shape) if is_redact => d.add_mask(Annotation { shape, ..a.clone() }).is_ok(),
                 Some(shape) => d.add(Annotation { shape, ..a.clone() }).is_ok(),
                 None => false,
             };
@@ -1998,13 +2044,17 @@ impl App {
                 dropped_redacts.push(a.id.clone());
             }
         }
-        for ann in extra {
+        for (id, ann) in extra {
             // Two redacts of one hunk cover its lines once.
             let covered = d.annotations.iter().any(|b| b.shape == ann.shape);
-            if !covered {
-                let _ = d.add(ann);
+            if !covered && d.add_mask(ann).is_err() && !dropped_redacts.contains(&id) {
+                // Never silent (it cannot happen on a non-blank line).
+                dropped_redacts.push(id);
             }
         }
+        // A move that changes a line the reload masked: its step shows the
+        // file's own code (masked) until the move is fixed; said loudly.
+        let conflict = d.check_masked_lines().err().map(|e| e.to_string());
         let kept = d.annotations.len();
         let harmless = kept == before && d.annotations == snapshot.annotations;
         let recorded = always.is_some() || !harmless;
@@ -2017,7 +2067,7 @@ impl App {
         self.clamp_cursor();
         self.touch();
         // Loud, and it must outlive the reload's own message (t-117 AC5).
-        self.redact_drop_notice = redact_notice(&whole_redacts, &dropped_redacts);
+        self.redact_drop_notice = redact_notice(&whole_redacts, &dropped_redacts, conflict);
         crate::reanchor::Outcome {
             kept,
             dropped: before.saturating_sub(kept),
@@ -4920,6 +4970,7 @@ impl App {
             "annotation.add" => {
                 let p: AddParams = parse(params)?;
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
+                let shape = self.agent_shape(shape, &p.file, p.step)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 // Where it stands against the view right now (t-155).
                 serde_json::to_value(AnnotationMutated::of(&self.doc, id, self.revision))?
@@ -5314,7 +5365,11 @@ pub fn theme_label(t: ThemeName) -> &'static str {
 /// (t-117, t-183): masked whole (fail-closed) and/or dropped. `None` when
 /// every redact's line is unchanged. Never the text under a mask: ids and
 /// lines.
-fn redact_notice(whole: &[(String, String)], dropped: &[String]) -> Option<String> {
+fn redact_notice(
+    whole: &[(String, String)],
+    dropped: &[String],
+    conflict: Option<String>,
+) -> Option<String> {
     let mut parts = Vec::new();
     if !whole.is_empty() {
         let ids: Vec<&str> = whole.iter().map(|(id, _)| id.as_str()).collect();
@@ -5332,6 +5387,11 @@ fn redact_notice(whole: &[(String, String)], dropped: &[String]) -> Option<Strin
         parts.push(format!(
             "redact {} dropped: the line changed — check the screen before recording",
             dropped.join(", ")
+        ));
+    }
+    if let Some(c) = conflict {
+        parts.push(format!(
+            "{c}: until the move is fixed its step shows the file's own code, masked"
         ));
     }
     (!parts.is_empty()).then(|| format!("{} (u undoes the reload)", parts.join("; ")))

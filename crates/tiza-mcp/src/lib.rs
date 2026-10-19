@@ -1537,7 +1537,7 @@ const RESOURCES: &[(&str, &str, &str, &str)] = &[
     (
         "tiza://scene",
         "scene",
-        "The live document as JSON (code embedded, annotations, styles, step, theme), as readers see it: code under a redact and any text repeating it masked. Read-only: to edit, read the document with `tiza scene get` / socket `scene.get`.",
+        "The live document as JSON (code embedded, annotations, styles, step, theme), as readers see it: the code under a redact masked (the mask covers the code only). Read-only: to edit, read the document with `tiza scene get` / socket `scene.get`.",
         "application/json",
     ),
     (

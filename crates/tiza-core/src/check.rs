@@ -380,9 +380,20 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     // An error does not quote the document's own targets when it has a
     // redact (t-183 D7), as when it is opened. (A warning quotes a target
     // that was found on the masked code: on screen anyway.)
+    // A linked file's name is document text too (review A7): not said in
+    // the place of any finding.
     if crate::redact::has_redacts(&doc) {
-        for f in out.iter_mut().filter(|f| f.level == Level::Error) {
-            f.message = crate::redact::elide_quotes(&f.message);
+        for f in out.iter_mut() {
+            if f.level == Level::Error {
+                f.message = crate::redact::elide_quotes(&f.message);
+            }
+            if let Some(file) = f.file.take() {
+                f.file = Some(crate::redact::ELIDED.into());
+                f.message = f.message.replace(
+                    &format!("({file} spans "),
+                    &format!("({} spans ", crate::redact::ELIDED),
+                );
+            }
         }
     }
     let mut report = Report::new(width, out, Some(max), clean);
@@ -468,6 +479,8 @@ fn load_links(
     base_dir: Option<&Path>,
     out: &mut Vec<Finding>,
 ) -> BTreeSet<String> {
+    // Aliases of one file are one view (t-183 review A1).
+    crate::fs::canonicalize_links(doc, base_dir);
     let mut missing = BTreeSet::new();
     let mut by_file: BTreeMap<String, Vec<(usize, u32, String)>> = BTreeMap::new();
     let mut order: Vec<String> = Vec::new();

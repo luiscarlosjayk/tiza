@@ -8,7 +8,7 @@
 //! - AC2 Eight `•` plus the last `keep` characters, never the real length.
 //! - AC3 Masked everywhere: TUI, txt/md/ansi/svg/png, .cast/.tape,
 //!   render.text, code.get, scene.get; active from step 0 whatever the
-//!   annotation's step (unless `redact_from_step`).
+//!   annotation's step (always, since t-183).
 //! - AC4 Only columns are stored; anchoring by the secret itself is refused;
 //!   `:embed` and `:w` never write the secret.
 //! - AC5 Follow/paste re-anchor a redact; a dropped one is reported loudly.

@@ -556,7 +556,7 @@ fn ac2_keeps_the_pointer_and_the_redact_alert_rows() {
     let live = at_step_0("t155-ac2-rows");
     // The live pointer (t-030) and a pending redact alert (t-135/t-156).
     live.keys(&[KeyCode::Char('f')]);
-    live.with(|a| a.redact_alert("redact a9 widened: mark the value again".into()));
+    live.with(|a| a.redact_alert("redact a9: its line changed, masking L2 whole".into()));
     live.api_ok(
         "annotation.add",
         json!({"type": "note", "line": 2, "text": "x"}),
@@ -570,12 +570,12 @@ fn ac2_keeps_the_pointer_and_the_redact_alert_rows() {
         "{last}"
     );
     assert!(
-        rows[rows.len() - 2].contains("redact a9 widened: mark the value again"),
+        rows[rows.len() - 2].contains("redact a9: its line changed, masking L2 whole"),
         "{screen}"
     );
     assert!(live.with(|a| a.pointer.is_some()));
     assert_eq!(
         live.with(|a| a.redact_alerts.clone()),
-        vec!["redact a9 widened: mark the value again".to_string()]
+        vec!["redact a9: its line changed, masking L2 whole".to_string()]
     );
 }

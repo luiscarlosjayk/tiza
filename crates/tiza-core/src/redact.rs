@@ -636,8 +636,37 @@ pub fn unquoted(doc: &Document, e: Error) -> Error {
         },
         Error::Invalid(s) => Error::Invalid(elide_quotes(&s)),
         Error::StepNotFound(s) => Error::StepNotFound(elide_quotes(&s)),
+        // The length of a line may be that of a masked value (review A3).
+        Error::SpanOutOfRange {
+            line, start, end, ..
+        } => Error::SpanOutOfRange {
+            line,
+            start,
+            end,
+            len: None,
+        },
         other => other,
     }
+}
+
+/// `msg` without ` (it has N graphemes)`.
+fn elide_lengths(msg: &str) -> String {
+    const K: &str = " (it has ";
+    let mut out = String::with_capacity(msg.len());
+    let mut rest = msg;
+    while let Some(k) = rest.find(K) {
+        let after = &rest[k + K.len()..];
+        let digits = after.chars().take_while(char::is_ascii_digit).count();
+        if digits > 0 && after[digits..].starts_with(" graphemes)") {
+            out.push_str(&rest[..k]);
+            rest = &after[digits + " graphemes)".len()..];
+        } else {
+            out.push_str(&rest[..k + K.len()]);
+            rest = after;
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 /// Whether a raw `.tiza` has a redact annotation, before it is parsed.
@@ -660,8 +689,11 @@ pub fn parse_error(raw_redacted: bool, e: serde_json::Error) -> Error {
     }
 }
 
-/// `msg` with every `«…»` quote as [`ELIDED`].
+/// `msg` with every `«…»` quote as [`ELIDED`], and without the length of
+/// a line (`(it has N graphemes)`, t-183 review A3).
 pub fn elide_quotes(msg: &str) -> String {
+    let msg = elide_lengths(msg);
+    let msg = msg.as_str();
     let mut out = String::with_capacity(msg.len());
     let mut rest = msg;
     while let Some(k) = rest.find('«') {

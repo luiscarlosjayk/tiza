@@ -1193,7 +1193,8 @@ fn ac8_the_docs_say_the_mask_covers_the_code_only() {
         .map_or(readme.len(), |e| start + e);
     let section = &readme[start..end];
     for want in [
-        "The mask covers the code, nothing else",
+        "The mask covers the file's own code, nothing else",
+        "so is the text a move writes",
         "Only you take a mask away",
         "No move touches a masked line",
         "masked whole",
@@ -1203,7 +1204,8 @@ fn ac8_the_docs_say_the_mask_covers_the_code_only() {
     }
     let guide = repo_text("docs/agent-guide.md");
     for want in [
-        "The mask covers the code only",
+        "The mask covers the file's own code only",
+        "so is the text a move writes",
         "A redact is the presenter's:",
         "No move touches a masked line:",
     ] {
@@ -1223,4 +1225,330 @@ fn ac8_the_docs_say_the_mask_covers_the_code_only() {
         }
     }
     assert!(repo_text("docs/adr/0010-redact-minimo.md").contains("## Threat model"));
+    // Nor anywhere else (review A6): the other docs, the MCP's own
+    // descriptions, the tests, and the CHANGELOG unless the entry says
+    // t-183 removed it. (`redact_alerts` is still the TUI's own list of
+    // alert rows: only the docs and the MCP must not promise it.)
+    let stale = [
+        "a redact a move widens or drops",
+        "repeating it masked",
+        "widened: mark the value",
+        "could not follow its text",
+        "as_shown",
+        "masked_notice",
+    ];
+    let mut texts: Vec<(String, String)> = [
+        "docs/agent-guide.md",
+        "docs/demos/scenarios.md",
+        "README.md",
+        "crates/tiza-mcp/src/lib.rs",
+    ]
+    .iter()
+    .map(|f| (f.to_string(), repo_text(f)))
+    .collect();
+    for (f, t) in &texts {
+        assert!(
+            !t.contains("redact_alerts"),
+            "{f} still says `redact_alerts`"
+        );
+    }
+    let tests = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests");
+    for e in std::fs::read_dir(&tests).unwrap() {
+        let path = e.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        if name.ends_with(".rs") && name != "t-183.rs" {
+            texts.push((
+                format!("qa/tests/{name}"),
+                std::fs::read_to_string(&path).unwrap(),
+            ));
+        }
+    }
+    for (f, t) in &texts {
+        for gone in stale {
+            assert!(!t.contains(gone), "{f} still says `{gone}`");
+        }
+    }
+    for line in repo_text("CHANGELOG.md").lines() {
+        for gone in stale.iter().chain(&["redact_from_step", "redact_alerts"]) {
+            assert!(
+                !line.contains(gone) || line.contains("t-183"),
+                "CHANGELOG says `{gone}` without t-183's note: {line}"
+            );
+        }
+    }
+}
+
+// ---------- adversarial review of 8428f37 ----------
+
+#[test]
+fn review_a1_an_alias_of_a_masked_file_shows_its_masks() {
+    // A `code.link` to another name of a file with redacts (`sub/../x`,
+    // `../dir/x`, its absolute path, a symlink) is that file, masks
+    // included — never a view of its own without them.
+    let dir = scratch("t183-alias");
+    let dirname = dir.file_name().unwrap().to_str().unwrap().to_string();
+    std::fs::write(dir.join("app.env"), env_text()).unwrap();
+    std::fs::write(
+        dir.join("queue.env"),
+        format!("QUEUE=jobs\nTOKEN={VALUE}\n"),
+    )
+    .unwrap();
+    std::fs::create_dir_all(dir.join("sub")).unwrap();
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(dir.join("app.env"), dir.join("link.env")).unwrap();
+    let doc = fs::open(dir.join("app.env").to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, dir.join("app.env.tiza"), dir.join("live.sock"));
+    mask_all(&live);
+    // A linked file with a redact of its own, at step 1.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.link", "file": "queue.env"}),
+    );
+    live.api_ok("step.set", json!({"step": 1}));
+    live.command("redact 2:TOKEN=");
+    assert!(!live.message().unwrap().1);
+    let abs = |n: &str| dir.join(n).to_str().unwrap().to_string();
+    let mut aliases = vec![
+        "sub/../app.env".to_string(),
+        "./sub/.././app.env".to_string(),
+        format!("../{dirname}/app.env"),
+        abs("app.env"),
+        "sub/../queue.env".to_string(),
+        format!("../{dirname}/queue.env"),
+        abs("queue.env"),
+    ];
+    if cfg!(unix) {
+        aliases.push("link.env".into());
+    }
+    for (i, alias) in aliases.iter().enumerate() {
+        let step = i as u32 + 2;
+        let r = live.api(
+            "move.add",
+            json!({"at_step": step, "action": "code.link", "file": alias}),
+        );
+        assert!(r.error.is_none(), "{alias}: {:?}", r.error);
+        live.api_ok("step.set", json!({"step": step}));
+        let code = code_get(&live);
+        assert!(code.contains("••••••••"), "{alias}: no mask:\n{code}");
+        for (surface, s) in readers(&live) {
+            assert_clean(&format!("{alias}: {surface}"), &s);
+        }
+        let text = live.api_ok("scene.get", json!({})).to_string();
+        assert!(!text.contains(VALUE), "{alias}: scene.get");
+    }
+    // The aliases became the file's own name: no view of their own.
+    let files = live.with(|a| a.doc.link_files());
+    assert_eq!(files, vec!["queue.env".to_string()], "{files:?}");
+}
+
+#[test]
+fn review_a2_a_reload_never_drops_a_mask_a_move_touches() {
+    // A move replaces L2; a paste (or a reload) changes L2-3 and adds a
+    // line: the redact on L3 masks all three lines whole, the move's
+    // conflict is said, and no value shows at any step.
+    const NEW1: &str = "R0tat3dS3cretXYZ";
+    const NEW2: &str = "More5ecretABC";
+    let dir = scratch("t183-a2");
+    let src = dir.join("app.env");
+    let text = format!("# config\nNAME=demo\nTOKEN={VALUE}\nPORT=8080\n");
+    std::fs::write(&src, &text).unwrap();
+    let pasted = format!("# config\nNAME=x1\nTOKEN={NEW1}\nNEW={NEW2}\nPORT=8080\n");
+    for how in ["paste", "follow"] {
+        std::fs::write(&src, &text).unwrap();
+        let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+        let live = Live::open(
+            doc,
+            dir.join(format!("{how}.tiza")),
+            dir.join(format!("{how}.sock")),
+        );
+        live.command("redact 3:TOKEN=");
+        assert!(!live.message().unwrap().1);
+        live.api_ok(
+            "move.add",
+            patch(
+                1,
+                "replace",
+                json!({"position": "2", "content": "NAME=moved"}),
+            ),
+        );
+        live.api_ok("step.set", json!({"step": 0}));
+        if how == "paste" {
+            let p = pasted.clone();
+            live.with(move |a| a.replace_code(&p)).unwrap();
+        } else {
+            live.command("follow on");
+            let tmp = src.with_extension("env.tmp");
+            std::fs::write(&tmp, &pasted).unwrap();
+            std::fs::rename(&tmp, &src).unwrap();
+            let start = std::time::Instant::now();
+            while live.api_ok("follow.status", json!({}))["reloads"]
+                .as_u64()
+                .unwrap_or(0)
+                < 1
+            {
+                assert!(start.elapsed().as_secs() < 10, "no reload");
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+        let (msg, err) = live.message().unwrap();
+        assert!(err, "{how}: {msg}");
+        assert!(!msg.contains("dropped"), "{how}: {msg}");
+        assert!(msg.contains("masking L2-4 whole"), "{how}: {msg}");
+        assert!(
+            msg.contains("move #1"),
+            "{how}: the conflict is said: {msg}"
+        );
+        assert!(
+            live.with(|a| a
+                .doc
+                .annotations
+                .iter()
+                .filter(|x| matches!(x.shape, tiza_core::Shape::Redact { .. }))
+                .count())
+                >= 3,
+            "{how}: the masks are kept"
+        );
+        for step in [0, 1] {
+            live.api_ok("step.set", json!({"step": step}));
+            for (surface, s) in readers(&live) {
+                for v in [NEW1, NEW2, "R0tat", "5ecret"] {
+                    assert!(
+                        !s.contains(v),
+                        "{how}, step {step}: {surface} shows `{v}`:\n{s}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn review_a3_columns_are_checked_on_the_masked_line_and_its_length_is_not_said() {
+    // Two values of different lengths answer alike: an agent's columns are
+    // on the line as code.get shows it, and no error says how long the
+    // real line is.
+    let answers = |value: &str, tag: &str| -> Vec<String> {
+        let dir = scratch(&format!("t183-a3-{tag}"));
+        let src = dir.join("app.env");
+        std::fs::write(&src, format!("# config\nTOKEN={value}\nPORT=8080\n")).unwrap();
+        let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+        let live = Live::open(doc, dir.join("app.env.tiza"), dir.join("live.sock"));
+        live.command("redact 2:TOKEN=");
+        assert!(!live.message().unwrap().1);
+        let mut out = Vec::new();
+        for end in [13, 14, 15, 16, 17, 19, 25, 99] {
+            for (method, params) in [
+                (
+                    "annotation.add",
+                    json!({"type": "highlight", "at": {"line": 2, "col": 0, "end": end}}),
+                ),
+                (
+                    "annotation.add",
+                    json!({"type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 2, "col": end}}),
+                ),
+                (
+                    "move.add",
+                    json!({"at_step": 1, "action": "cursor", "line": 2, "col": end}),
+                ),
+            ] {
+                let r = live.api(method, params.clone());
+                let said = match (&r.error, &r.result) {
+                    (Some(e), _) => format!("{end} {method}: {} {}", e.code, e.message),
+                    (None, _) => format!("{end} {method}: ok"),
+                };
+                out.push(said);
+            }
+        }
+        // `tiza check` of a document whose annotation does not fit.
+        let bad = dir.join("bad.tiza");
+        let mut v: Value = serde_json::to_value(live.with(|a| a.doc.clone())).unwrap();
+        v["annotations"].as_array_mut().unwrap().push(json!(
+            {"id": "h9", "step": 1, "type": "highlight", "span": {"line": 2, "start": 0, "end": 99}}
+        ));
+        v["code"] = json!({"file": "app.env"});
+        std::fs::write(&bad, v.to_string()).unwrap();
+        let o = tiza(&["check", bad.to_str().unwrap()]);
+        let report = String::from_utf8_lossy(&o.stdout).into_owned();
+        assert!(report.contains("does not fit on line 2"), "{report}");
+        let e =
+            String::from_utf8_lossy(&tiza(&["render", bad.to_str().unwrap(), "--out", "-"]).stderr)
+                .into_owned();
+        for s in [&report, &e] {
+            assert!(!s.contains("graphemes"), "the length is said:\n{s}");
+        }
+        out
+    };
+    let short = answers(VALUE, "short");
+    let long = answers("Lq8xR3vT9mWp2Kz7Yb4N", "long");
+    assert_eq!(short, long);
+    // Within the shown line an agent's column is accepted.
+    assert!(short[0].ends_with("ok"), "{short:?}");
+    assert!(
+        !short
+            .iter()
+            .any(|s| s.contains("graphemes)") && s.contains("18")),
+        "{short:?}"
+    );
+}
+
+#[test]
+fn review_a5_a_find_next_to_a_mask_says_nothing_of_its_last_character() {
+    // `PW=Kd8?aa;` with `Kd8?` masked: `find "aa"` answers alike whatever
+    // `?` is (the hit that overlaps the mask is skipped, the next one may
+    // start inside it).
+    let answer = |last: char| {
+        let dir = scratch(&format!("t183-a5-{last}"));
+        let src = dir.join("pw.env");
+        std::fs::write(&src, format!("# pw\nPW=Kd8{last}aa;\n")).unwrap();
+        let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+        let live = Live::open(doc, dir.join("pw.env.tiza"), dir.join("live.sock"));
+        live.command("redact 2@3..7");
+        assert!(!live.message().unwrap().1);
+        let r = live.api(
+            "annotation.add",
+            json!({"type": "highlight", "at": {"find": "aa"}}),
+        );
+        (
+            r.error.map(|e| e.message),
+            r.result.map(|v| v["id"].is_string()),
+        )
+    };
+    let a = answer('a');
+    let q = answer('q');
+    assert_eq!(a, q);
+    assert_eq!(a.1, Some(true), "{a:?}");
+}
+
+#[test]
+fn review_a7_check_does_not_name_a_linked_file_of_a_document_with_redacts() {
+    let dir = scratch("t183-a7");
+    let linked = format!("{VALUE}.env");
+    std::fs::write(dir.join("app.env"), env_text()).unwrap();
+    std::fs::write(dir.join(&linked), "A=1\nB=2\n").unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "ini", "first_line": 1},
+        "code": {"file": "app.env"},
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 18}},
+            {"id": "n1", "step": 2, "type": "note", "line": 9, "text": "x", "file": linked}
+        ],
+        "moves": [
+            {"at_step": 1, "action": "code.link", "file": linked},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "find": "NOWHERE", "content": "x"}
+        ],
+    });
+    let p = dir.join("doc.tiza");
+    std::fs::write(&p, doc.to_string()).unwrap();
+    for args in [vec!["check"], vec!["check", "--json"]] {
+        let mut a = args.clone();
+        a.push(p.to_str().unwrap());
+        let out = tiza(&a);
+        let text = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr);
+        assert!(text.contains("move #2"), "{args:?}: {text}");
+        assert_no_value(&format!("{args:?}"), &text);
+    }
 }

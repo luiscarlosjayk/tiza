@@ -918,6 +918,28 @@ impl Document {
         d
     }
 
+    /// [`Document::embedded_copy`] with its code in place, masked: the
+    /// document as an agent reads it, which an agent's columns are checked
+    /// on (t-183 review A3).
+    pub fn masked_view(&self) -> Document {
+        let mut d = self.embedded_copy();
+        if let CodeSource::Embedded(lines) = &d.code_src {
+            let lines = lines.clone();
+            if d.moves.is_empty() {
+                d.code = lines;
+            } else {
+                d.base_code = lines;
+                let _ = d.sync_code_to_step();
+            }
+        }
+        for (file, code) in d.views.clone() {
+            if let Some(key) = d.view_key(&file) {
+                d.view_code.insert(key, code);
+            }
+        }
+        d
+    }
+
     /// A `scene.put` of the copy `scene.get` hands out ([`embedded_copy`])
     /// put back on what this document reads (t-174, t-183 AC5): the masked
     /// code of a file reference becomes the reference again, with its real
@@ -1109,13 +1131,31 @@ impl Document {
     }
 
     /// `file` as a `code.link` or an annotation names it, normalized:
-    /// trimmed, without a leading `./`.
+    /// trimmed, without `.` segments, repeated `/`, or a `dir/..` pair
+    /// (t-183 review A1: `sub/../app.env` is `app.env`, never another view
+    /// without its masks). A leading `..` stays; aliases that only the
+    /// disk can tell (`../dir/x`, an absolute path, a symlink, another
+    /// case) are settled by `fs::canonical_link`.
     pub fn normalize_file(file: &str) -> String {
-        let mut f = file.trim();
-        while let Some(rest) = f.strip_prefix("./") {
-            f = rest;
+        let f = file.trim();
+        let absolute = f.starts_with('/');
+        let mut parts: Vec<&str> = Vec::new();
+        for seg in f.split('/') {
+            match seg {
+                "" | "." => {}
+                ".." if parts.last().is_some_and(|p| *p != "..") => {
+                    parts.pop();
+                }
+                ".." if absolute => {}
+                s => parts.push(s),
+            }
         }
-        f.to_string()
+        let joined = parts.join("/");
+        if absolute {
+            format!("/{joined}")
+        } else {
+            joined
+        }
     }
 
     /// The view a file name points at: `None` when it names the main file
@@ -1795,7 +1835,7 @@ impl Document {
                     line: s.line,
                     start: s.start,
                     end: s.end,
-                    len,
+                    len: Some(len),
                 });
             }
             Ok(())
@@ -1808,7 +1848,7 @@ impl Document {
                     line: a.line,
                     start: a.col,
                     end: a.col,
-                    len,
+                    len: Some(len),
                 });
             }
             Ok(())
@@ -1966,6 +2006,27 @@ impl Document {
             self.annotations = before;
             return Err(e);
         }
+        Ok(id)
+    }
+
+    /// Adds a redact a reload or a paste carried to the new code (t-183
+    /// review A2): on the file's own code, step 0, *without* the guard of
+    /// [`Document::check_masked_lines`]. That guard refuses requests; a
+    /// reload is not one, and dropping its mask would show the value. A
+    /// move that now changes a masked line is the caller's to report (the
+    /// step then shows the file's own code, masked).
+    pub fn add_mask(&mut self, mut ann: Annotation) -> Result<String, Error> {
+        ann.step = 0;
+        self.resolve_file(&mut ann)?;
+        self.validate_annotation(&ann)?;
+        sanitize_texts(&mut ann.shape);
+        if ann.id.trim().is_empty() {
+            ann.id = self.next_id();
+        } else if self.find_annotation(&ann.id).is_some() {
+            return Err(Error::DuplicateId(ann.id));
+        }
+        let id = ann.id.clone();
+        self.annotations.push(ann);
         Ok(id)
     }
 
@@ -2198,8 +2259,12 @@ impl Document {
                 let end = grapheme_index(t, byte_start + text.len());
                 from = byte_start + text.len().max(1);
                 // A hit under a redact mask does not exist (t-117): a search
-                // must never confirm what the mask hides.
+                // must never confirm what the mask hides. The next hit may
+                // start inside the skipped one (t-183 review A5: otherwise
+                // whether `aa` is found after a mask says if the value ends
+                // in `a`), so the search goes on from its next character.
                 if crate::redact::overlaps_mask(masks, line, start, end) {
+                    from = byte_start + t[byte_start..].chars().next().map_or(1, char::len_utf8);
                     continue;
                 }
                 *seen += 1;

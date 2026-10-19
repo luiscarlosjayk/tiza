@@ -676,7 +676,7 @@ fn resolve_point(
                 line,
                 start: col,
                 end: col,
-                len,
+                len: Some(len),
             });
         }
         return Ok(Anchor { line, col });
@@ -837,7 +837,14 @@ pub fn project(
             MoveAction::Cursor(c) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                let code = p.codes.get(&key).cloned().unwrap_or_default();
+                // Its column is checked on the line as it is shown, masked
+                // (t-183 review A3): never on the length of a masked value.
+                let code = probe(
+                    &masks,
+                    &p.codes.get(&key).cloned().unwrap_or_default(),
+                    &key,
+                    first,
+                );
                 let last = first + code.len().saturating_sub(1) as u32;
                 if c.line < first || c.line > last {
                     return Err(named(Error::LineOutOfRange {
@@ -853,7 +860,7 @@ pub fn project(
                         line: c.line,
                         start: col,
                         end: col,
-                        len,
+                        len: Some(len),
                     }));
                 }
                 p.cursor = Some(Anchor { line: c.line, col });
