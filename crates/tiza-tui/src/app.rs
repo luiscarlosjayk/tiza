@@ -1237,14 +1237,22 @@ impl App {
 
     /// Removes every annotation (or only those of one step). Undo with `u`.
     pub fn clear_annotations(&mut self, step: Option<u32>) -> usize {
+        self.clear_annotations_keeping(step, false)
+    }
+
+    /// [`App::clear_annotations`]; `keep_redacts` leaves every redact in
+    /// place (an agent's `scene.clear`, t-183 AC3: only the presenter
+    /// removes a mask).
+    pub fn clear_annotations_keeping(&mut self, step: Option<u32>, keep_redacts: bool) -> usize {
         let before = self.doc.annotations.len();
         if before == 0 {
             return 0;
         }
         self.history.record(&self.doc, "clear");
+        let kept = |a: &Annotation| keep_redacts && matches!(a.shape, Shape::Redact { .. });
         match step {
-            Some(st) => self.doc.annotations.retain(|a| a.step != st),
-            None => self.doc.annotations.clear(),
+            Some(st) => self.doc.annotations.retain(|a| a.step != st || kept(a)),
+            None => self.doc.annotations.retain(kept),
         }
         let removed = before - self.doc.annotations.len();
         if removed == 0 {
@@ -1403,6 +1411,9 @@ impl App {
         // Its numbers first (t-166): a first line near `u32::MAX` or a step
         // past the cap is refused before anything counts with them.
         doc.check_bounds()?;
+        // On a document with redacts an agent sends back only the masked
+        // copy `scene.get` hands out, every redact as it came (t-183 AC3).
+        self.refuse_uncovering_put(&doc)?;
         // `scene.get` hands out the code masked: what comes back no longer
         // holds the values, so the ones this instance knew are kept (in
         // memory only) and its labels stay masked (t-174).
@@ -1465,6 +1476,39 @@ impl App {
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
     }
 
+    /// Whether `id` names a redact of the open document.
+    pub fn is_redact(&self, id: &str) -> bool {
+        self.doc
+            .find_annotation(id)
+            .is_some_and(|a| matches!(a.shape, Shape::Redact { .. }))
+    }
+
+    /// An agent's `scene.put` on a document with redacts (t-183 AC3): the
+    /// code (and every linked file) must be the masked copy `scene.get`
+    /// hands out and every redact must come back as it went; more redacts
+    /// may come. Anything else gets [`tiza_core::redact::AGENT_REFUSAL`].
+    fn refuse_uncovering_put(&self, put: &Document) -> Result<(), Error> {
+        if !self.has_redacts() {
+            return Ok(());
+        }
+        let copy = self.doc.embedded_copy();
+        let same_code = put.code_src == copy.code_src
+            && copy
+                .views
+                .iter()
+                .all(|(f, code)| put.views.get(f) == Some(code));
+        let redacts_back = copy
+            .annotations
+            .iter()
+            .filter(|a| matches!(a.shape, Shape::Redact { .. }))
+            .all(|a| put.find_annotation(&a.id) == Some(a));
+        if same_code && redacts_back {
+            Ok(())
+        } else {
+            Err(agent_refusal())
+        }
+    }
+
     /// `scene.patch`: partial changes; annotations merge by id (last write
     /// wins), `{"id", "deleted": true}` removes. All or nothing: an invalid
     /// annotation leaves the document untouched.
@@ -1494,6 +1538,18 @@ impl App {
                     .to_string();
                 let is_delete = v.get("deleted").and_then(|b| b.as_bool()).unwrap_or(false);
                 let existed = d.find_annotation(&id).is_some();
+                // A redact is the presenter's (t-183 AC3): deleted or sent
+                // back changed, refused; sent back as scene.get gave it, kept.
+                if self.is_redact(&id) {
+                    let same = !is_delete
+                        && copy.as_ref().is_some_and(|c| {
+                            <Annotation as serde::Deserialize>::deserialize(&v)
+                                .is_ok_and(|a| c.find_annotation(&id) == Some(&a))
+                        });
+                    if !same {
+                        return Err(agent_refusal());
+                    }
+                }
                 // A new id sharing text with a masked value (t-174).
                 if !existed && !is_delete {
                     self.refuse_masked_id(&id)?;
@@ -4761,6 +4817,10 @@ impl App {
         self.note_masked_texts();
         match result {
             Ok(v) => Response::ok(id, v),
+            // The same words whatever the request held (t-183 AC3).
+            Err(e) if e.to_string() == tiza_core::redact::AGENT_REFUSAL => {
+                Response::err(id, e.code(), e.to_string())
+            }
             Err(e) => {
                 let e = self
                     .echo()
@@ -5250,6 +5310,9 @@ impl App {
             }
             "annotation.update" => {
                 let p: UpdateParams = parse(params)?;
+                if self.is_redact(&p.id) {
+                    return Err(agent_refusal());
+                }
                 self.update_annotation(&p)?;
                 serde_json::to_value(AnnotationMutated::of(
                     &self.doc,
@@ -5347,11 +5410,30 @@ impl App {
                     .get("step")
                     .and_then(|v| v.as_u64())
                     .map(|v| v as u32);
-                let removed = self.clear_annotations(step);
-                json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision})
+                // An agent's clear leaves the redacts (t-183 AC3), and says so.
+                let removed = self.clear_annotations_keeping(step, true);
+                let kept = self
+                    .doc
+                    .annotations
+                    .iter()
+                    .filter(|a| matches!(a.shape, Shape::Redact { .. }))
+                    .filter(|a| step.is_none_or(|s| a.step == s))
+                    .count();
+                let mut reply = json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision});
+                if kept > 0 {
+                    reply["kept_redacts"] = json!(kept);
+                    reply["note"] = json!(format!(
+                        "{kept} redact{} kept: only the presenter removes a mask",
+                        if kept == 1 { "" } else { "s" }
+                    ));
+                }
+                reply
             }
             "annotation.delete" => {
                 let p: IdParams = parse(params)?;
+                if self.is_redact(&p.id) {
+                    return Err(agent_refusal());
+                }
                 self.delete_annotation(&p.id)?;
                 serde_json::to_value(Mutated {
                     id: p.id,
@@ -5671,6 +5753,11 @@ fn redact_notice(widened: &[(String, String)], dropped: &[String]) -> Option<Str
         ));
     }
     (!parts.is_empty()).then(|| format!("{} (u undoes the reload)", parts.join("; ")))
+}
+
+/// [`tiza_core::redact::AGENT_REFUSAL`] as an error (t-183 AC3).
+fn agent_refusal() -> Error {
+    Error::Invalid(tiza_core::redact::AGENT_REFUSAL.into())
 }
 
 fn opt(s: &str) -> Option<String> {

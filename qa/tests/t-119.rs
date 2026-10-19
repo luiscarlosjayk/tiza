@@ -536,3 +536,65 @@ fn ac5_nothing_changes_without_a_config_file_or_overrides() {
     );
     assert!(th.palette.is_empty());
 }
+
+// Moved here from qa/tests/t-157.rs when t-183 removed that file: it tests
+// the pty harness (qa/src/pty.py), not redaction.
+
+#[test]
+fn harness_the_pty_is_drained_while_the_body_calls_the_api() {
+    // Rework of t-157: case 1 failed on macOS because nobody read the pty
+    // while the body ran `tiza api` with `subprocess.run`; Tiza blocked
+    // writing a frame into the full pty buffer and stopped answering its
+    // socket. The same on Linux with frames bigger than its buffer: a
+    // 200×400 terminal full of long lines, never read by the body, and
+    // API calls that redraw it whole (`theme.set toggle`). With the reader thread of
+    // qa/src/pty.py every call answers (with the old helper, the first one
+    // timed out at 10 s).
+    let dir = scratch("t119-drain");
+    let doc = dir.join("big.tiza");
+    let code: Vec<String> = (1..=300)
+        .map(|i| format!("line {i} = {}", "x".repeat(150)))
+        .collect();
+    std::fs::write(
+        &doc,
+        json!({"schema": 1, "code": code, "source": {"language": "ini"}}).to_string(),
+    )
+    .unwrap();
+    let sock = dir.join("drain.sock");
+    let out = tiza_qa::pty_script(
+        &dir,
+        "drain.py",
+        r##"
+import json
+binary, doc, sock = sys.argv[1], sys.argv[2], sys.argv[3]
+def api(method, params):
+    try:
+        r = subprocess.run([binary, "--socket", sock, "api", method, json.dumps(params)],
+                           capture_output=True, text=True, timeout=10)
+    except subprocess.TimeoutExpired:
+        print("API_TIMEOUT", method, flush=True)
+        return False
+    print("API", method, r.returncode, flush=True)
+    return r.returncode == 0
+s = Pty([binary, "--socket", sock, "--no-save", doc], 200, 400)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
+    for i in range(6):
+        if not (api("theme.set", {"theme": "toggle"}) and api("code.get", {})):
+            break
+    else:
+        print("ALL_ANSWERED", flush=True)
+s.kill()
+s.finish(5)
+print("READ", len(s.out))
+"##,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            doc.to_str().unwrap(),
+            sock.to_str().unwrap(),
+        ],
+    );
+    assert!(
+        out.contains("ALL_ANSWERED") && !out.contains("API_TIMEOUT"),
+        "{out}"
+    );
+}

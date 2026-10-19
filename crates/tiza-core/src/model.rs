@@ -1828,6 +1828,12 @@ impl Document {
             std::cmp::Ordering::Greater => Some(i - 1),
         };
         let mut notices = self.repin_redacts(&old, new_index);
+        // A later move the deletion retargets onto a masked line (t-183
+        // AC4): refused, the moves stay as they were.
+        if let Err(e) = self.check_masked_lines() {
+            *self = old;
+            return Err(e);
+        }
         // The moves the deletion retargets (t-157).
         notices.extend(moves::retarget_notices(&old, self, new_index));
         if self.moves.is_empty() {
@@ -2498,11 +2504,30 @@ impl Document {
         }
         let id = ann.id.clone();
         let redact = matches!(ann.shape, Shape::Redact { .. });
+        let before = redact.then(|| self.annotations.clone());
         self.annotations.push(ann);
         if redact && !self.moves.is_empty() {
             self.pin_own_redact(&id);
         }
+        if let Some(before) = before
+            && let Err(e) = self.check_masked_lines()
+        {
+            self.annotations = before;
+            return Err(e);
+        }
         Ok(id)
+    }
+
+    /// No move rewrites or deletes a masked line (t-183 AC4): a redact
+    /// added on a line a move changes is refused like the move would be.
+    pub fn check_masked_lines(&self) -> Result<(), Error> {
+        if self.moves.is_empty() || !crate::redact::has_redacts(self) {
+            return Ok(());
+        }
+        match moves::validate(self, &self.moves, &self.annotations) {
+            Err(e) if crate::redact::is_masked_line_error(&e) => Err(e),
+            _ => Ok(()),
+        }
     }
 
     /// Pins the redact `id` Tiza just added or moved (t-154): to the file,
@@ -2575,6 +2600,7 @@ impl Document {
         sanitize_texts(&mut ann.shape);
         let redact = matches!(ann.shape, Shape::Redact { .. });
         let id = ann.id.clone();
+        let before = self.annotations.clone();
         let slot = self
             .annotations
             .iter_mut()
@@ -2583,6 +2609,10 @@ impl Document {
         *slot = ann;
         if redact && !self.moves.is_empty() && !same_place {
             self.pin_own_redact(&id);
+        }
+        if redact && let Err(e) = self.check_masked_lines() {
+            self.annotations = before;
+            return Err(e);
         }
         Ok(())
     }

@@ -183,7 +183,7 @@ pub fn api_schema() -> ApiSchema {
                 "style.list" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"document": {"type": "object"}, "builtin": {"type": "array"}, "aliases": {"type": "array"}}})),
                 "scene.put" => (schema::<PutParams>(), schema::<SceneChanged>()),
                 "scene.patch" => (schema::<PatchParams>(), schema::<SceneChanged>()),
-                "scene.clear" => (schema::<ClearParams>(), serde_json::json!({"type": "object", "properties": {"removed": {"type": "integer"}, "revision": {"type": "integer"}}})),
+                "scene.clear" => (schema::<ClearParams>(), serde_json::json!({"type": "object", "properties": {"removed": {"type": "integer"}, "remaining": {"type": "integer"}, "revision": {"type": "integer"}, "kept_redacts": {"type": "integer", "description": "Redacts left in place: an agent's clear never removes a mask (t-183)"}, "note": {"type": "string"}}})),
                 "move.add" => (schema::<crate::moves::Move>(), schema::<MoveMutated>()),
                 "move.delete" => (schema::<MoveIndexParams>(), schema::<MoveMutated>()),
                 "move.list" => (schema::<NoParams>(), schema::<MoveList>()),

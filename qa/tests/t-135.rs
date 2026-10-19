@@ -234,32 +234,6 @@ fn corner_presentation_mode_shows_it_on_the_last_rows() {
 }
 
 #[test]
-fn corner_a_move_notice_on_reaching_its_step_in_presentation_mode() {
-    // t-140: `n` onto a step whose move could not carry the redact.
-    let dir = scratch("t135-move");
-    let src = dir.join("config.json");
-    std::fs::write(&src, "{\"token\": \"abc123secret\", \"user\": \"ana\"}\n").unwrap();
-    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
-    let live = Live::open(doc, dir.join("config.json.tiza"), dir.join("live.sock"));
-    live.command("redact 1@11..23");
-    live.api_ok(
-        "move.add",
-        json!({"at_step": 1, "action": "code.patch", "op": "replace", "position": "1",
-               "content": "{\"apiToken\": \"abc123secret\", \"user\": \"ana\"}"}),
-    );
-    live.api_ok("step.set", json!({"step": 0}));
-    live.keys(&[KeyCode::Char('P'), KeyCode::Char('n')]);
-    let (msg, err) = live.message().unwrap();
-    assert!(
-        err && msg.contains("redact a1 could not follow its text through move #1"),
-        "{msg}"
-    );
-    let s = live.screen(80, 24);
-    assert_eq!(alerts_on(&s), vec![msg.clone()], "{s}");
-    assert!(!s.contains("abc123"), "{s}");
-}
-
-#[test]
 fn corner_an_overlay_does_not_eat_the_notice() {
     let (live, src) = followed("t135-overlay");
     live.keys(&[KeyCode::Char('?')]);

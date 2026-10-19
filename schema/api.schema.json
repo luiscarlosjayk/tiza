@@ -3172,6 +3172,16 @@
       },
       "result": {
         "properties": {
+          "kept_redacts": {
+            "description": "Redacts left in place: an agent's clear never removes a mask (t-183)",
+            "type": "integer"
+          },
+          "note": {
+            "type": "string"
+          },
+          "remaining": {
+            "type": "integer"
+          },
           "removed": {
             "type": "integer"
           },

@@ -298,52 +298,6 @@ fn ac2_schema_violations_and_unreadable_code() {
     assert_eq!(findings(&v)[0]["code"], "code");
 }
 
-/// The t-140 document: a redact on a line a move rewrites, saved.
-fn widened_redact(name: &str) -> PathBuf {
-    let dir = scratch(name);
-    let src = dir.join("config.json");
-    std::fs::write(
-        &src,
-        format!("{{\"token\": \"{SECRET}\", \"user\": \"ana\"}}\n"),
-    )
-    .unwrap();
-    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
-    let live = Live::open(doc, dir.join("config.json.tiza"), dir.join("live.sock"));
-    live.command("redact 1@11..23");
-    assert!(!live.message().unwrap().1);
-    live.api_ok(
-        "move.add",
-        json!({"at_step": 1, "action": "code.patch", "op": "replace", "position": "1",
-               "content": format!("{{\"apiToken\": \"{SECRET}\", \"user\": \"ana\"}}")}),
-    );
-    live.command("w");
-    dir.join("config.json.tiza")
-}
-
-#[test]
-fn ac3_step5_a_redact_widened_by_a_move_warns_and_strict_fails() {
-    let doc = widened_redact("t101-redact");
-    let (code, out, err) = check(&[doc.to_str().unwrap()]);
-    assert_eq!(code, 0, "warnings do not fail:\n{out}{err}");
-    assert!(
-        out.contains(
-            "warning: a1, step 1: redact a1 could not follow its text through move #1: masking the rest of L1 — fix it before recording"
-        ),
-        "the TUI's own text:\n{out}"
-    );
-    assert_no_secret("check", &(out.clone() + &err));
-    let (code, out, _) = check(&[doc.to_str().unwrap(), "--strict"]);
-    assert_eq!(code, 1, "{out}");
-    let (_, v) = check_json(&doc, &[]);
-    assert_no_secret("check --json", &v.to_string());
-    assert_eq!(with_code(&findings(&v), "redact").len(), 1, "{v}");
-    // The source file finds its sidecar.
-    let src = doc.parent().unwrap().join("config.json");
-    let (code, out, _) = check(&[src.to_str().unwrap()]);
-    assert_eq!(code, 0);
-    assert!(out.contains("could not follow its text"), "{out}");
-}
-
 #[test]
 fn ac3_a_redact_saved_widened_by_a_reload_warns() {
     let dir = scratch("t101-reload");

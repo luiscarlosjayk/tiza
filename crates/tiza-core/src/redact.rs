@@ -104,6 +104,23 @@ pub const MASK: &str = "••••••••";
 /// Cells the mask takes (before the kept tail).
 pub const MASK_WIDTH: u32 = 8;
 
+/// The one answer an agent (socket, MCP) gets when a request would take a
+/// redact away or uncover the code under one (t-183 AC3): deleting,
+/// narrowing, moving or retyping a redact, changing a masked line or
+/// sending other code than the masked copy `scene.get` hands out. The same
+/// words whatever the request held, so the answer never depends on what
+/// is under a mask.
+pub const AGENT_REFUSAL: &str = "a redact is the presenter's: an agent may add one, but not delete, narrow, move or retype one, change a masked line or send other code than scene.get hands out";
+
+/// What a move that would rewrite or delete a masked line is told (t-183
+/// AC4), after `move #N, step S: `.
+pub const MASKED_LINE: &str = "which a redact masks: a move never changes or deletes a masked line";
+
+/// Whether `e` is the [`MASKED_LINE`] refusal.
+pub fn is_masked_line_error(e: &Error) -> bool {
+    e.to_string().contains(MASKED_LINE)
+}
+
 /// Whether `a` masks the code at `step`: from step 0 by default, or from
 /// its own step when the document says `redact_from_step`.
 pub fn active(doc: &Document, a: &Annotation, step: u32) -> bool {

@@ -669,36 +669,6 @@ fn rework_optional_a_v_selection_defers_the_auto_advance() {
 }
 
 #[test]
-fn corner_a_redact_notice_once_per_loop_pass() {
-    let dir = scratch("t099-redact");
-    let src = dir.join("config.json");
-    std::fs::write(&src, "{\"token\": \"abc123secret\", \"user\": \"ana\"}\n").unwrap();
-    let doc = fs::open(src.to_str().unwrap()).unwrap().document;
-    let live = Live::open(doc, dir.join("config.json.tiza"), dir.join("live.sock"));
-    live.command("redact 1@11..23");
-    // The key renamed: the redact cannot follow its text → widened, loud.
-    live.api_ok(
-        "move.add",
-        json!({"at_step": 1, "action": "code.patch", "op": "replace", "position": "1",
-               "content": "{\"apiToken\": \"abc123secret\", \"user\": \"ana\"}"}),
-    );
-    live.api_ok("scene.patch", json!({"loop": true}));
-    live.api_ok("step.set", json!({"step": 0}));
-    for pass in 0..3 {
-        live.keys(&[KeyCode::Char('n')]);
-        let alerts = live.with(|a| a.redact_alerts.clone());
-        assert_eq!(alerts.len(), 1, "pass {pass}: {alerts:?}");
-        assert!(alerts[0].contains("could not follow its text"));
-        // Ticks at that step say nothing more.
-        std::thread::sleep(Duration::from_millis(50));
-        assert_eq!(live.with(|a| a.redact_alerts.len()), 1);
-        live.keys(&[KeyCode::Char('n')]);
-        assert_eq!(step(&live), 0, "pass {pass}: wrapped");
-        assert!(live.with(|a| a.redact_alerts.is_empty()));
-    }
-}
-
-#[test]
 fn ac11_the_gif_holds_a_step_for_its_auto_advance_ms() {
     let dir = scratch("t099-gif");
     // The fixture without typing (steps 0..=5): one timed step, 3 s.

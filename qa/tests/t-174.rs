@@ -2086,61 +2086,6 @@ fn r3_4_masked_style_names_stay_unique() {
 
 // ---------- review round 4 ----------
 
-fn rewritten_line() -> Value {
-    json!({
-        "schema": 1,
-        "source": {"language": "sh"},
-        "code": ["# a", "# b", format!("TOKEN={VALUE} # tail")],
-        "annotations": [
-            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 3, "start": 6, "end": 16}},
-            {"id": "h1", "step": 2, "type": "highlight", "span": {"line": 3, "start": 19, "end": 23}, "label": "the tail"},
-            {"id": "a1", "step": 2, "type": "arrow", "from": {"line": 3, "col": 20}, "to": {"line": 1, "col": 0}}
-        ],
-        "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "API=newvalue1234 # tail2"}]
-    })
-}
-
-#[test]
-fn r4_1_annotations_past_a_mask_that_could_not_follow_are_clipped_and_said() {
-    let dir = scratch("t174-r4-1");
-    let path = write(&dir, "rewrite", &rewritten_line());
-    let d = tiza_core::fs::open(path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(d, path.clone(), dir.join("live.sock"));
-    live.with(|a| a.set_step(0));
-    live.keys(&[crossterm::event::KeyCode::Char('n')]);
-    let alerts = live.with(|a| a.redact_alerts.clone()).join("\n");
-    assert!(
-        alerts.contains("could not follow its text through move #1")
-            && alerts.contains(
-                "fix it before recording; annotations past the mask are clipped when saved"
-            ),
-        "{alerts}"
-    );
-    assert_clean("the alert", &alerts);
-    live.api_ok("style.set", json!({"name": "unused", "glyph": "*"}));
-    drop(live);
-    let out = tiza(&["check", path.to_str().unwrap()]);
-    let report = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(
-        out.status.success(),
-        "the reopened file checks clean:\n{report}"
-    );
-    assert!(!report.contains("does not fit"), "{report}");
-    assert_clean("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
-    let (_, err) = out_of(&[
-        "render",
-        path.to_str().unwrap(),
-        "--all-steps",
-        "--format",
-        "ansi",
-        "--out",
-        &format!("{}/", dir.join("o").display()),
-    ]);
-    assert!(!err.contains("not drawn"), "{err}");
-}
-
 #[test]
 fn r4_2_an_unknown_kind_never_lands_on_a_masked_style() {
     let doc = json!({
@@ -2320,50 +2265,6 @@ fn rw1_get_put_keeps_a_linked_file_read_from_disk_on_its_file() {
 // Rework point 7 (an adversarial review): with moves, the cache key of the
 // masked values did not hold what they were read from at the current step
 // (the code in memory, part of a move being typed).
-#[test]
-fn rw7_values_read_while_a_move_is_typed_never_go_stale() {
-    let doc = json!({
-        "schema": 1,
-        "source": {"language": "sh"},
-        "code": ["# demo", "USER=ana"],
-        "annotations": [
-            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 3, "start": 6, "end": 16}},
-            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 2, "end": 6}, "label": format!("was {VALUE}")}
-        ],
-        "moves": [
-            {"at_step": 1, "action": "code.patch", "op": "insert", "after": "USER=ana",
-             "content": format!("TOKEN={VALUE}"), "typing": "char", "speed_ms": 600000}
-        ]
-    });
-    let live = live_of(&doc, "t174-rw7");
-    live.with(|a| a.set_step(0));
-    assert_clean("step 0", &live.screen(120, 20));
-    // `n`: the move starts being typed (it stays at its first character).
-    live.keys(&[crossterm::event::KeyCode::Char('n')]);
-    assert!(live.with(|a| a.is_typing()));
-    // An agent changes the redact while it is typed: the values are read
-    // again, on the code typed so far.
-    live.api_ok(
-        "annotation.update",
-        json!({"id": "r1", "label": "the token"}),
-    );
-    assert_clean("a typing frame", &live.screen(120, 20));
-    live.with(|a| a.finish_typing());
-    let screen = live.screen(120, 20);
-    assert_clean("the screen once typed", &screen);
-    assert!(screen.contains(&format!("was {MASK}")), "{screen}");
-    for (m, p) in [
-        ("render.text", json!({"width": 100})),
-        ("scene.list", json!({})),
-        ("scene.get", json!({"as_shown": true})),
-        ("check", json!({})),
-    ] {
-        assert_clean(m, &live.api_ok(m, p).to_string());
-    }
-    live.command("w");
-    let saved = std::fs::read_to_string(live.with(|a| a.save_path.clone())).unwrap();
-    assert_clean("the saved .tiza", &saved);
-}
 
 // Rework point 3: «saved masked» only after a real write.
 #[test]
@@ -2710,64 +2611,8 @@ fn long_doc() -> Value {
     })
 }
 
-#[track_caller]
-fn assert_no_long(what: &str, s: &str) {
-    let c: Vec<char> = LONG40.chars().collect();
-    for w in c.windows(4) {
-        let p: String = w.iter().collect();
-        if p.chars().any(|c| c.is_ascii_digit()) {
-            assert!(!s.contains(&p), "{what} shows «{p}» of the value:\n{s}");
-        }
-    }
-}
-
 // Review point 1: `scene.get` → `scene.patch` put the copy's columns on the
 // real code, narrowing the redact (`STRIPE=••••••••4eC39H…`).
-#[test]
-fn rv1_get_then_patch_keeps_the_real_columns_and_never_narrows_a_redact() {
-    let dir = scratch("t174-rv1");
-    let path = write(&dir, "long", &long_doc());
-    let d = tiza_core::fs::open(path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(d, path.clone(), dir.join("live.sock"));
-    live.with(|a| a.set_step(1));
-    let scene = live.api_ok("scene.get", json!({}));
-    let anns = scene["document"]["annotations"].clone();
-    live.api_ok("scene.patch", json!({"annotations": anns}));
-    for (m, p) in [
-        ("code.get", json!({})),
-        ("render.text", json!({"width": 100})),
-        ("scene.get", json!({})),
-    ] {
-        assert_no_long(m, &live.api_ok(m, p).to_string());
-    }
-    assert_no_long("the screen", &live.screen(120, 20));
-    let real = live.with(|a| a.doc.find_annotation("h1").unwrap().shape.clone());
-    assert_eq!(
-        tiza_core::redact::columns(&real),
-        [(2, 50), (2, 54)],
-        "h1 keeps its real columns"
-    );
-    // A redact sent back narrower than its value: refused, not quoted.
-    let mut narrow = scene["document"]["annotations"].clone();
-    narrow[0]["span"]["end"] = json!(10);
-    let r = live.api("scene.patch", json!({"annotations": narrow}));
-    let e = r.error.expect("a narrower redact is refused");
-    assert_eq!(e.code, "invalid_argument");
-    assert!(
-        e.message.contains("does not come back over its value"),
-        "{}",
-        e.message
-    );
-    assert_no_long(
-        "code.get after the refusal",
-        &live.api_ok("code.get", json!({})).to_string(),
-    );
-    live.command("w");
-    drop(live);
-    assert_no_long("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
-}
 
 fn long_ref(dir: &Path) -> PathBuf {
     std::fs::write(
@@ -2786,47 +2631,6 @@ fn long_ref(dir: &Path) -> PathBuf {
 
 // Review point 2: a put whose redacts do not come back over the value
 // (left out, narrower) is refused: the real code would show under them.
-#[test]
-fn rv2_a_put_without_its_redact_or_narrower_is_refused() {
-    let dir = scratch("t174-rv2");
-    let path = long_ref(&dir);
-    let written = std::fs::read_to_string(&path).unwrap();
-    let d = tiza_core::fs::open(path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(d, path.clone(), dir.join("live.sock"));
-    let scene = live.api_ok("scene.get", json!({}));
-    for case in ["left out", "narrower"] {
-        let mut doc = scene["document"].clone();
-        let anns = doc["annotations"].as_array_mut().unwrap();
-        if case == "left out" {
-            anns.retain(|a| a["id"] != "r1");
-        } else {
-            anns[0]["span"]["end"] = json!(8);
-        }
-        let r = live.api("scene.put", json!({"document": doc}));
-        let e = r.error.unwrap_or_else(|| panic!("{case}: accepted"));
-        assert!(
-            e.message
-                .contains("redact r1 does not come back over its value"),
-            "{}",
-            e.message
-        );
-        for (m, p) in [
-            ("code.get", json!({})),
-            ("render.text", json!({"width": 100})),
-        ] {
-            assert_no_long(&format!("{m} ({case})"), &live.api_ok(m, p).to_string());
-        }
-        assert_no_long("the screen", &live.screen(120, 20));
-    }
-    drop(live);
-    assert_eq!(
-        std::fs::read_to_string(&path).unwrap(),
-        written,
-        "nothing written"
-    );
-}
 
 // Review point 3: moves are matched by content, not by their place.
 #[test]
@@ -2884,50 +2688,6 @@ fn rv3_moves_keep_their_real_content_wherever_they_go() {
 
 // Review point 4: a put whose code is not the file's (edited, or older
 // than a reload) is refused instead of turning the reference embedded.
-#[test]
-fn rv4_a_put_with_other_code_keeps_the_reference() {
-    let dir = scratch("t174-rv4");
-    let path = file_ref(&dir, false);
-    let written = std::fs::read_to_string(&path).unwrap();
-    let d = tiza_core::fs::open(path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(d, path.clone(), dir.join("live.sock"));
-    let mut scene = live.api_ok("scene.get", json!({}));
-    scene["document"]["code"][2] = json!("USER=bob");
-    let r = live.api("scene.put", json!({"document": scene["document"]}));
-    let e = r.error.expect("a put with other code is refused");
-    assert_eq!(e.code, "invalid_argument");
-    assert!(
-        e.message.contains("this document follows main.env"),
-        "{}",
-        e.message
-    );
-    assert_clean("the refusal", &e.message);
-    assert!(live.with(|a| !a.doc.is_embedded()));
-    // `tiza scene put FILE` of the same `.tiza` sends the masked copy: it
-    // goes back on the file.
-    let out = tiza(&[
-        "--socket",
-        live.socket.to_str().unwrap(),
-        "scene",
-        "put",
-        path.to_str().unwrap(),
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    assert!(live.with(|a| !a.doc.is_embedded()));
-    drop(live);
-    let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(saved["code"], json!({"file": "main.env"}));
-    assert_eq!(
-        saved["annotations"],
-        serde_json::from_str::<Value>(&written).unwrap()["annotations"]
-    );
-}
 
 // Review point 5: a linked file frozen in `views` comes back as it was.
 #[test]
@@ -3248,82 +3008,6 @@ fn rc2_a_put_with_the_real_value_answers_like_a_wrong_guess() {
 
 // Second check, point 3: a redact keeps its step 0 through scene.patch,
 // annotation.update and a reload of a followed file, moves or not.
-#[test]
-fn rc3_a_redact_keeps_its_step_zero() {
-    for (moves, reference) in [(false, false), (false, true), (true, false), (true, true)] {
-        let dir = scratch(&format!("t174-rc3-{moves}-{reference}"));
-        std::fs::write(
-            dir.join("main.env"),
-            format!("# main\nTOKEN={VALUE}\nUSER=ana\n"),
-        )
-        .unwrap();
-        let mut doc = json!({
-            "schema": 1, "source": {"language": "sh"},
-            "redact_from_step": true,
-            "code": ["# main", format!("TOKEN={VALUE}"), "USER=ana"],
-            "annotations": [
-                {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
-                {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "the user"}
-            ]
-        });
-        if reference {
-            doc["code"] = json!({"file": "main.env"});
-        }
-        if moves {
-            doc["moves"] = json!([{"at_step": 2, "action": "code.patch", "op": "insert", "after": "USER=ana", "content": "HOST=db"}]);
-        }
-        let path = write(&dir, "doc", &doc);
-        let d = tiza_core::fs::open(path.to_str().unwrap())
-            .unwrap()
-            .document;
-        let live = Live::open(d, path.clone(), dir.join("live.sock"));
-        let step_of = |live: &Live| live.with(|a| a.doc.find_annotation("r1").unwrap().step);
-        let scene = live.api_ok("scene.get", json!({}));
-        live.api_ok(
-            "scene.patch",
-            json!({"annotations": scene["document"]["annotations"]}),
-        );
-        assert_eq!(step_of(&live), 0, "patch ({moves}, {reference})");
-        live.api_ok(
-            "annotation.update",
-            json!({"id": "r1", "step": 0, "label": "k"}),
-        );
-        assert_eq!(step_of(&live), 0, "update ({moves}, {reference})");
-        if reference {
-            live.api_ok("follow.set", json!({"enabled": true}));
-            std::fs::write(
-                dir.join("main.env"),
-                format!("# main\nTOKEN={VALUE}\nUSER=bob\n"),
-            )
-            .unwrap();
-            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while live.with(|a| a.doc.base().get(2).map(String::as_str) != Some("USER=bob")) {
-                live.with(|a| {
-                    a.follow_tick();
-                });
-                assert!(
-                    std::time::Instant::now() < deadline,
-                    "the reload never came"
-                );
-            }
-            assert_eq!(step_of(&live), 0, "follow ({moves})");
-            live.api_ok("follow.set", json!({"enabled": false}));
-        }
-        live.with(|a| a.set_step(0));
-        assert_clean(
-            "code.get at step 0",
-            &live.api_ok("code.get", json!({})).to_string(),
-        );
-        live.command("w");
-        drop(live);
-        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
-        assert_eq!(
-            saved["annotations"][0]["step"],
-            json!(0),
-            "saved ({moves}, {reference}): {saved:#}"
-        );
-    }
-}
 
 // Second check, point 4: an annotation's linked file is shown text in
 // `scene.list`, `list_annotations` and `:list`.

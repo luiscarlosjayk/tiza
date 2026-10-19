@@ -888,6 +888,20 @@ pub fn project(
                 let target = patch
                     .resolve(&probe(&code, &key, first, &red), first)
                     .map_err(named)?;
+                // A move never rewrites or deletes a masked line (t-183 AC4):
+                // the mask covers the file's own code, untouched.
+                if track
+                    && patch.op != PatchOp::Insert
+                    && let Some(mk) = view_masks(doc, &red, &key)
+                        .into_iter()
+                        .find(|mk| target.from <= mk.line && mk.line <= target.to)
+                {
+                    return Err(named(Error::Invalid(format!(
+                        "it would change L{}, {}",
+                        mk.line,
+                        crate::redact::MASKED_LINE
+                    ))));
+                }
                 let (new_code, map) = patch.apply_target(&code, first, target);
                 if let Some(c) = p.cursor {
                     p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
