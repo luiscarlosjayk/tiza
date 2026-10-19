@@ -1808,7 +1808,7 @@ fn review_r4_messages() {
     let (code, msg) = err(&live, "move.delete", json!({"index": 3}));
     assert_eq!(
         (code.as_str(), msg.as_str()),
-        ("not_found", "move #3 does not exist")
+        ("not_found", "move #«…» does not exist")
     );
     // A mark's inline style color is checked, without echo.
     for c in [CANARY, "SECRETxyz789"] {
@@ -1900,6 +1900,146 @@ fn review_r5_every_mcp_tool_and_socket_method_with_an_unknown_key() {
         }
         assert_eq!(out[0], out[1], "{m}: an unknown key answers differently");
     }
+}
+
+// ---------- Second verification of the review (3dd3c7e) ----------
+
+#[test]
+fn review2_r1_a_number_inside_a_text_is_written_and_never_said() {
+    let live = live_valued(DIGITS, true, "t167-rw2-1");
+    let mut mcp = McpClient::start(&live.socket);
+    for (piece, other) in [
+        ("4821-4821", "5555-5555"),
+        ("3-4821", "3-5555"),
+        ("04821", "05555"),
+        ("4821:4821", "5555:5555"),
+    ] {
+        for op in ["replace", "delete"] {
+            let t = json!({"at_step": 2, "action": "code.patch", "op": op, "position": "{}", "content": "x"});
+            alike(&live, "move.add", &t, piece, other, DIGITS);
+            let t = json!({"at_step": 2, "op": op, "position": "{}", "content": "x"});
+            alike_mcp(&mut mcp, "add_move", &t, piece, other, DIGITS);
+        }
+    }
+    alike(
+        &live,
+        "step.goto",
+        &json!({"id": "{}"}),
+        "04821",
+        "05555",
+        DIGITS,
+    );
+    alike_mcp(
+        &mut mcp,
+        "goto_step",
+        &json!({"id": "{}"}),
+        "04821",
+        "05555",
+        DIGITS,
+    );
+    let mut bar = Vec::new();
+    for x in ["04821", "05555"] {
+        live.command(&format!("goto {x}"));
+        let m = format!("{:?}", live.message());
+        assert_no_echo(":goto", &m, x, DIGITS);
+        bar.push(m);
+    }
+    assert_eq!(bar[0], bar[1]);
+    // The document's own bounds are still said.
+    let (_, msg) = err(
+        &live,
+        "move.add",
+        json!({"at_step": 2, "action": "code.patch", "op": "delete", "position": "3-5555"}),
+    );
+    assert!(
+        msg.contains("line «…» does not exist (the document spans 1 to 4)"),
+        "{msg}"
+    );
+    // Without redacts the number is said as before.
+    let plain = live_valued(DIGITS, false, "t167-rw2-1-plain");
+    let (_, msg) = err(
+        &plain,
+        "move.add",
+        json!({"at_step": 2, "action": "code.patch", "op": "delete", "position": "3-5555"}),
+    );
+    assert!(msg.contains("line 5555 does not exist"), "{msg}");
+}
+
+#[test]
+fn review2_r2_an_unknown_key_with_grave_accents_is_not_said() {
+    let live = live_valued(VALUE, true, "t167-rw2-2");
+    let mut mcp = McpClient::start(&live.socket);
+    for (piece, other) in [
+        ("a`123SECRETx", "a`QzWxQzWxQz"),
+        ("x`, expected `SECRETxyz", "x`, expected `QzWxQzWxQz"),
+        ("`SECRETxyz`", "`QzWxQzWxQz`"),
+    ] {
+        // serde's own words (`, expected `) are in the keys: only the
+        // value's pieces and the control's are checked.
+        for method in ["pointer.set", "scene.get"] {
+            let mut out = Vec::new();
+            for k in [piece, other] {
+                let (code, msg) = err(&live, method, json!({ k: 1 }));
+                assert_clean(&format!("{method} {k}"), &msg);
+                assert!(!msg.contains("QzWx"), "{method} {k}: {msg}");
+                out.push((code, msg));
+            }
+            assert_eq!(
+                out[0], out[1],
+                "{method}: «{piece}» and «{other}» answer differently"
+            );
+        }
+        let mut out = Vec::new();
+        for k in [piece, other] {
+            let (is_err, text, _) = mcp.call("update_annotation", json!({"id": "h1", k: 1}));
+            assert!(is_err, "{text}");
+            assert_clean(&format!("MCP update_annotation {k}"), &text);
+            assert!(!text.contains("QzWx"), "{k}: {text}");
+            out.push(text);
+        }
+        assert_eq!(
+            out[0], out[1],
+            "MCP update_annotation: «{piece}» and «{other}» answer differently"
+        );
+    }
+    // The list of the valid fields stays.
+    let (_, msg) = err(&live, "pointer.set", json!({"x`, expected `SECRETxyz": 1}));
+    assert!(
+        msg.contains("unknown field «…», expected one of `line`"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn review2_r3_focus_set_refuses_lines_that_are_not_line_numbers() {
+    let live = live_valued(DIGITS, true, "t167-rw2-3");
+    live.api_ok("focus.set", json!({"from_line": 2, "to_line": 3}));
+    for p in [
+        json!({"from_line": -1, "to_line": 3}),
+        json!({"from_line": 3, "to_line": -2}),
+        json!({"to_line": 4821}),
+        json!({"to_line": 3}),
+        json!({"from_line": 1.5}),
+        json!({"from_line": "2"}),
+    ] {
+        let (code, msg) = err(&live, "focus.set", p.clone());
+        assert_eq!(code, "invalid_argument", "{p}: {msg}");
+        for n in ["-1", "-2", "4821", "1.5"] {
+            assert!(!msg.contains(n), "{p}: {msg}");
+        }
+        assert_eq!(
+            live.with(|a| a.focus),
+            Some((2, 3)),
+            "{p} changed the focus"
+        );
+    }
+    let mut mcp = McpClient::start(&live.socket);
+    let (is_err, text, _) = mcp.call("set_focus", json!({"to_line": 4821}));
+    assert!(is_err, "{text}");
+    assert!(!text.contains("4821"), "{text}");
+    // Both omitted (or null) still clear it.
+    live.api_ok("focus.set", json!({"from_line": null}));
+    assert_eq!(live.with(|a| a.focus), None);
 }
 
 #[test]

@@ -4964,14 +4964,30 @@ impl App {
                 json!({"text": self.layout(width).canvas.to_plain_text()})
             }
             "focus.set" => {
-                let a = params
-                    .get("from_line")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32);
-                let b = params
-                    .get("to_line")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32);
+                // A line given is a line number (t-167 review 2: a negative
+                // one cleared or cut the focus without a word); `null` or
+                // absent is no line. The value is never repeated.
+                let line = |k: &str| -> Result<Option<u32>, Error> {
+                    match params.get(k) {
+                        None | Some(Value::Null) => Ok(None),
+                        Some(v) => v
+                            .as_u64()
+                            .and_then(|n| u32::try_from(n).ok())
+                            .map(Some)
+                            .ok_or_else(|| {
+                                Error::Invalid(format!(
+                                    "focus.set: `{k}` must be a line number (1 or more)"
+                                ))
+                            }),
+                    }
+                };
+                let (a, b) = (line("from_line")?, line("to_line")?);
+                if a.is_none() && b.is_some() {
+                    return Err(Error::Invalid(
+                        "focus.set: `to_line` needs `from_line` (omit both to clear the focus)"
+                            .into(),
+                    ));
+                }
                 let focus = match (a, b) {
                     (Some(a), Some(b)) => Some((a.min(b), a.max(b))),
                     (Some(a), None) => Some((a, a)),
@@ -5552,11 +5568,9 @@ fn command_words(input: &str) -> Vec<String> {
         .filter(|w| !w.is_empty())
     {
         out.push(w.to_string());
-        // The numbers of a range (`5555-5555`) are written too (t-167
-        // review): the error names a line, not the range.
-        if w.contains('-') && w.chars().any(|c| c.is_ascii_digit()) {
-            out.extend(w.split('-').filter(|p| !p.is_empty()).map(String::from));
-        }
+        // The numbers in a word (`5555-5555`, `04821`) are written too, as
+        // a message prints them (t-167 review).
+        out.extend(tiza_core::redact::digit_runs(w));
     }
     out
 }

@@ -1917,7 +1917,7 @@ impl Echo {
         if self.written.iter().any(|t| t == msg || t == msg.trim()) {
             return "…".into();
         }
-        let mut s = msg.to_string();
+        let mut s = elide_asked_numbers(msg);
         for t in &self.written {
             for q in [
                 format!("«{t}»"),
@@ -2000,7 +2000,8 @@ impl Echo {
             Error::Invalid(s) => Error::Invalid(self.text(&s)),
             Error::StepNotFound(s) => Error::StepNotFound(self.text(&s)),
             Error::NotFound(s) => Error::NotFound(self.text(&s)),
-            Error::MoveNotFound(s) => Error::MoveNotFound(self.text(&s)),
+            // Always `#N`, the number asked: never said (t-167 review 2).
+            Error::MoveNotFound(_) => Error::MoveNotFound(format!("#{ELIDED}")),
             // The numbers the request wrote are not repeated (t-167 review).
             e @ (Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. }) => {
                 Error::RangeText(self.text(&e.to_string()))
@@ -2045,11 +2046,21 @@ fn json_texts(v: &serde_json::Value, numbers: bool) -> Vec<String> {
     let mut stack = vec![v];
     while let Some(v) = stack.pop() {
         match v {
-            serde_json::Value::String(s) => out.push(s.clone()),
+            serde_json::Value::String(s) => {
+                if numbers {
+                    out.extend(digit_runs(s));
+                }
+                out.push(s.clone());
+            }
             serde_json::Value::Number(n) if numbers => out.push(n.to_string()),
             serde_json::Value::Array(a) => stack.extend(a.iter()),
             serde_json::Value::Object(o) => {
-                out.extend(o.keys().cloned());
+                for k in o.keys() {
+                    if numbers {
+                        out.extend(digit_runs(k));
+                    }
+                    out.push(k.clone());
+                }
                 stack.extend(o.values());
             }
             _ => {}
@@ -2070,12 +2081,75 @@ fn scrub_unknown_field(msg: &str) -> String {
         out.push_str("unknown field ");
         out.push_str(ELIDED);
         let after = &rest[k + K.len()..];
-        rest = match after.find('`') {
+        // The name ends at serde's own words, the last ones: a name may
+        // hold a grave accent or `, expected ` itself (t-167 review 2).
+        let end = after
+            .rfind("`, expected ")
+            .or_else(|| after.rfind("`, there are no fields"))
+            .or_else(|| after.rfind('`'));
+        rest = match end {
             Some(e) => &after[e + 1..],
             None => "",
         };
     }
     out.push_str(rest);
+    out
+}
+
+/// The runs of digits of a text, as written and without leading zeros
+/// (`"3-04821"` → `3`, `04821`, `4821`): a number inside a text is
+/// written too, in the form a message would print it (t-167 review 2).
+pub fn digit_runs(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for run in text
+        .split(|c: char| !c.is_ascii_digit())
+        .filter(|r| !r.is_empty())
+    {
+        out.push(run.to_string());
+        let bare = run.trim_start_matches('0');
+        if bare != run && !bare.is_empty() {
+            out.push(bare.to_string());
+        }
+    }
+    out
+}
+
+/// The numbers a message says about what was asked — `line N does not
+/// exist`, `step N is beyond the last step`, `range A..B does not fit on
+/// line L`, `move #N does not exist` — as [`ELIDED`]: on a document with
+/// redacts the message is the same whatever number was sent, or how it
+/// was written (t-167 review 2). The document's own bounds stay.
+fn elide_asked_numbers(msg: &str) -> String {
+    // (before, after): the number between them goes.
+    const PHRASES: [(&str, &str); 5] = [
+        ("line ", " does not exist"),
+        ("step ", " is beyond the last step"),
+        ("range ", " does not fit on line "),
+        ("does not fit on line ", " ("),
+        ("move #", " does not exist"),
+    ];
+    let mut out = msg.to_string();
+    for (before, after) in PHRASES {
+        let mut res = String::with_capacity(out.len());
+        let mut rest = out.as_str();
+        while let Some(k) = rest.find(before) {
+            let start = k + before.len();
+            res.push_str(&rest[..start]);
+            let tail = &rest[start..];
+            let n = tail
+                .char_indices()
+                .find(|&(_, c)| !(c.is_ascii_digit() || c == '.' || c == '…'))
+                .map_or(tail.len(), |(i, _)| i);
+            if n > 0 && tail[n..].starts_with(after) {
+                res.push_str(ELIDED);
+                rest = &tail[n..];
+            } else {
+                rest = tail;
+            }
+        }
+        res.push_str(rest);
+        out = res;
+    }
     out
 }
 
@@ -2122,7 +2196,7 @@ mod tests {
         let req = serde_json::json!({"a": {"123SECRETx": 1}, "n": 4821, "s": "x"});
         let mut w = json_written(&req);
         w.sort();
-        assert_eq!(w, ["1", "123SECRETx", "4821", "a", "n", "s", "x"]);
+        assert_eq!(w, ["1", "123", "123SECRETx", "4821", "a", "n", "s", "x"]);
         let mut st = json_strings(&req);
         st.sort();
         assert_eq!(st, ["123SECRETx", "a", "n", "s", "x"]);
@@ -2137,7 +2211,32 @@ mod tests {
         );
         assert_eq!(
             e.text("move #4821 does not exist"),
-            "move #… does not exist"
+            "move #«…» does not exist"
+        );
+        // Review 2: digits inside a text, grave accents in a key, numbers
+        // the message says.
+        assert_eq!(digit_runs("3-04821:x"), ["3", "04821", "4821"]);
+        assert_eq!(
+            scrub_unknown_field("unknown field `x`, expected `SEC`, expected `line`"),
+            "unknown field «…», expected `line`"
+        );
+        assert_eq!(
+            scrub_unknown_field("unknown field `a`12SECRET`, there are no fields"),
+            "unknown field «…», there are no fields"
+        );
+        assert_eq!(
+            elide_asked_numbers(
+                "move #1, step 2: line 5555 does not exist (the document spans 1 to 4)"
+            ),
+            "move #1, step 2: line «…» does not exist (the document spans 1 to 4)"
+        );
+        assert_eq!(
+            elide_asked_numbers("range 0..99 does not fit on line 2 (it has 6 graphemes)"),
+            "range «…» does not fit on line «…» (it has 6 graphemes)"
+        );
+        assert_eq!(
+            elide_asked_numbers("step 5555 is beyond the last step (3)"),
+            "step «…» is beyond the last step (3)"
         );
     }
 
