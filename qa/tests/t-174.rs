@@ -2905,21 +2905,28 @@ fn rv4_a_put_with_other_code_keeps_the_reference() {
     );
     assert_clean("the refusal", &e.message);
     assert!(live.with(|a| !a.doc.is_embedded()));
-    // The real code itself (`tiza scene put FILE`) is no conflict.
-    let mut real = live.api_ok("scene.get", json!({}));
-    real["document"]["code"] = json!([
-        "# main",
-        format!("TOKEN={VALUE} # tail"),
-        "USER=ana",
-        "PORT=8080"
+    // `tiza scene put FILE` of the same `.tiza` sends the masked copy: it
+    // goes back on the file.
+    let out = tiza(&[
+        "--socket",
+        live.socket.to_str().unwrap(),
+        "scene",
+        "put",
+        path.to_str().unwrap(),
     ]);
-    real["document"]["annotations"][0]["span"] = json!({"line": 2, "start": 6, "end": 16});
-    live.api_ok("scene.put", json!({"document": real["document"]}));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     assert!(live.with(|a| !a.doc.is_embedded()));
     drop(live);
     let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(saved["code"], json!({"file": "main.env"}));
-    let _ = written;
+    assert_eq!(
+        saved["annotations"],
+        serde_json::from_str::<Value>(&written).unwrap()["annotations"]
+    );
 }
 
 // Review point 5: a linked file frozen in `views` comes back as it was.
@@ -3114,8 +3121,236 @@ fn rv8_alerts_say_one_thing_and_a_failed_write_is_no_save() {
     );
     let out = String::from_utf8_lossy(&tiza(&["check", p.to_str().unwrap()]).stdout).into_owned();
     assert!(
-        out.contains("warning: r2: the linked file frozen in `views` holds the value under this redact in clear; frozen.tiza still holds it — open it in Tiza and :embed it"),
+        out.contains("warning: r2: the linked file frozen in `views` holds the value under this redact in clear; frozen.tiza still holds it — drop it from `views` (Tiza then reads the file), or :embed in Tiza (which embeds the main code too)"),
         "{out}"
     );
     assert_clean("check", &out);
+}
+
+// ---------- second check of the review (dbd7192) ----------
+
+/// A value shorter than the mask (`ab1Xz`, 5 < 8) and one longer.
+fn short_long(value: &str) -> Value {
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": [format!("KEY={value} tail end"), "USER=ana"],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 1, "start": 4, "end": 4 + value.chars().count()}}
+        ]
+    })
+}
+
+// Second check, point 1: an agent's column inside or past a mask never
+// overflows (it took the instance down) and never lands inside the value
+// uncovered.
+#[test]
+fn rc1_columns_before_inside_and_after_a_mask_are_mapped_safely() {
+    for value in ["ab1Xz", "Zq8wR4tY7uV2mK6YqA8m"] {
+        let n = value.chars().count() as u32;
+        let masked_len = 4 + 8 + " tail end".len() as u32;
+        for (i, (s, e)) in [
+            (0, 2),
+            (5, 6),
+            (9, 10),
+            (10, 11),
+            (11, 12),
+            (13, 17),
+            (20, 21),
+            (40, 41),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            for via in ["patch", "put", "arrow"] {
+                // A fresh instance each time: a put of the copy into an
+                // embedded document leaves its code masked in memory.
+                let live = live_of(&short_long(value), &format!("t174-rc1-{n}-{i}-{via}"));
+                live.with(|a| a.set_step(1));
+                let id = format!("z{i}{via}");
+                let ann = if via == "arrow" {
+                    json!({"id": id, "step": 1, "type": "arrow", "from": {"line": 1, "col": s}, "to": {"line": 2, "col": 0}})
+                } else {
+                    json!({"id": id, "step": 1, "type": "highlight", "span": {"line": 1, "start": s, "end": e}})
+                };
+                let r = if via == "put" {
+                    let mut doc = live.api_ok("scene.get", json!({}))["document"].clone();
+                    doc["annotations"].as_array_mut().unwrap().push(ann);
+                    live.api("scene.put", json!({"document": doc}))
+                } else {
+                    live.api("scene.patch", json!({"annotations": [ann]}))
+                };
+                // Accepted or refused cleanly (past the line), never a crash.
+                if let Some(err) = &r.error {
+                    assert!(e > masked_len || s > masked_len, "{via} {s}..{e}: {err:?}");
+                    continue;
+                }
+                let shape = live.with({
+                    let id = id.clone();
+                    move |a| a.doc.find_annotation(&id).map(|x| x.shape.clone())
+                });
+                let cols = tiza_core::redact::columns(&shape.unwrap());
+                // On the instance's code (a put into an embedded document
+                // leaves it masked, and its columns are the copy's).
+                let len = live.with(|a| a.doc.code[0].chars().count()) as u32;
+                assert!(
+                    cols.iter().all(|(_, c)| *c <= len),
+                    "{via} {s}..{e}: {cols:?}"
+                );
+                // A column inside the masked area stays inside the value or
+                // on its border: covered by the mask.
+                if via == "patch" && (5..12).contains(&s) {
+                    assert!(cols[0].1 >= 4 && cols[0].1 <= 4 + n, "{via} {s}: {cols:?}");
+                }
+                let text = live
+                    .api_ok("render.text", json!({"width": 100}))
+                    .to_string();
+                let c: Vec<char> = value.chars().collect();
+                for w in c.windows(4) {
+                    let p: String = w.iter().collect();
+                    assert!(!text.contains(&p), "{via} {s}..{e} shows «{p}»");
+                }
+            }
+        }
+    }
+}
+
+// Second check, point 2: a put never tells whether a guess under a mask
+// was right: a wrong guess and the real value get the same answer.
+#[test]
+fn rc2_a_put_with_the_real_value_answers_like_a_wrong_guess() {
+    let dir = scratch("t174-rc2");
+    let path = file_ref(&dir, false);
+    let written = std::fs::read_to_string(&path).unwrap();
+    let d = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(d, path.clone(), dir.join("live.sock"));
+    let scene = live.api_ok("scene.get", json!({}));
+    let before = live.api_ok("scene.get", json!({}));
+    let mut answers = Vec::new();
+    for guess in ["wrongguess", &VALUE.to_lowercase(), VALUE] {
+        let mut doc = scene["document"].clone();
+        doc["code"][1] = json!(format!("TOKEN={guess} # tail"));
+        let r = live.api("scene.put", json!({"document": doc}));
+        let e = r.error.expect("refused");
+        answers.push((e.code, e.message));
+        assert_eq!(
+            live.api_ok("scene.get", json!({})),
+            before,
+            "{guess}: no effect"
+        );
+    }
+    assert!(answers.windows(2).all(|w| w[0] == w[1]), "{answers:?}");
+    drop(live);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), written);
+}
+
+// Second check, point 3: a redact keeps its step 0 through scene.patch,
+// annotation.update and a reload of a followed file, moves or not.
+#[test]
+fn rc3_a_redact_keeps_its_step_zero() {
+    for (moves, reference) in [(false, false), (false, true), (true, false), (true, true)] {
+        let dir = scratch(&format!("t174-rc3-{moves}-{reference}"));
+        std::fs::write(
+            dir.join("main.env"),
+            format!("# main\nTOKEN={VALUE}\nUSER=ana\n"),
+        )
+        .unwrap();
+        let mut doc = json!({
+            "schema": 1, "source": {"language": "sh"},
+            "redact_from_step": true,
+            "code": ["# main", format!("TOKEN={VALUE}"), "USER=ana"],
+            "annotations": [
+                {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
+                {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "the user"}
+            ]
+        });
+        if reference {
+            doc["code"] = json!({"file": "main.env"});
+        }
+        if moves {
+            doc["moves"] = json!([{"at_step": 2, "action": "code.patch", "op": "insert", "after": "USER=ana", "content": "HOST=db"}]);
+        }
+        let path = write(&dir, "doc", &doc);
+        let d = tiza_core::fs::open(path.to_str().unwrap())
+            .unwrap()
+            .document;
+        let live = Live::open(d, path.clone(), dir.join("live.sock"));
+        let step_of = |live: &Live| live.with(|a| a.doc.find_annotation("r1").unwrap().step);
+        let scene = live.api_ok("scene.get", json!({}));
+        live.api_ok(
+            "scene.patch",
+            json!({"annotations": scene["document"]["annotations"]}),
+        );
+        assert_eq!(step_of(&live), 0, "patch ({moves}, {reference})");
+        live.api_ok(
+            "annotation.update",
+            json!({"id": "r1", "step": 0, "label": "k"}),
+        );
+        assert_eq!(step_of(&live), 0, "update ({moves}, {reference})");
+        if reference {
+            live.api_ok("follow.set", json!({"enabled": true}));
+            std::fs::write(
+                dir.join("main.env"),
+                format!("# main\nTOKEN={VALUE}\nUSER=bob\n"),
+            )
+            .unwrap();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while live.with(|a| a.doc.base().get(2).map(String::as_str) != Some("USER=bob")) {
+                live.with(|a| {
+                    a.follow_tick();
+                });
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "the reload never came"
+                );
+            }
+            assert_eq!(step_of(&live), 0, "follow ({moves})");
+            live.api_ok("follow.set", json!({"enabled": false}));
+        }
+        live.with(|a| a.set_step(0));
+        assert_clean(
+            "code.get at step 0",
+            &live.api_ok("code.get", json!({})).to_string(),
+        );
+        live.command("w");
+        drop(live);
+        let saved: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            saved["annotations"][0]["step"],
+            json!(0),
+            "saved ({moves}, {reference}): {saved:#}"
+        );
+    }
+}
+
+// Second check, point 4: an annotation's linked file is shown text in
+// `scene.list`, `list_annotations` and `:list`.
+#[test]
+fn rc4_an_annotations_file_is_masked_in_the_lists() {
+    let dir = scratch("t174-rc4");
+    std::fs::write(dir.join("beefcake.env"), "# lib\nMODE=x\n").unwrap();
+    let doc = json!({
+        "schema": 1, "source": {"language": "sh"},
+        "code": ["# main", format!("KEY={WORDY}")],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 4, "end": 20}},
+            {"id": "n2", "step": 2, "type": "note", "file": "beefcake.env", "line": 2, "text": "the mode"}
+        ],
+        "moves": [{"at_step": 2, "action": "code.link", "file": "beefcake.env"}]
+    });
+    let path = write(&dir, "doc", &doc);
+    let d = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(d, path.clone(), dir.join("live.sock"));
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(list.contains(&format!("({MASK})")), "{list}");
+    assert_no_wordy("scene.list", &list);
+    let mut mcp = McpClient::start(&live.socket);
+    let (_, text, _) = mcp.call("list_annotations", json!({}));
+    assert_no_wordy("list_annotations", &text);
+    live.keys(&[crossterm::event::KeyCode::Char('L')]);
+    assert_no_wordy(":list", &live.screen(140, 40));
 }

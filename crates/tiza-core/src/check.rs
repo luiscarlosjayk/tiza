@@ -445,10 +445,11 @@ fn check_text_with(
                             "the embedded code holds the value under this redact in clear; {file} still holds it — open and save it in Tiza"
                         )
                     } else {
-                        // A file reference keeps what it holds when saved:
-                        // `:embed` freezes everything masked.
+                        // A file reference keeps what it holds when saved;
+                        // `:embed` freezes everything masked, but embeds the
+                        // main code too, and the message says so.
                         format!(
-                            "the linked file frozen in `views` holds the value under this redact in clear; {file} still holds it — open it in Tiza and :embed it"
+                            "the linked file frozen in `views` holds the value under this redact in clear; {file} still holds it — drop it from `views` (Tiza then reads the file), or :embed in Tiza (which embeds the main code too)"
                         )
                     },
                 )

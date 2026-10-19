@@ -807,11 +807,12 @@ fn real_main() -> anyhow::Result<()> {
                 SceneCmd::Text { width } => ("render.text", serde_json::json!({"width": width})),
                 SceneCmd::Status => ("status", serde_json::json!({})),
                 SceneCmd::Put { file, as_code } => {
-                    let mut document = document_for_put(&file, as_code)?;
-                    // On the wire the code travels embedded: the instance may
-                    // run in another directory.
-                    document.code_src =
-                        tiza_core::model::CodeSource::Embedded(document.code.clone());
+                    // On the wire the code travels embedded (the instance may
+                    // run in another directory) and masked, as `scene.get`
+                    // hands it out (t-174 review): the instance puts a file
+                    // reference back on its file, and the real code of a
+                    // redacted line never travels.
+                    let document = document_for_put(&file, as_code)?.embedded_copy();
                     ("scene.put", serde_json::json!({"document": document}))
                 }
                 SceneCmd::Patch { json } => {

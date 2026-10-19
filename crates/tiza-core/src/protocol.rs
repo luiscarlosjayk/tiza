@@ -1412,10 +1412,11 @@ pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
     };
     // The file it belongs to, when it is not the main one (t-105).
     let line = match &a.file {
-        Some(f) => format!("{base} ({f})"),
+        // A file name is shown text, whole (t-174 review: `(beefcake.env)`).
+        Some(f) => format!("{base} ({})", echo.shown(f)),
         None => base,
     };
-    // The file name, the rest: Tiza's own words stay.
+    // The rest: Tiza's own words stay.
     echo.shown_message(&line)
 }
 

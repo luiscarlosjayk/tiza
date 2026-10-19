@@ -595,17 +595,27 @@ pub fn unmask_columns(open: &Document, anns: Vec<(Option<String>, &mut Annotatio
                 .collect(),
         )
     };
+    // A copy column back on the real code (checked arithmetic: an agent's
+    // column may be anywhere). One the map reaches goes to the last real
+    // column that lands on it (after a mask, never inside the value); one
+    // inside a mask longer than its value goes to the value's border on
+    // the side of the span (a start to the value's end, an end to its last
+    // character), so the mask still covers it; one past the line keeps its
+    // distance to the line's end (validation then says it does not fit).
     let back = |f: &[u32], m: u32, end: bool| -> u32 {
         if let Some(x) = f.iter().rposition(|&y| y == m) {
             return x as u32;
         }
         if end {
-            f.iter().rposition(|&y| y < m).map_or(0, |x| x as u32)
-        } else {
-            f.iter().position(|&y| y > m).map_or(
-                f.len().saturating_sub(1) as u32 + (m - f.last().copied().unwrap_or(0)),
-                |x| x as u32,
-            )
+            return f.iter().rposition(|&y| y < m).map_or(0, |x| x as u32);
+        }
+        match f.iter().position(|&y| y > m) {
+            Some(x) => x as u32,
+            None => {
+                let last = f.len().saturating_sub(1) as u32;
+                let top = f.last().copied().unwrap_or(0);
+                last.saturating_add(m.saturating_sub(top))
+            }
         }
     };
     for (key, a) in anns {
@@ -618,7 +628,7 @@ pub fn unmask_columns(open: &Document, anns: Vec<(Option<String>, &mut Annotatio
                     let s = back(&f, span.start, false);
                     let e = back(&f, span.end, true);
                     span.start = s;
-                    span.end = e.max(s + 1);
+                    span.end = e.max(s.saturating_add(1));
                 }
             }
             Shape::Arrow { from, to, .. } => {

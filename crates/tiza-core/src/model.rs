@@ -942,11 +942,15 @@ impl Document {
         // brought it masked (its columns are the copy's then).
         let mut restored: Vec<(ViewKey, bool)> = Vec::new();
         if let CodeSource::File { file, .. } = &self.code_src {
+            // Only the masked copy itself: any other code — an edit, an
+            // older copy, or the real value written under a mask — gets the
+            // same answer, so a put never tells whether a guess was right
+            // (t-174 review; t-167: nothing confirms what is under a mask).
+            // `tiza scene put FILE` sends the masked copy too.
             let masked = put.code_src == copy.code_src;
-            let real = put.code_src == CodeSource::Embedded(self.base().to_vec());
-            if !masked && !real {
+            if !masked {
                 return Err(Error::Invalid(format!(
-                    "scene.put: this document follows {} and the code sent is not its code as this instance has it (an edited copy, or one older than a reload): edit the file, or scene.get again (:embed first to replace the code)",
+                    "scene.put: this document follows {} and the code sent is not the copy scene.get hands out (an edited copy, or one older than a reload): edit the file, or scene.get again (:embed first to replace the code)",
                     echo.shown(file)
                 )));
             }
@@ -967,11 +971,14 @@ impl Document {
             let frozen = self.views.get(file);
             let sent = put.views.get(file);
             let masked = sent == Some(code);
-            let as_real = sent == Some(real) || (frozen.is_some() && sent == frozen);
+            // A frozen file sent as it is frozen is no guess (it is the
+            // document's own embedded code, the agent's to change); a file
+            // read from disk takes only the masked copy, as the main code.
+            let as_real = frozen.is_some() && sent == frozen;
             if !masked && !as_real {
                 if frozen.is_none() && sent.is_some() {
                     return Err(Error::Invalid(format!(
-                        "scene.put: {} is read from its file and the code sent for it is not its code as this instance has it: edit the file, or scene.get again",
+                        "scene.put: {} is read from its file and the code sent for it is not the copy scene.get hands out: edit the file, or scene.get again",
                         echo.shown(file)
                     )));
                 }
@@ -2358,8 +2365,11 @@ impl Document {
 
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
-        // Step 0 is the untouched code: only a redact pinned there (t-140).
-        let pinned = matches!(ann.shape, Shape::Redact { .. }) && !self.moves.is_empty();
+        // Step 0 is the untouched code: only a redact belongs there (t-140),
+        // and it keeps the step it came with, moves or not (t-174 review: a
+        // `scene.get` → `scene.patch` of a step-0 redact with
+        // `redact_from_step` must not unmask step 0).
+        let pinned = matches!(ann.shape, Shape::Redact { .. });
         if ann.step == 0 && !pinned {
             ann.step = 1;
         }

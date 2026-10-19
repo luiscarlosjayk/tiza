@@ -1084,7 +1084,12 @@ impl App {
             .cloned()
             .ok_or_else(|| Error::NotFound(p.id.clone()))?;
         if let Some(s) = p.step {
-            ann.step = s.max(1);
+            // A redact may be at step 0 (t-140, t-174 review).
+            ann.step = if matches!(ann.shape, Shape::Redact { .. }) {
+                s
+            } else {
+                s.max(1)
+            };
         }
         if let Some(c) = &p.color {
             if c.trim().is_empty() {
