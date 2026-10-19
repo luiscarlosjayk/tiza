@@ -1489,3 +1489,369 @@ fn ac10_live_get_put_then_save_round_trips_for_a_short_value() {
     );
     reopened_is_clean(&path, short, "t174-ac10-put-re");
 }
+
+// ---------- review round 2 ----------
+
+/// A value whose pieces are ordinary-looking words (`ffee`, `beef`).
+const WORDY: &str = "9f2c0ffeebeef417";
+
+#[track_caller]
+fn assert_no_wordy(what: &str, s: &str) {
+    let c: Vec<char> = WORDY.chars().collect();
+    for w in c.windows(4) {
+        let p: String = w.iter().collect();
+        assert!(!s.contains(&p), "{what} shows «{p}» of the value:\n{s}");
+    }
+}
+
+fn wordy_doc() -> Value {
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", format!("KEY={WORDY}"), "USER=ana", "PORT=1"],
+        "steps": [
+            {"step": 1, "id": "s-ffee", "title": "one"},
+            {"step": 2, "id": "t-beef", "title": "two"}
+        ],
+        "annotations": [
+            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 4, "end": 20}},
+            {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "plain"},
+            {"id": "n2", "step": 2, "type": "note", "line": 4, "text": "plain too"},
+            {"id": "beef", "step": 2, "type": "note", "line": 99, "text": "outside"},
+            {"id": "sp", "step": 1, "type": "spotlight", "ids": ["ffee-beef"]}
+        ]
+    })
+}
+
+/// Opens `doc` in a live instance saving to `dir/name.tiza`, autosaves
+/// once with a change that leaves every frame as it was, and closes it.
+fn autosave(dir: &Path, name: &str, doc: &Value) -> PathBuf {
+    let path = write(dir, name, doc);
+    let d = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(d, path.clone(), dir.join(format!("{name}.sock")));
+    live.api_ok("style.set", json!({"name": "unused", "glyph": "*"}));
+    drop(live);
+    path
+}
+
+#[test]
+fn r2_1_masked_step_ids_stay_unique_and_goto_still_works() {
+    let dir = scratch("t174-r2-1");
+    let path = autosave(&dir, "steps", &wordy_doc());
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert_no_wordy("the saved .tiza", &saved);
+    // It opens again, and its steps are reachable by their masked ids.
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap_or_else(|e| panic!("the saved file does not open: {e}"))
+        .document;
+    let live = Live::open(doc, dir.join("re.tiza"), dir.join("re.sock"));
+    let ids: Vec<String> = live.with(|a| a.doc.steps.iter().filter_map(|n| n.id.clone()).collect());
+    // The whole token goes (`s-ffee` → `••••••••`), so they are numbered.
+    assert_eq!(ids, [MASK.to_string(), format!("{MASK}-2")], "{ids:?}");
+    live.api_ok("step.goto", json!({"id": format!("{MASK}-2")}));
+    assert_eq!(live.api_ok("status", json!({}))["step"], json!(2));
+    live.api_ok("step.goto", json!({"id": MASK}));
+    live.api_ok("step.next", json!({}));
+    assert_eq!(live.api_ok("status", json!({}))["step"], json!(2));
+    // Two ids masked to the same text are kept apart.
+    let mut doc = wordy_doc();
+    doc["steps"] = json!([{"step": 1, "id": "ffee"}, {"step": 2, "id": "beef"}]);
+    let path = autosave(&dir, "same", &doc);
+    let reopened = tiza_core::fs::open(path.to_str().unwrap());
+    assert!(reopened.is_ok(), "{:?}", reopened.err());
+    let ids: Vec<String> = reopened
+        .unwrap()
+        .document
+        .steps
+        .iter()
+        .filter_map(|n| n.id.clone())
+        .collect();
+    assert_eq!(ids, [MASK.to_string(), format!("{MASK}-2")]);
+}
+
+#[test]
+fn r2_2_document_words_in_messages_are_masked() {
+    let dir = scratch("t174-r2-2");
+    let f = write(&dir, "wordy", &wordy_doc());
+    let (_, err) = out_of(&["render", f.to_str().unwrap(), "--format", "txt"]);
+    assert!(err.contains("not drawn"), "{err}");
+    assert_no_wordy("render stderr", &err);
+    for args in [
+        vec!["check", f.to_str().unwrap()],
+        vec!["check", f.to_str().unwrap(), "--json"],
+    ] {
+        let out = tiza(&args);
+        let report = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr);
+        assert!(
+            report.contains("does not exist") || report.contains("unknown"),
+            "{report}"
+        );
+        assert_no_wordy("tiza check", &report);
+    }
+    // The message's own words stay.
+    assert!(
+        err.contains("annotations outside the code (lines 1-4) and not drawn"),
+        "{err}"
+    );
+}
+
+#[test]
+fn r2_3_a_reference_to_a_missing_id_is_masked_and_saved_masked() {
+    let dir = scratch("t174-r2-3");
+    let live = live_of(&wordy_doc(), "t174-r2-3-live");
+    live.with(|a| a.set_step(1));
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(list.contains(&format!("spotlight [{MASK}]")), "{list}");
+    assert_no_wordy("scene.list", &list);
+    let sel = live.with(|a| {
+        a.selected = Some("sp".into());
+        a.selected_text()
+    });
+    assert_no_wordy("the selection line", &format!("{sel:?}"));
+    assert_no_wordy(
+        "as_shown",
+        &live
+            .api_ok("scene.get", json!({"as_shown": true}))
+            .to_string(),
+    );
+    let path = autosave(&dir, "missing", &wordy_doc());
+    assert_no_wordy("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
+}
+
+/// A document with moves whose redacted line has a highlight after the
+/// value, for a value shorter and one longer than the mask.
+fn shifted_doc(value: &str) -> Value {
+    let line = format!("TOKEN={value} # tail");
+    let tail = line.chars().count() as u32 - 4;
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", line, "X=1"],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 6 + value.chars().count() as u32}},
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "start": tail, "end": tail + 4}, "label": "the tail"},
+            {"id": "m1", "step": 2, "type": "mark", "kind": "warn", "span": {"line": 2, "start": tail, "end": tail + 4}}
+        ],
+        "moves": [{"at_step": 2, "action": "code.patch", "op": "replace", "find": "X=1", "content": "X=2"}]
+    })
+}
+
+fn all_steps_as(path: &Path, dir: &Path, name: &str, fmt: &str) -> Vec<String> {
+    let out = dir.join(name);
+    let _ = std::fs::remove_dir_all(&out);
+    let mut args = vec![
+        "render".to_string(),
+        path.to_str().unwrap().to_string(),
+        "--all-steps".into(),
+        "--format".into(),
+        fmt.into(),
+        "--width".into(),
+        "100".into(),
+        "--out".into(),
+        format!("{}/", out.display()),
+    ];
+    if fmt == "svg" {
+        args.push("--no-embed-fonts".into());
+    }
+    let a: Vec<&str> = args.iter().map(String::as_str).collect();
+    out_of(&a);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    files.sort();
+    files
+        .iter()
+        .map(|p| std::fs::read_to_string(p).unwrap())
+        .collect()
+}
+
+#[test]
+fn r2_4_annotations_after_the_value_keep_their_place_with_moves() {
+    for value in ["Ab3x9", "Zq8wR4tY7uV2"] {
+        let dir = scratch(&format!("t174-r2-4-{}", value.len()));
+        let path = write(&dir, "shift", &shifted_doc(value));
+        let before: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&path, &dir, &format!("b-{f}"), f))
+            .collect();
+        autosave(&dir, "shift", &shifted_doc(value));
+        let after: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&path, &dir, &format!("a-{f}"), f))
+            .collect();
+        assert_eq!(
+            after,
+            before,
+            "value of {}: save and reopen moved something",
+            value.len()
+        );
+        // The same through scene.get → scene.put → save.
+        let p2 = write(&dir, "put", &shifted_doc(value));
+        let d = tiza_core::fs::open(p2.to_str().unwrap()).unwrap().document;
+        let live = Live::open(d, p2.clone(), dir.join("put.sock"));
+        let scene = live.api_ok("scene.get", json!({}));
+        live.api_ok("scene.put", json!({"document": scene["document"]}));
+        live.command("w");
+        drop(live);
+        let after_put: Vec<Vec<String>> = ["ansi", "svg"]
+            .iter()
+            .map(|f| all_steps_as(&p2, &dir, &format!("p-{f}"), f))
+            .collect();
+        assert_eq!(
+            after_put,
+            before,
+            "value of {}: get → put moved something",
+            value.len()
+        );
+    }
+}
+
+/// A document whose code is embedded, with a linked file frozen in `views`
+/// (in clear, as a hand-written file may hold it) and a redact on it.
+fn views_doc(shown: bool) -> Value {
+    let mut moves = vec![
+        json!({"at_step": 2, "action": "code.patch", "op": "replace", "find": "USER=ana", "content": "USER=bob"}),
+    ];
+    if shown {
+        moves.push(json!({"at_step": 3, "action": "code.link", "file": "lib.env"}));
+    }
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# main", "USER=ana"],
+        "views": {"lib.env": ["# lib", format!("LIBKEY={VALUE}"), "MODE=x"]},
+        "annotations": [
+            {"id": "r2", "step": 0, "type": "redact", "file": "lib.env", "span": {"line": 2, "start": 7, "end": 17}},
+            {"id": "n9", "step": 1, "type": "note", "file": "lib.env", "line": 3, "text": format!("was {VALUE}")}
+        ],
+        "moves": moves
+    })
+}
+
+#[test]
+fn r2_5_views_are_saved_masked() {
+    let dir = scratch("t174-r2-5");
+    let path = autosave(&dir, "views", &views_doc(true));
+    let saved = std::fs::read_to_string(&path).unwrap();
+    assert!(saved.contains(&format!("LIBKEY={MASK}")), "{saved}");
+    assert_clean("the saved .tiza", &saved);
+}
+
+#[test]
+fn r2_6_a_note_of_a_linked_file_no_step_shows_is_saved_masked() {
+    let dir = scratch("t174-r2-6");
+    let path = autosave(&dir, "unshown", &views_doc(false));
+    assert_clean("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
+}
+
+#[test]
+fn r2_7_embed_with_a_linked_file_reopens_clean_and_checks() {
+    let dir = scratch("t174-r2-7");
+    std::fs::write(dir.join("main.env"), "# main\nUSER=ana\n").unwrap();
+    std::fs::write(
+        dir.join("lib.env"),
+        format!("# lib\nLIBKEY={VALUE}\nMODE=x\n"),
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": {"file": "main.env"},
+        "annotations": [
+            {"id": "r2", "step": 0, "type": "redact", "file": "lib.env", "span": {"line": 2, "start": 7, "end": 17}},
+            {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the user"}
+        ],
+        "moves": [{"at_step": 2, "action": "code.link", "file": "lib.env"}]
+    });
+    let path = write(&dir, "doc", &doc);
+    let before = all_steps(&path, &dir, "before");
+    let d = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(d, path.clone(), dir.join("live.sock"));
+    live.command("embed");
+    drop(live);
+    let out = tiza(&["check", path.to_str().unwrap()]);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "{report}");
+    assert!(!report.contains("does not fit"), "{report}");
+    let (_, err) = out_of(&["render", path.to_str().unwrap(), "--format", "txt"]);
+    assert!(!err.contains("not drawn"), "{err}");
+    assert_eq!(
+        all_steps(&path, &dir, "after"),
+        before,
+        "reopened = shown before"
+    );
+    assert_clean("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
+}
+
+#[test]
+fn r2_8_a_copy_alone_is_no_widened() {
+    let f = fixture("t-174/conmove.tiza");
+    let doc = tiza_core::fs::open(f.to_str().unwrap()).unwrap().document;
+    let dir = scratch("t174-r2-8");
+    let live = Live::open(doc, dir.join("c.tiza"), dir.join("c.sock"));
+    live.with(|a| a.set_step(1));
+    let list = live.api_ok("scene.list", json!({})).to_string();
+    assert!(list.contains("r1 [step 0] redact L1"), "{list}");
+    assert!(!list.contains("WIDENED"), "only a copy: {list}");
+    live.keys(&[crossterm::event::KeyCode::Char('L')]);
+    assert!(!live.screen(120, 30).contains("WIDENED"));
+}
+
+#[test]
+fn r2_9_one_alert_per_masked_id_and_each_copy_with_its_move() {
+    // Two ids masked to the same text: two alerts.
+    let mut doc = glyphs_and_ids();
+    doc["annotations"].as_array_mut().unwrap().push(
+        json!({"id": format!("x{VALUE}"), "step": 1, "type": "note", "line": 4, "text": "plain"}),
+    );
+    let live = live_of(&doc, "t174-r2-9");
+    let _ = live.screen(120, 30);
+    let alerts = live.with(|a| a.redact_alerts.clone());
+    let ids: Vec<&String> = alerts
+        .iter()
+        .filter(|a| a.contains("its id shares text"))
+        .collect();
+    assert_eq!(ids.len(), 3, "{alerts:?}");
+    assert!(
+        alerts
+            .iter()
+            .any(|a| a.starts_with(&format!("{MASK}-2: its id"))),
+        "{alerts:?}"
+    );
+    // Copies written by two moves: each named with its own lines.
+    let two = json!({
+        "schema": 1, "source": {"language": "sh"},
+        "code": ["TOKEN=9vK7wPx3Lm", "A=1", "B=2", "C=3"],
+        "annotations": [{"id": "r1", "step": 0, "type": "redact", "span": {"line": 1, "start": 6, "end": 16}}],
+        "moves": [
+            {"at_step": 1, "action": "code.patch", "op": "insert", "after": "A=1", "content": "# old 9vK7wPx3"},
+            {"at_step": 2, "action": "code.patch", "op": "insert", "after": "C=3", "content": "# was K7wPx3Lm"}
+        ]
+    });
+    let dir = scratch("t174-r2-9-moves");
+    let f = write(&dir, "two", &two);
+    let (_, err) = out_of(&[
+        "render",
+        f.to_str().unwrap(),
+        "--all-steps",
+        "--format",
+        "txt",
+        "--out",
+        &format!("{}/", dir.join("o").display()),
+    ]);
+    assert!(
+        err.contains("redact r1: masked a copy of its value on L3 (move #1)"),
+        "{err}"
+    );
+    assert!(
+        err.contains("redact r1: masked a copy of its value on L6 (move #2)"),
+        "{err}"
+    );
+    assert_clean("stderr", &err);
+}

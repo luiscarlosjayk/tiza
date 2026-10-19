@@ -443,7 +443,7 @@ fn scrub_secrets(doc: &Document, out: &mut [Finding]) {
     }
     // Shown text (t-174): an id, a message or a clipped label sharing text
     // with a masked value is masked, as on screen.
-    let filter = crate::redact::Echo::quoting(doc);
+    let filter = crate::redact::Echo::for_messages(doc);
     for f in out.iter_mut() {
         if let Some(id) = &mut f.id {
             *id = filter.shown(id);

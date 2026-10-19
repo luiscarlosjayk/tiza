@@ -340,17 +340,69 @@ pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
     if doc.moves.is_empty() {
         return masked(doc, u32::MAX).annotations;
     }
-    let mut d = doc.clone();
-    d.code = doc.base().to_vec();
-    d.source.first_line = doc.base_first();
-    d.annotations = base_redacts(doc, &None);
-    d.moves.clear();
-    d.base_code.clear();
-    let m = masked(&d, u32::MAX);
     let mut out = doc.annotations.clone();
-    for a in &mut out {
-        if let Some(n) = m.annotations.iter().find(|n| n.id == a.id) {
-            a.shape = n.shape.clone();
+    // The views at each step, to tell which annotations sit on a line as
+    // it is in the step-0 code (columns on the same text as the mask).
+    let mut views: std::collections::BTreeMap<u32, Document> = Default::default();
+    let mut keys: Vec<Option<String>> = vec![None];
+    keys.extend(doc.view_code.keys().cloned().map(Some));
+    for key in keys {
+        let redacts = base_redacts(doc, &key);
+        if redacts.is_empty() {
+            continue;
+        }
+        let Some(code) = doc.view_base_code(&key, false) else {
+            continue;
+        };
+        let first = doc.view_first_line(&key);
+        let lines: Vec<u32> = redacts
+            .iter()
+            .filter_map(|r| match &r.shape {
+                Shape::Redact { span, .. } => Some(span.line),
+                _ => None,
+            })
+            .collect();
+        let base_text =
+            |l: u32| -> Option<String> { code.get(l.checked_sub(first)? as usize).cloned() };
+        let mut others: Vec<Annotation> = Vec::new();
+        for a in doc.annotations.iter().filter(|a| a.file == key) {
+            if matches!(a.shape, Shape::Redact { .. }) {
+                continue;
+            }
+            let on: Vec<u32> = a
+                .shape
+                .line_ranges()
+                .iter()
+                .flat_map(|(f, t)| *f..=*t)
+                .filter(|l| lines.contains(l))
+                .collect();
+            if on.is_empty() {
+                continue;
+            }
+            // Its columns are on the step-0 text of those lines only when
+            // no move changed them before its step.
+            let v = views
+                .entry(a.step)
+                .or_insert_with(|| doc.view_at(a.step).doc);
+            let same = on.iter().all(|l| {
+                v.annotations.iter().any(|x| x.id == a.id)
+                    && v.line_text(*l).map(str::to_string) == base_text(*l)
+            });
+            if same {
+                others.push(a.clone());
+            }
+        }
+        let mut d = doc.clone();
+        d.code = code;
+        d.source.first_line = first;
+        d.annotations = redacts.into_iter().chain(others).collect();
+        d.moves.clear();
+        d.base_code.clear();
+        let m = masked(&d, u32::MAX);
+        for a in out.iter_mut().filter(|a| a.file == key) {
+            if let Some(n) = m.annotations.iter().find(|n| n.id == a.id) {
+                a.shape = n.shape.clone();
+            }
         }
     }
     out
@@ -809,6 +861,35 @@ pub fn masked_values(doc: &Document) -> Vec<String> {
         for step in 0..=doc.max_step() {
             take(&doc.view_at(step).doc, step);
         }
+        // And every redact on a file's own lines, of the main file or of a
+        // linked one, whether or not a step shows it (t-174 review 2).
+        let mut keys: Vec<Option<String>> = vec![None];
+        keys.extend(doc.view_code.keys().cloned().map(Some));
+        for key in keys {
+            let Some(code) = doc.view_base_code(&key, false) else {
+                continue;
+            };
+            let first = doc.view_first_line(&key);
+            for r in base_redacts(doc, &key) {
+                if let Shape::Redact { span, .. } = &r.shape
+                    && let Some(t) = span
+                        .line
+                        .checked_sub(first)
+                        .and_then(|i| code.get(i as usize))
+                {
+                    let g: Vec<&str> = t.graphemes(true).collect();
+                    let (s0, e0) = (
+                        (span.start as usize).min(g.len()),
+                        (span.end as usize).min(g.len()),
+                    );
+                    let v = g[s0..e0].concat();
+                    let v = v.trim();
+                    if v.chars().count() >= MIN_PIECE && !v.contains(MASK) {
+                        out.insert(v.to_string());
+                    }
+                }
+            }
+        }
     }
     let mut v: Vec<String> = out.into_iter().collect();
     v.sort_by_key(|s| std::cmp::Reverse(s.len()));
@@ -980,7 +1061,31 @@ pub fn shown(text: &str, doc: &Document) -> String {
 /// [`Echo::shown_message`] for `doc`: a message Tiza writes (a notice, a
 /// warning) that may name a document's id or text.
 pub fn shown_message(text: &str, doc: &Document) -> String {
-    Echo::quoting(doc).shown_message(text)
+    Echo::for_messages(doc).shown_message(text)
+}
+
+/// The plain lowercase words that the document itself wrote (ids, labels,
+/// notes, titles, keys, targets — every string but the code) and that
+/// share text with a masked value: a message masks them like any other
+/// document text; only the message's own words stay (t-174 review 2).
+fn document_words(doc: &Document, f: &Echo) -> Vec<String> {
+    let mut v = serde_json::to_value(doc).unwrap_or_default();
+    if let Some(o) = v.as_object_mut() {
+        o.remove("code");
+        o.remove("views");
+    }
+    let mut out: Vec<String> = Vec::new();
+    for s in json_strings(&v)
+        .into_iter()
+        .chain(doc.steps.iter().flat_map(|n| n.unknown.keys().cloned()))
+    {
+        for tok in s.split(|c: char| !token_char(c)) {
+            if plain_word(tok) && f.repeats(tok) && !out.iter().any(|o| o == tok) {
+                out.push(tok.to_string());
+            }
+        }
+    }
+    out
 }
 
 /// `doc` with every text a reader can see masked by [`shown`]: its title,
@@ -1057,6 +1162,9 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
         return out;
     }
     let hit = |t: Option<&str>| t.is_some_and(|t| f.repeats(t));
+    // Each annotation by its masked, unique id: two masked ids are two
+    // alerts (`••••••••`, `••••••••-2`), as in a reader's copy.
+    let names = f.unique_ids(doc.annotations.iter().map(|a| a.id.as_str()));
     let saved = matches!(doc.code_src, crate::model::CodeSource::Embedded(_));
     let mut push = |subject: String, id: Option<String>, step: Option<u32>, field| {
         out.push(MaskedText {
@@ -1121,7 +1229,8 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
         }
         for (t, field) in fields {
             if hit(t) {
-                push(f.shown(&a.id), Some(a.id.clone()), Some(a.step), field);
+                let subject = names.get(&a.id).cloned().unwrap_or_else(|| a.id.clone());
+                push(subject, Some(a.id.clone()), Some(a.step), field);
             }
         }
     }
@@ -1187,6 +1296,9 @@ pub struct Echo {
     active: bool,
     written: Vec<String>,
     values: Arc<Vec<String>>,
+    /// Plain words the document wrote that share text with a value
+    /// ([`document_words`]): never kept by [`Echo::shown_message`].
+    doc_words: Arc<Vec<String>>,
 }
 
 /// A plain lowercase word (`note`, `dashed`, `secret`): the vocabulary of
@@ -1209,6 +1321,7 @@ impl Echo {
             active: true,
             written: Vec::new(),
             values: all_values(doc),
+            ..Echo::default()
         }
         .written(document_targets(doc))
     }
@@ -1224,7 +1337,18 @@ impl Echo {
             active: true,
             written: Vec::new(),
             values: all_values(doc),
+            ..Echo::default()
         }
+    }
+
+    /// [`Echo::quoting`] knowing the document's own words, for the messages
+    /// Tiza composes about it ([`Echo::shown_message`]).
+    pub fn for_messages(doc: &Document) -> Echo {
+        let mut e = Echo::quoting(doc);
+        if !e.values.is_empty() {
+            e.doc_words = Arc::new(document_words(doc, &e));
+        }
+        e
     }
 
     /// Always active, with no document to read values from: for errors
@@ -1311,7 +1435,11 @@ impl Echo {
             let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
             let tok = &rest[..end];
             let whole = self.values.iter().any(|v| tok.contains(v.as_str()));
-            if !tok.is_empty() && plain_word(tok) && !whole {
+            if !tok.is_empty()
+                && plain_word(tok)
+                && !whole
+                && !self.doc_words.iter().any(|w| w == tok)
+            {
                 out.push_str(tok);
             } else {
                 out.push_str(&self.shown(tok));
@@ -1390,38 +1518,56 @@ impl Echo {
         self.shown_doc_with(doc, false);
     }
 
+    /// The new name of every id in `ids` that shares text with a masked
+    /// value: [`Echo::shown`], made unique among all of them (`••••••••`,
+    /// `••••••••-2`, …) so a masked id still names one thing.
+    pub fn unique_ids<'a>(
+        &self,
+        ids: impl Iterator<Item = &'a str> + Clone,
+    ) -> std::collections::HashMap<String, String> {
+        let mut renamed: std::collections::HashMap<String, String> = Default::default();
+        if self.values.is_empty() {
+            return renamed;
+        }
+        let mut taken: std::collections::HashSet<String> = ids
+            .clone()
+            .filter(|id| !self.repeats(id))
+            .map(str::to_string)
+            .collect();
+        for id in ids {
+            if self.repeats(id) && !renamed.contains_key(id) {
+                let base = self.shown(id);
+                let mut new = base.clone();
+                let mut n = 2;
+                while taken.contains(&new) {
+                    new = format!("{base}-{n}");
+                    n += 1;
+                }
+                taken.insert(new.clone());
+                renamed.insert(id.to_string(), new);
+            }
+        }
+        renamed
+    }
+
     fn shown_doc_with(&self, doc: &mut Document, ids: bool) {
         if self.values.is_empty() {
             return;
         }
         self.shown_opt(&mut doc.title);
         // Ids that repeat a value: masked, and kept unique (`••••••••-2`)
-        // so a spotlight or a `rebind` still names the same annotation.
-        let mut renamed: std::collections::HashMap<String, String> = Default::default();
-        if ids && doc.annotations.iter().any(|a| self.repeats(&a.id)) {
-            let mut taken: std::collections::HashSet<String> = doc
-                .annotations
-                .iter()
-                .filter(|a| !self.repeats(&a.id))
-                .map(|a| a.id.clone())
-                .collect();
-            for a in &doc.annotations {
-                if self.repeats(&a.id) && !renamed.contains_key(&a.id) {
-                    let base = self.shown(&a.id);
-                    let mut new = base.clone();
-                    let mut n = 2;
-                    while taken.contains(&new) {
-                        new = format!("{base}-{n}");
-                        n += 1;
-                    }
-                    taken.insert(new.clone());
-                    renamed.insert(a.id.clone(), new);
-                }
-            }
-        }
+        // so a spotlight or a `rebind` still names the same annotation. A
+        // reference to an id that does not exist is masked all the same.
+        let renamed = if ids {
+            self.unique_ids(doc.annotations.iter().map(|a| a.id.as_str()))
+        } else {
+            Default::default()
+        };
         let rename = |id: &mut String| {
             if let Some(n) = renamed.get(id.as_str()) {
                 *id = n.clone();
+            } else if self.repeats(id) {
+                *id = self.shown(id);
             }
         };
         for a in &mut doc.annotations {
@@ -1439,12 +1585,14 @@ impl Echo {
                 }
             }
         }
-        if !renamed.is_empty() {
+        if ids {
             for m in &mut doc.moves {
-                let rebind = std::mem::take(&mut m.rebind);
-                for (mut k, v) in rebind {
-                    rename(&mut k);
-                    m.rebind.insert(k, v);
+                if m.rebind.keys().any(|k| self.repeats(k)) {
+                    let rebind = std::mem::take(&mut m.rebind);
+                    for (mut k, v) in rebind {
+                        rename(&mut k);
+                        m.rebind.insert(k, v);
+                    }
                 }
             }
         }
@@ -1461,9 +1609,15 @@ impl Echo {
                 doc.styles.entry(self.shown_kind(&k)).or_insert(st);
             }
         }
+        // Step ids, unique the same way (`goto` names them, t-099).
+        let step_ids = self.unique_ids(doc.steps.iter().filter_map(|n| n.id.as_deref()));
         for n in &mut doc.steps {
             self.shown_opt(&mut n.title);
-            self.shown_opt(&mut n.id);
+            if let Some(id) = &mut n.id
+                && let Some(new) = step_ids.get(id.as_str())
+            {
+                *id = new.clone();
+            }
             // Keys this version does not know, kept as written (t-099).
             if n.unknown.keys().any(|k| self.repeats(k))
                 || n.unknown

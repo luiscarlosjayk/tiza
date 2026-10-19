@@ -1445,7 +1445,11 @@ impl Document {
                 if cumulative || self.moves[by].at_step == step {
                     out.push((
                         a.id.clone(),
-                        format!("redact {} dropped: move #{} deleted its line", a.id, by + 1),
+                        format!(
+                            "redact {} dropped: move #{} deleted its line",
+                            crate::redact::shown(&a.id, self),
+                            by + 1
+                        ),
                     ));
                 }
                 continue;
@@ -1482,30 +1486,35 @@ impl Document {
                         a.id.clone(),
                         format!(
                             "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
-                            a.id,
+                            crate::redact::shown(&a.id, self),
                             lost + 1
                         ),
                     ));
                 }
             }
-            if let Some(copy) = r.copy_by
-                && !r.copies.is_empty()
-                && (cumulative || self.moves[copy].at_step == step)
-            {
-                let mut lines: Vec<u32> = r.copies.iter().map(|s| s.line).collect();
+            // One notice per move that wrote copies, with its own lines.
+            let mut by_move: std::collections::BTreeMap<usize, Vec<u32>> = Default::default();
+            // (None once its copies became its own spans: then it could
+            // not follow its text, said above.)
+            for (m, l) in r.copy_log.iter().filter(|_| !r.copies.is_empty()) {
+                if cumulative || self.moves[*m].at_step == step {
+                    by_move.entry(*m).or_default().push(*l);
+                }
+            }
+            for (m, mut lines) in by_move {
                 lines.sort_unstable();
                 lines.dedup();
                 out.push((
                     a.id.clone(),
                     format!(
                         "redact {}: masked a copy of its value on {} (move #{})",
-                        a.id,
+                        crate::redact::shown(&a.id, self),
                         lines
                             .iter()
                             .map(|l| format!("L{l}"))
                             .collect::<Vec<_>>()
                             .join(", "),
-                        copy + 1
+                        m + 1
                     ),
                 ));
             }
@@ -1656,7 +1665,9 @@ impl Document {
                         return None;
                     }
                     let spans: Vec<TextSpan> = r.all().copied().collect();
-                    let widened = *widened || r.widened || spans.len() > 1;
+                    // Only when it really could not follow its text: a
+                    // copy masked elsewhere is no WIDENED (t-174 AC9).
+                    let widened = *widened || r.lost() || r.spans.len() > 1;
                     let mask = |span: TextSpan, id: String| Annotation {
                         id,
                         shape: Shape::Redact {

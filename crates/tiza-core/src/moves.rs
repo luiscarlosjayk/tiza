@@ -629,6 +629,9 @@ pub struct RedactAt {
     /// The move (index) that last wrote a copy of its value (or a piece)
     /// that is masked as one of [`RedactAt::copies`] (t-174).
     pub copy_by: Option<usize>,
+    /// Every copy as it was written: the move (index) and its line right
+    /// after that patch, for the notices (each copy named with its move).
+    pub copy_log: Vec<(usize, u32)>,
     /// The text under its mask while it still covered it exactly (taken on
     /// the first patch it goes through, t-157): searched for — whole or in
     /// pieces — in every line a later patch writes, even once the mask
@@ -637,6 +640,13 @@ pub struct RedactAt {
 }
 
 impl RedactAt {
+    /// It really could not follow its text (t-140), as opposed to having
+    /// only masked a copy of its value elsewhere (t-174 AC9): what `WIDENED`
+    /// and «could not follow» say.
+    pub fn lost(&self) -> bool {
+        self.lost_by.is_some() || (self.widened && self.copy_by.is_none())
+    }
+
     /// Every span its mask covers: its own, then the copies.
     pub fn all(&self) -> impl Iterator<Item = &TextSpan> {
         self.spans.iter().chain(self.copies.iter())
@@ -1012,6 +1022,11 @@ pub fn project(
                 r.by_move = r.by_move.or(g.by_move);
                 r.lost_by = r.lost_by.or(g.lost_by);
                 r.copy_by = r.copy_by.or(g.copy_by);
+                for c in g.copy_log {
+                    if !r.copy_log.contains(&c) {
+                        r.copy_log.push(c);
+                    }
+                }
                 r.copied_by.extend(g.copied_by);
             }
             _ => *slot = Some(g),
@@ -1231,6 +1246,9 @@ fn follow_redacts(
                     r.widened = true;
                     r.by_move = Some(index);
                     r.copy_by = Some(index);
+                    if !r.copy_log.contains(&(index, l)) {
+                        r.copy_log.push((index, l));
+                    }
                     // Only a copy of the whole value makes `move.add`
                     // refuse the move (t-140 AC6); a piece is masked.
                     if whole && !r.copied_by.contains(&index) {

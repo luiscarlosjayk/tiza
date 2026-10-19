@@ -316,8 +316,10 @@ fn ac1_case02_a_normal_document_masks_the_whole_new_value() {
             "port=8080"
         ]
     );
+    // t-174 AC9 (Luis): the redact followed its own text; the copy is
+    // masked, but that is no WIDENED.
     let list = live.api_ok("scene.list", json!({})).to_string();
-    assert!(list.contains("WIDENED"), "{list}");
+    assert!(!list.contains("WIDENED"), "{list}");
     // The loud step notice when the presenter reaches step 2.
     goto(&live, 1);
     live.keys(&[KeyCode::Char('n')]);

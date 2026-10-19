@@ -478,8 +478,21 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
         let filter = crate::redact::Echo::quoting(&doc);
         let base = crate::redact::masked_base(&doc);
         let annotations = crate::redact::embedded_annotations(&doc);
+        // The linked files frozen in `views`, masked with their own
+        // redacts, as `:embed` freezes them (t-177).
+        let views: Vec<(String, Vec<String>)> = doc
+            .views
+            .keys()
+            .filter_map(|f| {
+                let key = doc.view_key(f);
+                doc.view_base_code(&key, true).map(|c| (f.clone(), c))
+            })
+            .collect();
         doc.moves = crate::moves::saved_moves(&doc).0;
         doc.annotations = annotations;
+        for (f, code) in views {
+            doc.views.insert(f, code);
+        }
         filter.shown_doc(&mut doc);
         doc.code_src = CodeSource::Embedded(base);
     }
