@@ -5,3 +5,4 @@
 qa/bench/latest.json
 qa/herdr/latest/
 /examples/tally/target
+scripts/agent-trials/runs/

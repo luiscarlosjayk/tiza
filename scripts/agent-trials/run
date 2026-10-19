@@ -1,0 +1,1078 @@
+#!/usr/bin/env python3
+"""MCP context trials (t-161): guinea-pig agents, one task and one settings
+variant each, connected to `tiza mcp` on a live Tiza of their own; the harness
+measures the context they consume and checks their work through `tiza api`.
+
+  scripts/agent-trials/run --dry-run                 # the plan: trials, fixtures, commands; no model, no Tiza
+  scripts/agent-trials/run --self-check              # every check fails on the untouched fixture and passes
+                                                     # after a scripted solution (no model)
+  scripts/agent-trials/run --model sonnet --max-trials 16   # a real run (paid: asks to confirm the estimate)
+
+Options:
+  --model M          model for every trial (an alias such as sonnet, or a full name); required for a real run
+  --max-trials N     cap on the trials run (the plan is repeats x tasks x variants, in that order)
+  --repeats N        times each task x variant cell runs (default 2: tool search may load differently per run)
+  --tasks a,b        only these tasks;  --variants a,b  only these variants
+  --break TASK       break that task's fixture on purpose (its check must then fail whatever the agent says)
+  --trial-budget USD per-trial cap passed as --max-budget-usd (default 1.00)
+  --max-turns N      per-trial turn cap (default 40)
+  --timeout S        per-trial wall-clock cap in seconds (default 600)
+  --out DIR          where raw streams and results land (default scripts/agent-trials/runs/<stamp>, git-ignored)
+  --tiza BIN         tiza binary (default: builds target/debug/tiza; a real run copies it into the run directory)
+  --claude BIN       claude binary (default: claude on PATH, else ~/.local/bin/claude)
+  --builtin-tools T  value for claude --tools (default "": no built-in tools, so the agent cannot read
+                     files; the harness stops if variant tool-search then lacks ToolSearch)
+  --yes              do not ask before a real run (the estimate is still printed)
+
+Never part of `cargo test` or the gate: a real run calls a paid model. Each
+trial runs in a fresh directory under /tmp holding only its fixture (so the
+agent can read neither the repo nor the docs), with no CLAUDE.md, no auto
+memory, no user settings, no skills and no MCP server but this trial's
+`tiza mcp`. Results: docs/research/mcp-context.md. Stdlib only (python3 3.9+).
+"""
+
+import argparse
+import datetime
+import fcntl
+import hashlib
+import json
+import os
+import pty
+import re
+import shlex
+import shutil
+import signal
+import struct
+import subprocess
+import sys
+import tempfile
+import termios
+import threading
+import time
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(HERE))
+FIXTURES = os.path.join(HERE, "fixtures")
+
+# The fake token in fixtures/config/config.toml. It looks random on purpose
+# and is not a credential anywhere.
+FAKE_TOKEN = "tzk_Q7vN2xLp9RfT4mWc8bYe3HjK6sDa"
+
+SELF_REPORT = (
+    "When you are done, end your answer with one line of the form "
+    "`CONTEXT: <number> tokens - <one sentence>`: your own estimate of how much "
+    "context this task used, and why."
+)
+
+# --------------------------------------------------------------- variants ----
+
+# Settings variants. Each is the environment of the claude process on top of
+# the isolation below; `expects_tool_search` is checked against the session's
+# init message. Later cards (t-162, t-163) add theirs here and re-run the matrix.
+VARIANTS = {
+    "tool-search": {
+        "desc": "today's server, tool search on (Claude Code's default: MCP tools deferred)",
+        "env": {},
+        "unset": ["ENABLE_TOOL_SEARCH"],
+        "expects_tool_search": True,
+    },
+    "no-tool-search": {
+        "desc": "today's server, tool search off (ENABLE_TOOL_SEARCH=false: every tool loaded upfront)",
+        "env": {"ENABLE_TOOL_SEARCH": "false"},
+        "unset": [],
+        "expects_tool_search": False,
+    },
+}
+
+# Isolation for every trial (documented Claude Code variables).
+BASE_ENV = {
+    "CLAUDE_CODE_DISABLE_CLAUDE_MDS": "1",
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+}
+
+# ---------------------------------------------------------------- pricing ----
+
+# USD per million tokens (input, output, cache read), from the Claude API
+# model table cached 2026-10-06; a cache write is priced at 1.25 x input.
+# Only for the estimate printed before a run: the measured cost is Claude
+# Code's own `total_cost_usd`.
+PRICES = {
+    "fable": (10.0, 50.0, 0.25),
+    "opus": (4.0, 20.0, 0.20),
+    "sonnet": (2.0, 10.0, 0.20),
+    "haiku": (0.10, 0.50, 0.01),
+}
+# Assumed tokens per trial for the estimate: fresh input, cache writes,
+# cache reads, output (about ten requests over a ~30k-token context).
+TRIAL_TOKENS = (20_000, 40_000, 300_000, 4_000)
+
+
+def price_of(model):
+    m = (model or "").lower()
+    for key, p in PRICES.items():
+        if key in m:
+            return key, p
+    return None, None
+
+
+def estimate(model, trials):
+    key, p = price_of(model)
+    if p is None:
+        return None
+    fresh, write, read, out = TRIAL_TOKENS
+    per = (fresh * p[0] + write * p[0] * 1.25 + read * p[2] + out * p[1]) / 1e6
+    return per, per * trials
+
+
+# ------------------------------------------------------------------ tasks ----
+
+
+class CheckFailed(Exception):
+    pass
+
+
+def need(cond, msg):
+    if not cond:
+        raise CheckFailed(msg)
+
+
+def line_of(lines, needle, after=0):
+    """1-based number of the first line (after line `after`) containing needle."""
+    for i, text in enumerate(lines[after:], after + 1):
+        if needle in text:
+            return i
+    raise CheckFailed("%r is not in the code" % needle)
+
+
+def block_end(lines, start):
+    """The line closing the block opened on line `start` (same indent + `}`)."""
+    indent = len(lines[start - 1]) - len(lines[start - 1].lstrip())
+    for i in range(start, len(lines)):
+        if lines[i] == " " * indent + "}":
+            return i + 1
+    raise CheckFailed("no closing brace for line %d" % start)
+
+
+def read_fixture(work, name):
+    with open(os.path.join(work, name)) as f:
+        return f.read().split("\n")
+
+
+def anns(inst):
+    return inst.api("scene.get")["document"].get("annotations", [])
+
+
+def of_type(inst, kind):
+    return [a for a in anns(inst) if a.get("type") == kind]
+
+
+def lines_of(a):
+    """The lines an annotation covers, as (first, last)."""
+    if isinstance(a.get("from_line"), int):
+        return a["from_line"], a.get("to_line", a["from_line"])
+    ends = [a[k]["line"] for k in ("from", "to", "at", "span") if isinstance(a.get(k), dict) and "line" in a[k]]
+    if isinstance(a.get("line"), int):
+        ends.append(a["line"])
+    return (min(ends), max(ends)) if ends else (None, None)
+
+
+# Every task: the fixture it copies, the file Tiza opens, the prompt, the
+# harness's check (raises CheckFailed), a scripted solution for --self-check
+# (through the API, or the MCP bridge itself where the result depends on it)
+# and what --break does to the fixture so that the check must fail:
+# (file, old text, new text), or ("mkdir", name) for a directory in the way
+# of a file the task writes. A check gets the trial record: the agent's final
+# `answer` and its tool `calls` ({name, input, error}).
+
+
+def check_read(inst, work, rec):
+    # The truth is the fixture as opened, not the live state: an agent that
+    # browses steps before answering still answers about where it started.
+    with open(os.path.join(work, "stack.rs.tiza")) as f:
+        doc = json.load(f)
+    need(read_fixture(work, "stack.rs")[3].startswith("fn parse_args"), "line 4 is not fn parse_args")
+    want = {"STEP": str(doc["step"]), "ANNOTATIONS": str(len(doc["annotations"])), "FUNCTION": "parse_args"}
+    for key, value in want.items():
+        got = re.findall(r"\b%s\s*=\s*`?([\w-]+)" % key, rec.get("answer") or "")
+        need(got and got[-1] == value, "%s: want %s, answered %s" % (key, value, got[-1] if got else "nothing"))
+
+
+def oracle_read(inst, work):
+    status = inst.api("status")
+    return {"answer": "STEP=%d\nANNOTATIONS=%d\nFUNCTION=parse_args" % (status["step"], len(anns(inst)))}
+
+
+def check_box(inst, work, rec):
+    lines = read_fixture(work, "stack.rs")
+    start = line_of(lines, "fn push(")
+    end = block_end(lines, start)
+    boxes = [a for a in of_type(inst, "box") if a.get("step") == 1]
+    need(boxes, "no box at step 1")
+    ok = [b for b in boxes if b.get("from_line") == start and b.get("to_line") == end
+          and "refuses when full" in (b.get("label") or "").lower()]
+    need(ok, "no box %d-%d labelled «refuses when full» at step 1: %s" % (start, end, boxes))
+
+
+def oracle_box(inst, work):
+    lines = read_fixture(work, "stack.rs")
+    start = line_of(lines, "fn push(")
+    inst.api("annotation.add", {"type": "box", "from_line": start, "to_line": block_end(lines, start),
+                                "label": "refuses when full", "step": 1})
+
+
+def check_arrow_note(inst, work, rec):
+    lines = read_fixture(work, "stack.rs")
+    src = line_of(lines, "let max = parse_args")
+    dst = line_of(lines, "Stack { items: Vec::new(), max }")
+    arrows = [a for a in of_type(inst, "arrow") if a.get("step") == 2]
+    need([a for a in arrows if a["from"]["line"] == src and a["to"]["line"] == dst],
+         "no arrow L%d -> L%d at step 2: %s" % (src, dst, arrows))
+    notes = [a for a in of_type(inst, "note") if a.get("step") == 2]
+    need([n for n in notes if n.get("line") == src and "capacity" in (n.get("text") or "").lower()],
+         "no note on L%d at step 2 about the capacity: %s" % (src, notes))
+
+
+def oracle_arrow_note(inst, work):
+    lines = read_fixture(work, "stack.rs")
+    src = line_of(lines, "let max = parse_args")
+    dst = line_of(lines, "Stack { items: Vec::new(), max }")
+    inst.api("annotation.add", {"type": "arrow", "from": {"line": src, "find": "max"},
+                                "to": {"line": dst, "find": "max }"}, "step": 2})
+    inst.api("annotation.add", {"type": "note", "line": src, "text": "capacity comes from --max", "step": 2})
+
+
+def check_redact(inst, work, rec):
+    need(of_type(inst, "redact"), "no redact annotation")
+    code = inst.api("code.get")["text"]
+    render = inst.api("render.text", {"width": 120}).get("text", "")
+    for name, text in (("code.get", code), ("render.text", render)):
+        need(FAKE_TOKEN[4:12] not in text and FAKE_TOKEN[-8:] not in text, "the token still shows in %s" % name)
+    for visible in ('name = "tally"', "port = 8080", "timeout_secs = 30", "[upstream]"):
+        need(visible in code, "%s is masked too (code.get)" % visible)
+
+
+def oracle_redact(inst, work):
+    lines = read_fixture(work, "config.toml")
+    inst.api("annotation.add", {"type": "redact", "at": {"line": line_of(lines, "api_token"), "find": "api_token = "}})
+
+
+def check_move(inst, work, rec):
+    lines = read_fixture(work, "stack.rs")
+    anchor = line_of(lines, "let mut stack = Stack {")
+    moves = inst.api("move.list")["moves"]
+    typed = [m for m in moves if m.get("action") == "code.patch" and m.get("at_step") == 3
+             and m.get("typing") == "char" and 'println!("stack is ready")' in (m.get("content") or "")]
+    need(typed, "no code.patch at step 3 typed by char with the println: %s" % moves)
+    inst.api("step.set", {"step": 3})
+    code = [re.sub(r"^\s*\d+  ", "", ln) for ln in inst.api("code.get")["text"].split("\n")]
+    need(len(code) > anchor and code[anchor].strip() == 'println!("stack is ready");',
+         "at step 3 the line after L%d is %r" % (anchor, code[anchor] if len(code) > anchor else None))
+    inst.api("step.set", {"step": 2})
+    code = inst.api("code.get")["text"]
+    need("stack is ready" not in code, "the line is there before step 3")
+
+
+def oracle_move(inst, work):
+    inst.api("move.add", {"action": "code.patch", "at_step": 3, "op": "insert",
+                          "after": "let mut stack = Stack {", "typing": "char",
+                          "content": '    println!("stack is ready");'})
+
+
+def check_export(inst, work, rec):
+    path = os.path.join(work, "step3.png")
+    need(os.path.isfile(path), "no step3.png in the working directory")
+    with open(path, "rb") as f:
+        png = f.read()
+    need(png[:8] == b"\x89PNG\r\n\x1a\n", "step3.png is not a PNG")
+    # The fixture opens at step 2 and export_image defaults to the step on
+    # screen, so a PNG is not enough: it must be step 3. References drawn by
+    # the same bridge at its defaults tell; a PNG with other options (width,
+    # theme) passes when the agent's own successful call named step 3.
+    with tempfile.TemporaryDirectory(dir="/tmp") as tmp:
+        with Bridge(inst.tiza, inst.sock, tmp) as b:
+            refs = {s: b.call("export_image", {"path": "ref%d.png" % s, "step": s}) for s in (2, 3)}
+        for s in (2, 3):
+            need(not refs[s]["error"], "reference export of step %d failed: %s" % (s, refs[s]["text"]))
+        ref = {s: open(os.path.join(tmp, "ref%d.png" % s), "rb").read() for s in (2, 3)}
+    if png == ref[3]:
+        return
+    need(png != ref[2], "step3.png shows step 2 (the step on screen), not step 3")
+    calls = [c for c in rec.get("calls", []) if c["name"].endswith("export_image") and not c["error"]
+             and str(c["input"].get("path", "")).endswith("step3.png")]
+    need([c for c in calls if str(c["input"].get("step")) == "3"],
+         "step3.png differs from step 3 at the defaults and no export_image call named step 3: %s" % calls)
+
+
+def oracle_export(inst, work):
+    # Through the MCP bridge, as the agent would: a relative path lands in
+    # the bridge's working directory, which is the trial's.
+    with Bridge(inst.tiza, inst.sock, work) as b:
+        r = b.call("export_image", {"path": "step3.png", "step": 3})
+    need(not r["error"], "export_image failed: %s" % r["text"])
+    return {"calls": [{"name": "mcp__tiza__export_image", "input": {"path": "step3.png", "step": 3},
+                       "error": False}]}
+
+
+def check_tour(inst, work, rec):
+    main = read_fixture(work, "main.rs")
+    queue = read_fixture(work, "queue.rs")
+    mstart = line_of(main, "fn main(")
+    qstart = line_of(queue, "pub fn push(")
+    links = [m for m in inst.api("move.list")["moves"]
+             if m.get("action") == "code.link" and m.get("at_step") == 2 and m.get("file", "").endswith("queue.rs")]
+    need(links, "no code.link to queue.rs at step 2")
+    boxes = of_type(inst, "box")
+    need([b for b in boxes if b.get("step") == 1 and not b.get("file") and b.get("from_line") == mstart
+          and b.get("to_line") == block_end(main, mstart) and "entry point" in (b.get("label") or "").lower()],
+         "no box on main (main.rs L%d) labelled «entry point» at step 1: %s" % (mstart, boxes))
+    need([b for b in boxes if b.get("step") == 2 and (b.get("file") or "").endswith("queue.rs")
+          and b.get("from_line") == qstart and b.get("to_line") == block_end(queue, qstart)
+          and "adds at the back" in (b.get("label") or "").lower()],
+         "no box on push (queue.rs L%d) labelled «adds at the back» at step 2: %s" % (qstart, boxes))
+    need(inst.api("check")["errors"] == 0, "check reports errors")
+
+
+def oracle_tour(inst, work):
+    main = read_fixture(work, "main.rs")
+    queue = read_fixture(work, "queue.rs")
+    mstart = line_of(main, "fn main(")
+    qstart = line_of(queue, "pub fn push(")
+    inst.api("annotation.add", {"type": "box", "from_line": mstart, "to_line": block_end(main, mstart),
+                                "label": "entry point", "step": 1})
+    inst.api("move.add", {"action": "code.link", "at_step": 2, "file": "queue.rs"})
+    inst.api("annotation.add", {"type": "box", "from_line": qstart, "to_line": block_end(queue, qstart),
+                                "label": "adds at the back", "step": 2})
+
+
+def check_explain(inst, work, rec):
+    # Free-form: every step 1-4 shows something new (an annotation, or a move
+    # such as a select or a cursor), nothing goes past step 4, something is
+    # about parse_args (its doc comment, its body or a line that calls it),
+    # and the document has no errors.
+    lines = read_fixture(work, "stack.rs")
+    start = line_of(lines, "fn parse_args(")
+    if start > 1 and lines[start - 2].lstrip().startswith("///"):
+        start -= 1
+    end = block_end(lines, line_of(lines, "fn parse_args("))
+    about = {n for n in range(start, end + 1)} | {i for i, t in enumerate(lines, 1) if "parse_args" in t}
+    all_anns = anns(inst)
+    moves = inst.api("move.list")["moves"]
+    steps = {a.get("step") for a in all_anns} | {m.get("at_step") for m in moves}
+    need(steps >= {1, 2, 3, 4}, "steps with something new: %s, want 1-4" % sorted(steps))
+    need(max(steps) == 4, "something at step %d, past the four steps" % max(steps))
+
+    def touches(a):
+        lo, hi = lines_of(a)
+        return lo is not None and any(lo <= n <= hi for n in about)
+
+    need([a for a in all_anns if touches(a)], "no annotation is on parse_args (L%d-%d) or a call to it" % (start, end))
+    need(inst.api("check")["errors"] == 0, "check reports errors")
+
+
+def oracle_explain(inst, work):
+    lines = read_fixture(work, "stack.rs")
+    start = line_of(lines, "fn parse_args(")
+    inst.api("annotation.add", {"type": "box", "from_line": start, "to_line": block_end(lines, start),
+                                "label": "parse_args", "step": 1})
+    inst.api("annotation.add", {"type": "note", "line": start + 1, "text": "10 by default", "step": 2})
+    inst.api("annotation.add", {"type": "highlight", "at": {"line": start + 4, "find": '"--max"'}, "step": 3})
+    inst.api("annotation.add", {"type": "note", "line": block_end(lines, start) - 1, "text": "the result", "step": 4})
+
+
+TASKS = [
+    {
+        "id": "read",
+        "fixture": "stack", "open": "stack.rs",
+        "prompt": "A presenter has a Rust file open in Tiza. Find out which step they are on, how many "
+                  "annotations the document has, and the name of the function that starts on line 4. "
+                  "Answer with three lines: `STEP=<n>`, `ANNOTATIONS=<n>`, `FUNCTION=<name>`.",
+        "check": check_read, "oracle": oracle_read,
+        "break": ("stack.rs", "fn parse_args(", "fn read_flags("),
+    },
+    {
+        "id": "box",
+        "fixture": "plain", "open": "stack.rs",
+        "prompt": "In the Rust file open in Tiza, draw a box around the whole method `push` (from its `fn` "
+                  "line to its closing brace) with the label `refuses when full`, at step 1.",
+        "check": check_box, "oracle": oracle_box,
+        "break": ("stack.rs", "fn push(", "fn push_item("),
+    },
+    {
+        "id": "arrow-note",
+        "fixture": "plain", "open": "stack.rs",
+        "prompt": "In the Rust file open in Tiza, at step 2: draw an arrow from `max` in "
+                  "`let max = parse_args(...)` to the `max` field in `Stack { items: Vec::new(), max }`, and "
+                  "add a note on the `let max` line saying `capacity comes from --max`.",
+        "check": check_arrow_note, "oracle": oracle_arrow_note,
+        "break": ("stack.rs", "let max = parse_args", "let cap = parse_args"),
+    },
+    {
+        "id": "redact",
+        "fixture": "config", "open": "config.toml",
+        "prompt": "The config file open in Tiza is about to be recorded and it shows an API token. Mask the "
+                  "token's value so it never appears on screen, and leave the rest of the file readable.",
+        "check": check_redact, "oracle": oracle_redact,
+        # A second copy of the token, in a comment: masking api_token alone leaves it on screen.
+        "break": ("config.toml", "timeout_secs = 30", "timeout_secs = 30\n# old: " + FAKE_TOKEN),
+    },
+    {
+        "id": "move",
+        "fixture": "plain", "open": "stack.rs",
+        "prompt": "In the Rust file open in Tiza, make the code gain a new line "
+                  "`    println!(\"stack is ready\");` right after the line "
+                  "`let mut stack = Stack { items: Vec::new(), max };` when the presenter reaches step 3, "
+                  "typed character by character. Earlier steps must not show it.",
+        "check": check_move, "oracle": oracle_move,
+        "break": ("stack.rs", "let mut stack = Stack {", "let mut s = Stack {"),
+    },
+    {
+        "id": "export",
+        "fixture": "stack", "open": "stack.rs",
+        "prompt": "Export a PNG image of step 3 of the document open in Tiza to `step3.png` in the current "
+                  "directory.",
+        "check": check_export, "oracle": oracle_export,
+        # A directory in the way: the PNG cannot be written.
+        "break": ("mkdir", "step3.png"),
+    },
+    {
+        "id": "tour",
+        "fixture": "tour", "open": "main.rs",
+        "prompt": "Tiza has `main.rs` open; next to it is `queue.rs`. Make a two-step tour: at step 1 box the "
+                  "function `main` in main.rs with the label `entry point`; at step 2 switch the view to "
+                  "`queue.rs` and box its method `push` with the label `adds at the back`.",
+        "check": check_tour, "oracle": oracle_tour,
+        "break": ("queue.rs", "pub fn push(", "pub fn enqueue("),
+    },
+    {
+        "id": "explain",
+        "fixture": "plain", "open": "stack.rs",
+        "prompt": "Explain the function `parse_args` of the Rust file open in Tiza to a viewer in four steps "
+                  "(steps 1 to 4), with whatever annotations you think explain it best. Then make sure the "
+                  "document has no errors.",
+        "check": check_explain, "oracle": oracle_explain,
+        "break": ("stack.rs", "fn parse_args(", "fn read_flags("),
+    },
+]
+
+FIXTURE_DIRS = {"stack": "stack", "plain": "stack", "config": "config", "tour": "tour"}
+
+
+def fixture_files(task):
+    """Files copied into the trial directory ("plain" is the stack without its .tiza)."""
+    src = os.path.join(FIXTURES, FIXTURE_DIRS[task["fixture"]])
+    names = sorted(os.listdir(src))
+    if task["fixture"] == "plain":
+        names = [n for n in names if not n.endswith(".tiza")]
+    return src, names
+
+
+# --------------------------------------------------------------- instance ----
+
+
+class Instance:
+    """A live Tiza on a pseudo-terminal (120x40), with a socket of its own."""
+
+    def __init__(self, tiza, work, open_file, sock):
+        self.tiza, self.sock = tiza, sock
+        pid, fd = pty.fork()
+        if pid == 0:
+            os.chdir(work)
+            fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+            os.environ["TERM"] = "xterm-256color"
+            os.execv(tiza, [tiza, open_file, "--no-save", "--socket", sock])
+        self.pid, self.fd = pid, fd
+        threading.Thread(target=self._drain, daemon=True).start()
+        deadline = time.time() + 15
+        while True:
+            try:
+                self.api("status")
+                return
+            except CheckFailed:
+                if time.time() > deadline:
+                    self.stop()
+                    raise CheckFailed("Tiza did not answer on %s within 15 s" % sock)
+                time.sleep(0.1)
+
+    def _drain(self):
+        while True:
+            try:
+                if not os.read(self.fd, 65536):
+                    return
+            except OSError:
+                return
+
+    def api(self, method, params=None):
+        out = subprocess.run([self.tiza, "api", method, json.dumps(params or {}), "--socket", self.sock],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            raise CheckFailed("tiza api %s: %s" % (method, out.stderr.strip()))
+        v = json.loads(out.stdout)
+        return v.get("result", v) if isinstance(v, dict) else v
+
+    def stop(self):
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.kill(self.pid, sig)
+            except ProcessLookupError:
+                break
+            for _ in range(40):
+                if os.waitpid(self.pid, os.WNOHANG)[0]:
+                    break
+                time.sleep(0.05)
+            else:
+                continue
+            break
+        try:
+            os.waitpid(self.pid, 0)
+        except ChildProcessError:
+            pass
+        try:
+            os.close(self.fd)
+        except OSError:
+            pass
+
+
+class Bridge:
+    """`tiza mcp` driven over JSON-RPC, as an MCP client would, in `cwd`."""
+
+    def __init__(self, tiza, sock, cwd):
+        self.proc = subprocess.Popen([tiza, "mcp", "--socket", sock], cwd=cwd, stdin=subprocess.PIPE,
+                                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+        self.next_id = 0
+        self._rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {},
+                                 "clientInfo": {"name": "agent-trials", "version": "0"}})
+        self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.proc.stdin.close()
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+
+    def _send(self, msg):
+        self.proc.stdin.write(json.dumps(msg) + "\n")
+        self.proc.stdin.flush()
+
+    def _rpc(self, method, params):
+        self.next_id += 1
+        self._send({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params})
+        while True:
+            line = self.proc.stdout.readline()
+            need(line, "tiza mcp closed its output")
+            msg = json.loads(line)
+            if msg.get("id") == self.next_id:
+                return msg
+
+    def call(self, tool, arguments):
+        msg = self._rpc("tools/call", {"name": tool, "arguments": arguments})
+        res = msg.get("result") or {}
+        text = " ".join(c.get("text", "") for c in res.get("content", []) if isinstance(c, dict))
+        return {"error": bool(res.get("isError") or "error" in msg), "text": text or str(msg.get("error"))}
+
+
+def prepare(task, broken):
+    """A fresh /tmp directory: work/ (only the fixture) and the socket path."""
+    base = tempfile.mkdtemp(prefix="tiza-trial-", dir="/tmp")
+    try:
+        work = os.path.join(base, "work")
+        os.mkdir(work)
+        src, names = fixture_files(task)
+        for n in names:
+            shutil.copy(os.path.join(src, n), os.path.join(work, n))
+        if broken and task["break"][0] == "mkdir":
+            os.mkdir(os.path.join(work, task["break"][1]))
+        elif broken:
+            name, old, new = task["break"]
+            p = os.path.join(work, name)
+            with open(p) as f:
+                text = f.read()
+            assert old in text, "break of %s: %r not in %s" % (task["id"], old, name)
+            with open(p, "w") as f:
+                f.write(text.replace(old, new))
+    except BaseException:
+        shutil.rmtree(base, ignore_errors=True)
+        raise
+    return base, work, os.path.join(base, "t.sock")
+
+
+def run_check(task, inst, work, rec):
+    try:
+        task["check"](inst, work, rec)
+        return True, ""
+    except CheckFailed as e:
+        return False, str(e)
+    except Exception as e:  # a check that crashes is a failed trial, never a pass
+        return False, "check crashed: %r" % e
+
+
+# ------------------------------------------------------------ measurement ----
+
+# Error texts that mean the arguments were wrong (a heuristic: the bridge
+# reports instance errors as invalid_params with the instance's code in the
+# message, and Claude Code rejects a schema mismatch as InputValidationError).
+INVALID_ARGS = re.compile(r"invalid_argument|text_not_found|out_of_range|invalid_params|InputValidationError|-32602")
+
+
+def parse_stream(lines):
+    """Claude Code's stream-json → the trial's measured figures.
+
+    Usage is per API request: assistant messages that share a message id carry
+    the same usage, so they are counted once. Output tokens come from the
+    result message (per-request output is a placeholder in the stream)."""
+    init, result = {}, {}
+    requests = []          # [{id, usage, tools: [names]}] in order
+    by_id = {}
+    calls = []             # [{id, name, input, error, error_text}] in order
+    call_by_id = {}
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            ev = json.loads(raw)
+        except ValueError:
+            continue
+        kind = ev.get("type")
+        if kind == "system" and ev.get("subtype") == "init":
+            init = ev
+        elif kind == "assistant":
+            msg = ev.get("message", {})
+            mid = msg.get("id") or "#%d" % len(requests)
+            if mid not in by_id:
+                by_id[mid] = {"id": mid, "usage": msg.get("usage") or {}, "tools": []}
+                requests.append(by_id[mid])
+            for block in msg.get("content") or []:
+                if block.get("type") == "tool_use" and block.get("id") not in call_by_id:
+                    call = {"id": block.get("id"), "name": block.get("name") or "", "input": block.get("input") or {},
+                            "error": False, "error_text": ""}
+                    by_id[mid]["tools"].append(call["name"])
+                    call_by_id[call["id"]] = call
+                    calls.append(call)
+        elif kind == "user":
+            for block in (ev.get("message", {}).get("content") or []):
+                if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("is_error"):
+                    content = block.get("content")
+                    if isinstance(content, list):
+                        content = " ".join(c.get("text", "") for c in content if isinstance(c, dict))
+                    call = call_by_id.get(block.get("tool_use_id"))
+                    if call:
+                        call["error"], call["error_text"] = True, str(content)[:300]
+        elif kind == "result":
+            result = ev
+
+    def ctx(u):
+        return {"input": u.get("input_tokens", 0), "cache_read": u.get("cache_read_input_tokens", 0),
+                "cache_write": u.get("cache_creation_input_tokens", 0)}
+
+    def total(c):
+        return c["input"] + c["cache_read"] + c["cache_write"]
+
+    first = ctx(requests[0]["usage"]) if requests else None
+    first_tiza = next((ctx(r["usage"]) for r in requests
+                       if any(n.startswith("mcp__tiza__") for n in r["tools"])), None)
+    sums = {"input": 0, "cache_read": 0, "cache_write": 0}
+    for r in requests:
+        for k, v in ctx(r["usage"]).items():
+            sums[k] += v
+    rusage = result.get("usage") or {}
+    # A retry: a call of a tool that failed earlier in the trial.
+    retries = sum(1 for i, c in enumerate(calls) if any(p["error"] and p["name"] == c["name"] for p in calls[:i]))
+    errors = [c for c in calls if c["error"]]
+    servers = init.get("mcp_servers") or []
+    return {
+        "model": init.get("model") or ",".join((result.get("modelUsage") or {}).keys()),
+        "models_used": sorted((result.get("modelUsage") or {}).keys()),
+        "tools_offered": init.get("tools") or [],
+        "mcp_servers": servers,
+        "mcp_ok": [s.get("name") for s in servers] == ["tiza"] and servers[0].get("status") == "connected",
+        "session": {k: init.get(k) for k in ("plugins", "skills", "permissionMode", "apiKeySource",
+                                               "output_style", "claude_code_version", "cwd") if k in init},
+        "requests": len(requests),
+        "ctx_first_request": first,
+        "ctx_first_request_total": total(first) if first else None,
+        "ctx_first_tiza_call": first_tiza,
+        "ctx_first_tiza_call_total": total(first_tiza) if first_tiza else None,
+        "input": sums,
+        "input_total": total(sums),
+        "output": rusage.get("output_tokens"),
+        "calls": [{"name": c["name"], "input": c["input"], "error": c["error"]} for c in calls],
+        "tiza_calls": sum(1 for c in calls if c["name"].startswith("mcp__tiza__")),
+        "tool_search_calls": sum(1 for c in calls if c["name"] == "ToolSearch"),
+        "other_tool_calls": sorted(c["name"] for c in calls
+                                   if not c["name"].startswith("mcp__tiza__") and c["name"] != "ToolSearch"),
+        "tool_errors": len(errors),
+        "invalid_arguments": sum(1 for c in errors if INVALID_ARGS.search(c["error_text"])),
+        "retries": retries,
+        "error_samples": [(c["name"], c["error_text"]) for c in errors[:5]],
+        "cost_usd": result.get("total_cost_usd"),
+        "num_turns": result.get("num_turns"),
+        "duration_ms": result.get("duration_ms"),
+        "result_subtype": result.get("subtype"),
+        "answer": result.get("result"),
+        "self_report_tokens": self_report(result.get("result") or ""),
+    }
+
+
+def self_report(answer):
+    """The number in the agent's last `CONTEXT:` line (12k, 12,000, ~1.2M, **CONTEXT:** about 9000)."""
+    found = re.findall(r"CONTEXT\W*?:\W*?(?:about|around|roughly|~|≈|\s)*([\d][\d,.]*)\s*([kKmM])?", answer, re.I)
+    if not found:
+        return None
+    digits, unit = found[-1]
+    if re.fullmatch(r"\d{1,3}([.,]\d{3})+", digits):
+        n = float(re.sub(r"[.,]", "", digits))          # 12,000 or 12.000
+    else:
+        n = float(digits.replace(",", ""))
+    return int(n * {"k": 1e3, "m": 1e6}.get(unit.lower(), 1) if unit else n)
+
+
+# ------------------------------------------------------------------ trial ----
+
+
+def mcp_config(tiza, sock):
+    return json.dumps({"mcpServers": {"tiza": {"command": tiza, "args": ["mcp", "--socket", sock]}}})
+
+
+def claude_command(args, task, sock):
+    prompt = task["prompt"] + "\n\n" + SELF_REPORT
+    return [
+        args.claude, "-p", prompt,
+        "--output-format", "stream-json", "--verbose",
+        "--model", args.model or "<model>",
+        "--setting-sources", "project",
+        "--strict-mcp-config", "--mcp-config", mcp_config(args.tiza, sock),
+        "--tools", args.builtin_tools,
+        "--allowedTools", "mcp__tiza__*,ToolSearch",
+        "--permission-mode", "dontAsk",
+        "--disable-slash-commands", "--no-session-persistence",
+        "--max-budget-usd", "%.2f" % args.trial_budget,
+        "--max-turns", str(args.max_turns),
+    ]
+
+
+def claude_env(variant):
+    env = dict(os.environ)
+    for k in variant["unset"]:
+        env.pop(k, None)
+    env.update(BASE_ENV)
+    env.update(variant["env"])
+    return env
+
+
+def run_claude(cmd, cwd, env, raw, timeout):
+    """claude in its own process group, killed whole on timeout."""
+    proc = subprocess.Popen(cmd, cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=raw,
+                            stderr=subprocess.PIPE, text=True, start_new_session=True)
+    try:
+        _, err = proc.communicate(timeout=timeout)
+        return proc.returncode, err[-2000:]
+    except BaseException as e:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        proc.wait()
+        if isinstance(e, subprocess.TimeoutExpired):
+            return None, "timed out after %ds" % timeout
+        raise
+
+
+def run_trial(args, n, task, vname, out_dir):
+    variant = VARIANTS[vname]
+    broken = args.break_task == task["id"]
+    stem = "%02d-%s-%s" % (n, task["id"], vname)
+    rec = {"n": n, "task": task["id"], "variant": vname, "broken_on_purpose": broken,
+           "model_requested": args.model}
+    base, inst = None, None
+    try:
+        base, work, sock = prepare(task, broken)
+        try:
+            inst = Instance(args.tiza, work, task["open"], sock)
+        except CheckFailed as e:
+            rec.update(success=False, why="Tiza did not start, no agent ran: %s" % e)
+            return rec
+        t0 = time.time()
+        with open(os.path.join(out_dir, stem + ".jsonl"), "w") as raw:
+            rec["exit"], rec["stderr"] = run_claude(claude_command(args, task, sock), work, claude_env(variant),
+                                                    raw, args.timeout)
+        rec["wall_s"] = round(time.time() - t0, 1)
+        with open(os.path.join(out_dir, stem + ".jsonl")) as raw:
+            rec.update(parse_stream(raw))
+        ok, why = run_check(task, inst, work, rec)
+        if rec.get("tiza_calls", 0) == 0:
+            ok, why = False, "the agent never called a tiza tool" + ("; " + why if why else "")
+        if not rec.get("mcp_ok"):
+            why = "tiza mcp was not connected (%s); %s" % (rec.get("mcp_servers"), why)
+            ok = False
+        rec["success"], rec["why"] = ok, why
+        rec["tool_search_offered"] = "ToolSearch" in rec.get("tools_offered", [])
+    finally:
+        if inst:
+            inst.stop()
+        if base:
+            shutil.rmtree(base, ignore_errors=True)
+        with open(os.path.join(out_dir, stem + ".json"), "w") as f:
+            json.dump(rec, f, indent=2)
+    return rec
+
+
+# ----------------------------------------------------------------- report ----
+
+
+def fmt(n):
+    return "—" if n is None else "{:,}".format(n)
+
+
+def table(records, meta):
+    lines = ["Model %s · %s · tiza %s · claude %s" % (meta.get("model"), meta.get("stamp"), meta.get("tiza_commit"),
+                                                     meta.get("claude_version")), ""]
+    lines.append("| # | task | variant | ok | ctx 1st request | ctx at 1st tiza call | input total (fresh / cache read"
+                 " / write) | output | tiza calls | tool search | errors (invalid args) | retries | other tools"
+                 " | turns | wall s | cost $ | self-report |")
+    lines.append("|" + "---|" * 17)
+    for r in records:
+        i = r.get("input") or {}
+        lines.append("| %d | %s | %s | %s | %s | %s | %s (%s / %s / %s) | %s | %s | %s | %s (%s) | %s | %s | %s | %s"
+                     " | %s | %s |" % (
+                         r["n"], r["task"] + (" (broken)" if r.get("broken_on_purpose") else ""), r["variant"],
+                         "yes" if r.get("success") else "**no**",
+                         fmt(r.get("ctx_first_request_total")), fmt(r.get("ctx_first_tiza_call_total")),
+                         fmt(r.get("input_total")), fmt(i.get("input")), fmt(i.get("cache_read")),
+                         fmt(i.get("cache_write")), fmt(r.get("output")), fmt(r.get("tiza_calls")),
+                         fmt(r.get("tool_search_calls")), fmt(r.get("tool_errors")), fmt(r.get("invalid_arguments")),
+                         fmt(r.get("retries")), ", ".join(r.get("other_tool_calls") or []) or "—",
+                         fmt(r.get("num_turns")), r.get("wall_s", "—"),
+                         "—" if r.get("cost_usd") is None else "%.3f" % r["cost_usd"],
+                         fmt(r.get("self_report_tokens"))))
+    fails = ["- #%d %s/%s: %s" % (r["n"], r["task"], r["variant"], r.get("why")) for r in records if not r.get("success")]
+    return "\n".join(lines) + ("\n\nFailures:\n" + "\n".join(fails) if fails else "") + "\n"
+
+
+# ------------------------------------------------------------------- main ----
+
+
+def plan(args, cap=True):
+    tasks = [t for t in TASKS if not args.tasks or t["id"] in args.tasks]
+    variants = [v for v in VARIANTS if not args.variants or v in args.variants]
+    trials = [(t, v) for _ in range(args.repeats) for t in tasks for v in variants]
+    return trials[:args.max_trials] if cap and args.max_trials else trials
+
+
+def find_claude():
+    on_path = shutil.which("claude")
+    if on_path:
+        return on_path
+    return os.path.expanduser("~/.local/bin/claude")
+
+
+def build_tiza():
+    out = subprocess.run(["cargo", "build", "-p", "tiza", "--quiet"], cwd=ROOT)
+    if out.returncode != 0:
+        sys.exit("agent-trials: building tiza failed")
+    return os.path.join(ROOT, "target", "debug", "tiza")
+
+
+def output_of(cmd, cwd=None):
+    try:
+        return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=30).stdout.strip()
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+
+
+def self_check(args):
+    """No model: each task's check must fail on its untouched fixture, pass after
+    the scripted solution, and fail again when the fixture is broken."""
+    bad = 0
+    for task in TASKS:
+        if args.tasks and task["id"] not in args.tasks:
+            continue
+        for broken in (False, True):
+            base, work, sock = prepare(task, broken)
+            try:
+                inst = Instance(args.tiza, work, task["open"], sock)
+            except CheckFailed as e:
+                shutil.rmtree(base, ignore_errors=True)
+                print("%-11s BAD %s Tiza did not start: %s" % (task["id"], "broken" if broken else "untouched", e))
+                bad += 1
+                continue
+            try:
+                before, _ = run_check(task, inst, work, {"answer": "", "calls": []})
+                try:
+                    rec = task["oracle"](inst, work) or {}
+                except CheckFailed as e:
+                    rec = {"answer": "oracle failed: %s" % e}
+                rec.setdefault("calls", [])
+                after, why_after = run_check(task, inst, work, rec)
+            finally:
+                inst.stop()
+                shutil.rmtree(base, ignore_errors=True)
+            if broken:
+                good = not after
+                line = "broken fixture + solution → %s" % ("FAIL (as it must)" if good else "PASS (wrong!)")
+            else:
+                good = not before and after
+                line = "untouched → %s; solution → %s" % ("FAIL" if not before else "PASS (wrong!)",
+                                                          "PASS" if after else "FAIL: " + why_after)
+            bad += not good
+            print("%-11s %s %s" % (task["id"], "ok " if good else "BAD", line))
+    # The stream parser on a recorded sample (fixtures/sample-stream.jsonl).
+    with open(os.path.join(FIXTURES, "sample-stream.jsonl")) as f:
+        m = parse_stream(f)
+    want = {"requests": 3, "ctx_first_request_total": 21000, "ctx_first_tiza_call_total": 23500,
+            "input_total": 70000, "output": 900, "tiza_calls": 2, "tool_search_calls": 1,
+            "tool_errors": 1, "invalid_arguments": 1, "retries": 1, "self_report_tokens": 12000,
+            "other_tool_calls": [], "mcp_ok": True}
+    wrong = {k: (m.get(k), v) for k, v in want.items() if m.get(k) != v}
+    for text, n in (("CONTEXT: 12k tokens - x", 12000), ("**CONTEXT:** about 12,000 tokens", 12000),
+                    ("context: ~1.2M", 1200000), ("CONTEXT: 9000 then\nCONTEXT: 15k tokens", 15000),
+                    ("CONTEXT: 12.000 tokens", 12000), ("no line", None)):
+        if self_report(text) != n:
+            wrong[text] = (self_report(text), n)
+    print("%-11s %s %s" % ("stream", "BAD" if wrong else "ok ", wrong or "sample stream and self-reports parsed as expected"))
+    bad += bool(wrong)
+    print("self-check: %s" % ("all good" if not bad else "%d problem(s)" % bad))
+    return 1 if bad else 0
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split("\n")[0], add_help=True)
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--self-check", action="store_true")
+    p.add_argument("--model")
+    p.add_argument("--max-trials", type=int)
+    p.add_argument("--repeats", type=int, default=2)
+    p.add_argument("--tasks", type=lambda s: s.split(","))
+    p.add_argument("--variants", type=lambda s: s.split(","))
+    p.add_argument("--break", dest="break_task")
+    p.add_argument("--trial-budget", type=float, default=1.0)
+    p.add_argument("--max-turns", type=int, default=40)
+    p.add_argument("--timeout", type=int, default=600)
+    p.add_argument("--out")
+    p.add_argument("--tiza")
+    p.add_argument("--claude")
+    p.add_argument("--builtin-tools", default="")
+    p.add_argument("--yes", action="store_true")
+    args = p.parse_args()
+
+    for name, chosen, known in (("task", args.tasks, [t["id"] for t in TASKS]), ("variant", args.variants, VARIANTS)):
+        for c in chosen or []:
+            if c not in known:
+                sys.exit("agent-trials: unknown %s %s (known: %s)" % (name, c, ", ".join(known)))
+    if args.break_task and args.break_task not in [t["id"] for t in TASKS]:
+        sys.exit("agent-trials: unknown task for --break: %s" % args.break_task)
+    for name in ("max_trials", "repeats", "max_turns", "timeout"):
+        v = getattr(args, name)
+        if v is not None and v < 1:
+            sys.exit("agent-trials: --%s must be at least 1" % name.replace("_", "-"))
+    if args.trial_budget <= 0:
+        sys.exit("agent-trials: --trial-budget must be above 0")
+    args.claude = args.claude or find_claude()
+    trials = plan(args)
+
+    if args.dry_run:
+        args.tiza = args.tiza or os.path.join(ROOT, "target", "debug", "tiza")
+        full = plan(args, cap=False)
+        print("plan: %d of %d trial(s) (%d repeat(s) x %d task(s) x %d variant(s), in that order); model %s; "
+              "no model is called" % (len(trials), len(full), args.repeats, len({t["id"] for t, _ in full}),
+                                      len({v for _, v in full}), args.model or "<--model>"))
+        for name, v in VARIANTS.items():
+            if not args.variants or name in args.variants:
+                env = " ".join("%s=%s" % kv for kv in sorted(v["env"].items())) or "(nothing)"
+                print("  variant %-15s %s; env %s%s" % (name, v["desc"], env,
+                      "; unset " + ",".join(v["unset"]) if v["unset"] else ""))
+        print("  every trial: env %s; a fresh /tmp/tiza-trial-*/work with only its fixture"
+              % " ".join("%s=%s" % kv for kv in sorted(BASE_ENV.items())))
+        for n, (task, vname) in enumerate(trials, 1):
+            src, names = fixture_files(task)
+            sock = "/tmp/tiza-trial-XXXXXX/t.sock"
+            print("\n#%d %s × %s%s\n  fixture: %s/{%s}, Tiza opens %s\n  prompt: %s\n  command: %s"
+                  % (n, task["id"], vname, "  (fixture broken on purpose)" if args.break_task == task["id"] else "",
+                     os.path.relpath(src, ROOT), ",".join(names), task["open"], task["prompt"],
+                     " ".join(shlex.quote(c) for c in claude_command(args, task, sock))))
+        est = estimate(args.model, len(trials))
+        print("\nestimate: %s" % ("about $%.2f per trial, $%.2f in all (rough; see PRICES/TRIAL_TOKENS)" % est
+                                  if est else "pass --model (opus, sonnet, haiku, fable) for a spend estimate"))
+        return 0
+
+    args.tiza = os.path.abspath(args.tiza) if args.tiza else build_tiza()
+    if args.self_check:
+        return self_check(args)
+
+    if not args.model:
+        sys.exit("agent-trials: a real run needs --model (the comparison always uses one model)")
+    if not os.path.exists(args.claude):
+        sys.exit("agent-trials: claude not found (%s); --claude BIN" % args.claude)
+    est = estimate(args.model, len(trials))
+    print("%d trial(s) with %s; per-trial cap $%.2f (--max-budget-usd), so at most about $%.2f"
+          % (len(trials), args.model, args.trial_budget, args.trial_budget * len(trials)))
+    if est:
+        print("estimate: about $%.2f per trial, $%.2f in all (rough)" % est)
+    if not args.yes:
+        if input("run them? [y/N] ").strip().lower() != "y":
+            return 1
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_dir = args.out or os.path.join(HERE, "runs", stamp)
+    os.makedirs(os.path.join(out_dir, "bin"), exist_ok=True)
+    # The binary under test, copied: a rebuild in the worktree during a long
+    # run cannot swap it between trials.
+    src_tiza, args.tiza = args.tiza, os.path.join(out_dir, "bin", "tiza")
+    shutil.copy2(src_tiza, args.tiza)
+    with open(args.tiza, "rb") as f:
+        tiza_sha = hashlib.sha256(f.read()).hexdigest()
+    dirty = output_of(["git", "status", "--porcelain", "--untracked-files=no"], ROOT)
+    meta = {"model": args.model, "stamp": stamp, "claude": args.claude,
+            "claude_version": output_of([args.claude, "--version"]),
+            "tiza_commit": output_of(["git", "rev-parse", "--short", "HEAD"], ROOT) + ("+dirty" if dirty else ""),
+            "tiza_version": output_of([args.tiza, "--version"]), "tiza_sha256": tiza_sha,
+            "builtin_tools": args.builtin_tools, "repeats": args.repeats, "max_trials": args.max_trials,
+            "trial_budget": args.trial_budget}
+    records = []
+
+    def on_term(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, on_term)
+    stopped = None
+    try:
+        for n, (task, vname) in enumerate(trials, 1):
+            print("#%d %s × %s …" % (n, task["id"], vname), end=" ", flush=True)
+            rec = run_trial(args, n, task, vname, out_dir)
+            records.append(rec)
+            print("%s (%s requests, %s tokens in, $%s)%s" % (
+                "ok" if rec.get("success") else "FAILED", rec.get("requests"), fmt(rec.get("input_total")),
+                "—" if rec.get("cost_usd") is None else "%.3f" % rec["cost_usd"],
+                "" if rec.get("success") else ": " + (rec.get("why") or "")))
+            if VARIANTS[vname]["expects_tool_search"] and rec.get("tools_offered") and not rec.get("tool_search_offered"):
+                stopped = ("variant %s has no ToolSearch in the session's tools %s; pass --builtin-tools "
+                           "ToolSearch (or another value) and re-run" % (vname, rec["tools_offered"]))
+                break
+            if rec.get("mcp_servers") and not rec.get("mcp_ok"):
+                stopped = "tiza mcp did not connect: %s" % rec["mcp_servers"]
+                break
+    except KeyboardInterrupt:
+        stopped = "interrupted"
+    meta["stopped"] = stopped
+    with open(os.path.join(out_dir, "summary.json"), "w") as f:
+        json.dump(dict(meta, trials=records), f, indent=2)
+    md = table(records, meta)
+    with open(os.path.join(out_dir, "summary.md"), "w") as f:
+        f.write(md)
+    print("\n" + md)
+    spent = sum(r.get("cost_usd") or 0 for r in records)
+    unknown = sum(1 for r in records if r.get("cost_usd") is None and r.get("exit", 0) is None)
+    print("spent $%.2f (Claude Code's total_cost_usd)%s; raw streams and results in %s" % (
+        spent, " plus %d timed-out trial(s) whose cost the stream did not report" % unknown if unknown else "",
+        out_dir))
+    if stopped:
+        print("agent-trials: the run stopped early: %s" % stopped)
+        return 130 if stopped == "interrupted" else 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

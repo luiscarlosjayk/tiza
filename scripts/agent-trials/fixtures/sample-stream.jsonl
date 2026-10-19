@@ -1,0 +1,9 @@
+{"type": "system", "subtype": "init", "model": "claude-sample", "tools": ["ToolSearch"], "mcp_servers": [{"name": "tiza", "status": "connected"}]}
+{"type": "assistant", "message": {"id": "m1", "usage": {"input_tokens": 1000, "cache_read_input_tokens": 0, "cache_creation_input_tokens": 20000, "output_tokens": 1}, "content": [{"type": "tool_use", "id": "t1", "name": "ToolSearch", "input": {"query": "tiza box"}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t1", "content": "loaded"}]}}
+{"type": "assistant", "message": {"id": "m2", "usage": {"input_tokens": 500, "cache_read_input_tokens": 21000, "cache_creation_input_tokens": 2000, "output_tokens": 1}, "content": [{"type": "text", "text": "Drawing the box."}]}}
+{"type": "assistant", "message": {"id": "m2", "usage": {"input_tokens": 500, "cache_read_input_tokens": 21000, "cache_creation_input_tokens": 2000, "output_tokens": 1}, "content": [{"type": "tool_use", "id": "t2", "name": "mcp__tiza__add_box", "input": {"from_line": 0}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t2", "is_error": true, "content": [{"type": "text", "text": "invalid_argument: from_line must be at least 1"}]}]}}
+{"type": "assistant", "message": {"id": "m3", "usage": {"input_tokens": 500, "cache_read_input_tokens": 23000, "cache_creation_input_tokens": 2000, "output_tokens": 1}, "content": [{"type": "tool_use", "id": "t3", "name": "mcp__tiza__add_box", "input": {"from_line": 23, "to_line": 29}}]}}
+{"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t3", "content": "a1 added at step 1"}]}}
+{"type": "result", "subtype": "success", "total_cost_usd": 0.0421, "num_turns": 4, "duration_ms": 15000, "usage": {"output_tokens": 900}, "modelUsage": {"claude-sample": {}}, "result": "Done.\nCONTEXT: 12k tokens - the tool list and two calls."}

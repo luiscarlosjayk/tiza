@@ -1,0 +1,9 @@
+# Settings for the tally service (a test fixture: the token is fake).
+[service]
+name = "tally"
+port = 8080
+
+[upstream]
+url = "https://api.example.com/v1"
+api_token = "tzk_Q7vN2xLp9RfT4mWc8bYe3HjK6sDa"
+timeout_secs = 30

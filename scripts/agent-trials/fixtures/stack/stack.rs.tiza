@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "title": "A bounded stack",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "stack.rs"
+  },
+  "step": 2,
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "box",
+      "from_line": 4,
+      "to_line": 15,
+      "label": "reads --max"
+    },
+    {
+      "id": "a2",
+      "step": 2,
+      "type": "note",
+      "line": 23,
+      "text": "refuses a push past max"
+    },
+    {
+      "id": "a3",
+      "step": 3,
+      "type": "arrow",
+      "from": {
+        "line": 38,
+        "col": 8
+      },
+      "to": {
+        "line": 39,
+        "col": 47
+      },
+      "label": "max"
+    }
+  ]
+}
