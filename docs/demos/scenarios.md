@@ -216,7 +216,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **What the audience sees:** a fenced text block (or a PNG) with the line highlighted and the note beside it, pasted under the question.
 
-**Features:** `export_image` to `.md`, `.txt` or `.png`, `render --all-steps` for a short series, masks applied on every export.
+**Features:** `export_image` to `.md`, `.txt` or `.png`, `render --all-steps` for a short series.
 
 **Recording:** a still, not a video; `tiza render /tmp/tally/src/count.rs.tiza --out answer.md --step 1` does the same from the shell.
 
@@ -238,5 +238,5 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 Nothing above waits on these; they change how a script can be written once they land.
 
-- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen (masked as it shows them), so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
+- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen, so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
 - **t-183, the redact feature withdrawn** (6). Scenario 6 used masks over a config file; Tiza no longer masks anything (ADR 0010), so the scenario works on a file with demo values. A `.tiza` that still carries `redact` annotations does not open until they are removed.

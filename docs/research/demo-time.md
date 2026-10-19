@@ -53,7 +53,7 @@ Highlight specifics worth noting: whole-line highlight has a border; character-r
 | Copilot chat actions, EngageTime polls, QR | Yes / SaaS | — | **Out of scope.** |
 | macOS desktop actions (focus mode, dock, caffeine) | OS | — | **Out of scope** (a tip in the recording profile docs at most). |
 | Preflight check (validate the demo before presenting) | No | `tiza render` fails on bad anchors | **t-101** (`tiza check FILE`). |
-| Redaction mode | Tiza, both ways | t-117 | Done differently: a `redact` annotation the presenter places (`:redact L:ANCHOR`, select + `r`, MCP `redact`) plus an opt-in `:redact auto` that turns the built-in patterns into ordinary, reviewable redact annotations; never on by default, never silent. Because Tiza owns the buffer, one mask covers the screen, every export, the recordings and what agents read; the file on disk and the `.tiza` never hold the secret. |
+| Redaction mode | Tiza, both ways | t-117, withdrawn by t-183 | Done differently and then withdrawn before any release (ADR 0010; what follows is what t-117 built): a `redact` annotation the presenter places (`:redact L:ANCHOR`, select + `r`, MCP `redact`) plus an opt-in `:redact auto` that turns the built-in patterns into ordinary, reviewable redact annotations; never on by default, never silent. Because Tiza owns the buffer, one mask covers the screen, every export, the recordings and what agents read; the file on disk and the `.tiza` never hold the secret. |
 
 ## Proposal: "moves" for Tiza (editor-agnostic)
 
