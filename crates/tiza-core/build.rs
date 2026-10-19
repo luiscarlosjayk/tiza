@@ -1,33 +1,94 @@
 //! Records the git commit the binary was built from, so `tiza --version`
 //! and the MCP `status` tool can tell a stale build from a fresh one.
+//!
+//! `TIZA_GIT_SHA_OVERRIDE` (non-empty, trimmed) is used instead, for builds
+//! that know better (a release from a tarball). Otherwise the stamp is `git
+//! rev-parse --short=10 HEAD`, plus `-dirty` when tracked files differed
+//! from it when the stamp was computed (a staged change, say; an unstaged
+//! edit alone does not rerun this script), or `unknown` outside git or
+//! without a working `git`.
+//!
+//! The script reruns when the commit can have moved (t-181). The files to
+//! watch come from git itself, because in a worktree `.git` is a file and
+//! HEAD, the index and the branch refs live elsewhere (`--git-path` maps
+//! each name to this checkout's or the common dir): HEAD and its reflog
+//! (a detached HEAD moves there), the index, the ref HEAD points to, its
+//! reflog (still there, and only touched by this branch, while the ref
+//! itself sits in `packed-refs`), `packed-refs`, and `reftable/` in a
+//! reftable repository.
 
+use std::path::PathBuf;
 use std::process::Command;
 
-fn main() {
-    let sha = Command::new("git")
-        .args(["rev-parse", "--short=10", "HEAD"])
+/// `git ARGS` in the package directory, without its trailing newline;
+/// `None` on any failure. `GIT_OPTIONAL_LOCKS=0` keeps `git status` from
+/// refreshing the index, which would rerun this script on the next build.
+fn git(args: &[&str]) -> Option<String> {
+    let out = Command::new("git")
+        .args(args)
+        .env("GIT_OPTIONAL_LOCKS", "0")
         .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "unknown".into());
-    let dirty = Command::new("git")
-        .args(["status", "--porcelain", "--untracked-files=no"])
-        .output()
-        .ok()
-        .filter(|o| o.status.success())
-        .map(|o| !o.stdout.is_empty())
-        .unwrap_or(false);
-    println!(
-        "cargo:rustc-env=TIZA_GIT_SHA={sha}{}",
-        if dirty { "-dirty" } else { "" }
-    );
-    // Rebuild when HEAD moves (a new commit) or the index changes.
-    for p in ["../../.git/HEAD", "../../.git/index"] {
-        if std::path::Path::new(p).exists() {
-            println!("cargo:rerun-if-changed={p}");
-        }
+        .ok()?;
+    if !out.status.success() {
+        return None;
     }
+    let text = String::from_utf8_lossy(&out.stdout)
+        .trim_end_matches(['\n', '\r'])
+        .to_string();
+    (!text.is_empty()).then_some(text)
+}
+
+/// The absolute path git uses for NAME in this checkout (`--git-path`
+/// answers relative to the current directory in a plain checkout).
+fn git_path(name: &str) -> Option<PathBuf> {
+    let p = PathBuf::from(git(&["rev-parse", "--git-path", name])?);
+    if p.is_absolute() {
+        Some(p)
+    } else {
+        Some(std::env::current_dir().ok()?.join(p))
+    }
+}
+
+/// The files whose change can move the commit or the dirty flag.
+fn watched() -> Vec<PathBuf> {
+    let mut names = vec![
+        "HEAD".to_string(),
+        "logs/HEAD".to_string(),
+        "index".to_string(),
+        "packed-refs".to_string(),
+        "reftable".to_string(),
+    ];
+    // `refs/heads/NAME` on a branch, `HEAD` when detached.
+    if let Some(r) =
+        git(&["rev-parse", "--symbolic-full-name", "HEAD"]).filter(|r| r.starts_with("refs/"))
+    {
+        names.push(format!("logs/{r}"));
+        names.push(r);
+    }
+    let mut paths: Vec<PathBuf> = names.iter().filter_map(|n| git_path(n)).collect();
+    // A path that does not exist makes cargo rerun on every build.
+    paths.retain(|p| p.exists());
+    paths
+}
+
+fn stamp() -> String {
+    let Some(sha) = git(&["rev-parse", "--short=10", "HEAD"]) else {
+        return "unknown".into();
+    };
+    let dirty = git(&["status", "--porcelain", "--untracked-files=no"]).is_some();
+    format!("{sha}{}", if dirty { "-dirty" } else { "" })
+}
+
+fn main() {
     println!("cargo:rerun-if-env-changed=TIZA_GIT_SHA_OVERRIDE");
+    let sha = match std::env::var("TIZA_GIT_SHA_OVERRIDE") {
+        Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
+        _ => {
+            for p in watched() {
+                println!("cargo:rerun-if-changed={}", p.display());
+            }
+            stamp()
+        }
+    };
+    println!("cargo:rustc-env=TIZA_GIT_SHA={sha}");
 }
