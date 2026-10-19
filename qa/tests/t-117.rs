@@ -12,12 +12,11 @@
 //! - AC4 Only columns are stored; anchoring by the secret itself is refused;
 //!   `:embed` and `:w` never write the secret.
 //! - AC5 Follow/paste re-anchor a redact; a dropped one is reported loudly.
-//!   (Retrabajo) A redact follows the text AROUND it, never the secret: a
-//!   rotated value under the same key stays masked (`keep=N` shows the new
-//!   tail). (Retrabajo 2) When it cannot follow that text it fails CLOSED:
-//!   the rest of its line (or every line of a hunk that changed size) is
-//!   masked, loudly, marked `widened` in scene.list/scene.get until the
-//!   value is marked again; only a line deleted with nothing in its place
+//!   A redact keeps its columns only on a line whose text is unchanged
+//!   (wherever it moved). t-183 replaced following the text around it
+//!   (t-117 retrabajos 1 and 2): any change to a masked line fails CLOSED,
+//!   the whole line is masked (no tail), loudly; every line of a hunk that
+//!   changed size, whole; only a line deleted with nothing in its place
 //!   drops it. `:embed` turns follow off (the code no longer comes from
 //!   the file).
 //! - AC6 `:redact off|on` for the author only; `◆ redacted` on the bar;
@@ -209,17 +208,15 @@ fn ac5_follow_reanchors_and_a_lost_anchor_fails_closed() {
             .any(|l| l.contains("3") && l.contains("API_KEY=••••••••")),
         "{text}"
     );
-    // The anchor itself (the text before the secret) rewritten: fail-closed,
-    // the mask is NOT dropped — it covers the rest of the line from where
-    // the line first differs, loudly. (A new value under the same key stays
-    // masked precisely: see `ac5_rotating_a_masked_value_under_follow_keeps_it_masked`.)
+    // The masked line rewritten: fail-closed, the mask is NOT dropped — it
+    // covers the whole line, loudly (t-183).
     let changed = config().replace(&format!("API_KEY={SECRET}"), "APIKEY_V2=rotated-later");
     save_atomically(&src, &format!("# new first line\n{changed}"));
     wait_reloads(&live, 2);
     let (msg, err) = live.message().unwrap();
     assert!(
         err && msg.contains(
-            "redact a1 could not follow its text: masking the rest of L3 — fix it before recording (u undoes the reload)"
+            "redact a1: its line changed, masking L3 whole — check the screen before recording (u undoes the reload)"
         ),
         "{msg}"
     );
@@ -227,7 +224,7 @@ fn ac5_follow_reanchors_and_a_lost_anchor_fails_closed() {
         !msg.contains("dropped") && !msg.contains("rotated"),
         "{msg}"
     );
-    assert_eq!(code_line(&live, 3), "API••••••••");
+    assert_eq!(code_line(&live, 3), "••••••••");
     assert_no_value(&live, "anchor rewritten", &["rotated-later", "KEY_V2"]);
     // Deleted with nothing in its place: only now is it dropped, loudly.
     let deleted = config().replace(&format!("API_KEY={SECRET}\n"), "");
@@ -354,20 +351,17 @@ fn assert_rotated_masked(live: &Live, what: &str) {
         );
         assert_clean(&format!("{what}: {surface}"), s);
     }
-    // keep=4 shows the tail of the NEW value.
-    let tail = &ROTATED[ROTATED.len() - 4..];
+    // The whole line, with no tail: not one character of the new value
+    // nor the key (t-183).
+    assert!(!code.contains("API_KEY"), "{what}: {code}");
     assert!(
-        text.contains(&format!("API_KEY=••••••••{tail}")),
-        "{what}: {text}"
-    );
-    assert!(
-        code.contains(&format!("API_KEY=••••••••{tail}")),
+        code.lines().any(|l| l.ends_with("  ••••••••")),
         "{what}: {code}"
     );
 }
 
 #[test]
-fn ac5_rotating_a_masked_value_under_follow_keeps_it_masked() {
+fn ac5_rotating_a_masked_value_under_follow_masks_its_whole_line() {
     let (live, src, _) = opened("t117-rotate-follow");
     live.command("redact 2:API_KEY= keep=4");
     assert!(!live.message().unwrap().1);
@@ -380,10 +374,14 @@ fn ac5_rotating_a_masked_value_under_follow_keeps_it_masked() {
     wait_reloads(&live, 1);
     assert_rotated_masked(&live, "after the rotation");
     let (msg, err) = live.message().unwrap();
-    assert!(!err && !msg.contains("dropped"), "kept, no notice: {msg}");
+    assert!(
+        err && msg.contains("redact a1: its line changed, masking L2 whole"),
+        "{msg}"
+    );
+    assert!(!msg.contains("dropped"), "{msg}");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
-    // Rotated again with a line added above it and one right after it
-    // (the line moves and changes at once): still masked.
+    // A line added above it and one right after it: the masked line is
+    // unchanged, it moves with its mask.
     let again = config().replace(
         &format!("API_KEY={SECRET}\n"),
         &format!("API_KEY={ROTATED}\nAPI_REGION=eu\n"),
@@ -397,7 +395,7 @@ fn ac5_rotating_a_masked_value_under_follow_keeps_it_masked() {
 }
 
 #[test]
-fn ac5_rotating_a_masked_value_by_paste_keeps_it_masked() {
+fn ac5_rotating_a_masked_value_by_paste_masks_its_whole_line() {
     let (live, _src, _) = opened("t117-rotate-paste");
     live.command("redact 2:API_KEY= keep=4");
     assert!(!live.message().unwrap().1);
@@ -405,18 +403,15 @@ fn ac5_rotating_a_masked_value_by_paste_keeps_it_masked() {
     live.with(move |a| a.replace_code(&pasted)).unwrap();
     assert_rotated_masked(&live, "after the paste");
     let (msg, err) = live.message().unwrap();
-    assert!(!err && !msg.contains("dropped"), "{msg}");
-    // A paste where the key itself is gone: fail-closed, the whole line
-    // (nothing before the old column survived), loudly.
-    let renamed = config().replace(&format!("API_KEY={SECRET}"), &format!("TOKEN_V2={ROTATED}"));
-    live.with(move |a| a.replace_code(&renamed)).unwrap();
-    let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.contains("redact a1 could not follow its text: masking the rest of L2"),
+        err && msg.contains("redact a1: its line changed, masking L2 whole"),
         "{msg}"
     );
     assert!(!msg.contains(ROTATED), "{msg}");
-    assert_eq!(code_line(&live, 2), "••••••••", "no tail once widened");
+    // A paste where the key is gone too: still the whole line.
+    let renamed = config().replace(&format!("API_KEY={SECRET}"), &format!("TOKEN_V2={ROTATED}"));
+    live.with(move |a| a.replace_code(&renamed)).unwrap();
+    assert_eq!(code_line(&live, 2), "••••••••", "no tail on a whole line");
     assert_no_value(&live, "paste renamed", &[ROTATED, "NEWvalue", "TOKEN_V2"]);
 }
 
@@ -435,65 +430,60 @@ fn json_live(name: &str) -> (Live, std::path::PathBuf) {
 }
 
 #[test]
-fn ac5_column_redact_that_cannot_follow_fails_closed() {
-    // Retrabajo (Luis, 2026-10-17): dropping revealed the secret. A value
-    // selected mid-line follows the text on both sides; when one side or
-    // both change, the mask covers the rest of the line, loudly, and the
-    // widened state shows in scene.list / scene.get until the presenter
-    // marks the value again.
+fn ac5_a_column_redact_on_a_changed_line_masks_it_whole() {
+    // Retrabajo (Luis, 2026-10-17): dropping revealed the secret. t-183:
+    // a value selected mid-line keeps its columns only while its line is
+    // unchanged; any change masks the whole line, loudly, until the
+    // presenter marks the value again.
     let (live, src) = json_live("t117-columns");
+    // Unchanged line moved down: the same columns.
     save_atomically(
         &src,
-        "{\"token\": \"NEWvalue-much-longer\", \"user\": \"ana\"}\n",
+        "// cfg\n{\"token\": \"abc123secret\", \"user\": \"ana\"}\n",
     );
     wait_reloads(&live, 1);
     assert_eq!(
-        code_line(&live, 1),
+        code_line(&live, 2),
         "{\"token\": \"••••••••\", \"user\": \"ana\"}"
     );
-    // One side changed (`user` → `usr`): the rest of the line from the value on.
-    save_atomically(&src, "{\"token\": \"r0tat3d-0ne-side\", \"usr\": 1}\n");
-    wait_reloads(&live, 2);
-    let (msg, err) = live.message().unwrap();
-    assert!(
-        err && msg.contains(
-            "redact a1 could not follow its text: masking the rest of L1 — fix it before recording"
-        ),
-        "{msg}"
-    );
-    assert!(!msg.contains("dropped"), "{msg}");
-    assert_eq!(code_line(&live, 1), "{\"token\": \"••••••••");
-    assert_no_value(&live, "one side", &["r0tat3d", "0ne-side"]);
-    // (t-183: the widened mask keeps no tail; there is no `widened` flag.)
-    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
-    // Both sides changed: from where the line first differs (`{"tok`), so
-    // not one character of the new value shows (the old column 11 would
-    // have shown `zz`).
-    save_atomically(&src, "{\"tok\": \"zzq-b0th-s1des\", \"usr\": 1}\n");
-    wait_reloads(&live, 3);
-    let (msg, err) = live.message().unwrap();
-    assert!(err && msg.contains("could not follow its text"), "{msg}");
-    assert_eq!(code_line(&live, 1), "{\"tok••••••••");
+    // The value rotated (one side, both sides: the same): the whole line.
+    for (n, line) in [
+        (2, "{\"token\": \"r0tat3d-0ne-side\", \"usr\": 1}"),
+        (3, "{\"tok\": \"zzq-b0th-s1des\", \"usr\": 1}"),
+    ] {
+        save_atomically(&src, &format!("// cfg\n{line}\n"));
+        wait_reloads(&live, n);
+        let (msg, err) = live.message().unwrap();
+        assert!(
+            err && msg.contains(
+                "redact a1: its line changed, masking L2 whole — check the screen before recording"
+            ),
+            "{msg}"
+        );
+        assert!(!msg.contains("dropped"), "{msg}");
+        assert_eq!(code_line(&live, 2), "••••••••");
+        assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    }
     assert_no_value(&live, "both sides", &["zzq-b0th", "b0th-s1des"]);
     // Marking the value again (`:redact off` shows it to the author, a
     // selection or columns mark it) adds a precise mask; deleting the wide
     // one (`x`, `:del`) leaves it.
-    live.command("redact 1@9..23");
+    live.command("redact 2@9..23");
     assert!(!live.message().unwrap().1);
     live.command("del a1");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
-    assert_eq!(code_line(&live, 1), "{\"tok\": \"••••••••\", \"usr\": 1}");
+    assert_eq!(code_line(&live, 2), "{\"tok\": \"••••••••\", \"usr\": 1}");
 }
 
 #[test]
-fn ac5_auto_redact_whose_prefix_is_gone_fails_closed() {
+fn ac5_auto_redacts_on_changed_lines_mask_them_whole() {
     let (live, src, _) = opened("t117-auto-prefix");
     live.command("redact auto");
     assert!(live.message().unwrap().0.contains("3 masked"));
     live.command("follow on");
-    // The env key renamed and the value rotated at once: the auto redact
-    // (anchored after `API_KEY=`) cannot follow; the URL password rotated
-    // under the same `admin:` … `@` stays masked precisely.
+    // The env key renamed and the value rotated at once, and the URL
+    // password rotated: both lines masked whole; the untouched one keeps
+    // its mask as it was.
     let changed = config()
         .replace(
             &format!("API_KEY={SECRET}"),
@@ -504,11 +494,13 @@ fn ac5_auto_redact_whose_prefix_is_gone_fails_closed() {
     wait_reloads(&live, 1);
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.contains("could not follow its text: masking the rest of L2"),
+        err && msg.contains("their line changed, masking L2, L4 whole"),
         "{msg}"
     );
     assert_eq!(live.with(|a| a.doc.annotations.len()), 3, "nothing dropped");
-    assert!(code_line(&live, 4).contains("postgres://admin:••••••••@"));
+    assert_eq!(code_line(&live, 2), "••••••••");
+    assert_eq!(code_line(&live, 4), "••••••••");
+    assert!(code_line(&live, 3).starts_with("AUTH=Bearer ••••••••"));
     assert_no_value(&live, "auto prefix", &["svc-N3W", "rotated-77", "n3w-pa55"]);
 }
 
@@ -527,7 +519,7 @@ fn ac5_a_hunk_that_changed_size_masks_all_its_new_lines() {
     wait_reloads(&live, 1);
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.contains("redact a1 could not follow its text: masking L2-4 whole"),
+        err && msg.contains("redact a1: its line changed, masking L2-4 whole"),
         "{msg}"
     );
     assert_eq!(live.with(|a| a.doc.annotations.len()), 3);

@@ -607,6 +607,117 @@ fn ac5_an_embedded_save_is_masked_and_a_reference_stays_a_reference() {
     assert!(code_get(&live).contains("TOKEN=••••••••"));
 }
 
+/// Waits (10 s at most) until follow mode has applied `n` reloads.
+fn wait_reloads(live: &Live, n: u64) {
+    let start = std::time::Instant::now();
+    while live.api_ok("follow.status", json!({}))["reloads"]
+        .as_u64()
+        .unwrap_or(0)
+        < n
+    {
+        assert!(
+            start.elapsed().as_secs() < 10,
+            "follow did not reload #{n} in 10 s"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+}
+
+/// Atomic save, as editors do (tmp + rename).
+fn save_atomically(src: &std::path::Path, text: &str) {
+    let tmp = src.with_extension("env.tmp");
+    std::fs::write(&tmp, text).unwrap();
+    std::fs::rename(&tmp, src).unwrap();
+}
+
+/// Line `n` (1-based) of `code.get`, past its gutter.
+fn code_line(live: &Live, n: usize) -> String {
+    code_get(live)
+        .lines()
+        .nth(n - 1)
+        .and_then(|l| l.get(6..))
+        .unwrap_or_default()
+        .to_string()
+}
+
+#[test]
+fn ac6_follow_masks_a_changed_masked_line_whole() {
+    const ROTATED: &str = "Wr5uJ2nQ8sXe";
+    const KEY_V2: &str = "Np9rT4kWb6Zh";
+    let (live, src, _) = opened("t183-ac6");
+    mask_all(&live);
+    live.command("follow on");
+    // Unchanged lines moved down: each mask keeps its columns, no alert.
+    save_atomically(&src, &format!("# rotated soon\n{}", env_text()));
+    wait_reloads(&live, 1);
+    let (msg, err) = live.message().unwrap();
+    assert!(!err && !msg.contains("redact"), "{msg}");
+    assert_eq!(code_line(&live, 3), "TOKEN=••••••••");
+    assert_eq!(code_line(&live, 4), "PAIR=a:•••••••• b:••••••••");
+    assert_eq!(code_line(&live, 6), "KEY=••••••••81Tq");
+    assert_readers_clean(&live, "moved down");
+    // The value rotated on one line, the key renamed on the other: both
+    // lines masked whole, no tail, loudly; the untouched lines as they were.
+    let changed = format!(
+        "# rotated soon\n# service config\nTOKEN={ROTATED}\nPAIRS=a:{LEFT} b:{RIGHT}\nNAME=demo\nKEY={KEPT}\n"
+    );
+    save_atomically(&src, &changed);
+    wait_reloads(&live, 2);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains(
+            "redact a1, a2, a3: their line changed, masking L3, L4 whole — check the screen before recording (u undoes the reload)"
+        ),
+        "{msg}"
+    );
+    assert_eq!(code_line(&live, 3), "••••••••");
+    assert_eq!(code_line(&live, 4), "••••••••");
+    assert_eq!(code_line(&live, 5), "NAME=demo");
+    assert_eq!(code_line(&live, 6), "KEY=••••••••81Tq");
+    let screen = live.screen(110, 20);
+    assert!(screen.contains("⚠ redact a1, a2, a3"), "{screen}");
+    for (surface, s) in readers(&live) {
+        assert_clean(&format!("rotated: {surface}"), &s);
+        for p in [ROTATED, "PAIRS"] {
+            assert!(!s.contains(p), "rotated: {surface} shows `{p}`:\n{s}");
+        }
+    }
+    // `u` undoes the reload.
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(code_line(&live, 3), "TOKEN=••••••••");
+    live.keys(&[KeyCode::Char('U')]);
+    assert_eq!(code_line(&live, 3), "••••••••");
+    // The masked line deleted with nothing in its place: dropped, loudly.
+    save_atomically(&src, &changed.replace(&format!("TOKEN={ROTATED}\n"), ""));
+    wait_reloads(&live, 3);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg
+            .contains("redact a1 dropped: the line changed — check the screen before recording"),
+        "{msg}"
+    );
+    // One masked line became two: which one holds the value cannot be
+    // told, both are masked whole.
+    let hunk = changed.replace(&format!("TOKEN={ROTATED}\n"), "").replace(
+        &format!("KEY={KEPT}\n"),
+        &format!("KEY_V2={KEY_V2}\nKEY_REGION=eu\n"),
+    );
+    save_atomically(&src, &hunk);
+    wait_reloads(&live, 4);
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("its line changed, masking L5-6 whole"),
+        "{msg}"
+    );
+    assert_eq!(code_line(&live, 5), "••••••••");
+    assert_eq!(code_line(&live, 6), "••••••••");
+    for (surface, s) in readers(&live) {
+        for p in [KEY_V2, "KEY_REGION", "KEY_V2"] {
+            assert!(!s.contains(p), "hunk: {surface} shows `{p}`:\n{s}");
+        }
+    }
+}
+
 #[test]
 fn corner_a_linked_file_with_its_own_redact() {
     // D1: a linked file's redact is on that file's own code, with the same

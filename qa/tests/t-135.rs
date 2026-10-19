@@ -9,9 +9,9 @@
 //! - AC3 qa test at 80 and 130 columns with follow on and `⚠ small
 //!   terminal`; CHANGELOG.
 //!
-//! The notices that exist today: `redact aN could not follow its text:
-//! masking … — fix it before recording` (fail-closed, t-117 reload/paste and
-//! t-140 moves) and `redact aN dropped: the line changed — check the screen
+//! The notices that exist today: `redact aN: its line changed, masking … whole
+//! — check the screen before recording` (fail-closed, t-117 reload/paste,
+//! t-183) and `redact aN dropped: the line changed — check the screen
 //! before recording` (t-117). The `kept by columns` notice of the card's
 //! description was removed by t-117.
 
@@ -71,7 +71,7 @@ fn rename_key(live: &Live, src: &std::path::Path, reload: u64) -> String {
     wait_reloads(live, reload);
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.starts_with("redact a1 could not follow its text: masking the rest of L4"),
+        err && msg.starts_with("redact a1: its line changed, masking L4 whole"),
         "{msg}"
     );
     msg

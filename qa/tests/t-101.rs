@@ -9,8 +9,8 @@
 //!   once; a move target that does not match exactly once at its step; a
 //!   linked file that cannot be read; an unknown or duplicate id; a schema
 //!   violation.
-//! - AC3 Warnings: a redact that widens or drops through a move or a
-//!   reload (the same text the TUI shows); an annotation hidden as
+//! - AC3 Warnings: (t-183: a redact no longer widens or drops through a
+//!   move, and `check` never sees a reload); an annotation hidden as
 //!   `(unanchored)` at some step; a label clipped with «…»; a step with
 //!   nothing new. `--strict` makes warnings fail.
 //! - AC4 `--json` prints the findings as JSON; the MCP gets a `check` tool.

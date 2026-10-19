@@ -301,11 +301,12 @@ pub struct App {
     /// rehearsing looks like presenting. Presentation mode and every
     /// export are always stable.
     pub layout_stable: bool,
-    /// A reload or paste widened (fail-closed) or dropped a redact: shown as an error after the
-    /// reload's own message, so it is never missed.
+    /// A reload or paste masked a changed line whole (fail-closed) or
+    /// dropped a redact: shown as an error after the reload's own message,
+    /// so it is never missed.
     redact_drop_notice: Option<String>,
     /// Loud redact notices still to be read (t-135): a reload or paste that
-    /// widened or dropped a redact (t-117).
+    /// masked whole or dropped a redact (t-117).
     /// `ui::draw` puts them whole on their own rows above the status bar —
     /// never cut, whatever the bar holds — until the next key; a later
     /// reload or message never replaces them (a new notice is added).
@@ -1938,9 +1939,9 @@ impl App {
             .iter()
             .map(|a| a.file.is_some().then(|| a.shape.clone()))
             .collect();
-        // Redacts that could not follow their text, fail-closed (t-117):
-        // the spans their mask widens to.
-        let mut widened: Vec<Option<Vec<tiza_core::TextSpan>>> = vec![None; old.annotations.len()];
+        // Redacts whose line changed, fail-closed (t-183): the lines they
+        // now mask whole.
+        let mut whole: Vec<Option<Vec<tiza_core::TextSpan>>> = vec![None; old.annotations.len()];
         for step in steps {
             let old_s = at_step(&old, step);
             let new_s = at_step(&d, step);
@@ -1950,22 +1951,22 @@ impl App {
                     continue;
                 }
                 if let Shape::Redact { span, .. } = &a.shape
-                    && let crate::reanchor::RedactFate::Widened(spans) = remap.redact(span)
+                    && let crate::reanchor::RedactFate::Whole(spans) = remap.redact(span)
                 {
-                    widened[i] = Some(spans);
+                    whole[i] = Some(spans);
                     continue;
                 }
                 shapes[i] = remap.shape(&a.shape);
             }
         }
         let mut dropped_redacts: Vec<String> = Vec::new();
-        let mut widened_redacts: Vec<(String, String)> = Vec::new();
-        // Lines of a hunk a widened redact also covers: added after every
+        let mut whole_redacts: Vec<(String, String)> = Vec::new();
+        // Lines of a hunk a whole-line redact also covers: added after every
         // other annotation, so their new ids never take an old one's.
         let mut extra: Vec<Annotation> = Vec::new();
         for (i, (a, shape)) in old.annotations.iter().zip(shapes).enumerate() {
             let is_redact = matches!(a.shape, Shape::Redact { .. });
-            if let (Some(spans), Shape::Redact { label, .. }) = (widened[i].take(), &a.shape) {
+            if let (Some(spans), Shape::Redact { label, .. }) = (whole[i].take(), &a.shape) {
                 let mask = |span: tiza_core::TextSpan, id: String| Annotation {
                     id,
                     shape: Shape::Redact {
@@ -1976,15 +1977,15 @@ impl App {
                     ..a.clone()
                 };
                 let place = match spans.as_slice() {
-                    [one] => format!("the rest of L{}", one.line),
-                    [first, .., last] => format!("L{}-{} whole", first.line, last.line),
+                    [one] => format!("L{}", one.line),
+                    [first, .., last] => format!("L{}-{}", first.line, last.line),
                     [] => String::new(),
                 };
                 let mut spans = spans.into_iter();
                 let first = spans.next();
                 let kept_one = first.is_some_and(|sp| d.add(mask(sp, a.id.clone())).is_ok());
                 if kept_one {
-                    widened_redacts.push((a.id.clone(), place));
+                    whole_redacts.push((a.id.clone(), place));
                     extra.extend(spans.map(|sp| mask(sp, String::new())));
                 } else {
                     dropped_redacts.push(a.id.clone());
@@ -2001,7 +2002,7 @@ impl App {
             }
         }
         for ann in extra {
-            // Two widened redacts of one hunk cover the same lines once.
+            // Two redacts of one hunk cover its lines once.
             let covered = d.annotations.iter().any(|b| b.shape == ann.shape);
             if !covered {
                 let _ = d.add(ann);
@@ -2019,7 +2020,7 @@ impl App {
         self.clamp_cursor();
         self.touch();
         // Loud, and it must outlive the reload's own message (t-117 AC5).
-        self.redact_drop_notice = redact_notice(&widened_redacts, &dropped_redacts);
+        self.redact_drop_notice = redact_notice(&whole_redacts, &dropped_redacts);
         crate::reanchor::Outcome {
             kept,
             dropped: before.saturating_sub(kept),
@@ -5342,16 +5343,19 @@ pub fn theme_label(t: ThemeName) -> &'static str {
     }
 }
 
-/// The loud notice after a reload or paste touched a redact it could not
-/// follow (t-117): widened (fail-closed) and/or dropped. `None` when every
-/// redact followed its text. Never the text under a mask: ids and lines.
-fn redact_notice(widened: &[(String, String)], dropped: &[String]) -> Option<String> {
+/// The loud notice after a reload or paste changed a redact's line
+/// (t-117, t-183): masked whole (fail-closed) and/or dropped. `None` when
+/// every redact's line is unchanged. Never the text under a mask: ids and
+/// lines.
+fn redact_notice(whole: &[(String, String)], dropped: &[String]) -> Option<String> {
     let mut parts = Vec::new();
-    if !widened.is_empty() {
-        let ids: Vec<&str> = widened.iter().map(|(id, _)| id.as_str()).collect();
-        let places: Vec<&str> = widened.iter().map(|(_, p)| p.as_str()).collect();
+    if !whole.is_empty() {
+        let ids: Vec<&str> = whole.iter().map(|(id, _)| id.as_str()).collect();
+        let mut places: Vec<&str> = whole.iter().map(|(_, p)| p.as_str()).collect();
+        // Two masks on one line name it once.
+        places.dedup();
         parts.push(format!(
-            "redact {} could not follow {} text: masking {} — fix it before recording",
+            "redact {}: {} line changed, masking {} whole — check the screen before recording",
             ids.join(", "),
             if ids.len() == 1 { "its" } else { "their" },
             places.join(", ")
