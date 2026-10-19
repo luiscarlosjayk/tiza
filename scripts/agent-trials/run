@@ -96,7 +96,7 @@ BASE_ENV = {
 
 # USD per million tokens (input, output, cache read). Input and output from
 # the Claude API model table cached 2026-10-06; Sonnet's cache read is what
-# Claude Code's total_cost_usd showed in the first baseline ($0.10/M), the
+# Claude Code's total_cost_usd showed in the Sonnet check run ($0.10/M; Opus fit $0.20/M), the
 # others' are the table's. Claude Code writes the 1-hour cache, priced at 2 x
 # input. Only for the estimate printed before a run: the measured cost is
 # Claude Code's own `total_cost_usd`.
@@ -108,7 +108,7 @@ PRICES = {
 }
 CACHE_WRITE = 2.0
 # Assumed tokens per trial for the estimate: fresh input, cache writes,
-# cache reads, output. The first baseline (Sonnet 5.5, 16 trials) averaged
+# cache reads, output. The Sonnet 5.5 check run (16 trials) averaged
 # 4.4k cache writes, 46k cache reads and 0.8k output per trial; these add
 # headroom (about 2x) for longer tasks and other models.
 TRIAL_TOKENS = (1_000, 8_000, 80_000, 1_500)

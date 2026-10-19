@@ -26,7 +26,7 @@ Each trial is one fresh headless agent with **one task** and **one settings vari
 2. A live Tiza opens the fixture on a pseudo-terminal of 120×40, with `--no-save` and a socket of its own.
 3. `claude -p` runs in that directory with `--output-format stream-json --verbose`, the model given by `--model`, and:
    - `--strict-mcp-config --mcp-config` naming only this trial's `tiza mcp --socket …`;
-   - `--tools ToolSearch` (`--builtin-tools`): tool search is the only built-in tool, so the agent cannot read files or run commands. `--tools ""` removes `ToolSearch` as well (the first baseline attempt found it: the tool-search variant then loaded every Tiza tool upfront), and the harness stops the run when the tool-search variant lacks it;
+   - `--tools ToolSearch` (`--builtin-tools`): tool search is the only built-in tool, so the agent cannot read files or run commands. `--tools ""` removes `ToolSearch` as well (the first probe trial found it: the tool-search variant then loaded every Tiza tool upfront), and the harness stops the run when the tool-search variant lacks it;
    - `--allowedTools 'mcp__tiza__*,ToolSearch' --permission-mode dontAsk`, so the Tiza tools and tool search run and anything else is denied;
    - `--setting-sources project` (the trial directory has no project settings, so none of the machine's user settings — hooks, plugins, output style — apply), `--disable-slash-commands --no-session-persistence`, and `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1`, `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` (no CLAUDE.md, no memory); the session's plugins, skills and permission mode from its init message are kept with each trial, so a run on another machine can be compared;
    - `--max-budget-usd` (`--trial-budget`, default 1.00) and `--max-turns` (default 40) as caps.
@@ -85,7 +85,7 @@ The plan is repeats × tasks × variants, in that order, so `--max-trials 16` is
 
 ## Cost
 
-The estimate printed before a run assumes, per trial, 1k fresh input, 8k cache writes, 80k cache reads and 1.5k output — the first baseline's averages (4.4k writes, 46k reads, 0.8k output) with some headroom — at list input and output prices, cache writes at 2× input (Claude Code writes the 1-hour cache) and cache reads at the rate its `total_cost_usd` showed for Sonnet 5.5 ($0.10/M; the other models' read prices are the API table's).
+The estimate printed before a run assumes, per trial, 1k fresh input, 8k cache writes, 80k cache reads and 1.5k output — the Sonnet check run's averages (4.4k writes, 46k reads, 0.8k output) with some headroom — at list input and output prices, cache writes at 2× input (Claude Code writes the 1-hour cache) and cache reads at the rate its `total_cost_usd` showed for Sonnet 5.5 ($0.10/M; the other models' read prices are the API table's).
 
 | model | per trial | 16 trials | 32 trials |
 |---|---|---|---|
@@ -94,11 +94,59 @@ The estimate printed before a run assumes, per trial, 1k fresh input, 8k cache w
 | Fable 5.1 | ~$0.27 | ~$4.24 | ~$8.48 |
 | Haiku 5.5 | ~$0.003 | ~$0.05 | ~$0.10 |
 
-Each trial is also capped at `--trial-budget` dollars (default 1.00). The measured figure is Claude Code's own `total_cost_usd`, summed at the end of the run and kept per trial. The first baseline cost $0.48 for 16 trials with Sonnet 5.5, plus $0.10 for the two probe trials that found the `--tools ""` problem.
+Each trial is also capped at `--trial-budget` dollars (default 1.00). The measured figure is Claude Code's own `total_cost_usd`, summed at the end of the run and kept per trial. The Sonnet check run cost $0.48 for 16 trials, plus $0.10 for the two probe trials that found the `--tools ""` problem; the Opus baseline cost $2.43 for 32 (estimated $3.65).
 
 ## Results
 
-### Baseline, 2026-10-18 (Sonnet 5.5, 16 trials, one pass)
+### Baseline: Opus 5.5, 32 trials (2026-10-18)
+
+**This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
+
+Each cell shows pass 1 / pass 2 (one value when both agree). Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
+
+| task | variant | ok | ctx 1st request | ctx at 1st tiza call | ctx peak | input total | of which cache writes | tiza calls | ToolSearch | turns | cost $ | self-report |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| read | tool search | 2/2 | 4,038 / 4,036 | 4,807 / 4,805 | 5,789 / 5,787 | 14,634 / 14,628 | 4,294 / 2,973 | 2 | 1 | 4 | 0.042 / 0.033 | 5,000 |
+| read | upfront | 2/2 | 16,794 / 16,793 | 16,794 / 16,793 | 17,778 / 17,775 | 34,572 / 34,568 | 17,776 / 1,724 | 2 | — | 3 | 0.148 / 0.023 | 2,500 |
+| box | tool search | 2/2 | 3,998 / 3,999 | 5,394 / 5,392 | 6,622 / 6,297 | 22,390 / 21,732 | 4,208 / 3,523 | 3 / 2 | 1 | 5 / 4 | 0.046 / 0.040 | 7,000 / 6,000 |
+| box | upfront | 2/2 | 16,754 / 16,755 | 16,754 / 16,755 | 17,659 / 17,657 | 51,819 / 51,816 | 2,008 / 1,646 | 2 | — | 3 | 0.032 / 0.029 | 17,000 / 2,500 |
+| arrow-note | tool search | 2/2 | 4,033 | 6,079 | 9,346 / 7,729 | 42,757 / 24,902 | 6,932 / 4,921 | 6 / 4 | 2 / 1 | 9 / 6 | 0.088 / 0.062 | 9,000 / 6,000 |
+| arrow-note | upfront | 2/2 | 16,788 / 16,787 | 16,788 / 16,787 | 19,316 / 18,335 | 90,033 / 70,673 | 3,665 / 2,290 | 7 / 4 | — | 8 / 5 | 0.065 / 0.047 | 19,000 / 4,500 |
+| redact | tool search | 2/2 | 3,995 / 3,993 | 5,613 / 5,608 | 6,997 / 6,983 | 29,240 / 29,203 | 4,583 / 4,213 | 5 | 1 | 7 | 0.057 / 0.054 | 6,000 |
+| redact | upfront | 2/2 | 16,752 / 16,751 | 16,752 / 16,751 | 18,505 / 17,638 | 105,491 / 68,809 | 2,854 / 1,631 | 8 / 4 | — | 9 / 5 | 0.062 / 0.037 | 3,500 / 4,000 |
+| move | tool search | 2/2 | 4,031 | 7,230 / 7,111 | 10,433 / 10,397 | 58,246 / 65,455 | 8,019 / 7,590 | 9 | 1 | 11 | 0.094 | 11,000 / 13,000 |
+| move | upfront | 2/2 | 16,788 / 16,786 | 16,788 / 16,786 | 19,545 / 19,937 | 71,470 / 109,735 | 3,894 / 3,893 | 7 / 8 | — | 8 / 9 | 0.059 / 0.069 | 18,000 / 19,000 |
+| export | tool search | 2/2 | 3,975 | 5,298 / 5,293 | 5,540 / 5,578 | 14,813 / 14,846 | 3,126 / 2,826 | 1 | 1 | 3 | 0.034 / 0.033 | 5,000 |
+| export | upfront | 2/2 | 16,732 / 16,731 | 16,732 / 16,731 | 16,952 | 33,684 / 33,683 | 1,301 / 963 | 1 | — | 2 | 0.021 / 0.019 | 2,000 / 1,500 |
+| tour | tool search | 2/2 | 4,037 | 6,282 / 6,103 | 10,888 / 10,974 | 70,512 / 59,695 | 8,474 / 8,162 | 10 | 2 | 13 | 0.104 / 0.098 | 14,000 / 12,000 |
+| tour | upfront | 2/2 | 16,793 | 16,793 | 18,533 / 18,523 | 106,102 / 106,077 | 2,882 / 2,474 | 8 | — | 9 | 0.060 / 0.056 | 19,000 / 4,000 |
+| explain | tool search | 2/2 | 4,010 | 11,950 / 10,448 | 21,494 / 20,503 | 141,929 / 153,898 | 19,080 / 17,717 | 24 | 1 / 2 | 26 / 27 | 0.268 / 0.253 | 22,000 / 30,000 |
+| explain | upfront | 2/2 | 16,766 / 16,764 | 16,766 / 16,764 | 23,932 / 24,007 | 168,316 / 146,471 | 8,281 / 7,984 | 20 / 22 | — | 21 / 23 | 0.153 / 0.146 | 22,000 |
+
+| variant | input | cache writes | output | cost pass 1 | cost pass 2 | cost | wall |
+|---|---|---|---|---|---|---|---|
+| tool search | 778,880 | 110,641 | 19,051 | $0.733 | $0.668 | $1.401 | 335 s |
+| upfront | 1,283,319 | 65,266 | 13,015 | $0.601 | $0.426 | $1.027 | 273 s |
+
+**Cache, warm and cold.** Claude Code's prompt cache is the API's, model-scoped and kept for an hour across processes and runs, and no Opus trial had run before this one, so pass 1 starts cold for both variants: each pays to write its own prefix once, at its first trial (trial 2, the first upfront one, wrote 16,792 tokens; trial 1, tool search, 2,543). Within a pass, each task runs with tool search and then upfront; the two variants' prefixes differ, so that order favours neither. From the second trial of each variant on, the prefix is read from the cache (trials 3 and 4 read 2,412 and 15,649 tokens); pass 2 also finds each task's own prompt warm (about 400 tokens more read per first request), which helps both variants alike. So pass 1 holds each variant's one-time cold prefix write, and pass 2 is all warm, which favours the variant with the bigger stable prefix (upfront). Taking the cold excess out of pass 1 (trial 2 against trial 18, ~$0.125; trial 1 against 17, ~$0.009) leaves tool search ~52 % dearer there, close to pass 2's 57 %.
+
+What it says:
+
+- **The context figures do not depend on the model**: the first request is ~16,800 tokens with the 31 tools upfront and ~4,000 with tool search, as with Sonnet. With tool search the context at the first Tiza call is 4,800–7,200 tokens for the single-purpose tasks and 10,400–12,000 for `explain`. Peaks: 5,500–11,000 against 17,000–19,900 for the single-purpose tasks; for `explain`, which loaded 14 of the 31 tools (about half of the tool list's bytes), 21,500 against 24,000, so the gap closes as an agent uses more of the server.
+- **Success 32/32, with no tool errors**, no wrong tools and no retries. Opus hit neither of the two traps of Sonnet's check run: it boxed by line numbers everywhere (so `find_end` was never exercised) and, in `arrow-note`, annotated at step 2 before moving there.
+- **Tool search used 39 % fewer input tokens and cost 36 % more**: 22 % more in pass 1 (with each variant's one-time cold prefix write) and 57 % more in pass 2 (warm). It writes 1.7× as much to the cache (each lookup changes the prompt), and Opus's `total_cost_usd` fits exactly $8/M for a cache write (2× input, the 1-hour cache), $0.20/M for a read (0.05×), $4/M fresh input and $20/M output: a write costs 40 reads. It also took 22 % more wall time (335 s against 273 s), one ToolSearch round trip or two per trial.
+- **Per-cell differences are not readable; compare totals per variant.** `read`, `box`, `export` and `tour` repeat almost to the token, but identical runs of `arrow-note`, `redact` and `move` differ by up to ~70 % in input and cost (tool-search `arrow-note`: 42,757 then 24,902; upfront `redact`: 8 calls then 4; upfront `move`: 71,470 then 109,735). Context at the first call and the peak are the stable metrics (within ~20 %, mostly within 5 %).
+- Self-reports again range from 1,500 to 30,000 with no relation to the measured context.
+
+Usability findings for t-162 (all three from the Sonnet check run below; Opus reproduced none of them; proposals only, no code changed here):
+
+1. Annotating at step N creates step N. Sonnet called `goto_step 2` on a one-step document, read `step 2 is beyond the last step (1)` and gave up drawing at step 2. The server instructions should say it.
+2. The `goto_step` error itself could say how: `step 2 is beyond the last step (1); annotate with step: 2 to add it`.
+3. `find_end` takes the first match after `find_start`, so `"}"` often closes an inner block (Sonnet's `tour` box came out L5-9). The agent guide warns about it; the tool descriptions do not.
+
+### Harness check run: Sonnet 5.5, 16 trials, one pass (2026-10-18)
+
+The first full run, made to check the harness before the baseline (after the two probe trials that found the `--tools ""` problem); kept for what it found (the price fit, two usability findings), not as the baseline.
 
 `claude-sonnet-5-5`, Claude Code 2.1.303, `tiza` at 472e224 (the run's `+dirty` is the harness's own `--builtin-tools` default, changed between the probe and this run; the binary is 472e224's). One pass of each cell, so treat a single cell as a first look; the corner case asks for two runs per cell (`--max-trials 32`). Raw streams outside the repo, in `pruebas/t161/20261018-191431/` on Luis's Mac. Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
 
@@ -132,4 +180,4 @@ What it says:
 - **Self-reports are not a measure.** The agents' own estimates (2,500–30,000) mostly overshoot the peak with tool search (9,000 against ~6,000) and undershoot it upfront (6,000–9,000 against ~17,000; `explain` upfront, 22,000 against 21,838, is the exception), and against the total input every one undershoots, by 1.6–5.8×: an agent does not see what its tool list costs. The measured figures are the ones to compare.
 - Success 15/16; tool errors 2 (both counted as invalid arguments); no retries of a failed call, no wrong tools.
 
-Next: a second pass of every cell (`--max-trials 16` or `--repeats 1` again; `--max-trials 32` would be two more) before drawing conclusions per task — run with a warm cache for both variants, or note which one it favours — then the same matrix again with each change of t-162 and t-163. Usability findings for t-162: annotating at step N creates step N (the `goto_step` dead end), and `find_end` takes the first match after the start, which for `}` is often an inner block.
+The Opus baseline above, with two passes per cell, replaces this run for comparisons.
