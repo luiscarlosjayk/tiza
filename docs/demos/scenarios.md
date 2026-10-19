@@ -63,7 +63,7 @@ Then, to Claude Code (one prompt at a time; wait for each to finish):
 
 Now present it: `P` for presentation mode and `n` through the steps (or `tiza next` / `tiza goto recap` from another terminal). Each `add_*` reply says whether the annotation is on screen (`m1 added at step 1; visible now …`); if the agent ever answers `not visible now`, it says why, and the take is still right. The agent may phrase things differently or pick other columns; `examples/tally-tour.tiza` is the reference result.
 
-The agent's version is already on disk: every call above was autosaved to `/tmp/tally/src/main.rs.tiza`. Check it and render it like any `.tiza` (render the file rather than the live instance; see [t-166](#planned-changes-that-touch-these-scenarios)):
+The agent's version is already on disk: every call above was autosaved to `/tmp/tally/src/main.rs.tiza`. Check it and render it like any `.tiza` (the file is the take's result; since [t-166](#planned-changes-that-touch-these-scenarios) a render of the live instance draws the same):
 
 ```sh
 tiza check /tmp/tally/src/main.rs.tiza --width 130
@@ -238,5 +238,5 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 Nothing above waits on these; they change how a script can be written once they land.
 
-- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Today `tiza render` with no FILE, and the MCP `export_image`, do not load the files a `code.link` move shows: render the `.tiza` file (the sidecar the TUI autosaved) instead of the live instance, as the scripts do. Once it lands, both export the instance as it is on screen.
+- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen (masked as it shows them), so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
 - **t-168, masks only the presenter removes** (6). Agents may add a `redact`, and an agent will not be able to delete, clear or narrow one over the socket or the MCP; the presenter keeps every way to remove one in the TUI. Until then, scenario 6's script tells the agent not to touch a mask.

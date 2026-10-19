@@ -133,7 +133,7 @@ New annotations appear at the current step. The `.tiza` references the source fi
 ```sh
 tiza render demo.tiza --out thumb.png --step 3          # PNG at 2× (thumbnails, posts)
 tiza render demo.tiza --out figure.svg --theme light     # SVG with the fonts embedded
-tiza render --out shot.png                                   # what the live instance shows right now
+tiza render --out shot.png                                   # what the live instance shows right now (linked files included)
 tiza render demo.tiza --out notes.md --step 2            # fenced code block for a README, an issue or a chat
 tiza render demo.tiza --out - --format ansi | less -R    # 24-bit ANSI, no trailing spaces
 tiza render demo.tiza --out demo.gif                     # animated GIF of every step, drawn by Tiza (nothing to install)

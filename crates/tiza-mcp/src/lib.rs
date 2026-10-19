@@ -1237,8 +1237,11 @@ impl TizaServer {
             // masked value come masked, like the code.
             serde_json::from_value(self.call("scene.get", json!({"as_shown": true})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        tiza_core::fs::resolve_code(&mut scene.document, None)
-            .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        // Its linked files too, as the instance shows them (t-166): an
+        // export never draws another file than the TUI, in silence.
+        tiza_core::fs::load_scene(&mut scene.document).map_err(|e| {
+            McpError::internal_error(format!("the live document cannot be exported: {e}"), None)
+        })?;
         let status: tiza_core::protocol::Status =
             serde_json::from_value(self.call("status", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
@@ -1476,8 +1479,13 @@ impl ServerHandler for TizaServer {
             .as_ref()
             .map(|a| tiza_core::redact::json_written(&Value::Object(a.clone())))
             .unwrap_or_default();
+        let tool = request.name.to_string();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        let mut resp = self.tool_router.call(tcc).await?;
+        // Every call answers (t-166): a panic while it runs (a bug) is an
+        // error reply, never a call left waiting forever.
+        let mut resp = answer_always(self.tool_router.call(tcc))
+            .await
+            .map_err(|p| panicked(&format!("tool {tool}"), p))??;
         if let rmcp::model::CallToolResponse::Complete(r) = &mut resp
             && r.is_error == Some(true)
         {
@@ -1515,7 +1523,9 @@ impl ServerHandler for TizaServer {
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, McpError> {
-        let text = self.resource_text(&request.uri).await?;
+        let text = answer_always(self.resource_text(&request.uri))
+            .await
+            .map_err(|p| panicked("resource", p))??;
         let mime = RESOURCES
             .iter()
             .find(|r| r.0 == request.uri)
@@ -1552,9 +1562,73 @@ impl ServerHandler for TizaServer {
     }
 }
 
+/// A future whose panic is caught and returned (t-166): the tool router
+/// runs each call in a task of its own, and a panic there drops the task
+/// without a reply, so the client waits forever while the server still
+/// answers other calls. With this, a panic becomes an error reply.
+struct AnswerAlways<'a, T>(std::pin::Pin<Box<dyn std::future::Future<Output = T> + Send + 'a>>);
+
+impl<T> std::future::Future for AnswerAlways<'_, T> {
+    type Output = Result<T, Box<dyn std::any::Any + Send>>;
+
+    fn poll(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        let inner = &mut self.0;
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| inner.as_mut().poll(cx))) {
+            Ok(std::task::Poll::Ready(v)) => std::task::Poll::Ready(Ok(v)),
+            Ok(std::task::Poll::Pending) => std::task::Poll::Pending,
+            Err(p) => std::task::Poll::Ready(Err(p)),
+        }
+    }
+}
+
+fn answer_always<'a, T>(
+    f: impl std::future::Future<Output = T> + Send + 'a,
+) -> AnswerAlways<'a, T> {
+    AnswerAlways(Box::pin(f))
+}
+
+/// The error reply for a call that panicked: what failed, never the
+/// panic's own text (it may quote document text, t-167); the panic itself
+/// is on the server's stderr.
+fn panicked(what: &str, _payload: Box<dyn std::any::Any + Send>) -> McpError {
+    McpError::internal_error(
+        format!(
+            "internal error: the {what} call failed with a bug in Tiza (a panic; its message is on the MCP server's stderr). Please report it; the live instance is unaffected"
+        ),
+        None,
+    )
+}
+
 /// Starts the MCP server over stdio (blocks until the client closes).
 pub async fn serve(socket: PathBuf) -> anyhow::Result<()> {
     let service = TizaServer::new(socket).serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// t-166 (QA 2): a call that panics answers with an error instead of
+    /// leaving the client waiting; one that does not keeps its result.
+    #[tokio::test]
+    async fn answer_always_turns_a_panic_into_an_error_reply() {
+        let boom = answer_always(async {
+            tokio::task::yield_now().await;
+            let v: Vec<u32> = Vec::new();
+            v[0]
+        })
+        .await;
+        let e = panicked("tool export_image", boom.unwrap_err());
+        assert!(
+            e.message.contains("export_image") && e.message.contains("bug in Tiza"),
+            "{}",
+            e.message
+        );
+        assert_eq!(answer_always(async { 7 }).await.unwrap(), 7);
+    }
 }

@@ -431,8 +431,11 @@ fn real_main() -> anyhow::Result<()> {
                         serde_json::json!({"as_shown": true}),
                     )?)
                     .context("unexpected scene.get response")?;
-                    fs::resolve_code(&mut scene.document, None)
-                        .context("the live document has no code")?;
+                    // Its linked files too, as the instance shows them
+                    // (t-166): opening the `.tiza` loads them the same way.
+                    fs::load_scene(&mut scene.document).map_err(|e| {
+                        anyhow::anyhow!("the live document cannot be rendered: {e}")
+                    })?;
                     let status: tiza_core::protocol::Status = serde_json::from_value(call(
                         &socket_path,
                         "status",

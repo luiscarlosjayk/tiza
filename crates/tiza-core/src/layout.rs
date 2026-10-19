@@ -913,7 +913,12 @@ pub fn layout_with(
             let n = format!("{:>w$}", line, w = num_w - 1);
             canvas.put_str(0, y, &n, base.fg(theme.muted));
         }
-        let segs = &segments[(*line - doc.source.first_line) as usize];
+        // A view with no loaded lines (a linked file a caller did not load)
+        // draws an empty row, never an index out of bounds (t-166).
+        let segs = line
+            .checked_sub(doc.source.first_line)
+            .and_then(|i| segments.get(i as usize))
+            .map_or(&[][..], Vec::as_slice);
         paint_code(
             &mut canvas,
             code_x,

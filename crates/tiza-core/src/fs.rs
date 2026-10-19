@@ -260,9 +260,57 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     };
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
-    load_views(&mut doc, base_dir)?;
+    // A linked file that cannot be read is named in the error, through the
+    // redact filter (t-166, t-167): its name could repeat a masked value.
+    load_views(&mut doc, base_dir).map_err(|e| unloaded_filter(&doc).error(e))?;
     doc.normalize_loaded()?;
     Ok(doc)
+}
+
+/// The redact filter of a document whose code is resolved but not yet
+/// normalized ([`Document::normalize_loaded`] has not set the step-0 code
+/// of a document with moves): the values it masks are read from that code,
+/// so an error raised while loading never quotes them (t-166).
+fn unloaded_filter(doc: &Document) -> crate::redact::Echo {
+    if doc.moves.is_empty() || !doc.base_code.is_empty() {
+        return crate::redact::Echo::new(doc);
+    }
+    let mut probe = doc.clone();
+    probe.base_code = probe.code.clone();
+    probe.base_first_line = probe.source.first_line;
+    crate::redact::Echo::new(&probe)
+}
+
+/// Readies the document a live instance handed out (`scene.get`) for an
+/// export, as [`parse_document`] readies a `.tiza` (t-166): its main code
+/// and the code of every file a `code.link` move names come embedded in it
+/// (the instance's own copy, masked as it shows it,
+/// [`Document::embedded_copy`]), so the export draws the files the live
+/// TUI shows, never what this process would read from its own directory.
+/// A linked file the instance did not send is an error naming it, never a
+/// guess from disk.
+pub fn load_scene(doc: &mut Document) -> Result<(), Error> {
+    resolve_code(doc, None)?;
+    let echo = unloaded_filter(doc);
+    for (i, m) in doc.moves.iter().enumerate() {
+        let crate::moves::MoveAction::CodeLink(l) = &m.action else {
+            continue;
+        };
+        let Some(key) = doc.view_key(&l.file) else {
+            continue; // the main file: always sent
+        };
+        if !doc.views.contains_key(&key) && !doc.views.contains_key(&l.file) {
+            return Err(echo.error(Error::Invalid(format!(
+                "move #{}, step {}: code.link «{}»: the live instance did not send its code (open the document again in Tiza, or render the .tiza file)",
+                i + 1,
+                m.at_step,
+                l.file
+            ))));
+        }
+    }
+    // Every view comes from `views` now: nothing is read from disk.
+    load_views(doc, None).map_err(|e| echo.error(e))?;
+    doc.normalize_loaded()
 }
 
 /// Absolute path of a file a `code.link` names, resolved like `code.file`:

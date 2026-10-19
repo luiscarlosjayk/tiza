@@ -290,7 +290,10 @@ impl Drop for Live {
 pub struct McpClient {
     child: std::process::Child,
     stdin: std::process::ChildStdin,
-    reader: std::io::BufReader<std::process::ChildStdout>,
+    /// Lines of the server's stdout, read on a thread of its own, so a
+    /// call the server never answers fails the test at a deadline instead
+    /// of hanging `cargo test` (t-166).
+    lines: mpsc::Receiver<String>,
     next_id: u64,
     /// The `initialize` result (capabilities, instructions, serverInfo).
     init: serde_json::Value,
@@ -308,11 +311,25 @@ impl McpClient {
             .spawn()
             .expect("spawn tiza mcp");
         let stdin = child.stdin.take().unwrap();
-        let reader = std::io::BufReader::new(child.stdout.take().unwrap());
+        let mut reader = std::io::BufReader::new(child.stdout.take().unwrap());
+        let (tx, lines) = mpsc::channel();
+        std::thread::spawn(move || {
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {
+                        if tx.send(line).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        });
         let mut c = McpClient {
             child,
             stdin,
-            reader,
+            lines,
             next_id: 1,
             init: serde_json::Value::Null,
         };
@@ -326,7 +343,6 @@ impl McpClient {
             .write_all(b"{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n")
             .unwrap();
         c.stdin.flush().unwrap();
-        let _ = &mut c.reader as &mut dyn BufRead;
         c
     }
 
@@ -335,9 +351,23 @@ impl McpClient {
         &self.init
     }
 
-    /// Sends one JSON-RPC request and returns its reply (notifications are skipped).
+    /// Sends one JSON-RPC request and returns its reply (notifications are
+    /// skipped). A server that does not answer within 120 s fails the test.
     pub fn request(&mut self, method: &str, params: serde_json::Value) -> serde_json::Value {
-        use std::io::{BufRead, Write};
+        let deadline = std::time::Duration::from_secs(120);
+        self.request_within(method, params, deadline)
+            .unwrap_or_else(|| panic!("tiza mcp did not answer {method} within {deadline:?}"))
+    }
+
+    /// [`McpClient::request`] with a deadline: `None` when the server has not
+    /// answered by then (t-166: every call must answer).
+    pub fn request_within(
+        &mut self,
+        method: &str,
+        params: serde_json::Value,
+        timeout: std::time::Duration,
+    ) -> Option<serde_json::Value> {
+        use std::io::Write;
         let id = self.next_id;
         self.next_id += 1;
         let msg =
@@ -345,20 +375,20 @@ impl McpClient {
         self.stdin.write_all(msg.to_string().as_bytes()).unwrap();
         self.stdin.write_all(b"\n").unwrap();
         self.stdin.flush().unwrap();
+        let until = std::time::Instant::now() + timeout;
         loop {
-            let mut line = String::new();
-            let n = self
-                .reader
-                .read_line(&mut line)
-                .expect("read from tiza mcp");
-            assert!(
-                n > 0,
-                "tiza mcp closed its stdout before answering {method}"
-            );
+            let left = until.saturating_duration_since(std::time::Instant::now());
+            let line = match self.lines.recv_timeout(left) {
+                Ok(line) => line,
+                Err(mpsc::RecvTimeoutError::Timeout) => return None,
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    panic!("tiza mcp closed its stdout before answering {method}")
+                }
+            };
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&line)
                 && v["id"] == id
             {
-                return v;
+                return Some(v);
             }
         }
     }
