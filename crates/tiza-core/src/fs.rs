@@ -241,26 +241,15 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     }
     // Redacts saved before t-183 (same schema): back on the file's own code.
     crate::redact::migrate_legacy(&mut raw)?;
-    // A document with a redact that does not parse: serde quotes the
-    // values it could not read, so its message goes through the redact
-    // filter before there is a document to ask (t-167).
-    let guard = crate::redact::json_has_redact(&raw).then(|| crate::redact::json_strings(&raw));
-    let mut doc: Document = match serde_json::from_value(raw) {
-        Ok(d) => d,
-        Err(e) => {
-            return Err(match guard {
-                Some(written) => crate::redact::Echo::closed()
-                    .written(written)
-                    .error(Error::Json(e)),
-                None => Error::Json(e),
-            });
-        }
-    };
+    // With a redact, serde's error does not repeat the value it read (D7).
+    let redacted = crate::redact::raw_has_redacts(&raw);
+    let mut doc: Document =
+        serde_json::from_value(raw).map_err(|e| crate::redact::parse_error(redacted, e))?;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
-    // A linked file that cannot be read is named in the error, through the
-    // redact filter (t-166, t-167): its name could repeat a masked value.
-    load_views(&mut doc, base_dir).map_err(|e| crate::redact::Echo::loading(&doc).error(e))?;
+    // A linked file that cannot be read is named by the document's own
+    // `code.link` (t-166, t-183 D7).
+    load_views(&mut doc, base_dir).map_err(|e| crate::redact::unquoted(&doc, e))?;
     doc.normalize_loaded()?;
     Ok(doc)
 }
@@ -275,7 +264,6 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
 /// guess from disk.
 pub fn load_scene(doc: &mut Document) -> Result<(), Error> {
     resolve_code(doc, None)?;
-    let echo = crate::redact::Echo::loading(doc);
     for (i, m) in doc.moves.iter().enumerate() {
         let crate::moves::MoveAction::CodeLink(l) = &m.action else {
             continue;
@@ -284,16 +272,19 @@ pub fn load_scene(doc: &mut Document) -> Result<(), Error> {
             continue; // the main file: always sent
         };
         if !doc.views.contains_key(&key) && !doc.views.contains_key(&l.file) {
-            return Err(echo.error(Error::Invalid(format!(
-                "move #{}, step {}: code.link «{}»: the live instance did not send its code (open the document again in Tiza, or render the .tiza file)",
-                i + 1,
-                m.at_step,
-                l.file
-            ))));
+            return Err(crate::redact::unquoted(
+                doc,
+                Error::Invalid(format!(
+                    "move #{}, step {}: code.link «{}»: the live instance did not send its code (open the document again in Tiza, or render the .tiza file)",
+                    i + 1,
+                    m.at_step,
+                    l.file
+                )),
+            ));
         }
     }
     // Every view comes from `views` now: nothing is read from disk.
-    load_views(doc, None).map_err(|e| echo.error(e))?;
+    load_views(doc, None).map_err(|e| crate::redact::unquoted(doc, e))?;
     doc.normalize_loaded()
 }
 
@@ -366,7 +357,7 @@ fn load_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>, Er
     let full = view_path(file, base_dir);
     let text = std::fs::read_to_string(&full).map_err(|e| {
         Error::Invalid(format!(
-            "code.link «{file}»: could not read {} ({e})",
+            "code.link «{file}»: could not read «{}» ({e})",
             full.display()
         ))
     })?;

@@ -7,10 +7,10 @@
 //! (for linked views) and the line.
 //!
 //! Errors are what would stop the document from loading or a move from
-//! applying; warnings are what would spoil a take. Nothing is written,
-//! and no finding quotes text under a redact (t-117): a move target is
-//! scrubbed to `«…»` on a document with redacts, as `move.add` does
-//! (t-154), and a clipped label under a mask is named without its text.
+//! applying; warnings are what would spoil a take. Nothing is written.
+//! Targets match on the masked code, and on a document with redacts no
+//! error quotes the document's own text: every `«…»` quote of an error
+//! reads `«…»`, as when it is opened (t-183 D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -318,9 +318,6 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         ));
         return Report::new(width, out, None, None);
     }
-    // The values serde quotes in a parse error, on a document with a
-    // redact, go through the redact filter (t-167).
-    let guard = crate::redact::json_has_redact(&raw).then(|| crate::redact::json_strings(&raw));
     let mut migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
     for (from, migrate) in crate::fs::MIGRATIONS {
         if found <= *from {
@@ -339,6 +336,7 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         return Report::new(width, out, None, None);
     }
     migrated |= raw != before;
+    let redacted = crate::redact::raw_has_redacts(&raw);
     let parsed: Result<Document, serde_json::Error> = if migrated {
         serde_json::from_value(raw)
     } else {
@@ -353,12 +351,10 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
                 Finding::new(
                     Level::Error,
                     "schema",
-                    match guard {
-                        Some(written) => crate::redact::Echo::closed()
-                            .written(written)
-                            .serde_text(&format!("does not follow the .tiza format: {e}")),
-                        None => format!("does not follow the .tiza format: {e}"),
-                    },
+                    format!(
+                        "does not follow the .tiza format: {}",
+                        crate::redact::parse_error(redacted, e)
+                    ),
                 )
                 .line(line),
             );
@@ -374,7 +370,6 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     // ---- the numbers (t-166): a step past the cap or a first line near
     // `u32::MAX` is one error, before anything is laid out step by step.
     if let Err(e) = doc.check_bounds() {
-        let e = crate::redact::Echo::loading(&doc).error(e);
         out.push(Finding::new(Level::Error, "bounds", e.to_string()));
         return Report::new(width, out, None, None);
     }
@@ -382,9 +377,14 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     let doc = tidy(doc, &missing, &mut out);
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);
-    // Last line of defence (t-117): whatever a finding says, the text under
-    // a mask never leaves `check`.
-    scrub_secrets(&doc, &mut out);
+    // An error does not quote the document's own targets when it has a
+    // redact (t-183 D7), as when it is opened. (A warning quotes a target
+    // that was found on the masked code: on screen anyway.)
+    if crate::redact::has_redacts(&doc) {
+        for f in out.iter_mut().filter(|f| f.level == Level::Error) {
+            f.message = crate::redact::elide_quotes(&f.message);
+        }
+    }
     let mut report = Report::new(width, out, Some(max), clean);
     if let Some(c) = clean
         && width < c
@@ -418,24 +418,6 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
             None,
             None,
         ),
-    }
-}
-
-/// Takes every text under a mask out of the findings.
-fn scrub_secrets(doc: &Document, out: &mut [Finding]) {
-    let secrets = crate::redact::masked_values(doc);
-    if secrets.is_empty() {
-        return;
-    }
-    for f in out {
-        for s in &secrets {
-            if f.message.contains(s.as_str()) {
-                f.message = f.message.replace(s.as_str(), "…");
-            }
-            if f.text.as_deref().is_some_and(|t| t.contains(s.as_str())) {
-                f.text = None;
-            }
-        }
     }
 }
 
@@ -597,7 +579,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
     if doc.code.is_empty() {
         doc.code.push(String::new());
     }
-    let redacted = crate::redact::has_redacts(&doc);
     // ---- ids ----
     let mut seen = BTreeSet::new();
     doc.annotations.retain(|a| {
@@ -769,11 +750,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         match moves::project(&d, &with, u32::MAX, true) {
             Ok(_) => accepted = with,
             Err(e) => {
-                let e = if redacted {
-                    d.scrub_targets(&trial[i], e)
-                } else {
-                    e
-                };
                 let file = d.shown_view_at(trial[i].at_step).file;
                 // A move over a masked line (t-183 AC4) has a code of its own.
                 let code = if crate::redact::is_masked_line_error(&e) {
@@ -809,7 +785,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         let mut d = doc.clone();
         d.moves = only.clone();
         if let Err(e) = moves::validate(&d, &only, &d.annotations) {
-            let e = if redacted { d.scrub_targets(&m, e) } else { e };
             let file = d.shown_view_at(m.at_step).file;
             let msg = in_file(move_message(e, i, m.at_step), &file);
             out.push(

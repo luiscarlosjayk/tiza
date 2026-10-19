@@ -16,11 +16,6 @@ pub enum Error {
     /// A move that does not exist (`move.delete`): `move #N does not exist`.
     #[error("move {0} does not exist")]
     MoveNotFound(String),
-    /// A range error whose message went through the redact filter (t-167
-    /// review): the same `out_of_range`, without the numbers the request
-    /// wrote.
-    #[error("{0}")]
-    RangeText(String),
     #[error("an annotation with id {0} already exists")]
     DuplicateId(String),
     /// A bare text that matches nothing (`at.find`, a `find` an agent sent).
@@ -51,8 +46,8 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    /// A JSON error whose message went through the redact filter (t-167):
-    /// the same `invalid_json`, without the values serde quoted.
+    /// serde's message through [`serde_text`]: a `.tiza` with a redact
+    /// that does not parse never repeats the value serde read (t-183 D7).
     #[error("{0}")]
     JsonText(String),
 }
@@ -61,9 +56,7 @@ impl Error {
     /// Stable code for the API (socket/MCP): clients branch on it, not on the message.
     pub fn code(&self) -> &'static str {
         match self {
-            Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } | Error::RangeText(_) => {
-                "out_of_range"
-            }
+            Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
             Error::NotFound(_) | Error::StepNotFound(_) | Error::MoveNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
@@ -73,6 +66,89 @@ impl Error {
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",
             Error::Json(_) | Error::JsonText(_) => "invalid_json",
+        }
+    }
+}
+
+/// What is left of a value or a target an error does not repeat.
+pub const ELIDED: &str = "«…»";
+
+/// How a socket error for parameters that do not deserialize starts: the
+/// rest is serde's message, through [`serde_text`].
+pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
+
+/// serde's message for a value it could not read without that value, with
+/// or without redacts (t-167 R1, R2): a closed value (a color, a type, an
+/// op…) is answered with the valid names only, never with what was sent.
+/// serde's list of what it expected (after the last `, expected `) is
+/// Tiza's own names and stays whole; before it, the value received
+/// (`unknown variant `x``, `invalid type: string "x"`, a number) becomes
+/// [`ELIDED`]. A field name stays: `unknown field `x`` names it, as
+/// `missing field` and `duplicate field` do.
+pub fn serde_text(msg: &str) -> String {
+    let (head, tail) = msg.split_at(msg.rfind(", expected ").unwrap_or(msg.len()));
+    let mut head = head.to_string();
+    for (open, close) in [
+        ("unknown variant `", '`'),
+        ("string \"", '"'),
+        ("integer `", '`'),
+        ("floating point `", '`'),
+        ("character `", '`'),
+    ] {
+        if let Some(k) = head.find(open) {
+            let from = k + open.len() - 1;
+            let to = head[from + 1..]
+                .rfind(close)
+                .map_or(head.len(), |e| from + 1 + e + 1);
+            head.replace_range(from..to, ELIDED);
+        }
+    }
+    head + tail
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn serde_text_keeps_the_list_and_the_field_names_and_drops_the_value() {
+        for (msg, want) in [
+            (
+                "unknown variant `sk_live_x`, expected one of `box`, `note`",
+                "unknown variant «…», expected one of `box`, `note`",
+            ),
+            (
+                "unknown variant `a`, expected `b` at line 3 column 9",
+                "unknown variant «…», expected `b` at line 3 column 9",
+            ),
+            // A value that says `, expected ` itself: serde's list is the last.
+            (
+                "unknown variant `x, expected `y`, expected `box`",
+                "unknown variant «…», expected `box`",
+            ),
+            (
+                "invalid type: string \"Zq7\\\"v\", expected u32",
+                "invalid type: string «…», expected u32",
+            ),
+            (
+                "invalid type: integer `48213`, expected a string",
+                "invalid type: integer «…», expected a string",
+            ),
+            (
+                "invalid value: floating point `1.5`, expected u8",
+                "invalid value: floating point «…», expected u8",
+            ),
+            (
+                "unknown field `colour`, expected one of `color`, `step`",
+                "unknown field `colour`, expected one of `color`, `step`",
+            ),
+            ("missing field `span`", "missing field `span`"),
+            (
+                "unknown variant `x`, there are no variants",
+                "unknown variant «…», there are no variants",
+            ),
+        ] {
+            assert_eq!(serde_text(msg), want, "{msg}");
         }
     }
 }

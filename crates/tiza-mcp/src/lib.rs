@@ -1608,21 +1608,15 @@ impl TizaServer {
 impl ServerHandler for TizaServer {
     /// The tool router's call, with one change (t-167): arguments that do
     /// not deserialize come back as `failed to deserialize parameters:
-    /// invalid type: string "…"`, raised here before the instance is asked,
-    /// so the server cannot know whether the document has a redact. It
-    /// fails closed: the values the agent sent are taken out of that
-    /// message, with or without redacts (the instance's own errors already
-    /// went through its filter).
+    /// invalid type: string "…"`, raised here before the instance is asked:
+    /// the value serde could not read is taken out of that message
+    /// ([`tiza_core::error::serde_text`]), as the instance does with its
+    /// own.
     async fn call_tool(
         &self,
         request: rmcp::model::CallToolRequestParams,
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResponse, McpError> {
-        let written = request
-            .arguments
-            .as_ref()
-            .map(|a| tiza_core::redact::json_written(&Value::Object(a.clone())))
-            .unwrap_or_default();
         let tool = request.name.to_string();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
         // Every call answers (t-166): a panic while it runs (a bug) is an
@@ -1636,12 +1630,11 @@ impl ServerHandler for TizaServer {
         if let rmcp::model::CallToolResponse::Complete(r) = &mut resp
             && r.is_error == Some(true)
         {
-            let echo = tiza_core::redact::Echo::closed().written(written);
             for c in &mut r.content {
                 if let rmcp::model::ContentBlock::Text(t) = c
                     && t.text.starts_with("failed to deserialize parameters")
                 {
-                    t.text = echo.serde_text(&t.text);
+                    t.text = tiza_core::error::serde_text(&t.text);
                 }
             }
         }

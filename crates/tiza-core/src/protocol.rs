@@ -918,8 +918,7 @@ pub struct Status {
     /// turn it off; `:w` saves explicitly either way).
     #[serde(default = "yes")]
     pub autosave: bool,
-    /// The `.tiza` this instance saves to (absolute, as shown text: a name
-    /// repeating a masked value is masked), when it exists on disk; absent
+    /// The `.tiza` this instance saves to (absolute), when it exists on disk; absent
     /// before the first save. What a `.tape` of the live instance opens
     /// (t-166).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1231,16 +1230,6 @@ pub struct MoveMutated {
 
 /// One line per move, in the `move.list` / `:moves` format.
 pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
-    describe_move_with(index, m, &crate::redact::Echo::default())
-}
-
-/// [`describe_move`] through the filter of its document (t-167): on a
-/// document with a redact its targets read «…».
-pub fn describe_move_with(
-    index: usize,
-    m: &crate::moves::Move,
-    echo: &crate::redact::Echo,
-) -> String {
     use crate::moves::{MoveAction, PatchOp, Typing};
     let p = match &m.action {
         MoveAction::CodePatch(p) => p,
@@ -1259,7 +1248,7 @@ pub fn describe_move_with(
             let point = |w: &Where| match (&w.find, w.line) {
                 (Some(t), _) => format!(
                     "{}{}",
-                    echo.quote(t),
+                    quote(t),
                     w.occurrence.map(|n| format!("#{n}")).unwrap_or_default()
                 ),
                 (None, Some(l)) => format!("L{l}:{}", w.col.unwrap_or(0)),
@@ -1284,13 +1273,13 @@ pub fn describe_move_with(
     let target = if let Some(pos) = &p.position {
         format!("L{pos}")
     } else if let Some(t) = &p.after {
-        format!("after {}", echo.quote(t))
+        format!("after {}", quote(t))
     } else if let Some(t) = &p.before {
-        format!("before {}", echo.quote(t))
+        format!("before {}", quote(t))
     } else if let Some(t) = &p.find {
-        echo.quote(t)
+        quote(t)
     } else if let (Some(a), Some(b)) = (&p.find_start, &p.find_end) {
-        format!("{}..{}", echo.quote(a), echo.quote(b))
+        format!("{}..{}", quote(a), quote(b))
     } else {
         String::from("?")
     };
@@ -1320,16 +1309,10 @@ pub fn describe_move_with(
 
 /// Renders an annotation in the `scene.list` format.
 pub fn describe(a: &Annotation) -> String {
-    describe_with(a, &crate::redact::Echo::default())
-}
-
-/// [`describe`] through the redact filter of the document `a` is in
-/// (t-167): on a document with a redact its range markers read `@«…»`
-/// (a marker may sit on the mask; quoting only the others would say which).
-pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
     let base = describe_shape(a);
     let base = match &a.markers {
-        Some(m) => format!("{base} @{}..@{}", echo.quote(&m.start), echo.quote(&m.end)),
+        // Markers match on the masked code: what they quote is on screen.
+        Some(m) => format!("{base} @{}..@{}", quote(&m.start), quote(&m.end)),
         None => base,
     };
     // The file it belongs to, when it is not the main one (t-105).
@@ -1337,6 +1320,11 @@ pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
         Some(f) => format!("{base} ({f})"),
         None => base,
     }
+}
+
+/// A target as a listing quotes it.
+fn quote(text: &str) -> String {
+    format!("«{text}»")
 }
 
 fn describe_shape(a: &Annotation) -> String {

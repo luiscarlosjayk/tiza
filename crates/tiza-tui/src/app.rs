@@ -1244,7 +1244,7 @@ impl App {
         doc.normalize_loaded()?;
         for a in &doc.annotations {
             doc.validate_annotation(a)
-                .map_err(|e| tiza_core::redact::Echo::new(&doc).error(e))?;
+                .map_err(|e| tiza_core::redact::unquoted(&doc, e))?;
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -1363,7 +1363,7 @@ impl App {
                 let mut ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
                     Error::Invalid(format!(
                         "annotation {id}: {}",
-                        tiza_core::redact::serde_message(&e, &v)
+                        tiza_core::error::serde_text(&e.to_string())
                     ))
                 })?;
                 // Sent back from the masked copy: on the real columns again.
@@ -1678,8 +1678,7 @@ impl App {
     /// current step (shifted through the patches); one that lost its anchor
     /// keeps its authoring coordinates and is marked `(unanchored)`.
     pub fn list_lines(&self) -> Vec<String> {
-        let echo = tiza_core::redact::Echo::quoting(&self.doc);
-        let describe = |a: &Annotation| tiza_core::protocol::describe_with(a, &echo);
+        let describe = |a: &Annotation| tiza_core::protocol::describe(a);
         if self.doc.moves.is_empty() {
             return self.doc.annotations.iter().map(describe).collect();
         }
@@ -1700,8 +1699,6 @@ impl App {
 
     /// `move.list` payload.
     pub fn move_list(&self) -> MoveList {
-        // Targets through the echo filter (t-167).
-        let echo = tiza_core::redact::Echo::new(&self.doc);
         MoveList {
             moves: self
                 .doc
@@ -1710,7 +1707,7 @@ impl App {
                 .enumerate()
                 .map(|(i, m)| MoveListed {
                     index: i + 1,
-                    summary: tiza_core::protocol::describe_move_with(i + 1, m, &echo),
+                    summary: tiza_core::protocol::describe_move(i + 1, m),
                     r#move: m.clone(),
                 })
                 .collect(),
@@ -2548,10 +2545,7 @@ impl App {
     pub fn selected_text(&self) -> Option<String> {
         let id = self.selected.as_ref()?;
         let a = self.doc.find_annotation(id)?;
-        Some(tiza_core::protocol::describe_with(
-            a,
-            &tiza_core::redact::Echo::quoting(&self.doc),
-        ))
+        Some(tiza_core::protocol::describe(a))
     }
 
     /// Quick edits on the selected annotation. Returns false if `key` is not one.
@@ -3402,11 +3396,7 @@ impl App {
         match result {
             Ok(msg) if !msg.is_empty() => self.info(msg),
             Ok(_) => {}
-            // The presenter's own targets are not repeated either (t-167).
-            Err(e) => {
-                let e = self.echo().written(command_words(input)).error(e);
-                self.error(e.to_string())
-            }
+            Err(e) => self.error(e.to_string()),
         }
         // Undo/redo bring annotations back as they were: no hint there.
         if !matches!(cmd, "undo" | "u" | "redo") {
@@ -4407,8 +4397,8 @@ impl App {
     /// what it was ([`RequestState`]), the undo entries it recorded are
     /// forgotten, and the document is saved again when the request had
     /// saved a half-done change. The crash hook leaves the terminal alone
-    /// meanwhile ([`answering_request`]); the panic's place and message,
-    /// through the redact filter, go to `panics.log` in Tiza's runtime
+    /// meanwhile ([`answering_request`]); the panic's place and message
+    /// (not on a document with redacts) go to `panics.log` in Tiza's runtime
     /// directory, and nothing of it is shown or returned (it may quote the
     /// document, t-167).
     pub fn handle_request(&mut self, req: Request) -> Response {
@@ -4454,13 +4444,19 @@ impl App {
 
     /// Appends one line about a request's panic to `panics.log` in Tiza's
     /// runtime directory (owner only, like the sockets): the time, the
-    /// version, the request, where it panicked and its message through the
-    /// redact filter. Returns the log's path when it was written.
+    /// version, the request, where it panicked and its message (not on a
+    /// document with redacts). Returns the log's path when it was written.
     fn log_request_panic(&self, what: &str) -> Option<PathBuf> {
         let (at, message) = LAST_PANIC
             .with(|p| p.borrow_mut().take())
             .unwrap_or_else(|| ("unknown place".into(), String::new()));
-        let message = self.echo().text(&message);
+        // A panic message may quote any text, the code under a mask too:
+        // on a document with redacts only where it panicked is logged.
+        let message = if tiza_core::redact::has_redacts(&self.doc) {
+            "(message not logged: the document has redacts)".to_string()
+        } else {
+            message
+        };
         let path = tiza_core::socket::runtime_dir().join("panics.log");
         tiza_core::socket::prepare_dir(&path).ok()?;
         let stamp = std::time::SystemTime::now()
@@ -4486,15 +4482,6 @@ impl App {
 
     fn answer(&mut self, req: Request) -> Response {
         let id = req.id.clone();
-        // What the agent wrote, for the error's echo filter (t-167).
-        let brings_redact = tiza_core::redact::json_has_redact(&req.params);
-        let written = if brings_redact || tiza_core::redact::has_redacts(&self.doc) {
-            let mut w = tiza_core::redact::json_written(&req.params);
-            w.push(req.method.clone());
-            w
-        } else {
-            Vec::new()
-        };
         let result = self.dispatch(&req.method, req.params);
         // Test hook (t-166), only with the `test-hooks` feature: a panic on
         // purpose after the request did its work, for the tests that a
@@ -4505,18 +4492,7 @@ impl App {
         }
         match result {
             Ok(v) => Response::ok(id, v),
-            // The same words whatever the request held (t-183 AC3).
-            Err(e) if e.to_string() == tiza_core::redact::AGENT_REFUSAL => {
-                Response::err(id, e.code(), e.to_string())
-            }
-            Err(e) => {
-                let e = self
-                    .echo()
-                    .redacted(brings_redact)
-                    .written(written)
-                    .error(e);
-                Response::err(id, e.code(), e.to_string())
-            }
+            Err(e) => Response::err(id, e.code(), e.to_string()),
         }
     }
 
@@ -4550,9 +4526,8 @@ impl App {
             return;
         }
         // The review list, the y/n/expiry messages and
-        // `supervise.status` all show this summary: on a document with
-        // redacts it quotes no target (t-167).
-        let summary = proposal_summary(&self.echo(), &req);
+        // `supervise.status` all show this summary.
+        let summary = proposal_summary(&req);
         let id = self.next_proposal;
         self.next_proposal += 1;
         self.proposals.push(Proposal {
@@ -4818,17 +4793,10 @@ impl App {
         }
     }
 
-    /// The filter for every error and echo about the open document
-    /// (t-167): on a document with redacts no target is quoted.
-    pub fn echo(&self) -> tiza_core::redact::Echo {
-        tiza_core::redact::Echo::new(&self.doc)
-    }
-
     pub fn supervise_status(&self) -> Value {
-        // A method the API does not have is the agent's text (t-167).
-        let quoting = tiza_core::redact::Echo::quoting(&self.doc).active();
+        // A method the API does not have is never repeated (t-167 R1).
         let method = |m: &str| -> String {
-            if quoting && !tiza_core::protocol::METHODS.iter().any(|(k, _)| *k == m) {
+            if !tiza_core::protocol::METHODS.iter().any(|(k, _)| *k == m) {
                 tiza_core::redact::ELIDED.into()
             } else {
                 m.to_string()
@@ -4853,8 +4821,8 @@ impl App {
             T::deserialize(&v).map_err(|e| {
                 Error::Invalid(format!(
                     "{}{}",
-                    tiza_core::redact::INVALID_PARAMETERS,
-                    tiza_core::redact::serde_message(&e, &v)
+                    tiza_core::error::INVALID_PARAMETERS,
+                    tiza_core::error::serde_text(&e.to_string())
                 ))
             })
         }
@@ -5195,7 +5163,6 @@ impl App {
             annotations: self.doc.annotations.len(),
             step: self.doc.step,
             max_step: self.doc.max_step(),
-            // Shown text (t-174): a title or id repeating a masked value.
             step_id: self
                 .doc
                 .named_step(self.doc.step)
@@ -5597,20 +5564,19 @@ pub fn shape_summary(a: &Annotation) -> String {
 }
 
 /// One line describing an agent request for the review overlay. It goes to
-/// the list, the y/n/expiry messages and `supervise.status` (t-167): on a
-/// document with redacts a `find` and a step id are quoted `«…»` and every
-/// other text the agent wrote (a label, an id) passes the copy rule of
-/// t-157 ([`tiza_core::redact::Echo`]).
-pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String {
+/// the list, the y/n/expiry messages and `supervise.status`. A closed value
+/// that is none of its names (a `type`, a method) is never repeated (t-167
+/// R1): it reads [`tiza_core::redact::ELIDED`].
+pub fn proposal_summary(req: &Request) -> String {
     let p = &req.params;
-    let raw = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
-    let s = |k: &str| echo.copies(&raw(k));
+    let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let quote = |t: &str| format!("«{t}»");
     let n = |k: &str| p.get(k).and_then(|v| v.as_u64());
     let place = |k: &str| -> String {
         match p.get(k) {
             Some(w) if w.is_object() => {
                 if let Some(f) = w.get("find").and_then(|v| v.as_str()) {
-                    echo.quote(f)
+                    quote(f)
                 } else if let Some(l) = w.get("line").and_then(|v| v.as_u64()) {
                     format!("L{l}")
                 } else {
@@ -5630,7 +5596,7 @@ pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String
     };
     match req.method.as_str() {
         "annotation.add" => {
-            let kind = raw("type");
+            let kind = s("type");
             let at = match kind.as_str() {
                 "box" | "callout" | "spotlight" => match (n("from_line"), n("to_line")) {
                     (Some(a), Some(b)) => format!("L{a}-{b}"),
@@ -5643,8 +5609,7 @@ pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String
             };
             let what = match kind.as_str() {
                 "mark" => format!("mark {}", s("kind")),
-                // A type no shape has is the agent's text (t-167).
-                k if echo.active() && !SHAPE_TYPES.contains(&k) => tiza_core::redact::ELIDED.into(),
+                k if !SHAPE_TYPES.contains(&k) => tiza_core::redact::ELIDED.into(),
                 k => k.to_string(),
             };
             format!("add {what} {at}{}", text("label") + &text("text"))
@@ -5670,10 +5635,6 @@ pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String
             "go to step {}",
             p.get("id")
                 .map(|v| match v.as_str() {
-                    // A step id the agent wrote is quoted like a target.
-                    Some(id) if echo.active() && !id.trim().chars().all(|c| c.is_ascii_digit()) => {
-                        echo.quote(id)
-                    }
                     Some(id) => id.to_string(),
                     None => v.to_string(),
                 })
@@ -5685,40 +5646,20 @@ pub fn proposal_summary(echo: &tiza_core::redact::Echo, req: &Request) -> String
             (Some(l), _, _) => format!("point at L{l}"),
             (None, Some(a), Some(b)) => format!("point at L{a}-{b}"),
             (None, Some(a), None) => format!("point at L{a}"),
-            _ => format!("point at {}", echo.quote(&s("find"))),
+            _ => format!("point at {}", quote(&s("find"))),
         },
         "pointer.clear" => "turn the pointer off".into(),
         "theme.set" => format!("theme {}", s("theme")),
         "follow.set" => "toggle follow mode".into(),
-        // A method the API does not have is the agent's text (t-167).
         other
-            if echo.active()
-                && !tiza_core::protocol::METHODS
-                    .iter()
-                    .any(|(m, _)| *m == other) =>
+            if !tiza_core::protocol::METHODS
+                .iter()
+                .any(|(m, _)| *m == other) =>
         {
             tiza_core::redact::ELIDED.into()
         }
         other => other.to_string(),
     }
-}
-
-/// The words of a `:` command line, as the redact filter reads what was
-/// written (t-167): the line, and its pieces split at blanks, quotes,
-/// `@`, `:` and `..` (`:box @'a'..@'b'`, `:hl 2:text`).
-fn command_words(input: &str) -> Vec<String> {
-    let mut out = vec![input.to_string()];
-    for w in input
-        .replace("..", " ")
-        .split(|c: char| c.is_whitespace() || "'\"`@:=".contains(c))
-        .filter(|w| !w.is_empty())
-    {
-        out.push(w.to_string());
-        // The numbers in a word (`5555-5555`, `04821`) are written too, as
-        // a message prints them (t-167 review).
-        out.extend(tiza_core::redact::digit_runs(w));
-    }
-    out
 }
 
 /// The `type`s of `annotation.add`.

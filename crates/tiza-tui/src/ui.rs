@@ -374,14 +374,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             if !app.doc.moves.is_empty() {
                 lines.push(String::new());
                 lines.push("Moves (code changes between steps):".into());
-                lines.extend(app.doc.moves.iter().enumerate().map(|(i, m)| {
-                    // Through the output filter (t-174).
-                    tiza_core::protocol::describe_move_with(
-                        i + 1,
-                        m,
-                        &tiza_core::redact::Echo::new(&app.doc),
-                    )
-                }));
+                lines.extend(
+                    app.doc
+                        .moves
+                        .iter()
+                        .enumerate()
+                        .map(|(i, m)| tiza_core::protocol::describe_move(i + 1, m)),
+                );
             }
             draw_overlay(frame, app, "Annotations", lines)
         }

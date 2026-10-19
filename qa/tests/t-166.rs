@@ -595,25 +595,22 @@ fn ac3_a_missing_linked_file_is_named_through_the_redact_filter() {
         assert_eq!(out.status.code(), Some(1), "an error, never a panic");
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
-    // A name that repeats nothing masked is named (its path).
+    // On a document with a redact no name is quoted (t-183 D7), whether it
+    // repeats a masked value or not: the move and step say which, and both
+    // errors read alike.
     let path = secret_demo_linking("missing-plain", "notes.sh");
-    let err = render_missing(&path, "notes.sh");
-    assert!(
-        err.contains("move #1, step 2: code.link")
-            && err.contains("could not read")
-            && err.contains("/notes.sh"),
-        "{err}"
-    );
-    pieces_absent("the error", &err);
-    // A name repeating a masked value is not: the move and step say which.
+    let plain = render_missing(&path, "notes.sh");
     let linked = format!("vault-{VALUE}.sh");
     let path = secret_demo("missing-secret");
-    let err = render_missing(&path, &linked);
-    assert!(
-        err.contains("move #1, step 2: code.link") && err.contains("could not read"),
-        "{err}"
-    );
-    pieces_absent("the error", &err);
+    let secret = render_missing(&path, &linked);
+    for err in [&plain, &secret] {
+        assert!(
+            err.contains("move #1, step 2: code.link «…»: could not read «…»"),
+            "{err}"
+        );
+        assert!(!err.contains("notes.sh"), "{err}");
+        pieces_absent("the error", err);
+    }
 }
 
 #[test]

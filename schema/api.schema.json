@@ -97,7 +97,7 @@
             "type": "integer"
           },
           "document": {
-            "description": "The `.tiza` this instance saves to (absolute, as shown text: a name\nrepeating a masked value is masked), when it exists on disk; absent\nbefore the first save. What a `.tape` of the live instance opens\n(t-166).",
+            "description": "The `.tiza` this instance saves to (absolute), when it exists on disk; absent\nbefore the first save. What a `.tape` of the live instance opens\n(t-166).",
             "type": [
               "string",
               "null"

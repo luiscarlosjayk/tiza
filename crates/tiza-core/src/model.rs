@@ -1308,8 +1308,9 @@ impl Document {
             Err(e) => {
                 self.code = self.base_code.clone();
                 self.source.first_line = self.base_first_line;
-                // The TUI shows it on a step change (`moves: …`, t-167).
-                Some(crate::redact::Echo::new(self).error(e))
+                // The TUI shows it on a step change (`moves: …`): the
+                // document's own targets (t-183 D7).
+                Some(crate::redact::unquoted(self, e))
             }
         }
     }
@@ -1333,54 +1334,12 @@ impl Document {
             with.base_first_line = with.source.first_line;
         }
         with.moves.push(m.clone());
-        // Its targets are matched on the masked code (t-117) and a «not
-        // found» does not repeat them (t-167).
-        moves::validate(&with, &with.moves, &with.annotations)
-            .map_err(|e| with.scrub_targets(&m, e))?;
+        // Its targets are matched on the masked code (t-117): a «not
+        // found» reads the same under a mask or nowhere.
+        moves::validate(&with, &with.moves, &with.annotations)?;
         *self = with;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
-    }
-
-    /// The target texts of a move (`find`, `after`, `before`,
-    /// `find_start`, `find_end`, a `select` or `rebind` `find`), with the
-    /// field each comes from.
-    pub(crate) fn move_targets(m: &Move) -> Vec<(&'static str, String)> {
-        let mut targets: Vec<(&'static str, String)> = Vec::new();
-        let mut put = |what: &'static str, t: &Option<String>| {
-            if let Some(t) = t {
-                targets.push((what, t.clone()));
-            }
-        };
-        match &m.action {
-            MoveAction::CodePatch(p) => {
-                put("find", &p.find);
-                put("after", &p.after);
-                put("before", &p.before);
-                put("find_start", &p.find_start);
-                put("find_end", &p.find_end);
-            }
-            MoveAction::Select(sel) => {
-                put("from.find", &sel.from.find);
-                put("to.find", &sel.to.find);
-            }
-            _ => {}
-        }
-        for spec in m.rebind.values() {
-            for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
-                put("rebind find", &w.find);
-            }
-        }
-        targets
-    }
-
-    /// An error about move `m` with its target texts taken out, on a
-    /// document with redacts (t-154): a «not found» for a target that is
-    /// under a mask must not hand the text back (and every target is
-    /// scrubbed alike, so the answer says nothing about the mask).
-    pub(crate) fn scrub_targets(&self, m: &Move, e: Error) -> Error {
-        let targets = Self::move_targets(m).into_iter().map(|(_, t)| t);
-        crate::redact::Echo::new(self).written(targets).error(e)
     }
 
     /// Deletes the move at `index` (0-based).
@@ -1731,9 +1690,9 @@ impl Document {
     /// characters become spaces), `step` within range, unique ids.
     pub fn normalize_loaded(&mut self) -> Result<(), Error> {
         // A load error names moves and markers by their target texts: on a
-        // document with redacts none is quoted (t-167).
+        // document with redacts none is quoted (t-183 D7).
         self.normalize_loaded_raw()
-            .map_err(|e| crate::redact::Echo::loading(self).error(e))
+            .map_err(|e| crate::redact::unquoted(self, e))
     }
 
     fn normalize_loaded_raw(&mut self) -> Result<(), Error> {

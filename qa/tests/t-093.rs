@@ -158,7 +158,7 @@ fn ac5_mcp_rejects_unknown_fields() {
         r2["result"]["content"][0]["text"]
             .as_str()
             .unwrap_or("")
-            .contains("unknown field «…», expected one of `id`"),
+            .contains("unknown field `span`, expected one of `id`"),
         "{r2}"
     );
     assert!(

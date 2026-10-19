@@ -213,8 +213,9 @@ fn ac3_errors_leave_the_document_untouched() {
     assert!(!out.status.success());
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(
-        // The unknown field is not named (t-167 review); the valid ones are.
-        err.contains("unknown field «…», expected one of `step`")
+        // The unknown field is named, and the valid ones (t-183 named it
+        // again: t-167 review had taken it out).
+        err.contains("unknown field `stepp`, expected one of `step`")
             && err.contains("invalid_argument"),
         "{err}"
     );
