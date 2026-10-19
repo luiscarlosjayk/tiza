@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::error::Error;
 use crate::highlight::detect_language;
-use crate::model::{CodeSource, Document, SCHEMA_VERSION};
+use crate::model::{CodeSource, Document, SCHEMA_VERSION, Shape};
 
 pub const EXT: &str = "tiza";
 
@@ -460,6 +460,62 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
     }
 }
 
+/// The annotations whose columns run past their line in the document as
+/// it is written (a move that rewrote a masked line it could not follow is
+/// saved with the rest of that line masked, so the line is shorter): cut
+/// to the line, so the reopened file still checks clean (t-174). The
+/// redact notice says so beforehand.
+fn clip_to_saved(doc: &mut Document, base_dir: Option<&Path>) {
+    let Ok(json) = serde_json::to_string(&*doc) else {
+        return;
+    };
+    let Ok(saved) = parse_document(&json, base_dir) else {
+        return;
+    };
+    let mut views: std::collections::BTreeMap<u32, Document> = Default::default();
+    for a in doc.annotations.iter_mut() {
+        if !matches!(
+            a.shape,
+            Shape::Highlight { .. } | Shape::Mark { .. } | Shape::Arrow { .. }
+        ) {
+            continue;
+        }
+        let v = views
+            .entry(a.step)
+            .or_insert_with(|| saved.view_at(a.step).doc);
+        if v.find_annotation(&a.id).is_none() {
+            continue;
+        }
+        let len = |l: u32| -> Option<u32> {
+            v.line_text(l).map(|t| {
+                unicode_segmentation::UnicodeSegmentation::graphemes(t, true).count() as u32
+            })
+        };
+        match &mut a.shape {
+            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+                if let Some(n) = len(span.line)
+                    && n > 0
+                    && span.end > n
+                {
+                    span.end = n;
+                    span.start = span.start.min(n - 1);
+                }
+            }
+            Shape::Arrow { from, to, .. } => {
+                for p in [from, to] {
+                    if let Some(n) = len(p.line)
+                        && n > 0
+                        && p.col >= n
+                    {
+                        p.col = n - 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Saves atomically (tmp + rename), as editors do.
 pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     let mut doc = doc.clone();
@@ -495,6 +551,7 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
         }
         filter.shown_doc(&mut doc);
         doc.code_src = CodeSource::Embedded(base);
+        clip_to_saved(&mut doc, path.parent());
     }
     let json = serde_json::to_string_pretty(&doc)?;
     // The save is an atomic replace (temp file + rename), which would walk

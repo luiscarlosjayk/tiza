@@ -1436,6 +1436,7 @@ impl Document {
         };
         let shown = p.shown.file.clone();
         let mut out = Vec::new();
+        let mut view: Option<Document> = None;
         for (a, r) in self.annotations.iter().zip(&p.redacts) {
             let Some(r) = r else { continue };
             let Some(by) = r.by_move else { continue };
@@ -1483,12 +1484,35 @@ impl Document {
                     _ => None,
                 };
                 if let Some(place) = place {
+                    // With embedded code the masked rest of the line is what
+                    // gets saved: an annotation past the mask is cut to it
+                    // (t-174), and said here, before it happens.
+                    let clipped = matches!(self.code_src, CodeSource::Embedded(_)) && {
+                        let v = view.get_or_insert_with(|| self.view_at(step).doc);
+                        v.annotations.iter().any(|x| {
+                            x.file == a.file
+                                && r.spans.iter().any(|sp| match &x.shape {
+                                    Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+                                        span.line == sp.line && span.end > sp.start
+                                    }
+                                    Shape::Arrow { from, to, .. } => [from, to]
+                                        .iter()
+                                        .any(|p| p.line == sp.line && p.col >= sp.start),
+                                    _ => false,
+                                })
+                        })
+                    };
                     out.push((
                         a.id.clone(),
                         format!(
-                            "redact {} could not follow its text through move #{}: masking {place} — fix it before recording",
+                            "redact {} could not follow its text through move #{}: masking {place} — fix it before recording{}",
                             crate::redact::shown(&a.id, self),
-                            lost + 1
+                            lost + 1,
+                            if clipped {
+                                "; annotations past the mask are clipped when saved"
+                            } else {
+                                ""
+                            }
                         ),
                     ));
                 }

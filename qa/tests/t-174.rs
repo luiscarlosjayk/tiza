@@ -2033,3 +2033,103 @@ fn r3_4_masked_style_names_stay_unique() {
     let txt = String::from_utf8_lossy(&txt).into_owned();
     assert!(txt.contains("★ first") && txt.contains("◆ second"), "{txt}");
 }
+
+// ---------- review round 4 ----------
+
+fn rewritten_line() -> Value {
+    json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# a", "# b", format!("TOKEN={VALUE} # tail")],
+        "annotations": [
+            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 3, "start": 6, "end": 16}},
+            {"id": "h1", "step": 2, "type": "highlight", "span": {"line": 3, "start": 19, "end": 23}, "label": "the tail"},
+            {"id": "a1", "step": 2, "type": "arrow", "from": {"line": 3, "col": 20}, "to": {"line": 1, "col": 0}}
+        ],
+        "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "API=newvalue1234 # tail2"}]
+    })
+}
+
+#[test]
+fn r4_1_annotations_past_a_mask_that_could_not_follow_are_clipped_and_said() {
+    let dir = scratch("t174-r4-1");
+    let path = write(&dir, "rewrite", &rewritten_line());
+    let d = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(d, path.clone(), dir.join("live.sock"));
+    live.with(|a| a.set_step(0));
+    live.keys(&[crossterm::event::KeyCode::Char('n')]);
+    let alerts = live.with(|a| a.redact_alerts.clone()).join("\n");
+    assert!(
+        alerts.contains("could not follow its text through move #1")
+            && alerts.contains(
+                "fix it before recording; annotations past the mask are clipped when saved"
+            ),
+        "{alerts}"
+    );
+    assert_clean("the alert", &alerts);
+    live.api_ok("style.set", json!({"name": "unused", "glyph": "*"}));
+    drop(live);
+    let out = tiza(&["check", path.to_str().unwrap()]);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        out.status.success(),
+        "the reopened file checks clean:\n{report}"
+    );
+    assert!(!report.contains("does not fit"), "{report}");
+    assert_clean("the saved .tiza", &std::fs::read_to_string(&path).unwrap());
+    let (_, err) = out_of(&[
+        "render",
+        path.to_str().unwrap(),
+        "--all-steps",
+        "--format",
+        "ansi",
+        "--out",
+        &format!("{}/", dir.join("o").display()),
+    ]);
+    assert!(!err.contains("not drawn"), "{err}");
+}
+
+#[test]
+fn r4_2_an_unknown_kind_never_lands_on_a_masked_style() {
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# demo", format!("KEY={WORDY}"), "A=1", "B=2"],
+        "styles": {"beef": {"glyph": "★", "legend": "first"}},
+        "annotations": [
+            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 4, "end": 20}},
+            {"id": "m1", "step": 1, "type": "mark", "kind": "beef", "span": {"line": 3, "start": 0, "end": 3}},
+            {"id": "m2", "step": 1, "type": "mark", "kind": "ffee-x", "span": {"line": 4, "start": 0, "end": 3}}
+        ]
+    });
+    let live = live_of(&doc, "t174-r4-2");
+    live.with(|a| a.set_step(1));
+    let text = live.api_ok("render.text", json!({"width": 100}))["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(text.matches("★ first").count(), 1, "{text}");
+    assert_no_wordy("render.text", &text);
+    let shown = live.api_ok("scene.get", json!({"as_shown": true}));
+    let kinds: Vec<String> = shown["document"]["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|a| a["kind"].as_str().map(String::from))
+        .collect();
+    assert_eq!(kinds.len(), 2);
+    assert_ne!(kinds[0], kinds[1], "{kinds:?}");
+    let dir = scratch("t174-r4-2-save");
+    let path = autosave(&dir, "kinds", &doc);
+    let (txt, _) = out_of(&[
+        "render",
+        path.to_str().unwrap(),
+        "--format",
+        "txt",
+        "--step",
+        "1",
+    ]);
+    assert_eq!(String::from_utf8_lossy(&txt).matches("★ first").count(), 1);
+}

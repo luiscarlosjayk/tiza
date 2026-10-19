@@ -1644,11 +1644,23 @@ impl Echo {
     /// The masked, unique name of every style of `doc` whose name shares
     /// text with a masked value (built-in kinds stay).
     pub fn style_names(&self, doc: &Document) -> std::collections::HashMap<String, String> {
+        // A mark's `kind` that names no style and no built-in kind is in the
+        // same namespace: masked, it must not land on a masked style.
+        let unknown = doc.annotations.iter().filter_map(|a| match &a.shape {
+            Shape::Mark { kind, .. }
+                if !doc.styles.contains_key(kind.trim())
+                    && crate::model::builtin_kind(kind).is_none() =>
+            {
+                Some(kind.trim())
+            }
+            _ => None,
+        });
         self.unique_ids(
             doc.styles
                 .keys()
                 .map(String::as_str)
-                .filter(|k| crate::model::builtin_kind(k).is_none()),
+                .filter(|k| crate::model::builtin_kind(k).is_none())
+                .chain(unknown),
         )
     }
 
