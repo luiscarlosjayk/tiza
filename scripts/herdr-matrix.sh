@@ -5,8 +5,9 @@
 # step on a machine with Herdr (Luis's Mac), never part of `cargo test`.
 #
 #   scripts/herdr-matrix.sh              # capture into qa/herdr/latest/, print sizes
-#   scripts/herdr-matrix.sh --check      # capture and diff with qa/herdr/*.txt (exit 1 on changes)
-#   scripts/herdr-matrix.sh --update     # capture and rewrite qa/herdr/*.txt on purpose
+#   scripts/herdr-matrix.sh --check      # capture and diff with qa/herdr/*.{txt,ansi} (exit 1 on changes)
+#   scripts/herdr-matrix.sh --update     # capture and rewrite qa/herdr/*.{txt,ansi} on purpose
+#   scripts/herdr-matrix.sh --normalize F.ansi   # print what --check compares of an ansi capture (no Herdr)
 #
 # Options:
 #   --file DOC        document to open (default: examples/ownership.rs.tiza, only read)
@@ -36,7 +37,19 @@
 # target (a pane whose frame differs), the pane is resized by the difference.
 # It waits for a stable first frame and saves `herdr pane read --source
 # visible --format text` as <snapshots>/<case>-<cols>x<rows>.txt, with the
-# size Tiza sees (Herdr's rect is printed next to it).
+# size Tiza sees (Herdr's rect is printed next to it), and `--format ansi`
+# next to it as <case>-<cols>x<rows>.ansi (t-158), the colours and
+# attributes the text capture loses.
+#
+# --check compares the .txt byte for byte and the .ansi by meaning: both
+# sides are reduced to the text of each row ("T row|text") and the runs of
+# one style ("S row:first-last style", terminal cells from 1, style as
+# fg=/bg=/ul= colours plus attributes; see ANSI_PY), so the same frame
+# written with other bytes (`\e[m` for `\e[0m`, `38:2::r:g:b` for
+# `38;2;r;g;b`, combined or separate sequences, `\e(B` or other non-SGR
+# escapes, CRLF, palette colours 16-255 as RGB) is no change. A change is
+# reported as `text differs` (the .txt), `text differs in the ansi capture`
+# (same .txt, other text in the .ansi) or `style only`.
 #
 # Only the herdr 0.9.5 CLI is used: tab create/close and pane layout/list/
 # split/resize/run/read/close. Everything that talks to Herdr goes through
@@ -52,6 +65,7 @@ TIZA_BIN="${TIZA:-}"
 BASE=""
 SNAPS="$ROOT/qa/herdr"
 OUT=""
+NORMALIZE=""
 TIMEOUT="${TIZA_HERDR_TIMEOUT:-15}"   # seconds per wait (socket up, first frame)
 TOL=1                                 # cells a pane may miss its target by
 LABEL="tiza-matrix"
@@ -70,6 +84,7 @@ while [ $# -gt 0 ]; do
     --base) BASE="${2:?--base needs a pane id}"; shift ;;
     --snapshots) SNAPS="${2:?--snapshots needs a directory}"; shift ;;
     --out) OUT="${2:?--out needs a directory}"; shift ;;
+    --normalize) NORMALIZE="${2:?--normalize needs an .ansi file}"; shift ;;
     -h | --help)
         sed -n '2,/^set -euo/p' "$0" | sed '$d; s/^# \{0,1\}//'
         exit 0
@@ -79,9 +94,10 @@ while [ $# -gt 0 ]; do
     shift
 done
 [ -n "$OUT" ] || OUT="$SNAPS/latest"
-[ -f "$DOC" ] || die "document not found: $DOC"
+[ -z "$NORMALIZE" ] || [ -f "$NORMALIZE" ] || die "file not found: $NORMALIZE"
+[ -n "$NORMALIZE" ] || [ -f "$DOC" ] || die "document not found: $DOC"
 DOC="$(cd "$(dirname "$DOC")" && pwd)/$(basename "$DOC")"
-command -v python3 >/dev/null || die "python3 is needed to read Herdr's and Tiza's JSON"
+command -v python3 >/dev/null || die "python3 is needed (Herdr's and Tiza's JSON, the ansi captures)"
 
 # The matrix: case, target cols, target rows of the terminal Tiza sees ("max"
 # = as large as the base pane allows), mode. 75x50 is Zed split in half; the
@@ -122,7 +138,10 @@ herdr() {
 # `layout` gives the rects of one tab's panes, `close` gives the space back
 # to the parent, `run` starts the command in a Python pty of the pane's
 # terminal size that follows later resizes, `read` is the live instance's
-# text render. Every call is appended to $FAKE/calls.
+# text render (`--format ansi`: its ansi render, with CRLF line ends as
+# Herdr prints them). Every call is appended to $FAKE/calls.
+# TIZA_HERDR_FAKE_SGR=other writes that ansi render with other SGR bytes for
+# the same styles (see SGR_OTHER_PY), as another Herdr version might.
 # TIZA_HERDR_FAKE_FAIL_READ=1 makes `read` fail; TIZA_HERDR_FAKE_TAB_OUTPUT=none
 # makes `tab create` print nothing (the script must find the tab another way).
 fake_herdr() {
@@ -150,10 +169,17 @@ fake_herdr() {
         local pane="$1"
         [ -d "$FAKE/panes/$pane" ] || { echo "error: pane not found: $pane" >&2; return 1; }
         [ "${TIZA_HERDR_FAKE_FAIL_READ:-0}" != 1 ] || { echo "error: read failed (fake)" >&2; return 1; }
-        local sock
+        local sock format=text
+        case " $* " in *" --format ansi "*) format=ansi ;; esac
         sock=$(sed -n 's/.*--socket \([^ ]*\).*/\1/p' "$FAKE/panes/$pane/cmd" 2>/dev/null || true)
         [ -n "$sock" ] || return 0
-        "$TIZA_BIN" render --socket "$sock" --format txt --out - 2>/dev/null || true
+        if [ "$format" = text ]; then
+            "$TIZA_BIN" render --socket "$sock" --format txt --out - 2>/dev/null || true
+        elif [ "${TIZA_HERDR_FAKE_SGR:-}" = other ]; then
+            "$TIZA_BIN" render --socket "$sock" --format ansi --out - 2>/dev/null | python3 -c "$SGR_OTHER_PY" || true
+        else
+            "$TIZA_BIN" render --socket "$sock" --format ansi --out - 2>/dev/null | awk '{ printf "%s\r\n", $0 }' || true
+        fi
         ;;
     "pane close")
         local pane="$1"
@@ -386,6 +412,157 @@ try:
 except (OSError, ChildProcessError):
     pass
 '
+
+# The fake `pane read --format ansi` of TIZA_HERDR_FAKE_SGR=other: the same
+# styles in other bytes -- foregrounds as `38:2::r:g:b`, neighbouring SGR
+# sequences merged into one, `\e[0m` as `\e[m`, CRLF line ends.
+SGR_OTHER_PY='
+import re, sys
+s = sys.stdin.read()
+s = re.sub(r"\x1b\[38;2;(\d+);(\d+);(\d+)m", lambda m: "\x1b[38:2::%s:%s:%sm" % m.groups(), s)
+merge = re.compile(r"\x1b\[([0-9;:]+)m\x1b\[([0-9;:]+)m")
+while merge.search(s):
+    s = merge.sub(lambda m: "\x1b[%s;%sm" % m.groups(), s)
+s = s.replace("\x1b[0m", "\x1b[m").replace("\n", "\r\n")
+sys.stdout.write(s)
+'
+
+# --------------------------------------------------------- ansi captures ----
+
+# An ansi capture → its meaning, the same however the SGR bytes are written:
+# "T row|text" per row (trailing blanks and blank rows at the end trimmed, as
+# in the .txt) and "S row:first-last style" per run of cells in one style
+# that is not the default, columns counted in terminal cells from 1 (a wide
+# character takes two). Colours are fg=/bg=/ul= #rrggbb, or idxN for the 16
+# palette colours the terminal's theme decides; 16-255 become their xterm
+# RGB. A blank cell keeps only what shows on it: its background, or all of
+# its style under reverse, underline, strike or overline. An SGR code it does
+# not know stays as sgrN until a reset, so a stray one shows up as a style
+# change. Every other escape sequence (CSI, OSC, DCS/APC/PM/SOS strings,
+# charset designations such as `\e(B`) and C0 control is dropped whole.
+ANSI_PY='
+import re, sys, unicodedata
+data = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+data = data.replace("\r\n", "\n").replace("\r", "")
+def xterm(n):
+    if n < 232:
+        n -= 16
+        level = lambda v: 0 if v == 0 else 55 + 40 * v
+        return "#%02x%02x%02x" % (level(n // 36), level(n // 6 % 6), level(n % 6))
+    g = 8 + 10 * (n - 232)
+    return "#%02x%02x%02x" % (g, g, g)
+def idx(n):
+    return "idx%d" % n if n < 16 else xterm(n)
+def num(s):
+    return int(s) if s.isdigit() else 0
+def color(kind, vals):
+    # vals after 38/48/58 and the kind: [n] for 5; [r, g, b] for 2, or with
+    # colons [colour space, r, g, b, ...] (ITU T.416) when there are more.
+    if kind == "5" and vals:
+        return idx(num(vals[0]) % 256)
+    if kind == "2" and len(vals) >= 3:
+        rgb = vals[:3] if len(vals) == 3 else vals[1:4]
+        return "#%02x%02x%02x" % tuple(num(v) % 256 for v in rgb)
+    return None
+UNDERLINES = ("underline", "underline-double", "underline-curly", "underline-dotted", "underline-dashed")
+ON = {1: "bold", 2: "dim", 3: "italic", 4: "underline", 5: "blink", 6: "blink",
+      7: "reverse", 8: "hidden", 9: "strike", 21: "underline-double", 53: "overline"}
+OFF = {22: ("bold", "dim"), 23: ("italic",), 24: UNDERLINES, 25: ("blink",),
+       27: ("reverse",), 28: ("hidden",), 29: ("strike",), 55: ("overline",)}
+SLOT = {38: "fg", 48: "bg", 58: "ul"}
+def underline(st, name):
+    st["a"].difference_update(UNDERLINES)
+    if name:
+        st["a"].add(name)
+def sgr(params, st):
+    ps = params.split(";") if params else ["0"]
+    i = 0
+    while i < len(ps):
+        p = ps[i]
+        i += 1
+        if ":" in p:
+            sub = p.split(":")
+            head = num(sub[0])
+            if head in SLOT:
+                st["c"][SLOT[head]] = color(sub[1] if len(sub) > 1 else "", sub[2:])
+            elif head == 4 and len(sub) == 2 and num(sub[1]) < len(UNDERLINES) + 1:
+                underline(st, ([None] + list(UNDERLINES))[num(sub[1])])
+            else:
+                st["a"].add("sgr" + p)
+            continue
+        n = num(p)
+        if n == 0:
+            st["c"].clear()
+            st["a"].clear()
+        elif n in SLOT:
+            kind = ps[i] if i < len(ps) else ""
+            take = 2 if kind == "5" else 4 if kind == "2" else 1
+            st["c"][SLOT[n]] = color(kind, ps[i + 1:i + take])
+            i += take
+        elif n in (4, 21):
+            underline(st, ON[n])
+        elif n in ON:
+            st["a"].add(ON[n])
+        elif n in OFF:
+            st["a"].difference_update(OFF[n])
+        elif n in (39, 49, 59):
+            st["c"].pop({39: "fg", 49: "bg", 59: "ul"}[n], None)
+        elif 30 <= n <= 37 or 90 <= n <= 97:
+            st["c"]["fg"] = idx(n - 30 if n < 90 else n - 82)
+        elif 40 <= n <= 47 or 100 <= n <= 107:
+            st["c"]["bg"] = idx(n - 40 if n < 100 else n - 92)
+        else:
+            st["a"].add("sgr%d" % n)
+SHOWS_ON_BLANK = {"reverse", "strike", "overline"}.union(UNDERLINES)
+def key(st, ch):
+    c, a = dict(st["c"]), set(st["a"])
+    if ch == " " and not a & SHOWS_ON_BLANK:
+        c, a = {"bg": c.get("bg")}, set()
+    cs = ["%s=%s" % (k, v) for k, v in sorted(c.items()) if v]
+    return " ".join(cs + sorted(a))
+def width(ch):
+    if unicodedata.combining(ch):
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1
+token = re.compile(
+    r"\x1b\[([0-?]*)([ -/]*)([@-~])"            # CSI
+    r"|\x1b\][^\x07\x1b\n]*(?:\x07|\x1b\\)?"    # OSC, terminated or not
+    r"|\x1b[PX^_][^\x1b]*(?:\x1b\\)?"           # DCS, SOS, PM, APC strings
+    r"|\x1b[ -/]*[0-~]?"                        # other escapes: \e(B, \e7, \e=
+    r"|\n|[\x00-\x09\x0b-\x1a\x1c-\x1f\x7f]|[^\x1b\n]")
+st = {"c": {}, "a": set()}
+rows, row = [], []
+for m in token.finditer(data):
+    t = m.group(0)
+    if t == "\n":
+        rows.append(row)
+        row = []
+    elif m.group(3) == "m" and not m.group(2) and not m.group(1).startswith(("<", "=", ">", "?")):
+        sgr(m.group(1), st)
+    elif not t.startswith("\x1b") and (t >= " " and t != "\x7f"):
+        row.append((t, key(st, t), width(t)))
+rows.append(row)
+text = ["".join(c for c, _, _ in r).rstrip() for r in rows]
+while text and not text[-1]:
+    text.pop()
+for n, t in enumerate(text, 1):
+    print("T %d|%s" % (n, t))
+for n, r in enumerate(rows, 1):
+    runs, col = [], 1
+    for _, k, w in r:
+        if w == 0:
+            continue
+        if runs and runs[-1][2] == k:
+            runs[-1][1] = col + w - 1
+        else:
+            runs.append([col, col + w - 1, k])
+        col += w
+    for first, last, k in runs:
+        if k:
+            print("S %d:%d-%d %s" % (n, first, last, k))
+'
+
+[ -z "$NORMALIZE" ] || { python3 -c "$ANSI_PY" "$NORMALIZE"; exit 0; }
 
 # ----------------------------------------------------- Herdr is reachable ----
 
@@ -662,17 +839,23 @@ tiza_size() {
 }
 
 # wait_frame PANE → the visible text once two reads in a row agree (and are
-# not blank), with trailing blanks trimmed.
+# not blank), with trailing blanks trimmed; the ansi read taken with each
+# text read must agree too, and the last one is left in $WORK/frame.ansi.
 wait_frame() {
     local end=$((SECONDS + TIMEOUT)) prev="" cur
+    rm -f "$WORK/frame.ansi"
     while [ "$SECONDS" -le "$end" ]; do
         cur="$(herdr pane read "$1" --source visible --format text | sed 's/[[:space:]]*$//')" ||
             die "herdr pane read $1 failed"
-        if [ -n "$(printf '%s' "$cur" | tr -d '[:space:]')" ] && [ "$cur" = "$prev" ]; then
+        herdr pane read "$1" --source visible --format ansi >"$WORK/next.ansi" ||
+            die "herdr pane read $1 --format ansi failed"
+        if [ -n "$(printf '%s' "$cur" | tr -d '[:space:]')" ] && [ "$cur" = "$prev" ] &&
+            cmp -s "$WORK/next.ansi" "$WORK/frame.ansi"; then
             printf '%s\n' "$cur"
             return 0
         fi
         prev="$cur"
+        mv "$WORK/next.ansi" "$WORK/frame.ansi"
         sleep 0.2
     done
     die "no stable frame in pane $1 within ${TIMEOUT}s"
@@ -735,7 +918,7 @@ echo "herdr frame: ${FC}x${FR} cells (a ${prect% *}x${prect#* } pane, Tiza sees 
 # ------------------------------------------------------------------ run ----
 
 mkdir -p "$OUT"
-rm -f "$OUT"/*.txt
+rm -f "$OUT"/*.txt "$OUT"/*.ansi
 printf '%-13s %-8s %-8s %-8s %s\n' case target tiza herdr file
 CAPTURED=""
 while read -r name tc tr mode; do
@@ -795,6 +978,7 @@ while read -r name tc tr mode; do
     real="${size% *}x${size#* }"
     file="$name-$tiza.txt"
     printf '%s\n' "$frame" >"$OUT/$file"
+    cp "$WORK/frame.ansi" "$OUT/${file%.txt}.ansi"
     target="${tc}x${tr}"
     [ "$tr" = max ] && target=max
     printf '%-13s %-8s %-8s %-8s %s\n' "$name" "$target" "$tiza" "$real" "$OUT/$file"
@@ -812,8 +996,9 @@ capture)
 update)
     mkdir -p "$SNAPS"
     for file in $CAPTURED; do
-        rm -f "$SNAPS/${file%-*}"-[0-9]*x[0-9]*.txt
+        rm -f "$SNAPS/${file%-*}"-[0-9]*x[0-9]*.txt "$SNAPS/${file%-*}"-[0-9]*x[0-9]*.ansi
         cp "$OUT/$file" "$SNAPS/$file"
+        cp "$OUT/${file%.txt}.ansi" "$SNAPS/${file%.txt}.ansi"
     done
     echo "updated $SNAPS"
     ;;
@@ -832,9 +1017,27 @@ check)
             echo "CHANGED $name: size ${old#"$name"-} → ${file#"$name"-}"
             changed="$changed $name"
         elif ! diff -u "$SNAPS/$old" "$OUT/$file" >"$WORK/diff"; then
-            echo "CHANGED $name: frame differs ($(grep -c '^[-+][^-+]' "$WORK/diff" || true) lines)"
+            echo "CHANGED $name: text differs ($(grep -c '^[-+][^-+]' "$WORK/diff" || true) lines)"
             sed -n '1,40p' "$WORK/diff"
             changed="$changed $name"
+        elif [ ! -f "$SNAPS/${old%.txt}.ansi" ]; then
+            echo "CHANGED $name: no ${old%.txt}.ansi in $SNAPS (run --update)"
+            changed="$changed $name"
+        else
+            # Same text: the ansi captures by meaning, not by bytes.
+            python3 -c "$ANSI_PY" "$SNAPS/${old%.txt}.ansi" >"$WORK/old.norm"
+            python3 -c "$ANSI_PY" "$OUT/${file%.txt}.ansi" >"$WORK/new.norm"
+            if ! diff -u "$WORK/old.norm" "$WORK/new.norm" >"$WORK/diff"; then
+                if grep -q '^[-+]T ' "$WORK/diff"; then
+                    rows=$(grep '^[-+]T ' "$WORK/diff" | sed 's/^.T \([0-9]*\).*/\1/' | sort -u | wc -l | tr -d ' ')
+                    echo "CHANGED $name: text differs in the ansi capture ($rows rows)"
+                else
+                    rows=$(grep '^[-+]S ' "$WORK/diff" | sed 's/^.S \([0-9]*\):.*/\1/' | sort -u | wc -l | tr -d ' ')
+                    echo "CHANGED $name: style only ($rows rows; lines are S row:first-last style)"
+                fi
+                grep '^[-+][TS] ' "$WORK/diff" | sed -n '1,40p'
+                changed="$changed $name"
+            fi
         fi
     done
     if [ -n "$changed" ]; then

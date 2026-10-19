@@ -18,6 +18,17 @@
 //!   not installed or not running.
 //! - AC5 Documented in qa/README.md as a QA-round step (not `cargo test`).
 //!
+//! t-158 adds the ansi side:
+//! - AC1 Each case also saves `<case>-<cols>x<rows>.ansi` from `herdr pane
+//!   read --source visible --format ansi`.
+//! - AC2 `--check` diffs it too and says whether a change is text or only
+//!   style; it compares normalised SGR (text per row and runs of one style),
+//!   not bytes, since Herdr may write the same style differently between
+//!   versions.
+//! - AC3 The fake mode simulates it (`tiza render --format ansi`, CRLF line
+//!   ends as Herdr prints them, and `TIZA_HERDR_FAKE_SGR=other` for the same
+//!   styles in other bytes) and this file covers it.
+//!
 //! Herdr's `pane layout` rect counts the pane's frame (Luis's QA on
 //! 2026-10-18 17:55: Tiza always saw 3 columns and 2 rows less than the rect,
 //! so the b9f34fa version tested 77×22 instead of 80×24). The script measures
@@ -253,37 +264,62 @@ fn assert_cleaned(fake: &Path) {
     );
 }
 
-fn snapshot_names(dir: &Path) -> Vec<String> {
+/// The files in `dir` with extension `ext` (`txt` or `ansi`), sorted.
+fn snapshot_names(dir: &Path, ext: &str) -> Vec<String> {
     let mut v: Vec<String> = std::fs::read_dir(dir)
         .unwrap()
         .filter_map(|e| {
             let n = e.unwrap().file_name().into_string().unwrap();
-            n.ends_with(".txt").then_some(n)
+            n.ends_with(&format!(".{ext}")).then_some(n)
         })
         .collect();
     v.sort();
     v
 }
 
-fn expected_names() -> Vec<String> {
+fn expected_names(ext: &str) -> Vec<String> {
     let mut v: Vec<String> = CASES
         .iter()
-        .map(|(c, s)| format!("{c}-{}.txt", wxh(*s)))
+        .map(|(c, s)| format!("{c}-{}.{ext}", wxh(*s)))
         .collect();
     v.sort();
     v
 }
 
-/// A copy of the example (document + source) whose step-1 label is changed.
-fn changed_example(dir: &Path) -> PathBuf {
-    let d = dir.join("doc");
+/// A copy of the example (document + source) in `dir/sub` with `from`
+/// replaced by `to` in the document.
+fn changed_copy(dir: &Path, sub: &str, from: &str, to: &str) -> PathBuf {
+    let d = dir.join(sub);
     std::fs::create_dir_all(&d).unwrap();
     std::fs::copy(example("ownership.rs"), d.join("ownership.rs")).unwrap();
     let doc = std::fs::read_to_string(example("ownership.rs.tiza")).unwrap();
-    assert!(doc.contains("s is born"), "the example's label moved");
+    assert!(doc.contains(from), "the example has no {from}");
     let p = d.join("ownership.rs.tiza");
-    std::fs::write(&p, doc.replace("s is born", "s is created")).unwrap();
+    std::fs::write(&p, doc.replace(from, to)).unwrap();
     p
+}
+
+/// A copy of the example whose step-1 label is changed.
+fn changed_example(dir: &Path) -> PathBuf {
+    changed_copy(dir, "doc", "s is born", "s is created")
+}
+
+/// The case names in the `panes that changed:` summary, sorted.
+fn changed_cases(r: &Run) -> Vec<String> {
+    let line = r
+        .stdout
+        .lines()
+        .find_map(|l| l.strip_prefix("panes that changed:"))
+        .unwrap_or_else(|| panic!("no summary:\n{}", r.stdout));
+    let mut v: Vec<String> = line.split_whitespace().map(str::to_owned).collect();
+    v.sort();
+    v
+}
+
+fn all_cases() -> Vec<String> {
+    let mut v: Vec<String> = CASES.iter().map(|(c, _)| (*c).to_owned()).collect();
+    v.sort();
+    v
 }
 
 /// Test steps 1–3: `--update` works in a new tab, measures Herdr's frame,
@@ -299,7 +335,18 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
     assert!(r.stdout.contains("herdr frame: 3x2 cells"), "{}", r.stdout);
     assert_sizes(&r, (3, 2), no_extra);
-    assert_eq!(snapshot_names(&dir.join("snaps")), expected_names());
+    assert_eq!(
+        snapshot_names(&dir.join("snaps"), "txt"),
+        expected_names("txt")
+    );
+    // t-158 AC1: the ansi capture next to each text one, CRLF as Herdr's.
+    assert_eq!(
+        snapshot_names(&dir.join("snaps"), "ansi"),
+        expected_names("ansi")
+    );
+    let ansi = std::fs::read_to_string(dir.join("snaps/vt100-80x24.ansi")).unwrap();
+    assert!(ansi.contains("\x1b[") && ansi.contains("\r\n"), "{ansi:?}");
+    assert!(ansi.contains("s is born"), "{ansi:?}");
     // The probe pane, then each case split off the tab's root pane p1 at
     // target + frame: 1 − 83/200 for vt100's columns, 1 − 26/60 for its rows,
     // so no resize is needed at all.
@@ -355,16 +402,13 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
         &[],
     );
     assert_eq!(r.code, Some(1), "{}\n{}", r.stdout, r.stderr);
-    let changed = r
-        .stdout
-        .lines()
-        .find_map(|l| l.strip_prefix("panes that changed:"))
-        .unwrap_or_else(|| panic!("no summary:\n{}", r.stdout));
-    let mut changed: Vec<&str> = changed.split_whitespace().collect();
-    changed.sort();
-    let mut all: Vec<&str> = CASES.iter().map(|(c, _)| *c).collect();
-    all.sort();
-    assert_eq!(changed, all);
+    assert_eq!(changed_cases(&r), all_cases());
+    assert!(
+        r.stdout.contains("CHANGED vt100: text differs ("),
+        "{}",
+        r.stdout
+    );
+    assert!(!r.stdout.contains("style only"), "{}", r.stdout);
     assert!(
         r.stdout.contains("+    │        · s is created"),
         "{}",
@@ -445,7 +489,8 @@ fn ac1_too_big_is_shrunk_by_growing_the_neighbour() {
     );
     assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
     assert_sizes(&r, (3, 2), no_extra);
-    assert_eq!(snapshot_names(&out), expected_names());
+    assert_eq!(snapshot_names(&out, "txt"), expected_names("txt"));
+    assert_eq!(snapshot_names(&out, "ansi"), expected_names("ansi"));
     assert!(!dir.join("snaps").exists(), "a plain run wrote snapshots");
     let resizes = resizes(&fake);
     assert!(
@@ -638,6 +683,196 @@ fn ac4_herdr_missing_or_not_running() {
     );
 }
 
+/// t-158 test steps 1–2: `--update` reads every pane's visible ansi and
+/// replaces an `.ansi` of another size; a `--check` whose ansi capture
+/// writes the same styles in other SGR bytes finds no difference; a copy
+/// with only a colour changed is reported as `style only` in every pane,
+/// never as text; other text in the `.ansi` alone is a text change; a
+/// missing `.ansi` snapshot asks for `--update`.
+#[test]
+fn t158_style_only_change_and_other_sgr_bytes() {
+    let dir = scratch("t158-ansi");
+    let fake = fake(&dir);
+    std::fs::create_dir_all(dir.join("snaps")).unwrap();
+    std::fs::write(dir.join("snaps/vt100-77x22.ansi"), "old\n").unwrap();
+    let r = matrix(&dir, &fake, &["--update"], &[]);
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert_eq!(
+        snapshot_names(&dir.join("snaps"), "ansi"),
+        expected_names("ansi")
+    );
+    let reads = calls(&fake)
+        .into_iter()
+        .filter(|c| c.starts_with("pane read ") && c.ends_with(" --source visible --format ansi"))
+        .count();
+    assert!(reads >= 2 * CASES.len(), "{:#?}", calls(&fake));
+
+    // Corner case: normalised SGR, not bytes.
+    let r = matrix(
+        &dir,
+        &fake,
+        &["--check"],
+        &[("TIZA_HERDR_FAKE_SGR", "other")],
+    );
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    assert!(r.stdout.contains("no differences"), "{}", r.stdout);
+    let snap = std::fs::read(dir.join("snaps/vt100-80x24.ansi")).unwrap();
+    let other = std::fs::read(dir.join("snaps/latest/vt100-80x24.ansi")).unwrap();
+    assert_ne!(snap, other, "the fake wrote the same bytes");
+    assert_cleaned(&fake);
+
+    // Step 2: only a colour changes (orange annotations drawn red).
+    let doc = changed_copy(&dir, "doc-red", "\"orange\"", "\"red\"");
+    let r = matrix(
+        &dir,
+        &fake,
+        &["--check", "--file", doc.to_str().unwrap()],
+        &[],
+    );
+    assert_eq!(r.code, Some(1), "{}\n{}", r.stdout, r.stderr);
+    assert_eq!(changed_cases(&r), all_cases());
+    for case in all_cases() {
+        assert!(
+            r.stdout.contains(&format!("CHANGED {case}: style only (")),
+            "{case}:\n{}",
+            r.stdout
+        );
+    }
+    assert!(!r.stdout.contains("text differs"), "{}", r.stdout);
+    // The diff names the runs: the old colour out, the new one in.
+    assert!(
+        r.stdout
+            .lines()
+            .any(|l| l.starts_with("-S ") && l.contains("fg=#")),
+        "{}",
+        r.stdout
+    );
+    assert!(
+        r.stdout
+            .lines()
+            .any(|l| l.starts_with("+S ") && l.contains("fg=#")),
+        "{}",
+        r.stdout
+    );
+    // --check never rewrites the snapshots.
+    assert_eq!(
+        std::fs::read(dir.join("snaps/vt100-80x24.ansi")).unwrap(),
+        snap
+    );
+    assert_cleaned(&fake);
+
+    // The same .txt but other text in the .ansi is a text change.
+    let ansi = String::from_utf8(snap.clone()).unwrap();
+    std::fs::write(
+        dir.join("snaps/vt100-80x24.ansi"),
+        ansi.replace("s is born", "s is torn"),
+    )
+    .unwrap();
+    let r = matrix(&dir, &fake, &["--check"], &[]);
+    assert_eq!(r.code, Some(1), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        r.stdout
+            .contains("CHANGED vt100: text differs in the ansi capture (1 rows)"),
+        "{}",
+        r.stdout
+    );
+    assert!(r.stdout.contains("s is torn"), "{}", r.stdout);
+    assert_eq!(changed_cases(&r), ["vt100"]);
+    assert_cleaned(&fake);
+
+    // Snapshots from before t-158 have no .ansi: that case asks for --update.
+    std::fs::remove_file(dir.join("snaps/vt100-80x24.ansi")).unwrap();
+    let r = matrix(&dir, &fake, &["--check"], &[]);
+    assert_eq!(r.code, Some(1), "{}\n{}", r.stdout, r.stderr);
+    assert!(
+        r.stdout.contains("CHANGED vt100: no vt100-80x24.ansi in"),
+        "{}",
+        r.stdout
+    );
+    assert_eq!(changed_cases(&r), ["vt100"]);
+    assert_cleaned(&fake);
+}
+
+/// `--normalize FILE` prints what `--check` compares, without Herdr.
+fn normalize(dir: &Path, name: &str, bytes: &str) -> String {
+    let f = dir.join(name);
+    std::fs::write(&f, bytes).unwrap();
+    let r = run(dir, &["--normalize", f.to_str().unwrap()], &[]);
+    assert_eq!(r.code, Some(0), "{}\n{}", r.stdout, r.stderr);
+    r.stdout
+}
+
+/// t-158 corner case: the same styles in other SGR bytes normalise alike
+/// (`0m`/`m`, `;`/`:` colours, combined or separate sequences, palette
+/// colours 16-255 as RGB, CRLF); a stray SGR code and a change of colour or
+/// attribute do not; other escape sequences are dropped.
+#[test]
+fn t158_normalised_sgr() {
+    let dir = scratch("t158-normalize");
+    let a = normalize(
+        &dir,
+        "a",
+        "\x1b[0m\x1b[31mAB\x1b[0m  \n\x1b[1m\x1b[38;2;255;0;0mC\x1b[22mD\x1b[0m\n",
+    );
+    assert_eq!(
+        a,
+        "T 1|AB\nT 2|CD\nS 1:1-2 fg=idx1\nS 2:1-1 fg=#ff0000 bold\nS 2:2-2 fg=#ff0000\n"
+    );
+    let same = [
+        "\x1b[31mAB\x1b[m  \r\n\x1b[1;38:2::255:0:0mC\x1b[22mD\x1b[m",
+        "\x1b[38;5;1mA\x1b[38:5:1mB\x1b[39m  \r\n\x1b[38;5;196;1mC\x1b[0;38;2;255;0;0mD\x1b]8;;x\x1b\\\x1b[2K\r\n\r\n",
+        // Non-SGR escapes and C0 controls are dropped whole (`\e(B` as
+        // `tput sgr0` writes it, a private CSI ending in m, a DCS string, an
+        // unterminated OSC, a tab); blanks keep only their background.
+        "\x1b[31mA\x1b(B\x1b[31mB\x1b[1m \x1b[m\x1b[?25l \x1b[>4;2m\r\n\x1bP1$r0m\x1b\\\x1b[1;38;2;255;0;0mC\x1b[22mD\x1b[m\t\x1b]8;;x",
+    ];
+    for (i, s) in same.iter().enumerate() {
+        let n = normalize(&dir, &format!("same{i}"), s);
+        // `\x1b[31m` and `38;5;1` are the same palette colour.
+        assert_eq!(n, a, "{s:?}");
+    }
+    let differ = [
+        (
+            "stray",
+            "\x1b[31mAB\x1b[0m\n\x1b[1;38;2;255;0;0;73mC\x1b[22mD",
+        ),
+        (
+            "colour",
+            "\x1b[32mAB\x1b[0m\n\x1b[1;38;2;255;0;0mC\x1b[22mD",
+        ),
+        (
+            "italic",
+            "\x1b[31mAB\x1b[0m\n\x1b[3;38;2;255;0;0mC\x1b[23mD",
+        ),
+    ];
+    for (name, s) in differ {
+        let n = normalize(&dir, name, s);
+        assert_ne!(n, a, "{name}");
+        assert_eq!(
+            n.lines()
+                .filter(|l| l.starts_with("T "))
+                .collect::<Vec<_>>(),
+            ["T 1|AB", "T 2|CD"],
+            "{name}: the text is the same"
+        );
+    }
+    // Underline styles, wide characters (two cells), colon colours with an
+    // ITU T.416 colour space id, and what a blank cell keeps.
+    let n = normalize(
+        &dir,
+        "forms",
+        "\x1b[31m漢x\x1b[4:3mU\x1b[4:0;38:2:0:255:0:0:9:9mR\x1b[48:2::0:0:255;58:5:3;21mB\x1b[0;7m \x1b[0;1;48;5;196m \x1b[0;1m ",
+    );
+    assert_eq!(
+        n,
+        "T 1|漢xURB\nS 1:1-3 fg=idx1\nS 1:4-4 fg=idx1 underline-curly\nS 1:5-5 fg=#ff0000\n\
+         S 1:6-6 bg=#0000ff fg=#ff0000 ul=idx3 underline-double\nS 1:7-7 reverse\nS 1:8-8 bg=#ff0000\n"
+    );
+    let r = run(&dir, &["--normalize", "/nonexistent.ansi"], &[]);
+    assert_eq!(r.code, Some(2));
+    assert!(r.stderr.contains("file not found"), "{}", r.stderr);
+}
+
 /// AC5: qa/README.md documents the script as a QA-round step, and the
 /// captures of a plain run stay out of git.
 #[test]
@@ -652,6 +887,10 @@ fn ac5_documented() {
         "herdr tab create",
         "frame",
         "not part of `cargo test`",
+        ".ansi",
+        "--format ansi",
+        "style only",
+        "--normalize",
     ] {
         assert!(readme.contains(needle), "qa/README.md lacks {needle}");
     }
