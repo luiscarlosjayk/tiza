@@ -169,8 +169,8 @@ fn corner_spotlight_past_its_until_and_redact_from_step_0() {
     );
     assert_eq!(r["visible"], json!(true), "{r}");
 
-    // A redact masks from step 0: visible at step 0, where it is born now
-    // (t-174: a redact is born at the step on screen, 0 included).
+    // A redact masks from step 0: visible at step 0, where it is born
+    // (t-183: a redact is always at step 0).
     live.api_ok("step.set", json!({"step": 0}));
     let r = live.api_ok(
         "annotation.add",

@@ -1172,3 +1172,55 @@ fn corner_documents_saved_before_t183_open_or_refuse_clearly() {
     let report = check_json(&path);
     assert!(report.to_string().contains("\"move_on_mask\""), "{report}");
 }
+
+/// A file of the repository, as text.
+fn repo_text(rel: &str) -> String {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
+    std::fs::read_to_string(root.join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
+}
+
+#[test]
+fn ac8_the_docs_say_the_mask_covers_the_code_only() {
+    let readme = repo_text("README.md");
+    let start = readme
+        .find("## Redaction: masking secrets on every surface at once")
+        .expect("the README's redaction section");
+    let end = readme[start..]
+        .find("\n## ")
+        .map_or(readme.len(), |e| start + e);
+    let section = &readme[start..end];
+    for want in [
+        "The mask covers the code, nothing else",
+        "Only you take a mask away",
+        "No move touches a masked line",
+        "masked whole",
+        "use fake values in demos",
+    ] {
+        assert!(section.contains(want), "README: `{want}` missing");
+    }
+    let guide = repo_text("docs/agent-guide.md");
+    for want in [
+        "The mask covers the code only",
+        "A redact is the presenter's:",
+        "No move touches a masked line:",
+    ] {
+        assert!(guide.contains(want), "agent guide: `{want}` missing");
+    }
+    // Nothing of the removed mechanisms is promised any more.
+    for (name, text) in [("README", section), ("agent guide", guide.as_str())] {
+        for gone in [
+            "redact_alerts",
+            "WIDENED",
+            "as_shown",
+            "redact_from_step",
+            "masked_notice",
+            "\"pin\"",
+        ] {
+            assert!(!text.contains(gone), "{name} still says `{gone}`");
+        }
+    }
+    assert!(repo_text("docs/adr/0010-redact-minimo.md").contains("## Threat model"));
+}

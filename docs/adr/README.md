@@ -13,5 +13,6 @@ One decision per file, kept short. Format: context, decision, consequences, stat
 | [0007](0007-moves-y-pasos-con-nombre.md) | Moves (code.patch, code.link, cursor, select, wait) and named steps: scripted demos without an editor (accepted; deterministic re-anchoring, `step: N`, follow paused while moves are applied) |
 | [0008](0008-renombre-a-tiza.md) | The project is renamed from CodeDraw to Tiza: `tiza` crate, binary, socket, `.tiza` sidecar, MCP server; v0.0.1 is re-tagged after the rename |
 | [0009](0009-politica-de-red.md) | Network policy: the `tiza` binary has no network dependencies and never opens a connection; anything that talks to the internet lives in a separate `tiza-net` crate, runs only on explicit command and says what it sends; `deny.toml` enforces it |
+| [0010](0010-redact-minimo.md) | Minimal redact: a mask over the file's own code that only the presenter removes; agents may only add one, no move touches a masked line, follow masks a changed line whole; nothing tracks the value elsewhere (t-183) |
 
 ADRs 0001–0007 predate the rename and still say CodeDraw; each carries a note at the top.

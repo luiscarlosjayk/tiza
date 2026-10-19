@@ -80,8 +80,8 @@ fn ac1_each_kind_of_command_gets_the_hint() {
         let m = info(&live);
         assert!(m.ends_with(" (step 1, press n)"), "{cmd}: {m}");
     }
-    // A redact is born at the step on screen, step 0 included (t-174): it
-    // masks from there, no step to press `n` for.
+    // A redact is always at step 0 (t-183): it masks from there, no step
+    // to press `n` for.
     live.command("redact 2");
     let m = info(&live);
     assert!(!m.contains("press n"), "redact 2: {m}");

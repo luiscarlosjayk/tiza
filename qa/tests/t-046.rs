@@ -15,7 +15,7 @@
 //!   `examples/tally/`) plus the exact prompt list.
 //! - AC4 A closing list of what each scenario needs that Tiza does not do yet.
 //!   After Luis's rework (2026-10-18) it names only what will be built
-//!   (t-166, t-168), and no scenario depends on a discarded feature: no
+//!   (t-166, t-183), and no scenario depends on a discarded feature: no
 //!   arrows between files or two files at once, no author metadata, no
 //!   resource notifications, no diff import, no `:redact auto` for agents,
 //!   no `--no-save` (the scenarios work on a copy and keep the sidecar the
@@ -131,7 +131,7 @@ fn ac4_the_closing_list_names_only_what_will_be_built() {
         .collect();
     assert_eq!(items.len(), 2, "{items:?}");
     assert!(items[0].contains("t-166"), "{items:?}");
-    assert!(items[1].contains("t-168"), "{items:?}");
+    assert!(items[1].contains("t-183"), "{items:?}");
     assert!(scenarios().iter().all(|(t, _)| !t.starts_with("Planned")));
 }
 
@@ -560,8 +560,8 @@ fn scenario_6_asks_for_redacts_without_a_label() {
     // columns, end exclusive), as the prompt asks the agent to compute it.
     // The fake values share no four characters in a row with anything else
     // in the scenario (nor with the notes and labels below, nor with the
-    // file name): a value that does masks those words in every label and
-    // note too (t-174, fail closed). `hunter2` masked «counter», «enter».
+    // file name): random-looking, so no note or label ever seems to repeat
+    // one (since t-183 the mask covers the code only).
     let words = s[5]
         .1
         .replace("Qz7rW4xv", "")

@@ -644,8 +644,7 @@ const W_SECRET: &str = "abc123SECRETxyz789";
 fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
     let dir = scratch(name);
     // The instance holds the same file the CLI reads (a copy of it, same
-    // name, not written yet): an embedded one still holds its value in
-    // clear, and both say so in the same words (t-174 rework point 3).
+    // name, not written yet): both say the same.
     let held = dir.join(file.file_name().unwrap());
     std::fs::copy(file, &held).unwrap();
     let doc = fs::open(file.to_str().unwrap()).unwrap().document;

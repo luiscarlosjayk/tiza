@@ -137,18 +137,18 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** a viewer, or a teammate setting up the project; any take where a real token could appear.
 
-**Setup:** examples ship no secrets on purpose; make a throwaway file with fake values (random-looking on purpose: a value that shares four characters in a row with a word masks that word too in every label and note, t-174): `mkdir -p /tmp/config && printf 'DATABASE_URL=postgres://app:Qz7rW4xv@db.local/app\nAPI_TOKEN=tk_R7vQ2mXz9LpW4nB8\nLOG_LEVEL=info\n' > /tmp/config/demo.env`. Do not open it yet: the masks go in first, so the values are never on screen, not even for a frame.
+**Setup:** examples ship no secrets on purpose; make a throwaway file with fake values (the mask covers the code only: never repeat a value in a note or a label): `mkdir -p /tmp/config && printf 'DATABASE_URL=postgres://app:Qz7rW4xv@db.local/app\nAPI_TOKEN=tk_R7vQ2mXz9LpW4nB8\nLOG_LEVEL=info\n' > /tmp/config/demo.env`. Do not open it yet: the masks go in first, so the values are never on screen, not even for a frame.
 
 **Script:**
 - To the agent, before Tiza is open: `Build the sidecar /tmp/config/demo.env.tiza with the masks already in it: a .tiza document (schema 1, source {first_line: 1}, code {file: "demo.env"}) with one redact annotation per secret value, the password inside DATABASE_URL and the value of API_TOKEN, each with step 0 and a span {line, start, end} that starts right after the text before the value (columns count from 0, end exclusive). Give the redacts no label: a labelled one takes the room the notes on its line need. Never put a value into a label. Then run tiza check /tmp/config/demo.env.tiza and tiza render /tmp/config/demo.env.tiza --out - and show me that no value is visible (a warning that step 1 has nothing new is expected until the notes go in).`
 - You: `tiza /tmp/config/demo.env`. Tiza prefers the sidecar next to the file, so the masks are on from the first frame (`◆ redacted` on the bar).
-- To the agent: `Call status and check redact_alerts is empty, then get_code. Explain each setting at step 1 with a note on its line. Never quote a masked value; if you spot a secret that is not masked, stop and tell me before anything is recorded.`
+- To the agent: `Call get_code. Explain each setting at step 1 with a note on its line. Never quote a masked value; if you spot a secret that is not masked, stop and tell me before anything is recorded.`
 
 **What the audience sees:** `••••••••` where the password and the token are, on screen and in every export, with a note per line; `◆ redacted` on the bar in normal mode.
 
-**Features:** `redact` annotations in a `.tiza` written by hand, the sidecar preferred on open, `tiza check`, masks in `get_code`, the exports and the resources, `redact_alerts` in `status` (t-156), `:redact off` (only the author's own screen).
+**Features:** `redact` annotations in a `.tiza` written by hand, the sidecar preferred on open, `tiza check`, masks in `get_code`, the exports and the resources, agents may add a mask but never remove one (t-183), `:redact off` (only the author's own screen).
 
-**Recording:** presentation mode; before recording, read the screen and run `tiza check`. Under a minute. The masks are the presenter's: an agent adds them while building the document, and only the presenter removes one, in the TUI (see [t-168](#planned-changes-that-touch-these-scenarios)).
+**Recording:** presentation mode; before recording, read the screen and run `tiza check`. Under a minute. The masks are the presenter's: an agent adds them while building the document, and only the presenter removes one, in the TUI (t-183).
 
 ## 7. Live coding: the agent annotates while you edit
 
@@ -239,4 +239,4 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 Nothing above waits on these; they change how a script can be written once they land.
 
 - **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen (masked as it shows them), so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
-- **t-168, masks only the presenter removes** (6). Agents may add a `redact`, and an agent will not be able to delete, clear or narrow one over the socket or the MCP; the presenter keeps every way to remove one in the TUI. Until then, scenario 6's script tells the agent not to touch a mask.
+- **t-183, masks only the presenter removes** (6). Landed: agents may add a `redact`, but cannot delete, clear, narrow or move one over the socket or the MCP, and no move touches a masked line; the presenter keeps every way to remove one in the TUI.
