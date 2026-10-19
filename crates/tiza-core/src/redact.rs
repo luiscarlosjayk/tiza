@@ -47,18 +47,59 @@ pub fn is_masked_line_error(e: &Error) -> bool {
     e.to_string().contains(MASKED_LINE)
 }
 
-/// Whether `a` masks the code at `step`: from step 0 by default, or from
-/// its own step when the document says `redact_from_step`.
-pub fn active(doc: &Document, a: &Annotation, step: u32) -> bool {
-    matches!(a.shape, Shape::Redact { .. }) && (!doc.redact_from_step || a.step <= step)
+/// The refusal of a redact on a line a move wrote (t-183, D4): a mask
+/// covers only the file's own code. `id` may be empty (a redact not added
+/// yet); `n` is the move, 1-based.
+pub fn on_move_line(id: &str, n: usize) -> Error {
+    let which = if id.trim().is_empty() {
+        "the redact".to_string()
+    } else {
+        format!("redact {id}")
+    };
+    Error::Invalid(format!(
+        "{which} is on a line move #{n} writes: a mask covers only the file's own code — put the value in the file, or delete the redact"
+    ))
 }
 
-/// Characters a redact leaves visible after its bullets: its `keep`, or
-/// none once it was widened (it no longer knows where the value ends, so a
-/// tail could be part of a new secret).
+/// Redacts as the version before t-183 saved them (D3, D4), on a raw
+/// `.tiza` before it is read: `redact_from_step` goes (masks show from
+/// step 0, which only masks more); a redact `widened` by a reload keeps no
+/// tail; `pin: 0` is the file's own code (`step: 0`); `pin: N`, a line move
+/// #N wrote, is refused with [`on_move_line`].
+pub fn migrate_legacy(raw: &mut serde_json::Value) -> Result<(), Error> {
+    if let Some(o) = raw.as_object_mut() {
+        o.remove("redact_from_step");
+    }
+    let Some(anns) = raw.get_mut("annotations").and_then(|a| a.as_array_mut()) else {
+        return Ok(());
+    };
+    for a in anns {
+        let Some(o) = a.as_object_mut() else {
+            continue;
+        };
+        if o.get("type").and_then(|t| t.as_str()) != Some("redact") {
+            continue;
+        }
+        if o.remove("widened").and_then(|w| w.as_bool()) == Some(true) {
+            o.insert("keep".into(), 0.into());
+        }
+        match o.remove("pin").map(|p| p.as_u64()) {
+            Some(Some(0)) => {
+                o.insert("step".into(), 0.into());
+            }
+            Some(Some(n)) => {
+                let id = o.get("id").and_then(|i| i.as_str()).unwrap_or_default();
+                return Err(on_move_line(id, n as usize));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Characters a redact leaves visible after its bullets: its `keep`.
 pub fn shown_tail(shape: &Shape) -> u8 {
     match shape {
-        Shape::Redact { widened: true, .. } => 0,
         Shape::Redact { keep, .. } => *keep,
         _ => 0,
     }
@@ -71,15 +112,13 @@ pub fn has_redacts(doc: &Document) -> bool {
         .any(|a| matches!(a.shape, Shape::Redact { .. }))
 }
 
-/// The document with every active mask applied: masked code lines, the
-/// redact spans narrowed to the mask, and the other annotations of those
-/// lines re-mapped. A document without redacts comes back unchanged.
+/// The document with every mask applied: masked code lines, the redact
+/// spans narrowed to the mask, and the other annotations of those lines
+/// re-mapped. A document without redacts comes back unchanged.
 ///
-/// Masks that overlap on a line (two redacts widened by a move, t-140) are
-/// drawn as one. A span that runs past the end of its line (a line being
-/// typed, t-140) shows no kept tail: the tail of a partial value is the
-/// start of the secret.
-pub fn masked(doc: &Document, step: u32) -> Document {
+/// Masks that overlap on a line are drawn as one. A span that runs past
+/// the end of its line shows no kept tail.
+pub fn masked(doc: &Document) -> Document {
     let mut out = doc.clone();
     if !has_redacts(doc) {
         return out;
@@ -87,9 +126,7 @@ pub fn masked(doc: &Document, step: u32) -> Document {
     let mut by_line: std::collections::BTreeMap<u32, Vec<(usize, TextSpan, u8)>> =
         Default::default();
     for (i, a) in doc.annotations.iter().enumerate() {
-        if let Shape::Redact { span, .. } = &a.shape
-            && active(doc, a, step)
-        {
+        if let Shape::Redact { span, .. } = &a.shape {
             by_line
                 .entry(span.line)
                 .or_default()
@@ -315,25 +352,20 @@ pub fn overlaps_mask(annotations: &[Annotation], line: u32, start: u32, end: u32
     })
 }
 
-/// Only the masked code lines at `step` (what `code.get` and the
-/// `tiza://code` resource return).
-pub fn masked_code(doc: &Document, step: u32) -> Vec<String> {
+/// Only the masked code lines (what `code.get` and the `tiza://code`
+/// resource return, on the view of the step).
+pub fn masked_code(doc: &Document) -> Vec<String> {
     if !has_redacts(doc) {
         return doc.code.clone();
     }
-    masked(doc, step).code
+    masked(doc).code
 }
 
-/// The step-0 code with every redact applied (what a save embeds, what
-/// `:embed` freezes), so a sidecar never carries a secret. On a document
-/// with moves only the redacts already there at step 0 are drawn (one
-/// marked on a line a move writes lives in that move's step, t-140).
+/// The step-0 code of the main file with its redacts applied (what a save
+/// embeds, what `:embed` freezes), so a sidecar never carries a secret.
 pub fn masked_base(doc: &Document) -> Vec<String> {
     if !has_redacts(doc) {
         return doc.base().to_vec();
-    }
-    if doc.moves.is_empty() {
-        return masked(doc, u32::MAX).code;
     }
     let mut d = doc.clone();
     d.code = doc.base().to_vec();
@@ -341,178 +373,70 @@ pub fn masked_base(doc: &Document) -> Vec<String> {
     d.annotations = base_redacts(doc, &None);
     d.moves.clear();
     d.base_code.clear();
-    masked(&d, u32::MAX).code
+    masked(&d).code
 }
 
 /// The annotations as they go with the masked step-0 code that a save and
-/// `scene.get` write (t-174 AC10): the redacts of the step-0 code cover
-/// exactly their mask (eight `•` plus the kept tail) instead of the real
-/// value's columns, and without moves the other annotations of those lines
-/// are re-mapped the same way. So the reopened (or re-put) document shows
-/// exactly what was shown — no extra `•` when the value was shorter than
-/// the mask, nothing shifted.
+/// `scene.get` write (t-174 AC10): every redact covers exactly its mask
+/// (eight `•` plus the kept tail) instead of the real value's columns, and
+/// every other annotation on a masked line is re-mapped the same way, at
+/// its own step (the masked line is the same at every step: no move
+/// rewrites it, t-183). So the reopened (or re-put) document shows exactly
+/// what was shown — no extra `•` when the value was shorter than the
+/// mask, nothing shifted.
 pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
     if !has_redacts(doc) {
         return doc.annotations.clone();
     }
-    if doc.moves.is_empty() {
-        return masked(doc, u32::MAX).annotations;
-    }
     let mut out = doc.annotations.clone();
-    // The projection at each step: an annotation's columns are on the code
-    // at the end of its own step (ADR 0007 §3d), its lines shifted by the
-    // moves before it.
-    let mut projections: std::collections::BTreeMap<u32, Option<crate::moves::Projection>> =
+    // Each file at each step its annotations are written on.
+    let mut groups: std::collections::BTreeMap<(Option<String>, u32), Vec<usize>> =
         Default::default();
-    let mut keys: Vec<Option<String>> = vec![None];
-    // A linked file read from disk again on reopening keeps its real
-    // columns (t-174 review 3): only one frozen in `views` is masked.
-    keys.extend(
-        doc.view_code
-            .keys()
-            .filter(|k| {
-                doc.views
-                    .keys()
-                    .any(|v| doc.view_key(v).as_ref() == Some(*k))
-            })
-            .cloned()
-            .map(Some),
-    );
-    for key in keys {
-        let redacts = base_redacts(doc, &key);
+    for (i, a) in doc.annotations.iter().enumerate() {
+        groups.entry((a.file.clone(), a.step)).or_default().push(i);
+    }
+    for ((key, step), members) in groups {
+        let redacts = doc.redacts_at(&key, step);
         if redacts.is_empty() {
             continue;
         }
-        let Some(code) = doc.view_base_code(&key, false) else {
+        let Ok((code, first)) = doc.view_code_at(&key, step) else {
             continue;
         };
-        let first = doc.view_first_line(&key);
-        let lines: Vec<u32> = redacts
-            .iter()
-            .filter_map(|r| match &r.shape {
-                Shape::Redact { span, .. } => Some(span.line),
-                _ => None,
-            })
-            .collect();
-        let base_text =
-            |l: u32| -> Option<String> { code.get(l.checked_sub(first)? as usize).cloned() };
         let mut d = doc.clone();
-        d.code = code.clone();
-        d.source.first_line = first;
         d.moves.clear();
         d.base_code.clear();
-        d.annotations = redacts.clone();
-        let m = masked(&d, u32::MAX);
-        for r in out.iter_mut().filter(|a| a.file == key) {
-            if let Some(n) = m.annotations.iter().find(|n| n.id == r.id) {
-                r.shape = n.shape.clone();
+        d.code = code;
+        d.source.first_line = first;
+        let n = redacts.len();
+        let others: Vec<usize> = members
+            .iter()
+            .copied()
+            .filter(|&i| !matches!(doc.annotations[i].shape, Shape::Redact { .. }))
+            .collect();
+        d.annotations = redacts;
+        d.annotations
+            .extend(others.iter().map(|&i| doc.annotations[i].clone()));
+        let m = masked(&d);
+        for &i in &members {
+            if matches!(doc.annotations[i].shape, Shape::Redact { .. })
+                && let Some(r) = m.annotations[..n].iter().find(|r| r.id == out[i].id)
+            {
+                out[i].shape = r.shape.clone();
             }
         }
-        for a in out.iter_mut().filter(|a| a.file == key) {
-            if !matches!(
-                a.shape,
-                Shape::Highlight { .. } | Shape::Mark { .. } | Shape::Arrow { .. }
-            ) {
-                continue;
-            }
-            // Its step's code and where each step-0 line went by then.
-            let proj = projections
-                .entry(a.step)
-                .or_insert_with(|| crate::moves::project(doc, &doc.moves, a.step, false).ok());
-            let Some(proj) = proj.as_ref() else { continue };
-            let Some(at_step) = proj.codes.get(&key) else {
-                continue;
-            };
-            let to_step = |b: u32| -> Option<u32> {
-                let mut l = b;
-                for ap in proj.patches.iter().filter(|p| p.file == key) {
-                    l = ap.map.get_column_anchor(l)?;
-                }
-                Some(l)
-            };
-            let text_at =
-                |l: u32| -> Option<&String> { at_step.get(l.checked_sub(first)? as usize) };
-            // Step line → step-0 line, for the redacted lines whose text is
-            // still the same at its step.
-            let back: Vec<(u32, u32)> = lines
-                .iter()
-                .filter_map(|b| {
-                    let l = to_step(*b)?;
-                    (text_at(l).cloned() == base_text(*b)).then_some((l, *b))
-                })
-                .collect();
-            if back.is_empty() {
-                continue;
-            }
-            // On the step-0 lines (others out of the way), masked, back.
-            const AWAY: u32 = u32::MAX / 2;
-            let to_base = |l: u32| {
-                back.iter()
-                    .find(|(s, _)| *s == l)
-                    .map_or(AWAY + l, |(_, b)| *b)
-            };
-            let from_base = |l: u32| {
-                if l >= AWAY {
-                    l - AWAY
-                } else {
-                    back.iter().find(|(_, b)| *b == l).map_or(l, |(s, _)| *s)
-                }
-            };
-            let mut probe = a.clone();
-            let touched = map_column_lines(&mut probe.shape, to_base);
-            if !touched {
-                continue;
-            }
-            let mut d1 = d.clone();
-            d1.annotations = redacts.iter().cloned().chain([probe]).collect();
-            let m1 = masked(&d1, u32::MAX);
-            if let Some(n) = m1.annotations.last() {
-                let mut shape = n.shape.clone();
-                map_column_lines(&mut shape, from_base);
-                a.shape = shape;
-            }
+        for (k, &i) in others.iter().enumerate() {
+            out[i].shape = m.annotations[n + k].shape.clone();
         }
     }
     out
 }
 
-/// Moves the lines of a shape's column anchors through `f`; `true` when
-/// one of them landed on a line `f` knows (below `u32::MAX / 2`).
-fn map_column_lines(shape: &mut Shape, f: impl Fn(u32) -> u32) -> bool {
-    let mut touched = false;
-    let mut go = |l: &mut u32| {
-        *l = f(*l);
-        touched |= *l < u32::MAX / 2;
-    };
-    match shape {
-        Shape::Highlight { span, .. } | Shape::Mark { span, .. } => go(&mut span.line),
-        Shape::Arrow { from, to, .. } => {
-            go(&mut from.line);
-            go(&mut to.line);
-        }
-        _ => {}
-    }
-    touched
-}
-
-/// The redacts of view `key` whose span is on that view's step-0 code: all
-/// of them without moves; with moves, those of step 0 (and, with
-/// `redact_from_step`, every one: their spans were marked at their own
-/// step, so masking them on the step-0 code can only mask more).
+/// The redacts of view `key` (on that view's own code, t-183).
 pub fn base_redacts(doc: &Document, key: &Option<String>) -> Vec<Annotation> {
     doc.annotations
         .iter()
         .filter(|a| &a.file == key && matches!(a.shape, Shape::Redact { .. }))
-        .filter(|a| {
-            doc.moves.is_empty()
-                || match crate::moves::redact_frame(doc, a) {
-                    Some(crate::moves::RedactFrame::File) => true,
-                    // Marked at their own step: masking them on the step-0
-                    // code can only mask more.
-                    Some(crate::moves::RedactFrame::EndOfStep(_)) => doc.redact_from_step,
-                    _ => false,
-                }
-        })
         .cloned()
         .collect()
 }
@@ -1033,69 +957,37 @@ pub fn looks_like_secret(text: &str) -> bool {
     !t.contains(char::is_whitespace) && t.chars().count() >= 20
 }
 
-/// The texts under every mask at any step (the step-0 code and every step
-/// a move changes): at least four characters, longest first. Only searched
-/// for, never shown (`tiza check`, [`Echo`]).
+/// The texts under every mask (on its file's own code): at least four
+/// characters, longest first. Only searched for, never shown (`tiza
+/// check`, [`Echo`]).
 pub fn masked_values(doc: &Document) -> Vec<String> {
     if !has_redacts(doc) {
         return Vec::new();
     }
     let mut out: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-    let mut take = |d: &Document, step: u32| {
-        for a in &d.annotations {
-            if let Shape::Redact { span, .. } = &a.shape
-                && active(d, a, step)
-                && let Some(t) = d.line_text(span.line)
+    let mut keys: Vec<Option<String>> = vec![None];
+    keys.extend(doc.view_code.keys().cloned().map(Some));
+    for key in keys {
+        let Some(code) = doc.view_base_code(&key, false) else {
+            continue;
+        };
+        let first = doc.view_first_line(&key);
+        for r in base_redacts(doc, &key) {
+            if let Shape::Redact { span, .. } = &r.shape
+                && let Some(t) = span
+                    .line
+                    .checked_sub(first)
+                    .and_then(|i| code.get(i as usize))
             {
                 let g: Vec<&str> = t.graphemes(true).collect();
-                let (s, e) = (
+                let (s0, e0) = (
                     (span.start as usize).min(g.len()),
                     (span.end as usize).min(g.len()),
                 );
-                let v = g[s..e].concat();
+                let v = g[s0..e0].concat();
                 let v = v.trim();
                 if v.chars().count() >= MIN_PIECE && !v.contains(MASK) {
                     out.insert(v.to_string());
-                }
-            }
-        }
-    };
-    if doc.moves.is_empty() {
-        take(doc, u32::MAX);
-    } else {
-        // The projected code of every step, never the code in memory: a
-        // move being typed shows part of its content, and the cache key
-        // ([`values_key`]) holds what the projection reads, not that.
-        // Only the steps where something changes (t-166).
-        for step in doc.change_steps(doc.max_step()) {
-            take(&doc.projected_view_at(step).doc, step);
-        }
-        // And every redact on a file's own lines, of the main file or of a
-        // linked one, whether or not a step shows it (t-174 review 2).
-        let mut keys: Vec<Option<String>> = vec![None];
-        keys.extend(doc.view_code.keys().cloned().map(Some));
-        for key in keys {
-            let Some(code) = doc.view_base_code(&key, false) else {
-                continue;
-            };
-            let first = doc.view_first_line(&key);
-            for r in base_redacts(doc, &key) {
-                if let Shape::Redact { span, .. } = &r.shape
-                    && let Some(t) = span
-                        .line
-                        .checked_sub(first)
-                        .and_then(|i| code.get(i as usize))
-                {
-                    let g: Vec<&str> = t.graphemes(true).collect();
-                    let (s0, e0) = (
-                        (span.start as usize).min(g.len()),
-                        (span.end as usize).min(g.len()),
-                    );
-                    let v = g[s0..e0].concat();
-                    let v = v.trim();
-                    if v.chars().count() >= MIN_PIECE && !v.contains(MASK) {
-                        out.insert(v.to_string());
-                    }
                 }
             }
         }
@@ -1643,8 +1535,6 @@ mod tests {
                 span: TextSpan { line, start, end },
                 keep,
                 label: None,
-                widened: false,
-                pin: None,
             },
         }
     }
@@ -1800,7 +1690,7 @@ mod tests {
                 emphasis: Default::default(),
             },
         });
-        let m = masked(&d, 0);
+        let m = masked(&d);
         assert_eq!(m.code[0], "API_KEY=••••••••f456 # prod");
         assert_eq!(m.code[1], "next");
         let Shape::Redact { span, .. } = &m.annotations[0].shape else {
@@ -1811,11 +1701,6 @@ mod tests {
             panic!()
         };
         assert_eq!((span.start, span.end), (23, 27), "`prod` moved left by 8");
-        // Active from step 0 even though the redact is at step 3.
-        assert_eq!(masked(&d, 0).code[0], m.code[0]);
-        d.redact_from_step = true;
-        assert!(masked(&d, 2).code[0].contains("sk-live"));
-        assert!(!masked(&d, 3).code[0].contains("sk-live"));
     }
 
     #[test]
@@ -1824,12 +1709,12 @@ mod tests {
         // the start of the secret.
         let mut d = doc("API_KEY=sk-li\n");
         d.annotations.push(redact("r1", 1, 8, 28, 4));
-        assert_eq!(masked(&d, 0).code[0], "API_KEY=••••••••");
+        assert_eq!(masked(&d).code[0], "API_KEY=••••••••");
         // Two masks that overlap are drawn once.
         let mut d = doc("token=abcdefghijklmnop end\n");
         d.annotations.push(redact("r1", 1, 6, 16, 2));
         d.annotations.push(redact("r2", 1, 10, 22, 0));
-        assert_eq!(masked(&d, 0).code[0], "token=•••••••• end");
+        assert_eq!(masked(&d).code[0], "token=•••••••• end");
         let spans = [
             MaskSpan {
                 line: 1,
@@ -1911,7 +1796,7 @@ mod tests {
                 emphasis: Default::default(),
             },
         });
-        let m = masked(&d, 0);
+        let m = masked(&d);
         assert_eq!(m.code[0], "token=•••••••• end");
         let Shape::Highlight { span, .. } = &m.annotations[1].shape else {
             panic!()

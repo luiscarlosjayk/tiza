@@ -305,7 +305,7 @@ pub struct App {
     /// reload's own message, so it is never missed.
     redact_drop_notice: Option<String>,
     /// Loud redact notices still to be read (t-135): a reload or paste that
-    /// widened or dropped a redact (t-117), a step whose move did (t-140).
+    /// widened or dropped a redact (t-117).
     /// `ui::draw` puts them whole on their own rows above the status bar —
     /// never cut, whatever the bar holds — until the next key; a later
     /// reload or message never replaces them (a new notice is added).
@@ -572,7 +572,7 @@ impl App {
         self.message = Some((msg.into(), true));
     }
 
-    /// A loud redact notice (t-117, t-140): the error message, as before,
+    /// A loud redact notice (t-117): the error message, as before,
     /// and a pending alert drawn whole above the bar until the next key
     /// (t-135). An alert already pending stays; the same text is not
     /// repeated.
@@ -800,7 +800,7 @@ impl App {
                     return Err(Error::Invalid("pointer.set: empty `find`".into()));
                 }
                 let view = self.doc.view_at(self.doc.step);
-                let code = tiza_core::redact::masked_code(&view.doc, self.doc.step);
+                let code = tiza_core::redact::masked_code(&view.doc);
                 let hits = moves::matches_of(&code, first, text);
                 let l = match line {
                     Some(l) => {
@@ -1002,33 +1002,12 @@ impl App {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         self.history.record(&self.doc, "add");
-        // A redact is born at the step being viewed, step 0 included, and
-        // keeps an explicit `"step": 0` (t-174 review: with
-        // `redact_from_step` one born at step 1 left step 0 in clear).
+        // A redact is marked on the code at the step being viewed (step 0
+        // included) and kept on the file's own code (t-183).
         let redact = matches!(shape, Shape::Redact { .. });
         let step = step.unwrap_or(self.doc.step);
         let step = if redact { step } else { step.max(1) };
         let kind = shape.kind_name();
-        // Marking the value again over a widened redact (t-117) replaces
-        // it: the precise mask takes over, the widened state goes away.
-        let replaced: Vec<String> = match &shape {
-            Shape::Redact {
-                span,
-                widened: false,
-                ..
-            } if file.is_none() => self
-                .doc
-                .annotations
-                .iter()
-                .filter(|a| {
-                    a.file.is_none()
-                        && matches!(&a.shape, Shape::Redact { span: w, widened: true, .. }
-                            if w.line == span.line && w.start < span.end && span.start < w.end)
-                })
-                .map(|a| a.id.clone())
-                .collect(),
-            _ => Vec::new(),
-        };
         let res = self.doc.add(Annotation {
             id: id.unwrap_or_default(),
             step,
@@ -1037,30 +1016,10 @@ impl App {
             file,
             shape,
         });
-        if res.is_ok() {
-            for id in &replaced {
-                let _ = self.doc.delete(id);
-            }
-        }
         match res {
             Ok(id) => {
                 self.history.label_last(format!("{kind} {id}"));
                 self.touch();
-                // With `redact_from_step`, a redact that does not mask the
-                // step on screen (it was given a later one) says so, loud,
-                // as the API's `hidden` does: the value shows there. (A
-                // redact pinned to a line a later move writes hides nothing
-                // yet: there is no value there to show.)
-                if redact
-                    && self.doc.redact_from_step
-                    && step > self.doc.step
-                    && let Some(why) = self.doc.why_hidden(&id, self.doc.step)
-                {
-                    self.redact_alert(format!(
-                        "redact {id} does not mask step {}: {why} — the value shows there",
-                        self.doc.step
-                    ));
-                }
                 Ok(id)
             }
             Err(e) => {
@@ -1126,7 +1085,7 @@ impl App {
             .cloned()
             .ok_or_else(|| Error::NotFound(p.id.clone()))?;
         if let Some(s) = p.step {
-            // A redact may be at step 0 (t-140, t-174 review).
+            // A redact stays at step 0 (t-183: `Document::update`).
             ann.step = if matches!(ann.shape, Shape::Redact { .. }) {
                 s
             } else {
@@ -1484,8 +1443,8 @@ impl App {
     }
 
     /// `:next`, `:prev`, `:step N`: goes to `step` and says where it is,
-    /// unless the step raised a redact notice (t-154): then the notice
-    /// stays on the bar, as with the `n` key, and nothing replaces it.
+    /// unless the step said something loud (a move that does not apply):
+    /// then that stays on the bar, as with the `n` key.
     fn step_message(&mut self, step: u32) -> String {
         if self.step_to(step) {
             return String::new();
@@ -1511,8 +1470,8 @@ impl App {
     /// `step.goto`, MCP `goto_step`, `tiza goto ID`, `:goto ID` (t-099):
     /// the step a named id (or a number) names, landed on exactly as `n`
     /// would after a full replay — the document is recomputed from step 0
-    /// (moves, views, redacts), the typing of that step complete, and the
-    /// redact notices of every step on the way said once. Returns the step.
+    /// (moves, views, redacts), the typing of that step complete. Returns
+    /// the step.
     pub fn goto_step(&mut self, id: &str) -> Result<u32, Error> {
         let s = self.doc.resolve_step(id)?;
         self.step_to_with(s, true);
@@ -1548,14 +1507,13 @@ impl App {
 
     /// Goes to `step` (moves applied, typing started going forward one).
     /// `true` when it said something loud on the bar: a move that does not
-    /// apply, or a redact notice (t-140).
+    /// apply.
     fn step_to(&mut self, step: u32) -> bool {
         self.step_to_with(step, false)
     }
 
     /// [`App::step_to`]; `jump` (goto, the loop back to step 0) lands with
-    /// the step's typing complete and says the redact notices of every step
-    /// up to it, as walking there would have.
+    /// the step's typing complete.
     fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
         self.finish_typing();
@@ -1585,13 +1543,6 @@ impl App {
                 self.carry_pointer(from_step);
                 if forward_one {
                     self.start_typing();
-                }
-                // A move of this step could not carry a redact with its
-                // text (t-140): loud, before anything is recorded.
-                let notices = self.doc.redact_notices_at(s, jump);
-                if !notices.is_empty() {
-                    self.redact_alert(notices.join(" · "));
-                    loud = true;
                 }
             }
             self.clamp_cursor();
@@ -1676,28 +1627,18 @@ impl App {
     /// Adds a move (validated against the code at its step). Undoable. A
     /// `code.link` reads its file next to the document first (t-105).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
-        self.add_move_noting(m).map(|(i, _)| i)
-    }
-
-    /// [`App::add_move`] plus the moves it retargets (t-157): a `position`
-    /// move of a later step that now hits another line. Said loudly, on
-    /// rows of their own (t-135); `u` undoes the move and clears them.
-    pub fn add_move_noting(&mut self, m: Move) -> Result<(usize, Vec<String>), Error> {
         self.finish_typing();
         if let tiza_core::moves::MoveAction::CodeLink(l) = &m.action {
             let base = self.save_path.parent().map(Path::to_path_buf);
             fs::load_view(&mut self.doc, &l.file, base.as_deref())?;
         }
         self.history.record(&self.doc, "move added");
-        match self.doc.add_move_noting(m) {
-            Ok((i, notices)) => {
+        match self.doc.add_move(m) {
+            Ok(i) => {
                 self.history.label_last(format!("move #{} added", i + 1));
                 self.clamp_cursor();
                 self.touch();
-                if !notices.is_empty() {
-                    self.redact_alert(notices.join(" · "));
-                }
-                Ok((i, notices))
+                Ok(i)
             }
             Err(e) => {
                 self.history.undo(&mut self.doc);
@@ -1708,12 +1649,6 @@ impl App {
 
     /// Deletes a move by 1-based index. Undoable.
     pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
-        self.delete_move_noting(index).map(|(m, _)| m)
-    }
-
-    /// [`App::delete_move`] plus the redacts it dropped (t-154): the move
-    /// wrote their line. Said loudly; `u` brings both back.
-    pub fn delete_move_noting(&mut self, index: usize) -> Result<(Move, Vec<String>), Error> {
         self.finish_typing();
         let i = index
             .checked_sub(1)
@@ -1721,17 +1656,20 @@ impl App {
             .ok_or_else(|| Error::MoveNotFound(format!("#{index}")))?;
         self.history
             .record(&self.doc, format!("move #{index} deleted"));
-        let (m, notices) = self.doc.delete_move_noting(i)?;
+        let m = match self.doc.delete_move(i) {
+            Ok(m) => m,
+            Err(e) => {
+                self.history.discard_last();
+                return Err(e);
+            }
+        };
         if self.doc.step > self.doc.max_step() {
             self.doc.step = self.doc.max_step();
             self.doc.sync_code_to_step();
         }
         self.clamp_cursor();
         self.touch();
-        if !notices.is_empty() {
-            self.redact_alert(notices.join(" · "));
-        }
-        Ok((m, notices))
+        Ok(m)
     }
 
     /// `scene.list` / `:list`: one line per annotation, in document order.
@@ -1761,21 +1699,18 @@ impl App {
 
     /// `move.list` payload.
     pub fn move_list(&self) -> MoveList {
-        // Content masked where it lands under a redact (t-140); targets
-        // through the echo filter (t-167).
+        // Targets through the echo filter (t-167).
         let echo = tiza_core::redact::Echo::new(&self.doc);
-        let shown = tiza_core::moves::masked_moves(&self.doc);
         MoveList {
-            moves: shown
-                .into_iter()
+            moves: self
+                .doc
+                .moves
+                .iter()
                 .enumerate()
-                .map(|(i, m)| {
-                    let summary = tiza_core::protocol::describe_move_with(i + 1, &m, &echo);
-                    MoveListed {
-                        index: i + 1,
-                        summary,
-                        r#move: m,
-                    }
+                .map(|(i, m)| MoveListed {
+                    index: i + 1,
+                    summary: tiza_core::protocol::describe_move_with(i + 1, m, &echo),
+                    r#move: m.clone(),
                 })
                 .collect(),
             unanchored: self.doc.unanchored(),
@@ -1820,20 +1755,13 @@ impl App {
         }
     }
 
-    /// Redoes the last undone edit. Redoing a move added or deleted shifts
-    /// the code again under every later `position` move it retargeted, so
-    /// the presenter is told again, as when it was first made (t-157).
+    /// Redoes the last undone edit.
     pub fn redo(&mut self) {
         self.finish_typing();
-        let before = self.doc.clone();
         if let Some(what) = self.history.redo(&mut self.doc) {
             self.rebuild_theme();
             self.touch();
             self.info(format!("redone: {what}"));
-            let notices = tiza_core::moves::retarget_notices_between(&before, &self.doc);
-            if !notices.is_empty() {
-                self.redact_alert(notices.join(" · "));
-            }
         } else {
             self.info("nothing to redo");
         }
@@ -1985,49 +1913,24 @@ impl App {
         // exist (AC9). A step whose moves no longer apply on the new text
         // falls back to the step-0 code (those moves are reported when
         // the presenter steps onto them).
-        // A redact is re-anchored on the code its columns refer to (t-154):
-        // the file, or the code right after the move it is pinned to.
-        #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-        enum Frame {
-            Step(u32),
-            AfterMove(usize),
-        }
-        let frame_of = |a: &Annotation| -> Frame {
-            if old.moves.is_empty() {
-                return Frame::Step(a.step);
-            }
-            match tiza_core::moves::redact_frame(&old, a) {
-                Some(tiza_core::moves::RedactFrame::File) => Frame::Step(0),
-                Some(tiza_core::moves::RedactFrame::AfterMove(i)) => Frame::AfterMove(i),
-                _ => Frame::Step(a.step),
-            }
-        };
-        let mut steps: Vec<Frame> = old.annotations.iter().map(frame_of).collect();
+        // A redact is on the file's own code, step 0 (t-183).
+        let mut steps: Vec<u32> = old.annotations.iter().map(|a| a.step).collect();
         steps.sort_unstable();
         steps.dedup();
         // Only the main file changed: its annotations are re-anchored on
         // its own code at their step; those of a linked file (t-105) keep
         // their coordinates.
-        let at_step = |doc: &Document, frame: Frame| -> Document {
+        let at_step = |doc: &Document, step: u32| -> Document {
             let mut s = doc.clone();
-            let code = match frame {
-                _ if doc.moves.is_empty() => None,
-                Frame::Step(step) => doc.view_code_at(&None, step).ok(),
-                Frame::AfterMove(i) => tiza_core::moves::code_after_move(doc, i)
-                    .filter(|(key, _, _)| key.is_none())
-                    .map(|(_, c, f)| (c, f))
-                    .or_else(|| doc.view_code_at(&None, 0).ok()),
-            };
-            if let Some((code, first)) = code {
+            if !doc.moves.is_empty()
+                && let Ok((code, first)) = doc.view_code_at(&None, step)
+            {
                 s.code = code;
                 s.source.first_line = first;
             }
             s.moves.clear();
             s.base_code.clear();
-            s.step = match frame {
-                Frame::Step(step) => step,
-                Frame::AfterMove(i) => doc.moves.get(i).map_or(0, |m| m.at_step),
-            };
+            s.step = step;
             s
         };
         let mut shapes: Vec<Option<Shape>> = old
@@ -2043,7 +1946,7 @@ impl App {
             let new_s = at_step(&d, step);
             let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
             for (i, a) in old.annotations.iter().enumerate() {
-                if frame_of(a) != step || a.file.is_some() {
+                if a.step != step || a.file.is_some() {
                     continue;
                 }
                 if let Shape::Redact { span, .. } = &a.shape
@@ -2062,16 +1965,13 @@ impl App {
         let mut extra: Vec<Annotation> = Vec::new();
         for (i, (a, shape)) in old.annotations.iter().zip(shapes).enumerate() {
             let is_redact = matches!(a.shape, Shape::Redact { .. });
-            if let (Some(spans), Shape::Redact { label, pin, .. }) = (widened[i].take(), &a.shape) {
-                // Still on the code it is pinned to (t-154).
+            if let (Some(spans), Shape::Redact { label, .. }) = (widened[i].take(), &a.shape) {
                 let mask = |span: tiza_core::TextSpan, id: String| Annotation {
                     id,
                     shape: Shape::Redact {
                         span,
                         keep: 0,
                         label: label.clone(),
-                        widened: true,
-                        pin: *pin,
                     },
                     ..a.clone()
                 };
@@ -2499,8 +2399,6 @@ impl App {
                         span,
                         keep: 0,
                         label: None,
-                        widened: false,
-                        pin: None,
                     },
                 ) {
                     Ok(id) => self.info(format!(
@@ -4170,8 +4068,6 @@ impl App {
                 span: tiza_core::TextSpan { line, start, end },
                 keep: 0,
                 label: None,
-                widened: false,
-                pin: None,
             },
         )?;
         Ok(Some(id))
@@ -4286,8 +4182,6 @@ impl App {
                 span,
                 keep,
                 label: opt(label),
-                widened: false,
-                pin: None,
             },
         )?;
         Ok(format!(
@@ -4326,7 +4220,8 @@ impl App {
     fn redact_auto(&mut self, dry: bool) -> Result<String, Error> {
         // Scan the code as shown (masks already applied are bullets, so a
         // second run does not stack masks on masks).
-        let code = tiza_core::redact::masked_code(&self.doc, self.doc.step);
+        let view = self.doc.view_at(self.doc.step).doc;
+        let code = tiza_core::redact::masked_code(&view);
         let matches = tiza_core::redact::auto_matches(&code, self.doc.source.first_line);
         if matches.is_empty() {
             return Ok("redact auto: 0 matches (it only knows JWTs, Bearer/Basic tokens, password/secret/token/api_key values, URL credentials, AWS/GitHub/Stripe/Slack/Google keys and e-mail addresses)".into());
@@ -4346,7 +4241,7 @@ impl App {
         let mut masked = 0;
         for m in &matches {
             // Skip a place that is already a mask (bullets) or already redacted.
-            let already = self.doc.annotations.iter().any(|a| {
+            let already = view.annotations.iter().any(|a| {
                 matches!(&a.shape, Shape::Redact { span, .. } if span.line == m.line && span.start < m.end && span.end > m.start)
             });
             if already {
@@ -4363,8 +4258,6 @@ impl App {
                     },
                     keep: 0,
                     label: None,
-                    widened: false,
-                    pin: None,
                 },
             )?;
             masked += 1;
@@ -5009,7 +4902,7 @@ impl App {
             "code.get" => {
                 // What an agent reads is what the screen shows: masked (t-117).
                 let view = self.doc.view_at(self.doc.step);
-                let code = tiza_core::redact::masked_code(&view.doc, self.doc.step);
+                let code = tiza_core::redact::masked_code(&view.doc);
                 let mut out = String::new();
                 for (i, text) in code.iter().enumerate() {
                     let line = self.doc.source.first_line + i as u32;
@@ -5025,21 +4918,7 @@ impl App {
                 // directory could not resolve a relative file reference.
                 // Masked (t-117): the embedded code an agent gets never holds
                 // a secret; linked files travel embedded too (t-105).
-                let mut document = self.doc.embedded_copy();
-                // A redact a move widened at this step says so (t-140).
-                if !self.doc.moves.is_empty() {
-                    let view = self.doc.view_at(self.doc.step);
-                    for a in &mut document.annotations {
-                        let now = view.doc.find_annotation(&a.id).map(|v| &v.shape);
-                        if let (
-                            Shape::Redact { widened, .. },
-                            Some(Shape::Redact { widened: true, .. }),
-                        ) = (&mut a.shape, now)
-                        {
-                            *widened = true;
-                        }
-                    }
-                }
+                let document = self.doc.embedded_copy();
                 serde_json::to_value(Scene {
                     revision: self.revision,
                     step: self.doc.step,
@@ -5050,24 +4929,22 @@ impl App {
             "scene.list" => json!(self.list_lines()),
             "move.add" => {
                 let m: Move = parse(params)?;
-                let (i, notices) = self.add_move_noting(m)?;
+                let i = self.add_move(m)?;
                 serde_json::to_value(MoveMutated {
                     index: i + 1,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
-                    notices,
                 })?
             }
             "move.delete" => {
                 let p: MoveIndexParams = parse(params)?;
-                let (_, notices) = self.delete_move_noting(p.index)?;
+                self.delete_move(p.index)?;
                 serde_json::to_value(MoveMutated {
                     index: p.index,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
-                    notices,
                 })?
             }
             "move.list" => serde_json::to_value(self.move_list())?,
@@ -5336,7 +5213,6 @@ impl App {
                 w.extend(self.doc.step_warnings());
                 w
             },
-            redact_alerts: self.redact_alerts.clone(),
             supervised: self.supervised,
             autosave: self.autosave,
             document: self.save_path.is_file().then(|| {

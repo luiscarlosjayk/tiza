@@ -233,7 +233,7 @@ enum Cmd {
         loop_count: u16,
     },
     /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
-    /// step, linked files, ids, redacts a move widens or drops, annotations a move hides, labels
+    /// step, moves over a masked line, linked files, ids, annotations a move hides, labels
     /// clipped with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
     /// Writes nothing.
     Check {
@@ -491,23 +491,6 @@ fn real_main() -> anyhow::Result<()> {
                     doc.max_step(),
                     doc.max_step()
                 );
-            }
-            // A redact a move widened or dropped (t-140): said once, on
-            // stderr, before the frames are written.
-            let notice_steps: Vec<u32> =
-                if all_steps || animated || matches!(format, Format::Cast | Format::Tape) {
-                    (0..=doc.max_step()).collect()
-                } else {
-                    vec![step.min(doc.max_step())]
-                };
-            let mut said: Vec<String> = Vec::new();
-            for s in notice_steps {
-                for n in doc.redact_notices_at(s, true) {
-                    if !said.contains(&n) {
-                        eprintln!("tiza: {n}");
-                        said.push(n);
-                    }
-                }
             }
             // A `steps` entry past the last step is kept, never dropped in
             // silence (t-099).

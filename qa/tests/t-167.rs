@@ -912,7 +912,9 @@ fn review7_pieces_quoted_any_other_way_are_taken_out() {
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "sk_live_51Hx9QeLkT2mNpR8vWzYa"}),
     );
-    assert!(msg.contains("looks like a secret"), "{msg}");
+    // (t-183: a target is matched on the masked code; one that looks like
+    // a secret is not refused apart any more, it is simply not found.)
+    assert!(msg.contains("matches nothing in the code"), "{msg}");
 }
 
 // ---------- Rework 1 (QA 21:50, coordinator 20:15; t-174 rework point 2) ----------

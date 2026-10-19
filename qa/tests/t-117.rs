@@ -464,14 +464,7 @@ fn ac5_column_redact_that_cannot_follow_fails_closed() {
     assert!(!msg.contains("dropped"), "{msg}");
     assert_eq!(code_line(&live, 1), "{\"token\": \"••••••••");
     assert_no_value(&live, "one side", &["r0tat3d", "0ne-side"]);
-    // The widened state is visible to the presenter and to agents.
-    let list = live.api_ok("scene.list", json!({})).to_string();
-    assert!(list.contains("WIDENED"), "{list}");
-    let scene = live.api_ok("scene.get", json!({}));
-    assert_eq!(
-        scene["document"]["annotations"][0]["widened"], true,
-        "{scene}"
-    );
+    // (t-183: the widened mask keeps no tail; there is no `widened` flag.)
     assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
     // Both sides changed: from where the line first differs (`{"tok`), so
     // not one character of the new value shows (the old column 11 would
@@ -483,18 +476,12 @@ fn ac5_column_redact_that_cannot_follow_fails_closed() {
     assert_eq!(code_line(&live, 1), "{\"tok••••••••");
     assert_no_value(&live, "both sides", &["zzq-b0th", "b0th-s1des"]);
     // Marking the value again (`:redact off` shows it to the author, a
-    // selection or columns mark it) replaces the widened mask.
+    // selection or columns mark it) adds a precise mask; deleting the wide
+    // one (`x`, `:del`) leaves it.
     live.command("redact 1@9..23");
     assert!(!live.message().unwrap().1);
+    live.command("del a1");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
-    let list = live.api_ok("scene.list", json!({})).to_string();
-    assert!(!list.contains("WIDENED"), "{list}");
-    assert!(
-        !live
-            .api_ok("scene.get", json!({}))
-            .to_string()
-            .contains("widened")
-    );
     assert_eq!(code_line(&live, 1), "{\"tok\": \"••••••••\", \"usr\": 1}");
 }
 
@@ -553,8 +540,6 @@ fn ac5_a_hunk_that_changed_size_masks_all_its_new_lines() {
         "untouched"
     );
     assert_no_value(&live, "hunk", &["hvs.", "N3wT0ken", "VAULT", "kv/app"]);
-    let list = live.api_ok("scene.list", json!({})).to_string();
-    assert_eq!(list.matches("WIDENED").count(), 3, "{list}");
 }
 
 #[test]

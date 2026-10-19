@@ -175,14 +175,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "redact_alerts": {
-            "default": [],
-            "description": "The loud redact notices on the presenter's screen, oldest first\n(t-156): a redact widened or dropped by a reload, a paste or a move\n(t-117, t-140, t-157) and a move retargeted by another (t-157), the\nsame rows the TUI draws above its bar (t-135). Ids, lines and\nvisible text only, never text under a mask. A later reload does not\nclear them; the presenter's next key does (they were seen). Always\npresent, `[]` when nothing is pending.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "revision": {
             "format": "uint64",
             "minimum": 0,
@@ -622,7 +614,7 @@
                 "type": "object"
               },
               {
-                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). Active from\nstep 0 whatever its `step`, unless `Document::redact_from_step`.\nOnly the columns are stored: never the text under them.",
+                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). On the\nfile's own code (`step: 0`, t-183), active from step 0; no move\nrewrites or deletes its line. Only the columns are stored: never the\ntext under them.",
                 "properties": {
                   "keep": {
                     "description": "Characters left visible at the end of the span (0..=8).",
@@ -637,25 +629,12 @@
                       "null"
                     ]
                   },
-                  "pin": {
-                    "description": "On a document with moves, which code the span's columns refer to\n(t-154), set by Tiza when it pins the redact: `0` the untouched\nfile, `N` the code right after move #N (1-based), the move that\nwrote its line. Absent: the code at the end of the annotation's\n`step` (ADR 0007 §3d; `step: 0` is the untouched file). Moves\nadded or deleted later keep it on that same text.",
-                    "format": "uint32",
-                    "minimum": 0,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  },
                   "span": {
                     "$ref": "#/$defs/TextSpan"
                   },
                   "type": {
                     "const": "redact",
                     "type": "string"
-                  },
-                  "widened": {
-                    "description": "Set by a reload or paste that could not follow the redact's text\n(fail-closed, t-117): the mask was widened to the rest of its\nline, or to whole lines, and keeps no tail. Cleared when the\npresenter marks the value again (a new redact over it).",
-                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -740,7 +719,7 @@
               },
               "step": {
                 "default": 1,
-                "description": "Step at which it appears (1-based). A redact may say 0 on a document\nwith moves: it masks from step 0 anyway, and its step only says which\ncode its columns refer to (0: the untouched file, t-140).",
+                "description": "Step at which it appears (1-based). A redact is at step 0: on the\nfile's own code, masking from step 0 (t-183).",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -863,10 +842,6 @@
                   "array",
                   "null"
                 ]
-              },
-              "redact_from_step": {
-                "description": "Redact masks follow their annotation's `step` instead of being active\nfrom step 0 (off by default: a secret is never shown at an earlier step).",
-                "type": "boolean"
               },
               "schema": {
                 "format": "uint32",
@@ -3413,7 +3388,7 @@
                 "type": "object"
               },
               {
-                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). Active from\nstep 0 whatever its `step`, unless `Document::redact_from_step`.\nOnly the columns are stored: never the text under them.",
+                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). On the\nfile's own code (`step: 0`, t-183), active from step 0; no move\nrewrites or deletes its line. Only the columns are stored: never the\ntext under them.",
                 "properties": {
                   "keep": {
                     "description": "Characters left visible at the end of the span (0..=8).",
@@ -3428,25 +3403,12 @@
                       "null"
                     ]
                   },
-                  "pin": {
-                    "description": "On a document with moves, which code the span's columns refer to\n(t-154), set by Tiza when it pins the redact: `0` the untouched\nfile, `N` the code right after move #N (1-based), the move that\nwrote its line. Absent: the code at the end of the annotation's\n`step` (ADR 0007 §3d; `step: 0` is the untouched file). Moves\nadded or deleted later keep it on that same text.",
-                    "format": "uint32",
-                    "minimum": 0,
-                    "type": [
-                      "integer",
-                      "null"
-                    ]
-                  },
                   "span": {
                     "$ref": "#/$defs/TextSpan"
                   },
                   "type": {
                     "const": "redact",
                     "type": "string"
-                  },
-                  "widened": {
-                    "description": "Set by a reload or paste that could not follow the redact's text\n(fail-closed, t-117): the mask was widened to the rest of its\nline, or to whole lines, and keeps no tail. Cleared when the\npresenter marks the value again (a new redact over it).",
-                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3531,7 +3493,7 @@
               },
               "step": {
                 "default": 1,
-                "description": "Step at which it appears (1-based). A redact may say 0 on a document\nwith moves: it masks from step 0 anyway, and its step only says which\ncode its columns refer to (0: the untouched file, t-140).",
+                "description": "Step at which it appears (1-based). A redact is at step 0: on the\nfile's own code, masking from step 0 (t-183).",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -3654,10 +3616,6 @@
                   "array",
                   "null"
                 ]
-              },
-              "redact_from_step": {
-                "description": "Redact masks follow their annotation's `step` instead of being active\nfrom step 0 (off by default: a secret is never shown at an earlier step).",
-                "type": "boolean"
               },
               "schema": {
                 "format": "uint32",
@@ -5058,13 +5016,6 @@
             "minimum": 0,
             "type": "integer"
           },
-          "notices": {
-            "description": "Loud notices of the change: a redact dropped because the deleted\nmove wrote its line (t-154), and every `code.patch` the change\nretargets — a later move whose `position` now hits another line\n(t-157). They never quote masked text. Check the screen before\nrecording.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "revision": {
             "format": "uint64",
             "minimum": 0,
@@ -5117,13 +5068,6 @@
             "format": "uint",
             "minimum": 0,
             "type": "integer"
-          },
-          "notices": {
-            "description": "Loud notices of the change: a redact dropped because the deleted\nmove wrote its line (t-154), and every `code.patch` the change\nretargets — a later move whose `position` now hits another line\n(t-157). They never quote masked text. Check the screen before\nrecording.",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
           },
           "revision": {
             "format": "uint64",
@@ -6128,7 +6072,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step`,\n`move_on_mask` (a move that rewrites or deletes a masked line,\nt-183) and `redact_on_move_line` (a redact the version before t-183\nsaved on a line a move writes).",
                 "type": "string"
               },
               "file": {

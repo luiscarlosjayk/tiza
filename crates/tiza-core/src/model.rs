@@ -11,7 +11,6 @@ use unicode_segmentation::UnicodeSegmentation;
 
 use crate::error::Error;
 use crate::moves::{self, Move, MoveAction, ViewKey, ViewRef};
-use crate::redact::RedactFate;
 
 /// Schema version of the `.tiza` file.
 pub const SCHEMA_VERSION: u32 = 1;
@@ -115,10 +114,6 @@ pub struct Document {
     /// keyed by the file as the move names it. Never serialized directly.
     #[serde(skip)]
     pub view_code: BTreeMap<String, Vec<String>>,
-    /// Redact masks follow their annotation's `step` instead of being active
-    /// from step 0 (off by default: a secret is never shown at an earlier step).
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub redact_from_step: bool,
     /// Line-number gutter (t-112). Off, the code starts at the left edge
     /// (lanes and boxes move with it); the TUI, `render` and the agents'
     /// renders all follow it. `render --no-numbers` / `--numbers` override
@@ -578,9 +573,10 @@ pub enum Shape {
     },
     /// Masks a span of code (a token, a password, a URL with credentials):
     /// on every surface the span shows as eight `•` plus the last `keep`
-    /// characters, never the real text or its length (t-117). Active from
-    /// step 0 whatever its `step`, unless `Document::redact_from_step`.
-    /// Only the columns are stored: never the text under them.
+    /// characters, never the real text or its length (t-117). On the
+    /// file's own code (`step: 0`, t-183), active from step 0; no move
+    /// rewrites or deletes its line. Only the columns are stored: never the
+    /// text under them.
     Redact {
         span: TextSpan,
         /// Characters left visible at the end of the span (0..=8).
@@ -588,20 +584,6 @@ pub enum Shape {
         keep: u8,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         label: Option<String>,
-        /// Set by a reload or paste that could not follow the redact's text
-        /// (fail-closed, t-117): the mask was widened to the rest of its
-        /// line, or to whole lines, and keeps no tail. Cleared when the
-        /// presenter marks the value again (a new redact over it).
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-        widened: bool,
-        /// On a document with moves, which code the span's columns refer to
-        /// (t-154), set by Tiza when it pins the redact: `0` the untouched
-        /// file, `N` the code right after move #N (1-based), the move that
-        /// wrote its line. Absent: the code at the end of the annotation's
-        /// `step` (ADR 0007 §3d; `step: 0` is the untouched file). Moves
-        /// added or deleted later keep it on that same text.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        pin: Option<u32>,
     },
     /// Directs attention: while active (from `step` to `until`, or only at
     /// `step`), dims the code outside `lines` and the annotations outside `ids`.
@@ -697,9 +679,8 @@ impl Shape {
 pub struct Annotation {
     /// Short, stable public id (`a1`, `a2`…), chosen by the client or assigned.
     pub id: String,
-    /// Step at which it appears (1-based). A redact may say 0 on a document
-    /// with moves: it masks from step 0 anyway, and its step only says which
-    /// code its columns refer to (0: the untouched file, t-140).
+    /// Step at which it appears (1-based). A redact is at step 0: on the
+    /// file's own code, masking from step 0 (t-183).
     #[serde(default = "one")]
     pub step: u32,
     /// Color chosen by the presenter: a palette name (`blue`, `verde`…) or `#rrggbb`.
@@ -792,8 +773,6 @@ pub struct View {
 pub enum Hidden {
     /// No annotation has that id.
     NoSuch(String),
-    /// A redact with `redact_from_step` that does not mask yet.
-    MasksFrom(u32),
     /// A spotlight past its `until`.
     SpotlightPast { from: u32, end: u32 },
     /// It appears at a later step.
@@ -814,7 +793,6 @@ impl std::fmt::Display for Hidden {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Hidden::NoSuch(id) => write!(f, "no annotation {id}"),
-            Hidden::MasksFrom(s) => write!(f, "it masks from step {s}"),
             Hidden::SpotlightPast { from, end } if from == end => {
                 write!(f, "a spotlight shows only at its step {end}")
             }
@@ -869,7 +847,6 @@ impl Document {
             base_first_line: 1,
             views: BTreeMap::new(),
             view_code: BTreeMap::new(),
-            redact_from_step: false,
             numbers: true,
             margin: None,
             theme_overrides: None,
@@ -928,8 +905,8 @@ impl Document {
     }
 
     /// A copy ready for the wire (`scene.get`): the main code and every
-    /// linked file embedded and masked, the moves' content masked, the
-    /// first line that of the main file.
+    /// linked file embedded and masked, the first line that of the main
+    /// file.
     pub fn embedded_copy(&self) -> Document {
         let mut d = self.clone();
         d.sync_code_src();
@@ -938,8 +915,6 @@ impl Document {
         // this copy shows what was shown (its linked files are frozen in
         // `views` now, so theirs too).
         d.annotations = crate::redact::embedded_annotations(&d);
-        // Move content masked where it lands under a redact (t-140).
-        d.moves = moves::masked_moves(self);
         d
     }
 
@@ -1018,77 +993,50 @@ impl Document {
             .map(|(a, _)| a)
             .collect();
         self.unmask_annotations(&copy, anns);
-        // The moves whose content the copy masked get it back, matched by
-        // content (the agent may insert, delete, reorder or move them).
-        let masked_moves: Vec<usize> = (0..self.moves.len().min(copy.moves.len()))
-            .filter(|&j| self.moves[j] != copy.moves[j])
-            .collect();
-        let mut used: Vec<usize> = Vec::new();
-        let content = |m: &Move| match &m.action {
-            MoveAction::CodePatch(p) => p.content.clone(),
-            _ => None,
-        };
-        // Exact copies first, then the same content elsewhere.
-        for exact in [true, false] {
-            for m in put.moves.iter_mut() {
-                let Some(c) = content(m) else { continue };
-                if !c.contains(crate::redact::MASK) {
-                    continue;
-                }
-                let found = masked_moves.iter().copied().find(|j| {
-                    !used.contains(j)
-                        && content(&copy.moves[*j]).as_deref() == Some(c.as_str())
-                        && (!exact || copy.moves[*j] == *m)
-                });
-                if let Some(j) = found
-                    && let (MoveAction::CodePatch(p), MoveAction::CodePatch(real)) =
-                        (&mut m.action, &self.moves[j].action)
-                {
-                    p.content = real.content.clone();
-                    used.push(j);
-                }
-            }
-        }
-        // Masked content left over (a duplicate, an edit of the bullets):
-        // it would replace the real content for good.
-        for (i, m) in put.moves.iter().enumerate() {
-            if let Some(c) = content(m)
-                && c.contains(crate::redact::MASK)
-                && !self
-                    .moves
-                    .iter()
-                    .any(|o| content(o).as_deref() == Some(c.as_str()))
-            {
-                return Err(Error::Invalid(format!(
-                    "scene.put: move #{} carries content masked for the wire that matches no move of this document: send it as scene.get gave it, or write its content again",
-                    i + 1
-                )));
-            }
-        }
         Ok(())
+    }
+
+    /// The redacts of view `key` as they are at the end of `step`: on the
+    /// file's own code, shifted with their lines through the patches up to
+    /// it (no patch rewrites a masked line, t-183 AC4).
+    pub fn redacts_at(&self, key: &ViewKey, step: u32) -> Vec<Annotation> {
+        let mut out: Vec<Annotation> = self
+            .annotations
+            .iter()
+            .filter(|a| &a.file == key && matches!(a.shape, Shape::Redact { .. }))
+            .cloned()
+            .collect();
+        if out.is_empty() || self.moves.is_empty() {
+            return out;
+        }
+        if let Ok(p) = moves::project(self, &self.moves, step, false) {
+            for ap in p.patches.iter().filter(|ap| &ap.file == key) {
+                for a in &mut out {
+                    if let Shape::Redact { span, .. } = &mut a.shape
+                        && let Some(l) = ap.map.get(span.line)
+                    {
+                        span.line = l;
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// The masks drawn at `step` on the code of view `key` (real columns).
     pub fn masks_at(&self, key: &ViewKey, step: u32) -> Vec<crate::redact::MaskSpan> {
-        let own = |a: &Annotation| match &a.shape {
-            Shape::Redact { span, .. } if &a.file == key => Some(crate::redact::MaskSpan {
-                line: span.line,
-                start: span.start,
-                end: span.end,
-                keep: crate::redact::shown_tail(&a.shape),
-            }),
-            _ => None,
-        };
-        if self.moves.is_empty() {
-            return self.annotations.iter().filter_map(own).collect();
-        }
-        match moves::project(self, &self.moves, step, false) {
-            Ok(p) => moves::view_masks(self, &p.redacts, key),
-            Err(_) => crate::redact::base_redacts(self, key)
-                .iter()
-                .filter_map(own)
-                .collect(),
-        }
+        self.redacts_at(key, step)
+            .iter()
+            .filter_map(|a| match &a.shape {
+                Shape::Redact { span, .. } => Some(crate::redact::MaskSpan {
+                    line: span.line,
+                    start: span.start,
+                    end: span.end,
+                    keep: crate::redact::shown_tail(&a.shape),
+                }),
+                _ => None,
+            })
+            .collect()
     }
 
     /// Annotations placed on the masked copy `copy` of this document
@@ -1376,170 +1324,22 @@ impl Document {
     /// index. A `code.link` needs its file loaded first (`fs::load_view`
     /// or an entry in `views`).
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
-        self.add_move_noting(m).map(|(i, _)| i)
-    }
-
-    /// [`Document::add_move`] plus its notices (t-157): every `code.patch`
-    /// that the new move retargets (it now hits other lines, because the
-    /// new move shifted the code its `position` counts on), named without
-    /// quoting masked text.
-    pub fn add_move_noting(&mut self, m: Move) -> Result<(usize, Vec<String>), Error> {
         let what = format!("move #{}", self.moves.len() + 1);
         check_step(m.at_step, &what)?;
         moves::check_move_bounds(&m, &what)?;
-        // Every redact is pinned to the code its columns refer to before
-        // the new move changes what "the code at its step" is (t-140,
-        // t-154), so the move is followed through, never read in its old
-        // columns.
-        let mut framed = self.clone();
-        if framed.moves.is_empty() {
-            framed.base_code = framed.code.clone();
-            framed.base_first_line = framed.source.first_line;
+        let mut with = self.clone();
+        if with.moves.is_empty() {
+            with.base_code = with.code.clone();
+            with.base_first_line = with.source.first_line;
         }
-        framed.pin_redacts_with(&self.moves, None);
-        // A target that looks like a secret is refused before anything
-        // echoes it (t-154).
-        framed.check_move_targets(&m, framed.moves.len())?;
-        let mut trial = framed.moves.clone();
-        trial.push(m.clone());
-        let mut with = framed.clone();
-        with.moves = trial.clone();
-        // A redact pinned to a move whose lines a move at an earlier step
-        // shifts keeps its offset in that move's lines (t-154).
-        with.repin_redacts(&framed, Some);
-        // The move's targets are matched with the masks drawn; a «not
-        // found» does not repeat them.
-        moves::validate(&with, &trial, &with.annotations).map_err(|e| with.scrub_targets(&m, e))?;
-        with.check_move_content(trial.len() - 1)?;
-        let notices = moves::retarget_notices(&framed, &with, Some);
+        with.moves.push(m.clone());
+        // Its targets are matched on the masked code (t-117) and a «not
+        // found» does not repeat them (t-167).
+        moves::validate(&with, &with.moves, &with.annotations)
+            .map_err(|e| with.scrub_targets(&m, e))?;
         *self = with;
         self.sync_code_to_step();
-        Ok((self.moves.len() - 1, notices))
-    }
-
-    /// Pins every redact Tiza can pin without losing a reading (t-140,
-    /// t-154): see [`Document::pin_redacts_with`].
-    pub fn reframe_redacts(&mut self) {
-        let moves = self.moves.clone();
-        self.pin_redacts_with(&moves, None);
-    }
-
-    /// Pins the redacts to the code their columns refer to, on `moves`
-    /// (t-140, t-154), so later moves — and moves added later at earlier
-    /// steps — follow them from there and never reinterpret their columns.
-    /// A redact on a line of the file goes to the file (`step: 0`; with
-    /// `redact_from_step`, `pin: 0` and its step stays its activation step).
-    /// A redact on a line a move wrote goes to that move (`pin: N`, its
-    /// step that move's) when Tiza itself marked it (`own`, the redact just
-    /// added) or with `redact_from_step`; one Tiza did not pin (a file
-    /// written by hand, by an agent, or saved before t-154) keeps its
-    /// step's reading — moved to the earliest step that holds its line —
-    /// so the projection still masks both readings.
-    fn pin_redacts_with(&mut self, moves: &[Move], own: Option<&str>) {
-        if !crate::redact::has_redacts(self) {
-            return;
-        }
-        let from_step = self.redact_from_step;
-        let mut d = self.clone();
-        d.moves = moves.to_vec();
-        for a in &mut self.annotations {
-            let mine = own == Some(a.id.as_str());
-            let Shape::Redact { span, pin, .. } = &mut a.shape else {
-                continue;
-            };
-            if pin.is_some() || (a.step == 0 && !from_step) {
-                continue;
-            }
-            if moves.is_empty() {
-                // Without moves every redact is on the untouched file.
-                if from_step {
-                    *pin = Some(0);
-                } else {
-                    a.step = 0;
-                }
-                continue;
-            }
-            let o = moves::line_origin(&d, &a.file, a.step, span.line);
-            match o.writer {
-                None if o.frame == 0 => {
-                    span.line = o.frame_line;
-                    if from_step {
-                        *pin = Some(0);
-                    } else {
-                        a.step = 0;
-                    }
-                }
-                None => {}
-                Some((index, line)) if mine || from_step => {
-                    span.line = line;
-                    *pin = Some(index as u32 + 1);
-                    if !from_step {
-                        a.step = moves[index].at_step;
-                    }
-                }
-                Some(_) if o.frame < a.step => {
-                    a.step = o.frame;
-                    span.line = o.frame_line;
-                }
-                Some(_) => {}
-            }
-        }
-    }
-
-    /// After the moves changed (`old`: the document before, `new_index`:
-    /// where each old move is now, `None` when it was deleted), every
-    /// redact pinned to a move keeps its place in that move's lines
-    /// (t-154). One whose move was deleted is dropped — its line no
-    /// longer exists at any step — and named in the notices returned.
-    fn repin_redacts(
-        &mut self,
-        old: &Document,
-        new_index: impl Fn(usize) -> Option<usize>,
-    ) -> Vec<String> {
-        let mut notices = Vec::new();
-        if !crate::redact::has_redacts(self) {
-            return notices;
-        }
-        let snapshot = self.clone();
-        let mut gone: Vec<String> = Vec::new();
-        for a in &mut self.annotations {
-            let Shape::Redact {
-                span, pin, widened, ..
-            } = &mut a.shape
-            else {
-                continue;
-            };
-            let Some(n) = pin.filter(|n| *n >= 1) else {
-                continue;
-            };
-            let i = n as usize - 1;
-            let Some(j) = new_index(i) else {
-                notices.push(format!(
-                    "redact {} dropped: move #{n}, which wrote its line, was deleted",
-                    a.id
-                ));
-                gone.push(a.id.clone());
-                continue;
-            };
-            *pin = Some(j as u32 + 1);
-            if let Some(m) = snapshot.moves.get(j)
-                && !snapshot.redact_from_step
-            {
-                a.step = m.at_step;
-            }
-            match moves::repin_span(old, i, &snapshot, j, *span) {
-                Some(RedactFate::Followed(sp)) => *span = sp,
-                Some(RedactFate::Widened(v)) if !v.is_empty() => {
-                    *span = v[0];
-                    *widened = true;
-                }
-                // Nothing on that line to hide any more, or nothing to say
-                // where: kept as it is (masked at its stored columns).
-                _ => {}
-            }
-        }
-        self.annotations.retain(|a| !gone.contains(&a.id));
-        notices
+        Ok(self.moves.len() - 1)
     }
 
     /// The target texts of a move (`find`, `after`, `before`,
@@ -1574,29 +1374,6 @@ impl Document {
         targets
     }
 
-    /// On a document with redacts, `move.add` refuses a target that looks
-    /// like a secret, like a redact anchor does (t-154): the moves would
-    /// save it. The error never names the text. A target that is (part
-    /// of) a value under a mask is not refused here — it is matched on the
-    /// masked code and simply not found, exactly like text that is not
-    /// there, so the answer is no oracle (t-117) — and
-    /// [`Document::scrub_targets`] keeps that answer from echoing it.
-    fn check_move_targets(&self, m: &Move, index: usize) -> Result<(), Error> {
-        if !crate::redact::has_redacts(self) {
-            return Ok(());
-        }
-        for (what, t) in Self::move_targets(m) {
-            if crate::redact::looks_like_secret(&t) {
-                return Err(Error::Invalid(format!(
-                    "move #{}, step {}: its `{what}` text looks like a secret, and the moves would save it — target the line by `position`, or by the text before the secret",
-                    index + 1,
-                    m.at_step
-                )));
-            }
-        }
-        Ok(())
-    }
-
     /// An error about move `m` with its target texts taken out, on a
     /// document with redacts (t-154): a «not found» for a target that is
     /// under a mask must not hand the text back (and every target is
@@ -1606,209 +1383,26 @@ impl Document {
         crate::redact::Echo::new(self).written(targets).error(e)
     }
 
-    /// `move.add` refuses a `code.patch` whose content repeats a value that
-    /// is under a redact at that point, unless every copy lands under a
-    /// mask after the patch (t-140, AC6). The error never names the value.
-    fn check_move_content(&self, index: usize) -> Result<(), Error> {
-        let m = &self.moves[index];
-        let MoveAction::CodePatch(_) = &m.action else {
-            return Ok(());
-        };
-        if !crate::redact::has_redacts(self) {
-            return Ok(());
-        }
-        let Ok(p) = moves::project(self, &self.moves, m.at_step, false) else {
-            return Ok(());
-        };
-        let Some(ap) = p.patches.iter().find(|ap| ap.index == index) else {
-            return Ok(());
-        };
-        let copied: Vec<String> = p
-            .redacts
-            .iter()
-            .zip(&self.annotations)
-            .filter_map(|(r, a)| {
-                let r = r.as_ref()?;
-                (a.file == ap.file && r.copied_by.contains(&index)).then(|| a.id.clone())
-            })
-            .collect();
-        if copied.is_empty() {
-            return Ok(());
-        }
-        Err(Error::Invalid(format!(
-            "move #{}, step {}: its content repeats the value under redact {} where no mask covers it; it would show on screen — write the value in place of the masked one, or leave it out",
-            index + 1,
-            m.at_step,
-            copied.join(", ")
-        )))
-    }
-
-    /// Redacts a move widened or dropped at `step` (t-140): one notice
-    /// each, to say loudly when the presenter reaches that step (and on
-    /// `render --step N`). `cumulative`: every widened or dropped redact
-    /// at `step`, not only those of the moves of that step.
-    pub fn redact_notices_at(&self, step: u32, cumulative: bool) -> Vec<String> {
-        self.redact_notices_by_id(step, cumulative)
-            .into_iter()
-            .map(|(_, n)| n)
-            .collect()
-    }
-
-    /// [`Document::redact_notices_at`] with the id of the redact each
-    /// notice is about (t-101: `tiza check` names it).
-    pub fn redact_notices_by_id(&self, step: u32, cumulative: bool) -> Vec<(String, String)> {
-        if self.moves.is_empty() || !crate::redact::has_redacts(self) {
-            return Vec::new();
-        }
-        let Ok(p) = moves::project(self, &self.moves, step, false) else {
-            return Vec::new();
-        };
-        let shown = p.shown.file.clone();
-        let mut out = Vec::new();
-        let mut view: Option<Document> = None;
-        for (a, r) in self.annotations.iter().zip(&p.redacts) {
-            let Some(r) = r else { continue };
-            let Some(by) = r.by_move else { continue };
-            if a.file != shown {
-                continue;
-            }
-            if r.dropped {
-                if cumulative || self.moves[by].at_step == step {
-                    out.push((
-                        a.id.clone(),
-                        format!("redact {} dropped: move #{} deleted its line", a.id, by + 1),
-                    ));
-                }
-                continue;
-            }
-            // It really could not follow its text (t-140): its own mask
-            // widened. A copy of its value that a move wrote elsewhere is
-            // masked too, and said apart, line by line (t-174): the redact
-            // itself did follow its text.
-            let lost = r
-                .lost_by
-                .or(if r.copy_by.is_none() { Some(by) } else { None });
-            if let Some(lost) = lost
-                && (cumulative || self.moves[lost].at_step == step)
-            {
-                let mut lines: Vec<u32> = r.spans.iter().map(|s| s.line).collect();
-                lines.sort_unstable();
-                lines.dedup();
-                let place = match (lines.first(), lines.last()) {
-                    (Some(a), Some(b)) if a == b => Some(format!("the rest of L{a}")),
-                    (Some(a), Some(b)) if (b - a) as usize + 1 == lines.len() => {
-                        Some(format!("L{a}-{b}"))
-                    }
-                    (Some(_), Some(_)) => Some(
-                        lines
-                            .iter()
-                            .map(|l| format!("L{l}"))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    ),
-                    _ => None,
-                };
-                if let Some(place) = place {
-                    // With embedded code the masked rest of the line is what
-                    // gets saved: an annotation past the mask is cut to it
-                    // (t-174), and said here, before it happens.
-                    let clipped = matches!(self.code_src, CodeSource::Embedded(_)) && {
-                        let v = view.get_or_insert_with(|| self.view_at(step).doc);
-                        v.annotations.iter().any(|x| {
-                            x.file == a.file
-                                && r.spans.iter().any(|sp| match &x.shape {
-                                    Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
-                                        span.line == sp.line && span.end > sp.start
-                                    }
-                                    Shape::Arrow { from, to, .. } => [from, to]
-                                        .iter()
-                                        .any(|p| p.line == sp.line && p.col >= sp.start),
-                                    _ => false,
-                                })
-                        })
-                    };
-                    out.push((
-                        a.id.clone(),
-                        format!(
-                            "redact {} could not follow its text through move #{}: masking {place} — fix it before recording{}",
-                            a.id,
-                            lost + 1,
-                            if clipped {
-                                "; annotations past the mask are clipped when saved"
-                            } else {
-                                ""
-                            }
-                        ),
-                    ));
-                }
-            }
-            // One notice per move that wrote copies, with its own lines.
-            let mut by_move: std::collections::BTreeMap<usize, Vec<u32>> = Default::default();
-            // (None once its copies became its own spans: then it could
-            // not follow its text, said above.)
-            for (m, l) in r.copy_log.iter().filter(|_| !r.copies.is_empty()) {
-                if cumulative || self.moves[*m].at_step == step {
-                    by_move.entry(*m).or_default().push(*l);
-                }
-            }
-            for (m, mut lines) in by_move {
-                lines.sort_unstable();
-                lines.dedup();
-                out.push((
-                    a.id.clone(),
-                    format!(
-                        "redact {}: masked a copy of its value on {} (move #{})",
-                        a.id,
-                        lines
-                            .iter()
-                            .map(|l| format!("L{l}"))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                        m + 1
-                    ),
-                ));
-            }
-        }
-        out
-    }
-
     /// Deletes the move at `index` (0-based).
     pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
-        self.delete_move_noting(index).map(|(m, _)| m)
-    }
-
-    /// [`Document::delete_move`] plus the notices of the redacts it
-    /// dropped: one pinned to the deleted move lost its line at every step
-    /// (t-154). The others pinned to a move keep their place in its lines.
-    pub fn delete_move_noting(&mut self, index: usize) -> Result<(Move, Vec<String>), Error> {
         if index >= self.moves.len() {
             return Err(Error::MoveNotFound(format!("#{}", index + 1)));
         }
-        let moves = self.moves.clone();
-        self.pin_redacts_with(&moves, None);
         let old = self.clone();
         let m = self.moves.remove(index);
-        let new_index = |i: usize| match i.cmp(&index) {
-            std::cmp::Ordering::Less => Some(i),
-            std::cmp::Ordering::Equal => None,
-            std::cmp::Ordering::Greater => Some(i - 1),
-        };
-        let mut notices = self.repin_redacts(&old, new_index);
         // A later move the deletion retargets onto a masked line (t-183
         // AC4): refused, the moves stay as they were.
         if let Err(e) = self.check_masked_lines() {
             *self = old;
             return Err(e);
         }
-        // The moves the deletion retargets (t-157).
-        notices.extend(moves::retarget_notices(&old, self, new_index));
         if self.moves.is_empty() {
             self.code = std::mem::take(&mut self.base_code);
             self.source.first_line = self.base_first_line;
         } else {
             self.sync_code_to_step();
         }
-        Ok((m, notices))
+        Ok(m)
     }
 
     /// The document as shown at `step`: the shown file (cropped to its
@@ -1820,18 +1414,6 @@ impl Document {
     /// current step the in-memory `code` is kept (it may be a typing
     /// animation in progress).
     pub fn view_at(&self, step: u32) -> View {
-        self.view_at_with(step, true)
-    }
-
-    /// [`Document::view_at`] on the projected code at every step, never on
-    /// the code in memory (a move being typed shows part of its content):
-    /// what the masked values are read from (t-174 rework point 7), so they
-    /// depend only on what their cache key holds.
-    pub fn projected_view_at(&self, step: u32) -> View {
-        self.view_at_with(step, false)
-    }
-
-    fn view_at_with(&self, step: u32, live: bool) -> View {
         let plain = || View {
             doc: self.clone(),
             unanchored: Vec::new(),
@@ -1844,13 +1426,6 @@ impl Document {
         }
         let Ok(proj) = moves::project(self, &self.moves, step, false) else {
             // An invalid move was reported at load/add time; show the base.
-            if !live {
-                // The step-0 code itself, not the code in memory.
-                let mut v = plain();
-                v.doc.code = self.base().to_vec();
-                v.doc.source.first_line = self.base_first();
-                return v;
-            }
             return plain();
         };
         let mut shapes: Vec<Option<Shape>> = self
@@ -1867,12 +1442,15 @@ impl Document {
                 if a.file != ap.file || a.step >= ap.at_step {
                     continue;
                 }
-                // Redacts are followed by the projection itself (t-140).
-                if matches!(a.shape, Shape::Redact { .. }) {
-                    continue;
-                }
                 let Some(cur) = slot.as_ref() else { continue };
-                *slot = match m.rebind.get(&a.id) {
+                // A redact is on the file's own code, which no patch
+                // rewrites (t-183 AC4): it only shifts with its line, and no
+                // `rebind` moves it.
+                let rebind = m
+                    .rebind
+                    .get(&a.id)
+                    .filter(|_| !matches!(a.shape, Shape::Redact { .. }));
+                *slot = match rebind {
                     Some(spec) => {
                         let d = scratch.get_or_insert_with(|| {
                             let mut d = self.clone();
@@ -1896,75 +1474,26 @@ impl Document {
         let mut doc = self.clone();
         doc.moves.clear();
         doc.base_code.clear();
-        let live = live && step == self.step;
+        let live = step == self.step;
         doc.code = if live { self.code.clone() } else { code };
         doc.source.first_line = if live { self.source.first_line } else { first };
         doc.step = step;
         let mut unanchored = Vec::new();
-        let mut extra: Vec<Annotation> = Vec::new();
         doc.annotations = self
             .annotations
             .iter()
             .zip(shapes)
-            .enumerate()
-            .filter_map(|(i, (a, s))| {
-                if let Shape::Redact {
-                    keep,
-                    label,
-                    widened,
-                    pin,
-                    ..
-                } = &a.shape
-                {
-                    // Where the projection followed it (t-140); not there
-                    // yet when it was marked on a line a later move writes.
-                    if a.file != proj.shown.file {
-                        return None;
+            .filter_map(|(a, s)| match s {
+                Some(shape) if a.file == proj.shown.file => Some(Annotation { shape, ..a.clone() }),
+                Some(_) => None,
+                None => {
+                    if a.step <= step {
+                        unanchored.push(a.id.clone());
                     }
-                    let r = proj.redacts.get(i)?.as_ref()?;
-                    if r.dropped {
-                        if a.step <= step {
-                            unanchored.push(a.id.clone());
-                        }
-                        return None;
-                    }
-                    let spans: Vec<TextSpan> = r.all().copied().collect();
-                    // Only when it really could not follow its text: a
-                    // copy masked elsewhere is no WIDENED (t-174 AC9).
-                    let widened = *widened || r.lost() || r.spans.len() > 1;
-                    let mask = |span: TextSpan, id: String| Annotation {
-                        id,
-                        shape: Shape::Redact {
-                            span,
-                            keep: *keep,
-                            label: label.clone(),
-                            widened,
-                            pin: *pin,
-                        },
-                        ..a.clone()
-                    };
-                    // One annotation per masked line: the redact's own id on
-                    // the first, derived ids (never a real one) on the rest.
-                    for (k, sp) in spans.iter().enumerate().skip(1) {
-                        extra.push(mask(*sp, format!("{}~{}", a.id, k + 1)));
-                    }
-                    return spans.first().map(|sp| mask(*sp, a.id.clone()));
-                }
-                match s {
-                    Some(shape) if a.file == proj.shown.file => {
-                        Some(Annotation { shape, ..a.clone() })
-                    }
-                    Some(_) => None,
-                    None => {
-                        if a.step <= step {
-                            unanchored.push(a.id.clone());
-                        }
-                        None
-                    }
+                    None
                 }
             })
             .collect();
-        doc.annotations.extend(extra);
         View {
             doc,
             unanchored,
@@ -1993,19 +1522,13 @@ impl Document {
     /// Why annotation `id` is not on screen at `step`, or `None` when it is
     /// drawn there (t-155). Follows the same rules as the layout: its file
     /// must be the one shown, its step reached (a spotlight also not past
-    /// its `until`, a redact masking from step 0 unless
-    /// `redact_from_step`), its anchor kept and its lines inside the
-    /// window. An unknown id is reported as such.
+    /// its `until`, a redact masking from step 0), its anchor kept and its
+    /// lines inside the window. An unknown id is reported as such.
     pub fn hidden_reason(&self, id: &str, step: u32) -> Option<Hidden> {
         let Some(a) = self.find_annotation(id) else {
             return Some(Hidden::NoSuch(id.to_string()));
         };
         match &a.shape {
-            Shape::Redact { .. } => {
-                if !crate::redact::active(self, a, step) {
-                    return Some(Hidden::MasksFrom(a.step));
-                }
-            }
             Shape::Spotlight { until, .. } if step >= a.step => {
                 let end = until.unwrap_or(a.step);
                 if step > end {
@@ -2255,8 +1778,15 @@ impl Document {
         if !self.moves.is_empty() {
             self.base_code = self.code.clone();
             self.base_first_line = self.source.first_line;
+        }
+        // A redact the version before t-183 left on a step's code goes back
+        // to the file's own code; one on a line a move wrote does not open
+        // (D4).
+        if let Some((_, e)) = self.migrate_redacts().into_iter().next() {
+            return Err(e);
+        }
+        if !self.moves.is_empty() {
             self.validate_moves()?;
-            self.reframe_redacts();
             if let Some(e) = self.sync_code_to_step() {
                 return Err(e);
             }
@@ -2449,19 +1979,19 @@ impl Document {
 
     /// Adds an annotation. If `id` is empty a new one is assigned. Returns the id.
     pub fn add(&mut self, mut ann: Annotation) -> Result<String, Error> {
-        // Step 0 is the untouched code: only a redact belongs there (t-140),
-        // and it keeps the step it came with, moves or not (t-174 review: a
-        // `scene.get` → `scene.patch` of a step-0 redact with
-        // `redact_from_step` must not unmask step 0).
-        let pinned = matches!(ann.shape, Shape::Redact { .. });
-        if ann.step == 0 && !pinned {
+        // Step 0 is the untouched code: only a redact belongs there. A
+        // redact is marked on the code at its `step` and kept on the file's
+        // own code, step 0 (t-183 AC1).
+        let redact = matches!(ann.shape, Shape::Redact { .. });
+        if ann.step == 0 && !redact {
             ann.step = 1;
         }
         check_step(ann.step, &annotation_what(&ann.id))?;
         self.resolve_file(&mut ann)?;
-        // A redact that comes pinned (an agent's `scene.get` → `scene.patch`
-        // round trip, t-154) is checked on the code it is pinned to.
         self.validate_annotation(&ann)?;
+        if redact {
+            self.redact_to_base(&mut ann)?;
+        }
         sanitize_texts(&mut ann.shape);
         if ann.id.trim().is_empty() {
             ann.id = self.next_id();
@@ -2469,12 +1999,8 @@ impl Document {
             return Err(Error::DuplicateId(ann.id));
         }
         let id = ann.id.clone();
-        let redact = matches!(ann.shape, Shape::Redact { .. });
         let before = redact.then(|| self.annotations.clone());
         self.annotations.push(ann);
-        if redact && !self.moves.is_empty() {
-            self.pin_own_redact(&id);
-        }
         if let Some(before) = before
             && let Err(e) = self.check_masked_lines()
         {
@@ -2482,6 +2008,61 @@ impl Document {
             return Err(e);
         }
         Ok(id)
+    }
+
+    /// A redact marked on the code at its `step` (with moves), put on the
+    /// file's own code (t-183 AC1): its line followed back through the
+    /// patches of its file, `step: 0`. Refused when a move wrote that line:
+    /// a mask covers only the file's own code.
+    pub fn redact_to_base(&self, ann: &mut Annotation) -> Result<(), Error> {
+        let step = std::mem::replace(&mut ann.step, 0);
+        if step == 0 || self.moves.is_empty() {
+            return Ok(());
+        }
+        let Shape::Redact { span, .. } = &mut ann.shape else {
+            return Ok(());
+        };
+        // On the moves alone: the masks that are there do not count yet.
+        let mut bare = self.clone();
+        bare.annotations
+            .retain(|a| !matches!(a.shape, Shape::Redact { .. }));
+        let p = moves::project(&bare, &bare.moves, step, false)?;
+        let mut line = span.line;
+        for ap in p.patches.iter().rev().filter(|ap| ap.file == ann.file) {
+            let old = ap
+                .map
+                .map
+                .iter()
+                .position(|n| *n == Some(line))
+                .map(|o| ap.map.first_line + o as u32)
+                .filter(|o| !ap.map.replaced.contains(o));
+            match old {
+                Some(o) => line = o,
+                None => return Err(crate::redact::on_move_line(&ann.id, ap.index + 1)),
+            }
+        }
+        span.line = line;
+        Ok(())
+    }
+
+    /// Redacts the version before t-183 left on a step's code (`step > 0`,
+    /// no `pin`): each put on the file's own code ([`Document::redact_to_base`]).
+    /// Returns those that cannot be (a move wrote their line), with the
+    /// error; they are left out of the document.
+    pub fn migrate_redacts(&mut self) -> Vec<(String, Error)> {
+        let mut failed = Vec::new();
+        let mut anns = std::mem::take(&mut self.annotations);
+        for a in &mut anns {
+            if matches!(a.shape, Shape::Redact { .. })
+                && a.step > 0
+                && let Err(e) = self.redact_to_base(a)
+            {
+                failed.push((a.id.clone(), e));
+            }
+        }
+        anns.retain(|a| !failed.iter().any(|(id, _)| *id == a.id));
+        self.annotations = anns;
+        failed
     }
 
     /// No move rewrites or deletes a masked line (t-183 AC4): a redact
@@ -2496,76 +2077,32 @@ impl Document {
         }
     }
 
-    /// Pins the redact `id` Tiza just added or moved (t-154): to the file,
-    /// or to the move that wrote its line (`pin: N`), never left to the
-    /// step's reading, so it gets no second reading and moves added or
-    /// deleted later keep it on its text.
-    fn pin_own_redact(&mut self, id: &str) {
-        let moves = self.moves.clone();
-        self.pin_redacts_with(&moves, Some(id));
-    }
-
-    /// Validates an annotation where its coordinates live: a pinned redact
-    /// on the code it is pinned to (t-154), anything else on the code at
-    /// its step.
+    /// Validates an annotation on the code at its step (a redact: the
+    /// file's own code, step 0).
     pub fn validate_annotation(&self, a: &Annotation) -> Result<(), Error> {
-        if !self.moves.is_empty() {
-            let frame = moves::redact_frame(self, a);
-            let code = match frame {
-                Some(moves::RedactFrame::File) => self
-                    .view_base_code(&a.file, false)
-                    .map(|c| (c, self.view_first_line(&a.file))),
-                Some(moves::RedactFrame::AfterMove(i)) => {
-                    moves::code_after_move(self, i).map(|(_, c, f)| (c, f))
-                }
-                _ => None,
-            };
-            if let Some((code, first)) = code {
-                let mut d = self.clone();
-                d.moves.clear();
-                d.base_code.clear();
-                d.code = code;
-                d.source.first_line = first;
-                return d.validate_shape(&a.shape);
-            }
-        }
         self.validate_shape_in(&a.shape, &a.file, a.step)
     }
 
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
         check_step(ann.step, &annotation_what(&ann.id))?;
         self.resolve_file(&mut ann)?;
-        // A redact whose span, pin and file did not change (its label or
-        // `keep` did) stays where it is pinned (t-154); a new span is on
-        // the code at its step, as for any annotation, and is pinned again.
-        let same_place = match (&ann.shape, self.find_annotation(&ann.id)) {
-            (
-                Shape::Redact { span, pin, .. },
-                Some(Annotation {
-                    shape:
-                        Shape::Redact {
-                            span: s0, pin: p0, ..
-                        },
-                    file,
-                    step,
-                    ..
-                }),
-            ) => span == s0 && pin == p0 && file == &ann.file && *step == ann.step,
-            _ => false,
-        };
-        if let Shape::Redact { pin, .. } = &mut ann.shape
-            && !same_place
-        {
-            *pin = None;
+        // A redact stays on the file's own code (t-183): its label, `keep`
+        // or color changed, it stays where it is; a new span is on the code
+        // at the step on screen, and goes back to the file's own lines.
+        let redact = matches!(ann.shape, Shape::Redact { .. });
+        if redact {
+            let moved = !matches!(
+                (&ann.shape, self.find_annotation(&ann.id)),
+                (Shape::Redact { span, .. }, Some(Annotation { shape: Shape::Redact { span: s0, .. }, file, .. }))
+                    if span == s0 && file == &ann.file
+            );
+            ann.step = if moved { self.step } else { 0 };
         }
-        if same_place {
-            self.validate_annotation(&ann)?;
-        } else {
-            self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
+        self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
+        if redact {
+            self.redact_to_base(&mut ann)?;
         }
         sanitize_texts(&mut ann.shape);
-        let redact = matches!(ann.shape, Shape::Redact { .. });
-        let id = ann.id.clone();
         let before = self.annotations.clone();
         let slot = self
             .annotations
@@ -2573,9 +2110,6 @@ impl Document {
             .find(|a| a.id == ann.id)
             .ok_or_else(|| Error::NotFound(ann.id.clone()))?;
         *slot = ann;
-        if redact && !self.moves.is_empty() && !same_place {
-            self.pin_own_redact(&id);
-        }
         if redact && let Err(e) = self.check_masked_lines() {
             self.annotations = before;
             return Err(e);
@@ -2663,8 +2197,8 @@ impl Document {
         None
     }
 
-    /// The masks a search skips: where they are now, followed to this
-    /// step when there are moves (t-140).
+    /// The masks a search skips: where they are now, shifted to this step
+    /// when there are moves.
     fn search_masks(&self) -> Vec<Annotation> {
         if self.moves.is_empty() {
             self.annotations.clone()
@@ -2684,8 +2218,8 @@ impl Document {
         }
         let occurrence = occurrence.max(1);
         let mut seen = 0;
-        // The masks where they are now: with moves, followed to this step
-        // (t-140); the stored spans refer to the code of their own step.
+        // The masks where they are now: with moves, shifted to this step;
+        // the stored spans are on the file's own code.
         let masks: Vec<Annotation> = if self.moves.is_empty() {
             Vec::new()
         } else {

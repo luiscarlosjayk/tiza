@@ -1,7 +1,7 @@
 //! Preflight (t-101): `tiza check FILE` loads a document the way the TUI
 //! does, but instead of stopping at the first problem it lists them all —
-//! every anchor and marker, every move at its step, every linked file,
-//! every redact a move widens or drops, every annotation a move hides,
+//! every anchor and marker, every move at its step (and every move over a
+//! masked line, t-183), every linked file, every annotation a move hides,
 //! every label clipped with `…` at the width of the take and every step
 //! with nothing new — naming the annotation or move, the step, the file
 //! (for linked views) and the line.
@@ -41,7 +41,10 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`.
+    /// `steps`, `unanchored`, `clipped_label`, `empty_step`,
+    /// `move_on_mask` (a move that rewrites or deletes a masked line,
+    /// t-183) and `redact_on_move_line` (a redact the version before t-183
+    /// saved on a line a move writes).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -318,13 +321,25 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     // The values serde quotes in a parse error, on a document with a
     // redact, go through the redact filter (t-167).
     let guard = crate::redact::json_has_redact(&raw).then(|| crate::redact::json_strings(&raw));
-    let migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
-    let parsed: Result<Document, serde_json::Error> = if migrated {
-        for (from, migrate) in crate::fs::MIGRATIONS {
-            if found <= *from {
-                migrate(&mut raw);
-            }
+    let mut migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
+    for (from, migrate) in crate::fs::MIGRATIONS {
+        if found <= *from {
+            migrate(&mut raw);
         }
+    }
+    // Redacts saved before t-183 (D3, D4): back on the file's own code, or
+    // a redact on a line a move wrote, which does not open.
+    let before = raw.clone();
+    if let Err(e) = crate::redact::migrate_legacy(&mut raw) {
+        out.push(Finding::new(
+            Level::Error,
+            "redact_on_move_line",
+            e.to_string(),
+        ));
+        return Report::new(width, out, None, None);
+    }
+    migrated |= raw != before;
+    let parsed: Result<Document, serde_json::Error> = if migrated {
         serde_json::from_value(raw)
     } else {
         // Straight from the text: the error keeps its line and column.
@@ -720,6 +735,24 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             }
         })
         .collect();
+    // ---- redacts left on a step's code by the version before t-183: on
+    // the file's own code, or one on a line a move wrote (D4) ----
+    if doc
+        .annotations
+        .iter()
+        .any(|a| matches!(a.shape, Shape::Redact { .. }) && a.step > 0)
+    {
+        let mut m = doc.clone();
+        m.moves = trial.clone();
+        m.base_code = m.code.clone();
+        m.base_first_line = m.source.first_line;
+        for (id, e) in m.migrate_redacts() {
+            out.push(
+                Finding::new(Level::Error, "redact_on_move_line", e.to_string()).id(id.clone()),
+            );
+        }
+        doc.annotations = m.annotations;
+    }
     // ---- moves: each one on the code at its step ----
     doc.base_code = doc.code.clone();
     doc.base_first_line = doc.source.first_line;
@@ -742,9 +775,15 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                     e
                 };
                 let file = d.shown_view_at(trial[i].at_step).file;
+                // A move over a masked line (t-183 AC4) has a code of its own.
+                let code = if crate::redact::is_masked_line_error(&e) {
+                    "move_on_mask"
+                } else {
+                    "move"
+                };
                 let msg = in_file(move_message(e, i, trial[i].at_step), &file);
                 out.push(
-                    Finding::new(Level::Error, "move", msg.clone())
+                    Finding::new(Level::Error, code, msg.clone())
                         .id(format!("move #{}", i + 1))
                         .step(trial[i].at_step)
                         .file(file)
@@ -786,7 +825,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
     if doc.moves.is_empty() {
         doc.base_code.clear();
     } else {
-        doc.reframe_redacts();
         doc.sync_code_to_step();
     }
     if doc.step > doc.max_step() {
@@ -817,23 +855,8 @@ fn marker_code(doc: &Document, a: &crate::model::Annotation) -> Document {
         d.source.first_line = first;
     }
     if crate::redact::has_redacts(doc) {
-        let masks: Vec<crate::model::Annotation> = if doc.moves.is_empty() {
-            doc.annotations
-                .iter()
-                .filter(|r| r.file == a.file && crate::redact::active(doc, r, a.step))
-                .cloned()
-                .collect()
-        } else if doc.shown_view_at(a.step).file == a.file {
-            let v = doc.view_at(a.step).doc;
-            v.annotations
-                .iter()
-                .filter(|r| crate::redact::active(&v, r, a.step))
-                .cloned()
-                .collect()
-        } else {
-            crate::redact::base_redacts(doc, &a.file)
-        };
-        d.code = crate::redact::mask_lines(&d.code, d.source.first_line, &masks);
+        let masks = doc.masks_at(&a.file, a.step);
+        d.code = crate::redact::mask_with(&d.code, d.source.first_line, &masks);
     }
     // The masks are drawn on the lines: nothing else to skip.
     d.annotations.clear();
@@ -1024,16 +1047,14 @@ fn under_redact(doc: &Document, id: &str, step: u32) -> bool {
     } else {
         doc.view_at(step).doc
     };
-    let masked = crate::redact::masked(&shown, step);
+    let masked = crate::redact::masked(&shown);
     let Some(a) = masked.find_annotation(id) else {
         return false;
     };
     let masks: Vec<_> = masked
         .annotations
         .iter()
-        .filter(|r| {
-            matches!(r.shape, Shape::Redact { .. }) && crate::redact::active(&masked, r, step)
-        })
+        .filter(|r| matches!(r.shape, Shape::Redact { .. }))
         .cloned()
         .collect();
     let on = |line: u32, start: u32, end: u32| {
@@ -1105,45 +1126,6 @@ fn check_loaded(
         }
         if let Some(m) = &a.markers {
             check_markers(doc, a, m, redacted, out);
-        }
-    }
-    // ---- redacts a move widened or dropped (the TUI's own words) ----
-    let mut said: BTreeSet<String> = BTreeSet::new();
-    let mut moved: BTreeSet<String> = BTreeSet::new();
-    for step in doc.change_steps(max).into_iter().filter(|s| *s >= 1) {
-        for (id, n) in doc.redact_notices_by_id(step, true) {
-            if said.insert(n.clone()) {
-                let a = doc.find_annotation(&id);
-                moved.insert(id.clone());
-                out.push(
-                    Finding::new(Level::Warning, "redact", n)
-                        .id(id)
-                        .step(step)
-                        .file(a.and_then(|a| a.file.clone())),
-                );
-            }
-        }
-    }
-    // A redact saved WIDENED by a reload.
-    for a in &doc.annotations {
-        if let Shape::Redact {
-            widened: true,
-            span,
-            ..
-        } = &a.shape
-            && !moved.contains(&a.id)
-        {
-            out.push(
-                Finding::new(
-                    Level::Warning,
-                    "redact",
-                    format!("redact {} is WIDENED: it could not follow its text through a reload, mark the value again", a.id),
-                )
-                .id(a.id.clone())
-                .step(a.step)
-                .file(a.file.clone())
-                .line(Some(span.line)),
-            );
         }
     }
     // ---- annotations a move hides ----

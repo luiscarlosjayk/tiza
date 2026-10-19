@@ -299,25 +299,6 @@ fn ac2_schema_violations_and_unreadable_code() {
 }
 
 #[test]
-fn ac3_a_redact_saved_widened_by_a_reload_warns() {
-    let dir = scratch("t101-reload");
-    let path = dir.join("doc.tiza");
-    std::fs::write(
-        &path,
-        r#"{"schema": 1, "source": {"language": "ini"}, "code": ["token=••••••••"],
-            "annotations": [{"id": "r1", "step": 1, "type": "redact",
-                             "span": {"line": 1, "start": 6, "end": 14}, "widened": true}]}"#,
-    )
-    .unwrap();
-    let (code, v) = check_json(&path, &[]);
-    assert_eq!(code, 0);
-    let r = with_code(&findings(&v), "redact");
-    assert_eq!(r.len(), 1, "{v}");
-    assert_eq!(r[0]["id"], "r1");
-    assert!(r[0]["message"].as_str().unwrap().contains("WIDENED"));
-}
-
-#[test]
 fn ac3_an_annotation_a_move_hides_warns_with_its_steps() {
     let (code, v) = check_json(&example("ownership-moves.rs.tiza"), &[]);
     assert_eq!(code, 0);

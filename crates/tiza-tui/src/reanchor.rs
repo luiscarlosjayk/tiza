@@ -412,19 +412,11 @@ impl<'a> Remap<'a> {
             },
             // Only a redact that followed its text; the widened and dropped
             // outcomes are the caller's (`redact`), which must say so.
-            Shape::Redact {
-                span,
-                keep,
-                label,
-                widened,
-                pin,
-            } => match self.redact(span) {
+            Shape::Redact { span, keep, label } => match self.redact(span) {
                 RedactFate::Followed(span) => Shape::Redact {
                     span,
                     keep: *keep,
                     label: label.clone(),
-                    widened: *widened,
-                    pin: *pin,
                 },
                 RedactFate::Widened(_) | RedactFate::Dropped => return None,
             },
@@ -965,8 +957,6 @@ mod tests {
                     },
                     keep: 4,
                     label: None,
-                    widened: false,
-                    pin: None,
                 },
             });
         }

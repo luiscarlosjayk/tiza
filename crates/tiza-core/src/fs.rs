@@ -239,6 +239,8 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
             migrate(&mut raw);
         }
     }
+    // Redacts saved before t-183 (same schema): back on the file's own code.
+    crate::redact::migrate_legacy(&mut raw)?;
     // A document with a redact that does not parse: serde quotes the
     // values it could not read, so its message goes through the redact
     // filter before there is a document to ask (t-167).
@@ -498,8 +500,8 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     // redact masks applied (t-117). A file reference stays a reference.
     if matches!(doc.code_src, CodeSource::Embedded(_)) && crate::redact::has_redacts(&doc) {
         // The redacts on their masks (t-174 AC10), so the reopened file
-        // shows what was shown; the moves' content as it is shown (t-177).
-        // Everything from the real document first, then written together.
+        // shows what was shown. Everything from the real document first,
+        // then written together.
         let base = crate::redact::masked_base(&doc);
         let annotations = crate::redact::embedded_annotations(&doc);
         // The linked files frozen in `views`, masked with their own
@@ -512,7 +514,6 @@ pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
                 doc.view_base_code(&key, true).map(|c| (f.clone(), c))
             })
             .collect();
-        doc.moves = crate::moves::saved_moves(&doc).0;
         doc.annotations = annotations;
         for (f, code) in views {
             doc.views.insert(f, code);

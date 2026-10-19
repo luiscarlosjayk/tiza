@@ -906,3 +906,158 @@ fn ac5_embed_round_trips_identical() {
         );
     }
 }
+
+// ---------- documents saved before t-183 (corner cases, D3, D4) ----------
+
+/// A `.tiza` as the version before t-183 could save it: `TOKEN=` on line
+/// 2 of the file, with `extra` merged in (moves, flags) and `redact` as
+/// the redact's fields.
+fn legacy(dir: &std::path::Path, name: &str, redact: Value, extra: Value) -> std::path::PathBuf {
+    let mut r = json!({"id": "r1", "type": "redact"});
+    for (k, v) in redact.as_object().unwrap() {
+        r[k] = v.clone();
+    }
+    let mut doc = json!({
+        "schema": 1,
+        "source": {"language": "sh"},
+        "code": ["# config", format!("TOKEN={VALUE}"), "PORT=8080"],
+        "annotations": [r]
+    });
+    for (k, v) in extra.as_object().unwrap() {
+        doc[k] = v.clone();
+    }
+    write(dir, name, &doc)
+}
+
+fn check_json(path: &std::path::Path) -> Value {
+    let o = tiza(&["check", path.to_str().unwrap(), "--json"]);
+    serde_json::from_slice(&o.stdout)
+        .unwrap_or_else(|_| panic!("check --json: {}", String::from_utf8_lossy(&o.stderr)))
+}
+
+#[test]
+fn corner_documents_saved_before_t183_open_or_refuse_clearly() {
+    let dir = scratch("t183-legacy");
+    let span = json!({"line": 2, "start": 6, "end": 18});
+    let insert_top = json!([{"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "# header"}]);
+    // Opening ones: each masks from step 0 on the file's own line 2.
+    for (name, redact, extra) in [
+        // D3: `redact_from_step` is ignored (masks from step 0, more).
+        (
+            "from-step",
+            json!({"step": 2, "span": span}),
+            json!({"redact_from_step": true}),
+        ),
+        // Widened by a reload: no tail.
+        (
+            "widened",
+            json!({"step": 0, "span": span, "keep": 4, "widened": true}),
+            json!({}),
+        ),
+        // Pinned to the file.
+        (
+            "pin-0",
+            json!({"step": 3, "pin": 0, "span": span}),
+            json!({"moves": insert_top}),
+        ),
+        // On the code of step 2, line 3 there, the file's line 2.
+        (
+            "step-2",
+            json!({"step": 2, "span": {"line": 3, "start": 6, "end": 18}}),
+            json!({"moves": insert_top}),
+        ),
+    ] {
+        let path = legacy(&dir, name, redact, extra);
+        let doc = fs::load_document(&path).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let r = doc.annotations.iter().find(|a| a.id == "r1").unwrap();
+        assert_eq!(r.step, 0, "{name}");
+        match &r.shape {
+            tiza_core::Shape::Redact { span, keep, .. } => {
+                assert_eq!((span.line, span.start, span.end), (2, 6, 18), "{name}");
+                if name == "widened" {
+                    assert_eq!(*keep, 0, "a widened redact keeps no tail");
+                }
+            }
+            other => panic!("{name}: {other:?}"),
+        }
+        for step in ["0", "1", "3"] {
+            let o = tiza(&[
+                "render",
+                path.to_str().unwrap(),
+                "--step",
+                step,
+                "--out",
+                "-",
+            ]);
+            assert!(
+                o.status.success(),
+                "{name}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
+            let out = String::from_utf8_lossy(&o.stdout);
+            assert_no_value(&format!("{name} at step {step}"), &out);
+            assert!(out.contains("TOKEN=••••••••"), "{name}: {out}");
+        }
+        assert_eq!(check_json(&path)["errors"], 0, "{name}");
+        // Saved again, in the new form.
+        let d = fs::open(path.to_str().unwrap()).unwrap().document;
+        let live = Live::open(d, path.clone(), dir.join(format!("{name}.sock")));
+        live.command("w");
+        drop(live);
+        let saved = std::fs::read_to_string(&path).unwrap();
+        for gone in ["redact_from_step", "widened", "\"pin\""] {
+            assert!(
+                !saved.contains(gone),
+                "{name}: {gone} saved again:\n{saved}"
+            );
+        }
+    }
+    // D4: a redact on a line a move wrote does not open; a clear error that
+    // quotes nothing, and `tiza check` says which.
+    let writes = json!([{"at_step": 1, "action": "code.patch", "op": "insert", "position": "4", "content": format!("BACKUP={VALUE}")}]);
+    for (name, redact) in [
+        (
+            "pin-1",
+            json!({"step": 1, "pin": 1, "span": {"line": 4, "start": 7, "end": 19}}),
+        ),
+        (
+            "written",
+            json!({"step": 1, "span": {"line": 4, "start": 7, "end": 19}}),
+        ),
+    ] {
+        let path = legacy(&dir, name, redact, json!({"moves": writes}));
+        let e = fs::load_document(&path).unwrap_err().to_string();
+        assert!(
+            e.contains(
+                "redact r1 is on a line move #1 writes: a mask covers only the file's own code"
+            ),
+            "{name}: {e}"
+        );
+        assert_no_value(name, &e);
+        let o = tiza(&["render", path.to_str().unwrap(), "--out", "-"]);
+        assert!(!o.status.success(), "{name} renders");
+        assert_no_value(name, &String::from_utf8_lossy(&o.stderr));
+        let report = check_json(&path);
+        let codes: Vec<String> = report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["code"].as_str().unwrap_or_default().to_string())
+            .collect();
+        assert!(
+            codes.iter().any(|c| c == "redact_on_move_line"),
+            "{name}: {report}"
+        );
+        assert_no_value(name, &report.to_string());
+    }
+    // A move that rewrites a masked line: refused on load, `move_on_mask`.
+    let path = legacy(
+        &dir,
+        "move-on-mask",
+        json!({"step": 0, "span": span}),
+        json!({"moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "TOKEN=new"}]}),
+    );
+    assert!(fs::load_document(&path).is_err());
+    let report = check_json(&path);
+    assert!(report.to_string().contains("\"move_on_mask\""), "{report}");
+}

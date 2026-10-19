@@ -387,8 +387,6 @@ impl ShapeSpec {
                 span: resolve_redact_span(doc, at)?,
                 keep: *keep,
                 label: label.clone(),
-                widened: false,
-                pin: None,
             },
         };
         Ok((shape, markers))
@@ -909,15 +907,6 @@ pub struct Status {
     /// code) and the document (a `steps` entry past the last step).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
-    /// The loud redact notices on the presenter's screen, oldest first
-    /// (t-156): a redact widened or dropped by a reload, a paste or a move
-    /// (t-117, t-140, t-157) and a move retargeted by another (t-157), the
-    /// same rows the TUI draws above its bar (t-135). Ids, lines and
-    /// visible text only, never text under a mask. A later reload does not
-    /// clear them; the presenter's next key does (they were seen). Always
-    /// present, `[]` when nothing is pending.
-    #[serde(default)]
-    pub redact_alerts: Vec<String>,
     /// Supervised mode: mutations wait for the presenter's approval.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub supervised: bool,
@@ -1238,13 +1227,6 @@ pub struct MoveMutated {
     pub moves: usize,
     pub max_step: u32,
     pub revision: u64,
-    /// Loud notices of the change: a redact dropped because the deleted
-    /// move wrote its line (t-154), and every `code.patch` the change
-    /// retargets — a later move whose `position` now hits another line
-    /// (t-157). They never quote masked text. Check the screen before
-    /// recording.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub notices: Vec<String>,
 }
 
 /// One line per move, in the `move.list` / `:moves` format.
@@ -1360,22 +1342,14 @@ pub fn describe_with(a: &Annotation, echo: &crate::redact::Echo) -> String {
 fn describe_shape(a: &Annotation) -> String {
     match &a.shape {
         // Never the text under the mask: columns only.
-        Shape::Redact {
-            span,
-            keep,
-            label,
-            widened,
-            ..
-        } => format!(
+        Shape::Redact { span, keep, label } => format!(
             "{} [step {}] redact L{} {}..{} (masked{}){}",
             a.id,
             a.step,
             span.line,
             span.start,
             span.end,
-            if *widened {
-                ", WIDENED: could not follow its text, mark the value again".to_string()
-            } else if *keep > 0 {
+            if *keep > 0 {
                 format!(", keeps {keep}")
             } else {
                 String::new()

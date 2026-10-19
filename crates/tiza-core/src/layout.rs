@@ -242,7 +242,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         };
         let masked;
         let d = if opts.redact && crate::redact::has_redacts(d) {
-            masked = crate::redact::masked(d, step);
+            masked = crate::redact::masked(d);
             &masked
         } else {
             d
@@ -395,7 +395,7 @@ pub fn layout_with(
     // From here on the code holds the masks and nothing under them.
     let masked_doc;
     let doc = if opts.redact && crate::redact::has_redacts(doc) {
-        masked_doc = crate::redact::masked(doc, opts.step);
+        masked_doc = crate::redact::masked(doc);
         &masked_doc
     } else {
         doc
@@ -1079,16 +1079,12 @@ pub fn layout_with(
 
     // ---- 2b. redact masks: muted, no syntax colour, no tint, on top of
     // whatever else touched those cells (the redact wins). Active from step
-    // 0 whatever the annotation's step (unless `redact_from_step`), so they
-    // are taken from the document, not from `vis`.
+    // 0, so they are taken from the document, not from `vis`.
     if opts.redact {
         for a in &doc.annotations {
             let Shape::Redact { span, label, .. } = &a.shape else {
                 continue;
             };
-            if !crate::redact::active(doc, a, opts.step) {
-                continue;
-            }
             let Some(&y) = row_of_line.get(&span.line) else {
                 continue;
             };

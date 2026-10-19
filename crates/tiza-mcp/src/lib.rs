@@ -246,7 +246,6 @@ pub struct RedactParams {
     )]
     pub keep: Option<u8>,
     pub label: Option<String>,
-    pub step: Option<u32>,
     pub id: Option<String>,
 }
 
@@ -708,7 +707,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size; `redact_alerts`, the loud redact notices still pending on the presenter's screen (a redact widened or dropped by a reload, paste or move, a move retargeted by another; ids, lines and visible text only, never masked text), cleared when the presenter presses a key — while it is not empty, tell the presenter to check the screen and read `get_code` before recording; plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
+        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size; plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         let mut v = self.call("status", json!({})).await?;
@@ -720,7 +719,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (a redact a move widens or drops, an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning. Runs inside the instance on the real code, so redacts change nothing; read-only, and never quotes text under a redact. Run it before showing a document."
+        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a move over a masked line, a linked file that cannot be read, an unknown or duplicate id) and warnings (an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning. Runs inside the instance on the real code, so redacts change nothing; read-only, and never quotes text under a redact. Run it before showing a document."
     )]
     async fn check(
         &self,
@@ -859,13 +858,13 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Masks a secret (a token, a password, a URL with credentials) with eight bullets on every surface at once — the screen, every export, the recordings and what get_code / the resources return — without touching the file on disk. Only the columns are stored, never the text. `at.find` is the text BEFORE the secret (`API_KEY=`, `Bearer`); the mask runs from there to the end of the line. Active from step 0 whatever `step`. Several per line allowed."
+        description = "Masks a secret (a token, a password, a URL with credentials) with eight bullets on every surface at once — the screen, every export, the recordings and what get_code / the resources return — without touching the file on disk. Only the columns are stored, never the text. `at.find` is the text BEFORE the secret (`API_KEY=`, `Bearer`); the mask runs from there to the end of the line. Marked on the code shown now, kept on the file's own lines, active from step 0. Several per line allowed. An agent may add a redact but never delete, narrow or move one."
     )]
     async fn redact(
         &self,
         Parameters(p): Parameters<RedactParams>,
     ) -> Result<CallToolResult, McpError> {
-        let params = json!({"type": "redact", "at": p.at, "keep": p.keep.unwrap_or(0), "label": p.label, "step": p.step, "id": p.id});
+        let params = json!({"type": "redact", "at": p.at, "keep": p.keep.unwrap_or(0), "label": p.label, "id": p.id});
         let v = self.call("annotation.add", params).await?;
         Ok(annotation_reply(&v, "added"))
     }
@@ -1008,7 +1007,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly. `notices` names every later move the new one retargets (a `position` target now hits another line, because this move shifted the code it counts on): check it with get_code before recording."
+        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly. A move never rewrites or deletes a line a redact masks: that is refused."
     )]
     async fn add_move(
         &self,
@@ -1046,7 +1045,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Deletes a move by its 1-based index (see list_moves). `notices` names any redact dropped with it (the move wrote its line) and every later move the deletion retargets (a `position` target now hits another line): check get_code before recording."
+        description = "Deletes a move by its 1-based index (see list_moves). Refused when a later move would then rewrite or delete a masked line."
     )]
     async fn delete_move(
         &self,

@@ -740,42 +740,6 @@ fn ac5_changelog_names_the_card() {
     );
 }
 
-/// The scene the instance sends has its moves' content masked (t-140):
-/// readied for the export, it draws what the file's render draws, and the
-/// value never comes back.
-#[test]
-fn corner_masked_move_content_in_the_live_export() {
-    let dir = scratch("moves-masked");
-    std::fs::write(
-        dir.join("main.sh"),
-        format!("# deploy\nTOKEN={VALUE}\nrun\n"),
-    )
-    .unwrap();
-    let doc = json!({
-        "schema": 1,
-        "title": "Deploy",
-        "source": {"language": "sh", "first_line": 1},
-        "code": {"file": "main.sh"},
-        "step": 0,
-        "moves": [
-            {"at_step": 2, "action": "code.patch", "op": "replace", "find": "run", "content": format!("run --key {VALUE}")},
-            {"at_step": 3, "action": "select", "from": {"find": "TOKEN"}, "to": {"find": "run"}}
-        ],
-        "annotations": [
-            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}}
-        ]
-    });
-    let path = dir.join("deploy.tiza");
-    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
-    let live = open_live(&path);
-    let cwd = elsewhere("moves-masked");
-    for step in 0..=3 {
-        let l = render_live(&live, &cwd, step, "md");
-        assert_eq!(l, render_file(&path, step, "md"), "step {step}");
-        pieces_absent(&format!("live md of step {step}"), &l);
-    }
-}
-
 // ---------- Review round 1 (adversarial review of 2f653ce) ----------
 
 /// A small document with a masked token, as a value.
