@@ -1344,25 +1344,25 @@ fn review_a1_an_alias_of_a_masked_file_shows_its_masks() {
 }
 
 #[test]
-fn review_a2_a_reload_never_drops_a_mask_a_move_touches() {
-    // A move replaces L2; a paste (or a reload) changes L2-3 and adds a
-    // line: the redact on L3 masks all three lines whole, the move's
-    // conflict is said, and no value shows at any step.
+fn review_a2_a_reload_a_move_conflicts_with_is_not_applied_and_the_document_still_opens() {
+    // A move replaces L2; a paste (or a reload) would change L2-3 and add a
+    // line, so the redact on L3 would mask a line the move rewrites. The
+    // new code is not applied (second review, A-2: applied, the sidecar
+    // did not open again and the exports failed): the previous code stays,
+    // masked, the error names the move, and the document saves, reopens
+    // and exports.
     const NEW1: &str = "R0tat3dS3cretXYZ";
     const NEW2: &str = "More5ecretABC";
     let dir = scratch("t183-a2");
     let src = dir.join("app.env");
     let text = format!("# config\nNAME=demo\nTOKEN={VALUE}\nPORT=8080\n");
-    std::fs::write(&src, &text).unwrap();
     let pasted = format!("# config\nNAME=x1\nTOKEN={NEW1}\nNEW={NEW2}\nPORT=8080\n");
     for how in ["paste", "follow"] {
         std::fs::write(&src, &text).unwrap();
+        let sidecar = dir.join(format!("{how}.tiza"));
+        let sock = dir.join(format!("{how}.sock"));
         let doc = fs::open(src.to_str().unwrap()).unwrap().document;
-        let live = Live::open(
-            doc,
-            dir.join(format!("{how}.tiza")),
-            dir.join(format!("{how}.sock")),
-        );
+        let live = Live::open(doc, sidecar.clone(), sock.clone());
         live.command("redact 3:TOKEN=");
         assert!(!live.message().unwrap().1);
         live.api_ok(
@@ -1374,52 +1374,53 @@ fn review_a2_a_reload_never_drops_a_mask_a_move_touches() {
             ),
         );
         live.api_ok("step.set", json!({"step": 0}));
+        let before = code_get(&live);
         if how == "paste" {
             let p = pasted.clone();
-            live.with(move |a| a.replace_code(&p)).unwrap();
+            let r = live.with(move |a| a.replace_code(&p));
+            let e = r.expect_err("a paste that conflicts with a move is refused");
+            assert!(e.to_string().contains("not applied"), "{e}");
         } else {
             live.command("follow on");
             let tmp = src.with_extension("env.tmp");
             std::fs::write(&tmp, &pasted).unwrap();
             std::fs::rename(&tmp, &src).unwrap();
             let start = std::time::Instant::now();
-            while live.api_ok("follow.status", json!({}))["reloads"]
-                .as_u64()
-                .unwrap_or(0)
-                < 1
-            {
-                assert!(start.elapsed().as_secs() < 10, "no reload");
+            while !live.with(|a| a.redact_alerts.iter().any(|n| n.contains("not applied"))) {
+                assert!(start.elapsed().as_secs() < 10, "no alert");
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
+            let alert = live.with(|a| a.redact_alerts.join("\n"));
+            assert!(alert.contains("move #1"), "{alert}");
+            assert_eq!(
+                live.api_ok("follow.status", json!({}))["reloads"].as_u64(),
+                Some(0),
+                "not counted as a reload"
+            );
         }
-        let (msg, err) = live.message().unwrap();
-        assert!(err, "{how}: {msg}");
-        assert!(!msg.contains("dropped"), "{how}: {msg}");
-        assert!(msg.contains("masking L2-4 whole"), "{how}: {msg}");
-        assert!(
-            msg.contains("move #1"),
-            "{how}: the conflict is said: {msg}"
-        );
-        assert!(
-            live.with(|a| a
-                .doc
-                .annotations
-                .iter()
-                .filter(|x| matches!(x.shape, tiza_core::Shape::Redact { .. }))
-                .count())
-                >= 3,
-            "{how}: the masks are kept"
-        );
+        assert_eq!(code_get(&live), before, "{how}: the previous code stays");
         for step in [0, 1] {
             live.api_ok("step.set", json!({"step": step}));
             for (surface, s) in readers(&live) {
-                for v in [NEW1, NEW2, "R0tat", "5ecret"] {
-                    assert!(
-                        !s.contains(v),
-                        "{how}, step {step}: {surface} shows `{v}`:\n{s}"
-                    );
+                assert_no_value(&format!("{how}, step {step}: {surface}"), &s);
+                for v in [NEW1, NEW2] {
+                    assert!(!s.contains(v), "{how}, step {step}: {surface} shows `{v}`");
                 }
             }
+        }
+        // Everything the TUI holds saves, reopens and exports.
+        live.command("w");
+        fs::open(sidecar.to_str().unwrap()).unwrap_or_else(|e| panic!("{how}: reopen: {e}"));
+        for args in [
+            vec!["render", sidecar.to_str().unwrap(), "--out", "-"],
+            vec!["--socket", sock.to_str().unwrap(), "render", "--out", "-"],
+        ] {
+            let o = tiza(&args);
+            assert!(
+                o.status.success(),
+                "{how}: {args:?}: {}",
+                String::from_utf8_lossy(&o.stderr)
+            );
         }
     }
 }
@@ -1551,4 +1552,147 @@ fn review_a7_check_does_not_name_a_linked_file_of_a_document_with_redacts() {
         assert!(text.contains("move #2"), "{args:?}: {text}");
         assert_no_value(&format!("{args:?}"), &text);
     }
+}
+
+#[test]
+fn review2_a1_no_request_measures_a_masked_line() {
+    // The same requests on two documents whose masked values differ in
+    // length (12 and 17 characters; every masked line shows the same)
+    // answer byte for byte alike: patched spans, an arrow moved by
+    // columns, spans to the end of a line, and the listings.
+    let answers = |value: &str, tag: &str| -> Vec<String> {
+        let dir = scratch(&format!("t183-r2a1-{tag}"));
+        let src = dir.join("app.env");
+        std::fs::write(
+            &src,
+            format!("# config\nTOKEN={value}\nPORT=8080\nURL=https://h/?k={value}&z=1\n"),
+        )
+        .unwrap();
+        let doc = fs::open(src.to_str().unwrap()).unwrap().document;
+        let live = Live::open(doc, dir.join("app.env.tiza"), dir.join("live.sock"));
+        let n = value.chars().count();
+        for cmd in [
+            "redact 2:TOKEN=".to_string(),
+            format!("redact 4@17..{}", 17 + n),
+        ] {
+            live.command(&cmd);
+            assert!(!live.message().unwrap().1, "{cmd}");
+        }
+        let mut out = Vec::new();
+        let mut say = |what: String, r: tiza_core::protocol::Response| {
+            out.push(match (r.error, r.result) {
+                (Some(e), _) => format!("{what}: {} {}", e.code, e.message),
+                (None, Some(v)) => {
+                    format!("{what}: ok {}", v.get("id").cloned().unwrap_or_default())
+                }
+                (None, None) => format!("{what}: ok"),
+            });
+        };
+        // (1) scene.patch with a span on a masked line.
+        for (i, (a, b)) in [(13, 14), (14, 15), (18, 19), (22, 23)]
+            .into_iter()
+            .enumerate()
+        {
+            let r = live.api(
+                "scene.patch",
+                json!({"annotations": [{"id": format!("p{i}"), "step": 1, "type": "highlight",
+                    "span": {"line": 2, "start": a, "end": b}}]}),
+            );
+            say(format!("patch {a}..{b}"), r);
+        }
+        // (2) an arrow moved by columns onto a masked line.
+        let r = live.api(
+            "annotation.add",
+            json!({"id": "ar", "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 3, "col": 0}}),
+        );
+        say("arrow".into(), r);
+        for col in [14, 15, 20, 24] {
+            let r = live.api(
+                "annotation.update",
+                json!({"id": "ar", "move": {"from": {"line": 2, "col": col}}}),
+            );
+            say(format!("move col {col}"), r);
+        }
+        // (3) spans to the end of a masked line.
+        for (id, shape) in [
+            ("h1", json!({"type": "highlight", "at": {"line": 2}})),
+            (
+                "h2",
+                json!({"type": "highlight", "at": {"line": 2, "col": 0}}),
+            ),
+            (
+                "m1",
+                json!({"type": "mark", "kind": "move", "at": {"line": 2, "col": 3}}),
+            ),
+            (
+                "h3",
+                json!({"type": "highlight", "at": {"line": 4, "col": 27, "end": 28}}),
+            ),
+        ] {
+            let mut p = shape.clone();
+            p["id"] = json!(id);
+            let r = live.api("annotation.add", p);
+            say(format!("add {id}"), r);
+        }
+        // (4) the listings.
+        out.push(live.api_ok("scene.list", json!({})).to_string());
+        let mut mcp = McpClient::start(&live.socket);
+        let (_, text, _) = mcp.call("list_annotations", json!({}));
+        out.push(text);
+        out
+    };
+    let short = answers(VALUE, "short");
+    let long = answers("Lq8xR3vT9mWp2Kz7Y", "long");
+    assert_eq!(short.len(), long.len());
+    for (a, b) in short.iter().zip(&long) {
+        assert_eq!(a, b);
+    }
+    assert!(!short.iter().any(|s| s.contains("graphemes")), "{short:#?}");
+    for ok in [
+        "patch 13..14: ok",
+        "move col 14: ok",
+        "add h1: ok",
+        "add m1: ok",
+    ] {
+        assert!(short.iter().any(|s| s.starts_with(ok)), "{ok}: {short:#?}");
+    }
+    let list = &short[short.len() - 2];
+    assert!(list.contains("redact L2 6..14"), "{list}");
+}
+
+#[test]
+fn review2_a3_an_annotation_on_an_alias_of_a_linked_file_is_on_that_file() {
+    let dir = scratch("t183-r2a3");
+    std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
+    std::fs::write(
+        dir.join("queue.env"),
+        format!("QUEUE=jobs\nTOKEN={VALUE}\n"),
+    )
+    .unwrap();
+    let doc = tiza_core::Document::from_code("fn main() {}\n", "rs", Some("main.rs".into()));
+    let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.link", "file": "queue.env"}),
+    );
+    let r = live.api_ok(
+        "annotation.add",
+        json!({"type": "note", "line": 1, "text": "n", "step": 1, "file": "sub/../queue.env"}),
+    );
+    let id = r["id"].as_str().unwrap().to_string();
+    let file = live.with(move |a| a.doc.find_annotation(&id).unwrap().file.clone());
+    assert_eq!(file.as_deref(), Some("queue.env"));
+    // A file that is no view: said once, `not_found`.
+    let e = live
+        .api(
+            "annotation.add",
+            json!({"type": "note", "line": 1, "text": "n", "step": 1, "file": "other.env"}),
+        )
+        .error
+        .unwrap();
+    assert_eq!(e.code, "not_found");
+    assert_eq!(
+        e.message,
+        "file «other.env» is not a view of this document (link it with a code.link move first)"
+    );
 }

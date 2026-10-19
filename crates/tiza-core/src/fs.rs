@@ -89,9 +89,16 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
         .iter()
         .filter(|a| doc.validate_annotation(a).is_err())
         .map(|a| match &a.file {
-            // An annotation of a linked file (t-105): say which file.
+            // An annotation of a linked file (t-105): say which file — not
+            // on a document with redacts, whose file names are its own
+            // text (t-183 D7).
             Some(f) => {
                 let n = doc.view_code.get(f).map_or(0, Vec::len);
+                let f = if crate::redact::has_redacts(doc) {
+                    crate::redact::ELIDED
+                } else {
+                    f.as_str()
+                };
                 format!("{} ({f}, lines 1-{n})", a.id)
             }
             None => a.id.clone(),

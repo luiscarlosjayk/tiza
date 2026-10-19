@@ -16,6 +16,10 @@ pub enum Error {
     },
     #[error("annotation {0} does not exist")]
     NotFound(String),
+    /// A file that is not a view of the document (`file «x» is not a view
+    /// …`): `not_found`, said once (t-183 review A-3).
+    #[error("{0}")]
+    ViewNotFound(String),
     /// A move that does not exist (`move.delete`): `move #N does not exist`.
     #[error("move {0} does not exist")]
     MoveNotFound(String),
@@ -60,7 +64,10 @@ impl Error {
     pub fn code(&self) -> &'static str {
         match self {
             Error::LineOutOfRange { .. } | Error::SpanOutOfRange { .. } => "out_of_range",
-            Error::NotFound(_) | Error::StepNotFound(_) | Error::MoveNotFound(_) => "not_found",
+            Error::NotFound(_)
+            | Error::ViewNotFound(_)
+            | Error::StepNotFound(_)
+            | Error::MoveNotFound(_) => "not_found",
             Error::DuplicateId(_) => "duplicate_id",
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
                 "text_not_found"

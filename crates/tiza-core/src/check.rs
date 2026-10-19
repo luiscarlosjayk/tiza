@@ -1098,7 +1098,7 @@ fn check_loaded(
         }
         if let Err(e) = doc.validate_annotation(a) {
             bad.insert(a.id.clone());
-            let code = if matches!(e, crate::Error::NotFound(_)) {
+            let code = if matches!(e, crate::Error::NotFound(_) | crate::Error::ViewNotFound(_)) {
                 "unknown_id"
             } else {
                 "anchor"

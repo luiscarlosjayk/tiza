@@ -636,6 +636,7 @@ pub fn unquoted(doc: &Document, e: Error) -> Error {
         },
         Error::Invalid(s) => Error::Invalid(elide_quotes(&s)),
         Error::StepNotFound(s) => Error::StepNotFound(elide_quotes(&s)),
+        Error::ViewNotFound(s) => Error::ViewNotFound(elide_quotes(&s)),
         // The length of a line may be that of a masked value (review A3).
         Error::SpanOutOfRange {
             line, start, end, ..
@@ -686,6 +687,24 @@ pub fn parse_error(raw_redacted: bool, e: serde_json::Error) -> Error {
         Error::JsonText(crate::error::serde_text(&e.to_string()))
     } else {
         Error::Json(e)
+    }
+}
+
+/// `e` without the length of a line (`(it has N graphemes)`): for an
+/// agent's request on a document with redacts (t-183 review A-1), which
+/// is answered on the masked code and never says how long a line is.
+pub fn without_length(e: Error) -> Error {
+    match e {
+        Error::SpanOutOfRange {
+            line, start, end, ..
+        } => Error::SpanOutOfRange {
+            line,
+            start,
+            end,
+            len: None,
+        },
+        Error::Invalid(s) => Error::Invalid(elide_lengths(&s)),
+        other => other,
     }
 }
 

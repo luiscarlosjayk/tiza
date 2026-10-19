@@ -1319,7 +1319,7 @@ impl Document {
                 .view_base_code(key, false)
                 .map(|c| (c, first))
                 .ok_or_else(|| {
-                    Error::NotFound(format!(
+                    Error::ViewNotFound(format!(
                         "file «{}» is not a view of this document",
                         key.as_deref().unwrap_or("?")
                     ))
@@ -1961,7 +1961,7 @@ impl Document {
             Some(f) => {
                 let key = self.view_key(f);
                 if key.is_some() && !self.view_code.contains_key(key.as_deref().unwrap_or("")) {
-                    return Err(Error::NotFound(format!(
+                    return Err(Error::ViewNotFound(format!(
                         "file «{f}» is not a view of this document (link it with a code.link move first)"
                     )));
                 }
