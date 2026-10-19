@@ -16,7 +16,6 @@ use unicode_segmentation::UnicodeSegmentation;
 use crate::Error;
 use crate::model::{Anchor, Annotation, Document, Shape, TextSpan};
 use crate::protocol::{MoveSpec, Where};
-use crate::redact::MaskSpan;
 
 /// One move of the demo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -476,8 +475,7 @@ impl Patch {
         Ok(self.apply_target(code, first_line, t))
     }
 
-    /// Applies the patch at a target already resolved (on the masked code:
-    /// the text under a redact is never matched) to `code`.
+    /// Applies the patch at a target already resolved to `code`.
     pub fn apply_target(
         &self,
         code: &[String],
@@ -593,8 +591,7 @@ impl ViewRef {
 }
 
 /// One applied patch: its index in the moves list, its step, the view it
-/// edited, its line map and the view's code right after it (masked when
-/// the projection is).
+/// edited, its line map and the view's code right after it.
 #[derive(Debug, Clone)]
 pub struct AppliedPatch {
     pub index: usize,
@@ -676,7 +673,7 @@ fn resolve_point(
                 line,
                 start: col,
                 end: col,
-                len: Some(len),
+                len,
             });
         }
         return Ok(Anchor { line, col });
@@ -713,47 +710,18 @@ fn resolve_point(
 }
 
 /// The document at `step`: the moves `<= step` applied in step order then
-/// list order, each on the view shown at its point. A redact is on its
-/// file's own code (t-183): its mask shifts with its line, text targets are
-/// matched on the masked code (a `find` never probes a secret), and a patch
-/// that would rewrite or delete a masked line is refused (AC4). `masked`:
-/// `AppliedPatch::after` is the masked code too. An error names the move
-/// that failed.
-pub fn project(
-    doc: &Document,
-    moves: &[Move],
-    step: u32,
-    masked: bool,
-) -> Result<Projection, Error> {
+/// list order, each on the view shown at its point. An error names the
+/// move that failed.
+pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, Error> {
     let mut order: Vec<(usize, &Move)> = moves
         .iter()
         .enumerate()
         .filter(|(_, m)| m.at_step <= step)
         .collect();
     order.sort_by_key(|(i, m)| (m.at_step, *i));
-    // The masks of every view, on its own code, then where its patches put
-    // their lines.
-    let mut masks: BTreeMap<ViewKey, Vec<MaskSpan>> = BTreeMap::new();
-    for a in &doc.annotations {
-        if let Shape::Redact { span, .. } = &a.shape {
-            masks.entry(a.file.clone()).or_default().push(MaskSpan {
-                line: span.line,
-                start: span.start,
-                end: span.end,
-                keep: crate::redact::shown_tail(&a.shape),
-            });
-        }
-    }
-    let probe =
-        |masks: &BTreeMap<ViewKey, Vec<MaskSpan>>, code: &[String], key: &ViewKey, first: u32| {
-            match masks.get(key) {
-                Some(ms) if !ms.is_empty() => crate::redact::mask_with(code, first, ms),
-                _ => code.to_vec(),
-            }
-        };
     let mut p = Projection::default();
     p.codes
-        .insert(None, doc.view_base_code(&None, false).unwrap_or_default());
+        .insert(None, doc.view_base_code(&None).unwrap_or_default());
     for (i, m) in order {
         let named = |e: Error| name_move(e, i, m.at_step);
         match &m.action {
@@ -761,24 +729,7 @@ pub fn project(
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
                 let code = p.codes.get(&key).cloned().unwrap_or_default();
-                let target = patch
-                    .resolve(&probe(&masks, &code, &key, first), first)
-                    .map_err(named)?;
-                // A move never rewrites or deletes a masked line (t-183
-                // AC4): the mask covers the file's own code, untouched.
-                if patch.op != PatchOp::Insert
-                    && let Some(mk) = masks
-                        .get(&key)
-                        .into_iter()
-                        .flatten()
-                        .find(|mk| target.from <= mk.line && mk.line <= target.to)
-                {
-                    return Err(named(Error::Invalid(format!(
-                        "it would change L{}, {}",
-                        mk.line,
-                        crate::redact::MASKED_LINE
-                    ))));
-                }
+                let target = patch.resolve(&code, first).map_err(named)?;
                 let (new_code, map) = patch.apply_target(&code, first, target);
                 if let Some(c) = p.cursor {
                     p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
@@ -799,16 +750,7 @@ pub fn project(
                             _ => None,
                         };
                 }
-                if let Some(ms) = masks.get_mut(&key) {
-                    for mk in ms.iter_mut() {
-                        mk.line = map.get(mk.line).unwrap_or(mk.line);
-                    }
-                }
-                let after = if masked {
-                    probe(&masks, &new_code, &key, first)
-                } else {
-                    new_code.clone()
-                };
+                let after = new_code.clone();
                 p.codes.insert(key.clone(), new_code);
                 p.patches.push(AppliedPatch {
                     index: i,
@@ -821,7 +763,7 @@ pub fn project(
             MoveAction::CodeLink(link) => {
                 let key = doc.view_key(&link.file);
                 if !p.codes.contains_key(&key) {
-                    let base = doc.view_base_code(&key, false).ok_or_else(|| {
+                    let base = doc.view_base_code(&key).ok_or_else(|| {
                         named(Error::Invalid(format!(
                             "code.link «{}»: the file is not loaded (it could not be read next to the document; `:embed` stores it)",
                             link.file
@@ -837,14 +779,7 @@ pub fn project(
             MoveAction::Cursor(c) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                // Its column is checked on the line as it is shown, masked
-                // (t-183 review A3): never on the length of a masked value.
-                let code = probe(
-                    &masks,
-                    &p.codes.get(&key).cloned().unwrap_or_default(),
-                    &key,
-                    first,
-                );
+                let code = p.codes.get(&key).cloned().unwrap_or_default();
                 let last = first + code.len().saturating_sub(1) as u32;
                 if c.line < first || c.line > last {
                     return Err(named(Error::LineOutOfRange {
@@ -860,7 +795,7 @@ pub fn project(
                         line: c.line,
                         start: col,
                         end: col,
-                        len: Some(len),
+                        len,
                     }));
                 }
                 p.cursor = Some(Anchor { line: c.line, col });
@@ -868,12 +803,7 @@ pub fn project(
             MoveAction::Select(s) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                let code = probe(
-                    &masks,
-                    &p.codes.get(&key).cloned().unwrap_or_default(),
-                    &key,
-                    first,
-                );
+                let code = p.codes.get(&key).cloned().unwrap_or_default();
                 let a = resolve_point(doc, &code, first, &s.from, "select from", false)
                     .map_err(named)?;
                 let b =
@@ -900,15 +830,14 @@ pub fn project(
 /// through every patch of the shown view between the two steps, or back
 /// through them in reverse. `None` when a patch removed the line, when the
 /// two steps show different files, or when the moves do not apply. The
-/// same line without moves. Only line maps are read: no text, masked or
-/// not, reaches the caller.
+/// same line without moves.
 pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> {
     if doc.moves.is_empty() || from == to {
         return Some(line);
     }
     let (lo, hi) = (from.min(to), from.max(to));
-    let low = project(doc, &doc.moves, lo, false).ok()?;
-    let high = project(doc, &doc.moves, hi, false).ok()?;
+    let low = project(doc, &doc.moves, lo).ok()?;
+    let high = project(doc, &doc.moves, hi).ok()?;
     if low.shown.file != high.shown.file {
         return None;
     }
@@ -967,17 +896,9 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
             )));
         }
         for (id, spec) in &m.rebind {
-            let Some(a) = annotations.iter().find(|a| &a.id == id) else {
+            if !annotations.iter().any(|a| &a.id == id) {
                 return Err(Error::Invalid(format!(
                     "move #{}, step {}: rebind names unknown annotation «{id}»",
-                    i + 1,
-                    m.at_step
-                )));
-            };
-            // A mask stays on its line (t-183): no move takes it elsewhere.
-            if matches!(a.shape, Shape::Redact { .. }) {
-                return Err(Error::Invalid(format!(
-                    "move #{}, step {}: rebind cannot move redact {id}: a mask stays on its line",
                     i + 1,
                     m.at_step
                 )));
@@ -993,7 +914,7 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
     }
     // Apply in order, checking each patch's `rebind` finds on the code after
     // it: exactly one match, or an `occurrence` within the matches.
-    let p = project(doc, moves, u32::MAX, true)?;
+    let p = project(doc, moves, u32::MAX)?;
     for ap in &p.patches {
         let m = &moves[ap.index];
         let first = doc.view_first_line(&ap.file);
@@ -1094,15 +1015,6 @@ pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
             label: label.clone(),
             style: style.clone(),
             emphasis: *emphasis,
-        },
-        Shape::Redact {
-            span: s,
-            keep,
-            label,
-        } => Shape::Redact {
-            span: span(s)?,
-            keep: *keep,
-            label: label.clone(),
         },
         Shape::Box {
             from_line,
@@ -1257,7 +1169,7 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
     }) {
         return None;
     }
-    let proj = project(doc, &doc.moves, step, false).ok()?;
+    let proj = project(doc, &doc.moves, step).ok()?;
     let (full, _) = proj.shown_code(doc);
     let mut items: Vec<(usize, TypingItem)> = Vec::new();
     for (k, ap) in proj.patches.iter().enumerate() {

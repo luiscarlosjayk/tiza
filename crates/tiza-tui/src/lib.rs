@@ -325,12 +325,6 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.revision += 1;
         return;
     }
-    // Pending redact alerts (t-135) were on screen: this key means they
-    // were seen. Not while an overlay hides them (that key only closes or
-    // scrolls it), nor the key that ends a typing animation (above).
-    if app.overlay == Overlay::None {
-        app.dismiss_redact_alerts();
-    }
     // The review overlay has its own keys; the rest only scroll or close.
     if app.overlay == Overlay::Review && code == KeyCode::Char(':') {
         // Typing a command from the list: hide it and open the command

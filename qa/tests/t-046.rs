@@ -17,8 +17,8 @@
 //!   After Luis's rework (2026-10-18) it names only what will be built
 //!   (t-166, t-183), and no scenario depends on a discarded feature: no
 //!   arrows between files or two files at once, no author metadata, no
-//!   resource notifications, no diff import, no `:redact auto` for agents,
-//!   no `--no-save` (the scenarios work on a copy and keep the sidecar the
+//!   resource notifications, no diff import, no masks (t-183 withdrew the
+//!   redact feature), no `--no-save` (the scenarios work on a copy and keep the sidecar the
 //!   TUI autosaves).
 //! - AC5 No marketing or channel tasks.
 //!
@@ -155,19 +155,18 @@ fn ac4_no_scenario_depends_on_a_discarded_feature() {
             "the catalogue still mentions «{gone}»"
         );
     }
-    // Agents never turn masking on or off: `:redact auto` is not in a script.
-    assert!(
-        !text.contains(":redact auto"),
-        "scenario 6 builds the masks"
-    );
+    // No mask exists (t-183): no scenario promises one.
+    for gone in [":redact", "redact annotation", "••••••••", "◆ redacted"] {
+        assert!(!text.contains(gone), "the catalogue still says «{gone}»");
+    }
     let s = scenarios();
     let body = |n: usize| &s[n - 1].1;
     // Scenario 2: each agent signs its own labels and notes.
     assert!(body(2).contains("author:") && body(2).contains("review:"));
     // Scenario 4: the agent writes the moves from the diff.
     assert!(body(4).contains("git diff") && body(4).contains("writes the moves"));
-    // Scenario 6: the .tiza is built with its masks before it is opened.
-    assert!(body(6).contains("demo.env.tiza") && body(6).contains("redact"));
+    // Scenario 6: a throwaway file with demo values, never a real one.
+    assert!(body(6).contains("demo.env") && body(6).contains("fake values"));
     // Every scenario that opens a sample opens a working copy.
     for (title, b) in &s {
         for line in b.lines() {
@@ -530,113 +529,6 @@ fn scenario_12_starts_by_itself_and_loops_round_again() {
         summary.contains("steps 0, 1, 2, 3, 4, 5 timed by their auto_advance_ms"),
         "{summary}"
     );
-}
-
-#[test]
-fn scenario_6_asks_for_redacts_without_a_label() {
-    // QA 2 (2026-10-18): an agent labelled the masks, and the notes the
-    // second prompt puts on those lines had no room and were not drawn.
-    let s = scenarios();
-    let prompt1 = s[5]
-        .1
-        .lines()
-        .find(|l| l.starts_with("- To the agent, before Tiza is open"))
-        .expect("scenario 6's first prompt");
-    assert!(
-        prompt1.to_lowercase().contains("give the redacts no label"),
-        "{prompt1}"
-    );
-    // Why: the same take with labelled masks loses its notes.
-    let dir = scratch("t046-s6");
-    std::fs::create_dir_all(&dir).unwrap();
-    let env = [
-        ("DATABASE_URL=postgres://app:", "Qz7rW4xv", "@db.local/app"),
-        ("API_TOKEN=", "tk_R7vQ2mXz9LpW4nB8", ""),
-        ("LOG_LEVEL=info", "", ""),
-    ];
-    let text: String = env.iter().map(|(a, v, b)| format!("{a}{v}{b}\n")).collect();
-    std::fs::write(dir.join("demo.env"), text).unwrap();
-    // The span of each secret value, from the text before it (0-based
-    // columns, end exclusive), as the prompt asks the agent to compute it.
-    // The fake values share no four characters in a row with anything else
-    // in the scenario (nor with the notes and labels below, nor with the
-    // file name): random-looking, so no note or label ever seems to repeat
-    // one (since t-183 the mask covers the code only).
-    let words = s[5]
-        .1
-        .replace("Qz7rW4xv", "")
-        .replace("tk_R7vQ2mXz9LpW4nB8", "")
-        + " demo.env where the app's Postgres lives the token the API client sends how chatty the logs are database password API token";
-    for (_, value, _) in env.iter().take(2) {
-        assert!(s[5].1.contains(value), "scenario 6 writes {value}");
-        let c: Vec<char> = value.chars().collect();
-        for w in c.windows(4) {
-            let piece: String = w.iter().collect();
-            assert!(
-                !words.contains(&piece),
-                "{value} shares «{piece}» with the scenario's text"
-            );
-        }
-    }
-    let span = |line: usize| {
-        let (before, value, _) = env[line - 1];
-        json!({"line": line, "start": before.len(), "end": before.len() + value.len()})
-    };
-    let notes = [
-        (1, "where the app's Postgres lives"),
-        (2, "the token the API client sends"),
-        (3, "how chatty the logs are"),
-    ];
-    for labelled in [false, true] {
-        let mut r1 = json!({"id": "r1", "type": "redact", "step": 0, "span": span(1)});
-        let mut r2 = json!({"id": "r2", "type": "redact", "step": 0, "span": span(2)});
-        if labelled {
-            r1["label"] = json!("database password");
-            r2["label"] = json!("API token");
-        }
-        let mut annotations = vec![r1, r2];
-        for (line, text) in notes {
-            annotations.push(json!({"id": format!("a{line}"), "type": "note", "step": 1, "line": line, "text": text}));
-        }
-        let path = dir.join("demo.env.tiza");
-        let d = json!({"schema": 1, "source": {"first_line": 1}, "code": {"file": "demo.env"}, "annotations": annotations});
-        std::fs::write(&path, d.to_string()).unwrap();
-        let frame = render_step(&path, 1);
-        let drawn = notes.iter().filter(|(_, t)| frame.contains(t)).count();
-        // Exactly the value is masked: the text around it stays, and no
-        // piece of a value (two characters in a row) is left on its line.
-        for (n, (before, value, after)) in env.iter().take(2).enumerate() {
-            let masked = format!("{before}••••••••{after}");
-            let line = frame
-                .lines()
-                .find(|l| l.contains(before))
-                .unwrap_or_else(|| panic!("line {} is not drawn:\n{frame}", n + 1));
-            // The code as drawn: from the key to the first blank after it.
-            let at = line.find(before).unwrap();
-            let code: String = line[at..]
-                .chars()
-                .take_while(|c| !c.is_whitespace())
-                .collect();
-            assert_eq!(code, masked, "line {}: {line}", n + 1);
-            let shown = &code[before.len()..];
-            let chars: Vec<char> = value.chars().collect();
-            for w in chars.windows(2) {
-                let piece: String = w.iter().collect();
-                assert!(
-                    !shown.contains(&piece),
-                    "a piece of the value «{piece}» shows: {line}"
-                );
-            }
-        }
-        if labelled {
-            assert!(
-                drawn < notes.len(),
-                "labelled masks: {drawn} notes drawn\n{frame}"
-            );
-        } else {
-            assert_eq!(drawn, notes.len(), "unlabelled masks:\n{frame}");
-        }
-    }
 }
 
 #[test]

@@ -19,7 +19,6 @@ pub mod layout;
 pub mod model;
 pub mod moves;
 pub mod protocol;
-pub mod redact;
 pub mod schema;
 pub mod socket;
 pub mod steps;

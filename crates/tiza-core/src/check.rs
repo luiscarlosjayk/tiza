@@ -1,16 +1,13 @@
 //! Preflight (t-101): `tiza check FILE` loads a document the way the TUI
 //! does, but instead of stopping at the first problem it lists them all —
-//! every anchor and marker, every move at its step (and every move over a
-//! masked line, t-183), every linked file, every annotation a move hides,
+//! every anchor and marker, every move at its step, every linked file,
+//! every annotation a move hides,
 //! every label clipped with `…` at the width of the take and every step
 //! with nothing new — naming the annotation or move, the step, the file
 //! (for linked views) and the line.
 //!
 //! Errors are what would stop the document from loading or a move from
 //! applying; warnings are what would spoil a take. Nothing is written.
-//! Targets match on the masked code, and on a document with redacts no
-//! error quotes the document's own text: every `«…»` quote of an error
-//! reads `«…»`, as when it is opened (t-183 D7).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -41,10 +38,9 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `unanchored`, `clipped_label`, `empty_step`,
-    /// `move_on_mask` (a move that rewrites or deletes a masked line,
-    /// t-183) and `redact_on_move_line` (a redact the version before t-183
-    /// saved on a line a move writes).
+    /// `steps`, `unanchored`, `clipped_label`, `empty_step` and `redacts`
+    /// (a document that still carries `redact` annotations, which this
+    /// version no longer supports).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -61,8 +57,7 @@ pub struct Finding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     pub message: String,
-    /// `clipped_label` only: the full label text (absent when the label is
-    /// under a redact: never quoted).
+    /// `clipped_label` only: the full label text.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub text: Option<String>,
 }
@@ -318,25 +313,18 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         ));
         return Report::new(width, out, None, None);
     }
-    let mut migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
+    let migrated = crate::fs::MIGRATIONS.iter().any(|(from, _)| found <= *from);
     for (from, migrate) in crate::fs::MIGRATIONS {
         if found <= *from {
             migrate(&mut raw);
         }
     }
-    // Redacts saved before t-183 (D3, D4): back on the file's own code, or
-    // a redact on a line a move wrote, which does not open.
-    let before = raw.clone();
-    if let Err(e) = crate::redact::migrate_legacy(&mut raw) {
-        out.push(Finding::new(
-            Level::Error,
-            "redact_on_move_line",
-            e.to_string(),
-        ));
+    // A document that still carries redacts does not open (t-183): said
+    // the same way here.
+    if let Err(e) = crate::fs::refuse_redacts(&raw) {
+        out.push(Finding::new(Level::Error, "redacts", e.to_string()));
         return Report::new(width, out, None, None);
     }
-    migrated |= raw != before;
-    let redacted = crate::redact::raw_has_redacts(&raw);
     let parsed: Result<Document, serde_json::Error> = if migrated {
         serde_json::from_value(raw)
     } else {
@@ -351,10 +339,7 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
                 Finding::new(
                     Level::Error,
                     "schema",
-                    format!(
-                        "does not follow the .tiza format: {}",
-                        crate::redact::parse_error(redacted, e)
-                    ),
+                    format!("does not follow the .tiza format: {e}"),
                 )
                 .line(line),
             );
@@ -377,25 +362,6 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
     let doc = tidy(doc, &missing, &mut out);
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);
-    // An error does not quote the document's own targets when it has a
-    // redact (t-183 D7), as when it is opened. (A warning quotes a target
-    // that was found on the masked code: on screen anyway.)
-    // A linked file's name is document text too (review A7): not said in
-    // the place of any finding.
-    if crate::redact::has_redacts(&doc) {
-        for f in out.iter_mut() {
-            if f.level == Level::Error {
-                f.message = crate::redact::elide_quotes(&f.message);
-            }
-            if let Some(file) = f.file.take() {
-                f.file = Some(crate::redact::ELIDED.into());
-                f.message = f.message.replace(
-                    &format!("({file} spans "),
-                    &format!("({} spans ", crate::redact::ELIDED),
-                );
-            }
-        }
-    }
     let mut report = Report::new(width, out, Some(max), clean);
     if let Some(c) = clean
         && width < c
@@ -408,10 +374,9 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
 
 /// Checks a document already loaded in memory — the live one of a TUI, for
 /// the socket's `check` (t-101): the same checks as `tiza check` on the
-/// file, on the real (unmasked) code and linked files the TUI holds, not on
-/// the masked copy an agent reads. Only the report leaves; it never quotes
-/// text under a redact. `base_dir` resolves relative files the document
-/// names but did not load.
+/// file, on the code and linked files the TUI holds. Only the report
+/// leaves. `base_dir` resolves relative files the document names but did
+/// not load.
 pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
     let mut d = doc.clone();
     d.sync_code_src();
@@ -729,24 +694,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             }
         })
         .collect();
-    // ---- redacts left on a step's code by the version before t-183: on
-    // the file's own code, or one on a line a move wrote (D4) ----
-    if doc
-        .annotations
-        .iter()
-        .any(|a| matches!(a.shape, Shape::Redact { .. }) && a.step > 0)
-    {
-        let mut m = doc.clone();
-        m.moves = trial.clone();
-        m.base_code = m.code.clone();
-        m.base_first_line = m.source.first_line;
-        for (id, e) in m.migrate_redacts() {
-            out.push(
-                Finding::new(Level::Error, "redact_on_move_line", e.to_string()).id(id.clone()),
-            );
-        }
-        doc.annotations = m.annotations;
-    }
     // ---- moves: each one on the code at its step ----
     doc.base_code = doc.code.clone();
     doc.base_first_line = doc.source.first_line;
@@ -760,19 +707,13 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         with[i] = trial[i].clone();
         let mut d = doc.clone();
         d.moves = with.clone();
-        match moves::project(&d, &with, u32::MAX, true) {
+        match moves::project(&d, &with, u32::MAX) {
             Ok(_) => accepted = with,
             Err(e) => {
                 let file = d.shown_view_at(trial[i].at_step).file;
-                // A move over a masked line (t-183 AC4) has a code of its own.
-                let code = if crate::redact::is_masked_line_error(&e) {
-                    "move_on_mask"
-                } else {
-                    "move"
-                };
                 let msg = in_file(move_message(e, i, trial[i].at_step), &file);
                 out.push(
-                    Finding::new(Level::Error, code, msg.clone())
+                    Finding::new(Level::Error, "move", msg.clone())
                         .id(format!("move #{}", i + 1))
                         .step(trial[i].at_step)
                         .file(file)
@@ -830,10 +771,7 @@ fn in_file(msg: String, file: &Option<String>) -> String {
     }
 }
 
-/// The code a marker of `a` is looked for in: its file at its step, with
-/// the masks of that step drawn on it (t-154's rule for move targets): a
-/// marker whose text is under a redact is simply not there, with the same
-/// answer as text that does not exist.
+/// The code a marker of `a` is looked for in: its file at its step.
 fn marker_code(doc: &Document, a: &crate::model::Annotation) -> Document {
     let mut d = doc.clone();
     if let Ok((code, first)) = doc.view_code_at(&a.file, a.step) {
@@ -842,11 +780,6 @@ fn marker_code(doc: &Document, a: &crate::model::Annotation) -> Document {
         d.code = code;
         d.source.first_line = first;
     }
-    if crate::redact::has_redacts(doc) {
-        let masks = doc.masks_at(&a.file, a.step);
-        d.code = crate::redact::mask_with(&d.code, d.source.first_line, &masks);
-    }
-    // The masks are drawn on the lines: nothing else to skip.
     d.annotations.clear();
     d
 }
@@ -880,14 +813,11 @@ fn lines_text(lines: &[u32]) -> String {
 
 /// A range made from two markers (t-097): an error when it cannot be found
 /// again, a warning when a marker matches more than once (the range takes
-/// the first match, so an edit above it can move it). On a document with
-/// redacts the markers are matched on the masked code and an error never
-/// quotes them (t-154).
+/// the first match, so an edit above it can move it).
 fn check_markers(
     doc: &Document,
     a: &crate::model::Annotation,
     m: &crate::model::RangeMarkers,
-    redacted: bool,
     out: &mut Vec<Finding>,
 ) {
     let d = marker_code(doc, a);
@@ -900,28 +830,18 @@ fn check_markers(
     };
     match d.resolve_markers(&m.start, &m.end) {
         Err(e) => {
-            let mut msg = match e {
+            let msg = match e {
                 crate::Error::NoMatch(t) | crate::Error::TextNotFound(t) => {
                     format!("{t} matches nothing")
                 }
                 other => other.to_string(),
             };
-            if redacted {
-                for t in [&m.start, &m.end] {
-                    msg = msg.replace(&format!("«{t}»"), "«…»");
-                }
-                msg.push_str(
-                    " (on a document with redacts, text under a mask counts as not there)",
-                );
-            }
             out.push(finding(
                 Level::Error,
                 format!("{msg}: the range cannot be found again when the code changes"),
             ));
         }
         Ok((from, to)) => {
-            // Both markers were found on the masked code: what they match is
-            // on screen, so quoting them gives nothing away.
             let starts = hits(&d, &m.start, d.source.first_line, 0);
             if starts.len() > 1 {
                 out.push(finding(
@@ -954,9 +874,7 @@ fn check_markers(
 /// The line an annotation is anchored on (its first line).
 fn anchor_line(shape: &Shape) -> Option<u32> {
     match shape {
-        Shape::Highlight { span, .. } | Shape::Mark { span, .. } | Shape::Redact { span, .. } => {
-            Some(span.line)
-        }
+        Shape::Highlight { span, .. } | Shape::Mark { span, .. } => Some(span.line),
         Shape::Arrow { from, .. } => Some(from.line),
         Shape::Note { line, .. } => Some(*line),
         Shape::Box { from_line, .. } | Shape::Callout { from_line, .. } => Some(*from_line),
@@ -1021,53 +939,17 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
         line_numbers: doc.numbers,
         tab_width: 4,
         typing: false,
-        redact: true,
         stable: true,
         margin_cap: doc.margin.map(usize::from),
     }
 }
 
-/// Whether the label of annotation `id` is under a redact at `step`: the
-/// redact's own label, or a label anchored on a masked span.
-fn under_redact(doc: &Document, id: &str, step: u32) -> bool {
-    let shown = if doc.moves.is_empty() {
-        doc.clone()
-    } else {
-        doc.view_at(step).doc
-    };
-    let masked = crate::redact::masked(&shown);
-    let Some(a) = masked.find_annotation(id) else {
-        return false;
-    };
-    let masks: Vec<_> = masked
-        .annotations
-        .iter()
-        .filter(|r| matches!(r.shape, Shape::Redact { .. }))
-        .cloned()
-        .collect();
-    let on = |line: u32, start: u32, end: u32| {
-        crate::redact::overlaps_mask(&masks, line, start, end.max(start + 1))
-    };
-    match &a.shape {
-        Shape::Redact { .. } => true,
-        Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
-            on(span.line, span.start, span.end)
-        }
-        Shape::Arrow { from, to, .. } => {
-            on(from.line, from.col, from.col + 1) || on(to.line, to.col, to.col + 1)
-        }
-        _ => false,
-    }
-}
-
-/// The checks on a loaded document. Returns the narrowest clean width.
 fn check_loaded(
     doc: &Document,
     missing: &BTreeSet<String>,
     width: usize,
     out: &mut Vec<Finding>,
 ) -> Option<usize> {
-    let redacted = crate::redact::has_redacts(doc);
     let max = last_step(doc);
     // Annotations already reported as broken: not reported again as hidden.
     let mut bad: BTreeSet<String> = BTreeSet::new();
@@ -1113,7 +995,7 @@ fn check_loaded(
             continue;
         }
         if let Some(m) = &a.markers {
-            check_markers(doc, a, m, redacted, out);
+            check_markers(doc, a, m, out);
         }
     }
     // ---- annotations a move hides ----
@@ -1175,7 +1057,6 @@ fn check_loaded(
                 .unwrap_or(text),
             _ => text,
         };
-        let secret = under_redact(doc, &id, steps[0]);
         let how = if dropped {
             "has no room and is not drawn"
         } else {
@@ -1191,19 +1072,16 @@ fn check_loaded(
             ),
             [] => format!("at width {width}"),
         };
-        let message = if secret {
-            format!("a label under a redact {how} {when}")
-        } else {
-            format!("label «{text}» {how} {when}")
-        };
-        let mut f = Finding::new(Level::Warning, "clipped_label", message)
-            .id(id)
-            .step(steps[0])
-            .file(a.and_then(|a| a.file.clone()))
-            .line(a.and_then(|a| anchor_line(&a.shape)));
-        if !secret {
-            f.text = Some(text);
-        }
+        let mut f = Finding::new(
+            Level::Warning,
+            "clipped_label",
+            format!("label «{text}» {how} {when}"),
+        )
+        .id(id)
+        .step(steps[0])
+        .file(a.and_then(|a| a.file.clone()))
+        .line(a.and_then(|a| anchor_line(&a.shape)));
+        f.text = Some(text);
         out.push(f);
     }
     min_clean_width(doc, &theme)

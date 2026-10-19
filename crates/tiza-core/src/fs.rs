@@ -89,16 +89,9 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
         .iter()
         .filter(|a| doc.validate_annotation(a).is_err())
         .map(|a| match &a.file {
-            // An annotation of a linked file (t-105): say which file — not
-            // on a document with redacts, whose file names are its own
-            // text (t-183 D7).
+            // An annotation of a linked file (t-105): say which file.
             Some(f) => {
                 let n = doc.view_code.get(f).map_or(0, Vec::len);
-                let f = if crate::redact::has_redacts(doc) {
-                    crate::redact::ELIDED
-                } else {
-                    f.as_str()
-                };
                 format!("{} ({f}, lines 1-{n})", a.id)
             }
             None => a.id.clone(),
@@ -246,26 +239,46 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
             migrate(&mut raw);
         }
     }
-    // Redacts saved before t-183 (same schema): back on the file's own code.
-    crate::redact::migrate_legacy(&mut raw)?;
-    // With a redact, serde's error does not repeat the value it read (D7).
-    let redacted = crate::redact::raw_has_redacts(&raw);
-    let mut doc: Document =
-        serde_json::from_value(raw).map_err(|e| crate::redact::parse_error(redacted, e))?;
+    refuse_redacts(&raw)?;
+    let mut doc: Document = serde_json::from_value(raw)?;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     // A linked file that cannot be read is named by the document's own
-    // `code.link` (t-166, t-183 D7).
-    load_views(&mut doc, base_dir).map_err(|e| crate::redact::unquoted(&doc, e))?;
+    // `code.link` (t-166).
+    load_views(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
+}
+
+/// What a `.tiza` that still carries `redact` annotations gets instead of
+/// opening (t-183: the redact feature was withdrawn, ADR 0010): its code
+/// would show in clear with no mask and no word, so it is refused.
+pub const REDACTS_UNSUPPORTED: &str = "this document uses redacts, which this version no longer supports; remove the `redact` annotations from the sidecar";
+
+/// Whether a raw `.tiza` still carries a `redact` annotation.
+pub fn has_redacts(raw: &serde_json::Value) -> bool {
+    raw.get("annotations")
+        .and_then(|a| a.as_array())
+        .is_some_and(|a| {
+            a.iter()
+                .any(|x| x.get("type").and_then(|t| t.as_str()) == Some("redact"))
+        })
+}
+
+/// Refuses a raw `.tiza` that still carries a `redact` annotation
+/// ([`REDACTS_UNSUPPORTED`]).
+pub fn refuse_redacts(raw: &serde_json::Value) -> Result<(), Error> {
+    if has_redacts(raw) {
+        return Err(Error::Invalid(REDACTS_UNSUPPORTED.into()));
+    }
+    Ok(())
 }
 
 /// Readies the document a live instance handed out (`scene.get`) for an
 /// export, as [`parse_document`] readies a `.tiza` (t-166): its main code
 /// and the code of every file a `code.link` move names come embedded in it
-/// (the instance's own copy, masked as it shows it,
-/// [`Document::embedded_copy`]), so the export draws the files the live
+/// (the instance's own copy, [`Document::embedded_copy`]), so the export
+/// draws the files the live
 /// TUI shows, never what this process would read from its own directory.
 /// A linked file the instance did not send is an error naming it, never a
 /// guess from disk.
@@ -279,19 +292,16 @@ pub fn load_scene(doc: &mut Document) -> Result<(), Error> {
             continue; // the main file: always sent
         };
         if !doc.views.contains_key(&key) && !doc.views.contains_key(&l.file) {
-            return Err(crate::redact::unquoted(
-                doc,
-                Error::Invalid(format!(
-                    "move #{}, step {}: code.link «{}»: the live instance did not send its code (open the document again in Tiza, or render the .tiza file)",
-                    i + 1,
-                    m.at_step,
-                    l.file
-                )),
-            ));
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: code.link «{}»: the live instance did not send its code (open the document again in Tiza, or render the .tiza file)",
+                i + 1,
+                m.at_step,
+                l.file
+            )));
         }
     }
     // Every view comes from `views` now: nothing is read from disk.
-    load_views(doc, None).map_err(|e| crate::redact::unquoted(doc, e))?;
+    load_views(doc, None)?;
     doc.normalize_loaded()
 }
 
@@ -334,11 +344,11 @@ fn same_file(a: &Path, b: &Path) -> bool {
     false
 }
 
-/// The name `file` should go by in `doc` (t-183 review A1): an alias of the
-/// main file or of a file in `known` (`../dir/app.env`, its absolute path,
-/// a symlink, `APP.env` on a case-insensitive disk) becomes that file's
-/// own name, so it shows that file's code with its masks — never a view of
-/// its own without them. Otherwise `file` normalized.
+/// The name `file` should go by in `doc`: an alias of the main file or of
+/// a file in `known` (`../dir/app.env`, its absolute path, a symlink,
+/// `APP.env` on a case-insensitive disk) becomes that file's own name, so
+/// it is that file's view, with its annotations — never a second view of
+/// the same file. Otherwise `file` normalized.
 pub fn canonical_link(
     doc: &Document,
     file: &str,
@@ -581,30 +591,6 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
 pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
     let mut doc = doc.clone();
     doc.sync_code_src();
-    // A sidecar never carries a secret: embedded code is written with the
-    // redact masks applied (t-117). A file reference stays a reference.
-    if matches!(doc.code_src, CodeSource::Embedded(_)) && crate::redact::has_redacts(&doc) {
-        // The redacts on their masks (t-174 AC10), so the reopened file
-        // shows what was shown. Everything from the real document first,
-        // then written together.
-        let base = crate::redact::masked_base(&doc);
-        let annotations = crate::redact::embedded_annotations(&doc);
-        // The linked files frozen in `views`, masked with their own
-        // redacts, as `:embed` freezes them (t-177).
-        let views: Vec<(String, Vec<String>)> = doc
-            .views
-            .keys()
-            .filter_map(|f| {
-                let key = doc.view_key(f);
-                doc.view_base_code(&key, true).map(|c| (f.clone(), c))
-            })
-            .collect();
-        doc.annotations = annotations;
-        for (f, code) in views {
-            doc.views.insert(f, code);
-        }
-        doc.code_src = CodeSource::Embedded(base);
-    }
     let json = serde_json::to_string_pretty(&doc)?;
     // The save is an atomic replace (temp file + rename), which would walk
     // over a file the user made read-only: honour the bit instead.

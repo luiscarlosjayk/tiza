@@ -20,7 +20,7 @@
 //! Corner cases: supervised mode (the reply is computed when the presenter
 //! accepts, so `shown_step`/`visible` describe that moment); an annotation of
 //! a linked file not shown at the current step, or outside the window
-//! (t-105); a spotlight past its `until`; a redact masks from step 0.
+//! (t-105); a spotlight past its `until`.
 
 use std::sync::mpsc;
 use std::thread;
@@ -149,7 +149,7 @@ fn ac1_named_step_title_travels_with_the_reply() {
 }
 
 #[test]
-fn corner_spotlight_past_its_until_and_redact_from_step_0() {
+fn corner_spotlight_past_its_until() {
     let live = at_step_0("t155-spot");
     // Something at step 3, so the view can stand at step 2.
     live.api_ok(
@@ -168,19 +168,6 @@ fn corner_spotlight_past_its_until_and_redact_from_step_0() {
         json!({"type": "spotlight", "from_line": 2, "to_line": 3, "step": 1, "until": 3}),
     );
     assert_eq!(r["visible"], json!(true), "{r}");
-
-    // A redact masks from step 0: visible at step 0, where it is born
-    // (t-183: a redact is always at step 0).
-    live.api_ok("step.set", json!({"step": 0}));
-    let r = live.api_ok(
-        "annotation.add",
-        json!({"type": "redact", "at": {"line": 2, "find": "String::from("}}),
-    );
-    assert_eq!(
-        (r["step"].clone(), r["visible"].clone()),
-        (json!(0), json!(true)),
-        "{r}"
-    );
 }
 
 /// A scratch copy of the two-file example of t-105.
@@ -552,11 +539,10 @@ fn ac2_presentation_mode_waits_for_the_bar() {
 }
 
 #[test]
-fn ac2_keeps_the_pointer_and_the_redact_alert_rows() {
+fn ac2_keeps_the_pointer() {
     let live = at_step_0("t155-ac2-rows");
-    // The live pointer (t-030) and a pending redact alert (t-135/t-156).
+    // The live pointer (t-030).
     live.keys(&[KeyCode::Char('f')]);
-    live.with(|a| a.redact_alert("redact a9: its line changed, masking L2 whole".into()));
     live.api_ok(
         "annotation.add",
         json!({"type": "note", "line": 2, "text": "x"}),
@@ -569,13 +555,5 @@ fn ac2_keeps_the_pointer_and_the_redact_alert_rows() {
         last.contains("a1: note L2 added by agent (step 1, press n)"),
         "{last}"
     );
-    assert!(
-        rows[rows.len() - 2].contains("redact a9: its line changed, masking L2 whole"),
-        "{screen}"
-    );
     assert!(live.with(|a| a.pointer.is_some()));
-    assert_eq!(
-        live.with(|a| a.redact_alerts.clone()),
-        vec!["redact a9: its line changed, masking L2 whole".to_string()]
-    );
 }

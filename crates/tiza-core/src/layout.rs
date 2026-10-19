@@ -35,9 +35,6 @@ pub struct LayoutOptions {
     /// A typing animation of `step` is running: the code is drawn as it is
     /// but the annotations of `step` wait until it ends (t-098).
     pub typing: bool,
-    /// Apply the redact masks (t-117). Every output path passes `true`; only
-    /// the author's own screen may pass `false` after `:redact off`.
-    pub redact: bool,
     /// Cap on the right margin, in cells (t-113): notes, labels and legends
     /// wrap at it instead of spreading across a wide terminal, and the
     /// canvas ends there (a PNG is no wider than the content). `None`: the
@@ -61,7 +58,6 @@ impl Default for LayoutOptions {
             line_numbers: true,
             tab_width: 4,
             typing: false,
-            redact: true,
             stable: true,
             margin_cap: None,
         }
@@ -218,7 +214,7 @@ pub struct StableGeometry {
 }
 
 /// Sizes the lanes, the box band and the code column for every step of
-/// `doc` at once (moves and masks included): what `layout` uses when
+/// `doc` at once (moves included): what `layout` uses when
 /// `opts.stable` is set. Public so a recorder can check that its frames
 /// agree.
 pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
@@ -239,13 +235,6 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         } else {
             projected = doc.view_at(step).doc;
             &projected
-        };
-        let masked;
-        let d = if opts.redact && crate::redact::has_redacts(d) {
-            masked = crate::redact::masked(d);
-            &masked
-        } else {
-            d
         };
         g.code_full_w = g.code_full_w.max(
             d.code
@@ -391,15 +380,6 @@ pub fn layout_with(
         projected = v.doc;
         &projected
     };
-    // Redaction (t-117): the one place every rendered surface goes through.
-    // From here on the code holds the masks and nothing under them.
-    let masked_doc;
-    let doc = if opts.redact && crate::redact::has_redacts(doc) {
-        masked_doc = crate::redact::masked(doc);
-        &masked_doc
-    } else {
-        doc
-    };
     // Annotations outside the code (a document whose file shrank, or a
     // hand-edited one) are reported when it opens; here they are simply not
     // drawn, so a stale line number can never break the layout.
@@ -437,7 +417,6 @@ pub fn layout_with(
                 .unwrap_or(theme.accent),
             (Shape::Highlight { .. }, None) => theme.accent,
             (Shape::Spotlight { .. }, None) => theme.accent,
-            (Shape::Redact { .. }, None) => theme.muted,
         };
         colors.insert(a.id.as_str(), c);
     }
@@ -1074,48 +1053,6 @@ pub fn layout_with(
                 note: false,
                 glyph: None,
             });
-        }
-    }
-
-    // ---- 2b. redact masks: muted, no syntax colour, no tint, on top of
-    // whatever else touched those cells (the redact wins). Active from step
-    // 0, so they are taken from the document, not from `vis`.
-    if opts.redact {
-        for a in &doc.annotations {
-            let Shape::Redact { span, label, .. } = &a.shape else {
-                continue;
-            };
-            let Some(&y) = row_of_line.get(&span.line) else {
-                continue;
-            };
-            let text = doc.line_text(span.line).unwrap_or("");
-            let x0 = code_x + col_to_x(text, span.start, opts.tab_width);
-            let x1 = (code_x + col_to_x(text, span.end, opts.tab_width)).min(code_x + code_w);
-            if x1 > x0 {
-                let ink = if ann_dimmed(a) {
-                    theme.dimmed
-                } else if let Some(c) = colors.get(a.id.as_str()) {
-                    *c
-                } else {
-                    a.color
-                        .as_deref()
-                        .and_then(|c| theme.named_color(c))
-                        .unwrap_or(theme.muted)
-                };
-                canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink));
-            }
-            if labels_in_margin
-                && let Some(l) = label
-                && vis.iter().any(|v| v.id == a.id)
-            {
-                margin[y].push(Label {
-                    id: a.id.clone(),
-                    text: l.clone(),
-                    color: color_of(a),
-                    note: false,
-                    glyph: None,
-                });
-            }
         }
     }
 

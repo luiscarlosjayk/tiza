@@ -1,27 +1,14 @@
-//! t-167 — Opening or rendering a .tiza whose move targets masked text
-//! printed the secret in the load error; the same echo came back from the
-//! socket, the MCP and supervised mode.
+//! t-167 — Errors never repeat a closed value: a parameter with a fixed
+//! set of names (a color, `border`, a type, a move's `op`, a method…) that
+//! is none of them is answered with the valid names only, never with what
+//! was sent — the MCP tools, the socket methods, the `:` bar and supervised
+//! mode (R1); serde's list of valid names stays whole (R2); MCP arguments
+//! that do not deserialize repeat no value; a move that matches nothing
+//! reads like `tiza check` (R3); `focus.set` checks its lines.
 //!
-//! t-183 trimmed this card to its generic part (decisions D7 and AC7):
-//! - Load errors (TUI, `tiza render`, `tiza check`, `scene.put`) of a
-//!   document with a redact quote none of the document's own targets: they
-//!   say «…», a target under the mask and one that is nowhere alike (D7).
-//!   Without redacts they quote as before.
-//! - A closed value that is none of its names (a color, `border`, a type, a
-//!   move's `op`, a method…) is answered with the valid names only, never
-//!   with what was sent, redact or not: the MCP tools, the socket methods,
-//!   the `:` bar and supervised mode (R1). serde's list of valid names stays
-//!   whole (R2). MCP arguments that do not deserialize repeat no value.
-//! - A target matches on the masked code: an end marker under the mask
-//!   answers like one that is nowhere. What an agent just sent is quoted as
-//!   it wrote it (t-183: the elision of every written text, its numbers and
-//!   keys, and the copy rule on messages are gone; `unknown field` names the
-//!   field again).
-//! - A move that matches nothing reads like `tiza check` (R3).
-//!
-//! The QA script this rebuilds (pruebas/t167/qa_t167.py, on Luis's Mac)
-//! writes one .tiza per kind of target, with code `token=abc123SECRETxyz789`
-//! and a redact on 6..24.
+//! The card was about a redact's secret echoed in errors; t-183 withdrew
+//! the redact feature and kept this generic part. What an agent sent as a
+//! free text (a `find`, a step id) is quoted as it wrote it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -29,13 +16,9 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::protocol::{Request, Response};
-use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
+use tiza_qa::{Live, McpClient, scratch, tiza};
 
 const VALUE: &str = "abc123SECRETxyz789";
-const ELIDED: &str = "«…»";
-/// The load error of the card's repro, in the words of `tiza check`
-/// (rework, point 3).
-const MOVE2_ELIDED: &str = "move #2, step 3: find «…» matches nothing in the code at this step";
 
 fn code() -> Vec<String> {
     vec![
@@ -46,15 +29,11 @@ fn code() -> Vec<String> {
     ]
 }
 
-fn redact() -> Value {
-    json!({"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": 24}})
-}
-
 fn highlight() -> Value {
     json!({"id": "h1", "step": 1, "type": "highlight", "span": {"line": 3, "start": 0, "end": 6}})
 }
 
-/// Every piece of 4 characters of the value (the t-157 rule).
+/// Every piece of 4 characters of the value.
 fn pieces() -> Vec<String> {
     let c: Vec<char> = VALUE.chars().collect();
     (0..=c.len() - 4)
@@ -77,66 +56,8 @@ fn patch(extra: Value) -> Value {
     m
 }
 
-/// One move per kind of target (and per way of meeting the mask): every
-/// one fails on the masked code, so each document fails to load.
-fn cases() -> Vec<(&'static str, Value)> {
-    vec![
-        (
-            "find-whole",
-            patch(json!({"op": "replace", "find": VALUE, "content": "x"})),
-        ),
-        (
-            "find-part",
-            patch(json!({"op": "replace", "find": "SECRETxyz", "content": "x"})),
-        ),
-        // Corner case: only part of the target is under the mask.
-        (
-            "find-overlap",
-            patch(json!({"op": "replace", "find": "token=abc123", "content": "x"})),
-        ),
-        (
-            "find-nowhere",
-            patch(json!({"op": "replace", "find": "NOWHERE123", "content": "x"})),
-        ),
-        (
-            "after",
-            patch(json!({"op": "insert", "after": VALUE, "content": "x"})),
-        ),
-        (
-            "before",
-            patch(json!({"op": "insert", "before": "123SECRETx", "content": "x"})),
-        ),
-        (
-            "find-start",
-            patch(
-                json!({"op": "replace", "find_start": "SECRETxyz789", "find_end": "port", "content": "x"}),
-            ),
-        ),
-        (
-            "find-end",
-            patch(
-                json!({"op": "replace", "find_start": "region", "find_end": "SECRETxyz789", "content": "x"}),
-            ),
-        ),
-        (
-            "select",
-            json!({"at_step": 2, "action": "select", "from": {"find": "SECRETxyz"}, "to": {"find": "region"}}),
-        ),
-        (
-            "rebind",
-            patch(
-                json!({"op": "replace", "find": "region=eu-west-1", "content": "region=x",
-                         "rebind": {"h1": {"at": {"find": "SECRETxyz789"}}}}),
-            ),
-        ),
-    ]
-}
-
-fn document(redacted: bool, moves: Vec<Value>) -> Value {
-    let mut anns = vec![highlight()];
-    if redacted {
-        anns.insert(0, redact());
-    }
+fn document(moves: Vec<Value>) -> Value {
+    let anns = vec![highlight()];
     json!({
         "schema": 1,
         "source": {"language": "ini", "first_line": 1},
@@ -158,9 +79,9 @@ fn stderr(args: &[&str]) -> String {
     String::from_utf8_lossy(&out.stderr).into_owned()
 }
 
-fn live(redacted: bool, name: &str) -> Live {
+fn live(name: &str) -> Live {
     let dir = scratch(name);
-    let doc = tiza_core::fs::parse_document(&document(redacted, vec![]).to_string(), None).unwrap();
+    let doc = tiza_core::fs::parse_document(&document(vec![]).to_string(), None).unwrap();
     Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"))
 }
 
@@ -172,65 +93,13 @@ fn err(live: &Live, method: &str, params: Value) -> (String, String) {
     (e.code, e.message)
 }
 
-// ---------- AC1/AC2: the load error ----------
+// ---------- what an agent or the document wrote is quoted ----------
 
 #[test]
-fn ac1_render_and_check_of_the_card_repro_say_elided() {
-    let f = fixture("t-167/w-redact.tiza");
-    let f = f.to_str().unwrap();
-    let e = stderr(&["render", f, "--out", "-"]);
-    assert!(e.contains(MOVE2_ELIDED), "{e}");
-    assert_clean("tiza render", &e);
-    let out = tiza(&["check", f]);
-    let report =
-        String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr);
-    assert!(report.contains("find «…»"), "{report}");
-    assert_clean("tiza check", &report);
-}
-
-#[test]
-fn ac1_every_kind_of_target_is_elided_on_load_render_check_and_scene_put() {
-    let dir = scratch("t167-load");
-    let target = live(false, "t167-load-live");
-    let sock = target.socket.to_str().unwrap().to_string();
-    let mut nowhere = String::new();
-    let mut whole = String::new();
-    for (name, m) in cases() {
-        let doc = document(true, vec![m]);
-        let p = write(&dir, name, &doc);
-        let ps = p.to_str().unwrap();
-        let e = stderr(&["render", ps, "--out", "-"]);
-        assert!(e.contains(ELIDED), "{name}: {e}");
-        assert_clean(&format!("{name}: tiza render"), &e);
-        let out = tiza(&["check", ps]);
-        let report = String::from_utf8_lossy(&out.stdout).into_owned()
-            + &String::from_utf8_lossy(&out.stderr);
-        assert_clean(&format!("{name}: tiza check"), &report);
-        // `tiza scene put` reads the file before sending it.
-        let e = stderr(&["--socket", &sock, "scene", "put", ps]);
-        assert_clean(&format!("{name}: tiza scene put"), &e);
-        // `scene.put` over the socket, on an instance whose own document
-        // has no redact: the document it brings has one.
-        let (code, msg) = err(&target, "scene.put", json!({"document": doc}));
-        assert!(msg.contains(ELIDED), "{name}: {msg}");
-        assert_clean(&format!("{name}: scene.put"), &msg);
-        assert!(!code.is_empty());
-        if name == "find-nowhere" {
-            nowhere = e.replace(ps, "");
-        }
-        if name == "find-whole" {
-            whole = e.replace(ps, "");
-        }
-    }
-    // No oracle: a target under the mask and one that is nowhere read alike.
-    assert_eq!(whole, nowhere);
-}
-
-#[test]
-fn corner_without_redacts_load_errors_still_quote_the_target() {
+fn load_errors_quote_the_target() {
     let dir = scratch("t167-plain-load");
     let m = patch(json!({"op": "replace", "find": "NOWHERE123", "content": "x"}));
-    let p = write(&dir, "nowhere", &document(false, vec![m]));
+    let p = write(&dir, "nowhere", &document(vec![m]));
     let e = stderr(&["render", p.to_str().unwrap(), "--out", "-"]);
     assert!(
         e.contains("move #1, step 2: find «NOWHERE123» matches nothing in the code at this step"),
@@ -239,44 +108,14 @@ fn corner_without_redacts_load_errors_still_quote_the_target() {
     let m = patch(
         json!({"op": "replace", "find_start": "region", "find_end": "SECRETxyz789", "content": "x"}),
     );
-    let p = write(&dir, "order", &document(false, vec![m]));
+    let p = write(&dir, "order", &document(vec![m]));
     let e = stderr(&["render", p.to_str().unwrap(), "--out", "-"]);
     assert!(e.contains("find_end «SECRETxyz789»"), "{e}");
 }
 
 #[test]
-fn ac2_tui_load_error_in_a_pty_raw_bytes() {
-    let dir = scratch("t167-pty-load");
-    let f = fixture("t-167/w-redact.tiza");
-    let out = tiza_qa::pty_script(
-        &dir,
-        "load.py",
-        r##"
-binary, doc = sys.argv[1], sys.argv[2]
-pieces = sys.argv[3].split(",")
-s = Pty([binary, "--no-save", doc], 30, 100)
-s.wait_for(lambda out: b"could not open" in out, 10, "load error")
-s.finish(5)
-raw = s.out
-leaks = [p for p in pieces if p.encode() in raw]
-print("RAW_LEAKS" if leaks else "RAW_CLEAN", leaks, flush=True)
-print("PLAIN", plain(raw).replace("\n", " "))
-"##,
-        &[
-            tiza_qa::bin().to_str().unwrap(),
-            f.to_str().unwrap(),
-            &pieces().join(","),
-        ],
-    );
-    assert!(out.contains("RAW_CLEAN"), "{out}");
-    assert!(out.contains(MOVE2_ELIDED), "{out}");
-}
-
-// ---------- AC1/AC2: socket and MCP echoes ----------
-
-#[test]
-fn corner_without_redacts_socket_errors_still_quote_the_target() {
-    let live = live(false, "t167-socket-plain");
+fn socket_errors_quote_the_target() {
+    let live = live("t167-socket-plain");
     let (_, msg) = err(
         &live,
         "annotation.add",
@@ -289,7 +128,7 @@ fn corner_without_redacts_socket_errors_still_quote_the_target() {
     assert!(msg.contains("\"nowhere\""), "{msg}");
 }
 
-// ---------- AC1/AC2: supervised mode ----------
+// ---------- supervised mode ----------
 
 fn request(method: &str, params: Value) -> Request {
     Request {
@@ -313,8 +152,8 @@ fn reply_text(rx: &mpsc::Receiver<Response>) -> String {
 }
 
 #[test]
-fn corner_without_redacts_supervised_summaries_quote_as_before() {
-    let live = live(false, "t167-supervised-plain");
+fn supervised_summaries_quote_the_target() {
+    let live = live("t167-supervised-plain");
     live.command("supervise on");
     let t0 = Instant::now();
     let _rx = propose(
@@ -336,7 +175,7 @@ fn corner_without_redacts_supervised_summaries_quote_as_before() {
 
 #[test]
 fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
-    let live = live(true, "t167-r2");
+    let live = live("t167-r2");
     let mut mcp = McpClient::start(&live.socket);
     for (tool, args) in [
         ("highlight", json!({"at": "SECRETxyz789"})),
@@ -352,7 +191,7 @@ fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
 
 #[test]
 fn review5_supervised_type_and_method_are_not_echoed() {
-    let live = live(true, "t167-r5");
+    let live = live("t167-r5");
     live.command("supervise on");
     let t0 = Instant::now();
     let a = propose(
@@ -369,7 +208,9 @@ fn review5_supervised_type_and_method_are_not_echoed() {
     assert_eq!(s[0], "add «…» L2");
     let status = live.api_ok("supervise.status", json!({}));
     assert_clean("supervise.status", &status.to_string());
-    assert_clean("the review list", &live.screen(120, 30));
+    // The code itself is on screen (no mask): the review list is not.
+    let screen = live.screen(120, 30).replace(&format!("token={VALUE}"), "");
+    assert_clean("the review list", &screen);
     let m1 = live.with(|a| a.accept_proposal()).unwrap();
     let m2 = live.with(|a| a.reject_proposal()).unwrap();
     let m3 = live.with(|a| a.accept_proposal()).unwrap();
@@ -383,14 +224,13 @@ fn review5_supervised_type_and_method_are_not_echoed() {
     live.with(|a| a.reject_all_proposals());
 }
 
-// ---------- Rework 1 (QA 21:50, coordinator 20:15; t-174 rework point 2) ----------
+// ---------- Rework 1 (QA 21:50, coordinator 20:15) ----------
 //
 // A closed value (a parameter with a fixed set of names) that is not one
 // of them is answered with the valid names and never with what was sent,
-// redact or not, on every channel: the 31 MCP tools, the socket methods
-// and the `:` bar. Three instances: no redact, the card's redact, and a
-// masked value made of lowercase words (`zebra-mango-quartz`, sending
-// `mango-quartz`: the message's lowercase-word exception let it through).
+// on every channel: the 30 MCP tools, the socket methods and the `:` bar.
+// Two instances: the card's value, and a value made of lowercase words
+// (`zebra-mango-quartz`, sending `mango-quartz`).
 
 /// What is sent as a closed value: a plain canary, a piece of the card's
 /// value and a lowercase piece of [`LOWER`].
@@ -400,7 +240,7 @@ const LOWER_PIECE: &str = "mango-quartz";
 
 /// Every MCP tool (the test fails when one is added, so its parameters get
 /// classified below).
-const TOOLS: [&str; 31] = [
+const TOOLS: [&str; 30] = [
     "add_arrow",
     "add_box",
     "add_callout",
@@ -424,7 +264,6 @@ const TOOLS: [&str; 31] = [
     "next_step",
     "point_at",
     "prev_step",
-    "redact",
     "render_text",
     "set_focus",
     "set_follow",
@@ -435,8 +274,7 @@ const TOOLS: [&str; 31] = [
 ];
 
 /// Parameters that take free text (a target, a label, an id, a path):
-/// their echo is the subject of AC1 (targets) and t-174 (labels), and they
-/// are swept with values by t-175's canary.
+/// quoted as written.
 const FREE: [&str; 21] = [
     "label",
     "text",
@@ -513,22 +351,15 @@ fn mcp_closed(dir: &Path) -> Vec<(&'static str, &'static str, Value)> {
     out
 }
 
-/// A document whose line 2 is `token=<value>`, masked (or not), with a
-/// highlight h1, a box b1 and an arrow a1 to update.
-fn live_valued(value: &str, redacted: bool, name: &str) -> Live {
+/// A document whose line 2 is `token=<value>`, with a highlight h1, a box
+/// b1 and an arrow a1 to update.
+fn live_valued(value: &str, name: &str) -> Live {
     let dir = scratch(name);
-    let mut anns = vec![
+    let anns = vec![
         highlight(),
         json!({"id": "b1", "step": 1, "type": "box", "from_line": 1, "to_line": 4}),
         json!({"id": "a1", "step": 1, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}}),
     ];
-    if redacted {
-        let end = 6 + value.chars().count();
-        anns.insert(
-            0,
-            json!({"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": end}}),
-        );
-    }
     let doc = json!({
         "schema": 1,
         "source": {"language": "ini", "first_line": 1},
@@ -541,29 +372,24 @@ fn live_valued(value: &str, redacted: bool, name: &str) -> Live {
     Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"))
 }
 
-/// The three instances and what each sends as a closed value.
+/// The two instances and what each sends as a closed value.
 fn closed_instances(tag: &str) -> Vec<(Live, Vec<&'static str>, &'static str)> {
     vec![
         (
-            live_valued(VALUE, false, &format!("t167-{tag}-plain")),
-            vec![CANARY],
-            VALUE,
-        ),
-        (
-            live_valued(VALUE, true, &format!("t167-{tag}-redact")),
+            live_valued(VALUE, &format!("t167-{tag}-plain")),
             vec![CANARY, "SECRETxyz789"],
             VALUE,
         ),
         (
-            live_valued(LOWER, true, &format!("t167-{tag}-lower")),
+            live_valued(LOWER, &format!("t167-{tag}-lower")),
             vec![LOWER_PIECE, CANARY],
             LOWER,
         ),
     ]
 }
 
-/// Neither `sent` nor any piece of 4 characters of it (nor of the masked
-/// value) is in `msg`.
+/// Neither `sent` nor any piece of 4 characters of it (nor of the
+/// document's value) is in `msg`.
 #[track_caller]
 fn assert_no_echo(what: &str, msg: &str, sent: &str, value: &str) {
     for s in [sent, value] {
@@ -803,12 +629,12 @@ fn rework1_the_bar_answers_a_closed_value_without_repeating_it() {
 #[test]
 fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
     let dir = scratch("t167-rw2");
-    let target = live(false, "t167-rw2-live");
-    let sock = target.socket.to_str().unwrap().to_string();
-    let types = "expected one of `highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `redact`, `spotlight`";
+    let target = live("t167-rw2-live");
+    let types =
+        "expected one of `highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `spotlight`";
     let actions = "expected one of `code.patch`, `code.link`, `cursor`, `select`, `wait`";
     let ops = "expected one of `insert`, `replace`, `delete`";
-    // The document says `box`, `note` and `redact` itself: they stay.
+    // The document says `box` and `note` itself: they stay.
     let extra = vec![
         json!({"id": "b2", "step": 1, "type": "box", "from_line": 1, "to_line": 2}),
         json!({"id": "n2", "step": 1, "type": "note", "line": 1, "text": "x"}),
@@ -841,27 +667,30 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
             ops,
         ),
     ] {
-        let mut doc = document(true, mv.into_iter().collect());
+        let mut doc = document(mv.into_iter().collect());
         let anns = doc["annotations"].as_array_mut().unwrap();
         anns.extend(extra.clone());
         anns.extend(ann);
         let p = write(&dir, name, &doc);
         let ps = p.to_str().unwrap();
+        // On load the value is quoted as written (t-047); the list stays.
         let e = stderr(&["render", ps, "--out", "-"]);
         assert!(e.contains(want), "{name}: render: {e}");
-        assert!(e.contains("unknown variant «…»"), "{name}: render: {e}");
-        assert_clean(&format!("{name}: render"), &e);
         let out = tiza(&["check", ps]);
         let report = String::from_utf8_lossy(&out.stdout).into_owned()
             + &String::from_utf8_lossy(&out.stderr);
         assert!(report.contains(want), "{name}: check: {report}");
-        let e = stderr(&["--socket", &sock, "scene", "put", ps]);
-        assert!(e.contains(want), "{name}: tiza scene put: {e}");
+        // Over the socket, never the value: only the list.
         let (_, msg) = err(&target, "scene.put", json!({"document": doc}));
         assert!(msg.contains(want), "{name}: scene.put: {msg}");
+        assert!(
+            msg.contains("unknown variant «…»"),
+            "{name}: scene.put: {msg}"
+        );
+        assert_clean(&format!("{name}: scene.put"), &msg);
     }
-    // Over the socket, on an instance with redacts: the patch says `box`.
-    let live = live(true, "t167-rw2-socket");
+    // The patch says `box` itself: it stays in the list.
+    let live = live("t167-rw2-socket");
     let (_, msg) = err(
         &live,
         "scene.patch",
@@ -879,40 +708,35 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
 #[test]
 fn rework3_a_move_that_matches_nothing_reads_like_tiza_check() {
     let dir = scratch("t167-rw3");
-    for (redacted, find, quoted) in [(true, VALUE, ELIDED), (false, "NOWHERE123", "«NOWHERE123»")]
-    {
-        let m = patch(json!({"op": "replace", "find": find, "content": "x"}));
-        let p = write(&dir, &format!("r{redacted}"), &document(redacted, vec![m]));
-        let ps = p.to_str().unwrap();
-        let want = format!(
-            "could not open {ps}: move #1, step 2: find {quoted} matches nothing in the code at this step"
-        );
-        let e = stderr(&["render", ps, "--out", "-"]);
-        assert!(e.contains(&want), "{e}");
-        assert!(!e.contains("text \""), "{e}");
-        let out = tiza(&["check", ps]);
-        let report = String::from_utf8_lossy(&out.stdout).into_owned();
-        assert!(
-            report.contains(&format!(
-                "move #1, step 2: find {quoted} matches nothing in the code at this step"
-            )),
-            "{report}"
-        );
-        // The socket's move.add, same words; what the agent just sent is
-        // quoted as it wrote it (t-183), with redacts or not.
-        let quoted = format!("«{find}»");
-        let live = live(redacted, &format!("t167-rw3-{redacted}"));
-        let mut mv = patch(json!({"op": "replace", "find": find, "content": "x"}));
-        mv["at_step"] = json!(1);
-        let (code, msg) = err(&live, "move.add", mv);
-        assert_eq!(code, "text_not_found");
-        assert_eq!(
-            msg,
-            format!("move #1, step 1: find {quoted} matches nothing in the code at this step")
-        );
-    }
+    let m = patch(json!({"op": "replace", "find": "NOWHERE123", "content": "x"}));
+    let p = write(&dir, "nowhere", &document(vec![m]));
+    let ps = p.to_str().unwrap();
+    let want = format!(
+        "could not open {ps}: move #1, step 2: find «NOWHERE123» matches nothing in the code at this step"
+    );
+    let e = stderr(&["render", ps, "--out", "-"]);
+    assert!(e.contains(&want), "{e}");
+    assert!(!e.contains("text \""), "{e}");
+    let out = tiza(&["check", ps]);
+    let report = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(
+        report.contains(
+            "move #1, step 2: find «NOWHERE123» matches nothing in the code at this step"
+        ),
+        "{report}"
+    );
+    // The socket's move.add, same words.
+    let sock = live("t167-rw3-socket");
+    let mut mv = patch(json!({"op": "replace", "find": "NOWHERE123", "content": "x"}));
+    mv["at_step"] = json!(1);
+    let (code, msg) = err(&sock, "move.add", mv);
+    assert_eq!(code, "text_not_found");
+    assert_eq!(
+        msg,
+        "move #1, step 1: find «NOWHERE123» matches nothing in the code at this step"
+    );
     // A marker that matches nothing is a phrase too, not a quoted text.
-    let live = live(false, "t167-rw3-marker");
+    let live = live("t167-rw3-marker");
     let (_, msg) = err(
         &live,
         "annotation.add",
@@ -921,161 +745,9 @@ fn rework3_a_move_that_matches_nothing_reads_like_tiza_check() {
     assert_eq!(msg, "start marker «NOWHERE123» matches nothing in the code");
 }
 
-// ---------- Review of 4a492db (coordinator, adversarial) ----------
-//
-// Each test answers «a piece of the masked value» and «text that is not
-// one» with the same code and the same message: anything else is an
-// oracle. Every one fails on 4a492db.
-
-/// The value of the numeric review (R3): digits an agent can send.
-const DIGITS: &str = "kq48213977zx";
-
-/// The same call with `piece` and with `other` in it (by `{}`) answers
-/// alike: the answer may quote what was sent (t-183), and once that is
-/// taken out nothing else of the masked value is in it.
-#[track_caller]
-fn alike(live: &Live, method: &str, template: &Value, piece: &str, other: &str, value: &str) {
-    let mut out = Vec::new();
-    for x in [piece, other] {
-        let text = template.to_string().replace("{}", x);
-        let params: Value = serde_json::from_str(&text).unwrap();
-        let r = live.api(method, params.clone());
-        let e = r
-            .error
-            .unwrap_or_else(|| panic!("{method} {params} succeeded"));
-        let said = e.message.replace(x, "{}");
-        assert_no_echo(&format!("{method} {params}"), &said, x, value);
-        out.push((e.code, said));
-    }
-    assert_eq!(
-        out[0], out[1],
-        "{method} {template}: «{piece}» and «{other}» answer differently"
-    );
-}
-
-/// [`alike`] through the MCP.
-#[track_caller]
-fn alike_mcp(
-    mcp: &mut McpClient,
-    tool: &str,
-    template: &Value,
-    piece: &str,
-    other: &str,
-    value: &str,
-) {
-    let mut out = Vec::new();
-    for x in [piece, other] {
-        let args: Value = serde_json::from_str(&template.to_string().replace("{}", x)).unwrap();
-        let (is_err, text, raw) = mcp.call(tool, args.clone());
-        assert!(is_err, "{tool} {args}: accepted ({raw})");
-        let said = text.replace(x, "{}");
-        assert_no_echo(&format!("MCP {tool} {args}"), &said, x, value);
-        out.push(said);
-    }
-    assert_eq!(
-        out[0], out[1],
-        "MCP {tool} {template}: «{piece}» and «{other}» answer differently"
-    );
-}
-
-#[test]
-fn review_r1_the_end_marker_is_searched_under_the_mask() {
-    let live = live_valued(VALUE, true, "t167-rv1");
-    for shape in [
-        json!({"type": "box", "find_start": "[api]", "find_end": "\"{}\""}),
-        json!({"type": "spotlight", "find_start": "[api]", "find_end": "\"{}\""}),
-        json!({"type": "callout", "text": "c", "find_start": "[api]", "find_end": "\"{}\""}),
-    ] {
-        // `"{}"` stands for a JSON string: the template is text.
-        let t: Value =
-            serde_json::from_str(&shape.to_string().replace("\"\\\"{}\\\"\"", "\"{}\"")).unwrap();
-        alike(&live, "annotation.add", &t, "SECRETxyz", "NOTHEREzz", VALUE);
-        // The same end on the same line as the start: `token=` then the value.
-        let mut same = t.clone();
-        same["find_start"] = json!("token=");
-        alike(
-            &live,
-            "annotation.add",
-            &same,
-            "SECRETxyz",
-            "NOTHEREzz",
-            VALUE,
-        );
-    }
-    // Boxes whose markers come in a scene.patch: `check` reads them alike.
-    live.api_ok(
-        "scene.patch",
-        json!({"annotations": [
-            {"id": "m1", "step": 1, "type": "box", "from_line": 1, "to_line": 2,
-             "markers": {"start": "[api]", "end": "SECRETxyz"}},
-            {"id": "m2", "step": 1, "type": "box", "from_line": 1, "to_line": 2,
-             "markers": {"start": "[api]", "end": "NOTHEREzz"}}
-        ]}),
-    );
-    let report = live.api_ok("check", json!({}));
-    let said = |id: &str| -> Vec<String> {
-        report["findings"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter(|f| f["id"] == id)
-            .map(|f| f["message"].as_str().unwrap().to_string())
-            .collect()
-    };
-    assert!(!said("m2").is_empty(), "{report}");
-    assert_eq!(said("m1"), said("m2"), "{report}");
-    assert_clean("check", &report.to_string());
-    live.api_ok(
-        "scene.patch",
-        json!({"annotations": [{"id": "m1", "deleted": true}, {"id": "m2", "deleted": true}]}),
-    );
-    // And the `:` bar's markers.
-    let mut bar = Vec::new();
-    for x in ["SECRETxyz", "NOTHEREzz"] {
-        live.command(&format!("box @'[api]'..@'{x}'"));
-        let m = format!("{:?}", live.message()).replace(x, "{}");
-        assert_no_echo(":box", &m, x, VALUE);
-        bar.push(m);
-    }
-    assert_eq!(bar[0], bar[1]);
-    let mut mcp = McpClient::start(&live.socket);
-    for tool in ["add_box", "add_spotlight"] {
-        alike_mcp(
-            &mut mcp,
-            tool,
-            &json!({"find_start": "[api]", "find_end": "{}"}),
-            "SECRETxyz",
-            "NOTHEREzz",
-            VALUE,
-        );
-    }
-    alike_mcp(
-        &mut mcp,
-        "add_callout",
-        &json!({"find_start": "[api]", "find_end": "{}", "text": "c"}),
-        "SECRETxyz",
-        "NOTHEREzz",
-        VALUE,
-    );
-    // Text outside the mask is still found: the end marker works.
-    let r = live.api_ok(
-        "annotation.add",
-        json!({"type": "box", "find_start": "[api]", "find_end": "port"}),
-    );
-    assert!(r["id"].is_string(), "{r}");
-    // Without redacts the end marker finds that text as before.
-    let plain = live_valued(VALUE, false, "t167-rv1-plain");
-    plain.api_ok(
-        "annotation.add",
-        json!({"type": "box", "find_start": "[api]", "find_end": "SECRETxyz"}),
-    );
-}
-
-// ---------- Second verification of the review (3dd3c7e) ----------
-
 #[test]
 fn review2_r3_focus_set_refuses_lines_that_are_not_line_numbers() {
-    let live = live_valued(DIGITS, true, "t167-rw2-3");
+    let live = live_valued("kq48213977zx", "t167-rw2-3");
     live.api_ok("focus.set", json!({"from_line": 2, "to_line": 3}));
     for p in [
         json!({"from_line": -1, "to_line": 3}),

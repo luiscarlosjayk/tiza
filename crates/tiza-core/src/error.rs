@@ -4,20 +4,17 @@ use thiserror::Error;
 pub enum Error {
     #[error("line {line} does not exist (the document spans {first} to {last})")]
     LineOutOfRange { line: u32, first: u32, last: u32 },
-    /// `len`: the graphemes of the line, `None` when it is not said (a
-    /// document with a redact, t-183 review A3: the length of a masked
-    /// line would measure the value).
-    #[error("range {start}..{end} does not fit on line {line}{}", graphemes(*len))]
+    #[error("range {start}..{end} does not fit on line {line} (it has {len} graphemes)")]
     SpanOutOfRange {
         line: u32,
         start: u32,
         end: u32,
-        len: Option<u32>,
+        len: u32,
     },
     #[error("annotation {0} does not exist")]
     NotFound(String),
     /// A file that is not a view of the document (`file «x» is not a view
-    /// …`): `not_found`, said once (t-183 review A-3).
+    /// …`): `not_found`.
     #[error("{0}")]
     ViewNotFound(String),
     /// A move that does not exist (`move.delete`): `move #N does not exist`.
@@ -53,10 +50,6 @@ pub enum Error {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    /// serde's message through [`serde_text`]: a `.tiza` with a redact
-    /// that does not parse never repeats the value serde read (t-183 D7).
-    #[error("{0}")]
-    JsonText(String),
 }
 
 impl Error {
@@ -75,14 +68,9 @@ impl Error {
             Error::Invalid(_) => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",
-            Error::Json(_) | Error::JsonText(_) => "invalid_json",
+            Error::Json(_) => "invalid_json",
         }
     }
-}
-
-fn graphemes(len: Option<u32>) -> String {
-    len.map(|n| format!(" (it has {n} graphemes)"))
-        .unwrap_or_default()
 }
 
 /// What is left of a value or a target an error does not repeat.
@@ -92,9 +80,9 @@ pub const ELIDED: &str = "«…»";
 /// rest is serde's message, through [`serde_text`].
 pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
 
-/// serde's message for a value it could not read without that value, with
-/// or without redacts (t-167 R1, R2): a closed value (a color, a type, an
-/// op…) is answered with the valid names only, never with what was sent.
+/// serde's message for a value it could not read without that value
+/// (t-167 R1, R2): a closed value (a color, a type, an op…) is answered
+/// with the valid names only, never with what was sent.
 /// serde's list of what it expected (after the last `, expected `) is
 /// Tiza's own names and stays whole; before it, the value received
 /// (`unknown variant `x``, `invalid type: string "x"`, a number) becomes

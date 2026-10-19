@@ -6,7 +6,6 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use unicode_segmentation::UnicodeSegmentation;
 
 use crate::model::{
     Anchor, Annotation, BorderStyle, Document, Emphasis, Head, LineStyle, MarkStyle, Placement,
@@ -196,18 +195,6 @@ pub enum ShapeSpec {
         #[serde(default)]
         until: Option<u32>,
     },
-    /// Masks a span (t-117). `at` may be `{line, col, end}` (columns) or
-    /// `{line, find}`: with `find`, the mask covers what FOLLOWS the found
-    /// text on that line up to its end (the text is the anchor before the
-    /// secret, never the secret itself: a `find` that looks like a secret is
-    /// refused). Only columns are stored.
-    Redact {
-        at: Where,
-        #[serde(default)]
-        keep: u8,
-        #[serde(default)]
-        label: Option<String>,
-    },
 }
 
 /// A line range given either as numbers or as two text markers.
@@ -383,11 +370,6 @@ impl ShapeSpec {
                     until: *until,
                 }
             }
-            ShapeSpec::Redact { at, keep, label } => Shape::Redact {
-                span: resolve_redact_span(doc, at)?,
-                keep: *keep,
-                label: label.clone(),
-            },
         };
         Ok((shape, markers))
     }
@@ -395,50 +377,6 @@ impl ShapeSpec {
 
 fn m_is_some(m: &Option<RangeMarkers>) -> bool {
     m.is_some()
-}
-
-/// The span a redact covers: explicit columns, or everything after the
-/// anchor text (and the spaces that follow it) to the end of the line. A
-/// `find` that is itself a secret is refused: the anchor is what comes
-/// *before* the secret, so the command line and the file never hold it.
-pub fn resolve_redact_span(doc: &Document, at: &Where) -> Result<TextSpan, crate::Error> {
-    match &at.find {
-        None => at.resolve_span(doc),
-        Some(text) => {
-            if crate::redact::looks_like_secret(text) {
-                return Err(crate::Error::Invalid(
-                    "anchor a redact by columns or by the text before it; the secret would be saved (`:redact L:KEY=` masks what follows KEY=, `:redact L` the whole line, or select it and press r)".into(),
-                ));
-            }
-            let found = at.resolve_span(doc)?;
-            let line_text = doc.line_text(found.line).unwrap_or("");
-            let len = doc.line_len(found.line);
-            let mut start = found.end;
-            // Skip the blanks (and a quote) between the anchor and the value.
-            let graphemes: Vec<&str> = line_text.graphemes(true).collect();
-            while (start as usize) < graphemes.len()
-                && matches!(graphemes[start as usize], " " | "\t" | "\"" | "'")
-            {
-                start += 1;
-            }
-            if start >= len {
-                return Err(crate::Error::Invalid(format!(
-                    "nothing follows «{text}» on L{}: give columns (L@S..E), or select the value and press r",
-                    found.line
-                )));
-            }
-            // Stop before a closing quote at the end of the line.
-            let mut end = len;
-            while end > start && matches!(graphemes[(end - 1) as usize], "\"" | "'" | "," | ";") {
-                end -= 1;
-            }
-            Ok(TextSpan {
-                line: found.line,
-                start,
-                end: end.max(start + 1),
-            })
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
@@ -559,9 +497,7 @@ impl MoveSpec {
             ));
         }
         match shape {
-            Shape::Highlight { span, .. }
-            | Shape::Mark { span, .. }
-            | Shape::Redact { span, .. } => {
+            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
                 if self.from.is_some() || self.to.is_some() {
                     return reject("from/to", "`at`");
                 }
@@ -966,8 +902,7 @@ pub struct PointerParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     /// Text that names the line: on `line` when given, else it must appear
-    /// exactly once in the code shown (searched on the masked code: a
-    /// redacted secret is never found).
+    /// exactly once in the code shown.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub find: Option<String>,
     /// First line of a range (with `to`).
@@ -1096,7 +1031,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.get",
-        "Full document with annotations and current step (code embedded, masked: the code under a redact never travels)",
+        "Full document with annotations and current step (code embedded)",
     ),
     (
         "scene.list",
@@ -1172,7 +1107,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ("render.text", "Returns the current canvas as plain text"),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the real code and linked files inside the instance, so a redact neither breaks a span nor hides a problem; the report never quotes text under a mask. `{width?}` (default 100)",
+        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100)",
     ),
     (
         "follow.set",
@@ -1311,7 +1246,6 @@ pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
 pub fn describe(a: &Annotation) -> String {
     let base = describe_shape(a);
     let base = match &a.markers {
-        // Markers match on the masked code: what they quote is on screen.
         Some(m) => format!("{base} @{}..@{}", quote(&m.start), quote(&m.end)),
         None => base,
     };
@@ -1329,24 +1263,6 @@ fn quote(text: &str) -> String {
 
 fn describe_shape(a: &Annotation) -> String {
     match &a.shape {
-        // Never the text under the mask: columns only.
-        Shape::Redact { span, keep, label } => format!(
-            "{} [step {}] redact L{} {}..{} (masked{}){}",
-            a.id,
-            a.step,
-            span.line,
-            span.start,
-            span.end,
-            if *keep > 0 {
-                format!(", keeps {keep}")
-            } else {
-                String::new()
-            },
-            label
-                .as_ref()
-                .map(|l| format!(" «{l}»"))
-                .unwrap_or_default()
-        ),
         Shape::Highlight {
             span,
             label,

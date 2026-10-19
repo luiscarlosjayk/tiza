@@ -2757,7 +2757,6 @@ name = "tiza-core"
 version = "0.0.1"
 dependencies = [
  "proptest",
- "regex",
  "schemars",
  "serde",
  "serde_json",

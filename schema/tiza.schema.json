@@ -244,36 +244,6 @@
           "type": "object"
         },
         {
-          "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). On the\nfile's own code (`step: 0`, t-183), active from step 0; no move\nrewrites or deletes its line. Only the columns are stored: never the\ntext under them.",
-          "properties": {
-            "keep": {
-              "description": "Characters left visible at the end of the span (0..=8).",
-              "format": "uint8",
-              "maximum": 255,
-              "minimum": 0,
-              "type": "integer"
-            },
-            "label": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "span": {
-              "$ref": "#/$defs/TextSpan"
-            },
-            "type": {
-              "const": "redact",
-              "type": "string"
-            }
-          },
-          "required": [
-            "type",
-            "span"
-          ],
-          "type": "object"
-        },
-        {
           "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
           "properties": {
             "from_line": {
@@ -349,7 +319,7 @@
         },
         "step": {
           "default": 1,
-          "description": "Step at which it appears (1-based). A redact is at step 0: on the\nfile's own code, masking from step 0 (t-183).",
+          "description": "Step at which it appears (1-based).",
           "format": "uint32",
           "minimum": 0,
           "type": "integer"

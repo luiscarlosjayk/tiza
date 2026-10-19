@@ -359,7 +359,7 @@
       }
     },
     {
-      "description": "Full document with annotations and current step (code embedded, masked: the code under a redact never travels)",
+      "description": "Full document with annotations and current step (code embedded)",
       "method": "scene.get",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -614,36 +614,6 @@
                 "type": "object"
               },
               {
-                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). On the\nfile's own code (`step: 0`, t-183), active from step 0; no move\nrewrites or deletes its line. Only the columns are stored: never the\ntext under them.",
-                "properties": {
-                  "keep": {
-                    "description": "Characters left visible at the end of the span (0..=8).",
-                    "format": "uint8",
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "label": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "span": {
-                    "$ref": "#/$defs/TextSpan"
-                  },
-                  "type": {
-                    "const": "redact",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "span"
-                ],
-                "type": "object"
-              },
-              {
                 "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
                 "properties": {
                   "from_line": {
@@ -719,7 +689,7 @@
               },
               "step": {
                 "default": 1,
-                "description": "Step at which it appears (1-based). A redact is at step 0: on the\nfile's own code, masking from step 0 (t-183).",
+                "description": "Step at which it appears (1-based).",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -2067,37 +2037,6 @@
               "type"
             ],
             "type": "object"
-          },
-          {
-            "description": "Masks a span (t-117). `at` may be `{line, col, end}` (columns) or\n`{line, find}`: with `find`, the mask covers what FOLLOWS the found\ntext on that line up to its end (the text is the anchor before the\nsecret, never the secret itself: a `find` that looks like a secret is\nrefused). Only columns are stored.",
-            "properties": {
-              "at": {
-                "$ref": "#/$defs/Where"
-              },
-              "keep": {
-                "default": 0,
-                "format": "uint8",
-                "maximum": 255,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "label": {
-                "default": null,
-                "type": [
-                  "string",
-                  "null"
-                ]
-              },
-              "type": {
-                "const": "redact",
-                "type": "string"
-              }
-            },
-            "required": [
-              "type",
-              "at"
-            ],
-            "type": "object"
           }
         ],
         "properties": {
@@ -2708,37 +2647,6 @@
                   "type"
                 ],
                 "type": "object"
-              },
-              {
-                "description": "Masks a span (t-117). `at` may be `{line, col, end}` (columns) or\n`{line, find}`: with `find`, the mask covers what FOLLOWS the found\ntext on that line up to its end (the text is the anchor before the\nsecret, never the secret itself: a `find` that looks like a secret is\nrefused). Only columns are stored.",
-                "properties": {
-                  "at": {
-                    "$ref": "#/$defs/Where"
-                  },
-                  "keep": {
-                    "default": 0,
-                    "format": "uint8",
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "label": {
-                    "default": null,
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "type": {
-                    "const": "redact",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "at"
-                ],
-                "type": "object"
               }
             ]
           },
@@ -3119,16 +3027,6 @@
       },
       "result": {
         "properties": {
-          "kept_redacts": {
-            "description": "Redacts left in place: an agent's clear never removes a mask (t-183)",
-            "type": "integer"
-          },
-          "note": {
-            "type": "string"
-          },
-          "remaining": {
-            "type": "integer"
-          },
           "removed": {
             "type": "integer"
           },
@@ -3388,36 +3286,6 @@
                 "type": "object"
               },
               {
-                "description": "Masks a span of code (a token, a password, a URL with credentials):\non every surface the span shows as eight `•` plus the last `keep`\ncharacters, never the real text or its length (t-117). On the\nfile's own code (`step: 0`, t-183), active from step 0; no move\nrewrites or deletes its line. Only the columns are stored: never the\ntext under them.",
-                "properties": {
-                  "keep": {
-                    "description": "Characters left visible at the end of the span (0..=8).",
-                    "format": "uint8",
-                    "maximum": 255,
-                    "minimum": 0,
-                    "type": "integer"
-                  },
-                  "label": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  },
-                  "span": {
-                    "$ref": "#/$defs/TextSpan"
-                  },
-                  "type": {
-                    "const": "redact",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "type",
-                  "span"
-                ],
-                "type": "object"
-              },
-              {
                 "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
                 "properties": {
                   "from_line": {
@@ -3493,7 +3361,7 @@
               },
               "step": {
                 "default": 1,
-                "description": "Step at which it appears (1-based). A redact is at step 0: on the\nfile's own code, masking from step 0 (t-183).",
+                "description": "Step at which it appears (1-based).",
                 "format": "uint32",
                 "minimum": 0,
                 "type": "integer"
@@ -5813,7 +5681,7 @@
         "description": "Parameters of `pointer.set` (t-030): `{line}`, `{line, find}`,\n`{find}` (the text must appear once in the shown code) or\n`{from, to}`.",
         "properties": {
           "find": {
-            "description": "Text that names the line: on `line` when given, else it must appear\nexactly once in the code shown (searched on the masked code: a\nredacted secret is never found).",
+            "description": "Text that names the line: on `line` when given, else it must appear\nexactly once in the code shown.",
             "type": [
               "string",
               "null"
@@ -6047,7 +5915,7 @@
       }
     },
     {
-      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the real code and linked files inside the instance, so a redact neither breaks a span nor hides a problem; the report never quotes text under a mask. `{width?}` (default 100)",
+      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100)",
       "method": "check",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6072,7 +5940,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step`,\n`move_on_mask` (a move that rewrites or deletes a masked line,\nt-183) and `redact_on_move_line` (a redact the version before t-183\nsaved on a line a move writes).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step` and `redacts`\n(a document that still carries `redact` annotations, which this\nversion no longer supports).",
                 "type": "string"
               },
               "file": {
@@ -6114,7 +5982,7 @@
                 ]
               },
               "text": {
-                "description": "`clipped_label` only: the full label text (absent when the label is\nunder a redact: never quoted).",
+                "description": "`clipped_label` only: the full label text.",
                 "type": [
                   "string",
                   "null"

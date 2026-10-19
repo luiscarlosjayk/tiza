@@ -1,7 +1,7 @@
 //! The frames of a recording (t-120): every step of the document, the
 //! intermediate frames of its typed moves (t-098) and how long each one
-//! stays. One geometry for the whole take (t-111) and masks on (t-117), so
-//! the canvases are what the audience sees; the GIF encoder in `tiza-export`
+//! stays. One geometry for the whole take (t-111), so the canvases are what
+//! the audience sees; the GIF encoder in `tiza-export`
 //! and an MP4 muxer draw them without any further decision.
 
 use crate::Document;
@@ -89,7 +89,6 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 line_numbers: opts.line_numbers,
                 tab_width: 4,
                 typing,
-                redact: true,
                 stable: true,
                 margin_cap: d.margin.map(usize::from),
             },

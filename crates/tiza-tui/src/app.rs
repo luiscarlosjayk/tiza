@@ -140,10 +140,7 @@ struct RequestState {
     message: Option<(String, bool)>,
     dirty: bool,
     autosave: bool,
-    redact_shown: bool,
     layout_stable: bool,
-    redact_drop_notice: Option<String>,
-    redact_alerts: Vec<String>,
     padding_override: Option<(u16, u16)>,
     supervised: bool,
     typing: Option<TypingState>,
@@ -177,10 +174,7 @@ impl RequestState {
             message: app.message.clone(),
             dirty: app.dirty,
             autosave: app.autosave,
-            redact_shown: app.redact_shown,
             layout_stable: app.layout_stable,
-            redact_drop_notice: app.redact_drop_notice.clone(),
-            redact_alerts: app.redact_alerts.clone(),
             padding_override: app.padding_override,
             supervised: app.supervised,
             typing: app.typing.clone(),
@@ -213,10 +207,7 @@ impl RequestState {
         app.message = self.message;
         app.dirty = self.dirty;
         app.autosave = self.autosave;
-        app.redact_shown = self.redact_shown;
         app.layout_stable = self.layout_stable;
-        app.redact_drop_notice = self.redact_drop_notice;
-        app.redact_alerts = self.redact_alerts;
         app.padding_override = self.padding_override;
         app.supervised = self.supervised;
         app.typing = self.typing;
@@ -293,24 +284,11 @@ pub struct App {
     pub size: (u16, u16),
     pub socket_path: Option<PathBuf>,
     pub autosave: bool,
-    /// `:redact off` shows the author the real text on their own screen;
-    /// presentation mode, exports, recordings and agents keep the masks.
-    pub redact_shown: bool,
     /// `:layout stable`: the authoring screen uses the take's geometry
     /// (lanes, box band and margin sized for every step at once, t-111) so
     /// rehearsing looks like presenting. Presentation mode and every
     /// export are always stable.
     pub layout_stable: bool,
-    /// A reload or paste masked a changed line whole (fail-closed) or
-    /// dropped a redact: shown as an error after the reload's own message,
-    /// so it is never missed.
-    redact_drop_notice: Option<String>,
-    /// Loud redact notices still to be read (t-135): a reload or paste that
-    /// masked whole or dropped a redact (t-117).
-    /// `ui::draw` puts them whole on their own rows above the status bar —
-    /// never cut, whatever the bar holds — until the next key; a later
-    /// reload or message never replaces them (a new notice is added).
-    pub redact_alerts: Vec<String>,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
@@ -412,10 +390,7 @@ impl App {
             size: (80, 24),
             socket_path: None,
             autosave: true,
-            redact_shown: true,
             layout_stable: false,
-            redact_drop_notice: None,
-            redact_alerts: Vec::new(),
             save_error: None,
             save_warning_pending: false,
             padding_override: None,
@@ -573,35 +548,6 @@ impl App {
         self.message = Some((msg.into(), true));
     }
 
-    /// A loud redact notice (t-117): the error message, as before,
-    /// and a pending alert drawn whole above the bar until the next key
-    /// (t-135). An alert already pending stays; the same text is not
-    /// repeated.
-    pub fn redact_alert(&mut self, notice: String) {
-        // The one-time «not saved» warning of the autosave that ran inside
-        // this very action stays on the bar; the alert has its own rows.
-        if !self.save_warning_pending {
-            self.error(notice.clone());
-        }
-        if !self.redact_alerts.contains(&notice) {
-            self.redact_alerts.push(notice);
-        }
-    }
-
-    /// The presenter pressed a key with the alerts on screen: they have been
-    /// seen (t-135). `true` when there was something to hide.
-    pub fn dismiss_redact_alerts(&mut self) -> bool {
-        let had = !self.redact_alerts.is_empty();
-        self.redact_alerts.clear();
-        had
-    }
-
-    /// Whether `msg` is one of the pending redact alerts, already drawn whole
-    /// above the bar (the bar and the presentation row then skip it).
-    pub fn is_redact_alert(&self, msg: &str) -> bool {
-        self.redact_alerts.iter().any(|a| a == msg)
-    }
-
     /// Every annotation id with its step: taken before an action so
     /// [`App::add_step_hint`] can tell which ones it added or moved (t-132).
     fn annotation_steps(&self) -> HashMap<String, u32> {
@@ -646,31 +592,22 @@ impl App {
         }
     }
 
-    /// The layout every reader gets (render.text, screen captures): masks on.
+    /// The layout every reader gets (render.text, screen captures) and the
+    /// author's own screen.
     pub fn layout(&self, width: usize) -> Layout {
-        self.layout_with_masks(width, true)
+        layout(&self.doc, &self.theme, &self.layout_options(width))
     }
 
-    /// The author's own screen: masks off only after `:redact off`, and
-    /// never in presentation mode.
-    pub fn screen_layout(&self, width: usize) -> Layout {
-        self.layout_with_masks(width, self.redact_shown || self.present)
-    }
-
-    /// [`App::screen_layout`] with the live pointer (t-030). Only the
-    /// presenter's frame (`ui::draw`) calls it; `layout` (`render.text`,
-    /// screen captures) and every export never draw the pointer.
+    /// [`App::layout`] with the live pointer (t-030). Only the presenter's
+    /// frame (`ui::draw`) calls it; `layout` (`render.text`, screen
+    /// captures) and every export never draw the pointer.
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
-        let mut opts = self.layout_options(width, self.redact_shown || self.present);
+        let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
         layout(&self.doc, &self.theme, &opts)
     }
 
-    fn layout_with_masks(&self, width: usize, redact: bool) -> Layout {
-        layout(&self.doc, &self.theme, &self.layout_options(width, redact))
-    }
-
-    fn layout_options(&self, width: usize, redact: bool) -> LayoutOptions {
+    fn layout_options(&self, width: usize) -> LayoutOptions {
         LayoutOptions {
             width,
             step: self.doc.step,
@@ -679,7 +616,6 @@ impl App {
             line_numbers: self.doc.numbers,
             tab_width: 4,
             typing: self.typing.is_some(),
-            redact,
             // Presentation mode is a take: one geometry for every step
             // (t-111). Authoring grows as it goes unless `:layout stable`.
             stable: self.present || self.layout_stable,
@@ -755,11 +691,9 @@ impl App {
         }
     }
 
-    /// `pointer.set` (t-030): resolves the lines on the code shown — a
-    /// `find` on the masked code, so it never confirms text under a redact
-    /// — moves the cursor there (the view scrolls to it, `j`/`k` go on
-    /// from it) and points. Nothing is recorded: no revision, no undo, no
-    /// save.
+    /// `pointer.set` (t-030): resolves the lines on the code shown, moves
+    /// the cursor there (the view scrolls to it, `j`/`k` go on from it) and
+    /// points. Nothing is recorded: no revision, no undo, no save.
     pub fn set_pointer(
         &mut self,
         p: &tiza_core::protocol::PointerParams,
@@ -801,8 +735,7 @@ impl App {
                     return Err(Error::Invalid("pointer.set: empty `find`".into()));
                 }
                 let view = self.doc.view_at(self.doc.step);
-                let code = tiza_core::redact::masked_code(&view.doc);
-                let hits = moves::matches_of(&code, first, text);
+                let hits = moves::matches_of(&view.doc.code, first, text);
                 let l = match line {
                     Some(l) => {
                         let l = check(l)?;
@@ -879,11 +812,6 @@ impl App {
             }
             _ => self.pointer = None,
         }
-    }
-
-    /// Whether the document has redact masks (for the status bar).
-    pub fn has_redacts(&self) -> bool {
-        tiza_core::redact::has_redacts(&self.doc)
     }
 
     // ---------- mutations ----------
@@ -1003,11 +931,7 @@ impl App {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         self.history.record(&self.doc, "add");
-        // A redact is marked on the code at the step being viewed (step 0
-        // included) and kept on the file's own code (t-183).
-        let redact = matches!(shape, Shape::Redact { .. });
-        let step = step.unwrap_or(self.doc.step);
-        let step = if redact { step } else { step.max(1) };
+        let step = step.unwrap_or(self.doc.step).max(1);
         let kind = shape.kind_name();
         let res = self.doc.add(Annotation {
             id: id.unwrap_or_default(),
@@ -1046,22 +970,14 @@ impl App {
 
     /// Removes every annotation (or only those of one step). Undo with `u`.
     pub fn clear_annotations(&mut self, step: Option<u32>) -> usize {
-        self.clear_annotations_keeping(step, false)
-    }
-
-    /// [`App::clear_annotations`]; `keep_redacts` leaves every redact in
-    /// place (an agent's `scene.clear`, t-183 AC3: only the presenter
-    /// removes a mask).
-    pub fn clear_annotations_keeping(&mut self, step: Option<u32>, keep_redacts: bool) -> usize {
         let before = self.doc.annotations.len();
         if before == 0 {
             return 0;
         }
         self.history.record(&self.doc, "clear");
-        let kept = |a: &Annotation| keep_redacts && matches!(a.shape, Shape::Redact { .. });
         match step {
-            Some(st) => self.doc.annotations.retain(|a| a.step != st || kept(a)),
-            None => self.doc.annotations.retain(kept),
+            Some(st) => self.doc.annotations.retain(|a| a.step != st),
+            None => self.doc.annotations.clear(),
         }
         let removed = before - self.doc.annotations.len();
         if removed == 0 {
@@ -1079,51 +995,6 @@ impl App {
         removed
     }
 
-    /// An agent's columns are on the code as `code.get` shows it, masked
-    /// (t-183 review A3): the shape is checked on that masked copy — an
-    /// error says the length of the line as shown, never of a masked value,
-    /// and a column between the mask and the real end of the line is
-    /// refused or accepted whatever the value — and then put on the real
-    /// columns ([`Document::unmask_annotations`]).
-    fn agent_shape(
-        &self,
-        view: &Document,
-        shape: Shape,
-        file: &Option<String>,
-        step: Option<u32>,
-    ) -> Result<Shape, Error> {
-        if !tiza_core::redact::has_redacts(&self.doc) {
-            return Ok(shape);
-        }
-        let redact = matches!(shape, Shape::Redact { .. });
-        let step = step.unwrap_or(self.doc.step);
-        let step = if redact { step } else { step.max(1) };
-        let file = match file {
-            Some(f) => self.doc.view_key(f),
-            None if !self.doc.moves.is_empty() => self.doc.shown_view_at(step).file,
-            None => None,
-        };
-        let mut ann = Annotation {
-            id: String::new(),
-            step,
-            color: None,
-            markers: None,
-            file,
-            shape,
-        };
-        view.validate_annotation(&ann)
-            .map_err(tiza_core::redact::without_length)?;
-        self.doc.unmask_annotations(view, [&mut ann]);
-        Ok(ann.shape)
-    }
-
-    /// What an agent's request is resolved on (t-183 review A-1): the
-    /// masked copy when the document has a redact (a span to the end of a
-    /// line ends where the shown line ends), else the document.
-    fn agent_view(&self) -> Option<Document> {
-        tiza_core::redact::has_redacts(&self.doc).then(|| self.doc.masked_view())
-    }
-
     pub fn update_annotation(&mut self, p: &UpdateParams) -> Result<(), Error> {
         let mut ann = self
             .doc
@@ -1131,12 +1002,7 @@ impl App {
             .cloned()
             .ok_or_else(|| Error::NotFound(p.id.clone()))?;
         if let Some(s) = p.step {
-            // A redact stays at step 0 (t-183: `Document::update`).
-            ann.step = if matches!(ann.shape, Shape::Redact { .. }) {
-                s
-            } else {
-                s.max(1)
-            };
+            ann.step = s.max(1);
         }
         if let Some(c) = &p.color {
             if c.trim().is_empty() {
@@ -1150,40 +1016,13 @@ impl App {
                 )));
             }
         }
-        let view = self.agent_view();
         if let Some(spec) = &p.shape {
-            let (shape, markers) = spec
-                .resolve_with_markers(view.as_ref().unwrap_or(&self.doc))
-                .map_err(tiza_core::redact::without_length)?;
-            ann.shape = match &view {
-                Some(v) => self.agent_shape(v, shape, &ann.file, Some(ann.step))?,
-                None => shape,
-            };
+            let (shape, markers) = spec.resolve_with_markers(&self.doc)?;
+            ann.shape = shape;
             ann.markers = markers;
         }
         if let Some(mv) = &p.mv {
-            match &view {
-                // On a document with redacts the move is made on the
-                // shape as the masked copy has it, then put back on the
-                // real columns (review A-1).
-                Some(_) => {
-                    let mut with = self.doc.clone();
-                    if let Some(a) = with.annotations.iter_mut().find(|a| a.id == ann.id) {
-                        *a = ann.clone();
-                    }
-                    let copy = with.masked_view();
-                    let mut shown = copy
-                        .find_annotation(&ann.id)
-                        .cloned()
-                        .unwrap_or_else(|| ann.clone());
-                    mv.apply(&mut shown.shape, &copy)
-                        .and_then(|_| copy.validate_annotation(&shown))
-                        .map_err(tiza_core::redact::without_length)?;
-                    with.unmask_annotations(&copy, [&mut shown]);
-                    ann.shape = shown.shape;
-                }
-                None => mv.apply(&mut ann.shape, &self.doc)?,
-            }
+            mv.apply(&mut ann.shape, &self.doc)?;
             // Moved by lines: the markers no longer describe the range.
             if mv.from_line.is_some() || mv.to_line.is_some() {
                 ann.markers = None;
@@ -1260,8 +1099,7 @@ impl App {
                 Shape::Highlight { label, .. }
                 | Shape::Mark { label, .. }
                 | Shape::Box { label, .. }
-                | Shape::Arrow { label, .. }
-                | Shape::Redact { label, .. } => *label = l,
+                | Shape::Arrow { label, .. } => *label = l,
                 Shape::Note { text, .. } => {
                     if let Some(l) = l {
                         *text = l;
@@ -1292,13 +1130,6 @@ impl App {
         // Its numbers first (t-166): a first line near `u32::MAX` or a step
         // past the cap is refused before anything counts with them.
         doc.check_bounds()?;
-        // On a document with redacts an agent sends back only the masked
-        // copy `scene.get` hands out, every redact as it came (t-183 AC3).
-        self.refuse_uncovering_put(&doc)?;
-        // The masked copy of a file reference (or of a linked file read
-        // from disk) goes back on that file: the put must not turn it into
-        // an embedded `.tiza` (t-174 rework 1, t-183 AC5).
-        self.doc.put_copy(&mut doc)?;
         if doc.code.is_empty() {
             match &doc.code_src {
                 tiza_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
@@ -1315,8 +1146,7 @@ impl App {
         fs::load_views(&mut doc, base.as_deref())?;
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_annotation(a)
-                .map_err(|e| tiza_core::redact::unquoted(&doc, e))?;
+            doc.validate_annotation(a)?;
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -1348,39 +1178,6 @@ impl App {
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
     }
 
-    /// Whether `id` names a redact of the open document.
-    pub fn is_redact(&self, id: &str) -> bool {
-        self.doc
-            .find_annotation(id)
-            .is_some_and(|a| matches!(a.shape, Shape::Redact { .. }))
-    }
-
-    /// An agent's `scene.put` on a document with redacts (t-183 AC3): the
-    /// code (and every linked file) must be the masked copy `scene.get`
-    /// hands out and every redact must come back as it went; more redacts
-    /// may come. Anything else gets [`tiza_core::redact::AGENT_REFUSAL`].
-    fn refuse_uncovering_put(&self, put: &Document) -> Result<(), Error> {
-        if !self.has_redacts() {
-            return Ok(());
-        }
-        let copy = self.doc.embedded_copy();
-        let same_code = put.code_src == copy.code_src
-            && copy
-                .views
-                .iter()
-                .all(|(f, code)| put.views.get(f) == Some(code));
-        let redacts_back = copy
-            .annotations
-            .iter()
-            .filter(|a| matches!(a.shape, Shape::Redact { .. }))
-            .all(|a| put.find_annotation(&a.id) == Some(a));
-        if same_code && redacts_back {
-            Ok(())
-        } else {
-            Err(agent_refusal())
-        }
-    }
-
     /// `scene.patch`: partial changes; annotations merge by id (last write
     /// wins), `{"id", "deleted": true}` removes. All or nothing: an invalid
     /// annotation leaves the document untouched.
@@ -1393,12 +1190,6 @@ impl App {
                 d.styles.insert(name, st);
             }
         }
-        // `scene.get` hands out the masked copy: an annotation sent back
-        // from it is on the copy's columns, put back on the real ones, and
-        // a redact never comes back narrower than the value under it
-        // (t-174 review: `STRIPE=••••••••4eC3…`).
-        let copy = (p.annotations.is_some() && tiza_core::redact::has_redacts(&self.doc))
-            .then(|| self.doc.masked_view());
         if let Some(anns) = p.annotations {
             for v in anns {
                 let id = v
@@ -1410,18 +1201,6 @@ impl App {
                     .to_string();
                 let is_delete = v.get("deleted").and_then(|b| b.as_bool()).unwrap_or(false);
                 let existed = d.find_annotation(&id).is_some();
-                // A redact is the presenter's (t-183 AC3): deleted or sent
-                // back changed, refused; sent back as scene.get gave it, kept.
-                if self.is_redact(&id) {
-                    let same = !is_delete
-                        && copy.as_ref().is_some_and(|c| {
-                            <Annotation as serde::Deserialize>::deserialize(&v)
-                                .is_ok_and(|a| c.find_annotation(&id) == Some(&a))
-                        });
-                    if !same {
-                        return Err(agent_refusal());
-                    }
-                }
                 if is_delete {
                     if !existed {
                         return Err(Error::Invalid(format!(
@@ -1432,25 +1211,14 @@ impl App {
                     deleted.push(id);
                     continue;
                 }
-                let mut ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
+                let ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
                     Error::Invalid(format!(
                         "annotation {id}: {}",
                         tiza_core::error::serde_text(&e.to_string())
                     ))
                 })?;
-                // Sent back from the masked copy: checked there (an error
-                // never says how long a masked line is, review A-1), then
-                // on the real columns again.
-                if let Some(copy) = &copy {
-                    copy.validate_annotation(&ann)
-                        .map_err(tiza_core::redact::without_length)?;
-                    self.doc.unmask_annotations(copy, [&mut ann]);
-                }
                 d.annotations.retain(|a| a.id != id);
-                d.add(ann).map_err(|e| match &copy {
-                    Some(_) => tiza_core::redact::without_length(e),
-                    None => e,
-                })?;
+                d.add(ann)?;
                 if existed {
                     replaced.push(id);
                 } else {
@@ -1550,7 +1318,7 @@ impl App {
     /// `step.goto`, MCP `goto_step`, `tiza goto ID`, `:goto ID` (t-099):
     /// the step a named id (or a number) names, landed on exactly as `n`
     /// would after a full replay — the document is recomputed from step 0
-    /// (moves, views, redacts), the typing of that step complete. Returns
+    /// (moves, views), the typing of that step complete. Returns
     /// the step.
     pub fn goto_step(&mut self, id: &str) -> Result<u32, Error> {
         let s = self.doc.resolve_step(id)?;
@@ -1710,8 +1478,7 @@ impl App {
         self.finish_typing();
         if let tiza_core::moves::MoveAction::CodeLink(l) = &mut m.action {
             let base = self.save_path.parent().map(Path::to_path_buf);
-            // An alias of a file the document shows is that file, with its
-            // masks (t-183 review A1).
+            // An alias of a file the document shows is that file (t-183).
             let mut known = self.doc.link_files();
             known.extend(self.doc.view_code.keys().cloned());
             l.file = fs::canonical_link(&self.doc, &l.file, base.as_deref(), &known);
@@ -1763,10 +1530,7 @@ impl App {
     /// keeps its authoring coordinates and is marked `(unanchored)`.
     pub fn list_lines(&self) -> Vec<String> {
         let describe = |a: &Annotation| tiza_core::protocol::describe(a);
-        // The columns of the code as it is shown, masked (t-183 review
-        // A-1): never those of the real line under a mask.
-        let shown = self.agent_view();
-        let doc = shown.as_ref().unwrap_or(&self.doc);
+        let doc = &self.doc;
         if doc.moves.is_empty() {
             return doc.annotations.iter().map(describe).collect();
         }
@@ -1937,7 +1701,7 @@ impl App {
             d.code_src,
             d.source.first_line,
             Some("paste".into()),
-        )?;
+        );
         if let Some(det) = detected {
             self.doc.source.language = det.language;
         }
@@ -1957,9 +1721,6 @@ impl App {
                 out.kept
             ));
         }
-        if let Some(n) = self.redact_drop_notice.take() {
-            self.redact_alert(n);
-        }
         Ok(())
     }
 
@@ -1969,18 +1730,13 @@ impl App {
     /// (something dropped or shifted): a harmless reload leaves no step, so
     /// that after an editor undo that restores dropped text, one `u` reaches
     /// the reload that dropped it. Returns (kept, dropped, recorded).
-    ///
-    /// New code that would put a masked line under a move that changes it
-    /// is not applied (t-183 review A-2): the document keeps its code, so
-    /// what the TUI holds can always be saved, reopened and exported; the
-    /// error names the move.
     fn apply_new_code(
         &mut self,
         code: Vec<String>,
         code_src: tiza_core::model::CodeSource,
         first_line: u32,
         always: Option<String>,
-    ) -> Result<crate::reanchor::Outcome, Error> {
+    ) -> crate::reanchor::Outcome {
         let snapshot = self.doc.clone();
         let mut d = self.doc.clone();
         d.annotations.clear();
@@ -2003,7 +1759,6 @@ impl App {
         // exist (AC9). A step whose moves no longer apply on the new text
         // falls back to the step-0 code (those moves are reported when
         // the presenter steps onto them).
-        // A redact is on the file's own code, step 0 (t-183).
         let mut steps: Vec<u32> = old.annotations.iter().map(|a| a.step).collect();
         steps.sort_unstable();
         steps.dedup();
@@ -2028,85 +1783,21 @@ impl App {
             .iter()
             .map(|a| a.file.is_some().then(|| a.shape.clone()))
             .collect();
-        // Redacts whose line changed, fail-closed (t-183): the lines they
-        // now mask whole.
-        let mut whole: Vec<Option<Vec<tiza_core::TextSpan>>> = vec![None; old.annotations.len()];
         for step in steps {
             let old_s = at_step(&old, step);
             let new_s = at_step(&d, step);
             let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
-            for (i, a) in old.annotations.iter().enumerate() {
-                if a.step != step || a.file.is_some() {
-                    continue;
+            for (a, slot) in old.annotations.iter().zip(shapes.iter_mut()) {
+                if a.step == step && a.file.is_none() {
+                    *slot = remap.shape(&a.shape);
                 }
-                if let Shape::Redact { span, .. } = &a.shape
-                    && let crate::reanchor::RedactFate::Whole(spans) = remap.redact(span)
-                {
-                    whole[i] = Some(spans);
-                    continue;
-                }
-                shapes[i] = remap.shape(&a.shape);
             }
         }
-        let mut dropped_redacts: Vec<String> = Vec::new();
-        let mut whole_redacts: Vec<(String, String)> = Vec::new();
-        // Lines of a hunk a whole-line redact also covers: added after every
-        // other annotation, so their new ids never take an old one's.
-        let mut extra: Vec<(String, Annotation)> = Vec::new();
-        for (i, (a, shape)) in old.annotations.iter().zip(shapes).enumerate() {
-            let is_redact = matches!(a.shape, Shape::Redact { .. });
-            if let (Some(spans), Shape::Redact { label, .. }) = (whole[i].take(), &a.shape) {
-                let mask = |span: tiza_core::TextSpan, id: String| Annotation {
-                    id,
-                    shape: Shape::Redact {
-                        span,
-                        keep: 0,
-                        label: label.clone(),
-                    },
-                    ..a.clone()
-                };
-                let place = match spans.as_slice() {
-                    [one] => format!("L{}", one.line),
-                    [first, .., last] => format!("L{}-{}", first.line, last.line),
-                    [] => String::new(),
-                };
-                let mut spans = spans.into_iter();
-                let first = spans.next();
-                // A mask a reload carries is never refused by the guard of
-                // moves (t-183 review A2): a move that now hits it is
-                // reported below, and its step shows the file's own code.
-                let kept_one = first.is_some_and(|sp| d.add_mask(mask(sp, a.id.clone())).is_ok());
-                if kept_one {
-                    whole_redacts.push((a.id.clone(), place));
-                    extra.extend(spans.map(|sp| (a.id.clone(), mask(sp, String::new()))));
-                } else {
-                    dropped_redacts.push(a.id.clone());
-                }
-                continue;
+        for (a, shape) in old.annotations.iter().zip(shapes) {
+            if let Some(shape) = shape {
+                // `add` validates against the code at the annotation's step.
+                let _ = d.add(Annotation { shape, ..a.clone() });
             }
-            // `add` validates against the code at the annotation's step.
-            let kept_one = match shape {
-                Some(shape) if is_redact => d.add_mask(Annotation { shape, ..a.clone() }).is_ok(),
-                Some(shape) => d.add(Annotation { shape, ..a.clone() }).is_ok(),
-                None => false,
-            };
-            if !kept_one && is_redact {
-                dropped_redacts.push(a.id.clone());
-            }
-        }
-        for (id, ann) in extra {
-            // Two redacts of one hunk cover its lines once.
-            let covered = d.annotations.iter().any(|b| b.shape == ann.shape);
-            if !covered && d.add_mask(ann).is_err() && !dropped_redacts.contains(&id) {
-                // Never silent (it cannot happen on a non-blank line).
-                dropped_redacts.push(id);
-            }
-        }
-        // A move that changes a line the new code masks: not applied.
-        if let Err(e) = d.check_masked_lines() {
-            return Err(Error::Invalid(format!(
-                "the new code is not applied: {e}. Delete that move or the redact, then reload or paste again (the screen keeps the previous code)"
-            )));
         }
         let kept = d.annotations.len();
         let harmless = kept == before && d.annotations == snapshot.annotations;
@@ -2119,13 +1810,11 @@ impl App {
         self.selected = None;
         self.clamp_cursor();
         self.touch();
-        // Loud, and it must outlive the reload's own message (t-117 AC5).
-        self.redact_drop_notice = redact_notice(&whole_redacts, &dropped_redacts);
-        Ok(crate::reanchor::Outcome {
+        crate::reanchor::Outcome {
             kept,
             dropped: before.saturating_sub(kept),
             recorded,
-        })
+        }
     }
 
     fn clamp_cursor(&mut self) {
@@ -2241,22 +1930,11 @@ impl App {
             ));
             return true;
         }
+        f.mark_reloaded(new.clone());
+        let reloads = f.reloads;
         let code_src = self.doc.code_src.clone();
         let first = self.doc.source.first_line;
-        let out = match self.apply_new_code(new.clone(), code_src, first, None) {
-            Ok(out) => out,
-            Err(e) => {
-                // Not marked as reloaded: every later save that still
-                // conflicts says so again, once per save (review A-2).
-                self.redact_alert(format!("{name} changed on disk: {e}"));
-                return true;
-            }
-        };
-        let Some(f) = &mut self.follow else {
-            return true;
-        };
-        f.mark_reloaded(new);
-        let reloads = f.reloads;
+        let out = self.apply_new_code(new, code_src, first, None);
         if out.recorded {
             self.history.label_last(format!("reload #{reloads}"));
         }
@@ -2270,9 +1948,6 @@ impl App {
                 String::new()
             }
         ));
-        if let Some(n) = self.redact_drop_notice.take() {
-            self.redact_alert(n);
-        }
         true
     }
 
@@ -2501,44 +2176,6 @@ impl App {
                 self.focus = Some((a, b));
                 self.info(format!("focus {a}-{b} (Esc clears)"));
             }
-            ('r', Selection::Span(span)) => {
-                // Redact the selection (t-117): columns only, never the text.
-                self.mode = Mode::Normal;
-                match self.add_annotation(
-                    None,
-                    None,
-                    Shape::Redact {
-                        span,
-                        keep: 0,
-                        label: None,
-                    },
-                ) {
-                    Ok(id) => self.info(format!(
-                        "{id}: redacted L{} (:set {id} keep=4 shows the last 4 characters)",
-                        span.line
-                    )),
-                    Err(e) => self.error(e.to_string()),
-                }
-            }
-            ('r', Selection::Lines(a, b)) => {
-                self.mode = Mode::Normal;
-                let mut ids = Vec::new();
-                for line in a..=b {
-                    match self.redact_whole_line(line) {
-                        Ok(Some(id)) => ids.push(id),
-                        Ok(None) => {}
-                        Err(e) => {
-                            self.error(e.to_string());
-                            return true;
-                        }
-                    }
-                }
-                self.info(format!(
-                    "{} line{} redacted",
-                    ids.len(),
-                    if ids.len() == 1 { "" } else { "s" }
-                ));
-            }
             ('m', _) => self.command_with_selection("mark "),
             ('C', Selection::Lines(a, b)) => {
                 self.end_select();
@@ -2685,8 +2322,7 @@ impl App {
                     Shape::Highlight { label, .. }
                     | Shape::Mark { label, .. }
                     | Shape::Box { label, .. }
-                    | Shape::Arrow { label, .. }
-                    | Shape::Redact { label, .. } => label.clone().unwrap_or_default(),
+                    | Shape::Arrow { label, .. } => label.clone().unwrap_or_default(),
                     Shape::Note { text, .. } => text.clone(),
                     Shape::Callout { title, .. } => title.clone().unwrap_or_default(),
                     Shape::Spotlight { .. } => String::new(),
@@ -2740,7 +2376,6 @@ impl App {
         "box",
         "callout",
         "clear",
-        "redact",
         "ref",
         "follow",
         "color",
@@ -2984,7 +2619,6 @@ impl App {
                     Ok(format!("the .tiza now references {file}"))
                 }
                 "spot" | "spotlight" => self.cmd_spot(rest),
-                "redact" => self.cmd_redact(rest),
                 "callout" | "co" => self.cmd_callout(rest),
                 "set" => self.cmd_set(rest),
                 "follow" => match rest.trim() {
@@ -3722,9 +3356,6 @@ impl App {
                         .map_err(|_| Error::Invalid("step= must be a number".into()))?;
                 }
                 "width" => {
-                    // With redacts the number goes (`width=…: use a number
-                    // between …`): the bar counts what follows `=` as
-                    // written (t-167 review), the option name stays.
                     width = tiza_core::layout::check_width(v.parse::<usize>().map_err(|_| {
                         Error::Invalid(format!(
                             "width= must be a number between {} and {}",
@@ -3797,7 +3428,6 @@ impl App {
                 line_numbers: self.doc.numbers,
                 tab_width: 4,
                 typing: false,
-                redact: true,
                 stable: true,
                 margin_cap: self.doc.margin.map(usize::from),
             },
@@ -4145,234 +3775,6 @@ impl App {
         Ok(format!("style {name} defined (use it with :mark {name} …)"))
     }
 
-    /// Masks the content of `line` (from its first non-blank character).
-    /// `Ok(None)` for a blank line.
-    fn redact_whole_line(&mut self, line: u32) -> Result<Option<String>, Error> {
-        let text = self
-            .doc
-            .line_text(line)
-            .ok_or(Error::LineOutOfRange {
-                line,
-                first: self.doc.source.first_line,
-                last: self.doc.last_line(),
-            })?
-            .to_string();
-        use unicode_segmentation::UnicodeSegmentation;
-        let start = text
-            .graphemes(true)
-            .take_while(|g| g.trim().is_empty())
-            .count() as u32;
-        let end = self.doc.line_len(line);
-        if start >= end {
-            return Ok(None);
-        }
-        let id = self.add_annotation(
-            None,
-            None,
-            Shape::Redact {
-                span: tiza_core::TextSpan { line, start, end },
-                keep: 0,
-                label: None,
-            },
-        )?;
-        Ok(Some(id))
-    }
-
-    /// `:redact L` (the whole line), `:redact L:anchor [keep=N] [label]` (what
-    /// follows the anchor text to the end of the line), `:redact L@S..E`
-    /// (columns), `:redact on|off` (the author's view), `:redact auto
-    /// [--dry]` (built-in patterns → ordinary redact annotations), `:redact`
-    /// (state). The anchor is the text BEFORE the secret, never the secret.
-    fn cmd_redact(&mut self, rest: &str) -> Result<String, Error> {
-        let rest = rest.trim();
-        let usage = "usage: :redact L  |  :redact L:ANCHOR [keep=N] [label]  |  :redact L@S..E  |  :redact on|off  |  :redact auto [--dry]   (select the value and press r is the safest)";
-        match rest {
-            "" => {
-                let n = self
-                    .doc
-                    .annotations
-                    .iter()
-                    .filter(|a| matches!(a.shape, Shape::Redact { .. }))
-                    .count();
-                return Ok(format!(
-                    "redact: {n} mask{} ({}; presentation mode and every export always mask)",
-                    if n == 1 { "" } else { "s" },
-                    if self.redact_shown {
-                        "shown"
-                    } else {
-                        "OFF for the author: :redact on"
-                    }
-                ));
-            }
-            "on" => {
-                self.redact_shown = true;
-                self.revision += 1;
-                return Ok("redact on: masks shown".into());
-            }
-            "off" => {
-                self.redact_shown = false;
-                self.revision += 1;
-                return Ok(
-                    "redact off for the author only: the screen shows the real text until :redact on (presentation mode, exports, recordings and agents keep the masks)"
-                        .into(),
-                );
-            }
-            _ => {}
-        }
-        if let Some(flags) = rest.strip_prefix("auto") {
-            let dry = flags.trim() == "--dry";
-            if !flags.trim().is_empty() && !dry {
-                return Err(Error::Invalid("usage: :redact auto [--dry]".into()));
-            }
-            return self.redact_auto(dry);
-        }
-        let (at, tail) = split_first(rest);
-        let (label, kv) = split_trailing_kv(tail);
-        let mut keep: u8 = 0;
-        for (k, v) in &kv {
-            match k.as_str() {
-                "keep" => {
-                    keep = v
-                        .parse::<u8>()
-                        .ok()
-                        .filter(|n| *n <= 8)
-                        .ok_or_else(|| Error::Invalid("keep= must be 0 to 8".into()))?;
-                }
-                _ => {
-                    return Err(Error::Invalid(
-                        "unknown key for :redact (keep=N)".to_string(),
-                    ));
-                }
-            }
-        }
-        if !looks_like_anchor(at) {
-            return Err(Error::Invalid(usage.into()));
-        }
-        // `L` alone: the whole line.
-        if at.chars().all(|c| c.is_ascii_digit()) {
-            let line: u32 = at.parse().map_err(|_| Error::Invalid(usage.into()))?;
-            return match self.redact_whole_line(line)? {
-                Some(id) => {
-                    if keep > 0 || !label.trim().is_empty() {
-                        self.apply_redact_options(&id, keep, label)?;
-                    }
-                    Ok(format!("{id}: L{line} redacted"))
-                }
-                None => Err(Error::Invalid(format!("L{line} is blank: nothing to mask"))),
-            };
-        }
-        let w = parse_where(at, self.cursor_line)?;
-        if let Some(line) = w.line
-            && !self.doc.has_line(line)
-        {
-            return Err(Error::LineOutOfRange {
-                line,
-                first: self.doc.source.first_line,
-                last: self.doc.last_line(),
-            });
-        }
-        let span = tiza_core::protocol::resolve_redact_span(&self.doc, &w)?;
-        if let (Some(line), Some(_)) = (w.line, &w.find)
-            && span.line != line
-        {
-            return Err(Error::Invalid(format!(
-                "the anchor is not on L{line}; found on L{} — use {}:…",
-                span.line, span.line
-            )));
-        }
-        let id = self.add_annotation(
-            None,
-            None,
-            Shape::Redact {
-                span,
-                keep,
-                label: opt(label),
-            },
-        )?;
-        Ok(format!(
-            "{id}: redacted L{} ({} cell{} masked{})",
-            span.line,
-            span.end - span.start,
-            if span.end - span.start == 1 { "" } else { "s" },
-            if keep > 0 {
-                format!(", last {keep} shown")
-            } else {
-                String::new()
-            }
-        ))
-    }
-
-    fn apply_redact_options(&mut self, id: &str, keep: u8, label: &str) -> Result<(), Error> {
-        let mut ann = self
-            .doc
-            .find_annotation(id)
-            .cloned()
-            .ok_or_else(|| Error::NotFound(id.to_string()))?;
-        if let Shape::Redact {
-            keep: k, label: l, ..
-        } = &mut ann.shape
-        {
-            *k = keep;
-            *l = opt(label);
-        }
-        self.doc.update(ann)?;
-        self.touch();
-        Ok(())
-    }
-
-    /// `:redact auto`: the built-in patterns on the shown code, each match an
-    /// ordinary redact annotation the presenter can review and delete.
-    fn redact_auto(&mut self, dry: bool) -> Result<String, Error> {
-        // Scan the code as shown (masks already applied are bullets, so a
-        // second run does not stack masks on masks).
-        let view = self.doc.view_at(self.doc.step).doc;
-        let code = tiza_core::redact::masked_code(&view);
-        let matches = tiza_core::redact::auto_matches(&code, self.doc.source.first_line);
-        if matches.is_empty() {
-            return Ok("redact auto: 0 matches (it only knows JWTs, Bearer/Basic tokens, password/secret/token/api_key values, URL credentials, AWS/GitHub/Stripe/Slack/Google keys and e-mail addresses)".into());
-        }
-        let places: Vec<String> = matches
-            .iter()
-            .map(|m| format!("L{} {}", m.line, m.what))
-            .collect();
-        if dry {
-            return Ok(format!(
-                "redact auto --dry: {} match{} ({}); run :redact auto to mask them",
-                matches.len(),
-                if matches.len() == 1 { "" } else { "es" },
-                places.join(", ")
-            ));
-        }
-        let mut masked = 0;
-        for m in &matches {
-            // Skip a place that is already a mask (bullets) or already redacted.
-            let already = view.annotations.iter().any(|a| {
-                matches!(&a.shape, Shape::Redact { span, .. } if span.line == m.line && span.start < m.end && span.end > m.start)
-            });
-            if already {
-                continue;
-            }
-            self.add_annotation(
-                None,
-                None,
-                Shape::Redact {
-                    span: tiza_core::TextSpan {
-                        line: m.line,
-                        start: m.start,
-                        end: m.end,
-                    },
-                    keep: 0,
-                    label: None,
-                },
-            )?;
-            masked += 1;
-        }
-        Ok(format!(
-            "redact auto: {masked} masked ({}); :list shows them, :del ID removes one, u undoes",
-            places.join(", ")
-        ))
-    }
-
     /// `:spot 7-12`, `:spot a2 a3`, `:spot 7-12 a2 a3`. Active only in the current step
     /// (`:until ID N` extends it).
     fn cmd_spot(&mut self, rest: &str) -> Result<String, Error> {
@@ -4511,10 +3913,9 @@ impl App {
     /// what it was ([`RequestState`]), the undo entries it recorded are
     /// forgotten, and the document is saved again when the request had
     /// saved a half-done change. The crash hook leaves the terminal alone
-    /// meanwhile ([`answering_request`]); the panic's place and message
-    /// (not on a document with redacts) go to `panics.log` in Tiza's runtime
-    /// directory, and nothing of it is shown or returned (it may quote the
-    /// document, t-167).
+    /// meanwhile ([`answering_request`]); the panic's place and message go
+    /// to `panics.log` in Tiza's runtime directory, and nothing of it is
+    /// shown or returned (it may quote the document, t-167).
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         let method = req.method.clone();
@@ -4558,19 +3959,12 @@ impl App {
 
     /// Appends one line about a request's panic to `panics.log` in Tiza's
     /// runtime directory (owner only, like the sockets): the time, the
-    /// version, the request, where it panicked and its message (not on a
-    /// document with redacts). Returns the log's path when it was written.
+    /// version, the request, where it panicked and its message. Returns the
+    /// log's path when it was written.
     fn log_request_panic(&self, what: &str) -> Option<PathBuf> {
         let (at, message) = LAST_PANIC
             .with(|p| p.borrow_mut().take())
             .unwrap_or_else(|| ("unknown place".into(), String::new()));
-        // A panic message may quote any text, the code under a mask too:
-        // on a document with redacts only where it panicked is logged.
-        let message = if tiza_core::redact::has_redacts(&self.doc) {
-            "(message not logged: the document has redacts)".to_string()
-        } else {
-            message
-        };
         let path = tiza_core::socket::runtime_dir().join("panics.log");
         tiza_core::socket::prepare_dir(&path).ok()?;
         let stamp = std::time::SystemTime::now()
@@ -4668,7 +4062,7 @@ impl App {
     /// changes within [`AGENT_NOTICE_GROUP`] of the last one join it
     /// (`3 agent annotations not shown (step 1, press n)`). In presentation
     /// mode nothing is drawn: it waits for the bar (t-155). An error the
-    /// request itself raised (a redact alert, a failed save) keeps the bar.
+    /// request itself raised (a failed save) keeps the bar.
     fn agent_changed(
         &mut self,
         result: &Value,
@@ -4911,7 +4305,7 @@ impl App {
         // A method the API does not have is never repeated (t-167 R1).
         let method = |m: &str| -> String {
             if !tiza_core::protocol::METHODS.iter().any(|(k, _)| *k == m) {
-                tiza_core::redact::ELIDED.into()
+                tiza_core::error::ELIDED.into()
             } else {
                 m.to_string()
             }
@@ -4928,9 +4322,9 @@ impl App {
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, Error> {
         // Parameters that do not deserialize: serde quotes the value it
         // could not read (`unknown variant `x``, `invalid type: string
-        // "x"`); that value is taken out with or without redacts, like the
-        // MCP's own deserialization errors, and serde's list of valid names
-        // stays (t-167 rework).
+        // "x"`); that value is taken out, like the MCP's own
+        // deserialization errors, and serde's list of valid names stays
+        // (t-167 rework).
         fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
             T::deserialize(&v).map_err(|e| {
                 Error::Invalid(format!(
@@ -4983,11 +4377,9 @@ impl App {
                     .collect::<Vec<_>>()
             ),
             "code.get" => {
-                // What an agent reads is what the screen shows: masked (t-117).
                 let view = self.doc.view_at(self.doc.step);
-                let code = tiza_core::redact::masked_code(&view.doc);
                 let mut out = String::new();
-                for (i, text) in code.iter().enumerate() {
+                for (i, text) in view.doc.code.iter().enumerate() {
                     let line = self.doc.source.first_line + i as u32;
                     out.push_str(&format!("{line:>4}  {text}\n"));
                 }
@@ -4998,9 +4390,8 @@ impl App {
                     let _: tiza_core::protocol::SceneGetParams = parse(params)?;
                 }
                 // On the wire the code travels embedded: a client in another
-                // directory could not resolve a relative file reference.
-                // Masked (t-117): the embedded code an agent gets never holds
-                // a secret; linked files travel embedded too (t-105).
+                // directory could not resolve a relative file reference;
+                // linked files travel embedded too (t-105).
                 let document = self.doc.embedded_copy();
                 serde_json::to_value(Scene {
                     revision: self.revision,
@@ -5033,32 +4424,20 @@ impl App {
             "move.list" => serde_json::to_value(self.move_list())?,
             "annotation.add" => {
                 let mut p: AddParams = parse(params)?;
-                // An alias of a linked file is that file, as on load (t-183
-                // review A-3).
+                // An alias of a linked file is that file, as on load (t-183).
                 if let Some(f) = &p.file {
                     let base = self.save_path.parent().map(Path::to_path_buf);
                     let mut known = self.doc.link_files();
                     known.extend(self.doc.view_code.keys().cloned());
                     p.file = Some(fs::canonical_link(&self.doc, f, base.as_deref(), &known));
                 }
-                let view = self.agent_view();
-                let (shape, markers) = p
-                    .shape
-                    .resolve_with_markers(view.as_ref().unwrap_or(&self.doc))
-                    .map_err(tiza_core::redact::without_length)?;
-                let shape = match &view {
-                    Some(v) => self.agent_shape(v, shape, &p.file, p.step)?,
-                    None => shape,
-                };
+                let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 // Where it stands against the view right now (t-155).
                 serde_json::to_value(AnnotationMutated::of(&self.doc, id, self.revision))?
             }
             "annotation.update" => {
                 let p: UpdateParams = parse(params)?;
-                if self.is_redact(&p.id) {
-                    return Err(agent_refusal());
-                }
                 self.update_annotation(&p)?;
                 serde_json::to_value(AnnotationMutated::of(&self.doc, p.id, self.revision))?
             }
@@ -5126,30 +4505,11 @@ impl App {
                     .get("step")
                     .and_then(|v| v.as_u64())
                     .map(|v| v as u32);
-                // An agent's clear leaves the redacts (t-183 AC3), and says so.
-                let removed = self.clear_annotations_keeping(step, true);
-                let kept = self
-                    .doc
-                    .annotations
-                    .iter()
-                    .filter(|a| matches!(a.shape, Shape::Redact { .. }))
-                    .filter(|a| step.is_none_or(|s| a.step == s))
-                    .count();
-                let mut reply = json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision});
-                if kept > 0 {
-                    reply["kept_redacts"] = json!(kept);
-                    reply["note"] = json!(format!(
-                        "{kept} redact{} kept: only the presenter removes a mask",
-                        if kept == 1 { "" } else { "s" }
-                    ));
-                }
-                reply
+                let removed = self.clear_annotations(step);
+                json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision})
             }
             "annotation.delete" => {
                 let p: IdParams = parse(params)?;
-                if self.is_redact(&p.id) {
-                    return Err(agent_refusal());
-                }
                 self.delete_annotation(&p.id)?;
                 serde_json::to_value(Mutated {
                     id: p.id,
@@ -5178,9 +4538,6 @@ impl App {
             "check" => {
                 let p: tiza_core::schema::CheckParams = parse(params)?;
                 let width = p.width.map(tiza_core::layout::check_width).transpose()?;
-                // On the document the instance holds, never on the masked
-                // copy an agent reads: masks change the columns. Only the
-                // report leaves, and it never quotes a secret.
                 let base = self.save_path.parent().map(Path::to_path_buf);
                 serde_json::to_value(tiza_core::check::check_document(
                     &self.doc,
@@ -5440,38 +4797,6 @@ pub fn theme_label(t: ThemeName) -> &'static str {
     }
 }
 
-/// The loud notice after a reload or paste changed a redact's line
-/// (t-117, t-183): masked whole (fail-closed) and/or dropped. `None` when
-/// every redact's line is unchanged. Never the text under a mask: ids and
-/// lines.
-fn redact_notice(whole: &[(String, String)], dropped: &[String]) -> Option<String> {
-    let mut parts = Vec::new();
-    if !whole.is_empty() {
-        let ids: Vec<&str> = whole.iter().map(|(id, _)| id.as_str()).collect();
-        let mut places: Vec<&str> = whole.iter().map(|(_, p)| p.as_str()).collect();
-        // Two masks on one line name it once.
-        places.dedup();
-        parts.push(format!(
-            "redact {}: {} line changed, masking {} whole — check the screen before recording",
-            ids.join(", "),
-            if ids.len() == 1 { "its" } else { "their" },
-            places.join(", ")
-        ));
-    }
-    if !dropped.is_empty() {
-        parts.push(format!(
-            "redact {} dropped: the line changed — check the screen before recording",
-            dropped.join(", ")
-        ));
-    }
-    (!parts.is_empty()).then(|| format!("{} (u undoes the reload)", parts.join("; ")))
-}
-
-/// [`tiza_core::redact::AGENT_REFUSAL`] as an error (t-183 AC3).
-fn agent_refusal() -> Error {
-    Error::Invalid(tiza_core::redact::AGENT_REFUSAL.into())
-}
-
 fn opt(s: &str) -> Option<String> {
     let s = s.trim();
     if s.is_empty() {
@@ -5678,7 +5003,6 @@ pub fn shape_summary(a: &Annotation) -> String {
         Shape::Arrow { from, to, .. } => format!("arrow L{} → L{}", from.line, to.line),
         Shape::Highlight { span, .. } => format!("highlight L{}", span.line),
         Shape::Mark { kind, span, .. } => format!("mark {kind} L{}", span.line),
-        Shape::Redact { span, .. } => format!("redact L{}", span.line),
         Shape::Spotlight {
             from_line,
             to_line,
@@ -5696,7 +5020,7 @@ pub fn shape_summary(a: &Annotation) -> String {
 /// One line describing an agent request for the review overlay. It goes to
 /// the list, the y/n/expiry messages and `supervise.status`. A closed value
 /// that is none of its names (a `type`, a method) is never repeated (t-167
-/// R1): it reads [`tiza_core::redact::ELIDED`].
+/// R1): it reads [`tiza_core::error::ELIDED`].
 pub fn proposal_summary(req: &Request) -> String {
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -5739,7 +5063,7 @@ pub fn proposal_summary(req: &Request) -> String {
             };
             let what = match kind.as_str() {
                 "mark" => format!("mark {}", s("kind")),
-                k if !SHAPE_TYPES.contains(&k) => tiza_core::redact::ELIDED.into(),
+                k if !SHAPE_TYPES.contains(&k) => tiza_core::error::ELIDED.into(),
                 k => k.to_string(),
             };
             format!("add {what} {at}{}", text("label") + &text("text"))
@@ -5786,7 +5110,7 @@ pub fn proposal_summary(req: &Request) -> String {
                 .iter()
                 .any(|(m, _)| *m == other) =>
         {
-            tiza_core::redact::ELIDED.into()
+            tiza_core::error::ELIDED.into()
         }
         other => other.to_string(),
     }
@@ -5801,7 +5125,6 @@ const SHAPE_TYPES: &[&str] = &[
     "note",
     "callout",
     "spotlight",
-    "redact",
 ];
 
 /// Image formats `:export` can ask the binary for.

@@ -8,7 +8,7 @@
 //!   undimmed. `f` again, or `Esc`, turns it off.
 //! - AC2 The pointer follows the cursor (`j`/`k`, `g`/`G`, word motions, the
 //!   mouse when `--mouse` is on). Annotations of the current step stay
-//!   visible; masks (redacts) stay masked.
+//!   visible.
 //! - AC3 Presentation mode (`P`): `f` shows the pointer on the last cursor
 //!   line and `j`/`k` move it; the cursor itself stays hidden. Nothing else
 //!   of the presentation UI appears.
@@ -27,8 +27,7 @@
 //!
 //! Corner cases: the pointed line off screen (the view scrolls to it); a
 //! step change keeps the pointer on its line (or where a move shifted it),
-//! off when the line disappears; a redact under the pointer stays masked; a
-//! key typed into the `:` line never toggles it; an agent pointing while
+//! off when the line disappears; a key typed into the `:` line never toggles it; an agent pointing while
 //! the command line is open shows after it closes.
 
 use std::collections::BTreeSet;
@@ -213,11 +212,9 @@ fn ac2_follows_every_motion_and_the_mouse() {
 }
 
 #[test]
-fn ac2_annotations_stay_and_masks_stay_masked() {
-    const SECRET: &str = "sk_live_51Hx9QeLkT2mNpR8vWzYa";
-    let code = format!("APP=prod\nPORT=8080\nKEY={SECRET}\nLOG=info\n");
-    let live = Live::from_code(&code, "sh", "t030-mask");
-    live.command("redact 3:KEY=");
+fn ac2_annotations_stay() {
+    let code = "APP=prod\nPORT=8080\nKEY=demo-key-123\nLOG=info\n";
+    let live = Live::from_code(code, "sh", "t030-ann");
     live.command("note 1 the app name");
     live.command("step 1");
     for present in [false, true] {
@@ -229,9 +226,6 @@ fn ac2_annotations_stay_and_masks_stay_masked() {
         press(&live, &[KeyCode::Char('f')]);
         assert_eq!(pointer(&live), Some((3, 3)));
         let screen = live.screen(100, 30);
-        assert!(!screen.contains(SECRET), "{screen}");
-        assert!(!screen.contains("sk_live"), "{screen}");
-        assert!(screen.contains("••"), "the mask is drawn:\n{screen}");
         assert!(screen.contains("the app name"), "the note stays:\n{screen}");
         // The note is not dimmed: its text keeps its color.
         let note_dim = live.with(|a| {
@@ -474,24 +468,6 @@ fn ac6_agents_point_over_the_socket_and_status_reports_it() {
         out.contains("\"line\": 2") || out.contains("\"line\":2"),
         "{out}"
     );
-}
-
-#[test]
-fn ac6_a_find_never_probes_a_masked_secret() {
-    const SECRET: &str = "sk_live_51Hx9QeLkT2mNpR8vWzYa";
-    let code = format!("APP=prod\nKEY={SECRET}\nLOG=info\n");
-    let live = Live::from_code(&code, "sh", "t030-probe");
-    live.command("redact 2:KEY=");
-    for probe in [SECRET, "sk_live", "51Hx9"] {
-        let r = live.api("pointer.set", json!({"find": probe}));
-        let e = r.error.expect("a masked secret is never found");
-        assert_eq!(e.code, "text_not_found");
-        let r = live.api("pointer.set", json!({"line": 2, "find": probe}));
-        assert_eq!(r.error.unwrap().code, "text_not_found");
-    }
-    // Text outside the mask on the same line is found.
-    let r = live.api_ok("pointer.set", json!({"find": "KEY="}));
-    assert_eq!(r["pointer"]["line"], json!(2));
 }
 
 #[test]

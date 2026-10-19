@@ -7,7 +7,7 @@
 //!   typed frames of `code.patch` moves at their `speed_ms`, a final hold of
 //!   2×interval, looping (`--loop N`), one palette per animation, sub-
 //!   rectangle diffs; pure Rust.
-//! - AC2 Every frame shares the take's geometry (t-111) and the masks (t-117).
+//! - AC2 Every frame shares the take's geometry (t-111).
 //! - AC3 `--out demo.mp4`: frames to a temp dir, `ffmpeg` from PATH or
 //!   `$TIZA_FFMPEG` with a printed command; without ffmpeg a clear message,
 //!   exit 2, no partial file.
@@ -165,14 +165,13 @@ fn ac1_typed_moves_animate_at_their_speed() {
 }
 
 #[test]
-fn ac2_masks_are_in_every_frame_and_the_cast_is_unchanged() {
-    let dir = scratch("t120-redact");
+fn ac2_the_frames_are_the_layouts_and_the_cast_is_unchanged() {
+    let dir = scratch("t120-cast");
     let src = dir.join("config.env");
-    std::fs::write(&src, "APP=tiza\nTOKEN=sk-live-abc123XYZ\nPORT=1\n").unwrap();
+    std::fs::write(&src, "APP=tiza\nTOKEN=demo-token-1\nPORT=1\n").unwrap();
     let doc = json!({
         "schema": 1, "code": {"file": "config.env"}, "source": {"language": "sh"}, "step": 0,
         "annotations": [
-            {"id": "a1", "step": 0, "type": "redact", "span": {"line": 2, "start": 6, "end": 24}},
             {"id": "a2", "step": 1, "type": "note", "line": 3, "text": "the port"}
         ]
     });
@@ -195,11 +194,10 @@ fn ac2_masks_are_in_every_frame_and_the_cast_is_unchanged() {
         cast.to_str().unwrap(),
     ]);
     let text = std::fs::read_to_string(&cast).unwrap();
-    assert!(!text.contains("sk-live"), "the cast leaks the secret");
-    assert!(text.contains("••••••••"));
+    assert!(text.contains("the port"), "{text}");
     assert_eq!(decode(&std::fs::read(&gif).unwrap()).frames.len(), 2);
-    // And the GIF's own frames are drawn by the masked layout: the same
-    // canvases `anim::frames` hands the encoder.
+    // And the GIF's own frames are the layouts: the same canvases
+    // `anim::frames` hands the encoder.
     let d = tiza_core::fs::open(tiza_path.to_str().unwrap())
         .unwrap()
         .document;
@@ -211,7 +209,7 @@ fn ac2_masks_are_in_every_frame_and_the_cast_is_unchanged() {
     assert_eq!(frames.len(), 2);
     for f in &frames {
         let t = f.canvas.to_plain_text();
-        assert!(!t.contains("sk-live") && t.contains("••••••••"), "{t}");
+        assert!(t.contains("TOKEN=demo-token-1"), "{t}");
     }
     let tape = dir.join("c.tape");
     tiza_ok(&[

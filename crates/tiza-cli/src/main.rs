@@ -233,7 +233,7 @@ enum Cmd {
         loop_count: u16,
     },
     /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
-    /// step, moves over a masked line, linked files, ids, annotations a move hides, labels
+    /// step, linked files, ids, annotations a move hides, labels
     /// clipped with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
     /// Writes nothing.
     Check {
@@ -507,7 +507,6 @@ fn real_main() -> anyhow::Result<()> {
                     line_numbers,
                     tab_width: 4,
                     typing: false,
-                    redact: true,
                     stable: true,
                     margin_cap,
                 };
@@ -537,7 +536,6 @@ fn real_main() -> anyhow::Result<()> {
                     line_numbers,
                     tab_width: 4,
                     typing: false,
-                    redact: true,
                     stable: true,
                     margin_cap,
                 },
@@ -806,10 +804,8 @@ fn real_main() -> anyhow::Result<()> {
                 SceneCmd::Status => ("status", serde_json::json!({})),
                 SceneCmd::Put { file, as_code } => {
                     // On the wire the code travels embedded (the instance may
-                    // run in another directory) and masked, as `scene.get`
-                    // hands it out (t-174 review): the instance puts a file
-                    // reference back on its file, and the real code of a
-                    // redacted line never travels.
+                    // run in another directory), linked files included, as
+                    // `scene.get` hands it out.
                     let document = document_for_put(&file, as_code)?.embedded_copy();
                     ("scene.put", serde_json::json!({"document": document}))
                 }

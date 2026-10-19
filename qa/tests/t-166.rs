@@ -7,14 +7,13 @@
 //!   the `.tiza` does, so every step draws the file the live TUI shows:
 //!   `--step N --format md` of every step (step 0 included, with no column
 //!   shift), `--all-steps` and the GIF are the same as `tiza render FILE`.
-//!   The instance sends them already loaded and masked (`scene.get`
-//!   embeds them under `views`): nothing is read from the client's
-//!   directory.
+//!   The instance sends them already loaded (`scene.get` embeds them under
+//!   `views`): nothing is read from the client's directory.
 //! - AC2 Same for the MCP `export_image` (png compared with the file's
 //!   render, md, gif).
-//! - AC3 A missing or unreadable linked file is a clear error naming it
-//!   (through the redact filter), never a panic; the layout never indexes
-//!   out of bounds on a view with no loaded lines.
+//! - AC3 A missing or unreadable linked file is a clear error naming it,
+//!   never a panic; the layout never indexes out of bounds on a view with
+//!   no loaded lines.
 //! - AC4 (QA 2) Every export call answers, with a result or an error: a
 //!   panic while an MCP call runs is an error reply, never a call left
 //!   waiting (the unit test `answer_always_*` in tiza-mcp drives a panic).
@@ -31,8 +30,8 @@
 //!   past the last one is said; R7 the live `.tape` opens the instance's
 //!   `.tiza`; R8 a real MCP panic (test hook) answers an error.
 //! - Verification of 33e9a4e (`v1`…`v6`, and `r7`): V1 a dropped request
-//!   puts back the whole instance state (no typing animation drawing a
-//!   masked value); V2 the hooks only with the `test-hooks` feature; V3 no
+//!   puts back the whole instance state (no typing animation of the
+//!   dropped request); V2 the hooks only with the `test-hooks` feature; V3 no
 //!   undo entry left; V4 the panic logged in `panics.log`; V5 an export
 //!   caught at its deadline writes nothing (temporary + rename under the
 //!   deadline's lock); V6 no empty id in a bounds error; V7 (r7) the live
@@ -41,7 +40,7 @@
 //! Corner cases: a linked file deleted while the TUI is open (the instance
 //! keeps the code it shows, so the live export draws it and a render of the
 //! `.tiza` names the missing file); a live document with no `.tiza` on disk
-//! and a `move.add code.link`; a redact inside a linked file stays masked
+//! and a `move.add code.link`; an annotation inside a linked file is drawn
 //! in the live export.
 //!
 //! The repros are QA's pruebas/t046/livebug.py, mcpbug.py, pruebas/t166/
@@ -511,23 +510,14 @@ fn corner_a_linked_file_deleted_with_the_tui_open() {
     assert!(!err.contains("panicked"), "{err}");
 }
 
-const VALUE: &str = "9vK7wPx3Lm";
+const VALUE: &str = "demo-value-1";
 
-fn pieces_absent(what: &str, s: &str) {
-    let chars: Vec<char> = VALUE.chars().collect();
-    for w in chars.windows(4) {
-        let piece: String = w.iter().collect();
-        assert!(!s.contains(&piece), "{what} holds «{piece}»:\n{s}");
-    }
+/// A main file and a linked file with an annotation of its own.
+fn vault_demo(name: &str) -> PathBuf {
+    vault_demo_linking(name, "vault.sh")
 }
 
-/// A main file with a masked token and a linked file named after it (a
-/// name repeating a masked value), with a redact of its own.
-fn secret_demo(name: &str) -> PathBuf {
-    secret_demo_linking(name, &format!("vault-{VALUE}.sh"))
-}
-
-fn secret_demo_linking(name: &str, linked: &str) -> PathBuf {
+fn vault_demo_linking(name: &str, linked: &str) -> PathBuf {
     let dir = scratch(name);
     std::fs::write(
         dir.join("main.sh"),
@@ -547,8 +537,7 @@ fn secret_demo_linking(name: &str, linked: &str) -> PathBuf {
         "step": 0,
         "moves": [{"at_step": 2, "action": "code.link", "file": linked}],
         "annotations": [
-            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
-            {"id": "r2", "step": 2, "type": "redact", "file": linked, "span": {"line": 2, "start": 11, "end": 21}},
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "start": 6, "end": 18}},
             {"id": "n1", "step": 2, "type": "note", "file": linked, "line": 3, "text": "prints ok"}
         ]
     });
@@ -558,14 +547,13 @@ fn secret_demo_linking(name: &str, linked: &str) -> PathBuf {
 }
 
 #[test]
-fn corner_a_redact_in_a_linked_file_stays_masked_in_the_live_export() {
-    let path = secret_demo("secret");
+fn corner_an_annotation_in_a_linked_file_is_drawn_in_the_live_export() {
+    let path = vault_demo("vault");
     let live = open_live(&path);
-    let cwd = elsewhere("secret");
+    let cwd = elsewhere("vault");
     for step in 0..=max_step(&path) {
         let got = render_live(&live, &cwd, step, "md");
         assert_eq!(got, render_file(&path, step, "md"), "step {step}");
-        pieces_absent(&format!("live md of step {step}"), &got);
     }
     let md = render_live(&live, &cwd, 2, "md");
     assert!(
@@ -581,11 +569,10 @@ fn corner_a_redact_in_a_linked_file_stays_masked_in_the_live_export() {
     assert!(!err, "{text}");
     let got = std::fs::read_to_string(&out).unwrap();
     assert_eq!(got, md);
-    pieces_absent("MCP md", &got);
 }
 
 #[test]
-fn ac3_a_missing_linked_file_is_named_through_the_redact_filter() {
+fn ac3_a_missing_linked_file_is_named() {
     let render_missing = |path: &Path, linked: &str| {
         std::fs::remove_file(path.parent().unwrap().join(linked)).unwrap();
         let out = tiza_in(
@@ -595,22 +582,13 @@ fn ac3_a_missing_linked_file_is_named_through_the_redact_filter() {
         assert_eq!(out.status.code(), Some(1), "an error, never a panic");
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
-    // On a document with a redact no name is quoted (t-183 D7), whether it
-    // repeats a masked value or not: the move and step say which, and both
-    // errors read alike.
-    let path = secret_demo_linking("missing-plain", "notes.sh");
-    let plain = render_missing(&path, "notes.sh");
-    let linked = format!("vault-{VALUE}.sh");
-    let path = secret_demo("missing-secret");
-    let secret = render_missing(&path, &linked);
-    for err in [&plain, &secret] {
-        assert!(
-            err.contains("move #1, step 2: code.link «…»: could not read «…»"),
-            "{err}"
-        );
-        assert!(!err.contains("notes.sh"), "{err}");
-        pieces_absent("the error", err);
-    }
+    let path = vault_demo_linking("missing", "notes.sh");
+    let err = render_missing(&path, "notes.sh");
+    assert!(
+        err.contains("move #1, step 2: code.link «notes.sh»: could not read «")
+            && err.contains("/notes.sh»"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -664,7 +642,6 @@ fn ac3_layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
                         line_numbers: true,
                         tab_width: 4,
                         typing: false,
-                        redact: true,
                         stable,
                         margin_cap: None,
                     },
@@ -739,7 +716,7 @@ fn ac5_changelog_names_the_card() {
 
 // ---------- Review round 1 (adversarial review of 2f653ce) ----------
 
-/// A small document with a masked token, as a value.
+/// A small document with a token, as a value.
 fn small_doc() -> Value {
     json!({
         "schema": 1,
@@ -748,7 +725,7 @@ fn small_doc() -> Value {
         "code": ["# deploy", format!("TOKEN={VALUE}"), "run", "done"],
         "step": 0,
         "annotations": [
-            {"id": "r1", "step": 1, "type": "redact", "span": {"line": 2, "start": 6, "end": 16}},
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "start": 6, "end": 18}},
             {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "runs it"}
         ]
     })
@@ -771,7 +748,7 @@ fn api_err(live: &Live, method: &str, params: Value) -> (String, String) {
 }
 
 /// R1: a step past the cap is refused everywhere a step enters a document,
-/// with a clear error that quotes nothing under a mask.
+/// with a clear error.
 #[test]
 fn r1_steps_past_the_cap_are_refused_everywhere() {
     let (path, live) = live_doc("r1", &small_doc());
@@ -804,7 +781,6 @@ fn r1_steps_past_the_cap_are_refused_everywhere() {
             msg.contains("past the last step a document can have (999)"),
             "{msg}"
         );
-        pieces_absent(method, &msg);
     }
     // Updating an annotation's step past the cap.
     let (code, msg) = api_err(
@@ -818,7 +794,6 @@ fn r1_steps_past_the_cap_are_refused_everywhere() {
     doc["moves"] = json!([{"at_step": huge, "action": "wait", "ms": 5}]);
     let (code, msg) = api_err(&live, "scene.put", json!({"document": doc}));
     assert_eq!(code, "invalid_argument", "{msg}");
-    pieces_absent("scene.put", &msg);
     // Nothing of it reached the document.
     let status = live.api_ok("status", json!({}));
     assert_eq!(status["max_step"], 1, "{status}");
@@ -834,7 +809,6 @@ fn r1_steps_past_the_cap_are_refused_everywhere() {
             + &String::from_utf8_lossy(&out.stdout);
         assert_eq!(out.status.code(), Some(1), "{args:?}: {text}");
         assert!(text.contains("past the last step"), "{args:?}: {text}");
-        pieces_absent("the load error", &text);
     }
 }
 
@@ -859,7 +833,7 @@ fn r1_r5_a_take_at_the_cap_exports_and_checks_like_a_short_one() {
             "step {step}"
         );
     }
-    // The geometry, the masked values and `check` visit the change steps:
+    // The geometry and `check` visit the change steps:
     // 0, 1, 2, 500, 999 (and 1000, past the last).
     let d = tiza_core::fs::load_document(&path).unwrap();
     assert_eq!(d.change_steps(d.max_step()), vec![0, 1, 2, 500, 999]);
@@ -1312,8 +1286,8 @@ fn r8_a_panic_in_an_mcp_call_answers_an_error() {
 
 // ---------- Verification of 33e9a4e (one test per point, `v1`…`v7`) ----------
 
-/// The value of the typed-move document: a masked key the move's content
-/// writes twice (once in another case).
+/// The value of the typed-move document: a key the move's content writes
+/// twice (once in another case).
 const KEY: &str = "hx7kq2wz9pml";
 
 fn typed_doc(dir: &Path) -> PathBuf {
@@ -1321,11 +1295,9 @@ fn typed_doc(dir: &Path) -> PathBuf {
         "schema": 1,
         "title": "Keys",
         "source": {"language": "sh", "first_line": 1},
-        "code": ["# deploy", format!("KEY={KEY}"), "run"],
+        "code": ["# deploy", "run"],
         "step": 0,
-        "annotations": [
-            {"id": "r1", "step": 0, "type": "redact", "span": {"line": 2, "start": 4, "end": 16}}
-        ],
+        "annotations": [],
         "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "find": "run",
             "content": format!("run --key {KEY} --again {}", KEY.to_uppercase()),
             "typing": "char", "speed_ms": 20}]
@@ -1335,7 +1307,8 @@ fn typed_doc(dir: &Path) -> PathBuf {
     path
 }
 
-/// Pieces of 4 of the key, either case: what must never reach the screen.
+/// Pieces of 4 of the key, either case: what the dropped request's typing
+/// must never put on the screen (the key is only in the move's content).
 fn key_pieces() -> Vec<String> {
     let k: Vec<char> = KEY.chars().collect();
     let mut out: Vec<String> = k.windows(4).map(|w| w.iter().collect()).collect();
@@ -1383,9 +1356,9 @@ s.finish(5)
     )
 }
 
-/// V1: a panicking `step.next` on a step whose move types copies of a
-/// masked value: the instance goes back whole — no typing animation of the
-/// dropped request keeps drawing the value in clear.
+/// V1: a panicking `step.next` on a step whose move types text: the
+/// instance goes back whole — no typing animation of the dropped request
+/// keeps drawing the move's content.
 #[test]
 fn v1_a_dropped_request_leaves_no_animation_drawing_the_value() {
     let dir = scratch("v1");
@@ -1523,7 +1496,6 @@ fn v4_a_caught_panic_is_logged() {
         text.contains("annotation.add panicked at crates/tiza-tui/src/app.rs:"),
         "{text}"
     );
-    pieces_absent("panics.log", &text);
     assert!(
         out.contains(&format!("details in {}", log.display())),
         "{out}"
@@ -1602,8 +1574,7 @@ fn v6_a_bounds_error_never_shows_an_empty_id() {
         json!({"type": "note", "line": 3, "text": "x", "step": 1000}),
     );
     assert!(
-        // The number the agent sent is elided on a document with a redact.
-        msg.starts_with("annotation: step ") && msg.contains("is past the last step"),
+        msg.starts_with("annotation: step 1000 is past the last step"),
         "{msg}"
     );
 }

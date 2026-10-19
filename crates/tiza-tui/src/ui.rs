@@ -131,18 +131,13 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         (area.width, area.height),
         app.present,
     );
-    // Pending redact alerts (t-135): their own rows above the bar, taken
-    // from the code area so they never cover a line nor get cut.
-    let mut alerts = alert_lines(&app.redact_alerts, area.width as usize);
-    alerts.truncate(area.height.saturating_sub(status_h + 1) as usize);
-    let alert_h = alerts.len() as u16;
     let canvas_area = Rect {
         x: area.x + pad_h,
         y: area.y + pad_v,
         width: area.width.saturating_sub(pad_h * 2),
         height: area
             .height
-            .saturating_sub(status_h + alert_h)
+            .saturating_sub(status_h)
             .saturating_sub(pad_v * 2),
     };
 
@@ -340,30 +335,6 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     } else if app.present_message_shown() {
         draw_present_message(frame, app, last_row);
     }
-    if alert_h > 0 {
-        // Right above whatever holds the last row (the bar; in presentation
-        // mode the command line or a command's result), else at the bottom.
-        let last_used = !app.present
-            || matches!(app.mode, Mode::Command(_))
-            || (app.present_message_shown()
-                && !app
-                    .message
-                    .as_ref()
-                    .is_some_and(|(m, _)| app.is_redact_alert(m)));
-        let bottom = area.y + area.height - u16::from(last_used);
-        draw_alerts(
-            frame,
-            app,
-            &alerts,
-            Rect {
-                x: area.x,
-                y: bottom - alert_h,
-                width: area.width,
-                height: alert_h,
-            },
-        );
-    }
-
     match app.overlay {
         Overlay::Help => draw_overlay(frame, app, "╭─ Tiza ─▶  keys and commands", help_lines()),
         Overlay::List => {
@@ -491,69 +462,6 @@ pub fn fit_message(m: &str, room: usize) -> String {
     format!("{}…", cut(m, room - 1))
 }
 
-/// The rows of the pending redact alerts at `width` columns (t-135): each
-/// one `⚠ ` plus its text, wrapped at spaces with one blank cell at each
-/// side and continuation rows indented under the text — the whole notice,
-/// never an ellipsis. A word wider than the row is split.
-pub fn alert_lines(alerts: &[String], width: usize) -> Vec<String> {
-    let room = width.saturating_sub(2);
-    if room < 4 {
-        return Vec::new();
-    }
-    let mut rows = Vec::new();
-    for a in alerts {
-        let mut row = String::from("⚠ ");
-        let mut w = 2;
-        let mut first = true;
-        for word in a.split(' ').filter(|w| !w.is_empty()) {
-            let ww = word.width();
-            if !first && w + 1 + ww > room {
-                rows.push(std::mem::replace(&mut row, "  ".to_string()));
-                w = 2;
-                first = true;
-            }
-            if !first {
-                row.push(' ');
-                w += 1;
-            }
-            if w + ww <= room {
-                row.push_str(word);
-                w += ww;
-            } else {
-                // Longer than a whole row: split it by graphemes.
-                for g in word.graphemes(true) {
-                    if w + g.width() > room {
-                        rows.push(std::mem::replace(&mut row, "  ".to_string()));
-                        w = 2;
-                    }
-                    row.push_str(g);
-                    w += g.width();
-                }
-            }
-            first = false;
-        }
-        rows.push(row);
-    }
-    rows
-}
-
-/// The pending redact alerts on their rows: the bar's error colours, so the
-/// notice reads as part of it.
-fn draw_alerts(frame: &mut Frame, app: &App, rows: &[String], area: Rect) {
-    let th = &app.theme;
-    let st = Style::default()
-        .fg(rgb(th.error))
-        .bg(rgb(th.status_bg))
-        .add_modifier(Modifier::BOLD);
-    frame.render_widget(Clear, area);
-    frame.buffer_mut().set_style(area, st);
-    for (i, r) in rows.iter().enumerate() {
-        frame
-            .buffer_mut()
-            .set_string(area.x + 1.min(area.width), area.y + i as u16, r, st);
-    }
-}
-
 /// The result of the command just run, on the last row in presentation
 /// mode, for [`crate::app::PRESENT_MESSAGE_TTL`] (t-107): the status bar's
 /// text on the command line's row, nothing else of the bar.
@@ -561,10 +469,6 @@ fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
     let Some((m, is_err)) = &app.message else {
         return;
     };
-    if app.is_redact_alert(m) {
-        // Already whole on its own rows (t-135).
-        return;
-    }
     let th = &app.theme;
     let style = if *is_err {
         Style::default()
@@ -664,21 +568,6 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.dirty {
         left.push(Span::styled(" •", accent));
     }
-    if app.has_redacts() {
-        // `◆ redacted` while the masks are on; a loud `◆ UNMASKED` while the
-        // author looks at the real text (never in presentation mode).
-        if app.redact_shown || app.present {
-            left.push(Span::styled("  ◆ redacted", muted));
-        } else {
-            left.push(Span::styled(
-                "  ◆ UNMASKED (:redact on)",
-                Style::default()
-                    .fg(rgb(th.error))
-                    .bg(rgb(th.status_bg))
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-    }
     if app.layout_stable && !app.present {
         left.push(Span::styled("  ⊞ stable", muted));
     }
@@ -745,11 +634,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         .fg(rgb(th.error))
         .bg(rgb(th.status_bg))
         .add_modifier(Modifier::BOLD);
-    // A redact alert is drawn whole above the bar (t-135): not again here.
-    let message = app
-        .message
-        .as_ref()
-        .filter(|(m, _)| !app.is_redact_alert(m));
+    let message = app.message.as_ref();
     let (right_text, right_style, essential): (String, Style, bool) =
         match (&app.save_error, message) {
             (_, Some((m, is_err))) => {
@@ -937,7 +822,6 @@ fn help_lines() -> Vec<String> {
         "  :box … border=double corners=sharp fill=no   box/callout borders (solid dashed dotted thick double; rounded sharp)",
         "  :box A-B [label]                         :note L text   (L may be .)",
         "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
-        "  :redact L | :redact L:ANCHOR [keep=N] | select + r   mask a secret everywhere (••••••••); :redact off|on (author only); :redact auto [--dry]",
         "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
         "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
         "  :goto ID   jump to a named step (`steps` in the .tiza; `tiza goto ID` from a script)",

@@ -80,13 +80,6 @@ fn ac1_each_kind_of_command_gets_the_hint() {
         let m = info(&live);
         assert!(m.ends_with(" (step 1, press n)"), "{cmd}: {m}");
     }
-    // A redact is always at step 0 (t-183): it masks from there, no step
-    // to press `n` for.
-    live.command("redact 2");
-    let m = info(&live);
-    assert!(!m.contains("press n"), "redact 2: {m}");
-    let last = live.with(|a| a.doc.annotations.last().map(|x| x.step));
-    assert_eq!(last, Some(0));
     // The spotlight already names its step: only how to get there.
     live.command("spot 2-3");
     assert_eq!(

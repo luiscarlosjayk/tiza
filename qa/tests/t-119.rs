@@ -538,7 +538,7 @@ fn ac5_nothing_changes_without_a_config_file_or_overrides() {
 }
 
 // Moved here from qa/tests/t-157.rs when t-183 removed that file: it tests
-// the pty harness (qa/src/pty.py), not redaction.
+// the pty harness (qa/src/pty.py).
 
 #[test]
 fn harness_the_pty_is_drained_while_the_body_calls_the_api() {

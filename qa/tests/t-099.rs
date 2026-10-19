@@ -14,7 +14,7 @@
 //!   socket (session or `--socket`, like `tiza api`); with no instance they
 //!   say so and exit non-zero.
 //! - AC7 `goto` and `step.goto` land on the step exactly as `n` would after a
-//!   full replay: recomputed from step 0 (moves, views, redacts).
+//!   full replay: recomputed from step 0 (moves, views).
 //! - AC8 Auto-advance waits for the step to be ready: a typed move finishes
 //!   typing and a `wait` elapses before the countdown starts; a key pressed
 //!   meanwhile finishes the typing and is consumed.
@@ -30,8 +30,8 @@
 //!
 //! Corner cases: duplicate ids and all-digit ids are rejected on load; the
 //! auto-advance waits while the command line is open; `goto` to a typed step
-//! lands with the text complete; a number means a step number; a redact
-//! notice once per loop pass; an entry past the last step is kept and warned.
+//! lands with the text complete; a number means a step number; an entry
+//! past the last step is kept and warned.
 //!
 //! Rework (2026-10-18, after QA 2): MCP `goto_step` takes a step number too
 //! (`{"id": 4}`); ids starting with `-` are rejected on load and by

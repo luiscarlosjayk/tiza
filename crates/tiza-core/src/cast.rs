@@ -58,7 +58,6 @@ fn frames(doc: &Document, theme: &Theme, opts: &CastOptions) -> (Vec<(u32, Strin
                 line_numbers: opts.line_numbers,
                 tab_width: 4,
                 typing: false,
-                redact: true,
                 stable: true,
                 margin_cap: doc.margin.map(usize::from),
             },

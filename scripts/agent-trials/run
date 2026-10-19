@@ -56,10 +56,6 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(os.path.dirname(HERE))
 FIXTURES = os.path.join(HERE, "fixtures")
 
-# The fake token in fixtures/config/config.toml. It looks random on purpose
-# and is not a credential anywhere.
-FAKE_TOKEN = "tzk_Q7vN2xLp9RfT4mWc8bYe3HjK6sDa"
-
 SELF_REPORT = (
     "When you are done, end your answer with one line of the form "
     "`CONTEXT: <number> tokens - <one sentence>`: your own estimate of how much "
@@ -248,21 +244,6 @@ def oracle_arrow_note(inst, work):
     inst.api("annotation.add", {"type": "note", "line": src, "text": "capacity comes from --max", "step": 2})
 
 
-def check_redact(inst, work, rec):
-    need(of_type(inst, "redact"), "no redact annotation")
-    code = inst.api("code.get")["text"]
-    render = inst.api("render.text", {"width": 120}).get("text", "")
-    for name, text in (("code.get", code), ("render.text", render)):
-        need(FAKE_TOKEN[4:12] not in text and FAKE_TOKEN[-8:] not in text, "the token still shows in %s" % name)
-    for visible in ('name = "tally"', "port = 8080", "timeout_secs = 30", "[upstream]"):
-        need(visible in code, "%s is masked too (code.get)" % visible)
-
-
-def oracle_redact(inst, work):
-    lines = read_fixture(work, "config.toml")
-    inst.api("annotation.add", {"type": "redact", "at": {"line": line_of(lines, "api_token"), "find": "api_token = "}})
-
-
 def check_move(inst, work, rec):
     lines = read_fixture(work, "stack.rs")
     anchor = line_of(lines, "let mut stack = Stack {")
@@ -414,15 +395,6 @@ TASKS = [
         "break": ("stack.rs", "let max = parse_args", "let cap = parse_args"),
     },
     {
-        "id": "redact",
-        "fixture": "config", "open": "config.toml",
-        "prompt": "The config file open in Tiza is about to be recorded and it shows an API token. Mask the "
-                  "token's value so it never appears on screen, and leave the rest of the file readable.",
-        "check": check_redact, "oracle": oracle_redact,
-        # A second copy of the token, in a comment: masking api_token alone leaves it on screen.
-        "break": ("config.toml", "timeout_secs = 30", "timeout_secs = 30\n# old: " + FAKE_TOKEN),
-    },
-    {
         "id": "move",
         "fixture": "plain", "open": "stack.rs",
         "prompt": "In the Rust file open in Tiza, make the code gain a new line "
@@ -461,7 +433,7 @@ TASKS = [
     },
 ]
 
-FIXTURE_DIRS = {"stack": "stack", "plain": "stack", "config": "config", "tour": "tour"}
+FIXTURE_DIRS = {"stack": "stack", "plain": "stack", "tour": "tour"}
 
 
 def fixture_files(task):
