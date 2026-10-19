@@ -640,13 +640,10 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 .map(|f| f.to_string_lossy().into_owned())
         })
         .unwrap_or_else(|| "(stdin)".into());
+    // A file name is shown text (t-174 rework point 4).
+    let file = app.shown(&file);
     // While a `code.link` shows another file, name it (with its window).
-    let file = app
-        .doc
-        .shown_view_at(app.doc.step)
-        .label()
-        .map(|l| format!("↪ {l}"))
-        .unwrap_or(file);
+    let file = app.shown_view().map(|l| format!("↪ {l}")).unwrap_or(file);
     let mut left = vec![
         Span::styled(" ╭▶ ", accent),
         Span::styled(mode, accent),

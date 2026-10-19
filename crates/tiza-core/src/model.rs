@@ -910,6 +910,85 @@ impl Document {
         d
     }
 
+    /// A `scene.put` of the copy `scene.get` handed out ([`embedded_copy`]),
+    /// put back on what this document reads from disk (t-174 rework 1):
+    /// the masked code of a file reference becomes the reference again
+    /// (with its real code), a linked file frozen only for the wire reads
+    /// from its file again, and the annotations and moves that came back as
+    /// the copy had them take their real columns and content again. An
+    /// annotation the agent moved on such a file keeps its place, its
+    /// columns mapped from the masked line to the real one. Without this a
+    /// put turned a file reference into an embedded `.tiza` and its save
+    /// masked the author's texts for good. A document whose code is not
+    /// the copy's (another code, another source) is left as it came.
+    ///
+    /// [`embedded_copy`]: Document::embedded_copy
+    pub fn restore_copy(&self, put: &mut Document) {
+        if put.source.path != self.source.path {
+            return;
+        }
+        let copy = self.embedded_copy();
+        let mut restored: Vec<ViewKey> = Vec::new();
+        if matches!(self.code_src, CodeSource::File { .. }) && put.code_src == copy.code_src {
+            put.code_src = self.code_src.clone();
+            put.code = self.base().to_vec();
+            put.source.first_line = self.base_first();
+            restored.push(None);
+        }
+        // Linked files: the ones this document did not hold in `views`
+        // (read from disk) go back to their real code.
+        for (file, code) in &copy.views {
+            if self.views.contains_key(file) || put.views.get(file) != Some(code) {
+                continue;
+            }
+            let Some(key) = self.view_key(file) else {
+                continue;
+            };
+            let Some(real) = self.view_code.get(&key) else {
+                continue;
+            };
+            put.views.remove(file);
+            put.view_code.insert(key.clone(), real.clone());
+            restored.push(Some(key));
+        }
+        if restored.is_empty() {
+            return;
+        }
+        let key_of = |a: &Annotation| a.file.as_deref().and_then(|f| self.view_key(f));
+        // Annotations as the copy had them take their real columns again;
+        // the ones the agent placed or moved on the masked copy are mapped.
+        let mut moved: Vec<usize> = Vec::new();
+        for (i, a) in put.annotations.iter_mut().enumerate() {
+            if !restored.contains(&key_of(a)) {
+                continue;
+            }
+            match (copy.find_annotation(&a.id), self.find_annotation(&a.id)) {
+                (Some(c), Some(o))
+                    if crate::redact::columns(&a.shape) == crate::redact::columns(&c.shape) =>
+                {
+                    crate::redact::set_columns(&mut a.shape, &o.shape);
+                }
+                _ => moved.push(i),
+            }
+        }
+        let anns: Vec<(ViewKey, &mut Annotation)> = put
+            .annotations
+            .iter_mut()
+            .enumerate()
+            .filter(|(i, _)| moved.contains(i))
+            .map(|(_, a)| (key_of(a), a))
+            .collect();
+        crate::redact::unmask_columns(self, anns);
+        // The moves the copy masked, as they were.
+        for (i, m) in put.moves.iter_mut().enumerate() {
+            if copy.moves.get(i) == Some(m)
+                && let Some(o) = self.moves.get(i)
+            {
+                *m = o.clone();
+            }
+        }
+    }
+
     // ---- moves (ADR 0007, t-098) and views (t-105) ----
 
     /// The step-0 code of the main file.
@@ -1600,6 +1679,18 @@ impl Document {
     /// current step the in-memory `code` is kept (it may be a typing
     /// animation in progress).
     pub fn view_at(&self, step: u32) -> View {
+        self.view_at_with(step, true)
+    }
+
+    /// [`Document::view_at`] on the projected code at every step, never on
+    /// the code in memory (a move being typed shows part of its content):
+    /// what the masked values are read from (t-174 rework point 7), so they
+    /// depend only on what their cache key holds.
+    pub fn projected_view_at(&self, step: u32) -> View {
+        self.view_at_with(step, false)
+    }
+
+    fn view_at_with(&self, step: u32, live: bool) -> View {
         let plain = || View {
             doc: self.clone(),
             unanchored: Vec::new(),
@@ -1612,6 +1703,13 @@ impl Document {
         }
         let Ok(proj) = moves::project(self, &self.moves, step, false) else {
             // An invalid move was reported at load/add time; show the base.
+            if !live {
+                // The step-0 code itself, not the code in memory.
+                let mut v = plain();
+                v.doc.code = self.base().to_vec();
+                v.doc.source.first_line = self.base_first();
+                return v;
+            }
             return plain();
         };
         let mut shapes: Vec<Option<Shape>> = self
@@ -1657,16 +1755,9 @@ impl Document {
         let mut doc = self.clone();
         doc.moves.clear();
         doc.base_code.clear();
-        doc.code = if step == self.step {
-            self.code.clone()
-        } else {
-            code
-        };
-        doc.source.first_line = if step == self.step {
-            self.source.first_line
-        } else {
-            first
-        };
+        let live = live && step == self.step;
+        doc.code = if live { self.code.clone() } else { code };
+        doc.source.first_line = if live { self.source.first_line } else { first };
         doc.step = step;
         let mut unanchored = Vec::new();
         let mut extra: Vec<Annotation> = Vec::new();

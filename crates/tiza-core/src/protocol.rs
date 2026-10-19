@@ -1061,12 +1061,15 @@ pub struct AnnotationMutated {
 }
 
 impl AnnotationMutated {
-    pub fn of(doc: &Document, id: String, revision: u64) -> Self {
+    /// `kept`: what the instance's `.tiza` holds of the texts it masks
+    /// ([`crate::redact::Kept`]): the reply says «saved masked» only after
+    /// a real write.
+    pub fn of(doc: &Document, id: String, revision: u64, kept: &crate::redact::Kept) -> Self {
         let step = doc.find_annotation(&id).map(|a| a.step).unwrap_or(0);
         let hidden = doc.why_hidden(&id, doc.step);
-        let notices: Vec<String> = crate::redact::masked_texts(doc)
+        let notices: Vec<String> = crate::redact::masked_texts(doc, kept)
             .into_iter()
-            .filter(|m| m.id.as_deref() == Some(id.as_str()))
+            .filter(|m| !m.held && m.id.as_deref() == Some(id.as_str()))
             .map(|m| m.notice())
             .collect();
         AnnotationMutated {

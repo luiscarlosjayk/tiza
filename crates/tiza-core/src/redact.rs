@@ -66,7 +66,13 @@
 //!   own lowercase words stay, as in t-167's errors);
 //! - supervised mode (review list, accepted/rejected/expired messages,
 //!   `supervise.status`): `proposal_summary`, with [`Echo::copies`];
-//! - errors over the socket, the MCP, the CLI and on load: [`Echo::error`].
+//! - errors over the socket, the MCP, the CLI and on load: [`Echo::error`];
+//! - the name of the code file and of a linked view (`status.file` /
+//!   `status.view`, `code.get`, the bar): `App::shown_file` /
+//!   `App::shown_view` (t-174 rework point 4).
+//!
+//! Copies are found without case (rework, Luis's decision A): `HUNTER2`
+//! and `Hunter2` are copies of `hunter2` ([`value_hits`]).
 //!
 //! Only `scene.get` without `as_shown` (the explicit editing call) keeps
 //! the author's text as written. A `.tiza` whose code is embedded is saved
@@ -75,9 +81,15 @@
 //! its redacts on their masks ([`embedded_annotations`]), all in
 //! `fs::save_document`, every write included (autosave, `:w`, `:embed`):
 //! reopened, it no longer knows the value and shows what was shown. The
-//! alert then says «saved masked» ([`saved_message`]). A file reference keeps the author's texts. The
-//! values an instance knew survive a `scene.put` of the masked copy in
-//! memory only ([`KnownValues`], [`carry_values`]).
+//! alert says «saved masked» ([`saved_message`]) only once Tiza wrote the
+//! file; before (`tiza check`, `tiza render`, the instance before its
+//! first save) it says the file still holds it in clear ([`Kept`]), and a
+//! text that holds masked text already is said on opening and by `tiza
+//! check` (`its label holds masked text — reword it`). A file reference
+//! keeps the author's texts, also across `scene.get` → `scene.put`
+//! ([`Document::restore_copy`]). The values an instance knew survive a
+//! `scene.put` of the masked copy in memory only ([`KnownValues`],
+//! [`carry_values`]).
 
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -459,6 +471,168 @@ pub fn embedded_annotations(doc: &Document) -> Vec<Annotation> {
     out
 }
 
+/// The column anchors of a shape as `(line, column)`: a span's start and
+/// end, an arrow's two ends. Empty for a shape made of whole lines.
+pub fn columns(shape: &Shape) -> Vec<(u32, u32)> {
+    match shape {
+        Shape::Highlight { span, .. } | Shape::Mark { span, .. } | Shape::Redact { span, .. } => {
+            vec![(span.line, span.start), (span.line, span.end)]
+        }
+        Shape::Arrow { from, to, .. } => vec![(from.line, from.col), (to.line, to.col)],
+        _ => Vec::new(),
+    }
+}
+
+/// `to` on the columns of `from`, the same kind of shape (a `scene.put`
+/// of the masked copy, [`Document::restore_copy`]): its span or its arrow
+/// ends, and a redact's `widened` and `pin`, which go with its columns.
+/// Its texts stay.
+pub fn set_columns(to: &mut Shape, from: &Shape) {
+    match (to, from) {
+        (Shape::Highlight { span, .. }, Shape::Highlight { span: s, .. })
+        | (Shape::Mark { span, .. }, Shape::Mark { span: s, .. }) => *span = *s,
+        (
+            Shape::Redact {
+                span, widened, pin, ..
+            },
+            Shape::Redact {
+                span: s,
+                widened: w,
+                pin: p,
+                ..
+            },
+        ) => {
+            *span = *s;
+            *widened = *w;
+            *pin = *p;
+        }
+        (Shape::Arrow { from, to, .. }, Shape::Arrow { from: f, to: t, .. }) => {
+            *from = *f;
+            *to = *t;
+        }
+        _ => {}
+    }
+}
+
+/// The columns of annotations placed on the masked copy of `open`
+/// ([`Document::embedded_copy`]), each with its file's key, mapped to the
+/// real code of `open` (a `scene.put` of an edited copy,
+/// [`Document::restore_copy`]). The copy's columns are what
+/// [`embedded_annotations`] makes of the real ones; that map is probed on
+/// every column of each line involved (at the annotation's step, moves
+/// included) and inverted: a column the map reaches goes back to the last
+/// real column that lands on it (after a mask, not inside the value), and
+/// one inside a mask longer than its value to the nearest real column on
+/// the side of the span (a start to the next, an end to the previous).
+pub fn unmask_columns(open: &Document, anns: Vec<(Option<String>, &mut Annotation)>) {
+    if anns.is_empty() || !has_redacts(open) {
+        return;
+    }
+    let mut probe = open.clone();
+    probe.sync_code_src();
+    probe.embed_code();
+    // (key, step, line, index of its first probe, how many).
+    let mut lines: Vec<(Option<String>, u32, u32, usize, u32)> = Vec::new();
+    let mut projections: std::collections::BTreeMap<u32, Option<crate::moves::Projection>> =
+        Default::default();
+    for (key, a) in &anns {
+        for (line, _) in columns(&a.shape) {
+            if lines
+                .iter()
+                .any(|l| &l.0 == key && l.1 == a.step && l.2 == line)
+            {
+                continue;
+            }
+            let first = open.view_first_line(key);
+            let text: Option<String> = if open.moves.is_empty() {
+                open.view_base_code(key, false)
+                    .and_then(|c| c.get(line.checked_sub(first)? as usize).cloned())
+            } else {
+                projections
+                    .entry(a.step)
+                    .or_insert_with(|| crate::moves::project(open, &open.moves, a.step, false).ok())
+                    .as_ref()
+                    .and_then(|p| p.codes.get(key))
+                    .and_then(|c| c.get(line.checked_sub(first)? as usize).cloned())
+            };
+            let Some(text) = text else { continue };
+            let n = text.graphemes(true).count() as u32 + 1;
+            let start = probe.annotations.len();
+            for x in 0..n {
+                let at = Anchor { line, col: x };
+                probe.annotations.push(Annotation {
+                    id: format!("\u{0}probe{start}.{x}"),
+                    step: a.step,
+                    color: None,
+                    markers: None,
+                    file: key.clone(),
+                    shape: Shape::Arrow {
+                        from: at,
+                        to: at,
+                        label: None,
+                        line: Default::default(),
+                    },
+                });
+            }
+            lines.push((key.clone(), a.step, line, start, n));
+        }
+    }
+    if lines.is_empty() {
+        return;
+    }
+    let mapped = embedded_annotations(&probe);
+    // f(x) on one line: where real column x lands on the copy.
+    let table = |key: &Option<String>, step: u32, line: u32| -> Option<Vec<u32>> {
+        let l = lines
+            .iter()
+            .find(|l| &l.0 == key && l.1 == step && l.2 == line)?;
+        Some(
+            (0..l.4 as usize)
+                .map(|x| match &mapped.get(l.3 + x).map(|a| &a.shape) {
+                    Some(Shape::Arrow { from, .. }) => from.col,
+                    _ => x as u32,
+                })
+                .collect(),
+        )
+    };
+    let back = |f: &[u32], m: u32, end: bool| -> u32 {
+        if let Some(x) = f.iter().rposition(|&y| y == m) {
+            return x as u32;
+        }
+        if end {
+            f.iter().rposition(|&y| y < m).map_or(0, |x| x as u32)
+        } else {
+            f.iter().position(|&y| y > m).map_or(
+                f.len().saturating_sub(1) as u32 + (m - f.last().copied().unwrap_or(0)),
+                |x| x as u32,
+            )
+        }
+    };
+    for (key, a) in anns {
+        let step = a.step;
+        match &mut a.shape {
+            Shape::Highlight { span, .. }
+            | Shape::Mark { span, .. }
+            | Shape::Redact { span, .. } => {
+                if let Some(f) = table(&key, step, span.line) {
+                    let s = back(&f, span.start, false);
+                    let e = back(&f, span.end, true);
+                    span.start = s;
+                    span.end = e.max(s + 1);
+                }
+            }
+            Shape::Arrow { from, to, .. } => {
+                for at in [from, to] {
+                    if let Some(f) = table(&key, step, at.line) {
+                        at.col = back(&f, at.col, false);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
 /// Moves the lines of a shape's column anchors through `f`; `true` when
 /// one of them landed on a line `f` knows (below `u32::MAX / 2`).
 fn map_column_lines(shape: &mut Shape, f: impl Fn(u32) -> u32) -> bool {
@@ -644,36 +818,49 @@ pub fn whole_line(text: &str, l: u32) -> Option<TextSpan> {
 /// shorter than that only counts whole.
 pub const MIN_PIECE: usize = 4;
 
+/// A character as the copy rule compares it: without case (t-174 rework,
+/// Luis's decision A: `HUNTER2` and `Hunter2` are copies of `hunter2`).
+/// A character whose lowercase is several (`İ`) compares by the first.
+fn fold(c: char) -> char {
+    c.to_lowercase().next().unwrap_or(c)
+}
+
 /// Byte ranges of `text` that hold `value` (t-157): every copy of the
 /// whole value, and every run made of pieces of it of [`MIN_PIECE`]+
 /// characters, merged where they touch; `true` when the range holds the
-/// whole value. Only searched for, never shown.
+/// whole value. Without case (t-174 rework, Luis's decision A): fail
+/// closed. Only searched for, never shown.
 pub fn value_hits(text: &str, value: &str) -> Vec<(usize, usize, bool)> {
     let mut hits: Vec<(usize, usize, bool)> = Vec::new();
-    if value.is_empty() {
+    if value.is_empty() || text.is_empty() {
         return hits;
     }
-    let mut from = 0;
-    while let Some(pos) = text[from..].find(value) {
-        let b0 = from + pos;
-        hits.push((b0, b0 + value.len(), true));
-        from = b0 + value.len();
+    let t: Vec<(usize, char)> = text.char_indices().map(|(i, c)| (i, fold(c))).collect();
+    let v: Vec<char> = value.chars().map(fold).collect();
+    // Byte end of the char at `k`.
+    let end = |k: usize| t.get(k + 1).map_or(text.len(), |x| x.0);
+    let at = |k: usize, w: &[char]| {
+        k + w.len() <= t.len() && t[k..k + w.len()].iter().zip(w).all(|(a, b)| a.1 == *b)
+    };
+    let mut k = 0;
+    while k + v.len() <= t.len() {
+        if at(k, &v) {
+            hits.push((t[k].0, end(k + v.len() - 1), true));
+            k += v.len();
+        } else {
+            k += 1;
+        }
     }
-    let chars: Vec<(usize, char)> = value.char_indices().collect();
-    if chars.len() > MIN_PIECE {
-        for w in 0..=chars.len() - MIN_PIECE {
-            let start = chars[w].0;
-            let end = chars.get(w + MIN_PIECE).map_or(value.len(), |c| c.0);
-            let piece = &value[start..end];
-            if !piece.chars().any(char::is_alphanumeric) {
-                continue;
-            }
-            let mut from = 0;
-            while let Some(pos) = text[from..].find(piece) {
-                let b0 = from + pos;
-                hits.push((b0, b0 + piece.len(), false));
-                // Overlapping copies of a piece (`aaaa` in `aaaaa`) too.
-                from = b0 + text[b0..].chars().next().map_or(1, char::len_utf8);
+    if v.len() > MIN_PIECE {
+        let pieces: std::collections::HashSet<&[char]> = v
+            .windows(MIN_PIECE)
+            .filter(|w| w.iter().any(|c| c.is_alphanumeric()))
+            .collect();
+        let tc: Vec<char> = t.iter().map(|x| x.1).collect();
+        // Overlapping copies of a piece (`aaaa` in `aaaaa`) too.
+        for k in 0..tc.len().saturating_sub(MIN_PIECE - 1) {
+            if pieces.contains(&tc[k..k + MIN_PIECE]) {
+                hits.push((t[k].0, end(k + MIN_PIECE - 1), false));
             }
         }
     }
@@ -689,6 +876,12 @@ pub fn value_hits(text: &str, value: &str) -> Vec<(usize, usize, bool)> {
         }
     }
     out
+}
+
+/// Whether `text` holds a whole copy of `value`, without case (the copy
+/// rule's [`value_hits`], whole only).
+pub fn holds_value(text: &str, value: &str) -> bool {
+    value_hits(text, value).iter().any(|h| h.2)
 }
 
 /// Whether `c` can be part of a token around a secret (t-157): anything
@@ -928,8 +1121,11 @@ pub fn masked_values(doc: &Document) -> Vec<String> {
     if doc.moves.is_empty() {
         take(doc, u32::MAX);
     } else {
+        // The projected code of every step, never the code in memory: a
+        // move being typed shows part of its content, and the cache key
+        // ([`values_key`]) holds what the projection reads, not that.
         for step in 0..=doc.max_step() {
-            take(&doc.view_at(step).doc, step);
+            take(&doc.projected_view_at(step).doc, step);
         }
         // And every redact on a file's own lines, of the main file or of a
         // linked one, whether or not a step shows it (t-174 review 2).
@@ -1218,9 +1414,43 @@ pub fn shown_doc(doc: &Document) -> Document {
     d
 }
 
-/// A text of the document that repeats a masked value (t-174): drawn
-/// masked, and said once — by the TUI's alert row (t-135) and as a `tiza
-/// check` warning — without ever quoting it.
+/// What the `.tiza` holds of a text the filter masks, which decides how
+/// its alert ends (t-174 rework point 3): «saved masked» only after Tiza
+/// really wrote it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Kept {
+    /// The code is a file reference (or nothing was written yet): the
+    /// `.tiza` keeps the author's text, masked on screen.
+    OnScreen,
+    /// The code is embedded and Tiza has not written the file: `file` (its
+    /// name, shown text) still holds the text in clear. The same words for
+    /// a reader (`tiza check`, `tiza render`) and for the instance that has
+    /// it open before its first write, so the live `check` is the CLI's.
+    InClear { file: String },
+    /// The code is embedded and Tiza wrote the file: saved masked (AC10).
+    Saved,
+}
+
+impl Kept {
+    /// How a reader (`tiza check`, `tiza render`) finds the `.tiza` named
+    /// `file` that holds `doc`: a file reference keeps the author's text,
+    /// an embedded one still holds it in clear (nobody saved it here). The
+    /// name goes through the filter like any document text.
+    pub fn reading(doc: &Document, file: &str) -> Kept {
+        if doc.is_embedded() {
+            Kept::InClear {
+                file: shown(file, doc),
+            }
+        } else {
+            Kept::OnScreen
+        }
+    }
+}
+
+/// A text of the document that repeats a masked value (t-174), or that
+/// holds masked text already (`••••••••`, a text Tiza saved masked; t-174
+/// rework, Luis's decision B): drawn masked, and said once — by the TUI's
+/// alert row (t-135) and as a `tiza check` warning — without ever quoting it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MaskedText {
     /// Who holds it: an annotation id, `step N`, `document`, `style NAME`
@@ -1233,13 +1463,15 @@ pub struct MaskedText {
     /// Which text: `label`, `text`, `title`, `kind`, `legend`, `glyph`,
     /// `name`, `key`, `id`.
     pub field: &'static str,
-    /// The document's code is embedded: Tiza writes this text masked when
-    /// it saves (AC10), which cannot be undone, and says so.
-    pub saved: bool,
+    /// What the `.tiza` holds of it ([`Kept`]).
+    pub kept: Kept,
+    /// It repeats no value Tiza knows, but holds masked text: a text Tiza
+    /// saved masked, to reword (`its label holds masked text — reword it`).
+    pub held: bool,
 }
 
-/// [`shares_message`] for a document whose code is embedded: the text is
-/// saved masked (t-174 AC10, Luis's wording).
+/// [`shares_message`] for a document whose code is embedded, after Tiza
+/// wrote it: the text is saved masked (t-174 AC10, Luis's wording).
 pub fn saved_message(field: &str) -> String {
     format!("its {field} shares text with a masked value; saved masked — reword it")
 }
@@ -1250,13 +1482,30 @@ pub fn shares_message(field: &str) -> String {
     format!("its {field} shares text with a masked value; masked on screen — reword the {field}")
 }
 
+/// [`shares_message`] for an embedded `.tiza` nobody saved in Tiza yet
+/// (t-174 rework point 3): `file` still holds the value in clear.
+pub fn in_clear_message(field: &str, file: &str) -> String {
+    format!(
+        "its {field} shares text with a masked value; {file} still holds it in clear — open and save it in Tiza, or reword it"
+    )
+}
+
+/// What `tiza check` and the alert at opening say about a text that holds
+/// masked text (Luis's decision B).
+pub fn held_message(field: &str) -> String {
+    format!("its {field} holds masked text — reword it")
+}
+
 impl MaskedText {
     /// `its label shares text with a masked value; masked on screen — reword the label`.
     pub fn message(&self) -> String {
-        if self.saved {
-            saved_message(self.field)
-        } else {
-            shares_message(self.field)
+        if self.held {
+            return held_message(self.field);
+        }
+        match &self.kept {
+            Kept::OnScreen => shares_message(self.field),
+            Kept::InClear { file } => in_clear_message(self.field, file),
+            Kept::Saved => saved_message(self.field),
         }
     }
 
@@ -1267,60 +1516,99 @@ impl MaskedText {
 
     /// What identifies it across changes (the TUI says each one once).
     pub fn key(&self) -> String {
-        // The wording changes when the text will be saved masked: said again.
-        format!("{}\u{0}{}\u{0}{}", self.subject, self.field, self.saved)
+        // The wording changes once the text is saved masked: said again.
+        format!("{}\u{0}{}\u{0}{}", self.subject, self.field, self.message())
     }
 }
 
-/// Every text of `doc` that [`shown`] masks, in document order.
-pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
+/// Every text of `doc` that [`shown`] masks, and every text that holds
+/// masked text already, in document order. `kept` is what the `.tiza`
+/// holds of them when its code is embedded; a file reference keeps the
+/// author's texts ([`Kept::OnScreen`]).
+pub fn masked_texts(doc: &Document, kept: &Kept) -> Vec<MaskedText> {
     let f = Echo::quoting(doc);
     let mut out = Vec::new();
-    if f.values.is_empty() {
-        return out;
-    }
-    let hit = |t: Option<&str>| t.is_some_and(|t| f.repeats(t));
+    let kept = if doc.is_embedded() {
+        kept.clone()
+    } else {
+        Kept::OnScreen
+    };
+    let repeats = |t: &str| !f.values.is_empty() && f.repeats(t);
+    // 0: nothing to say; 1: shares text with a value; 2: holds masked text.
+    let hit = |t: Option<&str>| -> u8 {
+        match t {
+            Some(t) if repeats(t) => 1,
+            Some(t) if t.contains(MASK) => 2,
+            _ => 0,
+        }
+    };
     // Each annotation by its masked, unique id: two masked ids are two
     // alerts (`••••••••`, `••••••••-2`), as in a reader's copy.
     let names = f.unique_ids(doc.annotations.iter().map(|a| a.id.as_str()));
-    let saved = matches!(doc.code_src, crate::model::CodeSource::Embedded(_));
-    let mut push = |subject: String, id: Option<String>, step: Option<u32>, field| {
+    let mut push = |subject: String, id: Option<String>, step: Option<u32>, field, how: u8| {
+        if how == 0 {
+            return;
+        }
         out.push(MaskedText {
             subject,
             id,
             step,
             field,
-            saved,
+            kept: kept.clone(),
+            held: how == 2,
         })
     };
-    if hit(doc.title.as_deref()) {
-        push("document".into(), None, None, "title");
-    }
+    push(
+        "document".into(),
+        None,
+        None,
+        "title",
+        hit(doc.title.as_deref()),
+    );
     for n in &doc.steps {
         for (t, field) in [(&n.title, "title"), (&n.id, "id")] {
-            if hit(t.as_deref()) {
-                push(format!("step {}", n.step), None, Some(n.step), field);
-            }
+            push(
+                format!("step {}", n.step),
+                None,
+                Some(n.step),
+                field,
+                hit(t.as_deref()),
+            );
         }
-        if n.unknown
+        // One finding for all its unknown keys: sharing text wins.
+        let hows: Vec<u8> = n
+            .unknown
             .iter()
-            .any(|(k, v)| f.repeats(k) || v.as_str().is_some_and(|t| f.repeats(t)))
-        {
-            push(format!("step {}", n.step), None, Some(n.step), "key");
-        }
+            .flat_map(|(k, v)| [hit(Some(k)), v.as_str().map_or(0, |t| hit(Some(t)))])
+            .collect();
+        let how = if hows.contains(&1) {
+            1
+        } else if hows.contains(&2) {
+            2
+        } else {
+            0
+        };
+        push(format!("step {}", n.step), None, Some(n.step), "key", how);
     }
     let style_names = f.style_names(doc);
     for (k, st) in &doc.styles {
         let name = style_names.get(k).cloned().unwrap_or_else(|| k.clone());
-        if name != *k {
-            push(format!("style {name}"), None, None, "name");
-        }
-        if hit(st.legend.as_deref()) {
-            push(format!("style {name}"), None, None, "legend");
-        }
-        if hit(st.glyph.as_deref()) {
-            push(format!("style {name}"), None, None, "glyph");
-        }
+        let how = if name != *k { 1 } else { hit(Some(k)) };
+        push(format!("style {name}"), None, None, "name", how);
+        push(
+            format!("style {name}"),
+            None,
+            None,
+            "legend",
+            hit(st.legend.as_deref()),
+        );
+        push(
+            format!("style {name}"),
+            None,
+            None,
+            "glyph",
+            hit(st.glyph.as_deref()),
+        );
     }
     for a in &doc.annotations {
         let mut fields: Vec<(Option<&str>, &'static str)> = vec![(Some(&a.id), "id")];
@@ -1347,9 +1635,10 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
             Shape::Spotlight { .. } => {}
         }
         for (t, field) in fields {
-            if hit(t) {
+            let how = hit(t);
+            if how != 0 {
                 let subject = names.get(&a.id).cloned().unwrap_or_else(|| a.id.clone());
-                push(subject, Some(a.id.clone()), Some(a.step), field);
+                push(subject, Some(a.id.clone()), Some(a.step), field, how);
             }
         }
     }
@@ -1358,6 +1647,58 @@ pub fn masked_texts(doc: &Document) -> Vec<MaskedText> {
     // is said by the move's own notice (`masked a copy of its value on L7`)
     // and by `:embed` ([`embed_notice`]).
     out
+}
+
+/// Where an embedded `.tiza` holds a masked value in clear (t-174 rework
+/// point 3: written by hand or by another tool; Tiza never writes one):
+/// the redacts whose value is in clear in the step-0 code or in a linked
+/// file frozen in `views`, by id, and the moves whose content holds a copy
+/// of one, by index. Empty for a file reference (the file holds the code
+/// by design) and for a `.tiza` Tiza saved.
+pub fn values_in_clear(doc: &Document) -> (Vec<String>, Vec<usize>) {
+    let mut ids = Vec::new();
+    if !doc.is_embedded() || !has_redacts(doc) {
+        return (ids, Vec::new());
+    }
+    let mut keys: Vec<Option<String>> = vec![None];
+    keys.extend(
+        doc.views
+            .keys()
+            .filter_map(|f| doc.view_key(f))
+            .filter(|k| doc.view_code.contains_key(k))
+            .map(Some),
+    );
+    for key in keys {
+        let Some(code) = doc.view_base_code(&key, false) else {
+            continue;
+        };
+        let first = doc.view_first_line(&key);
+        for r in base_redacts(doc, &key) {
+            if let Shape::Redact { span, .. } = &r.shape
+                && let Some(t) = span
+                    .line
+                    .checked_sub(first)
+                    .and_then(|i| code.get(i as usize))
+            {
+                let g: Vec<&str> = t.graphemes(true).collect();
+                let (s, e) = (
+                    (span.start as usize).min(g.len()),
+                    (span.end as usize).min(g.len()),
+                );
+                let v = g[s..e].concat();
+                let v = v.trim();
+                if !v.is_empty() && !v.contains(MASK) && !ids.contains(&r.id) {
+                    ids.push(r.id.clone());
+                }
+            }
+        }
+    }
+    let moves = crate::moves::saved_moves(doc)
+        .1
+        .into_iter()
+        .map(|(i, _)| i)
+        .collect();
+    (ids, moves)
 }
 
 /// The info line of `:embed` (t-177 AC3): `embedded: masked 1 copy of a
@@ -1593,7 +1934,7 @@ impl Echo {
             rest = &rest[start..];
             let end = rest.find(|c: char| !token_char(c)).unwrap_or(rest.len());
             let tok = &rest[..end];
-            let whole = self.values.iter().any(|v| tok.contains(v.as_str()));
+            let whole = self.values.iter().any(|v| holds_value(tok, v));
             if !tok.is_empty()
                 && plain_word(tok)
                 && !whole

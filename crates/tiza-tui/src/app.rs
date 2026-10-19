@@ -165,6 +165,14 @@ pub struct App {
     /// Words the document wrote in this session that share text with a
     /// masked value (t-174): masked in messages even once they are gone.
     seen_words: Vec<String>,
+    /// This instance's last write of its `.tiza` (to `save_path`), since
+    /// the document came in, had the code embedded: it was saved masked,
+    /// and its alerts say so; before, the file still holds what it held
+    /// (t-174 rework point 3).
+    wrote: bool,
+    /// The document came from a `scene.put` of another source and was not
+    /// written since: the file at `save_path` holds another document.
+    foreign: bool,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
@@ -273,6 +281,8 @@ impl App {
             masked_checked: None,
             masked_said: Vec::new(),
             seen_words: Vec::new(),
+            wrote: false,
+            foreign: false,
             save_error: None,
             save_warning_pending: false,
             padding_override: None,
@@ -479,7 +489,7 @@ impl App {
                 self.seen_words.push(w.clone());
             }
         }
-        let found = tiza_core::redact::masked_texts(&self.doc);
+        let found = tiza_core::redact::masked_texts(&self.doc, &self.kept());
         let keys: Vec<String> = found.iter().map(|m| m.key()).collect();
         self.masked_said.retain(|k| keys.contains(k));
         for (m, k) in found.into_iter().zip(keys) {
@@ -490,13 +500,43 @@ impl App {
         }
     }
 
+    /// What the `.tiza` holds of the texts the filter masks (t-174 rework
+    /// point 3): a file reference keeps the author's texts; an embedded one
+    /// is saved masked once this instance wrote it, and until then the
+    /// file on disk still holds what it held (nothing was written yet when
+    /// there is no file).
+    pub fn kept(&self) -> tiza_core::redact::Kept {
+        use tiza_core::redact::Kept;
+        if !self.doc.is_embedded() {
+            return Kept::OnScreen;
+        }
+        if self.wrote {
+            return Kept::Saved;
+        }
+        if self.foreign || !self.save_path.exists() {
+            return Kept::OnScreen;
+        }
+        let name = self
+            .save_path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        Kept::InClear {
+            file: tiza_core::redact::shown(&name, &self.doc),
+        }
+    }
+
     /// A loud redact notice (t-117, t-140): the error message, as before,
     /// and a pending alert drawn whole above the bar until the next key
     /// (t-135). An alert already pending stays; the same text is not
     /// repeated.
     pub fn redact_alert(&mut self, notice: String) {
         let notice = self.shown_message(&notice);
-        self.error(notice.clone());
+        // The one-time «not saved» warning of the autosave that ran inside
+        // this very action stays on the bar; the alert has its own rows.
+        if !self.save_warning_pending {
+            self.error(notice.clone());
+        }
         if !self.redact_alerts.contains(&notice) {
             self.redact_alerts.push(notice);
         }
@@ -805,12 +845,14 @@ impl App {
     fn touch(&mut self) {
         self.revision += 1;
         self.dirty = true;
-        self.note_masked_texts();
         if self.autosave {
             // `save` records the failure in `save_error`, apart from `message`,
             // so a later info message cannot hide it.
             let _ = self.save();
         }
+        // After the save: the alerts say «saved masked» only once it was
+        // written (t-174 rework point 3).
+        self.note_masked_texts();
     }
 
     /// Writes the sidecar. A sidecar that cannot be written (read-only
@@ -829,10 +871,19 @@ impl App {
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
+                // Written with its code embedded: its alerts now say «saved
+                // masked» (a file reference keeps the author's texts).
+                let wrote = self.doc.is_embedded();
+                if wrote != self.wrote || self.foreign {
+                    self.wrote = wrote;
+                    self.foreign = false;
+                    self.masked_checked = None;
+                }
                 if self.save_error.take().is_some() {
                     // Writable again: say it once, over the action's own
                     // confirmation, and the bar indicator goes away.
-                    self.message = Some((format!("saved to {}", self.save_path.display()), false));
+                    let msg = format!("saved to {}", self.save_path.display());
+                    self.message = Some((self.shown_message(&msg), false));
                     self.save_warning_pending = true;
                 }
                 Ok(())
@@ -1143,6 +1194,11 @@ impl App {
         // holds the values, so the ones this instance knew are kept (in
         // memory only) and its labels stay masked (t-174).
         tiza_core::redact::carry_values(&self.doc, &mut doc);
+        // The masked copy of a file reference (or of a linked file read
+        // from disk) goes back on that file: the put must not turn it into
+        // an embedded `.tiza` whose save masks the author's texts for good
+        // (t-174 rework 1, AC4/AC10).
+        self.doc.restore_copy(&mut doc);
         if doc.code.is_empty() {
             match &doc.code_src {
                 tiza_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
@@ -1170,6 +1226,10 @@ impl App {
         // edited copy of the open document, `scene get` → `scene put`)
         // keeps saving as usual.
         let other = doc.source.path != self.doc.source.path;
+        // Not written yet: the next save says «saved masked» again; until
+        // then the file holds what it held, or another document.
+        self.wrote = false;
+        self.foreign = other;
         self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
         self.step_ready_at = Some(std::time::Instant::now());
@@ -1603,15 +1663,29 @@ impl App {
             unanchored: self.doc.unanchored(),
             step: self.doc.step,
             max_step: self.doc.max_step(),
-            view: self.doc.shown_view_at(self.doc.step).label(),
+            view: self.shown_view(),
         }
     }
 
     /// The file shown at the current step: the one a `code.link` left up
     /// (as the move names it), else the source file.
+    /// Shown text (t-174 rework point 4): a file name is the document's
+    /// text, so one sharing text with a masked value comes masked; the
+    /// real path stays inside, where the file is read.
     pub fn shown_file(&self) -> Option<String> {
         let v = self.doc.shown_view_at(self.doc.step);
-        v.file.or_else(|| self.doc.source.path.clone())
+        v.file
+            .or_else(|| self.doc.source.path.clone())
+            .map(|f| self.shown(&f))
+    }
+
+    /// The `code.link` view shown at the current step (`lib.rs:2-9`), as
+    /// shown text (t-174 rework point 4): `status.view`, `code.get`, the bar.
+    pub fn shown_view(&self) -> Option<String> {
+        self.doc
+            .shown_view_at(self.doc.step)
+            .label()
+            .map(|l| self.shown(&l))
     }
 
     /// Why the code cannot be replaced right now (paste, follow): moves are
@@ -2709,6 +2783,7 @@ impl App {
                 "w" | "write" => {
                     if !rest.is_empty() {
                         self.save_path = PathBuf::from(rest);
+                        self.wrote = false;
                     }
                     self.save()
                         .map(|_| format!("saved to {}", self.save_path.display()))
@@ -4743,7 +4818,7 @@ impl App {
                     let line = self.doc.source.first_line + i as u32;
                     out.push_str(&format!("{line:>4}  {text}\n"));
                 }
-                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.doc.shown_view_at(self.doc.step).label(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
+                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.shown_view(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
             }
             "scene.get" => {
                 let p: tiza_core::protocol::SceneGetParams = if params.is_null() {
@@ -4817,12 +4892,22 @@ impl App {
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 // Where it stands against the view right now (t-155).
-                serde_json::to_value(AnnotationMutated::of(&self.doc, id, self.revision))?
+                serde_json::to_value(AnnotationMutated::of(
+                    &self.doc,
+                    id,
+                    self.revision,
+                    &self.kept(),
+                ))?
             }
             "annotation.update" => {
                 let p: UpdateParams = parse(params)?;
                 self.update_annotation(&p)?;
-                serde_json::to_value(AnnotationMutated::of(&self.doc, p.id, self.revision))?
+                serde_json::to_value(AnnotationMutated::of(
+                    &self.doc,
+                    p.id,
+                    self.revision,
+                    &self.kept(),
+                ))?
             }
             "style.set" => {
                 let name = params
@@ -4866,9 +4951,9 @@ impl App {
                 let mut shown = self.doc.clone();
                 filter.shown_doc(&mut shown);
                 let shown_st = shown.styles.get(&shown_name).cloned().unwrap_or(st.clone());
-                let notices: Vec<String> = tiza_core::redact::masked_texts(&self.doc)
+                let notices: Vec<String> = tiza_core::redact::masked_texts(&self.doc, &self.kept())
                     .into_iter()
-                    .filter(|m| m.subject == format!("style {shown_name}"))
+                    .filter(|m| !m.held && m.subject == format!("style {shown_name}"))
                     .map(|m| m.notice())
                     .collect();
                 let mut reply =
@@ -4953,7 +5038,11 @@ impl App {
                 serde_json::to_value(tiza_core::check::check_document(
                     &self.doc,
                     base.as_deref(),
-                    &tiza_core::check::CheckOptions { width },
+                    &tiza_core::check::CheckOptions {
+                        width,
+                        name: None,
+                        kept: Some(self.kept()),
+                    },
                 ))?
             }
             "render.text" => {
@@ -5057,7 +5146,7 @@ impl App {
             lines: self.doc.code.len(),
             first_line: self.doc.source.first_line,
             last_line: self.doc.last_line(),
-            view: self.doc.shown_view_at(self.doc.step).label(),
+            view: self.shown_view(),
             annotations: self.doc.annotations.len(),
             step: self.doc.step,
             max_step: self.doc.max_step(),

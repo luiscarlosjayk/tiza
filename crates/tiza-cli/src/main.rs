@@ -388,6 +388,8 @@ fn real_main() -> anyhow::Result<()> {
                     }
                 });
             // The document: a file, or the live instance's scene.
+            // The `.tiza` a reader's warnings name (t-174 rework point 3).
+            let mut tiza_name: Option<String> = None;
             let (doc, step, width) = match &file {
                 Some(f) => {
                     let mut opened = if f == "-" {
@@ -401,6 +403,15 @@ fn real_main() -> anyhow::Result<()> {
                     if let Some(n) = &opened.notice {
                         eprintln!("tiza: {n}");
                     }
+                    tiza_name = Some(if f == "-" {
+                        "the document".to_string()
+                    } else {
+                        opened
+                            .save_path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| f.clone())
+                    });
                     override_language(
                         &mut opened.document,
                         lang.as_deref().or(cli.lang.as_deref()),
@@ -440,8 +451,17 @@ fn real_main() -> anyhow::Result<()> {
             // md heading, the `.cast` header, labels and notes) repeating a
             // masked value is masked, like the code (t-174); said once on
             // stderr, never quoted.
-            for m in tiza_core::redact::masked_texts(&doc) {
-                eprintln!("tiza: {}", m.notice());
+            // A file nobody saved here: an embedded one still holds the
+            // value in clear (never «saved masked»). A text Tiza saved
+            // masked is said by `tiza check` and on opening, not by a render.
+            let kept = match &tiza_name {
+                Some(n) => tiza_core::redact::Kept::reading(&doc, n),
+                None => tiza_core::redact::Kept::OnScreen,
+            };
+            for m in tiza_core::redact::masked_texts(&doc, &kept) {
+                if !m.held {
+                    eprintln!("tiza: {}", m.notice());
+                }
             }
             let doc = tiza_core::redact::shown_doc(&doc);
             // The gutter: the document's `numbers` field (t-112) unless a
@@ -733,7 +753,10 @@ fn real_main() -> anyhow::Result<()> {
                 .map(tiza_core::layout::check_width)
                 .transpose()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let opts = tiza_core::check::CheckOptions { width };
+            let opts = tiza_core::check::CheckOptions {
+                width,
+                ..Default::default()
+            };
             let (name, report) = if file == "-" {
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text)?;

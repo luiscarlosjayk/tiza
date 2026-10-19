@@ -42,7 +42,9 @@ pub struct Finding {
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
     /// `steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,
-    /// `masked_text` (a label, note or title repeating a masked value, t-174).
+    /// `masked_text` (a label, note or title repeating a masked value, or
+    /// holding masked text, t-174), `clear_value` (an embedded `.tiza`
+    /// nobody saved in Tiza holds a masked value in clear, t-174).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -131,6 +133,14 @@ impl Finding {
 pub struct CheckOptions {
     /// Width to check the labels at; `None`: [`DEFAULT_WIDTH`].
     pub width: Option<usize>,
+    /// The `.tiza`'s file name, which the warnings about an embedded file
+    /// nobody saved in Tiza name (`demo.tiza still holds it in clear`);
+    /// `None`: `the file`.
+    pub name: Option<String>,
+    /// What the `.tiza` holds of the texts the filter masks, when the
+    /// caller knows it (the live instance, [`crate::redact::Kept`]); `None`:
+    /// as a reader finds the file ([`crate::redact::Kept::reading`]).
+    pub kept: Option<crate::redact::Kept>,
 }
 
 /// Everything `check` found about one document.
@@ -286,7 +296,11 @@ pub fn last_step(doc: &Document) -> u32 {
 /// Checks a `.tiza` read from disk (its relative files resolve next to it).
 pub fn check_path(path: &Path, opts: &CheckOptions) -> Result<Report, crate::Error> {
     let text = std::fs::read_to_string(path)?;
-    Ok(check_text(&text, path.parent(), opts))
+    let mut opts = opts.clone();
+    if opts.name.is_none() {
+        opts.name = path.file_name().map(|n| n.to_string_lossy().into_owned());
+    }
+    Ok(check_text(&text, path.parent(), &opts))
 }
 
 /// Checks the text of a `.tiza`; `base_dir` resolves its relative files.
@@ -373,7 +387,10 @@ fn check_text_with(
     let doc = tidy(doc, &missing, &mut out);
     // A text that repeats a masked value is masked on every surface; said
     // here, never quoted (t-174).
-    for m in crate::redact::masked_texts(&doc) {
+    let kept = opts.kept.clone().unwrap_or_else(|| {
+        crate::redact::Kept::reading(&doc, opts.name.as_deref().unwrap_or("the file"))
+    });
+    for m in crate::redact::masked_texts(&doc, &kept) {
         let f = Finding::new(
             Level::Warning,
             "masked_text",
@@ -387,6 +404,36 @@ fn check_text_with(
             (None, Some(step)) => f.step(step),
             _ => f,
         });
+    }
+    // An embedded `.tiza` nobody saved in Tiza (written by hand or by
+    // another tool) that holds a value under a redact in clear: Tiza would
+    // save it masked (t-174 rework point 3).
+    if let crate::redact::Kept::InClear { file, .. } = &kept {
+        let (ids, moves) = crate::redact::values_in_clear(&doc);
+        for id in ids {
+            out.push(
+                Finding::new(
+                    Level::Warning,
+                    "clear_value",
+                    format!(
+                        "the embedded code holds the value under this redact in clear; {file} still holds it — open and save it in Tiza"
+                    ),
+                )
+                .id(crate::redact::shown(&id, &doc)),
+            );
+        }
+        for i in moves {
+            out.push(
+                Finding::new(
+                    Level::Warning,
+                    "clear_value",
+                    format!(
+                        "its content holds a masked value in clear; {file} still holds it — open and save it in Tiza"
+                    ),
+                )
+                .id(format!("move #{}", i + 1)),
+            );
+        }
     }
     let clean = check_loaded(&doc, &missing, width, &mut out);
     let max = last_step(&doc);

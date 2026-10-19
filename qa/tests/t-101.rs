@@ -708,8 +708,13 @@ const W_SECRET: &str = "abc123SECRETxyz789";
 /// The report of the MCP `check` of `file` opened in a live instance.
 fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
     let dir = scratch(name);
+    // The instance holds the same file the CLI reads (a copy of it, same
+    // name, not written yet): an embedded one still holds its value in
+    // clear, and both say so in the same words (t-174 rework point 3).
+    let held = dir.join(file.file_name().unwrap());
+    std::fs::copy(file, &held).unwrap();
     let doc = fs::open(file.to_str().unwrap()).unwrap().document;
-    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    let live = Live::open(doc, held, dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
     let (err, out, _) = mcp.call("check", args);
     assert!(!err, "{out}");

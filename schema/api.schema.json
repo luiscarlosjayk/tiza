@@ -6139,7 +6139,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,\n`masked_text` (a label, note or title repeating a masked value, t-174).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `redact`, `unanchored`, `clipped_label`, `empty_step`,\n`masked_text` (a label, note or title repeating a masked value, or\nholding masked text, t-174), `clear_value` (an embedded `.tiza`\nnobody saved in Tiza holds a masked value in clear, t-174).",
                 "type": "string"
               },
               "file": {
