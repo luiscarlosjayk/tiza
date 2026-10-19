@@ -20,9 +20,11 @@ Options:
   --out DIR          where raw streams and results land (default scripts/agent-trials/runs/<stamp>, git-ignored)
   --tiza BIN         tiza binary (default: builds target/debug/tiza; a real run copies it into the run directory)
   --claude BIN       claude binary (default: claude on PATH, else ~/.local/bin/claude)
-  --builtin-tools T  value for claude --tools (default "": no built-in tools, so the agent cannot read
-                     files; the harness stops if variant tool-search then lacks ToolSearch)
+  --builtin-tools T  value for claude --tools (default ToolSearch: the only built-in tool, so the agent
+                     cannot read files; `--tools ""` removes ToolSearch too, which the harness catches)
   --yes              do not ask before a real run (the estimate is still printed)
+  --report DIR       re-read a run's raw streams with this version of the parser and rewrite its
+                     summary (no model, no Tiza: the checks' verdicts are kept as they were)
 
 Never part of `cargo test` or the gate: a real run calls a paid model. Each
 trial runs in a fresh directory under /tmp holding only its fixture (so the
@@ -92,19 +94,24 @@ BASE_ENV = {
 
 # ---------------------------------------------------------------- pricing ----
 
-# USD per million tokens (input, output, cache read), from the Claude API
-# model table cached 2026-10-06; a cache write is priced at 1.25 x input.
-# Only for the estimate printed before a run: the measured cost is Claude
-# Code's own `total_cost_usd`.
+# USD per million tokens (input, output, cache read). Input and output from
+# the Claude API model table cached 2026-10-06; Sonnet's cache read is what
+# Claude Code's total_cost_usd showed in the first baseline ($0.10/M), the
+# others' are the table's. Claude Code writes the 1-hour cache, priced at 2 x
+# input. Only for the estimate printed before a run: the measured cost is
+# Claude Code's own `total_cost_usd`.
 PRICES = {
     "fable": (10.0, 50.0, 0.25),
     "opus": (4.0, 20.0, 0.20),
-    "sonnet": (2.0, 10.0, 0.20),
+    "sonnet": (2.0, 10.0, 0.10),
     "haiku": (0.10, 0.50, 0.01),
 }
+CACHE_WRITE = 2.0
 # Assumed tokens per trial for the estimate: fresh input, cache writes,
-# cache reads, output (about ten requests over a ~30k-token context).
-TRIAL_TOKENS = (20_000, 40_000, 300_000, 4_000)
+# cache reads, output. The first baseline (Sonnet 5.5, 16 trials) averaged
+# 4.4k cache writes, 46k cache reads and 0.8k output per trial; these add
+# headroom (about 2x) for longer tasks and other models.
+TRIAL_TOKENS = (1_000, 8_000, 80_000, 1_500)
 
 
 def price_of(model):
@@ -120,7 +127,7 @@ def estimate(model, trials):
     if p is None:
         return None
     fresh, write, read, out = TRIAL_TOKENS
-    per = (fresh * p[0] + write * p[0] * 1.25 + read * p[2] + out * p[1]) / 1e6
+    per = (fresh * p[0] + write * p[0] * CACHE_WRITE + read * p[2] + out * p[1]) / 1e6
     return per, per * trials
 
 
@@ -614,8 +621,11 @@ def run_check(task, inst, work, rec):
 
 # Error texts that mean the arguments were wrong (a heuristic: the bridge
 # reports instance errors as invalid_params with the instance's code in the
-# message, and Claude Code rejects a schema mismatch as InputValidationError).
-INVALID_ARGS = re.compile(r"invalid_argument|text_not_found|out_of_range|invalid_params|InputValidationError|-32602")
+# message, rejects arguments that do not fit the tool's schema with "failed to
+# deserialize parameters", and Claude Code rejects a schema mismatch as
+# InputValidationError).
+INVALID_ARGS = re.compile(r"invalid_argument|text_not_found|out_of_range|invalid_params|InputValidationError|"
+                          r"-32602|failed to deserialize|missing field|unknown field")
 
 
 def parse_stream(lines):
@@ -697,6 +707,8 @@ def parse_stream(lines):
         "ctx_first_request_total": total(first) if first else None,
         "ctx_first_tiza_call": first_tiza,
         "ctx_first_tiza_call_total": total(first_tiza) if first_tiza else None,
+        "ctx_peak_total": max((total(ctx(r["usage"])) for r in requests), default=None),
+        "ctx_last_request_total": total(ctx(requests[-1]["usage"])) if requests else None,
         "input": sums,
         "input_total": total(sums),
         "output": rusage.get("output_tokens"),
@@ -831,17 +843,18 @@ def fmt(n):
 def table(records, meta):
     lines = ["Model %s · %s · tiza %s · claude %s" % (meta.get("model"), meta.get("stamp"), meta.get("tiza_commit"),
                                                      meta.get("claude_version")), ""]
-    lines.append("| # | task | variant | ok | ctx 1st request | ctx at 1st tiza call | input total (fresh / cache read"
-                 " / write) | output | tiza calls | tool search | errors (invalid args) | retries | other tools"
-                 " | turns | wall s | cost $ | self-report |")
-    lines.append("|" + "---|" * 17)
+    lines.append("| # | task | variant | ok | ctx 1st request | ctx at 1st tiza call | ctx peak | input total (fresh /"
+                 " cache read / write) | output | tiza calls | tool search | errors (invalid args) | retries"
+                 " | other tools | turns | wall s | cost $ | self-report |")
+    lines.append("|" + "---|" * 18)
     for r in records:
         i = r.get("input") or {}
-        lines.append("| %d | %s | %s | %s | %s | %s | %s (%s / %s / %s) | %s | %s | %s | %s (%s) | %s | %s | %s | %s"
-                     " | %s | %s |" % (
+        lines.append("| %d | %s | %s | %s | %s | %s | %s | %s (%s / %s / %s) | %s | %s | %s | %s (%s) | %s | %s | %s"
+                     " | %s | %s | %s |" % (
                          r["n"], r["task"] + (" (broken)" if r.get("broken_on_purpose") else ""), r["variant"],
                          "yes" if r.get("success") else "**no**",
                          fmt(r.get("ctx_first_request_total")), fmt(r.get("ctx_first_tiza_call_total")),
+                         fmt(r.get("ctx_peak_total")),
                          fmt(r.get("input_total")), fmt(i.get("input")), fmt(i.get("cache_read")),
                          fmt(i.get("cache_write")), fmt(r.get("output")), fmt(r.get("tiza_calls")),
                          fmt(r.get("tool_search_calls")), fmt(r.get("tool_errors")), fmt(r.get("invalid_arguments")),
@@ -926,8 +939,14 @@ def self_check(args):
     want = {"requests": 3, "ctx_first_request_total": 21000, "ctx_first_tiza_call_total": 23500,
             "input_total": 70000, "output": 900, "tiza_calls": 2, "tool_search_calls": 1,
             "tool_errors": 1, "invalid_arguments": 1, "retries": 1, "self_report_tokens": 12000,
-            "other_tool_calls": [], "mcp_ok": True}
+            "other_tool_calls": [], "mcp_ok": True, "ctx_peak_total": 25500, "ctx_last_request_total": 25500}
     wrong = {k: (m.get(k), v) for k, v in want.items() if m.get(k) != v}
+    for text in ("failed to deserialize parameters: missing field `id`", "unknown field `foo`",
+                 "text \"x\" not found (text_not_found)", "InputValidationError: from_line"):
+        if not INVALID_ARGS.search(text):
+            wrong[text] = "not counted as invalid arguments"
+    if INVALID_ARGS.search("the presenter rejected this change (rejected)"):
+        wrong["rejected"] = "counted as invalid arguments"
     for text, n in (("CONTEXT: 12k tokens - x", 12000), ("**CONTEXT:** about 12,000 tokens", 12000),
                     ("context: ~1.2M", 1200000), ("CONTEXT: 9000 then\nCONTEXT: 15k tokens", 15000),
                     ("CONTEXT: 12.000 tokens", 12000), ("no line", None)):
@@ -937,6 +956,42 @@ def self_check(args):
     bad += bool(wrong)
     print("self-check: %s" % ("all good" if not bad else "%d problem(s)" % bad))
     return 1 if bad else 0
+
+
+def write_summary(out_dir, meta, records):
+    with open(os.path.join(out_dir, "summary.json"), "w") as f:
+        json.dump(dict(meta, trials=records), f, indent=2)
+    md = table(records, meta)
+    with open(os.path.join(out_dir, "summary.md"), "w") as f:
+        f.write(md)
+    return md
+
+
+def report(out_dir):
+    """Re-parse a finished run's streams (after a change to the measurements)."""
+    try:
+        with open(os.path.join(out_dir, "summary.json")) as f:
+            summary = json.load(f)
+        trials = summary.pop("trials")
+    except (OSError, ValueError, KeyError):
+        # A run that stopped before writing its summary: rebuild it from the
+        # per-trial results.
+        summary, trials = {"stamp": os.path.basename(os.path.normpath(out_dir))}, []
+        for name in sorted(os.listdir(out_dir)):
+            if re.match(r"\d+-.*\.json$", name):
+                with open(os.path.join(out_dir, name)) as f:
+                    trials.append(json.load(f))
+    records = []
+    for rec in trials:
+        stem = os.path.join(out_dir, "%02d-%s-%s" % (rec["n"], rec["task"], rec["variant"]))
+        if os.path.exists(stem + ".jsonl"):
+            with open(stem + ".jsonl") as raw:
+                rec.update(parse_stream(raw))
+            with open(stem + ".json", "w") as f:
+                json.dump(rec, f, indent=2)
+        records.append(rec)
+    print(write_summary(out_dir, summary, records))
+    return 0
 
 
 def main():
@@ -955,9 +1010,12 @@ def main():
     p.add_argument("--out")
     p.add_argument("--tiza")
     p.add_argument("--claude")
-    p.add_argument("--builtin-tools", default="")
+    p.add_argument("--builtin-tools", default="ToolSearch")
     p.add_argument("--yes", action="store_true")
+    p.add_argument("--report")
     args = p.parse_args()
+    if args.report:
+        return report(args.report)
 
     for name, chosen, known in (("task", args.tasks, [t["id"] for t in TASKS]), ("variant", args.variants, VARIANTS)):
         for c in chosen or []:
@@ -1057,11 +1115,7 @@ def main():
     except KeyboardInterrupt:
         stopped = "interrupted"
     meta["stopped"] = stopped
-    with open(os.path.join(out_dir, "summary.json"), "w") as f:
-        json.dump(dict(meta, trials=records), f, indent=2)
-    md = table(records, meta)
-    with open(os.path.join(out_dir, "summary.md"), "w") as f:
-        f.write(md)
+    md = write_summary(out_dir, meta, records)
     print("\n" + md)
     spent = sum(r.get("cost_usd") or 0 for r in records)
     unknown = sum(1 for r in records if r.get("cost_usd") is None and r.get("exit", 0) is None)
