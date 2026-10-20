@@ -1056,6 +1056,32 @@ fn check_loaded(
             );
         }
     }
+    // ---- annotations outside the window shown at their own step ----
+    for a in doc.annotations.iter().filter(|a| !bad.contains(&a.id)) {
+        let view = doc.shown_view_at(a.step);
+        let Some((from, to)) = view.window.filter(|_| view.file == a.file) else {
+            continue;
+        };
+        let lines = a.shape.line_ranges();
+        if lines.iter().all(|(f, t)| *f >= from && *t <= to) {
+            continue;
+        }
+        out.push(
+            Finding::new(
+                Level::Warning,
+                "outside_window",
+                format!(
+                    "outside the window shown at step {} (lines {from}-{to} of {}): kept, but not drawn there",
+                    a.step,
+                    doc.file_label(&a.file)
+                ),
+            )
+            .id(a.id.clone())
+            .step(a.step)
+            .file(a.file.clone())
+            .line(anchor_line(&a.shape)),
+        );
+    }
     // ---- steps with nothing new ----
     for step in 1..=max {
         let has = doc.annotations.iter().any(|a| a.step == step)

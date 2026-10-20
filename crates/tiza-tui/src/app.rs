@@ -1188,8 +1188,11 @@ impl App {
         doc.normalize_loaded()?;
         let stale = tiza_core::stale::refresh(None, &mut doc);
         let held = tiza_core::stale::held(&doc);
-        for a in doc.annotations.iter().filter(|a| !held.contains(&a.id)) {
-            doc.validate_annotation(a).map_err(|e| Error::Within {
+        for (a, fit) in doc.annotations.iter().zip(doc.annotation_checks()) {
+            if held.contains(&a.id) {
+                continue;
+            }
+            fit.map_err(|e| Error::Within {
                 what: format!("annotation {}, step {}", a.id, a.step),
                 inner: Box::new(e),
             })?;

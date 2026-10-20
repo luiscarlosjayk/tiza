@@ -57,7 +57,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, example, scratch};
+use tiza_qa::{Live, bin, example, fixture, scratch};
 
 // ---------------------------------------------------------------- helpers
 
@@ -1101,6 +1101,108 @@ fn review2_the_bar_says_a_file_is_a_reference_again() {
     assert_eq!(
         m,
         "main.rs is a reference again; autosave still off (:autosave on resumes)"
+    );
+}
+
+// ---------------------------------------------------------------- rework 1
+
+fn findings(live: &Live, code: &str) -> Vec<Value> {
+    live.api_ok("check", json!({}))["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["code"] == code)
+        .cloned()
+        .collect()
+}
+
+/// An insert at the step of a `code.link` with a window (the link runs
+/// first, the insert after it): the window is carried too, so it shows the
+/// same code and the annotation of the step stays inside it; deleting the
+/// insert gives the window back.
+#[test]
+fn rework_a_window_of_the_same_step_is_carried() {
+    let dir = examples_copy("same-step-window");
+    for (name, link, at, id, window, carried) in [
+        ("stack-and-queue.tiza", 5, "21", "a7", "17-23", "17-25"),
+        ("tally-tour.tiza", 3, "20", "c2", "9-28", "9-30"),
+    ] {
+        let live = open(&dir.join(name));
+        let before = get(&live);
+        let step = before["document"]["moves"][link]["at_step"].clone();
+        assert_eq!(before["document"]["moves"][link]["lines"], window, "{name}");
+        live.api_ok(
+            "move.add",
+            json!({"at_step": step, "action": "code.patch", "op": "insert", "position": at,
+                   "content": "    // one\n    // two"}),
+        );
+        let after = get(&live);
+        assert_eq!(after["document"]["moves"][link]["lines"], carried, "{name}");
+        let outside = findings(&live, "outside_window");
+        assert!(
+            outside.iter().all(|f| f["id"] != id),
+            "{name}: {id} stays in the window: {outside:?}"
+        );
+        let shown = live.with({
+            let id = id.to_string();
+            move |a| a.doc.hidden_reason(&id, a.doc.max_step())
+        });
+        assert!(shown.is_none(), "{name}: {id} is drawn: {shown:?}");
+        round_trip(&live, None, name);
+        let last = after["document"]["moves"].as_array().unwrap().len();
+        live.api_ok("move.delete", json!({ "index": last }));
+        assert_eq!(get(&live)["document"], before["document"], "{name}");
+        drop(live);
+    }
+}
+
+/// `tiza check` and the live `check` warn about an annotation outside the
+/// window shown at its own step, with its id and step.
+#[test]
+fn rework_check_warns_about_an_annotation_outside_its_window() {
+    let dir = examples_copy("outside-window");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let out = std::process::Command::new(bin())
+        .args(["check"])
+        .arg(&tiza)
+        .output()
+        .unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("warning: a5, step 2, src/queue.rs, L4: outside the window shown at step 2 (lines 10-36 of src/queue.rs)"),
+        "{text}"
+    );
+    let live = open(&tiza);
+    let f = findings(&live, "outside_window");
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert_eq!(f[0]["id"], "a5");
+    assert_eq!(f[0]["step"], 2);
+    // An annotation moved out of the window of its step is said too.
+    live.api_ok(
+        "annotation.update",
+        json!({"id": "a7", "move": {"at": {"line": 30, "col": 0}}}),
+    );
+    let f = findings(&live, "outside_window");
+    assert!(f.iter().any(|f| f["id"] == "a7" && f["step"] == 5), "{f:?}");
+}
+
+/// A document that already has an annotation outside the code: the refusal
+/// says so, instead of blaming the move for removing a line.
+#[test]
+fn rework_an_annotation_already_outside_the_code_is_named_as_such() {
+    let dir = scratch("already-outside");
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    std::fs::copy(fixture("t-101/linked.tiza"), dir.join("linked.tiza")).unwrap();
+    std::fs::copy(fixture("t-101/src/queue.rs"), dir.join("src/queue.rs")).unwrap();
+    let live = open(&dir.join("linked.tiza"));
+    let e = move_err(
+        &live,
+        json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "1", "content": "// new"}),
+    );
+    assert!(
+        e.starts_with("annotation q1, step 2: move #2 (step 2), the one being added, cannot carry it: it was already outside the code (line 9; src/queue.rs has lines 1-")
+            && e.ends_with("; move or delete q1 first"),
+        "{e}"
     );
 }
 

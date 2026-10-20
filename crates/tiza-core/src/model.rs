@@ -1174,10 +1174,13 @@ impl Document {
                 }
             }
         })?;
-        self.still_fit(
-            &with,
-            &format!("move #{} (step {})", i + 1, with.moves[i].at_step),
-        )?;
+        // Only a patch changes the code annotations stand on.
+        if matches!(with.moves[i].action, MoveAction::CodePatch(_)) {
+            self.still_fit(
+                &with,
+                &format!("move #{} (step {})", i + 1, with.moves[i].at_step),
+            )?;
+        }
         *self = with;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
@@ -1186,9 +1189,15 @@ impl Document {
     /// Every annotation that fits its step in `self` still fits it in
     /// `after` (the document once a move is added or deleted, `change`).
     fn still_fit(&self, after: &Document, change: &str) -> Result<(), Error> {
-        for (a, b) in self.annotations.iter().zip(&after.annotations) {
-            if self.validate_annotation(a).is_ok()
-                && let Err(e) = after.validate_annotation(b)
+        let fit = self.annotation_checks();
+        for ((b, was), now) in after
+            .annotations
+            .iter()
+            .zip(fit)
+            .zip(after.annotation_checks())
+        {
+            if was.is_ok()
+                && let Err(e) = now
             {
                 return Err(Error::Within {
                     what: format!("annotation {}, step {}: after {change}", b.id, b.step),
@@ -1197,6 +1206,45 @@ impl Document {
             }
         }
         Ok(())
+    }
+
+    /// [`Document::validate_annotation`] of every annotation, in order, with
+    /// the code of each file at each step worked out once (a document with
+    /// many annotations and moves would replay the moves for each one).
+    pub fn annotation_checks(&self) -> Vec<Result<(), Error>> {
+        if self.moves.is_empty() {
+            return self
+                .annotations
+                .iter()
+                .map(|a| self.validate_annotation(a))
+                .collect();
+        }
+        let mut order: Vec<usize> = (0..self.annotations.len()).collect();
+        order.sort_by(|&x, &y| {
+            let (a, b) = (&self.annotations[x], &self.annotations[y]);
+            (&a.file, a.step).cmp(&(&b.file, b.step))
+        });
+        let mut d = self.clone();
+        d.moves.clear();
+        d.base_code.clear();
+        let mut out: Vec<Option<Result<(), Error>>> =
+            (0..self.annotations.len()).map(|_| None).collect();
+        let mut at: Option<(ViewKey, u32)> = None;
+        for i in order {
+            let a = &self.annotations[i];
+            if at.as_ref() != Some(&(a.file.clone(), a.step)) {
+                // As `validate_shape_in`: a move that no longer applies
+                // leaves the base code shown.
+                let (code, first) = self
+                    .view_code_at(&a.file, a.step)
+                    .unwrap_or_else(|_| (self.base().to_vec(), self.base_first()));
+                d.code = code;
+                d.source.first_line = first;
+                at = Some((a.file.clone(), a.step));
+            }
+            out[i] = Some(d.validate_shape(&a.shape));
+        }
+        out.into_iter().map(|r| r.unwrap_or(Ok(()))).collect()
     }
 
     /// Deletes the move at `index` (0-based). A `code.patch` carries the
@@ -1262,7 +1310,10 @@ impl Document {
             what: change.clone(),
             inner: Box::new(e),
         })?;
-        self.still_fit(&with, &change)?;
+        // Only a patch or a link changes the code annotations stand on.
+        if matches!(m.action, MoveAction::CodePatch(_) | MoveAction::CodeLink(_)) {
+            self.still_fit(&with, &change)?;
+        }
         *self = with;
         if !self.moves.is_empty() {
             self.sync_code_to_step();

@@ -370,31 +370,46 @@ fn carry_before(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Resu
     Ok(m)
 }
 
-/// After a move ran: a `code.link` window is carried on the file it shows
-/// (both ends must still be there); the `rebind` lines of a patch (on the
-/// code right after it) are rare, so the change is refused when it would
-/// move one.
-fn carry_after(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
-    let Some(map) = map else { return Ok(()) };
+/// Refuses the change when the move it is about cannot be carried: a
+/// removed line of `what`.
+fn lost_line(m: &Move, index: usize, who: &str, what: String) -> Error {
     let n = index + 1;
-    let refuse = |what: String| {
-        Err(refused(
-            format!("move #{n}, step {}", m.at_step),
-            who,
-            what,
-            format!("delete move #{n} and add it again on the code as it is then"),
-        ))
-    };
+    refused(
+        format!("move #{n}, step {}", m.at_step),
+        who,
+        what,
+        format!("delete move #{n} and add it again on the code as it is then"),
+    )
+}
+
+/// A `code.link` window, on the file it shows at the end of its step: both
+/// ends must still be there.
+fn carry_window(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
+    let Some(map) = map else { return Ok(()) };
+    let at = m.clone();
     if let MoveAction::CodeLink(l) = &mut m.action
         && let Some(w) = l.lines.clone()
         && let Some((a, b)) = parse_range(&w)
     {
         match (map.line(a), map.line(b)) {
             (Some(x), Some(y)) => l.lines = Some(position_text(&w, x, y)),
-            (None, _) => return refuse(format!("removes line {a}, the first line of its window")),
-            (_, None) => return refuse(format!("removes line {b}, the last line of its window")),
+            (None, _) => {
+                let what = format!("removes line {a}, the first line of its window");
+                return Err(lost_line(&at, index, who, what));
+            }
+            (_, None) => {
+                let what = format!("removes line {b}, the last line of its window");
+                return Err(lost_line(&at, index, who, what));
+            }
         }
     }
+    Ok(())
+}
+
+/// The `rebind` lines of a patch (on the code right after it) are rare, so
+/// the change is refused when it would move one.
+fn check_rebind(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
+    let Some(map) = map else { return Ok(()) };
     for (id, spec) in &m.rebind {
         let lines = [&spec.at, &spec.from, &spec.to]
             .into_iter()
@@ -404,7 +419,8 @@ fn carry_after(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> R
             .chain(spec.to_line);
         for l in lines {
             if map.line(l) != Some(l) {
-                return refuse(format!("moves line {l}, where its rebind puts {id}"));
+                let what = format!("moves line {l}, where its rebind puts {id}");
+                return Err(lost_line(m, index, who, what));
             }
         }
     }
@@ -478,9 +494,20 @@ pub fn carry(
     };
     r.by_step.sort_by_key(|i| r.anns[*i].step);
     let named = |e: Error, i: usize, m: &Move| crate::moves::name_move(e, i, m.at_step);
+    // `code.link` windows crop the code at the end of their step: carried
+    // once every move of that step has run on both sides.
+    let mut windows: Vec<(usize, usize)> = Vec::new();
     for (slot, item) in order.iter().enumerate() {
         let (step, _) = step_of(item);
         r.carry_annotations(step.saturating_sub(1))?;
+        r.carry_windows(&mut windows, step, &mut out)?;
+        if let (Some(o), Some(n)) = *item
+            && matches!(old[o].action, MoveAction::CodeLink(_))
+            && old[o].stale.is_none()
+            && matches!(&new[n].action, MoveAction::CodeLink(l) if l.lines.is_some())
+        {
+            windows.push((o, n));
+        }
         match *item {
             // A stale move is not applied (crate::stale), so it is neither
             // replayed nor carried: it keeps its numbers.
@@ -489,7 +516,7 @@ pub fn carry(
                 let shown = r.old.shown.clone();
                 r.load(&shown);
                 let before = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                let mut m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
+                let m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
                 let (_, was) = r
                     .old
                     .apply(doc, &old[o], slot)
@@ -528,7 +555,7 @@ pub fn carry(
                 let shown = r.new.shown.clone();
                 r.load(&shown);
                 let after = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                carry_after(&mut m, o, after.as_ref(), &r.who)?;
+                check_rebind(&m, o, after.as_ref(), &r.who)?;
                 out[n] = m;
             }
             (None, Some(n)) => {
@@ -549,6 +576,7 @@ pub fn carry(
         }
     }
     r.carry_annotations(u32::MAX)?;
+    r.carry_windows(&mut windows, u32::MAX, &mut out)?;
     Ok((out, r.anns))
 }
 
@@ -566,6 +594,29 @@ struct Replay<'d> {
 }
 
 impl Replay<'_> {
+    /// Carries the windows of the links in `pending` whose step ends before
+    /// `step` (both ends must still be there).
+    fn carry_windows(
+        &mut self,
+        pending: &mut Vec<(usize, usize)>,
+        step: u32,
+        out: &mut [Move],
+    ) -> Result<(), Error> {
+        let (done, wait): (Vec<_>, Vec<_>) =
+            pending.drain(..).partition(|(_, n)| out[*n].at_step < step);
+        *pending = wait;
+        for (o, n) in done {
+            let MoveAction::CodeLink(l) = &out[n].action else {
+                continue;
+            };
+            let key = self.doc.view_key(&l.file);
+            self.load(&key);
+            let map = Mapper::new(self.doc, &key, &self.old, &self.new, &self.alias);
+            carry_window(&mut out[n], o, map.as_ref(), &self.who)?;
+        }
+        Ok(())
+    }
+
     /// A view on both sides, as its step-0 code where nothing touched it yet.
     fn load(&mut self, key: &ViewKey) {
         let _ = self.old.lines(self.doc, key);
@@ -586,6 +637,26 @@ impl Replay<'_> {
                 continue;
             };
             let ranges = a.shape.line_ranges();
+            // Already outside the code at its step (a document that came
+            // that way): nothing to carry, and nothing this change removed.
+            if let Some(l) = ranges
+                .iter()
+                .flat_map(|(f, t)| [*f, *t])
+                .find(|l| map.id(*l).is_none())
+            {
+                let last = map.first + map.old.ids.len() as u32 - 1;
+                return Err(refused(
+                    format!("annotation {}, step {}", a.id, a.step),
+                    &self.who,
+                    format!(
+                        "cannot carry it: it was already outside the code (line {l}; {} has lines {}-{last} at step {})",
+                        self.doc.file_label(&a.file),
+                        map.first,
+                        a.step
+                    ),
+                    format!("move or delete {} first", a.id),
+                ));
+            }
             let ends_kept = ranges.iter().all(|(f, t)| map.range(*f, *t).is_some());
             let shape = ends_kept
                 .then(|| {
