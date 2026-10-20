@@ -239,7 +239,6 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
             migrate(&mut raw);
         }
     }
-    refuse_redacts(&raw)?;
     let mut doc: Document = serde_json::from_value(raw)?;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
@@ -248,30 +247,6 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     load_views(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
-}
-
-/// What a `.tiza` that still carries `redact` annotations gets instead of
-/// opening (t-183: the redact feature was withdrawn, ADR 0010): its code
-/// would show in clear with no mask and no word, so it is refused.
-pub const REDACTS_UNSUPPORTED: &str = "this document uses redacts, which this version no longer supports; remove the `redact` annotations from the sidecar";
-
-/// Whether a raw `.tiza` still carries a `redact` annotation.
-pub fn has_redacts(raw: &serde_json::Value) -> bool {
-    raw.get("annotations")
-        .and_then(|a| a.as_array())
-        .is_some_and(|a| {
-            a.iter()
-                .any(|x| x.get("type").and_then(|t| t.as_str()) == Some("redact"))
-        })
-}
-
-/// Refuses a raw `.tiza` that still carries a `redact` annotation
-/// ([`REDACTS_UNSUPPORTED`]).
-pub fn refuse_redacts(raw: &serde_json::Value) -> Result<(), Error> {
-    if has_redacts(raw) {
-        return Err(Error::Invalid(REDACTS_UNSUPPORTED.into()));
-    }
-    Ok(())
 }
 
 /// Readies the document a live instance handed out (`scene.get`) for an

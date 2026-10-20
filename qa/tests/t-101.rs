@@ -29,7 +29,6 @@
 //! that matches more than once is a warning with its lines; `--all-steps`
 //! removes its own stale `step-NN` files and honours `--skip-zero`; the
 //! narrowest-width line says when a narrower width is clean too.
-//! (The redact-related cases went with the feature, t-183.)
 //!
 //! Corner cases: zero annotations → one image (step 0); `--all-steps` with
 //! `--out -` → error; `check` writes nothing and needs no terminal; a

@@ -6,9 +6,8 @@
 //! that do not deserialize repeat no value; a move that matches nothing
 //! reads like `tiza check` (R3); `focus.set` checks its lines.
 //!
-//! The card was about a redact's secret echoed in errors; t-183 withdrew
-//! the redact feature and kept this generic part. What an agent sent as a
-//! free text (a `find`, a step id) is quoted as it wrote it.
+//! What an agent sent as a free text (a `find`, a step id) is quoted as it
+//! wrote it.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -18,7 +17,7 @@ use serde_json::{Value, json};
 use tiza_core::protocol::{Request, Response};
 use tiza_qa::{Live, McpClient, scratch, tiza};
 
-const VALUE: &str = "abc123SECRETxyz789";
+const VALUE: &str = "abc123Q7valueXyz789";
 
 fn code() -> Vec<String> {
     vec![
@@ -106,11 +105,11 @@ fn load_errors_quote_the_target() {
         "{e}"
     );
     let m = patch(
-        json!({"op": "replace", "find_start": "region", "find_end": "SECRETxyz789", "content": "x"}),
+        json!({"op": "replace", "find_start": "region", "find_end": "Q7valueXyz789", "content": "x"}),
     );
     let p = write(&dir, "order", &document(vec![m]));
     let e = stderr(&["render", p.to_str().unwrap(), "--out", "-"]);
-    assert!(e.contains("find_end «SECRETxyz789»"), "{e}");
+    assert!(e.contains("find_end «Q7valueXyz789»"), "{e}");
 }
 
 #[test]
@@ -178,9 +177,9 @@ fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
     let live = live("t167-r2");
     let mut mcp = McpClient::start(&live.socket);
     for (tool, args) in [
-        ("highlight", json!({"at": "SECRETxyz789"})),
-        ("add_box", json!({"from_line": "SECRETxyz789"})),
-        ("point_at", json!({"line": "SECRETxyz789"})),
+        ("highlight", json!({"at": "Q7valueXyz789"})),
+        ("add_box", json!({"from_line": "Q7valueXyz789"})),
+        ("point_at", json!({"line": "Q7valueXyz789"})),
     ] {
         let (is_err, text, _) = mcp.call(tool, args.clone());
         assert!(is_err, "{tool} {args}: {text}");
@@ -200,7 +199,7 @@ fn review5_supervised_type_and_method_are_not_echoed() {
         t0,
     );
     let b = propose(&live, request(VALUE, json!({})), t0);
-    let c = propose(&live, request("SECRETxyz789", json!({})), t0);
+    let c = propose(&live, request("Q7valueXyz789", json!({})), t0);
     let s: Vec<String> = live.with(|a| a.proposals.iter().map(|p| p.summary.clone()).collect());
     for x in &s {
         assert_clean("summary", x);
@@ -208,7 +207,7 @@ fn review5_supervised_type_and_method_are_not_echoed() {
     assert_eq!(s[0], "add «…» L2");
     let status = live.api_ok("supervise.status", json!({}));
     assert_clean("supervise.status", &status.to_string());
-    // The code itself is on screen (no mask): the review list is not.
+    // The code itself is on screen: the review list must not repeat it.
     let screen = live.screen(120, 30).replace(&format!("token={VALUE}"), "");
     assert_clean("the review list", &screen);
     let m1 = live.with(|a| a.accept_proposal()).unwrap();
@@ -377,7 +376,7 @@ fn closed_instances(tag: &str) -> Vec<(Live, Vec<&'static str>, &'static str)> {
     vec![
         (
             live_valued(VALUE, &format!("t167-{tag}-plain")),
-            vec![CANARY, "SECRETxyz789"],
+            vec![CANARY, "Q7valueXyz789"],
             VALUE,
         ),
         (
@@ -642,21 +641,21 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
     for (name, ann, mv, want) in [
         (
             "type",
-            Some(json!({"id": "z1", "step": 1, "type": "SECRETxyz789", "line": 1})),
+            Some(json!({"id": "z1", "step": 1, "type": "Q7valueXyz789", "line": 1})),
             None,
             types,
         ),
         (
             "action",
             None,
-            Some(json!({"at_step": 2, "action": "SECRETxyz789"})),
+            Some(json!({"at_step": 2, "action": "Q7valueXyz789"})),
             actions,
         ),
         (
             "op",
             None,
             Some(patch(
-                json!({"op": "SECRETxyz789", "find": "port", "content": "x"}),
+                json!({"op": "Q7valueXyz789", "find": "port", "content": "x"}),
             )),
             ops,
         ),
@@ -696,7 +695,7 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
         "scene.patch",
         json!({"annotations": [
             {"id": "b3", "step": 1, "type": "box", "from_line": 1, "to_line": 2},
-            {"id": "z3", "step": 1, "type": "SECRETxyz789", "line": 1}
+            {"id": "z3", "step": 1, "type": "Q7valueXyz789", "line": 1}
         ]}),
     );
     assert!(msg.contains(types), "{msg}");

@@ -38,9 +38,7 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `unanchored`, `clipped_label`, `empty_step` and `redacts`
-    /// (a document that still carries `redact` annotations, which this
-    /// version no longer supports).
+    /// `steps`, `unanchored`, `clipped_label`, `empty_step`.
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -318,12 +316,6 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         if found <= *from {
             migrate(&mut raw);
         }
-    }
-    // A document that still carries redacts does not open (t-183): said
-    // the same way here.
-    if let Err(e) = crate::fs::refuse_redacts(&raw) {
-        out.push(Finding::new(Level::Error, "redacts", e.to_string()));
-        return Report::new(width, out, None, None);
     }
     let parsed: Result<Document, serde_json::Error> = if migrated {
         serde_json::from_value(raw)

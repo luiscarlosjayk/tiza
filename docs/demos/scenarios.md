@@ -2,7 +2,7 @@
 
 Twelve concrete situations where Tiza and an agent (Claude Code, or any MCP client) explain code to someone: a viewer, a new teammate, a reviewer, or another agent. Each one is an idea for a recording and a check that the pieces exist. Scenario 1 is worked out in full as a runnable example ([below](#worked-example-a-tour-of-tally)); the others are scripts to adapt.
 
-Every command, tool and field named here exists today (README, [agent guide](../agent-guide.md)), and no script waits on a feature: the two planned changes that touch them are in the [short list at the end](#planned-changes-that-touch-these-scenarios). Any frame you publish from these is a real `tiza render` export; do not retouch it.
+Every command, tool and field named here exists today (README, [agent guide](../agent-guide.md)), and no script waits on a feature: the one planned change that touches them is in the [short list at the end](#planned-changes-that-touch-these-scenarios). Any frame you publish from these is a real `tiza render` export; do not retouch it.
 
 Each scenario gives: **For** (the audience), **Setup** (a sample under `examples/`, or how to make a throwaway one), **Script** (the prompts to the agent and the `tiza` or MCP calls), **What the audience sees**, **Features** and **Recording** (format and length).
 
@@ -13,7 +13,7 @@ Each scenario gives: **For** (the audience), **Setup** (a sample under `examples
 | 3 | [A walkthrough one agent leaves for the next](#3-a-walkthrough-one-agent-leaves-for-the-next) | the next agent or teammate | the sidecar of scenario 1 |
 | 4 | [Walking through a change, before and after](#4-walking-through-a-change-before-and-after) | reviewer, viewer | `examples/ownership-moves.rs.tiza` |
 | 5 | [Tracing a bug across files to its fix](#5-tracing-a-bug-across-files-to-its-fix) | viewer, teammate | `examples/tally/` |
-| 6 | [Explaining a config file without leaking its secrets](#6-explaining-a-config-file-without-leaking-its-secrets) | viewer, teammate | a throwaway `.env` |
+| 6 | [Explaining a config file with demo values](#6-explaining-a-config-file-with-demo-values) | viewer, teammate | a throwaway `.env` |
 | 7 | [Live coding: the agent annotates while you edit](#7-live-coding-the-agent-annotates-while-you-edit) | viewer | `examples/tally/` |
 | 8 | [Supervised session: the agent proposes, you approve on camera](#8-supervised-session-the-agent-proposes-you-approve-on-camera) | viewer | `examples/src/stack.rs` |
 | 9 | [One concept, step by step](#9-one-concept-step-by-step) | learner | `examples/ownership.rs` |
@@ -137,7 +137,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **For:** a viewer, or a teammate setting up the project.
 
-**Setup:** examples ship no secrets on purpose, and Tiza has no mask: what is in the file is what the audience sees. Make a throwaway file with fake values, never a copy of a real one: `mkdir -p /tmp/config && printf 'DATABASE_URL=postgres://app:demo-pass@db.local/app\nAPI_TOKEN=tk_demo_token_0000\nLOG_LEVEL=info\n' > /tmp/config/demo.env`.
+**Setup:** examples ship no secrets on purpose: what is in the file is what the audience sees. Make a throwaway file with fake values, never a copy of a real one: `mkdir -p /tmp/config && printf 'DATABASE_URL=postgres://app:demo-pass@db.local/app\nAPI_TOKEN=tk_demo_token_0000\nLOG_LEVEL=info\n' > /tmp/config/demo.env`.
 
 **Script:**
 - You: `tiza /tmp/config/demo.env`.
@@ -239,4 +239,3 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 Nothing above waits on these; they change how a script can be written once they land.
 
 - **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen, so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
-- **t-183, the redact feature withdrawn** (6). Scenario 6 used masks over a config file; Tiza no longer masks anything (ADR 0010), so the scenario works on a file with demo values. A `.tiza` that still carries `redact` annotations does not open until they are removed.

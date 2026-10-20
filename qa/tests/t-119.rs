@@ -537,8 +537,8 @@ fn ac5_nothing_changes_without_a_config_file_or_overrides() {
     assert!(th.palette.is_empty());
 }
 
-// Moved here from qa/tests/t-157.rs when t-183 removed that file: it tests
-// the pty harness (qa/src/pty.py).
+// Moved here from qa/tests/t-157.rs (deleted): it tests the pty harness
+// (qa/src/pty.py).
 
 #[test]
 fn harness_the_pty_is_drained_while_the_body_calls_the_api() {

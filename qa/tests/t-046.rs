@@ -15,10 +15,9 @@
 //!   `examples/tally/`) plus the exact prompt list.
 //! - AC4 A closing list of what each scenario needs that Tiza does not do yet.
 //!   After Luis's rework (2026-10-18) it names only what will be built
-//!   (t-166, t-183), and no scenario depends on a discarded feature: no
+//!   (t-166), and no scenario depends on a discarded feature: no
 //!   arrows between files or two files at once, no author metadata, no
-//!   resource notifications, no diff import, no masks (t-183 withdrew the
-//!   redact feature), no `--no-save` (the scenarios work on a copy and keep the sidecar the
+//!   resource notifications, no diff import, no `--no-save` (the scenarios work on a copy and keep the sidecar the
 //!   TUI autosaves).
 //! - AC5 No marketing or channel tasks.
 //!
@@ -129,9 +128,8 @@ fn ac4_the_closing_list_names_only_what_will_be_built() {
         .lines()
         .filter(|l| l.starts_with("- "))
         .collect();
-    assert_eq!(items.len(), 2, "{items:?}");
+    assert_eq!(items.len(), 1, "{items:?}");
     assert!(items[0].contains("t-166"), "{items:?}");
-    assert!(items[1].contains("t-183"), "{items:?}");
     assert!(scenarios().iter().all(|(t, _)| !t.starts_with("Planned")));
 }
 
@@ -154,10 +152,6 @@ fn ac4_no_scenario_depends_on_a_discarded_feature() {
             !lower.contains(gone),
             "the catalogue still mentions «{gone}»"
         );
-    }
-    // No mask exists (t-183): no scenario promises one.
-    for gone in [":redact", "redact annotation", "••••••••", "◆ redacted"] {
-        assert!(!text.contains(gone), "the catalogue still says «{gone}»");
     }
     let s = scenarios();
     let body = |n: usize| &s[n - 1].1;
