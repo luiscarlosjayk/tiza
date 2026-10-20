@@ -125,7 +125,15 @@ impl Ffmpeg {
             video.display(),
             String::from_utf8_lossy(&out.stderr)
         );
-        let frames: Vec<&[u8]> = out.stdout.chunks_exact(W * H).collect();
+        let (frames, rest) = out.stdout.as_chunks::<{ W * H }>();
+        assert!(
+            rest.is_empty(),
+            "raw video from {} came out truncated: {} bytes left over after {} whole frames of {} bytes ({W}x{H} gray)",
+            video.display(),
+            rest.len(),
+            frames.len(),
+            W * H
+        );
         assert!(
             !frames.is_empty(),
             "no frames decoded from {}",
@@ -136,7 +144,7 @@ impl Ffmpeg {
         for i in 1..frames.len() {
             let changed = frames[i - 1]
                 .iter()
-                .zip(frames[i])
+                .zip(&frames[i])
                 .any(|(a, b)| a.abs_diff(*b) > 16);
             if changed {
                 steps.push((i - start) as f64 / 10.0);

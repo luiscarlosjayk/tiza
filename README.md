@@ -45,6 +45,8 @@ Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://git
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza
 ```
 
+Inside a checkout, `rust-toolchain.toml` pins Rust 1.99.1 (with rustfmt and clippy) so local builds and the gate use the same toolchain; 1.88 stays the minimum supported version.
+
 ## Quick start
 
 ```sh
