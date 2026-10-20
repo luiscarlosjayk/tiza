@@ -1199,6 +1199,7 @@ fn encode_video(
     std::fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
     let _cleanup = TempDir(dir.clone());
     let mut list = String::from("ffconcat version 1.0\n");
+    let mut total_ms: u64 = 0;
     for (i, f) in frames.iter().enumerate() {
         let svg = tiza_export::to_svg(&f.canvas, theme, svg_opts);
         let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
@@ -1208,13 +1209,23 @@ fn encode_video(
             "file '{name}'\nduration {:.3}\n",
             f.delay_ms as f64 / 1000.0
         ));
+        total_ms += f.delay_ms;
     }
-    // The concat demuxer drops the last duration unless the file is listed
-    // once more.
+    // The last frame is listed once more so it holds for its duration at
+    // all: without the repeat, ffmpeg 6 emits it as a single frame (its
+    // `duration` only places the next entry, and there is none). What the
+    // repeat itself lasts depends on the ffmpeg: 6.x gives it one frame,
+    // 7+ (Luis's 9.0.2, t-170) holds it as long as the previous entry, so
+    // the last step came out twice as long — a `duration` on the repeated
+    // entry changes nothing there. `-t` with the sum of every frame's
+    // duration cuts the output at exactly the GIF's length on every
+    // version, so the videos are not left to how each ffmpeg treats the
+    // tail of a concat list.
     if let Some(last) = frames.len().checked_sub(1) {
         list.push_str(&format!("file 'f{last:05}.png'\n"));
     }
     std::fs::write(dir.join("frames.txt"), &list)?;
+    let total = format!("{:.3}", total_ms as f64 / 1000.0);
     let out_path = std::path::Path::new(out);
     let tmp = out_path.with_file_name(format!(
         ".{}.tiza-tmp.{}",
@@ -1237,11 +1248,18 @@ fn encode_video(
         dir.join("frames.txt").to_string_lossy().into_owned(),
         "-vf".into(),
         "scale=trunc(iw/2)*2:trunc(ih/2)*2,fps=30".into(),
+        "-t".into(),
+        total,
     ];
     match format {
+        // yuv420p spelled out for the WebM too (t-170): ffmpeg 6 picked it
+        // on its own for the RGBA frames, a newer one keeps them as
+        // `gbrap`, which libvpx refuses, and no file is written.
         Format::Webm => args.extend([
             "-c:v".into(),
             "libvpx-vp9".into(),
+            "-pix_fmt".into(),
+            "yuv420p".into(),
             "-b:v".into(),
             "0".into(),
             "-crf".into(),
