@@ -1211,6 +1211,27 @@ impl Document {
         // later patches and selections to another file), named as
         // `move.list` shows them now: a pause holds the deleted one's place.
         let change = format!("deleting move #{} (step {})", index + 1, m.at_step);
+        // The only link to a file takes it out of the document: its
+        // annotations would belong to no view.
+        if let MoveAction::CodeLink(l) = &m.action
+            && let Some(key) = self.view_key(&l.file)
+            && !with.link_files().contains(&key)
+        {
+            let ids: Vec<&str> = with
+                .annotations
+                .iter()
+                .filter(|a| a.file.as_ref() == Some(&key))
+                .map(|a| a.id.as_str())
+                .collect();
+            if !ids.is_empty() {
+                return Err(Error::Invalid(format!(
+                    "{change}: {} belong{} to {key}, which no other code.link shows; delete {} first",
+                    ids.join(", "),
+                    if ids.len() == 1 { "s" } else { "" },
+                    if ids.len() == 1 { "it" } else { "them" },
+                )));
+            }
+        }
         let mut numbered = with.moves.clone();
         numbered.insert(
             index,

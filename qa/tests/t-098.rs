@@ -497,7 +497,7 @@ fn ac3_typing_animation_in_the_tui() {
     let e = r.error.unwrap().message;
     assert!(
         e.starts_with(
-            "annotation a2, step 2: deleting move #1 (step 2) removes or rewrites line 5"
+            "annotation a2, step 2: deleting move #1 (step 2) removes line 5, where it is"
         ),
         "{e}"
     );
@@ -1115,7 +1115,7 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
     );
     let err = r.error.unwrap().message;
     assert!(
-        err.contains("move #2, step 3") && err.contains("removes its target (line 7)"),
+        err.contains("move #2, step 3") && err.contains("removes line 7, the line it changes"),
         "{err}"
     );
     let dir = scratch("t098-render-step");

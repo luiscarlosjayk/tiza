@@ -260,6 +260,9 @@ struct SentCode {
     edited: Vec<String>,
     /// Changed on disk since the document was loaded: still a reference.
     stale: Vec<String>,
+    /// Embedded in memory by an earlier put of edited code, and read from
+    /// the file again now.
+    back: Vec<String>,
 }
 
 pub struct App {
@@ -1240,6 +1243,12 @@ impl App {
                 };
             }
             self.info(msg);
+        } else if !sent.back.is_empty() && !self.autosave {
+            self.info(format!(
+                "{} {} a reference again; autosave still off (:autosave on resumes)",
+                sent.back.join(", "),
+                if sent.back.len() == 1 { "is" } else { "are" }
+            ));
         }
         self.touch();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
@@ -1292,6 +1301,9 @@ impl App {
                 if !same {
                     out.stale.push(file.clone());
                 }
+                if self.doc.is_embedded() {
+                    out.back.push(file.clone());
+                }
             } else {
                 out.edited.push(format!(
                     "the code sent for {file} differs from the file on disk"
@@ -1327,7 +1339,10 @@ impl App {
             let same = disk.as_ref() == Some(&code);
             if same || known == Some(&code) {
                 doc.views.remove(&file);
-                doc.view_code.insert(key, code);
+                doc.view_code.insert(key.clone(), code);
+                if self.doc.views.contains_key(&file) || self.doc.views.contains_key(&key) {
+                    out.back.push(file.clone());
+                }
                 if !same {
                     out.stale.push(file);
                 }

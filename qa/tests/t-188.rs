@@ -652,7 +652,7 @@ fn ac3_refusals_name_what_would_lose_its_line_and_delete_carries_back() {
     );
     let e = r.error.unwrap().message;
     assert!(
-        e.starts_with("annotation a1, step 1: move #5 (step 1), the one being added, removes or rewrites line 3"),
+        e.starts_with("annotation a1, step 1: move #5 (step 1), the one being added, removes line 3, where the text it marks is"),
         "{e}"
     );
     let r = live.api(
@@ -812,7 +812,7 @@ fn review_a_move_that_would_trim_a_range_is_refused() {
     );
     let e = r.error.unwrap().message;
     assert!(
-        e.starts_with("annotation b1, step 2: move #1 (step 1), the one being added, removes or rewrites lines 2-3"),
+        e.starts_with("annotation b1, step 2: move #1 (step 1), the one being added, removes line 3, its last line (lines 2-3)"),
         "{e}"
     );
     assert_eq!(get(&live)["document"], before["document"]);
@@ -900,6 +900,172 @@ fn review_bar_messages() {
     assert!(
         m.contains("also src/stack.rs changed on disk since it was loaded"),
         "{m}"
+    );
+}
+
+// ---------------------------------------------------------------- review 2
+
+fn ann(scene: &Value, id: &str) -> Value {
+    scene["document"]["annotations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|a| a["id"] == id)
+        .unwrap()
+        .clone()
+}
+
+fn move_err(live: &Live, m: Value) -> String {
+    let before = get(live);
+    let r = live.api("move.add", m);
+    let e = r.error.expect("the move is refused").message;
+    assert_eq!(get(live)["document"], before["document"], "{e}");
+    e
+}
+
+/// Deleting the only `code.link` to a file with annotations is refused,
+/// naming them; nothing changes.
+#[test]
+fn review2_deleting_the_only_link_to_an_annotated_file_is_refused() {
+    let dir = examples_copy("only-link");
+    let tiza = dir.join("tally-tour.tiza");
+    let live = open(&tiza);
+    let before = get(&live);
+    let r = live.api("move.delete", json!({"index": 3}));
+    let e = r.error.unwrap().message;
+    assert!(
+        e.starts_with("deleting move #3 (step 4): ")
+            && e.contains(
+                "belong to tally/src/report.rs, which no other code.link shows; delete them first"
+            ),
+        "{e}"
+    );
+    for id in ["k2", "b4", "n3"] {
+        assert!(e.contains(id), "{e}");
+    }
+    assert_eq!(get(&live)["document"], before["document"]);
+    round_trip(&live, Some(&tiza), "after the refused delete");
+}
+
+/// A `code.link` window is carried: the guide's own flow (two lines above
+/// at step 1) in tally-tour, and an insert in queue.rs before the step-5
+/// window of stack-and-queue; deleting the move gives the window back.
+#[test]
+fn review2_a_window_is_carried() {
+    let dir = examples_copy("window");
+    let live = open(&dir.join("tally-tour.tiza"));
+    let before = get(&live);
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "3", "content": "// one\n// two"}),
+    );
+    let after = get(&live);
+    assert_eq!(after["document"]["moves"][3]["lines"], "11-30");
+    round_trip(&live, None, "tally-tour with the window carried");
+    live.api_ok("move.delete", json!({"index": 6}));
+    assert_eq!(get(&live)["document"], before["document"]);
+    drop(live);
+
+    let live = open(&dir.join("stack-and-queue.tiza"));
+    let before = get(&live);
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "12", "content": "    // a new line"}),
+    );
+    let after = get(&live);
+    assert_eq!(
+        after["document"]["moves"][5]["lines"], "18-24",
+        "{}",
+        after["document"]["moves"]
+    );
+    round_trip(&live, None, "stack-and-queue with the window carried");
+    live.api_ok("move.delete", json!({"index": 7}));
+    assert_eq!(get(&live)["document"], before["document"]);
+}
+
+/// Lines inserted inside a later move's range are taken along by it: the
+/// step-4 delete of `fn len` deletes the line added inside at step 3.
+#[test]
+fn review2_a_later_range_takes_the_lines_inserted_inside() {
+    let dir = examples_copy("inside");
+    let live = open(&dir.join("ownership-moves.rs.tiza"));
+    let before = get(&live);
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 3, "action": "code.patch", "op": "insert", "position": "16", "content": "    // only reads"}),
+    );
+    let after = get(&live);
+    assert_eq!(after["document"]["moves"][3]["position"], "14-18");
+    let code = |step: u32| live.with(move |a| a.doc.code_at(step).unwrap().0);
+    assert!(code(3).iter().any(|l| l == "    // only reads"));
+    assert!(
+        code(4)
+            .iter()
+            .all(|l| l != "    // only reads" && !l.contains("fn len"))
+    );
+    round_trip(&live, None, "insert inside a later range");
+    live.api_ok("move.delete", json!({"index": 5}));
+    assert_eq!(get(&live)["document"], before["document"]);
+}
+
+/// The messages name the end that would be lost and say what to do.
+#[test]
+fn review2_refusals_name_the_end_that_is_lost() {
+    let dir = examples_copy("messages");
+    let live = open(&dir.join("ownership.rs.tiza"));
+    let a4 = ann(&get(&live), "a4");
+    let (f, t) = (
+        a4["from_line"].as_u64().unwrap(),
+        a4["to_line"].as_u64().unwrap(),
+    );
+    let e = move_err(
+        &live,
+        json!({"at_step": a4["step"], "action": "code.patch", "op": "delete", "position": f.to_string()}),
+    );
+    assert!(
+        e.ends_with(&format!(
+            "removes line {f}, its first line (lines {f}-{t}); delete or move a4 first"
+        )),
+        "{e}"
+    );
+    drop(live);
+    let live = open(&dir.join("ownership-moves.rs.tiza"));
+    // a2 is an arrow from line 2 to line 7 at step 1.
+    let e = move_err(
+        &live,
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "7"}),
+    );
+    assert!(
+        e.starts_with("annotation a2, step 1: move #5 (step 1), the one being added, removes line 7, where its end is"),
+        "{e}"
+    );
+    // The review's repro of «another line (line 9 instead of line 9)»: no
+    // later move's text target moves (the insert is held by the line before
+    // it), so it is accepted. The message itself: carry.rs unit tests.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 2, "action": "code.patch", "op": "insert",
+               "before": "// println!(\"{s}\"); // error: value borrowed here after move",
+               "content": "    // println!(\"{s}\"); // error: value borrowed here after move // edited 10"}),
+    );
+    round_trip(&live, None, "the insert before a repeated line");
+}
+
+/// After a put of edited code (autosave off), a put of the file's code
+/// says the file is a reference again and autosave still off.
+#[test]
+fn review2_the_bar_says_a_file_is_a_reference_again() {
+    let dir = reference_demo("again");
+    let live = open(&dir.join("main.rs"));
+    let original = get(&live);
+    let mut edited = original.clone();
+    edited["document"]["code"][2] = json!("    println!(\"edited\");");
+    put(&live, &edited["document"]).unwrap();
+    put(&live, &original["document"]).unwrap();
+    let m = message(&live);
+    assert_eq!(
+        m,
+        "main.rs is a reference again; autosave still off (:autosave on resumes)"
     );
 }
 
@@ -1084,6 +1250,36 @@ struct Tally {
     accepted: usize,
     refused: usize,
     undone: usize,
+    /// Refusals by what the message says the move would do.
+    why: std::collections::BTreeMap<&'static str, usize>,
+}
+
+/// What a refusal says the move would do, in a few words.
+fn reason(msg: &str) -> &'static str {
+    [
+        (
+            "where the text it marks is",
+            "removes a mark's or highlight's line",
+        ),
+        ("where its start is", "removes an arrow end's line"),
+        ("where its end is", "removes an arrow end's line"),
+        ("where it is;", "removes a note's line"),
+        ("rewrites line", "rewrites the text under an anchor"),
+        ("its first line (", "removes a range's first line"),
+        ("its last line (", "removes a range's last line"),
+        ("the line it inserts after", "removes a later insert's line"),
+        ("lines it changes", "removes an end of a later move's range"),
+        ("the line it changes", "removes a later move's line"),
+        (
+            "another line with the same text",
+            "moves a later text target",
+        ),
+        ("of its window", "removes a window's end"),
+        ("rebind", "moves a rebind line"),
+    ]
+    .iter()
+    .find(|(k, _)| msg.contains(k))
+    .map_or("its own target is invalid", |(_, v)| v)
 }
 
 /// The loop on one document, with its own instance and seed.
@@ -1112,6 +1308,7 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
         let r = live.api("move.add", m.clone());
         if let Some(e) = r.error {
             t.refused += 1;
+            *t.why.entry(reason(&e.message)).or_default() += 1;
             assert!(
                 e.message.starts_with("move #") || e.message.starts_with("annotation "),
                 "{name}: {m}: an unnamed refusal: {}",
@@ -1138,12 +1335,28 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
                 assert_eq!(was, is, "{what}: the text under {id}");
             }
         }
-        // An insert only adds its own lines, at every step from its own on.
+        // An insert only adds its own lines, at every step from its own on
+        // — until a later replace or delete whose range holds them takes
+        // them along (the document is then as it was).
         if m["op"] == "insert" {
             let codes = codes_by_step(&live, last_step);
+            let moves = get(&live)["document"]["moves"].clone();
+            let s0 = step_of(&m);
+            let edited = live.with(move |a| a.doc.shown_view_at(s0).file);
+            let taken_by_then = |step: u32| {
+                moves.as_array().unwrap().iter().any(|l| {
+                    (step_of(&m) + 1..=step).contains(&step_of(l))
+                        && (l["op"] == "replace" || l["op"] == "delete")
+                })
+            };
             for ((step, key, was), (_, _, is)) in codes_before.iter().zip(&codes) {
-                if *step < step_of(&m) || was == is {
+                if *step < step_of(&m) || (was == is && *step > step_of(&m) && taken_by_then(*step))
+                {
                     assert_eq!(was, is, "{what}: step {step}, {key:?}");
+                    continue;
+                }
+                if *key != edited {
+                    assert_eq!(was, is, "{what}: step {step}, {key:?} is another file");
                     continue;
                 }
                 assert!(
@@ -1229,6 +1442,13 @@ fn ac5_random_moves_on_the_examples_survive_get_put() {
         sum(|t| t.undone),
         started.elapsed().as_secs_f64()
     );
+    let mut why = std::collections::BTreeMap::new();
+    for t in &tallies {
+        for (k, v) in &t.why {
+            *why.entry(*k).or_insert(0) += v;
+        }
+    }
+    eprintln!("t-188 refusals: {why:?}");
     for (name, t) in names.iter().zip(&tallies) {
         assert!(
             t.accepted >= t.tried / 3,
