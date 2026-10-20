@@ -705,7 +705,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size; plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
+        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size (`stale_moves`: how many moves are skipped because the code changed under them); plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         let mut v = self.call("status", json!({})).await?;
@@ -750,7 +750,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the existing annotations (id, step, kind and where they are), after a first line with the current step as the status line shows it (`step 3/7 · Shared borrow` on a named step). An annotation of a linked file ends with its file in parentheses; one hidden by a patch says (unanchored)."
+        description = "Lists the existing annotations (id, step, kind and where they are), after a first line with the current step as the status line shows it (`step 3/7 · Shared borrow` on a named step). An annotation of a linked file ends with its file in parentheses; one hidden by a patch says (unanchored). A move the code changed under (a follow reload, a paste) and that no longer matches is listed last as `move #N … (stale: why)`: it is skipped until it matches again."
     )]
     async fn list_annotations(
         &self,
@@ -1041,7 +1041,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the moves (index, step, summary), the annotation ids unanchored at the current step and the file/window a `code.link` shows (`view`)."
+        description = "Lists the moves (index, step, summary), the annotation ids unanchored at the current step and the file/window a `code.link` shows (`view`). A move the code changed under (a follow reload, a paste) and that no longer matches it has `stale: true` and `stale_reason` (`line 2 changed`, `find «x» matches nothing in the code`): it is skipped when stepping, never moved, and kept in the file as written; fix it (delete and add it again on the code as it is now) or change the code back."
     )]
     async fn list_moves(
         &self,

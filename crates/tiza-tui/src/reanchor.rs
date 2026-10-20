@@ -52,6 +52,9 @@ pub struct Outcome {
     pub recorded: bool,
     pub kept: usize,
     pub dropped: usize,
+    /// What changed in the moves that no longer match the code
+    /// (`tiza_core::stale`), for the status line.
+    pub stale: Option<String>,
 }
 
 /// How a line was found in the new version.

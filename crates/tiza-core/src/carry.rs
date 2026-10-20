@@ -482,6 +482,9 @@ pub fn carry(
         let (step, _) = step_of(item);
         r.carry_annotations(step.saturating_sub(1))?;
         match *item {
+            // A stale move is not applied (crate::stale), so it is neither
+            // replayed nor carried: it keeps its numbers.
+            (Some(o), _) if old[o].stale.is_some() => {}
             (Some(o), Some(n)) => {
                 let shown = r.old.shown.clone();
                 r.load(&shown);

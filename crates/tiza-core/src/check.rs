@@ -504,6 +504,7 @@ fn placeholder(at_step: u32) -> Move {
         at_step: at_step.max(1),
         action: MoveAction::Wait(Wait { ms: 1 }),
         rebind: BTreeMap::new(),
+        stale: None,
     }
 }
 
@@ -604,6 +605,8 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
     let mut moves = doc.moves.clone();
     let mut broken = vec![false; moves.len()];
     for (i, m) in moves.iter_mut().enumerate() {
+        // A live document's stale moves are checked as a fresh load would.
+        m.stale = None;
         let name = format!("move #{}", i + 1);
         if m.at_step == 0 {
             out.push(

@@ -186,6 +186,12 @@
             "minimum": 0,
             "type": "integer"
           },
+          "stale_moves": {
+            "description": "Moves skipped because the code changed under them (a follow reload,\na paste) and they no longer match it (`move.list` says why).",
+            "format": "uint",
+            "minimum": 0,
+            "type": "integer"
+          },
           "step": {
             "format": "uint32",
             "minimum": 0,
@@ -5096,6 +5102,17 @@
                 },
                 "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
                 "type": "object"
+              },
+              "stale": {
+                "description": "The code changed under it (a follow reload, a paste) and it no longer\nmatches: it is skipped until it does again (ADR 0007 §7).",
+                "type": "boolean"
+              },
+              "stale_reason": {
+                "description": "Why it is stale (`line 2 changed`, `find «x» matches nothing in the\ncode`).",
+                "type": [
+                  "string",
+                  "null"
+                ]
               },
               "summary": {
                 "type": "string"

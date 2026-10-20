@@ -870,6 +870,10 @@ pub struct Status {
     /// Never saved nor exported. Always present.
     #[serde(default)]
     pub pointer: Option<PointerAt>,
+    /// Moves skipped because the code changed under them (a follow reload,
+    /// a paste) and they no longer match it (`move.list` says why).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub stale_moves: usize,
 }
 
 /// Where the live pointer is (t-030).
@@ -1137,6 +1141,14 @@ pub struct MoveIndexParams {
 pub struct MoveListed {
     pub index: usize,
     pub summary: String,
+    /// The code changed under it (a follow reload, a paste) and it no longer
+    /// matches: it is skipped until it does again (ADR 0007 §7).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub stale: bool,
+    /// Why it is stale (`line 2 changed`, `find «x» matches nothing in the
+    /// code`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale_reason: Option<String>,
     #[serde(flatten)]
     pub r#move: crate::moves::Move,
 }
@@ -1163,8 +1175,17 @@ pub struct MoveMutated {
     pub revision: u64,
 }
 
-/// One line per move, in the `move.list` / `:moves` format.
+/// One line per move, in the `move.list` / `:moves` format; a stale move
+/// ends with `(stale: <why>)`.
 pub fn describe_move(index: usize, m: &crate::moves::Move) -> String {
+    let line = describe_move_fields(index, m);
+    match &m.stale {
+        Some(s) => format!("{line} (stale: {})", s.reason),
+        None => line,
+    }
+}
+
+fn describe_move_fields(index: usize, m: &crate::moves::Move) -> String {
     use crate::moves::{MoveAction, PatchOp, Typing};
     let p = match &m.action {
         MoveAction::CodePatch(p) => p,

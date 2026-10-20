@@ -1180,8 +1180,15 @@ impl App {
         // Linked files (t-105): embedded in `views`, else read next to the
         // open document.
         fs::load_views(&mut doc, base.as_deref())?;
+        // The open document's stale moves come back stale (and the
+        // annotations they hide, hidden), as `scene.get` gave them out.
+        if !other {
+            tiza_core::stale::inherit(&self.doc, &mut doc);
+        }
         doc.normalize_loaded()?;
-        for a in &doc.annotations {
+        tiza_core::stale::revalidate(None, &mut doc);
+        let held = tiza_core::stale::held(&doc);
+        for a in doc.annotations.iter().filter(|a| !held.contains(&a.id)) {
             doc.validate_annotation(a).map_err(|e| Error::Within {
                 what: format!("annotation {}, step {}", a.id, a.step),
                 inner: Box::new(e),
@@ -1726,7 +1733,8 @@ impl App {
             return doc.annotations.iter().map(describe).collect();
         }
         let view = doc.view_at(doc.step);
-        doc.annotations
+        let mut lines: Vec<String> = doc
+            .annotations
             .iter()
             .map(|a| {
                 if view.unanchored.contains(&a.id) {
@@ -1736,7 +1744,16 @@ impl App {
                     describe(shown)
                 }
             })
-            .collect()
+            .collect();
+        // A move the code changed under is listed, with why it is skipped.
+        lines.extend(
+            doc.moves
+                .iter()
+                .enumerate()
+                .filter(|(_, m)| m.stale.is_some())
+                .map(|(i, m)| format!("move {}", tiza_core::protocol::describe_move(i + 1, m))),
+        );
+        lines
     }
 
     /// `move.list` payload.
@@ -1750,6 +1767,8 @@ impl App {
                 .map(|(i, m)| MoveListed {
                     index: i + 1,
                     summary: tiza_core::protocol::describe_move(i + 1, m),
+                    stale: m.stale.is_some(),
+                    stale_reason: m.stale.as_ref().map(|s| s.reason.clone()),
                     r#move: m.clone(),
                 })
                 .collect(),
@@ -1898,29 +1917,42 @@ impl App {
         }
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
-        if out.dropped > 0 {
-            self.info(format!(
+        let msg = if out.dropped > 0 {
+            format!(
                 "{} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
                 self.doc.code.len(),
                 out.dropped,
                 if out.dropped == 1 { "" } else { "s" }
-            ));
+            )
         } else {
-            self.info(format!(
+            format!(
                 "{} lines pasted ({} annotations kept)",
                 self.doc.code.len(),
                 out.kept
-            ));
-        }
+            )
+        };
+        self.stale_notice(out.stale, msg);
         Ok(())
+    }
+
+    /// The status line after a paste or a reload: what changed in the
+    /// stale moves first (the bar may cut the end), loud when a move
+    /// stopped matching, then `msg`.
+    fn stale_notice(&mut self, stale: Option<String>, msg: String) {
+        match stale {
+            Some(s) if s.contains("no longer match") => self.error(format!("{s} · {msg}")),
+            Some(s) => self.info(format!("{s} · {msg}")),
+            None => self.info(msg),
+        }
     }
 
     /// Replaces the code lines (and where they come from), re-anchoring the
     /// annotations by text. One undoable step labelled `always` — or, with
     /// `None` (a follow reload), only when the reload touched an annotation
-    /// (something dropped or shifted): a harmless reload leaves no step, so
-    /// that after an editor undo that restores dropped text, one `u` reaches
-    /// the reload that dropped it. Returns (kept, dropped, recorded).
+    /// (something dropped or shifted) or a move's stale mark: a harmless
+    /// reload leaves no step, so that after an editor undo that restores
+    /// dropped text, one `u` reaches the reload that dropped it. Returns
+    /// (kept, dropped, recorded) and the notice about stale moves.
     fn apply_new_code(
         &mut self,
         code: Vec<String>,
@@ -1942,6 +1974,13 @@ impl App {
         d.source.first_line = first_line;
         let before = self.doc.annotations.len();
         let old = self.doc.clone();
+        // The demo did not write this change: a move that no longer matches
+        // the new code is skipped, never moved (ADR 0007 §7).
+        let stale = tiza_core::stale::revalidate(Some(&old), &mut d);
+        // An annotation on a line a now stale patch wrote is hidden and
+        // kept as it is, never re-anchored onto other text.
+        let mut held = tiza_core::stale::held(&old);
+        held.extend(tiza_core::stale::hold_new(&old, &mut d));
         // Each annotation is authored against the code at its own step
         // (ADR 0007 §3d), so it is re-anchored between the old and the new
         // code *at that step*: the moves are re-applied on the new text and
@@ -1969,29 +2008,36 @@ impl App {
             s.step = step;
             s
         };
+        // One a stale move hides keeps its place: the text it was on is
+        // the move's, not in the new code.
         let mut shapes: Vec<Option<Shape>> = old
             .annotations
             .iter()
-            .map(|a| a.file.is_some().then(|| a.shape.clone()))
+            .map(|a| (a.file.is_some() || held.contains(&a.id)).then(|| a.shape.clone()))
             .collect();
         for step in steps {
             let old_s = at_step(&old, step);
             let new_s = at_step(&d, step);
             let mut remap = crate::reanchor::Remap::new(&old_s, &new_s);
             for (a, slot) in old.annotations.iter().zip(shapes.iter_mut()) {
-                if a.step == step && a.file.is_none() {
+                if a.step == step && a.file.is_none() && !held.contains(&a.id) {
                     *slot = remap.shape(&a.shape);
                 }
             }
         }
         for (a, shape) in old.annotations.iter().zip(shapes) {
-            if let Some(shape) = shape {
+            match shape {
                 // `add` validates against the code at the annotation's step.
-                let _ = d.add(Annotation { shape, ..a.clone() });
+                Some(shape) if !held.contains(&a.id) => {
+                    let _ = d.add(Annotation { shape, ..a.clone() });
+                }
+                Some(shape) => d.annotations.push(Annotation { shape, ..a.clone() }),
+                None => {}
             }
         }
         let kept = d.annotations.len();
-        let harmless = kept == before && d.annotations == snapshot.annotations;
+        let harmless =
+            kept == before && d.annotations == snapshot.annotations && d.moves == snapshot.moves;
         let recorded = always.is_some() || !harmless;
         if recorded {
             self.history
@@ -2005,6 +2051,7 @@ impl App {
             kept,
             dropped: before.saturating_sub(kept),
             recorded,
+            stale,
         }
     }
 
@@ -2129,7 +2176,7 @@ impl App {
         if out.recorded {
             self.history.label_last(format!("reload #{reloads}"));
         }
-        self.info(format!(
+        let msg = format!(
             "{name} reloaded (#{reloads}): {} annotation{} kept{}",
             out.kept,
             if out.kept == 1 { "" } else { "s" },
@@ -2138,7 +2185,8 @@ impl App {
             } else {
                 String::new()
             }
-        ));
+        );
+        self.stale_notice(out.stale, msg);
         true
     }
 
@@ -3364,6 +3412,7 @@ impl App {
                 lines: lines.clone(),
             }),
             rebind: Default::default(),
+            stale: None,
         };
         let i = self.add_move(m)?;
         Ok(format!(
@@ -4872,6 +4921,7 @@ impl App {
             numbers: self.doc.numbers,
             margin: self.doc.margin,
             pointer: self.pointer,
+            stale_moves: tiza_core::stale::count(&self.doc),
         }
     }
 

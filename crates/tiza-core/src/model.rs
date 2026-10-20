@@ -1041,7 +1041,7 @@ impl Document {
     pub fn typing_ms_at(&self, step: u32) -> u64 {
         self.moves
             .iter()
-            .filter(|m| m.at_step == step)
+            .filter(|m| m.at_step == step && m.stale.is_none())
             .map(|m| match &m.action {
                 MoveAction::CodePatch(p) => p.typing_ms(),
                 MoveAction::Wait(w) => w.ms,
@@ -1254,6 +1254,7 @@ impl Document {
                 at_step: m.at_step,
                 action: MoveAction::Wait(moves::Wait { ms: 1 }),
                 rebind: BTreeMap::new(),
+                stale: None,
             },
         );
         moves::validate(&with, &numbered, &with.annotations).map_err(|e| Error::Within {
@@ -1324,6 +1325,13 @@ impl Document {
                     }
                     None => moves::shift_shape(cur, &ap.map),
                 };
+            }
+        }
+        // Kept as they were while the move that writes their text is stale.
+        let held = crate::stale::held(self);
+        for (a, slot) in self.annotations.iter().zip(shapes.iter_mut()) {
+            if held.contains(&a.id) {
+                *slot = None;
             }
         }
         let (code, first) = proj.shown_code(self);

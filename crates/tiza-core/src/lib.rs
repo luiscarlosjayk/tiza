@@ -24,6 +24,7 @@ pub mod printable;
 pub mod protocol;
 pub mod schema;
 pub mod socket;
+pub mod stale;
 pub mod steps;
 pub mod theme;
 

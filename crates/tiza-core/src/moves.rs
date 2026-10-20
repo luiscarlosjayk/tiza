@@ -33,6 +33,12 @@ pub struct Move {
     /// keys (or an unknown one) is a load-time error.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rebind: BTreeMap<String, MoveSpec>,
+    /// Set in a live instance when the code changed under the move by
+    /// something the demo did not write (a follow reload, a paste) and the
+    /// move no longer matches it: the move is skipped until a later change
+    /// makes it match again. Never saved nor sent (see [`crate::stale`]).
+    #[serde(skip)]
+    pub stale: Option<crate::stale::Stale>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -709,27 +715,51 @@ fn resolve_point(
     })
 }
 
-/// The document at `step`: the moves `<= step` applied in step order then
-/// list order, each on the view shown at its point. An error names the
-/// move that failed.
-pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, Error> {
+/// The moves `<= step` in the order they run: step order, then list order.
+pub(crate) fn replay_order(moves: &[Move], step: u32) -> Vec<(usize, &Move)> {
     let mut order: Vec<(usize, &Move)> = moves
         .iter()
         .enumerate()
         .filter(|(_, m)| m.at_step <= step)
         .collect();
     order.sort_by_key(|(i, m)| (m.at_step, *i));
-    let mut p = Projection::default();
-    p.codes
-        .insert(None, doc.view_base_code(&None).unwrap_or_default());
-    for (i, m) in order {
-        let named = |e: Error| name_move(e, i, m.at_step);
+    order
+}
+
+/// The document at `step`: the moves `<= step` applied in step order then
+/// list order, each on the view shown at its point. A stale move is
+/// skipped. An error names the move that failed.
+pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, Error> {
+    let mut p = Projection::start(doc);
+    for (i, m) in replay_order(moves, step) {
+        if m.stale.is_some() {
+            continue;
+        }
+        p.apply_move(doc, i, m)
+            .map_err(|e| name_move(e, i, m.at_step))?;
+    }
+    Ok(p)
+}
+
+impl Projection {
+    /// Step 0: the main file's code, nothing shown but it.
+    pub(crate) fn start(doc: &Document) -> Projection {
+        let mut p = Projection::default();
+        p.codes
+            .insert(None, doc.view_base_code(&None).unwrap_or_default());
+        p
+    }
+
+    /// Runs move `m` (number `i` of the list) on the view shown now. On an
+    /// error nothing changes and the error does not name the move yet.
+    pub(crate) fn apply_move(&mut self, doc: &Document, i: usize, m: &Move) -> Result<(), Error> {
+        let p = self;
         match &m.action {
             MoveAction::CodePatch(patch) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
                 let code = p.codes.get(&key).cloned().unwrap_or_default();
-                let target = patch.resolve(&code, first).map_err(named)?;
+                let target = patch.resolve(&code, first)?;
                 let (new_code, map) = patch.apply_target(&code, first, target);
                 if let Some(c) = p.cursor {
                     p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
@@ -762,16 +792,16 @@ pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, 
             }
             MoveAction::CodeLink(link) => {
                 let key = doc.view_key(&link.file);
+                let window = link.window()?;
                 if !p.codes.contains_key(&key) {
                     let base = doc.view_base_code(&key).ok_or_else(|| {
-                        named(Error::Invalid(format!(
+                        Error::Invalid(format!(
                             "code.link «{}»: the file is not loaded (it could not be read next to the document; `:embed` stores it)",
                             link.file
-                        )))
+                        ))
                     })?;
                     p.codes.insert(key.clone(), base);
                 }
-                let window = link.window().map_err(named)?;
                 p.shown = ViewRef { file: key, window };
                 p.cursor = None;
                 p.selection = None;
@@ -779,35 +809,33 @@ pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, 
             MoveAction::Cursor(c) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                let code = p.codes.get(&key).cloned().unwrap_or_default();
+                let code = p.codes.get(&key).map(Vec::as_slice).unwrap_or_default();
                 let last = first + code.len().saturating_sub(1) as u32;
                 if c.line < first || c.line > last {
-                    return Err(named(Error::LineOutOfRange {
+                    return Err(Error::LineOutOfRange {
                         line: c.line,
                         first,
                         last,
-                    }));
+                    });
                 }
                 let len = code[(c.line - first) as usize].graphemes(true).count() as u32;
                 let col = c.col.unwrap_or(0);
                 if col > len {
-                    return Err(named(Error::SpanOutOfRange {
+                    return Err(Error::SpanOutOfRange {
                         line: c.line,
                         start: col,
                         end: col,
                         len,
-                    }));
+                    });
                 }
                 p.cursor = Some(Anchor { line: c.line, col });
             }
             MoveAction::Select(s) => {
                 let key = p.shown.file.clone();
                 let first = doc.view_first_line(&key);
-                let code = p.codes.get(&key).cloned().unwrap_or_default();
-                let a = resolve_point(doc, &code, first, &s.from, "select from", false)
-                    .map_err(named)?;
-                let b =
-                    resolve_point(doc, &code, first, &s.to, "select to", true).map_err(named)?;
+                let code = p.codes.get(&key).map(Vec::as_slice).unwrap_or_default();
+                let a = resolve_point(doc, code, first, &s.from, "select from", false)?;
+                let b = resolve_point(doc, code, first, &s.to, "select to", true)?;
                 let (a, b) = if (b.line, b.col) < (a.line, a.col) {
                     (b, a)
                 } else {
@@ -817,12 +845,12 @@ pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, 
             }
             MoveAction::Wait(w) => {
                 if w.ms == 0 {
-                    return Err(named(Error::Invalid("wait: ms must be >= 1".into())));
+                    return Err(Error::Invalid("wait: ms must be >= 1".into()));
                 }
             }
         }
+        Ok(())
     }
-    Ok(p)
 }
 
 /// Where `line` of the code shown at step `from` is at step `to` (t-030:
@@ -917,37 +945,47 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
     let p = project(doc, moves, u32::MAX)?;
     for ap in &p.patches {
         let m = &moves[ap.index];
-        let first = doc.view_first_line(&ap.file);
-        for (id, spec) in &m.rebind {
-            for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
-                let (Some(text), None) = (&w.find, w.line) else {
-                    continue;
-                };
-                let n = matches_of(&ap.after, first, text).len();
-                let bad = match w.occurrence {
-                    None if n == 1 => None,
-                    None => Some(format!(
-                        "«{text}» matches {n} time{} after the patch; it must match exactly once (add occurrence: N)",
-                        if n == 1 { "" } else { "s" }
-                    )),
-                    Some(0) => Some(format!("«{text}»: occurrence is 1-based")),
-                    Some(k) if (k as usize) > n => Some(format!(
-                        "«{text}»: occurrence {k} asked, only {n} match{} after the patch",
-                        if n == 1 { "" } else { "es" }
-                    )),
-                    Some(_) => None,
-                };
-                if let Some(why) = bad {
-                    return Err(Error::Invalid(format!(
-                        "move #{}, step {}: rebind «{id}» {why}",
-                        ap.index + 1,
-                        m.at_step
-                    )));
-                }
-            }
+        if let Some(why) = rebind_problem(m, &ap.after, doc.view_first_line(&ap.file)) {
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: {why}",
+                ap.index + 1,
+                m.at_step
+            )));
         }
     }
     Ok(())
+}
+
+/// What is wrong with the `find`s of a patch's `rebind` on `after`, the
+/// code right after the patch (`rebind «a3» «x» matches 2 times…`), if
+/// anything: each must match exactly once or carry an `occurrence` within
+/// the matches.
+pub(crate) fn rebind_problem(m: &Move, after: &[String], first: u32) -> Option<String> {
+    for (id, spec) in &m.rebind {
+        for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
+            let (Some(text), None) = (&w.find, w.line) else {
+                continue;
+            };
+            let n = matches_of(after, first, text).len();
+            let bad = match w.occurrence {
+                None if n == 1 => None,
+                None => Some(format!(
+                    "«{text}» matches {n} time{} after the patch; it must match exactly once (add occurrence: N)",
+                    if n == 1 { "" } else { "s" }
+                )),
+                Some(0) => Some(format!("«{text}»: occurrence is 1-based")),
+                Some(k) if (k as usize) > n => Some(format!(
+                    "«{text}»: occurrence {k} asked, only {n} match{} after the patch",
+                    if n == 1 { "" } else { "es" }
+                )),
+                Some(_) => None,
+            };
+            if let Some(why) = bad {
+                return Some(format!("rebind «{id}» {why}"));
+            }
+        }
+    }
+    None
 }
 
 /// An error from applying a move, naming the move (1-based) and its step,
@@ -1522,6 +1560,7 @@ mod tests {
                 lines: lines.map(String::from),
             }),
             rebind: BTreeMap::new(),
+            stale: None,
         };
         d.add_move(link(1, "lib.rs", Some("2-9"))).unwrap();
         d.add_move(link(2, "main.rs", Some("3-4"))).unwrap();
