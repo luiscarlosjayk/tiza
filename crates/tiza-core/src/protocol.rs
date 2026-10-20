@@ -1060,7 +1060,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.put",
-        "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI",
+        "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI. Code sent equal to the file it came from keeps that file a reference; a put that changes nothing writes nothing",
     ),
     (
         "scene.patch",
@@ -1068,11 +1068,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.add",
-        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step",
+        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it",
     ),
     (
         "move.delete",
-        "Deletes a move by `index` (1-based, as `move.list` shows it)",
+        "Deletes a move by `index` (1-based, as `move.list` shows it); a patch carries back what it carried",
     ),
     (
         "move.list",

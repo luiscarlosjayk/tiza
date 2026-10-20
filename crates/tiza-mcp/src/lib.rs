@@ -991,7 +991,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly."
+        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; annotations of that file at that step or later, and the line numbers of later moves, are carried through it so they stay on the same text (a patch that removes or rewrites the text one of them is on is refused, naming it); `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly."
     )]
     async fn add_move(
         &self,
@@ -1028,7 +1028,9 @@ impl TizaServer {
         Ok(text(pretty(&self.call("move.add", m).await?)))
     }
 
-    #[tool(description = "Deletes a move by its 1-based index (see list_moves).")]
+    #[tool(
+        description = "Deletes a move by its 1-based index (see list_moves). Deleting a `code.patch` carries the annotations and later moves it had carried back (one on a line that patch wrote is refused, naming it)."
+    )]
     async fn delete_move(
         &self,
         Parameters(p): Parameters<MoveIndexParams>,

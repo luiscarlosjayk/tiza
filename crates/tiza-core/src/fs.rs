@@ -411,7 +411,7 @@ pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Err
             doc.view_code.insert(key, code);
             continue;
         }
-        let code = load_view_file(&file, base_dir)
+        let code = read_view_file(&file, base_dir)
             .map_err(|e| Error::Invalid(format!("move #{}, step {at_step}: {e}", i + 1)))?;
         doc.view_code.insert(key, code);
     }
@@ -427,12 +427,14 @@ pub fn load_view(doc: &mut Document, file: &str, base_dir: Option<&Path>) -> Res
     if doc.view_code.contains_key(&key) {
         return Ok(());
     }
-    let code = load_view_file(file, base_dir)?;
+    let code = read_view_file(file, base_dir)?;
     doc.view_code.insert(key, code);
     Ok(())
 }
 
-fn load_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>, Error> {
+/// The code of a file a `code.link` names, read whole from disk (`file`
+/// resolved like `code.file`, against `base_dir`).
+pub fn read_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>, Error> {
     let full = view_path(file, base_dir);
     let text = std::fs::read_to_string(&full).map_err(|e| {
         Error::Invalid(format!(
@@ -482,9 +484,17 @@ pub fn source_file(doc: &Document, base_dir: Option<&Path>) -> Option<PathBuf> {
 /// returns the new lines without touching `doc`. Errors say what happened
 /// (missing file, not UTF-8, permission) in one sentence.
 pub fn reread_code(doc: &Document, base_dir: Option<&Path>) -> Result<Vec<String>, Error> {
+    reread_reference(doc, base_dir).map(|(code, _)| code)
+}
+
+/// [`reread_code`] with the first line the range starts at.
+pub fn reread_reference(
+    doc: &Document,
+    base_dir: Option<&Path>,
+) -> Result<(Vec<String>, u32), Error> {
     let mut copy = doc.clone();
     resolve_code(&mut copy, base_dir)?;
-    Ok(copy.code)
+    Ok((copy.code, copy.source.first_line))
 }
 
 /// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
@@ -562,11 +572,16 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
     }
 }
 
-/// Saves atomically (tmp + rename), as editors do.
-pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
+/// The text [`save_document`] writes for `doc`.
+pub fn document_json(doc: &Document) -> Result<String, Error> {
     let mut doc = doc.clone();
     doc.sync_code_src();
-    let json = serde_json::to_string_pretty(&doc)?;
+    Ok(serde_json::to_string_pretty(&doc)?)
+}
+
+/// Saves atomically (tmp + rename), as editors do.
+pub fn save_document(doc: &Document, path: &Path) -> Result<(), Error> {
+    let json = document_json(doc)?;
     // The save is an atomic replace (temp file + rename), which would walk
     // over a file the user made read-only: honour the bit instead.
     if let Ok(meta) = std::fs::metadata(path)

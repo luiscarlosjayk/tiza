@@ -953,7 +953,7 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
 /// An error from applying a move, naming the move (1-based) and its step,
 /// so an author sees which move stopped applying — also when the move that
 /// failed is a later one than the one just added or edited.
-fn name_move(e: Error, index: usize, at_step: u32) -> Error {
+pub(crate) fn name_move(e: Error, index: usize, at_step: u32) -> Error {
     match e {
         Error::TextNotFound(t) => Error::MoveNoMatch {
             index: index + 1,
@@ -972,16 +972,28 @@ fn name_move(e: Error, index: usize, at_step: u32) -> Error {
 
 /// Shifts a shape through one patch's line map. `None` = unanchored.
 pub fn shift_shape(shape: &Shape, map: &LineMap) -> Option<Shape> {
-    let line = |l: u32| map.get(l);
+    shift_shape_by(shape, &|l| map.get(l), &|l, _| map.get_column_anchor(l))
+}
+
+/// Shifts a shape line by line: `line` maps a line for line-level anchors
+/// (notes, the ends of a range), `column_line` for column anchors (spans,
+/// arrow ends), given the line and how many graphemes from its start the
+/// anchor stands on (a span's end, an arrow end's column plus one). `None`
+/// = unanchored.
+pub fn shift_shape_by(
+    shape: &Shape,
+    line: &dyn Fn(u32) -> Option<u32>,
+    column_line: &dyn Fn(u32, u32) -> Option<u32>,
+) -> Option<Shape> {
     let span = |s: &TextSpan| {
-        map.get_column_anchor(s.line).map(|l| TextSpan {
+        column_line(s.line, s.end).map(|l| TextSpan {
             line: l,
             start: s.start,
             end: s.end,
         })
     };
     let anchor = |a: &Anchor| {
-        map.get_column_anchor(a.line).map(|l| Anchor {
+        column_line(a.line, a.col.saturating_add(1)).map(|l| Anchor {
             line: l,
             col: a.col,
         })

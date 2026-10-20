@@ -10,6 +10,7 @@
 
 pub mod anim;
 pub mod canvas;
+pub mod carry;
 pub mod cast;
 pub mod check;
 pub mod error;

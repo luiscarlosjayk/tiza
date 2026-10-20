@@ -1133,6 +1133,12 @@ impl Document {
     /// Adds a move (validated against the code at its step). Returns its
     /// index. A `code.link` needs its file loaded first (`fs::load_view`
     /// or an entry in `views`).
+    ///
+    /// A `code.patch` changes the code that the annotations of its file at
+    /// its step and later, and the moves that run after it, were written
+    /// against: they are carried through it ([`crate::carry`]), so they
+    /// stay on the same text. One whose line it removes is an error naming
+    /// it, and nothing changes.
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         let what = format!("move #{}", self.moves.len() + 1);
         check_step(m.at_step, &what)?;
@@ -1142,19 +1148,41 @@ impl Document {
             with.base_code = with.code.clone();
             with.base_first_line = with.source.first_line;
         }
-        with.moves.push(m.clone());
+        let mut list = with.moves.clone();
+        list.push(m);
+        if matches!(list[list.len() - 1].action, MoveAction::CodePatch(_)) {
+            let (carried, annotations) =
+                crate::carry::carry(&with, &with.moves, &list, crate::carry::Change::Added)?;
+            list = carried;
+            with.annotations = annotations;
+        }
+        with.moves = list;
         moves::validate(&with, &with.moves, &with.annotations)?;
         *self = with;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
     }
 
-    /// Deletes the move at `index` (0-based).
+    /// Deletes the move at `index` (0-based). A `code.patch` carries the
+    /// annotations and later moves back, as [`Document::add_move`] carried
+    /// them; one on a line that patch wrote is an error naming it.
     pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
         if index >= self.moves.len() {
             return Err(Error::MoveNotFound(format!("#{}", index + 1)));
         }
-        let m = self.moves.remove(index);
+        let mut list = self.moves.clone();
+        let m = list.remove(index);
+        if matches!(m.action, MoveAction::CodePatch(_)) {
+            let (carried, annotations) = crate::carry::carry(
+                self,
+                &self.moves,
+                &list,
+                crate::carry::Change::Deleted(index),
+            )?;
+            list = carried;
+            self.annotations = annotations;
+        }
+        self.moves = list;
         if self.moves.is_empty() {
             self.code = std::mem::take(&mut self.base_code);
             self.source.first_line = self.base_first_line;

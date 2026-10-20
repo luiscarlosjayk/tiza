@@ -252,6 +252,15 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "move.list",
 ];
 
+/// The files a `scene.put` sent different code for ([`App::keep_references`]).
+#[derive(Debug, Default)]
+struct SentCode {
+    /// Changed by the agent: shown, not saved over the file.
+    edited: Vec<String>,
+    /// Changed on disk since the document was loaded: still a reference.
+    stale: Vec<String>,
+}
+
 pub struct App {
     pub doc: Document,
     pub save_path: PathBuf,
@@ -1125,7 +1134,9 @@ impl App {
     /// Changes the current step. Step 0 is "code only": no annotation is drawn.
     /// `scene.put`: replaces the whole document. The code must come embedded
     /// (the instance cannot resolve a file reference meant for another
-    /// directory); the theme follows the document; one undo step.
+    /// directory); the theme follows the document; one undo step. A put
+    /// that changes nothing (the `scene.get` copy sent back as it was)
+    /// changes nothing: no undo step, no save.
     pub fn put_scene(&mut self, mut doc: Document) -> Result<SceneChanged, Error> {
         // Its numbers first (t-166): a first line near `u32::MAX` or a step
         // past the cap is refused before anything counts with them.
@@ -1140,13 +1151,25 @@ impl App {
                 }
             }
         }
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        let other = doc.source.path != self.doc.source.path;
+        let sent = if other {
+            SentCode::default()
+        } else {
+            self.keep_references(&mut doc, base.as_deref())
+        };
         // Linked files (t-105): embedded in `views`, else read next to the
         // open document.
-        let base = self.save_path.parent().map(Path::to_path_buf);
         fs::load_views(&mut doc, base.as_deref())?;
         doc.normalize_loaded()?;
         for a in &doc.annotations {
-            doc.validate_annotation(a)?;
+            doc.validate_annotation(a).map_err(|e| Error::Within {
+                what: format!("annotation {}, step {}", a.id, a.step),
+                inner: Box::new(e),
+            })?;
+        }
+        if self.same_document(&doc) {
+            return Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()));
         }
         self.finish_typing();
         // Saving rule (t-039/t-110): a document from another source must
@@ -1154,8 +1177,9 @@ impl App {
         // `:w` writes it over that file on purpose, `:w PATH` elsewhere,
         // `:autosave on` resumes. The same source (an agent re-putting an
         // edited copy of the open document, `scene get` → `scene put`)
-        // keeps saving as usual.
-        let other = doc.source.path != self.doc.source.path;
+        // keeps saving as usual, and the files it reads stay references
+        // ([`App::keep_references`]); code sent different from those
+        // files is shown but not saved over them.
         self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
         self.step_ready_at = Some(std::time::Instant::now());
@@ -1173,9 +1197,104 @@ impl App {
                 "another document loaded: autosave off (:w saves over {}, :w PATH saves elsewhere, :autosave on resumes)",
                 self.save_path.display()
             ));
+        } else if !sent.edited.is_empty() {
+            let files = sent.edited.join(", ");
+            if self.autosave {
+                self.autosave = false;
+                self.info(format!(
+                    "the code sent for {files} differs from the file on disk: shown, not saved — autosave off (:w saves it embedded in {}, :w PATH saves elsewhere, :autosave on resumes)",
+                    self.save_path.display()
+                ));
+            } else {
+                self.info(format!(
+                    "the code sent for {files} differs from the file on disk: shown embedded, not saved"
+                ));
+            }
+        } else if !sent.stale.is_empty() {
+            self.info(format!(
+                "{} changed on disk since it was loaded: the document still reads it; the screen keeps the copy loaded (:follow on reloads it)",
+                sent.stale.join(", ")
+            ));
         }
         self.touch();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
+    }
+
+    /// Saving rule of a put of the open document: a file the open document
+    /// reads from disk (its `code.file`, a linked file not frozen in
+    /// `views`) whose code comes back equal to that file's text **now**
+    /// stays a reference — `"code": {"file": …}` (with its `lines`) and the
+    /// link, read from disk again; nothing is embedded. Just a comparison of
+    /// the code sent with the file, no fingerprint and no state kept
+    /// between requests. Code that differs:
+    ///
+    /// - equal to the copy this instance holds: the file changed on disk
+    ///   after it was loaded (the agent sent back what `scene.get` gave
+    ///   out). Still a reference, with the copy loaded on screen, as for an
+    ///   edit made in the TUI meanwhile; listed in `stale`.
+    /// - anything else: the agent changed it. Kept as sent (embedded in
+    ///   memory) and listed in `edited`: the put is shown, autosave stops.
+    ///
+    /// An open document with embedded code (stdin, `:embed`) and the files
+    /// it froze in `views` stay embedded.
+    fn keep_references(&self, doc: &mut Document, base: Option<&Path>) -> SentCode {
+        let mut out = SentCode::default();
+        if let tiza_core::model::CodeSource::File { file, .. } = &self.doc.code_src
+            && let tiza_core::model::CodeSource::Embedded(lines) = &doc.code_src
+        {
+            let on_disk = fs::reread_reference(&self.doc, base).ok();
+            let same = on_disk
+                .as_ref()
+                .is_some_and(|(code, first)| code == lines && *first == doc.source.first_line);
+            let loaded = self.doc.base() == lines.as_slice()
+                && self.doc.base_first() == doc.source.first_line;
+            if same || loaded {
+                doc.code_src = self.doc.code_src.clone();
+                if !same {
+                    out.stale.push(file.clone());
+                }
+            } else {
+                out.edited.push(file.clone());
+            }
+        }
+        for (file, code) in doc.views.clone() {
+            let Some(key) = doc.view_key(&file) else {
+                continue;
+            };
+            // Frozen by the open document (`:embed`): its own embedded code.
+            if self.doc.views.contains_key(&file) || self.doc.views.contains_key(&key) {
+                continue;
+            }
+            let code = if code.is_empty() {
+                vec![String::new()]
+            } else {
+                code
+            };
+            let same = fs::read_view_file(&file, base).is_ok_and(|disk| disk == code);
+            let loaded = self.doc.view_code.get(&key) == Some(&code);
+            if same || loaded {
+                doc.views.remove(&file);
+                doc.view_code.insert(key, code);
+                if !same {
+                    out.stale.push(file);
+                }
+            } else {
+                out.edited.push(file);
+            }
+        }
+        out
+    }
+
+    /// Whether `doc` is the open document as it stands: what a save would
+    /// write, its code and that of its linked files.
+    fn same_document(&self, doc: &Document) -> bool {
+        self.doc.base() == doc.base()
+            && self.doc.base_first() == doc.base_first()
+            && self.doc.view_code == doc.view_code
+            && matches!(
+                (fs::document_json(&self.doc), fs::document_json(doc)),
+                (Ok(a), Ok(b)) if a == b
+            )
     }
 
     /// `scene.patch`: partial changes; annotations merge by id (last write

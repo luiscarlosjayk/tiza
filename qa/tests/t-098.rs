@@ -489,7 +489,19 @@ fn ac3_typing_animation_in_the_tui() {
     live.api_ok("step.prev", json!({}));
     assert!(!live.with(|a| a.is_typing()));
     assert_eq!(code_of(&live).len(), 5);
-    // A fast one runs to completion on its own (ticks in the loop).
+    // A fast one runs to completion on its own (ticks in the loop). The
+    // step-2 note is on a line the move wrote, and deleting a move carries
+    // the annotations back through it: refused, naming the note, until the
+    // note goes.
+    let r = live.api("move.delete", json!({"index": 1}));
+    let e = r.error.unwrap().message;
+    assert!(
+        e.starts_with(
+            "annotation a2, step 2: deleting move #1 (step 2) removes or rewrites line 5"
+        ),
+        "{e}"
+    );
+    live.api_ok("annotation.delete", json!({"id": "a2"}));
     live.api_ok("move.delete", json!({"index": 1}));
     live.api_ok("move.add", insert_after_b(2, "char"));
     live.keys(&[KeyCode::Char('n')]);
@@ -1093,15 +1105,17 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
         "move.add",
         json!({"at_step": 3, "action": "code.patch", "op": "delete", "position": "7"}),
     );
-    // A new step-1 move that shortens the code makes move #2 stop applying:
-    // the error names move #2 and its step, not just the line.
+    // A new step-1 move that removes the line move #2 deletes leaves move #2
+    // without its target: the error names move #2 and its step, not just
+    // the line. A move that only shortens the code carries the later moves'
+    // positions instead (qa/tests/t-188.rs).
     let r = live.api(
         "move.add",
-        json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "let a = 1;"}),
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "5"}),
     );
     let err = r.error.unwrap().message;
     assert!(
-        err.contains("move #2, step 3") && err.contains("line 7 does not exist"),
+        err.contains("move #2, step 3") && err.contains("removes its target (line 7)"),
         "{err}"
     );
     let dir = scratch("t098-render-step");

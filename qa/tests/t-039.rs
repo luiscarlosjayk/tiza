@@ -315,10 +315,12 @@ fn ac4_methods_are_published() {
         json!(false),
         "{patch_schema}"
     );
-    // A round trip: scene.get → scene.put is a no-op on the content.
+    // A round trip: scene.get → scene.put is a no-op on the content, and a
+    // put that changes nothing is no change at all (same revision, no save;
+    // qa/tests/t-188.rs).
     let before = live.api_ok("scene.get", json!({}));
     let r = live.api_ok("scene.put", json!({"document": before["document"]}));
-    assert!(r["revision"].as_u64().unwrap() > before["revision"].as_u64().unwrap());
+    assert_eq!(r["revision"], before["revision"]);
     let after = live.api_ok("scene.get", json!({}));
     let strip = |mut d: Value| {
         // Saving records the active theme; the content is what must match.
