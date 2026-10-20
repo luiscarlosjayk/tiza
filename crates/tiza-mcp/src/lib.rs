@@ -1029,7 +1029,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Deletes a move by its 1-based index (see list_moves). Deleting a `code.patch` carries the annotations and later moves it had carried back (one on a line that patch wrote is refused, naming it)."
+        description = "Deletes a move by its 1-based index (see list_moves). Deleting a `code.patch` carries the annotations and later moves it had carried back; a delete that would leave an annotation without its line, or a later move that no longer applies, is refused, naming it."
     )]
     async fn delete_move(
         &self,

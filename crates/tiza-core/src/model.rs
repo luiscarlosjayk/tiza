@@ -1158,9 +1158,30 @@ impl Document {
         }
         with.moves = list;
         moves::validate(&with, &with.moves, &with.annotations)?;
+        let i = with.moves.len() - 1;
+        self.still_fit(
+            &with,
+            &format!("move #{} (step {})", i + 1, with.moves[i].at_step),
+        )?;
         *self = with;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
+    }
+
+    /// Every annotation that fits its step in `self` still fits it in
+    /// `after` (the document once a move is added or deleted, `change`).
+    fn still_fit(&self, after: &Document, change: &str) -> Result<(), Error> {
+        for (a, b) in self.annotations.iter().zip(&after.annotations) {
+            if self.validate_annotation(a).is_ok()
+                && let Err(e) = after.validate_annotation(b)
+            {
+                return Err(Error::Within {
+                    what: format!("annotation {}, step {}: after {change}", b.id, b.step),
+                    inner: Box::new(e),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Deletes the move at `index` (0-based). A `code.patch` carries the
@@ -1170,23 +1191,42 @@ impl Document {
         if index >= self.moves.len() {
             return Err(Error::MoveNotFound(format!("#{}", index + 1)));
         }
-        let mut list = self.moves.clone();
-        let m = list.remove(index);
+        let mut with = self.clone();
+        let m = with.moves.remove(index);
         if matches!(m.action, MoveAction::CodePatch(_)) {
             let (carried, annotations) = crate::carry::carry(
                 self,
                 &self.moves,
-                &list,
+                &with.moves,
                 crate::carry::Change::Deleted(index),
             )?;
-            list = carried;
-            self.annotations = annotations;
+            with.moves = carried;
+            with.annotations = annotations;
         }
-        self.moves = list;
-        if self.moves.is_empty() {
-            self.code = std::mem::take(&mut self.base_code);
-            self.source.first_line = self.base_first_line;
-        } else {
+        if with.moves.is_empty() {
+            with.code = std::mem::take(&mut with.base_code);
+            with.source.first_line = with.base_first_line;
+        }
+        // The moves left must still apply (a deleted `code.link` sends the
+        // later patches and selections to another file), named as
+        // `move.list` shows them now: a pause holds the deleted one's place.
+        let change = format!("deleting move #{} (step {})", index + 1, m.at_step);
+        let mut numbered = with.moves.clone();
+        numbered.insert(
+            index,
+            Move {
+                at_step: m.at_step,
+                action: MoveAction::Wait(moves::Wait { ms: 1 }),
+                rebind: BTreeMap::new(),
+            },
+        );
+        moves::validate(&with, &numbered, &with.annotations).map_err(|e| Error::Within {
+            what: change.clone(),
+            inner: Box::new(e),
+        })?;
+        self.still_fit(&with, &change)?;
+        *self = with;
+        if !self.moves.is_empty() {
             self.sync_code_to_step();
         }
         Ok(m)

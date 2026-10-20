@@ -2,9 +2,8 @@
 //! deleted (ADR 0007 §3a, §3d).
 //!
 //! Annotations are written against the code as it is at their own step, and
-//! a move's line numbers (`position`, a cursor, a `select` or `rebind` by
-//! line, a `code.link` window) against the code as it is where that move
-//! runs. Adding a `code.patch` at step S changes that code for every
+//! a move's line numbers (`position`, a cursor, a `select` by line) against
+//! the code as it is where that move runs. Adding a `code.patch` at step S changes that code for every
 //! annotation of its file at step S or later and for every move that runs
 //! after it; deleting one changes it back. So the change carries them, by
 //! the patch's own effect and never by a text search: every line keeps an
@@ -13,14 +12,18 @@
 //! line number goes to the line with the same identity on the other side.
 //! A line the change rewrites keeps its line-level anchors (notes, the ends
 //! of a range) at the same offset, and its column anchors only where the
-//! line is unchanged from its start up to them. Something whose text the
-//! change removes cannot be carried, nor a later move whose text target the
-//! change would make match another line: the change is refused, naming it.
+//! line is unchanged from its start up to them. The change is refused,
+//! naming what it is about, when carrying would lose something — an
+//! anchor's text, a range's end, an insertion point, a later move's text
+//! target that would match another line, lines inserted inside a later
+//! move's range — or would move a `code.link` window or a `rebind` line
+//! (rare: refused rather than carried). So deleting a move always gives
+//! back the document from before it was added.
 
 use std::collections::{BTreeMap, HashMap};
 
 use crate::Error;
-use crate::model::{Annotation, Document, Shape};
+use crate::model::{Annotation, Document};
 use crate::moves::{Move, MoveAction, PatchOp, Target, ViewKey, shift_shape_by};
 use crate::protocol::Where;
 use unicode_segmentation::UnicodeSegmentation;
@@ -59,6 +62,9 @@ struct World {
 /// `(before, after)` pairs at the same offset.
 type Rewritten = Vec<(LineId, LineId)>;
 
+/// Where a patch applied: its target and the identities there.
+type Hit = (Target, [Option<LineId>; 2]);
+
 impl World {
     fn lines(&mut self, doc: &Document, key: &ViewKey) -> Option<&mut Lines> {
         if !self.views.contains_key(key) {
@@ -71,31 +77,15 @@ impl World {
 
     /// Replays `m` (the `slot`-th move of the replay) on this side. Only
     /// patches and links change the code; cursors, selections and waits are
-    /// checked by [`crate::moves::validate`] afterwards.
-    fn apply(&mut self, doc: &Document, m: &Move, slot: usize) -> Result<Rewritten, Error> {
-        Ok(self.apply_at(doc, m, slot)?.0)
-    }
-
-    /// The line a patch applies to on this side, without applying it.
-    fn target(&mut self, doc: &Document, m: &Move) -> Result<Option<Target>, Error> {
-        let MoveAction::CodePatch(p) = &m.action else {
-            return Ok(None);
-        };
-        let key = self.shown.clone();
-        let first = doc.view_first_line(&key);
-        match self.lines(doc, &key) {
-            Some(lines) => p.resolve(&lines.code, first).map(Some),
-            None => Ok(None),
-        }
-    }
-
-    /// [`World::apply`], with the place a patch applied at.
-    fn apply_at(
+    /// checked by [`crate::moves::validate`] afterwards. For a patch, also
+    /// where it applied: its target and the identity of the lines there (the
+    /// line it inserts before, `None` at the end; the ends of a range).
+    fn apply(
         &mut self,
         doc: &Document,
         m: &Move,
         slot: usize,
-    ) -> Result<(Rewritten, Option<Target>), Error> {
+    ) -> Result<(Rewritten, Option<Hit>), Error> {
         match &m.action {
             MoveAction::CodePatch(p) => {
                 let key = self.shown.clone();
@@ -104,50 +94,38 @@ impl World {
                     return Ok((Vec::new(), None));
                 };
                 let target = p.resolve(&lines.code, first)?;
+                let id = |l: u32| lines.ids.get(l.checked_sub(first)? as usize).copied();
+                let hit = match p.op {
+                    PatchOp::Insert => [id(target.from), None],
+                    PatchOp::Replace | PatchOp::Delete => [id(target.from), id(target.to)],
+                };
                 let (code, map) = p.apply_target(&lines.code, first, target);
-                let mut ids: Vec<Option<LineId>> = vec![None; code.len()];
-                for (o, n) in map.map.iter().enumerate() {
-                    if let Some(n) = n
-                        && !map.inserted.contains(n)
-                        && let Some(slot_id) = ids.get_mut((n - first) as usize)
-                    {
-                        *slot_id = Some(lines.ids[o]);
-                    }
-                }
-                let mut rewritten = Vec::new();
-                for n in map.inserted.clone() {
-                    let id = LineId::Written {
+                let written = |n: u32| LineId::Written {
+                    slot,
+                    k: (n - map.inserted.start) as usize,
+                };
+                // A patch that leaves no line leaves one empty line, its own.
+                let mut ids: Vec<LineId> = (0..code.len())
+                    .map(|i| LineId::Written {
                         slot,
-                        k: (n - map.inserted.start) as usize,
-                    };
-                    if let Some(s) = ids.get_mut((n - first) as usize) {
-                        *s = Some(id);
-                    }
-                }
-                for o in map.replaced.clone() {
-                    if let Some(n) = map.get(o) {
-                        rewritten.push((
-                            lines.ids[(o - first) as usize],
-                            LineId::Written {
-                                slot,
-                                k: (n - map.inserted.start) as usize,
-                            },
-                        ));
-                    }
-                }
-                // A patch that leaves no line leaves one empty line.
-                let ids = ids
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, id)| {
-                        id.unwrap_or(LineId::Written {
-                            slot,
-                            k: usize::MAX - i,
-                        })
+                        k: usize::MAX - i,
                     })
                     .collect();
+                for (o, n) in map.map.iter().enumerate() {
+                    if let Some(n) = n {
+                        ids[(n - first) as usize] = lines.ids[o];
+                    }
+                }
+                for n in map.inserted.clone() {
+                    ids[(n - first) as usize] = written(n);
+                }
+                let rewritten = map
+                    .replaced
+                    .clone()
+                    .filter_map(|o| Some((lines.ids[(o - first) as usize], written(map.get(o)?))))
+                    .collect();
                 *lines = Lines { code, ids };
-                Ok((rewritten, Some(target)))
+                Ok((rewritten, Some((target, hit))))
             }
             MoveAction::CodeLink(l) => {
                 let key = doc.view_key(&l.file);
@@ -234,42 +212,22 @@ impl<'a> Mapper<'a> {
     }
 
     /// An insertion point (the content goes before `line`; one past the
-    /// last line appends): before the first line from there on that is
-    /// still there, else at the end.
-    fn insertion(&self, line: u32) -> u32 {
-        let last = self.first + self.old.ids.len() as u32;
-        (line..last)
-            .find_map(|l| self.line(l))
-            .unwrap_or(self.first + self.new.ids.len() as u32)
+    /// last line appends): before the same line, which must still be there.
+    fn insertion(&self, line: u32) -> Option<u32> {
+        if line == self.first + self.old.ids.len() as u32 {
+            return Some(self.first + self.new.ids.len() as u32);
+        }
+        self.line(line)
     }
 
-    /// A range: from its first line still there to its last one.
+    /// A range: both ends must still be there (a range is never trimmed,
+    /// so deleting the move gives it back as it was).
     fn range(&self, a: u32, b: u32) -> Option<(u32, u32)> {
-        let x = (a..=b).find_map(|l| self.line(l))?;
-        let y = (a..=b).rev().find_map(|l| self.line(l))?;
-        Some((x, y))
+        Some((self.line(a)?, self.line(b)?))
     }
 }
 
-/// The line (or range) of `shape` that `map` cannot carry, for the message.
-fn lost_at(shape: &Shape, map: &Mapper) -> String {
-    let column = |line: u32, upto: u32| map.column_line(line, upto).is_none().then_some(line);
-    let lost = match shape {
-        Shape::Highlight { span, .. } | Shape::Mark { span, .. } => column(span.line, span.end),
-        Shape::Arrow { from, to, .. } => column(from.line, from.col.saturating_add(1))
-            .or_else(|| column(to.line, to.col.saturating_add(1))),
-        Shape::Note { line, .. } => Some(*line),
-        _ => None,
-    };
-    match lost {
-        Some(l) => lines_text(l, l),
-        None => shape
-            .line_ranges()
-            .first()
-            .map_or_else(|| "its lines".into(), |(f, t)| lines_text(*f, *t)),
-    }
-}
-
+/// `line 7` or `lines 7-9`.
 fn lines_text(a: u32, b: u32) -> String {
     if a == b {
         format!("line {a}")
@@ -301,8 +259,108 @@ fn parse_range(s: &str) -> Option<(u32, u32)> {
     }
 }
 
+/// Every refusal in one format: `<what it is about>: <the change> <what it
+/// does to it>; <what to do>`, e.g. `annotation a1, step 1: move #5 (step
+/// 1), the one being added, removes or rewrites line 3, where it is
+/// anchored; delete or move a1 first`.
+fn refused(about: String, who: &str, does: String, fix: String) -> Error {
+    Error::Invalid(format!("{about}: {who} {does}; {fix}"))
+}
+
+/// Carries a move's own line numbers, written against the code just
+/// before it runs. `index` is the move's number as `move.list` shows it
+/// now (0-based).
+fn carry_before(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<Move, Error> {
+    let Some(map) = map else {
+        return Ok(m.clone());
+    };
+    let mut m = m.clone();
+    let n = index + 1;
+    let about = format!("move #{n}, step {}", m.at_step);
+    let fix = format!("change or delete move #{n} first");
+    let lost = |what: String| refused(about.clone(), who, what, fix.clone());
+    match &mut m.action {
+        MoveAction::CodePatch(p) => {
+            if let Some(pos) = p.position.clone()
+                && let Some((a, b)) = parse_range(&pos)
+            {
+                let (x, y) = match p.op {
+                    PatchOp::Insert => {
+                        let x = map.insertion(a).ok_or_else(|| {
+                            lost(format!("removes line {a}, which it inserts before"))
+                        })?;
+                        (x, x)
+                    }
+                    PatchOp::Replace | PatchOp::Delete => map.range(a, b).ok_or_else(|| {
+                        let end = if a == b { "" } else { "an end of " };
+                        lost(format!("removes {end}its target ({})", lines_text(a, b)))
+                    })?,
+                };
+                if (x, y) != (a, b) {
+                    p.position = Some(position_text(&pos, x, y));
+                }
+            }
+        }
+        MoveAction::Cursor(c) => {
+            c.line = map
+                .line(c.line)
+                .ok_or_else(|| lost(format!("removes its cursor line ({})", c.line)))?;
+        }
+        MoveAction::Select(s) => {
+            for w in [&mut s.from, &mut s.to] {
+                if let Some(l) = w.line {
+                    w.line = Some(
+                        map.line(l)
+                            .ok_or_else(|| lost(format!("removes the line it selects ({l})")))?,
+                    );
+                }
+            }
+        }
+        MoveAction::CodeLink(_) | MoveAction::Wait(_) => {}
+    }
+    Ok(m)
+}
+
+/// A `code.link` window and the `rebind` lines of a patch are line numbers
+/// too (on the file shown and on the code right after the patch); they are
+/// rare, so instead of carrying them the change is refused when it would
+/// move one.
+fn check_after(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
+    let Some(map) = map else { return Ok(()) };
+    let n = index + 1;
+    let moved = |l: u32| map.line(l) != Some(l);
+    let refuse = |what: String| {
+        Err(refused(
+            format!("move #{n}, step {}", m.at_step),
+            who,
+            format!("moves {what}"),
+            format!("change or delete move #{n} first"),
+        ))
+    };
+    if let MoveAction::CodeLink(l) = &m.action
+        && let Some((a, b)) = l.lines.as_deref().and_then(parse_range)
+        && (moved(a) || moved(b))
+    {
+        return refuse(format!("the lines of its window ({})", lines_text(a, b)));
+    }
+    for (id, spec) in &m.rebind {
+        let lines = [&spec.at, &spec.from, &spec.to]
+            .into_iter()
+            .flatten()
+            .filter_map(|w: &Where| w.line)
+            .chain(spec.from_line)
+            .chain(spec.to_line);
+        for l in lines {
+            if moved(l) {
+                return refuse(format!("line {l}, where its rebind puts {id}"));
+            }
+        }
+    }
+    Ok(())
+}
+
 /// The change, as the messages name it: `move #9 (step 1), the one being
-/// added`, `deleting move #3 (step 2)`.
+/// added,`, `deleting move #3 (step 2)`.
 fn who(change: Change, old: &[Move], new: &[Move]) -> String {
     match change {
         Change::Added => format!(
@@ -315,102 +373,6 @@ fn who(change: Change, old: &[Move], new: &[Move]) -> String {
             i + 1,
             old.get(i).map_or(0, |m| m.at_step)
         ),
-    }
-}
-
-/// Carries a move's own line numbers, written against the code just
-/// before it runs (`rebind` lines are carried after, see
-/// [`carry_rebind`]). `index` is the move's number as `move.list` shows it
-/// now (0-based).
-fn carry_before(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<Move, Error> {
-    let Some(map) = map else {
-        return Ok(m.clone());
-    };
-    let mut m = m.clone();
-    let lost = |what: String| {
-        Error::Invalid(format!(
-            "move #{n}, step {step}: {who} removes {what}; change or delete move #{n} first",
-            n = index + 1,
-            step = m.at_step,
-        ))
-    };
-    match &mut m.action {
-        MoveAction::CodePatch(p) => {
-            if let Some(pos) = p.position.clone()
-                && let Some((a, b)) = parse_range(&pos)
-            {
-                let (x, y) = match p.op {
-                    PatchOp::Insert => {
-                        let x = map.insertion(a);
-                        (x, x)
-                    }
-                    PatchOp::Replace | PatchOp::Delete => map
-                        .range(a, b)
-                        .ok_or_else(|| lost(format!("its target ({})", lines_text(a, b))))?,
-                };
-                if (x, y) != (a, b) {
-                    p.position = Some(position_text(&pos, x, y));
-                }
-            }
-        }
-        MoveAction::Cursor(c) => {
-            c.line = map
-                .line(c.line)
-                .ok_or_else(|| lost(format!("its cursor line ({})", c.line)))?;
-        }
-        MoveAction::Select(s) => {
-            for w in [&mut s.from, &mut s.to] {
-                if let Some(l) = w.line {
-                    w.line = Some(
-                        map.line(l)
-                            .ok_or_else(|| lost(format!("the line it selects ({l})")))?,
-                    );
-                }
-            }
-        }
-        MoveAction::CodeLink(_) | MoveAction::Wait(_) => {}
-    }
-    Ok(m)
-}
-
-/// A `code.link` window, on the file it shows (a window that no longer
-/// holds any line is left as it is: a window only crops).
-fn carry_window(m: &mut Move, map: Option<&Mapper>) {
-    let (Some(map), MoveAction::CodeLink(l)) = (map, &mut m.action) else {
-        return;
-    };
-    if let Some(w) = l.lines.clone()
-        && let Some((a, b)) = parse_range(&w)
-        && let Some((x, y)) = map.range(a, b)
-        && (x, y) != (a, b)
-    {
-        l.lines = Some(position_text(&w, x, y));
-    }
-}
-
-/// `rebind` lines are written against the code right after their patch.
-fn carry_rebind(m: &mut Move, map: Option<&Mapper>) {
-    let Some(map) = map else { return };
-    let carry = |w: &mut Option<Where>| {
-        if let Some(w) = w
-            && let Some(l) = w.line
-            && let Some(n) = map.line(l)
-        {
-            w.line = Some(n);
-        }
-    };
-    for spec in m.rebind.values_mut() {
-        carry(&mut spec.at);
-        carry(&mut spec.from);
-        carry(&mut spec.to);
-        for l in [&mut spec.from_line, &mut spec.to_line]
-            .into_iter()
-            .flatten()
-        {
-            if let Some(n) = map.line(*l) {
-                *l = n;
-            }
-        }
     }
 }
 
@@ -451,11 +413,11 @@ pub fn carry(
     };
     order.sort_by_key(step_of);
 
+    let added = change == Change::Added;
     let mut out: Vec<Move> = new.to_vec();
     let mut r = Replay {
         doc,
         who: who(change, old, new),
-        added: change == Change::Added,
         anns: doc.annotations.clone(),
         by_step: (0..doc.annotations.len()).collect(),
         next: 0,
@@ -472,72 +434,68 @@ pub fn carry(
             (Some(o), Some(n)) => {
                 let shown = r.old.shown.clone();
                 r.load(&shown);
-                let was = r
-                    .old
-                    .target(doc, &old[o])
-                    .map_err(|e| named(e, o, &old[o]))?;
                 let before = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                let mut m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
-                // Where it must apply now: where it applied, carried.
-                let expected = match (&m.action, was, &before) {
-                    (MoveAction::CodePatch(p), Some(t), Some(b)) => Some(match p.op {
-                        PatchOp::Insert => Some((b.insertion(t.from), None)),
-                        PatchOp::Replace | PatchOp::Delete => {
-                            b.range(t.from, t.to).map(|(x, y)| (x, Some(y)))
-                        }
-                    }),
-                    _ => None,
-                };
-                r.old
+                let m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
+                let (_, was) = r
+                    .old
                     .apply(doc, &old[o], slot)
                     .map_err(|e| named(e, o, &old[o]))?;
-                let (_, now) = r.new.apply_at(doc, &m, slot).map_err(|e| named(e, o, &m))?;
-                if let (Some(expected), Some(now), Some(was)) = (expected, now, was) {
-                    let got = match &m.action {
-                        MoveAction::CodePatch(p) if p.op == PatchOp::Insert => (now.from, None),
-                        _ => (now.from, Some(now.to)),
+                let (_, now) = r.new.apply(doc, &m, slot).map_err(|e| named(e, o, &m))?;
+                // It must apply on the same lines as before, carried: a text
+                // target the change makes match another line (an explicit
+                // `occurrence` counts the new text too) would move in silence.
+                if let (Some((tw, iw)), Some((tn, inow))) = (was, now)
+                    && iw.map(|i| i.map(|i| *r.alias.get(&i).unwrap_or(&i))) != inow
+                {
+                    let at = |t: Target| match iw[1] {
+                        None => format!("before line {}", t.from),
+                        Some(_) => lines_text(t.from, t.to),
                     };
-                    if expected != Some(got) {
-                        let at = |t: Target| match &m.action {
-                            MoveAction::CodePatch(p) if p.op == PatchOp::Insert => {
-                                format!("before line {}", t.from)
-                            }
-                            _ => lines_text(t.from, t.to),
-                        };
-                        return Err(Error::Invalid(format!(
-                            "move #{n}, step {step}: {who} makes its text target match another line ({now} instead of {was}); change move #{n} first (`occurrence`, a longer text)",
-                            n = o + 1,
-                            step = m.at_step,
-                            who = r.who,
-                            now = at(now),
-                            was = at(was),
-                        )));
-                    }
+                    return Err(refused(
+                        format!("move #{}, step {}", o + 1, m.at_step),
+                        &r.who,
+                        format!(
+                            "makes its text target match another line ({} instead of {})",
+                            at(tn),
+                            at(tw)
+                        ),
+                        format!("change move #{} first (`occurrence`, a longer text)", o + 1),
+                    ));
+                }
+                // Nor may a new move put lines inside a later move's range:
+                // that move would take them along.
+                if let (true, Some((tw, [_, Some(_)])), Some((tn, _))) = (added, was, now)
+                    && tn.to - tn.from > tw.to - tw.from
+                {
+                    return Err(refused(
+                        format!("move #{}, step {}", o + 1, m.at_step),
+                        &r.who,
+                        format!(
+                            "inserts lines inside its target ({})",
+                            lines_text(tw.from, tw.to)
+                        ),
+                        format!("change or delete move #{} first", o + 1),
+                    ));
                 }
                 let shown = r.new.shown.clone();
                 r.load(&shown);
                 let after = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                carry_window(&mut m, after.as_ref());
-                carry_rebind(&mut m, after.as_ref());
+                check_after(&m, o, after.as_ref(), &r.who)?;
                 out[n] = m;
             }
             (None, Some(n)) => {
-                let rewritten = r
+                let (rewritten, _) = r
                     .new
                     .apply(doc, &new[n], slot)
                     .map_err(|e| named(e, n, &new[n]))?;
-                for (before, after) in rewritten {
-                    r.alias.insert(before, after);
-                }
+                r.alias.extend(rewritten);
             }
             (Some(o), None) => {
-                let rewritten = r
+                let (rewritten, _) = r
                     .old
                     .apply(doc, &old[o], slot)
                     .map_err(|e| named(e, o, &old[o]))?;
-                for (before, after) in rewritten {
-                    r.alias.insert(after, before);
-                }
+                r.alias.extend(rewritten.into_iter().map(|(b, a)| (a, b)));
             }
             (None, None) => {}
         }
@@ -551,7 +509,6 @@ pub fn carry(
 struct Replay<'d> {
     doc: &'d Document,
     who: String,
-    added: bool,
     anns: Vec<Annotation>,
     by_step: Vec<usize>,
     next: usize,
@@ -568,7 +525,8 @@ impl Replay<'_> {
     }
 
     /// Carries the annotations of every step up to `upto`: every move of
-    /// those steps has run on both sides, so their code is final there.
+    /// those steps has run on both sides, so their code is final there. The
+    /// ends of a range must stay (a box is never trimmed).
     fn carry_annotations(&mut self, upto: u32) -> Result<(), Error> {
         while self.next < self.by_step.len() && self.anns[self.by_step[self.next]].step <= upto {
             let i = self.by_step[self.next];
@@ -579,21 +537,28 @@ impl Replay<'_> {
             let Some(map) = Mapper::new(self.doc, &file, &self.old, &self.new, &self.alias) else {
                 continue;
             };
-            let Some(shape) = shift_shape_by(&a.shape, &|l| map.line(l), &|l, upto| {
-                map.column_line(l, upto)
-            }) else {
-                let at = lost_at(&a.shape, &map);
-                let later = if self.added {
-                    format!(", or add the move at a step after {}", a.step)
-                } else {
-                    String::new()
-                };
-                return Err(Error::Invalid(format!(
-                    "annotation {id}, step {step}: {who} removes or rewrites {at}, where it is anchored; delete or move {id} first{later}",
-                    who = self.who,
-                    id = a.id,
-                    step = a.step,
-                )));
+            let ranges = a.shape.line_ranges();
+            let ends_kept = ranges.iter().all(|(f, t)| map.range(*f, *t).is_some());
+            let shape = ends_kept
+                .then(|| {
+                    shift_shape_by(&a.shape, &|l| map.line(l), &|l, upto| {
+                        map.column_line(l, upto)
+                    })
+                })
+                .flatten();
+            let Some(shape) = shape else {
+                let (f, t) = ranges
+                    .iter()
+                    .fold((u32::MAX, 0), |(f, t), (a, b)| (f.min(*a), t.max(*b)));
+                return Err(refused(
+                    format!("annotation {}, step {}", a.id, a.step),
+                    &self.who,
+                    format!(
+                        "removes or rewrites {}, where it is anchored",
+                        lines_text(f, t)
+                    ),
+                    format!("delete or move {} first", a.id),
+                ));
             };
             self.anns[i].shape = shape;
         }
@@ -723,6 +688,83 @@ mod tests {
             .to_string();
         assert!(
             e.starts_with("move #1, step 2: move #2 (step 1), the one being added, makes its text target match another line"),
+            "{e}"
+        );
+    }
+
+    fn refusal(d: &mut crate::Document, m: serde_json::Value) -> String {
+        let before = json(d);
+        let e = d.add_move(patch(m)).unwrap_err().to_string();
+        assert_eq!(json(d), before, "a refused move changes nothing");
+        e
+    }
+
+    #[test]
+    fn a_range_is_never_trimmed_nor_given_lines_inside_a_later_move() {
+        let mut d = parse_document(
+            &serde_json::json!({
+                "schema": 1,
+                "source": {"language": "rs"},
+                "code": ["a();", "b();", "c();", "d();", "e();"],
+                "moves": [
+                    {"at_step": 3, "action": "code.patch", "op": "delete", "position": "2-4"}
+                ],
+                "annotations": [
+                    {"id": "b1", "step": 2, "type": "box", "from_line": 1, "to_line": 2}
+                ]
+            })
+            .to_string(),
+            None,
+        )
+        .unwrap();
+        let e = refusal(
+            &mut d,
+            serde_json::json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "2"}),
+        );
+        assert!(e.starts_with("annotation b1, step 2: "), "{e}");
+        let e = refusal(
+            &mut d,
+            serde_json::json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "3", "content": "x();"}),
+        );
+        assert!(
+            e.starts_with("move #1, step 3: move #2 (step 1), the one being added, inserts lines inside its target (lines 2-4)"),
+            "{e}"
+        );
+    }
+
+    #[test]
+    fn a_window_or_a_rebind_line_the_change_would_move_is_refused() {
+        let mut d = parse_document(
+            &serde_json::json!({
+                "schema": 1,
+                "source": {"language": "rs", "path": "/x/main.rs"},
+                "code": ["a();", "b();", "c();"],
+                "moves": [
+                    {"at_step": 2, "action": "code.patch", "op": "replace", "position": "3", "content": "C();",
+                     "rebind": {"n1": {"from_line": 3, "to_line": 3}}},
+                    {"at_step": 3, "action": "code.link", "file": "main.rs", "lines": "2-3"}
+                ],
+                "annotations": [{"id": "n1", "step": 1, "type": "box", "from_line": 3, "to_line": 3}]
+            })
+            .to_string(),
+            None,
+        )
+        .unwrap();
+        let e = refusal(
+            &mut d,
+            serde_json::json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "z();"}),
+        );
+        assert!(
+            e.starts_with("move #1, step 2: move #3 (step 1), the one being added, moves line 3, where its rebind puts n1"),
+            "{e}"
+        );
+        d.moves[0].rebind.clear();
+        let e = refusal(
+            &mut d,
+            serde_json::json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "z();"}),
+        );
+        assert!(
+            e.contains("moves the lines of its window (lines 2-3)"),
             "{e}"
         );
     }

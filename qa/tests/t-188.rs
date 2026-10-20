@@ -40,6 +40,16 @@
 //! embedded; a put taken at another step than the TUI's; `:embed` stays
 //! embedded after a put.
 //!
+//! Adversarial review of the first fix (`review_*`): with follow on, a put
+//! of code the file no longer holds is refused; after a put of edited code
+//! the file's own code makes it a reference again; `move.delete` refuses a
+//! document whose later moves stop applying; a move that would trim a range
+//! is refused, so deleting a move always undoes adding it; a file deleted
+//! between get and put refuses the put; the bar's messages (an unlinked
+//! `views` entry ignored, what is not saved first, stale and edited both
+//! said). The random loop also checks the text under every anchor and that
+//! an insert only adds its own lines.
+//!
 //! The repros (QA's scripts on Luis's Mac) are rebuilt here on scratch
 //! copies of the examples.
 
@@ -420,7 +430,8 @@ fn corner_file_changed_between_get_and_put_keeps_the_reference() {
     assert_eq!(live.api_ok("status", json!({}))["autosave"], true);
     let m = message(&live);
     assert!(
-        m.contains("main.rs changed on disk since it was loaded") && m.contains("still reads it"),
+        m.contains("main.rs changed on disk since it was loaded")
+            && m.contains("still read from it"),
         "{m}"
     );
     let text = live.api_ok("render.text", json!({}))["text"].clone();
@@ -668,6 +679,230 @@ fn ac3_refusals_name_what_would_lose_its_line_and_delete_carries_back() {
     assert_eq!(get(&live)["document"], before["document"]);
 }
 
+// ---------------------------------------------------------------- review
+
+/// Waits (10 s at most) until `cond` holds on the live instance.
+fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !cond() {
+        assert!(Instant::now() < deadline, "timed out waiting for {what}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// With follow on the screen follows the file: a put whose code is not the
+/// file's (here: the copy of a scene.get taken before follow reloaded it)
+/// is refused, and nothing changes — screen, autosave, note, follow.
+#[test]
+fn review_follow_on_refuses_a_put_of_code_the_file_no_longer_holds() {
+    let dir = reference_demo("follow");
+    let tiza = dir.join("main.rs.tiza");
+    let live = open(&dir.join("main.rs"));
+    live.command("follow on");
+    let mut scene = get(&live);
+    std::fs::write(
+        dir.join("main.rs"),
+        "fn main() {\n    let s = String::from(\"reloaded\");\n    println!(\"{s}\");\n}\n",
+    )
+    .unwrap();
+    wait_until("follow to reload main.rs", || {
+        live.api_ok("render.text", json!({}))["text"]
+            .as_str()
+            .unwrap()
+            .contains("reloaded")
+    });
+    let shown = get(&live);
+    let disk = on_disk(&tiza);
+    scene["document"]["annotations"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "n1", "step": 1, "type": "note", "line": 3, "text": "late note"}));
+    let (_, msg) = put(&live, &scene["document"]).unwrap_err();
+    assert!(
+        msg.contains("is not what main.rs holds now, and follow is on")
+            && msg.contains("scene.get again"),
+        "{msg}"
+    );
+    assert_eq!(get(&live)["document"], shown["document"]);
+    assert_eq!(on_disk(&tiza), disk);
+    let status = live.api_ok("status", json!({}));
+    assert_eq!(status["autosave"], true, "{status}");
+    assert_eq!(live.api_ok("follow.status", json!({}))["enabled"], true);
+    // A fresh get → put goes through, and follow keeps following.
+    let mut scene = get(&live);
+    scene["document"]["annotations"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "n1", "step": 1, "type": "note", "line": 3, "text": "late note"}));
+    put(&live, &scene["document"]).unwrap();
+    assert_eq!(read_json(&tiza)["code"], json!({"file": "main.rs"}));
+    std::fs::write(dir.join("main.rs"), "fn main() {\n    again();\n}\n").unwrap();
+    wait_until("follow to reload main.rs again", || {
+        live.api_ok("render.text", json!({}))["text"]
+            .as_str()
+            .unwrap()
+            .contains("again()")
+    });
+}
+
+/// A put with edited code leaves the document embedded in memory; a later
+/// put of the file's own code makes it a reference again, so `:autosave on`
+/// saves a reference.
+#[test]
+fn review_a_put_of_the_files_code_after_an_edited_one_is_a_reference_again() {
+    let dir = reference_demo("back-to-reference");
+    let tiza = dir.join("main.rs.tiza");
+    let live = open(&dir.join("main.rs"));
+    let original = get(&live);
+    let mut edited = original.clone();
+    edited["document"]["code"][2] = json!("    println!(\"edited\");");
+    put(&live, &edited["document"]).unwrap();
+    assert_eq!(live.api_ok("status", json!({}))["autosave"], false);
+    put(&live, &original["document"]).unwrap();
+    live.command("autosave on");
+    let saved = read_json(&tiza);
+    assert_eq!(saved["code"], json!({"file": "main.rs"}), "{saved}");
+    // Linked files too: an edited view, then the file's own code.
+    let dir = examples_copy("back-to-reference-linked");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let live = open(&tiza);
+    let original = get(&live);
+    let mut edited = original.clone();
+    edited["document"]["views"]["src/queue.rs"][19] = json!("    // edited");
+    put(&live, &edited["document"]).unwrap();
+    put(&live, &original["document"]).unwrap();
+    live.command("autosave on");
+    let saved = read_json(&tiza);
+    assert!(saved.get("views").is_none(), "{saved}");
+    round_trip(&live, Some(&tiza), "back to references");
+}
+
+/// Deleting a `code.link` that later moves need is refused, naming the
+/// deleted move and the one that would stop applying; nothing changes.
+#[test]
+fn review_deleting_a_link_later_moves_need_is_refused() {
+    let dir = examples_copy("delete-link");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let live = open(&tiza);
+    let before = get(&live);
+    let r = live.api("move.delete", json!({"index": 1}));
+    let e = r.error.unwrap().message;
+    assert!(
+        e.starts_with("deleting move #1 (step 2): move #2, step 3: ") && e.contains("push_back"),
+        "{e}"
+    );
+    assert_eq!(get(&live)["document"], before["document"]);
+    round_trip(&live, Some(&tiza), "after the refused delete");
+}
+
+/// A move that would trim a range (the end of a box) is refused, so
+/// deleting a move always gives back the document from before it.
+#[test]
+fn review_a_move_that_would_trim_a_range_is_refused() {
+    let dir = reference_demo("trim");
+    let live = open(&dir.join("main.rs"));
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "b1", "type": "box", "from_line": 2, "to_line": 3, "step": 2}),
+    );
+    let before = get(&live);
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "3"}),
+    );
+    let e = r.error.unwrap().message;
+    assert!(
+        e.starts_with("annotation b1, step 2: move #1 (step 1), the one being added, removes or rewrites lines 2-3"),
+        "{e}"
+    );
+    assert_eq!(get(&live)["document"], before["document"]);
+    // Lines inside the box are fine, and deleting the move gives it back.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "3", "content": "    // inside"}),
+    );
+    let b1 = |scene: &Value| {
+        scene["document"]["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == "b1")
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(b1(&get(&live))["to_line"], 4);
+    live.api_ok("move.delete", json!({"index": 1}));
+    assert_eq!(b1(&get(&live)), b1(&before));
+}
+
+/// A file deleted between the get and the put: refused, saying so (the
+/// `.tiza` must not point at a file that is gone).
+#[test]
+fn review_a_file_deleted_between_get_and_put_is_refused() {
+    let dir = reference_demo("deleted");
+    let tiza = dir.join("main.rs.tiza");
+    let live = open(&dir.join("main.rs"));
+    let disk = on_disk(&tiza);
+    let scene = get(&live);
+    std::fs::remove_file(dir.join("main.rs")).unwrap();
+    let (_, msg) = put(&live, &scene["document"]).unwrap_err();
+    assert!(
+        msg.contains("main.rs cannot be read") && msg.contains("put the file back"),
+        "{msg}"
+    );
+    assert_eq!(on_disk(&tiza), disk);
+    // The same for a linked file.
+    let dir = examples_copy("deleted-linked");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let live = open(&tiza);
+    let scene = get(&live);
+    std::fs::remove_file(dir.join("src/queue.rs")).unwrap();
+    let (_, msg) = put(&live, &scene["document"]).unwrap_err();
+    assert!(msg.contains("src/queue.rs cannot be read"), "{msg}");
+}
+
+/// Bar messages: a `views` entry no link names is dropped without a word;
+/// an edit says first what is not saved; a stale file and an edited one are
+/// both said.
+#[test]
+fn review_bar_messages() {
+    let dir = reference_demo("extra-view");
+    let tiza = dir.join("main.rs.tiza");
+    let live = open(&dir.join("main.rs"));
+    let mut scene = get(&live);
+    scene["document"]["views"] = json!({"nowhere.rs": ["fn x() {}"]});
+    scene["document"]["title"] = json!("with an extra view");
+    put(&live, &scene["document"]).unwrap();
+    assert_eq!(live.api_ok("status", json!({}))["autosave"], true);
+    let saved = read_json(&tiza);
+    assert!(
+        saved.get("views").is_none() && saved["code"].is_object(),
+        "{saved}"
+    );
+    assert!(!message(&live).contains("nowhere"), "{}", message(&live));
+
+    let dir = examples_copy("both");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let live = open(&tiza);
+    let mut scene = get(&live);
+    let stack = dir.join("src/stack.rs");
+    let text = std::fs::read_to_string(&stack).unwrap();
+    std::fs::write(&stack, text.replace("pub fn", "pub  fn")).unwrap();
+    scene["document"]["views"]["src/queue.rs"][19] = json!("    // edited");
+    put(&live, &scene["document"]).unwrap();
+    let m = message(&live);
+    assert!(
+        m.starts_with(
+            "not saved — autosave off: the code sent for src/queue.rs differs from the file on disk"
+        ),
+        "{m}"
+    );
+    assert!(
+        m.contains("also src/stack.rs changed on disk since it was loaded"),
+        "{m}"
+    );
+}
+
 // ---------------------------------------------------------------- AC5: random moves
 
 /// xorshift64*: a fixed seed gives the same moves on every run.
@@ -770,6 +1005,78 @@ fn random_move(rng: &mut Rng, live: &Live, step: u32, i: usize) -> Value {
     m
 }
 
+fn step_of(m: &Value) -> u32 {
+    m["at_step"].as_u64().unwrap() as u32
+}
+
+/// The text under each anchor of every annotation, at the annotation's own
+/// step, by id: `(line-level, text)` — a span's text, an arrow end's line up
+/// to its column, a note's line, a range's first and last lines.
+fn anchored_texts(live: &Live) -> std::collections::BTreeMap<String, Vec<(bool, String)>> {
+    live.with(|app| {
+        use tiza_core::Shape;
+        let d = &app.doc;
+        d.annotations
+            .iter()
+            .filter(|a| d.validate_annotation(a).is_ok())
+            .map(|a| {
+                let (code, first) = d.view_code_at(&a.file, a.step).unwrap();
+                let line = |l: u32| code[(l - first) as usize].clone();
+                let cut = |l: u32, from: u32, to: u32| -> String {
+                    line(l)
+                        .chars()
+                        .skip(from as usize)
+                        .take(to.saturating_sub(from) as usize)
+                        .collect()
+                };
+                let texts = match &a.shape {
+                    Shape::Highlight { span, .. } | Shape::Mark { span, .. } => {
+                        vec![(false, cut(span.line, span.start, span.end))]
+                    }
+                    Shape::Arrow { from, to, .. } => vec![
+                        (false, cut(from.line, 0, from.col + 1)),
+                        (false, cut(to.line, 0, to.col + 1)),
+                    ],
+                    other => other
+                        .line_ranges()
+                        .iter()
+                        .flat_map(|(f, t)| [(true, line(*f)), (true, line(*t))])
+                        .collect(),
+                };
+                (a.id.clone(), texts)
+            })
+            .collect()
+    })
+}
+
+/// The code of every view (the main file and each linked one) at every
+/// step up to `last`.
+fn codes_by_step(live: &Live, last: u32) -> Vec<(u32, Option<String>, Vec<String>)> {
+    live.with(move |app| {
+        let d = &app.doc;
+        let keys: Vec<Option<String>> = std::iter::once(None)
+            .chain(d.view_code.keys().cloned().map(Some))
+            .collect();
+        (0..=last)
+            .flat_map(|step| {
+                keys.iter()
+                    .map(|k| (step, k.clone(), d.view_code_at(k, step).unwrap().0))
+                    .collect::<Vec<_>>()
+            })
+            .collect()
+    })
+}
+
+/// `is` is `was` with `content` inserted as one block.
+fn only_adds(was: &[String], is: &[String], content: &[String]) -> bool {
+    is.len() == was.len() + content.len()
+        && (0..=was.len()).any(|i| {
+            is[..i] == was[..i]
+                && is[i..i + content.len()] == *content
+                && is[i + content.len()..] == was[i..]
+        })
+}
+
 /// What the loop did on one document.
 #[derive(Default)]
 struct Tally {
@@ -799,6 +1106,9 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
         let m = random_move(&mut rng, &live, step, i);
         t.tried += 1;
         let before = get(&live);
+        let texts_before = anchored_texts(&live);
+        let last_step = before["max_step"].as_u64().unwrap() as u32 + 1;
+        let codes_before = codes_by_step(&live, last_step);
         let r = live.api("move.add", m.clone());
         if let Some(e) = r.error {
             t.refused += 1;
@@ -812,10 +1122,46 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
         }
         t.accepted += 1;
         let what = format!("{name}, move {m}");
+        let content: Vec<String> = m["content"]
+            .as_str()
+            .map(|c| c.split('\n').map(str::to_string).collect())
+            .unwrap_or_default();
+        // The same text under every anchor at its own step, but for a
+        // line-level anchor on a line the move rewrites.
+        let after = anchored_texts(&live);
+        for (id, texts) in &texts_before {
+            let now = &after[id];
+            for ((line_level, was), (_, is)) in texts.iter().zip(now) {
+                if *line_level && content.contains(is) {
+                    continue;
+                }
+                assert_eq!(was, is, "{what}: the text under {id}");
+            }
+        }
+        // An insert only adds its own lines, at every step from its own on.
+        if m["op"] == "insert" {
+            let codes = codes_by_step(&live, last_step);
+            for ((step, key, was), (_, _, is)) in codes_before.iter().zip(&codes) {
+                if *step < step_of(&m) || was == is {
+                    assert_eq!(was, is, "{what}: step {step}, {key:?}");
+                    continue;
+                }
+                assert!(
+                    only_adds(was, is, &content),
+                    "{what}: at step {step} ({key:?}) the insert did more than add its lines:\n{was:#?}\n{is:#?}"
+                );
+            }
+        }
         round_trip(&live, Some(&tiza), &what);
-        if m["op"] == "insert" && rng.below(3) == 0 {
+        // Deleting it again gives the document from before it.
+        if rng.below(3) == 0 {
             let index = get(&live)["document"]["moves"].as_array().unwrap().len();
-            live.api_ok("move.delete", json!({ "index": index }));
+            let r = live.api("move.delete", json!({ "index": index }));
+            assert!(
+                r.error.is_none(),
+                "{what}: deleting it again: {:?}",
+                r.error
+            );
             t.undone += 1;
             let back = get(&live);
             assert_eq!(fields(&back)["moves"], fields(&before)["moves"], "{what}");
@@ -848,11 +1194,14 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
     t
 }
 
-/// AC5: random moves (fixed seed) on every example; after each one that is
-/// accepted, get → put gives the same document and the same render and
-/// writes nothing. Every fourth accepted move, a put that changes the title
-/// is saved, and the references stay references. An accepted insert is
-/// sometimes deleted again: the document is exactly the one before it.
+/// AC5: random moves (fixed seed) on every example. After each one that is
+/// accepted: every anchor has the same text under it at its step (but for a
+/// line-level anchor on a line the move rewrites); an insert only adds its
+/// own lines, at every step from its own on, in every file; get → put gives
+/// the same document and the same render and writes nothing. Every fourth
+/// accepted move, a put that changes the title is saved, and the references
+/// stay references. A third of the accepted moves (inserts, replaces and
+/// deletes) are deleted again: the document is exactly the one before.
 /// One thread per document (each its own instance and seed).
 #[test]
 fn ac5_random_moves_on_the_examples_survive_get_put() {

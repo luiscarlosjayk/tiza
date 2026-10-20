@@ -255,7 +255,8 @@ pub const READ_ONLY_METHODS: &[&str] = &[
 /// The files a `scene.put` sent different code for ([`App::keep_references`]).
 #[derive(Debug, Default)]
 struct SentCode {
-    /// Changed by the agent: shown, not saved over the file.
+    /// Changed by the agent, as the bar says it (`the code sent for main.rs
+    /// differs from the file on disk`): shown, not saved over the file.
     edited: Vec<String>,
     /// Changed on disk since the document was loaded: still a reference.
     stale: Vec<String>,
@@ -293,6 +294,14 @@ pub struct App {
     pub size: (u16, u16),
     pub socket_path: Option<PathBuf>,
     pub autosave: bool,
+    /// The file the code was last read from (`code: {file}` when opened or
+    /// at the last put): a put that sent other code leaves the document
+    /// embedded in memory, and a later put of that file's code makes it a
+    /// reference again. `None` once `:embed` froze the code on purpose.
+    reference: Option<tiza_core::model::CodeSource>,
+    /// Linked files the document itself keeps in `views` (as opened, or
+    /// frozen by `:embed`), as opposed to ones a put sent embedded.
+    frozen_views: std::collections::BTreeSet<String>,
     /// `:layout stable`: the authoring screen uses the take's geometry
     /// (lanes, box band and margin sized for every step at once, t-111) so
     /// rehearsing looks like presenting. Presentation mode and every
@@ -367,6 +376,8 @@ pub struct App {
 impl App {
     pub fn new(doc: Document, save_path: PathBuf) -> Self {
         let theme_auto = doc.theme.is_none();
+        let reference = (!doc.is_embedded()).then(|| doc.code_src.clone());
+        let frozen_views = doc.views.keys().cloned().collect();
         let theme = Theme::from_name(doc.theme.unwrap_or(ThemeName::Dark));
         let cursor_line = doc.source.first_line;
         let mut app = Self {
@@ -399,6 +410,8 @@ impl App {
             size: (80, 24),
             socket_path: None,
             autosave: true,
+            reference,
+            frozen_views,
             layout_stable: false,
             save_error: None,
             save_warning_pending: false,
@@ -1153,10 +1166,13 @@ impl App {
         }
         let base = self.save_path.parent().map(Path::to_path_buf);
         let other = doc.source.path != self.doc.source.path;
+        if !self.doc.is_embedded() {
+            self.reference = Some(self.doc.code_src.clone());
+        }
         let sent = if other {
             SentCode::default()
         } else {
-            self.keep_references(&mut doc, base.as_deref())
+            self.keep_references(&mut doc, base.as_deref())?
         };
         // Linked files (t-105): embedded in `views`, else read next to the
         // open document.
@@ -1197,31 +1213,40 @@ impl App {
                 "another document loaded: autosave off (:w saves over {}, :w PATH saves elsewhere, :autosave on resumes)",
                 self.save_path.display()
             ));
-        } else if !sent.edited.is_empty() {
-            let files = sent.edited.join(", ");
-            if self.autosave {
-                self.autosave = false;
-                self.info(format!(
-                    "the code sent for {files} differs from the file on disk: shown, not saved — autosave off (:w saves it embedded in {}, :w PATH saves elsewhere, :autosave on resumes)",
-                    self.save_path.display()
-                ));
-            } else {
-                self.info(format!(
-                    "the code sent for {files} differs from the file on disk: shown embedded, not saved"
-                ));
+        } else if !sent.edited.is_empty() || !sent.stale.is_empty() {
+            // What is not saved first: the bar may cut the end.
+            let mut msg = String::new();
+            if !sent.edited.is_empty() {
+                msg = if self.autosave {
+                    self.autosave = false;
+                    format!(
+                        "not saved — autosave off: {} (:w saves it embedded in {}, :w PATH saves elsewhere, :autosave on resumes)",
+                        sent.edited.join("; "),
+                        self.save_path.display()
+                    )
+                } else {
+                    format!("not saved: {} (shown embedded)", sent.edited.join("; "))
+                };
             }
-        } else if !sent.stale.is_empty() {
-            self.info(format!(
-                "{} changed on disk since it was loaded: the document still reads it; the screen keeps the copy loaded (:follow on reloads it)",
-                sent.stale.join(", ")
-            ));
+            if !sent.stale.is_empty() {
+                let stale = format!(
+                    "{} changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)",
+                    sent.stale.join(", ")
+                );
+                msg = if msg.is_empty() {
+                    stale
+                } else {
+                    format!("{msg} · also {stale}")
+                };
+            }
+            self.info(msg);
         }
         self.touch();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
     }
 
     /// Saving rule of a put of the open document: a file the open document
-    /// reads from disk (its `code.file`, a linked file not frozen in
+    /// reads from disk (its `code.file`, a linked file it does not keep in
     /// `views`) whose code comes back equal to that file's text **now**
     /// stays a reference — `"code": {"file": …}` (with its `lines`) and the
     /// link, read from disk again; nothing is embedded. Just a comparison of
@@ -1231,38 +1256,61 @@ impl App {
     /// - equal to the copy this instance holds: the file changed on disk
     ///   after it was loaded (the agent sent back what `scene.get` gave
     ///   out). Still a reference, with the copy loaded on screen, as for an
-    ///   edit made in the TUI meanwhile; listed in `stale`.
+    ///   edit made in the TUI meanwhile; listed in `stale`. With follow on
+    ///   the screen follows the file, so a put cannot change its code: an
+    ///   error, and so is a file that can no longer be read.
     /// - anything else: the agent changed it. Kept as sent (embedded in
     ///   memory) and listed in `edited`: the put is shown, autosave stops.
     ///
-    /// An open document with embedded code (stdin, `:embed`) and the files
-    /// it froze in `views` stay embedded.
-    fn keep_references(&self, doc: &mut Document, base: Option<&Path>) -> SentCode {
+    /// A `views` entry no `code.link` names is dropped. An open document
+    /// with embedded code (stdin, `:embed`) stays embedded.
+    fn keep_references(&self, doc: &mut Document, base: Option<&Path>) -> Result<SentCode, Error> {
+        use tiza_core::model::CodeSource;
         let mut out = SentCode::default();
-        if let tiza_core::model::CodeSource::File { file, .. } = &self.doc.code_src
-            && let tiza_core::model::CodeSource::Embedded(lines) = &doc.code_src
+        let unreadable = |file: &str, e: Error| {
+            Error::Invalid(format!(
+                "scene.put: {file} cannot be read ({e}) and the document reads its code from it: put the file back, or :embed to keep the copy loaded"
+            ))
+        };
+        if let Some(reference @ CodeSource::File { file, .. }) = &self.reference
+            && let CodeSource::Embedded(lines) = &doc.code_src
         {
-            let on_disk = fs::reread_reference(&self.doc, base).ok();
-            let same = on_disk
-                .as_ref()
-                .is_some_and(|(code, first)| code == lines && *first == doc.source.first_line);
+            let mut probe = self.doc.clone();
+            probe.code_src = reference.clone();
+            let (disk, first) =
+                fs::reread_reference(&probe, base).map_err(|e| unreadable(file, e))?;
+            let same = disk == *lines && first == doc.source.first_line;
+            if !same && self.follow.is_some() {
+                return Err(Error::Invalid(format!(
+                    "scene.put: the code sent is not what {file} holds now, and follow is on (the screen shows the file as it is): scene.get again; to change the code, edit {file}"
+                )));
+            }
             let loaded = self.doc.base() == lines.as_slice()
                 && self.doc.base_first() == doc.source.first_line;
             if same || loaded {
-                doc.code_src = self.doc.code_src.clone();
+                doc.code_src = reference.clone();
                 if !same {
                     out.stale.push(file.clone());
                 }
             } else {
-                out.edited.push(file.clone());
+                out.edited.push(format!(
+                    "the code sent for {file} differs from the file on disk"
+                ));
             }
         }
+        let linked = doc.link_files();
         for (file, code) in doc.views.clone() {
             let Some(key) = doc.view_key(&file) else {
                 continue;
             };
-            // Frozen by the open document (`:embed`): its own embedded code.
-            if self.doc.views.contains_key(&file) || self.doc.views.contains_key(&key) {
+            if !linked.contains(&key) {
+                doc.views.remove(&file);
+                continue;
+            }
+            // Kept in the document itself (as opened, or by `:embed`).
+            let frozen =
+                |k: &String| self.frozen_views.contains(k) && self.doc.views.contains_key(k);
+            if frozen(&file) || frozen(&key) {
                 continue;
             }
             let code = if code.is_empty() {
@@ -1270,19 +1318,28 @@ impl App {
             } else {
                 code
             };
-            let same = fs::read_view_file(&file, base).is_ok_and(|disk| disk == code);
-            let loaded = self.doc.view_code.get(&key) == Some(&code);
-            if same || loaded {
+            let known = self.doc.view_code.get(&key);
+            let disk = match fs::read_view_file(&file, base) {
+                Ok(d) => Some(d),
+                Err(e) if known.is_some() => return Err(unreadable(&file, e)),
+                Err(_) => None,
+            };
+            let same = disk.as_ref() == Some(&code);
+            if same || known == Some(&code) {
                 doc.views.remove(&file);
                 doc.view_code.insert(key, code);
                 if !same {
                     out.stale.push(file);
                 }
+            } else if disk.is_none() {
+                out.edited.push(format!("{file} is not a file on disk"));
             } else {
-                out.edited.push(file);
+                out.edited.push(format!(
+                    "the code sent for {file} differs from the file on disk"
+                ));
             }
         }
-        out
+        Ok(out)
     }
 
     /// Whether `doc` is the open document as it stands: what a save would
@@ -2695,6 +2752,8 @@ impl App {
                 "note" | "n" => self.cmd_note(rest),
                 "embed" => {
                     self.doc.embed_code();
+                    self.reference = None;
+                    self.frozen_views = self.doc.views.keys().cloned().collect();
                     self.touch();
                     // The code no longer comes from the file: there is
                     // nothing to follow (t-117; `:follow on` says the same).
