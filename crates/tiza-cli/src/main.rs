@@ -98,7 +98,11 @@ fn config_theme() -> Option<tiza_core::theme::ThemeOverrides> {
         Ok(Some((cfg, _))) => cfg.theme,
         Ok(None) => None,
         Err(e) => {
-            eprintln!("tiza: config ignored: {e}");
+            let e = e.to_string();
+            eprintln!(
+                "tiza: config ignored: {}",
+                tiza_core::printable::printable_text(&e)
+            );
             None
         }
     }
@@ -126,12 +130,14 @@ fn export_theme(
         config_theme().as_ref(),
         file.as_ref().or(doc.theme_overrides.as_ref()),
     );
+    // The notes quote the overrides as written, from the document or a
+    // theme file: shown, never sent raw to the terminal (t-182).
     for n in notes {
-        eprintln!("tiza: {n}");
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
     }
     let (theme, notice) = theme.for_export();
     if let Some(n) = notice {
-        eprintln!("tiza: {n}");
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
     }
     Ok(theme)
 }
@@ -317,7 +323,10 @@ enum SceneCmd {
 
 fn main() {
     if let Err(e) = real_main() {
-        eprintln!("tiza: {e:#}");
+        // An error can quote the document or a find text: its control
+        // characters are shown, never sent to the terminal (t-182).
+        let e = format!("{e:#}");
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&e));
         std::process::exit(1);
     }
 }
@@ -391,7 +400,7 @@ fn real_main() -> anyhow::Result<()> {
                         fs::open(f).with_context(|| format!("could not open {f}"))?
                     };
                     if let Some(n) = &opened.notice {
-                        eprintln!("tiza: {n}");
+                        eprintln!("tiza: {}", tiza_core::printable::printable_text(n));
                     }
                     override_language(
                         &mut opened.document,
@@ -484,7 +493,7 @@ fn real_main() -> anyhow::Result<()> {
             // A `steps` entry past the last step is kept, never dropped in
             // silence (t-099).
             for w in doc.step_warnings() {
-                eprintln!("tiza: {w}");
+                eprintln!("tiza: {}", tiza_core::printable::printable_text(&w));
             }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             if all_steps {
@@ -651,6 +660,19 @@ fn real_main() -> anyhow::Result<()> {
                                 .to_string_lossy()
                                 .into_owned()
                         };
+                        // VHS reads the tape line by line and types what
+                        // it quotes: a path with a newline, a control
+                        // character or a `"` would add commands of its
+                        // own. Refused, never rewritten: the tape would
+                        // open another file (t-182).
+                        for (what, p) in [("document", &document_path), ("output", &out)] {
+                            if !tiza_core::cast::tape_safe_path(p) {
+                                bail!(
+                                    "cannot write a .tape for the {what} path «{}»: it holds a control character, a newline or a `\"`, which VHS would read as commands of its own; rename the file",
+                                    tiza_core::printable::printable_line(p)
+                                );
+                            }
+                        }
                         let mut tape =
                             tiza_core::cast::to_vhs_tape(&doc, &theme, &document_path, &gif, &opts);
                         if let Some(note) = tape_note
@@ -691,15 +713,26 @@ fn real_main() -> anyhow::Result<()> {
                 std::io::stdout().write_all(&bytes)?;
             } else {
                 std::fs::write(&out, &bytes).with_context(|| format!("could not write {out}"))?;
-                eprintln!("wrote {out} ({} bytes)", bytes.len());
+                let shown = tiza_core::printable::printable_text(&out);
+                eprintln!("wrote {shown} ({} bytes)", bytes.len());
                 match format {
                     Format::Tape => eprintln!(
-                        "play it with `vhs {out}` (needs vhs, ttyd, ffmpeg); `--out {}.gif` needs nothing",
-                        std::path::Path::new(&out).with_extension("").display()
+                        "play it with `vhs {shown}` (needs vhs, ttyd, ffmpeg); `--out {}.gif` needs nothing",
+                        tiza_core::printable::printable_text(
+                            &std::path::Path::new(&out)
+                                .with_extension("")
+                                .display()
+                                .to_string()
+                        )
                     ),
                     Format::Cast => eprintln!(
-                        "play it with `asciinema play {out}` (GIF: `agg {out} {}`)",
-                        std::path::Path::new(&out).with_extension("gif").display()
+                        "play it with `asciinema play {shown}` (GIF: `agg {shown} {}`)",
+                        tiza_core::printable::printable_text(
+                            &std::path::Path::new(&out)
+                                .with_extension("gif")
+                                .display()
+                                .to_string()
+                        )
                     ),
                     _ => {}
                 }
@@ -727,7 +760,7 @@ fn real_main() -> anyhow::Result<()> {
                         resp.get("max_step").and_then(|v| v.as_u64()).unwrap_or(0)
                     )
                 });
-            println!("{label}");
+            println!("{}", tiza_core::printable::printable_line(&label));
             Ok(())
         }
         Some(Cmd::Check {
@@ -771,9 +804,14 @@ fn real_main() -> anyhow::Result<()> {
             let failed = !report.ok || (strict && report.warnings > 0);
             let mut stdout = std::io::stdout();
             if json {
-                writeln!(stdout, "{}", serde_json::to_string_pretty(&report)?)?;
+                writeln!(
+                    stdout,
+                    "{}",
+                    json_text(serde_json::to_string_pretty(&report)?)
+                )?;
             } else {
-                write!(stdout, "{}", report.to_text(&name))?;
+                let text = report.to_text(&name);
+                write!(stdout, "{}", tiza_core::printable::printable_text(&text))?;
             }
             stdout.flush()?;
             if failed {
@@ -818,14 +856,19 @@ fn real_main() -> anyhow::Result<()> {
             match method {
                 "render.text" => println!(
                     "{}",
-                    resp.get("text").and_then(|t| t.as_str()).unwrap_or("")
+                    tiza_core::printable::printable_text(
+                        resp.get("text").and_then(|t| t.as_str()).unwrap_or("")
+                    )
                 ),
                 "scene.list" => {
                     for l in resp.as_array().into_iter().flatten() {
-                        println!("{}", l.as_str().unwrap_or(""));
+                        println!(
+                            "{}",
+                            tiza_core::printable::printable_line(l.as_str().unwrap_or(""))
+                        );
                     }
                 }
-                _ => println!("{}", serde_json::to_string_pretty(&resp)?),
+                _ => println!("{}", json_text(serde_json::to_string_pretty(&resp)?)),
             }
             Ok(())
         }
@@ -839,7 +882,7 @@ fn real_main() -> anyhow::Result<()> {
                 std::io::stdout().write_all(text.as_bytes())?;
             } else {
                 std::fs::write(&out, text).with_context(|| format!("could not write {out}"))?;
-                eprintln!("wrote {out}");
+                eprintln!("wrote {}", tiza_core::printable::printable_text(&out));
             }
             Ok(())
         }
@@ -855,10 +898,16 @@ fn real_main() -> anyhow::Result<()> {
                 Some(p) => serde_json::from_str(p).context("the parameters are not valid JSON")?,
             };
             let resp = call(&socket_path, &method, params)?;
-            println!("{}", serde_json::to_string_pretty(&resp)?);
+            println!("{}", json_text(serde_json::to_string_pretty(&resp)?));
             Ok(())
         }
     }
+}
+
+/// Pretty JSON for the terminal: the value as is, with DEL, C1 and bidi
+/// controls as `\uXXXX` escapes (serde_json escapes only C0; t-182).
+fn json_text(pretty: String) -> String {
+    tiza_core::printable::escape_json_controls(&pretty).into_owned()
 }
 
 fn call(
@@ -1009,10 +1058,12 @@ fn render_all_steps(
     if n > 1 && !size.is_empty() {
         size.push_str(" each");
     }
+    // File and folder names as found on disk: shown, never raw (t-182).
+    let shown_dir = tiza_core::printable::printable_line(&dir.display().to_string()).into_owned();
     eprintln!(
         "wrote {n} file{} to {} ({steps}{size})",
         if n == 1 { "" } else { "s" },
-        dir.display()
+        shown_dir
     );
     let left = |n: usize| if n == 1 { "it is" } else { "they are" };
     if !removed.is_empty() {
@@ -1033,7 +1084,7 @@ fn render_all_steps(
     if !other.is_empty() {
         eprintln!(
             "tiza: {} also holds {} of another run, left as {}: {}",
-            dir.display(),
+            shown_dir,
             files_word(other.len()),
             left(other.len()),
             name_list(&other)
@@ -1042,7 +1093,7 @@ fn render_all_steps(
     if !odd.is_empty() {
         eprintln!(
             "tiza: {} also holds {} named like a step that {} not a regular file, left as {}: {}",
-            dir.display(),
+            shown_dir,
             if odd.len() == 1 {
                 "1 entry".to_string()
             } else {
@@ -1063,7 +1114,7 @@ fn files_word(n: usize) -> String {
 /// At most five names, then «and N more» (a directory can hold thousands).
 fn name_list(names: &[String]) -> String {
     const SHOWN: usize = 5;
-    if names.len() <= SHOWN + 1 {
+    let list = if names.len() <= SHOWN + 1 {
         names.join(", ")
     } else {
         format!(
@@ -1071,7 +1122,9 @@ fn name_list(names: &[String]) -> String {
             names[..SHOWN].join(", "),
             names.len() - SHOWN
         )
-    }
+    };
+    // Names found on disk: shown, never raw (t-182).
+    tiza_core::printable::printable_line(&list).into_owned()
 }
 
 /// Whether `f` is a name this `--all-steps` run's scheme writes: `step-` +
@@ -1400,7 +1453,10 @@ fn override_language(doc: &mut tiza_core::Document, lang: Option<&str>) {
         }
         let lang = normalize_language(l);
         if !has_grammar(&lang) && lang != "txt" {
-            eprintln!("tiza: no grammar for `{lang}`; the code is shown as plain text");
+            eprintln!(
+                "tiza: no grammar for `{}`; the code is shown as plain text",
+                tiza_core::printable::printable_text(&lang)
+            );
         }
         doc.source.language = lang;
     }

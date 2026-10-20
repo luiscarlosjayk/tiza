@@ -68,13 +68,18 @@ fn hex(c: Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
 }
 
+/// XML text: the markup characters as entities, and a character XML 1.0
+/// does not allow written as its picture or `�` (t-182). The cells never
+/// hold a control character (they come out of `Canvas::put`), but a title
+/// can, and one stray byte would make the whole file invalid.
 fn escape(s: &str, out: &mut String) {
-    for ch in s.chars() {
+    for ch in tiza_core::printable::printable_line(s).chars() {
         match ch {
             '&' => out.push_str("&amp;"),
             '<' => out.push_str("&lt;"),
             '>' => out.push_str("&gt;"),
             '"' => out.push_str("&quot;"),
+            '\u{FFFE}' | '\u{FFFF}' => out.push('\u{FFFD}'),
             c => out.push(c),
         }
     }
@@ -346,6 +351,21 @@ mod tests {
         assert_eq!(r[0].cells, 4);
         assert_eq!(r[1].text, "x");
         assert!(r[1].style.bold);
+    }
+
+    #[test]
+    fn control_characters_never_make_the_xml_invalid() {
+        let mut c = Canvas::new(8, 1);
+        c.put_str(0, 0, "a\x1b\0\u{9b}b", CellStyle::new());
+        let o = SvgOptions {
+            embed_fonts: false,
+            title: Some("t\x07\u{FFFF}\n".into()),
+            ..Default::default()
+        };
+        let svg = to_svg(&c, &Theme::dark(), &o);
+        assert!(svg.contains("a␛␀\u{FFFD}b"), "{svg}");
+        assert!(svg.contains("<title>t␇\u{FFFD}␊</title>"), "{svg}");
+        assert!(!svg.chars().any(|ch| ch < ' ' && ch != '\n'));
     }
 
     #[test]

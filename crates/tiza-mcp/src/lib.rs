@@ -599,8 +599,13 @@ fn exe_mtime() -> Option<std::time::SystemTime> {
         .and_then(|m| m.modified().ok())
 }
 
+/// A tool's text reply, with its control characters shown as pictures
+/// (`␛`, `␀`…) and never sent raw to the client (t-182).
 fn text(v: impl ToString) -> CallToolResult {
-    CallToolResult::success(vec![ContentBlock::text(v.to_string())])
+    let v = v.to_string();
+    CallToolResult::success(vec![ContentBlock::text(
+        tiza_core::printable::printable_text(&v).into_owned(),
+    )])
 }
 
 /// The reply of `annotation.add` / `annotation.update` with a first line
@@ -613,8 +618,11 @@ fn annotation_reply(v: &Value, verb: &str) -> CallToolResult {
     }
 }
 
+/// Pretty JSON; DEL, C1 and bidi controls as `\uXXXX` (the same value,
+/// t-182: serde_json escapes only C0).
 fn pretty(v: &Value) -> String {
-    serde_json::to_string_pretty(v).unwrap_or_default()
+    let text = serde_json::to_string_pretty(v).unwrap_or_default();
+    tiza_core::printable::escape_json_controls(&text).into_owned()
 }
 
 #[tool_router]
@@ -685,7 +693,11 @@ impl TizaServer {
             })?;
         if let Some(err) = resp.error {
             return Err(McpError::invalid_params(
-                format!("{} ({})", err.message, err.code),
+                format!(
+                    "{} ({})",
+                    tiza_core::printable::printable_text(&err.message),
+                    err.code
+                ),
                 None,
             ));
         }
@@ -1555,6 +1567,8 @@ impl TizaServer {
                 });
                 let mut out = String::new();
                 if let Some(t) = title {
+                    // One line, as `render --format md` (t-182).
+                    let t = tiza_core::printable::printable_line(&t);
                     out.push_str(&format!("**{t}** (step {})\n\n", status["step"]));
                 }
                 out.push_str("```text\n");
@@ -1595,15 +1609,25 @@ impl ServerHandler for TizaServer {
             self.tool_router.call(tcc).await
         })
         .await
-        .map_err(|p| panicked(&format!("tool {tool}"), p))??;
+        .map_err(|p| panicked(&format!("tool {tool}"), p))?
+        .map_err(|mut e| {
+            // An error can quote a path or a text the agent sent (an
+            // export's `could not write …`): shown, never raw (t-182).
+            if let std::borrow::Cow::Owned(m) = tiza_core::printable::printable_text(&e.message) {
+                e.message = m.into();
+            }
+            e
+        })?;
         if let rmcp::model::CallToolResponse::Complete(r) = &mut resp
             && r.is_error == Some(true)
         {
             for c in &mut r.content {
-                if let rmcp::model::ContentBlock::Text(t) = c
-                    && t.text.starts_with("failed to deserialize parameters")
-                {
-                    t.text = tiza_core::error::serde_text(&t.text);
+                if let rmcp::model::ContentBlock::Text(t) = c {
+                    if t.text.starts_with("failed to deserialize parameters") {
+                        t.text = tiza_core::error::serde_text(&t.text);
+                    }
+                    // A field name serde quotes is shown, not sent raw (t-182).
+                    t.text = tiza_core::printable::printable_text(&t.text).into_owned();
                 }
             }
         }
@@ -1640,6 +1664,9 @@ impl ServerHandler for TizaServer {
             .find(|r| r.0 == request.uri)
             .map(|r| r.3)
             .unwrap_or("text/plain");
+        // The code and the render with their control characters shown
+        // (t-182); the scene's JSON has them escaped already.
+        let text = tiza_core::printable::printable_text(&text).into_owned();
         Ok(
             ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
                 uri: request.uri,

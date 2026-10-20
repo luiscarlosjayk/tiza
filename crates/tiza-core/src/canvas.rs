@@ -227,7 +227,19 @@ impl Canvas {
     }
 
     /// Writes a grapheme (width 1 or 2) at (x, y). Returns the width used.
+    ///
+    /// The one door into the cells (t-182): a control character is stored
+    /// as its one-cell picture (`␛`, `␀`, `␡`, `�`…) and a bidi control as
+    /// nothing (it takes no cell, so nothing is written and the width is
+    /// 0), so no drawing or export ever holds a raw control byte. See
+    /// [`crate::printable`].
     pub fn put(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) -> usize {
+        // (An empty `sym` is the second half of a wide cell being copied.)
+        let shown = crate::printable::cell_symbol(sym);
+        if shown.is_empty() && !sym.is_empty() {
+            return 0;
+        }
+        let sym = &*shown;
         let w = UnicodeWidthStr::width(sym).max(1);
         let Some(i) = self.idx(x, y) else { return w };
         if w == 2 && x + 1 >= self.width {
@@ -356,6 +368,7 @@ impl Canvas {
     pub fn to_markdown(&self, title: Option<&str>) -> String {
         let mut out = String::new();
         if let Some(t) = title.map(str::trim).filter(|t| !t.is_empty()) {
+            let t = crate::printable::printable_line(t);
             out.push_str(&format!("**{t}**\n\n"));
         }
         out.push_str("```text\n");

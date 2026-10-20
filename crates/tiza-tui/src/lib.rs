@@ -139,7 +139,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             app.save_path.display(),
             app.save_error.as_deref().unwrap_or("unknown error")
         );
-        eprintln!("tiza: {msg}");
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&msg));
     }
     drop(ipc);
     result
@@ -185,8 +185,12 @@ fn install_crash_hook(save_path: &std::path::Path) {
                 path.display()
             )
         };
+        // The payload can quote a document or a file name: shown, never
+        // sent raw to the terminal (t-182).
+        let what = format!("{reason}{at}.{work}");
         eprintln!(
-            "tiza crashed: {reason}{at}.{work} Please report it with the command you typed: https://github.com/luiscarlosjayk/tiza/issues"
+            "tiza crashed: {} Please report it with the command you typed: https://github.com/luiscarlosjayk/tiza/issues",
+            tiza_core::printable::printable_text(&what)
         );
     }));
 }

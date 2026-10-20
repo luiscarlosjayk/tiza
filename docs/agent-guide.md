@@ -114,6 +114,8 @@ The presenter may turn on `:supervise`: then every mutating call (add, update, d
 
 If your client supports MCP resources, `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
 
+**Control characters.** Code can hold bytes a terminal acts on (ESC, NUL, BEL…). Tiza never shows or returns them raw (t-182): `get_code`, `render_text`, every export and the `tiza://` resources show a C0 control as its picture (`␛` for ESC, `␀`, `␇`; the tab is expanded as before), DEL as `␡` and a C1 control as `�`; a bidi control (U+202A–U+202E, U+2066–U+2069, U+200E/F, U+061C) takes no cell in a drawing and is `�` in a text reply. JSON replies (`tiza://scene`, `pretty` results) keep the real characters as `\uXXXX` escapes. A `find` must use the real character (`\u001b` in JSON), not its picture. An error that quotes your `find` shows such a character in Rust escapes (`text "a\u{1b}b" not found in the code`); other errors show its picture.
+
 ## Idempotency
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
