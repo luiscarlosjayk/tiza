@@ -137,14 +137,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(s) = tiza_core::stale::close_summary(&app.doc) {
         eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
     }
-    if app.dirty && app.save().is_err() {
-        // The terminal is restored by now: say it where it will be read.
-        let msg = format!(
-            "could not save {}: {}",
-            app.save_path.display(),
-            app.save_error.as_deref().unwrap_or("unknown error")
-        );
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&msg));
+    // No way out writes the sidecar: with autosave on every change is on
+    // disk already; with it off (or a read-only file) the author kept the
+    // file as it is. What is left unsaved is said where it will be read.
+    if let Some(s) = app.unsaved_summary() {
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
     }
     drop(ipc);
     result

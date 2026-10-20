@@ -144,7 +144,7 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     assert!(!live.with(|a| a.quit));
     let (msg, err) = live.message().unwrap();
     assert!(
-        err && msg.starts_with("unsaved (read-only): :q! discards"),
+        err && msg.starts_with("unsaved (read-only): :q! quits without saving"),
         "{msg}"
     );
     // (4) Writable again: the next autosave succeeds, says so once, and the
@@ -205,7 +205,7 @@ fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
     assert!(
         err && msg.contains("unsaved changes (autosave off)")
             && msg.contains(":w PATH saves elsewhere")
-            && msg.contains(":q! discards"),
+            && msg.contains(":q! quits without saving"),
         "{msg}"
     );
     live.command("q!");

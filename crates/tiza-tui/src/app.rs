@@ -269,6 +269,9 @@ pub struct App {
     pub doc: Document,
     pub save_path: PathBuf,
     pub history: History,
+    /// The newest undo entry when the sidecar was last written: the edits
+    /// after it are the unsaved ones.
+    pub saved_at: u64,
     pub theme: Theme,
     pub mode: Mode,
     pub overlay: Overlay,
@@ -395,6 +398,7 @@ impl App {
             doc,
             save_path,
             history: History::default(),
+            saved_at: 0,
             theme,
             mode: Mode::Normal,
             overlay: Overlay::None,
@@ -871,6 +875,7 @@ impl App {
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
+                self.saved_at = self.history.newest();
                 if self.save_error.take().is_some() {
                     // Writable again: say it once, over the action's own
                     // confirmation, and the bar indicator goes away.
@@ -896,18 +901,49 @@ impl App {
 
     /// Quits unless there are unsaved changes: ones that could not be
     /// written, or ones made with autosave off (`force` ignores both).
+    /// What quitting now leaves unsaved, for stderr once the terminal is
+    /// restored (no way out writes the sidecar: autosave already did, or
+    /// the author asked it not to): `quit without saving doc.tiza: 2
+    /// changes not saved (note a1, move #1 added)`. `None` when nothing is
+    /// pending.
+    pub fn unsaved_summary(&self) -> Option<String> {
+        if !self.dirty {
+            return None;
+        }
+        let labels = self.history.labels_after(self.saved_at);
+        let path = self.save_path.display();
+        Some(match labels.len() {
+            0 => {
+                format!("quit without saving {path}: the changes since the last save are not saved")
+            }
+            n => {
+                let shown: Vec<&str> = labels.iter().take(5).map(String::as_str).collect();
+                let more = if n > 5 {
+                    format!(", and {} more", n - 5)
+                } else {
+                    String::new()
+                };
+                format!(
+                    "quit without saving {path}: {n} change{} not saved ({}{more})",
+                    if n == 1 { "" } else { "s" },
+                    shown.join(", ")
+                )
+            }
+        })
+    }
+
     pub fn request_quit(&mut self, force: bool) {
         if !force && self.dirty {
             if self.save_error.is_some() {
                 self.error(format!(
-                    "unsaved (read-only): :q! discards, :w PATH saves elsewhere — {}",
+                    "unsaved (read-only): :q! quits without saving, :w PATH saves elsewhere — {}",
                     self.save_path.display()
                 ));
                 return;
             }
             if !self.autosave {
                 self.error(format!(
-                    "unsaved changes (autosave off): :w saves to {}, :w PATH saves elsewhere, :q! discards",
+                    "unsaved changes (autosave off): :w saves to {}, :w PATH saves elsewhere, :q! quits without saving",
                     self.save_path.display()
                 ));
                 return;

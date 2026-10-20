@@ -843,7 +843,7 @@ fn help_lines() -> Vec<String> {
         "  :theme dark|light|terminal|auto   :theme file PATH   fix a theme, use the terminal's palette, follow the terminal, load token overrides",
         "  :numbers on|off   show or hide the line-number gutter (saved in the document; exports follow it)",
         "  :margin N | :margin auto   cap the right margin so long notes wrap earlier (12-200 cells; saved in the document)",
-        "  :w [path]   :wq   :q   :q! (quit even if unsaved or with stale moves)   :autosave on|off (--no-save at start)   :redo   :help",
+        "  :w [path]   :wq   :q   :q! (quits without saving; also over stale moves)   :autosave on|off (--no-save at start)   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
         "MCP server (`tiza mcp`) do exactly the same thing as these commands.",

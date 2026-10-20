@@ -187,6 +187,21 @@ impl History {
         self.redo = c.redo;
     }
 
+    /// The id of the newest edit that can be undone (0: none).
+    pub fn newest(&self) -> u64 {
+        self.undo.last().map_or(0, |s| s.id)
+    }
+
+    /// The names of the edits recorded after the one with id `id`, oldest
+    /// first (what changed since then, as far as undo remembers).
+    pub fn labels_after(&self, id: u64) -> Vec<String> {
+        self.undo
+            .iter()
+            .filter(|s| s.id > id)
+            .map(|s| s.label.clone())
+            .collect()
+    }
+
     pub fn can_undo(&self) -> bool {
         !self.undo.is_empty()
     }
