@@ -9,6 +9,6 @@ Compiled into the binary (`fonts.rs`) and used only by `tiza render --format svg
 
 Provenance and the subset command of the symbols font: `pyftsubset DejaVuSansMono.ttf --unicodes="U+2000-2BFF,U+1F300-1FAFF" --no-hinting`, then the family renamed to *Tiza Symbols* with fontTools.
 
-The brand serif (*Tiza Serif*, a renamed Libron subset) used to be embedded here for the opt-in `--brand-font`; it left the binary on 2026-10-18 (t-134) and now lives in [`docs/brand/fonts/`](../../../../docs/brand/fonts/README.md) as brand material (wordmark, thumbnails: t-069), with its OFL license and the Reserved Font Name note.
+The brand serif (*Tiza Serif*, a renamed Libron subset) lives in [`docs/brand/fonts/`](../../../../docs/brand/fonts/README.md) as brand material (wordmark, thumbnails: t-069), with its OFL license and the Reserved Font Name note.
 
 Emoji render as monochrome outlines when the fallback has them and are otherwise left blank: pass `--system-fonts` to also use the fonts installed on the machine.
