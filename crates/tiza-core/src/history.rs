@@ -192,6 +192,11 @@ impl History {
         self.undo.last().map_or(0, |s| s.id)
     }
 
+    /// The edits that can be undone, oldest first: id and name.
+    pub fn entries(&self) -> Vec<(u64, String)> {
+        self.undo.iter().map(|s| (s.id, s.label.clone())).collect()
+    }
+
     /// The names of the edits recorded after the one with id `id`, oldest
     /// first (what changed since then, as far as undo remembers).
     pub fn labels_after(&self, id: u64) -> Vec<String> {

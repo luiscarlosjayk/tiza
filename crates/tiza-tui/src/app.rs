@@ -272,6 +272,12 @@ pub struct App {
     /// The newest undo entry when the sidecar was last written: the edits
     /// after it are the unsaved ones.
     pub saved_at: u64,
+    /// The undo entries and the sidecar text as last written.
+    saved_entries: Vec<(u64, String)>,
+    saved_json: Option<String>,
+    /// Ctrl-C asked to quit: a failed autosave is tried once more on the
+    /// way out.
+    pub retry_save_on_exit: bool,
     pub theme: Theme,
     pub mode: Mode,
     pub overlay: Overlay,
@@ -399,6 +405,9 @@ impl App {
             save_path,
             history: History::default(),
             saved_at: 0,
+            saved_entries: Vec::new(),
+            saved_json: None,
+            retry_save_on_exit: false,
             theme,
             mode: Mode::Normal,
             overlay: Overlay::None,
@@ -445,6 +454,7 @@ impl App {
             agent_deferred: Vec::new(),
         };
         app.rebuild_theme();
+        app.mark_saved();
         app
     }
 
@@ -875,7 +885,7 @@ impl App {
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
-                self.saved_at = self.history.newest();
+                self.mark_saved();
                 if self.save_error.take().is_some() {
                     // Writable again: say it once, over the action's own
                     // confirmation, and the bar indicator goes away.
@@ -899,18 +909,45 @@ impl App {
         }
     }
 
-    /// Quits unless there are unsaved changes: ones that could not be
-    /// written, or ones made with autosave off (`force` ignores both).
+    /// The sidecar as a save would write it now (the theme as `save` sets
+    /// it): what quitting compares with what was last written.
+    fn pending_json(&self) -> Option<String> {
+        let mut d = self.doc.clone();
+        if !self.theme_auto {
+            d.theme = Some(self.theme.name);
+        }
+        fs::document_json(&d).ok()
+    }
+
+    /// Takes note of the document as it stands as the one on disk (opened
+    /// or just saved): what quitting compares with.
+    fn mark_saved(&mut self) {
+        self.saved_at = self.history.newest();
+        self.saved_entries = self.history.entries();
+        self.saved_json = self.pending_json();
+    }
+
     /// What quitting now leaves unsaved, for stderr once the terminal is
-    /// restored (no way out writes the sidecar: autosave already did, or
-    /// the author asked it not to): `quit without saving doc.tiza: 2
-    /// changes not saved (note a1, move #1 added)`. `None` when nothing is
-    /// pending.
+    /// restored (only a Ctrl-C after a failed autosave writes on the way
+    /// out): `quit without saving doc.tiza: 2 changes not saved (note a2,
+    /// note a1 undone)`. `None` when the sidecar a save would write is the
+    /// one last written.
     pub fn unsaved_summary(&self) -> Option<String> {
-        if !self.dirty {
+        if !self.dirty || self.pending_json() == self.saved_json {
             return None;
         }
-        let labels = self.history.labels_after(self.saved_at);
+        // Undone since the save: the edits it had that undo took back
+        // (newest first); new: the ones recorded after it.
+        let now = self.history.entries();
+        let lowest = now.first().map_or(0, |(id, _)| *id);
+        let mut labels: Vec<String> = self
+            .saved_entries
+            .iter()
+            .rev()
+            .filter(|(id, _)| *id >= lowest && !now.iter().any(|(n, _)| n == id))
+            .map(|(_, l)| format!("{l} undone"))
+            .collect();
+        labels.extend(self.history.labels_after(self.saved_at));
         let path = self.save_path.display();
         Some(match labels.len() {
             0 => {
@@ -932,6 +969,9 @@ impl App {
         })
     }
 
+    /// Quits unless there are unsaved changes: ones that could not be
+    /// written, or ones made with autosave off (`force` ignores both), or
+    /// stale moves (their marks are not saved).
     pub fn request_quit(&mut self, force: bool) {
         if !force && self.dirty {
             if self.save_error.is_some() {

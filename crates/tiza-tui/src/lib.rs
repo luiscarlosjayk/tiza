@@ -139,7 +139,17 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     // No way out writes the sidecar: with autosave on every change is on
     // disk already; with it off (or a read-only file) the author kept the
-    // file as it is. What is left unsaved is said where it will be read.
+    // file as it is. Only Ctrl-C, with autosave on, tries a save that
+    // failed once more. What is left unsaved is said where it will be read.
+    if app.retry_save_on_exit
+        && app.autosave
+        && app.dirty
+        && app.save_error.is_some()
+        && let Err(e) = app.save()
+    {
+        let msg = format!("could not save {}: {e}", app.save_path.display());
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&msg));
+    }
     if let Some(s) = app.unsaved_summary() {
         eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
     }
@@ -481,7 +491,10 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
     }
     match code {
-        KeyCode::Char('c') if ctrl => app.quit = true,
+        KeyCode::Char('c') if ctrl => {
+            app.retry_save_on_exit = true;
+            app.quit = true;
+        }
         KeyCode::Tab => app.select_annotation(1),
         KeyCode::BackTab => app.select_annotation(-1),
         KeyCode::Char('v') => app.start_select(false),

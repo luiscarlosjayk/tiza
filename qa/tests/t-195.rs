@@ -60,6 +60,9 @@ s = Pty([binary, *args, "main.rs"], 30, 120)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
     s.settle(0.5)
     for k in keys[:-1]:
+        if k == "CHMOD644":
+            os.chmod("main.rs.tiza", 0o644)
+            continue
         s.send(k.encode())
         s.settle(0.4)
     if ready:
@@ -166,8 +169,97 @@ fn corner_a_read_only_sidecar_writes_nothing_on_the_way_out() {
     let before = stamp(&tiza);
     let tail = run(&dir, "ro.py", &[], &[":note 1 hello\r", "\x03"], None);
     assert_eq!(stamp(&tiza), before);
+    // Ctrl-C tried the failed autosave once more; it failed again.
+    assert!(tail.contains("tiza: could not save "), "{tail}");
     assert!(tail.contains("1 change not saved (note a1)"), "{tail}");
     std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o644)).unwrap();
+}
+
+#[test]
+fn review_ctrl_c_retries_a_failed_autosave_once_and_q_bang_never_writes() {
+    use std::os::unix::fs::PermissionsExt;
+    // Writable again by the time of the Ctrl-C: the note gets to disk.
+    let (dir, tiza) = project("t195-retry");
+    std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let tail = run(
+        &dir,
+        "retry.py",
+        &[],
+        &[":note 1 hello\r", "CHMOD644", "\x03"],
+        None,
+    );
+    assert!(std::fs::read_to_string(&tiza).unwrap().contains("hello"));
+    assert!(
+        !tail.contains("not saved") && !tail.contains("could not"),
+        "{tail}"
+    );
+    // The same with `:q!`: it quits without saving, whatever the mode.
+    let (dir, tiza) = project("t195-retry-q");
+    std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
+    let before = stamp(&tiza);
+    let tail = run(
+        &dir,
+        "retry-q.py",
+        &[],
+        &[":note 1 hello\r", "CHMOD644", ":q!\r"],
+        None,
+    );
+    assert_eq!(stamp(&tiza).0, before.0, "nothing written");
+    assert!(tail.contains("1 change not saved (note a1)"), "{tail}");
+}
+
+/// A live instance on `main.rs` with autosave off.
+fn unsaved(name: &str) -> (tiza_qa::Live, PathBuf) {
+    let (dir, tiza) = project(name);
+    let doc = tiza_core::fs::load_document(&tiza).unwrap();
+    let live = tiza_qa::Live::open(doc, tiza, dir.join("s.sock"));
+    live.command("autosave off");
+    (live, dir)
+}
+
+fn summary(live: &tiza_qa::Live) -> Option<String> {
+    live.with(|app| app.unsaved_summary())
+}
+
+#[test]
+fn review_the_summary_compares_with_the_sidecar_last_written() {
+    // a, :w, b, u: the document is the one on disk.
+    let (live, _dir) = unsaved("t195-same");
+    live.command("note 1 a");
+    live.command("w");
+    live.command("note 2 b");
+    live.command("undo");
+    assert_eq!(summary(&live), None);
+    // a, b, :w, u, u: both notes undone since the save, named.
+    let (live, _dir) = unsaved("t195-undone");
+    live.command("note 1 a");
+    live.command("note 2 b");
+    live.command("w");
+    live.command("undo");
+    live.command("undo");
+    assert_eq!(
+        summary(&live).unwrap(),
+        format!(
+            "quit without saving {}: 2 changes not saved (note a2 undone, note a1 undone)",
+            live.with(|app| app.save_path.display().to_string())
+        )
+    );
+}
+
+#[test]
+fn review_a_reload_of_code_read_by_reference_leaves_nothing_to_save() {
+    let (live, dir) = unsaved("t195-follow");
+    live.command("follow on");
+    std::fs::write(dir.join("main.rs"), CODE.replace("1", "2")).unwrap();
+    let start = std::time::Instant::now();
+    while live.with(|app| app.doc.code.join("\n")).contains("= 1") {
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(10),
+            "no reload"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(summary(&live), None);
 }
 
 #[test]
