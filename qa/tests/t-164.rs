@@ -18,7 +18,7 @@
 //!   `stale_reason` in `move.list` and MCP `list_moves`; `status` says how
 //!   many moves are stale.
 //! - AC3 One notice per change names the stale moves («stale move
-//!   skipped: #1 (line 2 changed); fix it before the next run»). A change
+//!   skipped: #1 (line 2 changed); u undoes the change, or re-add the move»). A change
 //!   that leaves every move matching says nothing new; one that makes a
 //!   move match again says so («move #1 matches the code again»).
 //! - AC4 Nothing is deleted: the `.tiza` keeps a stale move as it was; a
@@ -176,7 +176,7 @@ fn ac1_a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "stale move skipped: #1 (line 2 changed); fix it before the next run · config.ini reloaded (#3): 0 annotations kept"
+        "stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move · config.ini reloaded (#3): 0 annotations kept"
     );
     assert!(loud, "a move that stopped matching is said loudly");
     assert_eq!(
@@ -226,7 +226,7 @@ fn ac3_a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "stale move skipped: #1 (line 2 changed); fix it before the next run · 5 lines pasted (0 annotations kept)"
+        "stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move · 5 lines pasted (0 annotations kept)"
     );
     assert!(loud);
     assert_eq!(stale_count(&live), 1);
@@ -582,7 +582,7 @@ fn corner_a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
     assert!(notice.loud);
     assert_eq!(
         notice.text,
-        "stale move skipped: #3 (line 3 changed); fix it before the next run"
+        "stale move skipped: #3 (line 3 changed); u undoes the change, or re-add the move"
     );
     assert!(doc.moves[0].stale.is_none(), "main.rs's move untouched");
     assert_eq!(
@@ -960,9 +960,82 @@ fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_ev
     );
     assert_eq!(position_of(&live, 0), "3", "never moved by a guess");
     assert_eq!(code_at(&live, 1)[2], "}", "and never applied");
-    // Undoing both edits at once is again two edits: still not known.
-    reload(&live, &dir, BRACES, 4);
+    // Other edits around it: still not known.
+    reload(
+        &live,
+        &dir,
+        &BRACES
+            .replace("fn a()", "fn a3()")
+            .replace("two()", "drei()"),
+        4,
+    );
     assert_eq!(stale_count(&live), 1);
+    // The code exactly as it was when the move last matched (a checkout,
+    // a stash, the editor's undo): the move is back, numbers and all.
+    reload(&live, &dir, BRACES, 5);
+    assert_eq!(stale_count(&live), 0, "{}", message(&live));
+    assert!(message(&live).starts_with("move #1 matches the code again"));
+    assert_eq!(live.api_ok("check", json!({}))["ok"], true);
+}
+
+#[test]
+fn review_3_a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_stale() {
+    // C2a: the common end `1`, `}` also follows the copy in fn c.
+    for (position, name) in [("3", "t164-c2a"), ("2", "t164-c2a-body")] {
+        let (live, _dir) = demo(
+            name,
+            "fn a() {\n    1\n}\n",
+            json!([{"at_step": 1, "action": "code.patch", "op": "replace", "position": position, "content": "X"}]),
+            json!([]),
+            json!({}),
+        );
+        paste(&live, "fn a2() {\n    1\n}\nfn c() {\n    1\n}\n");
+        assert_eq!(stale_count(&live), 1, "{name}: {}", message(&live));
+        assert_eq!(position_of(&live, 0), position);
+        assert!(!code_at(&live, 1).contains(&"X".to_string()), "{name}");
+    }
+    // C2c: the common start `fn a() {` is also the new function's header.
+    let (live, _dir) = ab("t164-c2c", "1");
+    paste(
+        &live,
+        &format!(
+            "fn a() {{\n    9\n}}\n{}",
+            AB.replace("    2\n", "    20\n")
+        ),
+    );
+    assert_eq!(stale_count(&live), 1, "{}", message(&live));
+    assert_eq!(code_at(&live, 1)[0], "fn a() {");
+    // A function duplicated above or below: either copy could be it, and
+    // so could any `}` next to the change.
+    let above = format!("fn a() {{\n    1\n}}\n{AB}");
+    let below = format!("{AB}fn b() {{\n    2\n}}\n");
+    for (code, position, after, name) in [
+        (&above, "3", None, "t164-dup-above-a"),
+        (&above, "6", Some("9"), "t164-dup-above-b"),
+        (&below, "3", None, "t164-dup-below-a"),
+        (&below, "6", None, "t164-dup-below-b"),
+    ] {
+        let (live, _dir) = ab(name, position);
+        paste(&live, code);
+        match after {
+            Some(p) => {
+                assert_eq!(stale_count(&live), 0, "{name}");
+                assert_eq!(position_of(&live, 0), p, "{name}");
+            }
+            None => {
+                assert_eq!(stale_count(&live), 1, "{name}");
+                assert!(
+                    !code_at(&live, 1).contains(&"} // end".to_string()),
+                    "{name}"
+                );
+            }
+        }
+    }
+    // Luis's case still follows: `fn a() {` is not in the pasted block.
+    let (live, _dir) = brace("t164-brace-still");
+    paste(&live, &format!("fn z() {{\n    zero();\n}}\n{BRACES}"));
+    assert_eq!(position_of(&live, 0), "6");
+    assert_eq!(stale_count(&live), 0);
 }
 
 const AB: &str = "fn a() {\n    1\n}\nfn b() {\n    2\n}\n";

@@ -27,7 +27,7 @@ use crate::moves::{
 };
 
 /// Why a move is skipped, and what it needs to match again.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Stale {
     /// In words: `line 2 changed`, `find «x» matches nothing in the code`.
     pub reason: String,
@@ -36,6 +36,9 @@ pub struct Stale {
     /// For line-number targets, the text their lines held when the move
     /// last matched.
     expected: Option<Region>,
+    /// The step-0 code of its view when the move last matched, and the
+    /// move as it was then: code put back exactly as it was gives it back.
+    last_good: Option<(Vec<String>, Box<Move>)>,
 }
 
 impl Stale {
@@ -46,6 +49,7 @@ impl Stale {
             reason: reason.into(),
             file: None,
             expected: None,
+            last_good: None,
         }
     }
 }
@@ -158,7 +162,8 @@ const LOAD_ADVICE: &str = "; a move target must match exactly once (add occurren
 /// move's line numbers name are compared with what they held there (or,
 /// for a move already stale, when it last matched). Without `before` (a
 /// `scene.put`, a move added or deleted), the moves are checked as they
-/// stand, the stale ones against their own text. Then the annotations held
+/// stand; a stale one on line numbers stays stale unless its view's code is
+/// back to what it was when it last matched. Then the annotations held
 /// by moves that match again go back where those moves write
 /// ([`release`]). Returns the notice for the status line, `None` when no
 /// mark changed.
@@ -197,10 +202,30 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
         let key = p.shown.file.clone();
         let first = doc.view_first_line(&key);
         let kept = doc.moves[i].stale.as_ref().and_then(|s| s.expected.clone());
-        // Where its lines went, or why that is not known.
-        let (m, exp, mut reason) = match &mut follow {
-            Some(f) => f.carry(&doc.moves[i], kept, doc),
-            None => (doc.moves[i].clone(), kept, None),
+        let base = doc.view_base_code(&key);
+        let last_good = match (&doc.moves[i].stale, before) {
+            (Some(s), _) => s.last_good.clone(),
+            (None, Some(old)) => old
+                .view_base_code(&key)
+                .map(|code| (code, Box::new(doc.moves[i].clone()))),
+            (None, None) => None,
+        };
+        // Where its lines went, or why that is not known. The code exactly
+        // as it was when it last matched gives the move back as it was.
+        // Without a change of code to follow, a stale move on line numbers
+        // stays stale: where its lines are is not known.
+        let (m, exp, mut reason) = match (&mut follow, &last_good) {
+            (_, Some((code, then))) if base.as_ref() == Some(code) => {
+                ((**then).clone(), None, None)
+            }
+            (Some(f), _) => f.carry(&doc.moves[i], kept, doc),
+            (None, _) => {
+                let still = kept
+                    .is_some()
+                    .then(|| doc.moves[i].stale.as_ref().map(|s| s.reason.clone()))
+                    .flatten();
+                (doc.moves[i].clone(), kept, still)
+            }
         };
         if reason.is_none()
             && let (Some(r), Some(code)) = (&exp, p.codes.get(&key))
@@ -230,6 +255,7 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
             reason,
             file: key,
             expected: exp,
+            last_good,
         });
         doc.moves[i] = Move { stale, ..m };
     }
@@ -237,19 +263,26 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
     notice(doc, &was)
 }
 
-/// Where the step-0 lines of a view went: the common start (`prefix`
-/// lines) of the old and the new code keeps its place. The lines between
-/// the common start and end are the change. When the old and the new lines
-/// of the change share no line, it is one block: the common end (`suffix`
-/// lines) moved by `delta`, and a block of as many lines as before maps
-/// line for line (each line rewritten in place). When they share a line,
-/// there were several edits (or lines moved), and the common end may be a
-/// coincidence (one `}` alike after edits further up): nothing from the
-/// change down has a known place.
+/// Where the step-0 lines of a view went. The lines between the old and
+/// the new code's common start and end are the change. A line of the
+/// common start or end next to the change whose text the new lines of the
+/// change also have might be either copy, so its place is ambiguous, and
+/// so is every line closer to the change than it: the start and end are
+/// cut back to the first line whose text the change does not repeat
+/// (`sure_prefix`, `sure_suffix`). When the old and the new lines of the
+/// change share no line it is one block: the sure end moved by `delta`,
+/// and a block of as many lines as before maps line for line (each line
+/// rewritten in place). When they share a line there were several edits
+/// (or lines moved), and the common end may be a coincidence (one `}`
+/// alike after edits further up): nothing from the change down has a known
+/// place. A line whose place is ambiguous or unknown makes its move stale:
+/// one of several equal lines is never picked.
 struct BaseMap {
+    sure_prefix: usize,
     prefix: usize,
     old_len: usize,
     suffix: usize,
+    sure_suffix: usize,
     delta: i64,
     one_block: bool,
 }
@@ -265,14 +298,24 @@ impl BaseMap {
             .take(room)
             .take_while(|(a, b)| a == b)
             .count();
+        let changed: HashSet<&String> = new[prefix..new.len() - suffix].iter().collect();
         let was: HashSet<&String> = old[prefix..old.len() - suffix].iter().collect();
-        let one_block = !new[prefix..new.len() - suffix]
-            .iter()
-            .any(|l| was.contains(l));
+        let one_block = !changed.iter().any(|l| was.contains(l));
+        let sure_prefix = (0..prefix)
+            .rev()
+            .find(|k| !changed.contains(&old[*k]))
+            .map_or(0, |k| k + 1);
+        let tail = old.len() - suffix;
+        let sure_suffix = old.len()
+            - (tail..old.len())
+                .find(|k| !changed.contains(&old[*k]))
+                .unwrap_or(old.len());
         BaseMap {
+            sure_prefix,
             prefix,
             old_len: old.len(),
             suffix,
+            sure_suffix,
             delta: new.len() as i64 - old.len() as i64,
             one_block,
         }
@@ -281,14 +324,19 @@ impl BaseMap {
     /// Where step-0 line `k` (0-based) is now; `old_len` for one past the
     /// end.
     fn get(&self, k: usize) -> Option<usize> {
-        if k < self.prefix {
+        let shifted = || usize::try_from(k as i64 + self.delta).ok();
+        if k < self.sure_prefix {
             Some(k)
-        } else if !self.one_block {
+        } else if k < self.prefix || !self.one_block {
             None
-        } else if k >= self.old_len - self.suffix || self.delta == 0 {
-            usize::try_from(k as i64 + self.delta).ok()
+        } else if k < self.old_len - self.suffix {
+            (self.delta == 0).then_some(k)
+        } else if k < self.old_len - self.sure_suffix {
+            None
+        } else if k == self.old_len {
+            (self.sure_suffix == self.suffix).then(shifted).flatten()
         } else {
-            None
+            shifted()
         }
     }
 }
@@ -436,7 +484,7 @@ fn shifted(m: &Move, by: i64) -> Move {
     m
 }
 
-/// `stale move skipped: #1 (line 2 changed); fix it before the next run`,
+/// `stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move`,
 /// and `move #5 matches the code again`, when some mark appeared, changed
 /// its reason or went. The moves come first: the bar may cut the end.
 fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
@@ -463,9 +511,9 @@ fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
             .collect::<Vec<_>>()
             .join(", ");
         parts.push(if now.len() == 1 {
-            format!("stale move skipped: {list}; fix it before the next run")
+            format!("stale move skipped: {list}; u undoes the change, or re-add the move")
         } else {
-            format!("stale moves skipped: {list}; fix them before the next run")
+            format!("stale moves skipped: {list}; u undoes the change, or re-add the moves")
         });
     }
     match cleared.as_slice() {
