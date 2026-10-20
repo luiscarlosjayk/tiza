@@ -1141,9 +1141,9 @@ fn check_loaded(
 /// The annotations a step would show but its `code.link` window crops
 /// away, from their own step on with their lines carried there by the
 /// moves. A window that comes from a link after the annotation's step is
-/// the author zooming in, so it is left out: what is said is what is
-/// outside the window of the annotation's own step, or what a patch pushed
-/// out of it. Per id, in document order: the steps and the first such
+/// the author zooming in: what it never showed is left out, what was inside
+/// it at the link's step and a later patch pushes out is said, as is what
+/// is outside the window of the annotation's own step. Per id, in document order: the steps and the first such
 /// window (`src/queue.rs:17-23`). Empty for a document with no window.
 pub fn outside_windows(doc: &Document) -> Vec<(String, Vec<u32>, String)> {
     outside_windows_from(doc, 1, false)
@@ -1191,24 +1191,35 @@ pub fn outside_windows_from(
         };
         let file = doc.view_key(&l.file);
         let shapes = doc.shapes_at(&proj, step);
-        for (a, shape) in doc.annotations.iter().zip(shapes) {
-            let Some(shape) = shape else { continue };
-            if a.file != file || a.step > step || (!zoom && link.at_step > a.step) {
-                continue;
-            }
-            let inside = shape
+        // The shapes at the step of the link, for a window a later link
+        // sets: the author's zoom keeps out what it never showed, and what
+        // was inside it there and a patch pushes out is said.
+        let at_link = (!zoom && link.at_step < step).then(|| doc.shapes_at(&proj, link.at_step));
+        let inside = |shape: &crate::Shape| {
+            shape
                 .line_ranges()
                 .iter()
-                .all(|(f, t)| *f >= wa && *t <= wb);
-            if !inside {
-                found
-                    .entry(a.id.clone())
-                    .or_insert_with(|| {
-                        (Vec::new(), format!("{}:{wa}-{wb}", doc.file_label(&a.file)))
-                    })
-                    .0
-                    .push(step);
+                .all(|(f, t)| *f >= wa && *t <= wb)
+        };
+        for (i, (a, shape)) in doc.annotations.iter().zip(&shapes).enumerate() {
+            let Some(shape) = shape else { continue };
+            if a.file != file || a.step > step || inside(shape) {
+                continue;
             }
+            if !zoom && link.at_step > a.step {
+                let was_in = match &at_link {
+                    Some(at) => at[i].as_ref().is_some_and(inside),
+                    None => false,
+                };
+                if !was_in {
+                    continue;
+                }
+            }
+            found
+                .entry(a.id.clone())
+                .or_insert_with(|| (Vec::new(), format!("{}:{wa}-{wb}", doc.file_label(&a.file))))
+                .0
+                .push(step);
         }
     }
     doc.annotations

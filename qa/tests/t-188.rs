@@ -1361,6 +1361,61 @@ fn review_an_annotation_already_outside_blocks_only_the_patches_that_reach_it() 
     );
 }
 
+/// A zoom (a later link with a narrower window) keeps out, without a word,
+/// what it never showed; what was inside it at its step and a later patch
+/// pushes out is said by `check` too, as by the `move.add` reply.
+#[test]
+fn review_a_patch_after_a_zoom_that_pushes_an_annotation_out_is_said() {
+    let (_dir, live) = two_files(
+        "zoom-patch",
+        json!([
+            {"at_step": 2, "action": "code.link", "file": "b.rs", "lines": "1-12"},
+            {"at_step": 4, "action": "code.link", "file": "b.rs", "lines": "5-10"}
+        ]),
+        json!([{"id": "n1", "step": 2, "file": "b.rs", "type": "note", "line": 8, "text": "inside the zoom"}]),
+    );
+    assert!(findings(&live, "outside_window").is_empty());
+    let r = live.api_ok(
+        "move.add",
+        json!({"at_step": 5, "action": "code.patch", "op": "insert", "position": "3",
+               "content": "z1();\nz2();\nz3();\nz4();\nz5();"}),
+    );
+    assert_eq!(
+        r["warning"],
+        "n1: outside the window at step 5 (b.rs:5-10): kept, not drawn there"
+    );
+    let f = findings(&live, "outside_window");
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert_eq!(
+        (f[0]["id"].clone(), f[0]["step"].clone()),
+        (json!("n1"), json!(5))
+    );
+    assert!(
+        f[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("at step 5 (b.rs:5-10)"),
+        "{}",
+        f[0]
+    );
+    // The zoom alone says nothing (stack-and-queue: only a5, its own step).
+    let dir = examples_copy("zoom-alone");
+    let out = std::process::Command::new(bin())
+        .args(["check", "--json"])
+        .arg(dir.join("stack-and-queue.tiza"))
+        .output()
+        .unwrap();
+    let report: Value = serde_json::from_slice(&out.stdout).unwrap();
+    let ids: Vec<&Value> = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["code"] == "outside_window")
+        .map(|f| &f["id"])
+        .collect();
+    assert_eq!(ids, [&json!("a5")]);
+}
+
 // ---------------------------------------------------------------- AC5: random moves
 
 /// xorshift64*: a fixed seed gives the same moves on every run.
