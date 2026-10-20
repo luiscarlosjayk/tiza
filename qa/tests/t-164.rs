@@ -960,8 +960,76 @@ fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_ev
     );
     assert_eq!(position_of(&live, 0), "3", "never moved by a guess");
     assert_eq!(code_at(&live, 1)[2], "}", "and never applied");
+    // Undoing both edits at once is again two edits: still not known.
     reload(&live, &dir, BRACES, 4);
-    assert_eq!(stale_count(&live), 0);
+    assert_eq!(stale_count(&live), 1);
+}
+
+const AB: &str = "fn a() {\n    1\n}\nfn b() {\n    2\n}\n";
+
+fn ab(name: &str, position: &str) -> (Live, PathBuf) {
+    demo(
+        name,
+        AB,
+        json!([{"at_step": 1, "action": "code.patch", "op": "replace", "position": position, "content": "} // end"}]),
+        json!([]),
+        json!({}),
+    )
+}
+
+#[test]
+fn review_2_two_edits_with_a_common_end_by_chance_mark_what_is_below_them() {
+    let (live, _dir) = ab("t164-suffix", "6");
+    // `1` → `10` and a `fn c` added: only the last `}` is alike at the end.
+    paste(
+        &live,
+        &format!(
+            "{}fn c() {{\n    3\n}}\n",
+            AB.replace("    1\n", "    10\n")
+        ),
+    );
+    assert_eq!(stale_count(&live), 1, "{}", message(&live));
+    assert_eq!(position_of(&live, 0), "6");
+    let at1 = code_at(&live, 1);
+    assert_eq!(at1[5], "}");
+    assert_eq!(at1[8], "}", "fn c's brace untouched");
+    // One block above the target (a line inserted in `a`): it follows.
+    let (live, _dir) = ab("t164-suffix-one", "6");
+    paste(&live, &AB.replace("    1\n", "    1\n    1b\n"));
+    assert_eq!(stale_count(&live), 0, "{}", message(&live));
+    assert_eq!(position_of(&live, 0), "7");
+    assert_eq!(code_at(&live, 1)[6], "} // end");
+}
+
+#[test]
+fn review_2_a_stale_move_follows_the_change_and_is_checked_where_its_line_went() {
+    let (live, _dir) = ab("t164-stale-shift", "3");
+    let broken = AB.replacen("}\n", ")\n", 1);
+    paste(&live, &broken);
+    assert_eq!(
+        live.api_ok("move.list", json!({}))["moves"][0]["stale_reason"],
+        "line 3 changed"
+    );
+    // A block on top: its line is now L6 and still `)`; L3 is fn z's `}`.
+    let with_z = format!("fn z() {{\n    0\n}}\n{broken}");
+    paste(&live, &with_z);
+    assert_eq!(stale_count(&live), 1, "{}", message(&live));
+    assert_eq!(
+        position_of(&live, 0),
+        "6",
+        "it follows its line while stale"
+    );
+    assert_eq!(code_at(&live, 1)[2], "}", "fn z's brace untouched");
+    // Its brace back: it matches again, on its own line.
+    paste(&live, &format!("fn z() {{\n    0\n}}\n{AB}"));
+    assert!(
+        message(&live).starts_with("move #1 matches the code again"),
+        "{}",
+        message(&live)
+    );
+    let at1 = code_at(&live, 1);
+    assert_eq!(at1[5], "} // end");
+    assert_eq!(at1[2], "}");
 }
 
 #[test]

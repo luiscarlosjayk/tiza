@@ -5,11 +5,12 @@
 //! the old and the new code share a start and an end, and a line there is
 //! the same line, moved by as many lines as the change between them added
 //! or removed. A move whose line numbers (a `position`, a `cursor` line, a
-//! `select` by line) fall on those lines gets the new numbers; one whose
-//! lines fall between them — the changed block, or several edits with
-//! unchanged lines among them, which only a diff could tell apart — is
-//! marked stale and skipped, even when the text there looks the same, and
-//! so is one whose lines no longer hold the text they held. A text target
+//! `select` by line) fall on those lines gets the new numbers. The change
+//! is one block when its old and new lines share no line; otherwise there
+//! were several edits, the common end may be a coincidence, and a move from
+//! the change down is marked stale and skipped even when the text there
+//! looks the same (`BaseMap`); so is one whose lines no longer hold
+//! the text they held. A text target
 //! (`find`, `after`, `before`, `select`, `rebind`) is stale when it matches
 //! nothing or more than once. Moves are checked in the order they run,
 //! without the stale ones, so a move whose target a stale one wrote is
@@ -17,7 +18,7 @@
 //! mark. The mark lives only in the instance (and in its undo history, with
 //! the moves).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 
 use crate::carry::{LineId, World, position_text};
 use crate::model::{Annotation, Document};
@@ -197,9 +198,9 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
         let first = doc.view_first_line(&key);
         let kept = doc.moves[i].stale.as_ref().and_then(|s| s.expected.clone());
         // Where its lines went, or why that is not known.
-        let (m, exp, mut reason) = match (&mut follow, &kept) {
-            (Some(f), None) => f.carry(&doc.moves[i], doc),
-            _ => (doc.moves[i].clone(), kept, None),
+        let (m, exp, mut reason) = match &mut follow {
+            Some(f) => f.carry(&doc.moves[i], kept, doc),
+            None => (doc.moves[i].clone(), kept, None),
         };
         if reason.is_none()
             && let (Some(r), Some(code)) = (&exp, p.codes.get(&key))
@@ -237,15 +238,20 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
 }
 
 /// Where the step-0 lines of a view went: the common start (`prefix`
-/// lines) and end (`suffix` lines) of the old and the new code keep their
-/// text, the end moved by `delta`; the lines between (the changed block, or
-/// several edits with unchanged lines among them: without a diff there is
-/// no telling) have no known place.
+/// lines) of the old and the new code keeps its place. The lines between
+/// the common start and end are the change. When the old and the new lines
+/// of the change share no line, it is one block: the common end (`suffix`
+/// lines) moved by `delta`, and a block of as many lines as before maps
+/// line for line (each line rewritten in place). When they share a line,
+/// there were several edits (or lines moved), and the common end may be a
+/// coincidence (one `}` alike after edits further up): nothing from the
+/// change down has a known place.
 struct BaseMap {
     prefix: usize,
     old_len: usize,
     suffix: usize,
     delta: i64,
+    one_block: bool,
 }
 
 impl BaseMap {
@@ -259,18 +265,27 @@ impl BaseMap {
             .take(room)
             .take_while(|(a, b)| a == b)
             .count();
+        let was: HashSet<&String> = old[prefix..old.len() - suffix].iter().collect();
+        let one_block = !new[prefix..new.len() - suffix]
+            .iter()
+            .any(|l| was.contains(l));
         BaseMap {
             prefix,
             old_len: old.len(),
             suffix,
             delta: new.len() as i64 - old.len() as i64,
+            one_block,
         }
     }
 
+    /// Where step-0 line `k` (0-based) is now; `old_len` for one past the
+    /// end.
     fn get(&self, k: usize) -> Option<usize> {
         if k < self.prefix {
             Some(k)
-        } else if k >= self.old_len - self.suffix {
+        } else if !self.one_block {
+            None
+        } else if k >= self.old_len - self.suffix || self.delta == 0 {
             usize::try_from(k as i64 + self.delta).ok()
         } else {
             None
@@ -306,26 +321,35 @@ impl<'a> Follow<'a> {
         }
     }
 
-    /// The move with its line numbers where those lines are now, and what
-    /// they held there; or why where they went is not known (with what they
-    /// held at the numbers it keeps).
-    fn carry(&mut self, m: &Move, doc: &Document) -> (Move, Option<Region>, Option<String>) {
+    /// The move with its line numbers where those lines are now, and the
+    /// text they must hold there (`kept`, for a move already stale: the text
+    /// it last matched; else what they held before the change); or why where
+    /// they went is not known (with that text at the numbers it keeps).
+    fn carry(
+        &mut self,
+        m: &Move,
+        kept: Option<Region>,
+        doc: &Document,
+    ) -> (Move, Option<Region>, Option<String>) {
         let key = self.old.shown.clone();
         let first = self.old_doc.view_first_line(&key);
         let Some(old) = self.old.lines(self.old_doc, &key).cloned() else {
             return (m.clone(), None, None);
         };
-        let Some(was) = region(m, &old.code, first) else {
-            return (m.clone(), None, None);
+        let Some(at_old) = region(m, &old.code, first) else {
+            return (m.clone(), kept, None);
         };
+        let was = kept.unwrap_or(at_old);
         let Some(new) = self.new.lines(doc, &key).cloned() else {
             return (m.clone(), Some(was), None);
         };
         let map = self.maps.get(&key);
+        let end_known = map.is_none_or(|m| m.get(m.old_len).is_some());
         // Each line of the region, or one past the end, on the new side.
         let place = |l: u32| -> Option<u32> {
             let Some(id) = old.ids.get(l.checked_sub(first)? as usize) else {
-                return (l == first + old.ids.len() as u32).then(|| first + new.ids.len() as u32);
+                return (end_known && l == first + old.ids.len() as u32)
+                    .then(|| first + new.ids.len() as u32);
             };
             let id = match *id {
                 LineId::Base(k) => LineId::Base(map.map_or(Some(k), |m| m.get(k))?),
