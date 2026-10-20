@@ -1,22 +1,29 @@
 //! Moves the code changed under (ADR 0007 §7). A follow reload or a paste
-//! replaces the step-0 code with text the demo did not write, so a move is
-//! never moved to follow it (that is for the author's own `move.add`,
-//! [`crate::carry`]): a move that no longer matches the new code is marked
-//! stale and skipped, and a later change that makes it match again clears
-//! the mark. Nothing in the document changes; the mark lives only in the
-//! instance (and in its undo history, with the moves).
-//!
-//! A move no longer matches when the lines of its `position` target do not
-//! hold the text they held when it last matched (or are past the end), or
-//! when it does not apply on the new code: a `find`, `after`, `before`,
-//! `select` or `rebind` text that matches nothing or more than once, a line
-//! past the end. Moves are checked in the order they run, without the stale
-//! ones, so a move whose target a stale one wrote is stale too.
+//! replaces the step-0 code with text the demo did not write. Unlike the
+//! author's own `move.add` ([`crate::carry`]), such a change does not say
+//! where each line went, so a move follows it only where that is certain:
+//! the old and the new code share a start and an end, and a line there is
+//! the same line, moved by as many lines as the change between them added
+//! or removed. A move whose line numbers (a `position`, a `cursor` line, a
+//! `select` by line) fall on those lines gets the new numbers; one whose
+//! lines fall between them — the changed block, or several edits with
+//! unchanged lines among them, which only a diff could tell apart — is
+//! marked stale and skipped, even when the text there looks the same, and
+//! so is one whose lines no longer hold the text they held. A text target
+//! (`find`, `after`, `before`, `select`, `rebind`) is stale when it matches
+//! nothing or more than once. Moves are checked in the order they run,
+//! without the stale ones, so a move whose target a stale one wrote is
+//! stale too. A later change that makes a move match again clears the
+//! mark. The mark lives only in the instance (and in its undo history, with
+//! the moves).
 
 use std::collections::{BTreeMap, HashMap};
 
-use crate::model::Document;
-use crate::moves::{Move, MoveAction, PatchOp, Projection, ViewKey, rebind_problem, replay_order};
+use crate::carry::{LineId, World, position_text};
+use crate::model::{Annotation, Document};
+use crate::moves::{
+    Move, MoveAction, PatchOp, Projection, ViewKey, rebind_problem, replay_order, shift_shape_by,
+};
 
 /// Why a move is skipped, and what it needs to match again.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,12 +32,40 @@ pub struct Stale {
     pub reason: String,
     /// The view the move edits.
     pub file: ViewKey,
-    /// Annotations of its step or later hidden while it is stale: they were
-    /// on text it writes (`(unanchored)`, kept as they are).
-    pub holds: Vec<String>,
-    /// For a `position` target, the text its lines held when it last
-    /// matched.
+    /// For line-number targets, the text their lines held when the move
+    /// last matched.
     expected: Option<Region>,
+}
+
+impl Stale {
+    /// A mark known only by its reason (a copy of the live document sent
+    /// for an export): enough to skip the move.
+    pub fn named(reason: impl Into<String>) -> Stale {
+        Stale {
+            reason: reason.into(),
+            file: None,
+            expected: None,
+        }
+    }
+}
+
+/// An annotation hidden because it stood on text this move writes, while
+/// the move was stale or until what it writes again is where it fits.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hold {
+    pub id: String,
+    /// The first line the move wrote at the annotation's step, when it was
+    /// hidden.
+    pub wrote_first: u32,
+}
+
+/// What [`revalidate`] has to say on the status line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Notice {
+    pub text: String,
+    /// A move stopped matching (said loudly), rather than only matching
+    /// again.
+    pub loud: bool,
 }
 
 /// The text of the lines from `from` on (`None`: past the end).
@@ -40,20 +75,28 @@ struct Region {
     text: Vec<Option<String>>,
 }
 
-/// The lines a `position` target stands on in `code`: the range a replace
-/// or a delete changes, or the line an insert goes before and the one
-/// above it.
+/// The lines a move's line numbers stand on in `code`: the range a
+/// replace or a delete by `position` changes, the line an insert by
+/// `position` goes before and the one above it, a `cursor` line, the lines
+/// of a `select` given by line.
 fn region(m: &Move, code: &[String], first: u32) -> Option<Region> {
-    let MoveAction::CodePatch(p) = &m.action else {
-        return None;
-    };
-    let pos = p.position.as_deref()?;
-    let mut parts = pos.split(['-', ':']).map(|n| n.trim().parse::<u32>().ok());
-    let a = parts.next()??;
-    let b = parts.next().flatten().unwrap_or(a);
-    let (from, to) = match p.op {
-        PatchOp::Insert => (a.saturating_sub(1).max(first), a),
-        PatchOp::Replace | PatchOp::Delete => (a, b),
+    let (from, to) = match &m.action {
+        MoveAction::CodePatch(p) => {
+            let pos = p.position.as_deref()?;
+            let mut parts = pos.split(['-', ':']).map(|n| n.trim().parse::<u32>().ok());
+            let a = parts.next()??;
+            let b = parts.next().flatten().unwrap_or(a);
+            match p.op {
+                PatchOp::Insert => (a.saturating_sub(1).max(first), a),
+                PatchOp::Replace | PatchOp::Delete => (a, b),
+            }
+        }
+        MoveAction::Cursor(c) => (c.line, c.line),
+        MoveAction::Select(s) => {
+            let lines: Vec<u32> = [s.from.line, s.to.line].into_iter().flatten().collect();
+            (*lines.iter().min()?, *lines.iter().max()?)
+        }
+        MoveAction::CodeLink(_) | MoveAction::Wait(_) => return None,
     };
     let line = |l: u32| code.get(l.checked_sub(first)? as usize).cloned();
     Some(Region {
@@ -104,39 +147,39 @@ impl Region {
     }
 }
 
+/// What a load-time error adds that a stale reason does not need (the bar
+/// is short; `move.list` keeps the reason whole).
+const LOAD_ADVICE: &str = "; a move target must match exactly once (add occurrence: N)";
+
 /// Marks the moves of `doc` that no longer match its code and clears the
 /// mark of those that match again. `before` is the document just before
-/// its code changed: the lines of each `position` target are compared with
-/// what they held there (or, for a move already stale, when it last
-/// matched). Without `before` (a `scene.put` of a document whose moves were
-/// stale), only the moves already marked are checked again. Returns the
-/// notice for the status line, `None` when no mark changed.
-pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<String> {
+/// its code changed by something the demo did not write: the lines each
+/// move's line numbers name are compared with what they held there (or,
+/// for a move already stale, when it last matched). Without `before` (a
+/// `scene.put`, a move added or deleted), the moves are checked as they
+/// stand, the stale ones against their own text. Then the annotations held
+/// by moves that match again go back where those moves write
+/// ([`release`]). Returns the notice for the status line, `None` when no
+/// mark changed.
+pub fn refresh(before: Option<&Document>, doc: &mut Document) -> Option<Notice> {
+    let notice = revalidate(before, doc);
+    release(doc);
+    notice
+}
+
+/// [`refresh`] without putting held annotations back: a reload or a paste
+/// rebuilds the annotations first and releases them afterwards.
+///
+/// With `before`, the lines a move's numbers name follow the change when
+/// where they went is known: each view's old and new step-0 code share a
+/// start and an end ([`BaseMap`]); a line there keeps its identity (moved by
+/// as many lines as the change between them added or removed), a line in
+/// between does not, and a move on one is stale even when the text there is
+/// the same. Lines a move wrote keep theirs through the replay, as in
+/// [`crate::carry`]. A move that follows its lines is given the new numbers.
+pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notice> {
     if doc.moves.is_empty() {
         return None;
-    }
-    let mut expected: BTreeMap<usize, Region> = doc
-        .moves
-        .iter()
-        .enumerate()
-        .filter_map(|(i, m)| Some((i, m.stale.as_ref()?.expected.clone()?)))
-        .collect();
-    if let Some(old) = before {
-        let mut p = Projection::start(old);
-        for (i, m) in replay_order(&old.moves, u32::MAX) {
-            if m.stale.is_some() {
-                continue;
-            }
-            let key = p.shown.file.clone();
-            if let Some(r) = p
-                .codes
-                .get(&key)
-                .and_then(|code| region(m, code, old.view_first_line(&key)))
-            {
-                expected.entry(i).or_insert(r);
-            }
-            let _ = p.apply_move(old, i, m);
-        }
     }
     let was: Vec<Option<String>> = doc
         .moves
@@ -147,25 +190,26 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Strin
         .into_iter()
         .map(|(i, _)| i)
         .collect();
+    let mut follow = before.map(|old| Follow::new(old, doc));
     let mut p = Projection::start(doc);
     for i in order {
-        if before.is_none() && doc.moves[i].stale.is_none() {
-            let m = doc.moves[i].clone();
-            let _ = p.apply_move(doc, i, &m);
-            continue;
-        }
-        let m = doc.moves[i].clone();
         let key = p.shown.file.clone();
         let first = doc.view_first_line(&key);
-        let exp = expected.get(&i);
-        let moved = p
-            .codes
-            .get(&key)
-            .and_then(|code| exp.and_then(|r| r.differs(code, first)));
-        let reason = moved.or_else(|| {
+        let kept = doc.moves[i].stale.as_ref().and_then(|s| s.expected.clone());
+        // Where its lines went, or why that is not known.
+        let (m, exp, mut reason) = match (&mut follow, &kept) {
+            (Some(f), None) => f.carry(&doc.moves[i], doc),
+            _ => (doc.moves[i].clone(), kept, None),
+        };
+        if reason.is_none()
+            && let (Some(r), Some(code)) = (&exp, p.codes.get(&key))
+        {
+            reason = r.differs(code, first);
+        }
+        let reason = reason.or_else(|| {
             let saved = (!m.rebind.is_empty()).then(|| p.clone());
             match p.apply_move(doc, i, &m) {
-                Err(e) => Some(e.to_string()),
+                Err(e) => Some(e.to_string().replace(LOAD_ADVICE, "")),
                 Ok(()) => {
                     let why = saved.as_ref().and_then(|_| {
                         let ap = p.patches.last()?;
@@ -178,29 +222,207 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Strin
                 }
             }
         });
-        let holds = m.stale.map(|s| s.holds).unwrap_or_default();
-        doc.moves[i].stale = reason.map(|reason| Stale {
+        if let Some(f) = &mut follow {
+            f.ran(doc, i, reason.is_none().then_some(&m));
+        }
+        let stale = reason.map(|reason| Stale {
             reason,
             file: key,
-            holds,
-            expected: exp.cloned(),
+            expected: exp,
         });
+        doc.moves[i] = Move { stale, ..m };
     }
     doc.sync_code_to_step();
     notice(doc, &was)
 }
 
-/// `2 moves no longer match the code: #3 (…), #5 (…); they are skipped —
-/// fix them before the next run`, and `move #5 matches the code again`,
-/// when some mark appeared, changed its reason or went.
-fn notice(doc: &Document, was: &[Option<String>]) -> Option<String> {
+/// Where the step-0 lines of a view went: the common start (`prefix`
+/// lines) and end (`suffix` lines) of the old and the new code keep their
+/// text, the end moved by `delta`; the lines between (the changed block, or
+/// several edits with unchanged lines among them: without a diff there is
+/// no telling) have no known place.
+struct BaseMap {
+    prefix: usize,
+    old_len: usize,
+    suffix: usize,
+    delta: i64,
+}
+
+impl BaseMap {
+    fn new(old: &[String], new: &[String]) -> BaseMap {
+        let prefix = old.iter().zip(new).take_while(|(a, b)| a == b).count();
+        let room = old.len().min(new.len()) - prefix;
+        let suffix = old
+            .iter()
+            .rev()
+            .zip(new.iter().rev())
+            .take(room)
+            .take_while(|(a, b)| a == b)
+            .count();
+        BaseMap {
+            prefix,
+            old_len: old.len(),
+            suffix,
+            delta: new.len() as i64 - old.len() as i64,
+        }
+    }
+
+    fn get(&self, k: usize) -> Option<usize> {
+        if k < self.prefix {
+            Some(k)
+        } else if k >= self.old_len - self.suffix {
+            usize::try_from(k as i64 + self.delta).ok()
+        } else {
+            None
+        }
+    }
+}
+
+/// The replay of the moves on the old code and on the new one, with the
+/// identity of every line ([`crate::carry::World`]).
+struct Follow<'a> {
+    old_doc: &'a Document,
+    old: World,
+    new: World,
+    maps: BTreeMap<ViewKey, BaseMap>,
+}
+
+impl<'a> Follow<'a> {
+    fn new(old_doc: &'a Document, doc: &Document) -> Follow<'a> {
+        let mut keys: Vec<ViewKey> = vec![None];
+        keys.extend(doc.view_code.keys().cloned().map(Some));
+        let maps = keys
+            .into_iter()
+            .filter_map(|k| {
+                let map = BaseMap::new(&old_doc.view_base_code(&k)?, &doc.view_base_code(&k)?);
+                Some((k, map))
+            })
+            .collect();
+        Follow {
+            old_doc,
+            old: World::default(),
+            new: World::default(),
+            maps,
+        }
+    }
+
+    /// The move with its line numbers where those lines are now, and what
+    /// they held there; or why where they went is not known (with what they
+    /// held at the numbers it keeps).
+    fn carry(&mut self, m: &Move, doc: &Document) -> (Move, Option<Region>, Option<String>) {
+        let key = self.old.shown.clone();
+        let first = self.old_doc.view_first_line(&key);
+        let Some(old) = self.old.lines(self.old_doc, &key).cloned() else {
+            return (m.clone(), None, None);
+        };
+        let Some(was) = region(m, &old.code, first) else {
+            return (m.clone(), None, None);
+        };
+        let Some(new) = self.new.lines(doc, &key).cloned() else {
+            return (m.clone(), Some(was), None);
+        };
+        let map = self.maps.get(&key);
+        // Each line of the region, or one past the end, on the new side.
+        let place = |l: u32| -> Option<u32> {
+            let Some(id) = old.ids.get(l.checked_sub(first)? as usize) else {
+                return (l == first + old.ids.len() as u32).then(|| first + new.ids.len() as u32);
+            };
+            let id = match *id {
+                LineId::Base(k) => LineId::Base(map.map_or(Some(k), |m| m.get(k))?),
+                written => written,
+            };
+            new.ids
+                .iter()
+                .position(|n| *n == id)
+                .map(|n| first + n as u32)
+        };
+        let lines: Option<Vec<u32>> = (0..was.text.len() as u32)
+            .map(|k| place(was.from + k))
+            .collect();
+        let shift = lines.as_ref().and_then(|ls| {
+            let at = *ls.first()?;
+            ls.iter()
+                .enumerate()
+                .all(|(k, l)| *l == at + k as u32)
+                .then(|| i64::from(at) - i64::from(was.from))
+        });
+        let Some(shift) = shift else {
+            let why = was.differs(&new.code, first).unwrap_or_else(|| {
+                format!(
+                    "{}: the code around it changed, so where it went is not known",
+                    lines_text(was.from, was.from + was.text.len() as u32 - 1)
+                )
+            });
+            return (m.clone(), Some(was), Some(why));
+        };
+        let at = Region {
+            from: u32::try_from(i64::from(was.from) + shift).unwrap_or(was.from),
+            text: was.text,
+        };
+        (shifted(m, shift), Some(at), None)
+    }
+
+    /// Move `i` ran on the old side (unless it was stale there) and, when
+    /// `now` is given, on the new side as `now`.
+    fn ran(&mut self, doc: &Document, i: usize, now: Option<&Move>) {
+        let old = &self.old_doc.moves[i];
+        if old.stale.is_none() {
+            let _ = self.old.apply(self.old_doc, old, i);
+        }
+        if let Some(m) = now {
+            let _ = self.new.apply(doc, m, i);
+        }
+    }
+}
+
+/// `line 7` or `lines 7-9`.
+fn lines_text(a: u32, b: u32) -> String {
+    if a == b {
+        format!("line {a}")
+    } else {
+        format!("lines {a}-{b}")
+    }
+}
+
+/// `m` with every line number it holds moved by `by`.
+fn shifted(m: &Move, by: i64) -> Move {
+    if by == 0 {
+        return m.clone();
+    }
+    let f = |l: u32| u32::try_from(i64::from(l) + by).unwrap_or(l);
+    let mut m = m.clone();
+    match &mut m.action {
+        MoveAction::CodePatch(p) => {
+            if let Some(pos) = p.position.clone() {
+                let mut parts = pos.split(['-', ':']).map(|n| n.trim().parse::<u32>().ok());
+                if let Some(Some(a)) = parts.next() {
+                    let b = parts.next().flatten().unwrap_or(a);
+                    p.position = Some(position_text(&pos, f(a), f(b)));
+                }
+            }
+        }
+        MoveAction::Cursor(c) => c.line = f(c.line),
+        MoveAction::Select(s) => {
+            for w in [&mut s.from, &mut s.to] {
+                w.line = w.line.map(f);
+            }
+        }
+        MoveAction::CodeLink(_) | MoveAction::Wait(_) => {}
+    }
+    m
+}
+
+/// `stale move skipped: #1 (line 2 changed); fix it before the next run`,
+/// and `move #5 matches the code again`, when some mark appeared, changed
+/// its reason or went. The moves come first: the bar may cut the end.
+fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
     let now: Vec<(usize, &str)> = doc
         .moves
         .iter()
         .enumerate()
         .filter_map(|(i, m)| Some((i, m.stale.as_ref()?.reason.as_str())))
         .collect();
-    let new = now
+    let loud = now
         .iter()
         .any(|(i, r)| was.get(*i).and_then(|w| w.as_deref()) != Some(*r));
     let cleared: Vec<String> = was
@@ -210,21 +432,16 @@ fn notice(doc: &Document, was: &[Option<String>]) -> Option<String> {
         .map(|(i, _)| format!("#{}", i + 1))
         .collect();
     let mut parts = Vec::new();
-    if new {
+    if loud {
         let list = now
             .iter()
             .map(|(i, r)| format!("#{} ({r})", i + 1))
             .collect::<Vec<_>>()
             .join(", ");
         parts.push(if now.len() == 1 {
-            format!(
-                "1 move no longer matches the code: {list}; it is skipped — fix it before the next run"
-            )
+            format!("stale move skipped: {list}; fix it before the next run")
         } else {
-            format!(
-                "{} moves no longer match the code: {list}; they are skipped — fix them before the next run",
-                now.len()
-            )
+            format!("stale moves skipped: {list}; fix them before the next run")
         });
     }
     match cleared.as_slice() {
@@ -232,20 +449,31 @@ fn notice(doc: &Document, was: &[Option<String>]) -> Option<String> {
         [one] => parts.push(format!("move {one} matches the code again")),
         many => parts.push(format!("moves {} match the code again", many.join(", "))),
     }
-    (!parts.is_empty()).then(|| parts.join(" · "))
+    (!parts.is_empty()).then(|| Notice {
+        text: parts.join(" · "),
+        loud,
+    })
 }
 
 /// Gives the moves of `doc` (a `scene.put` of the open document) the marks
-/// of the same moves, at the same place, in `from`, so they load as they
-/// were; [`revalidate`] without `before` then checks them again.
+/// and held annotations of the same moves in `from` — each move paired
+/// with the first equal one of `from` not paired yet, wherever it is now —
+/// so they load as they were; [`refresh`] then checks them again.
 pub fn inherit(from: &Document, doc: &mut Document) {
-    for (m, o) in doc.moves.iter_mut().zip(&from.moves) {
-        let same = Move {
-            stale: None,
-            ..o.clone()
-        } == *m;
-        if same && o.stale.is_some() {
-            m.stale = o.stale.clone();
+    let mut used = vec![false; from.moves.len()];
+    for m in doc.moves.iter_mut() {
+        let found = from.moves.iter().enumerate().position(|(k, o)| {
+            !used[k]
+                && Move {
+                    stale: None,
+                    held: Vec::new(),
+                    ..o.clone()
+                } == *m
+        });
+        if let Some(k) = found {
+            used[k] = true;
+            m.stale = from.moves[k].stale.clone();
+            m.held = from.moves[k].held.clone();
         }
     }
 }
@@ -254,8 +482,9 @@ pub fn inherit(from: &Document, doc: &mut Document) {
 /// stale in `before` (the document just before the change) and is stale in
 /// `doc`, every annotation that stands on a line that patch wrote: with the
 /// patch skipped that line is another text, so the annotation is hidden as
-/// `(unanchored)` and kept as it is until the patch matches again. Returns
-/// the ids it hid (the ones already hidden stay so).
+/// `(unanchored)` and kept as it is until the patch writes again where it
+/// fits ([`release`]). Returns the ids it hid (the ones already hidden stay
+/// so).
 pub fn hold_new(before: &Document, doc: &mut Document) -> Vec<String> {
     let held = held(before);
     let mut wrote: HashMap<(usize, u32), Vec<u32>> = HashMap::new();
@@ -279,18 +508,66 @@ pub fn hold_new(before: &Document, doc: &mut Document) -> Vec<String> {
             let w = wrote
                 .entry((i, a.step))
                 .or_insert_with(|| written(before, i, a.step));
-            if lines
-                .iter()
-                .any(|(f, t)| w.iter().any(|l| (*f..=*t).contains(l)))
-                && let Some(s) = doc.moves[i].stale.as_mut()
+            if let Some(&wrote_first) = w.first()
+                && lines
+                    .iter()
+                    .any(|(f, t)| w.iter().any(|l| (*f..=*t).contains(l)))
             {
-                s.holds.push(a.id.clone());
+                doc.moves[i].held.push(Hold {
+                    id: a.id.clone(),
+                    wrote_first,
+                });
                 out.push(a.id.clone());
                 break;
             }
         }
     }
     out
+}
+
+/// Puts back the annotations held by moves that are not stale: shifted by
+/// as many lines as what the move writes moved since it was hidden, when
+/// every line of the annotation then falls on what the move writes (or
+/// unshifted, when what it writes did not move). One that does not fit
+/// stays hidden.
+pub fn release(doc: &mut Document) {
+    for i in 0..doc.moves.len() {
+        if doc.moves[i].stale.is_some() || doc.moves[i].held.is_empty() {
+            continue;
+        }
+        let holds = std::mem::take(&mut doc.moves[i].held);
+        let mut kept = Vec::new();
+        for h in holds {
+            let Some(k) = doc.annotations.iter().position(|a| a.id == h.id) else {
+                continue;
+            };
+            let a = &doc.annotations[k];
+            let w = written(doc, i, a.step);
+            let Some(&now_first) = w.first() else {
+                kept.push(h);
+                continue;
+            };
+            if now_first == h.wrote_first {
+                continue;
+            }
+            match shifted_onto(a, i64::from(now_first) - i64::from(h.wrote_first), &w) {
+                Some(shape) => doc.annotations[k].shape = shape,
+                None => kept.push(h),
+            }
+        }
+        doc.moves[i].held = kept;
+    }
+}
+
+/// `a` moved by `delta` lines, when every line of it lands on `lines`.
+fn shifted_onto(a: &Annotation, delta: i64, lines: &[u32]) -> Option<crate::model::Shape> {
+    let by = |l: u32| u32::try_from(i64::from(l) + delta).ok();
+    let shape = shift_shape_by(&a.shape, &by, &|l, _| by(l))?;
+    shape
+        .line_ranges()
+        .iter()
+        .all(|(f, t)| (*f..=*t).all(|l| lines.contains(&l)))
+        .then_some(shape)
 }
 
 /// The lines patch `index` of `doc` wrote, as they are at `step` (carried
@@ -316,16 +593,71 @@ fn written(doc: &Document, index: usize, step: u32) -> Vec<u32> {
         .collect()
 }
 
-/// Ids of the annotations stale moves hide.
+/// Ids of the annotations moves hide.
 pub fn held(doc: &Document) -> Vec<String> {
     doc.moves
         .iter()
-        .filter_map(|m| m.stale.as_ref())
-        .flat_map(|s| s.holds.iter().cloned())
+        .flat_map(|m| m.held.iter().map(|h| h.id.clone()))
         .collect()
 }
 
 /// How many moves are stale.
 pub fn count(doc: &Document) -> usize {
     doc.moves.iter().filter(|m| m.stale.is_some()).count()
+}
+
+/// The marks `scene.get` sends next to the document (which never carries
+/// them): the stale moves with their reason, and which move hides which
+/// annotation.
+pub fn marks(
+    doc: &Document,
+) -> (
+    Vec<crate::protocol::StaleMark>,
+    Vec<crate::protocol::HeldMark>,
+) {
+    let stale = doc
+        .moves
+        .iter()
+        .enumerate()
+        .filter_map(|(i, m)| {
+            Some(crate::protocol::StaleMark {
+                index: i + 1,
+                reason: m.stale.as_ref()?.reason.clone(),
+            })
+        })
+        .collect();
+    let held = doc
+        .moves
+        .iter()
+        .enumerate()
+        .flat_map(|(i, m)| {
+            m.held.iter().map(move |h| crate::protocol::HeldMark {
+                index: i + 1,
+                id: h.id.clone(),
+            })
+        })
+        .collect();
+    (stale, held)
+}
+
+/// Puts the marks of a `scene.get` reply on its document, so an export of
+/// it skips and hides what the live screen does.
+pub fn apply_marks(
+    doc: &mut Document,
+    stale: &[crate::protocol::StaleMark],
+    held: &[crate::protocol::HeldMark],
+) {
+    for s in stale {
+        if let Some(m) = s.index.checked_sub(1).and_then(|i| doc.moves.get_mut(i)) {
+            m.stale = Some(Stale::named(s.reason.clone()));
+        }
+    }
+    for h in held {
+        if let Some(m) = h.index.checked_sub(1).and_then(|i| doc.moves.get_mut(i)) {
+            m.held.push(Hold {
+                id: h.id.clone(),
+                wrote_first: 0,
+            });
+        }
+    }
 }

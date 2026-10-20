@@ -421,6 +421,8 @@ fn real_main() -> anyhow::Result<()> {
                     .context("unexpected scene.get response")?;
                     // Its linked files too, as the instance shows them
                     // (t-166): opening the `.tiza` loads them the same way.
+                    // What the screen skips and hides, the export does too.
+                    tiza_core::stale::apply_marks(&mut scene.document, &scene.stale, &scene.held);
                     fs::load_scene(&mut scene.document).map_err(|e| {
                         anyhow::anyhow!("the live document cannot be rendered: {e}")
                     })?;

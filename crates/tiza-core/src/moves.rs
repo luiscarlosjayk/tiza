@@ -39,6 +39,10 @@ pub struct Move {
     /// makes it match again. Never saved nor sent (see [`crate::stale`]).
     #[serde(skip)]
     pub stale: Option<crate::stale::Stale>,
+    /// Annotations hidden because they stood on text this move writes and
+    /// it went stale; live only, like `stale`.
+    #[serde(skip)]
+    pub held: Vec<crate::stale::Hold>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -1561,6 +1565,7 @@ mod tests {
             }),
             rebind: BTreeMap::new(),
             stale: None,
+            held: Vec::new(),
         };
         d.add_move(link(1, "lib.rs", Some("2-9"))).unwrap();
         d.add_move(link(2, "main.rs", Some("3-4"))).unwrap();

@@ -40,33 +40,33 @@ pub enum Change {
 /// line a patch wrote, by the patch (its place in the replay) and the
 /// line's offset in the patch's content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum LineId {
+pub(crate) enum LineId {
     Base(usize),
     Written { slot: usize, k: usize },
 }
 
 #[derive(Debug, Clone)]
-struct Lines {
-    code: Vec<String>,
-    ids: Vec<LineId>,
+pub(crate) struct Lines {
+    pub(crate) code: Vec<String>,
+    pub(crate) ids: Vec<LineId>,
 }
 
 /// One side of the replay: every view's code with the identity of each line.
 #[derive(Debug, Clone, Default)]
-struct World {
-    views: BTreeMap<ViewKey, Lines>,
-    shown: ViewKey,
+pub(crate) struct World {
+    pub(crate) views: BTreeMap<ViewKey, Lines>,
+    pub(crate) shown: ViewKey,
 }
 
 /// What a patch did while replayed: identities it rewrote, as
 /// `(before, after)` pairs at the same offset.
-type Rewritten = Vec<(LineId, LineId)>;
+pub(crate) type Rewritten = Vec<(LineId, LineId)>;
 
 /// Where a patch applied: its target and the identities there.
-type Hit = (Target, [Option<LineId>; 2]);
+pub(crate) type Hit = (Target, [Option<LineId>; 2]);
 
 impl World {
-    fn lines(&mut self, doc: &Document, key: &ViewKey) -> Option<&mut Lines> {
+    pub(crate) fn lines(&mut self, doc: &Document, key: &ViewKey) -> Option<&mut Lines> {
         if !self.views.contains_key(key) {
             let code = doc.view_base_code(key)?;
             let ids = (0..code.len()).map(LineId::Base).collect();
@@ -80,7 +80,7 @@ impl World {
     /// checked by [`crate::moves::validate`] afterwards. For a patch, also
     /// where it applied: its target and the identity of the lines there (the
     /// line it inserts before, `None` at the end; the ends of a range).
-    fn apply(
+    pub(crate) fn apply(
         &mut self,
         doc: &Document,
         m: &Move,
@@ -282,7 +282,7 @@ fn lines_text(a: u32, b: u32) -> String {
 
 /// `a-b` (or `a` when it is one line and `was`, the text carried, was one
 /// number), so carrying a value there and back gives it as it was.
-fn position_text(was: &str, a: u32, b: u32) -> String {
+pub(crate) fn position_text(was: &str, a: u32, b: u32) -> String {
     if a == b && !was.contains(['-', ':']) {
         a.to_string()
     } else {

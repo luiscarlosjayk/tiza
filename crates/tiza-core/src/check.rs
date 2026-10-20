@@ -38,7 +38,8 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `unanchored`, `clipped_label`, `empty_step`.
+    /// `steps`, `unanchored`, `clipped_label`, `empty_step`, and `stale` (a
+    /// live instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -379,13 +380,47 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
         }
     }
     match serde_json::to_string(&d) {
-        Ok(text) => check_text(&text, base_dir, opts),
+        Ok(text) => {
+            let mut report = check_text(&text, base_dir, opts);
+            stale_findings(doc, &mut report);
+            report
+        }
         Err(e) => Report::new(
             opts.width.unwrap_or(DEFAULT_WIDTH),
             vec![Finding::new(Level::Error, "schema", e.to_string())],
             None,
             None,
         ),
+    }
+}
+
+/// The live instance's stale moves (the code changed under them, a follow
+/// reload or a paste), each an error unless the check already found that
+/// move broken: a fresh load does not see the ones on line numbers whose
+/// text changed, since the file keeps no copy of that text.
+fn stale_findings(doc: &Document, report: &mut Report) {
+    for (i, m) in doc.moves.iter().enumerate() {
+        let Some(s) = &m.stale else { continue };
+        let id = format!("move #{}", i + 1);
+        if report.findings.iter().any(|f| f.id.as_deref() == Some(&id)) {
+            continue;
+        }
+        report.findings.insert(
+            0,
+            Finding::new(
+                Level::Error,
+                "stale",
+                format!(
+                    "the code changed under it (a reload or a paste) and it no longer matches: {}; it is skipped. Fix it before closing Tiza: a fresh load would apply it on the line now there",
+                    s.reason
+                ),
+            )
+            .id(id)
+            .step(m.at_step)
+            .file(s.file.clone()),
+        );
+        report.errors += 1;
+        report.ok = false;
     }
 }
 
@@ -505,6 +540,7 @@ fn placeholder(at_step: u32) -> Move {
         action: MoveAction::Wait(Wait { ms: 1 }),
         rebind: BTreeMap::new(),
         stale: None,
+        held: Vec::new(),
     }
 }
 
@@ -605,8 +641,6 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
     let mut moves = doc.moves.clone();
     let mut broken = vec![false; moves.len()];
     for (i, m) in moves.iter_mut().enumerate() {
-        // A live document's stale moves are checked as a fresh load would.
-        m.stale = None;
         let name = format!("move #{}", i + 1);
         if m.at_step == 0 {
             out.push(

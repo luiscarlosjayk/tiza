@@ -4,21 +4,24 @@
 //! Acceptance criteria:
 //! - AC1 When the step-0 code of a file changes under its moves (a follow
 //!   reload, or a paste at a step where no patch of that file is applied),
-//!   every move is checked again on the new code. A move is stale when the
-//!   lines of its `position` target no longer hold the text they held before
-//!   the change (out of range counts), or when a `find`/`select`/`rebind`
-//!   target now matches nothing or more than once. No approximate moving of
-//!   moves (ADR 0007 §3e).
+//!   every move is checked again on the new code. Line numbers (`position`,
+//!   a `cursor` line, a `select` by line) follow the change only where that
+//!   is exact (Luis, 2026-10-20): the old and new code's common start and
+//!   end keep their lines, the end shifted by what the change added or
+//!   removed; a target between them (the changed block, or several edits)
+//!   is stale even on the same text, and so is one whose lines no longer
+//!   hold their text (out of range counts). A `find`/`select`/`rebind`
+//!   target that now matches nothing or more than once is stale. No
+//!   approximate moving of moves (ADR 0007 §3e).
 //! - AC2 A stale move is skipped when stepping (steps keep their numbers),
 //!   shows as `(stale: <why>)` in `scene.list`, carries `stale: true` and
 //!   `stale_reason` in `move.list` and MCP `list_moves`; `status` says how
 //!   many moves are stale.
-//! - AC3 One notice per change names the stale moves («1 move no longer
-//!   matches the code: #1 (line 2 changed); it is skipped — fix it before
-//!   the next run»). A change that leaves every move matching says nothing
-//!   new; one that makes a move match again says so («move #1 matches the
-//!   code again»).
-//! - AC4 Nothing is deleted: the `.tiza` keeps the moves as they were; a
+//! - AC3 One notice per change names the stale moves («stale move
+//!   skipped: #1 (line 2 changed); fix it before the next run»). A change
+//!   that leaves every move matching says nothing new; one that makes a
+//!   move match again says so («move #1 matches the code again»).
+//! - AC4 Nothing is deleted: the `.tiza` keeps a stale move as it was; a
 //!   later reload, paste or undo that makes a move match again clears the
 //!   mark; undoing the reload or paste restores the exact previous state.
 //! - AC6 This file; CHANGELOG; ADR 0007 §7.
@@ -142,17 +145,38 @@ fn message(live: &Live) -> String {
 
 // ---------------------------------------------------------------- AC1–AC3
 
+/// INI with its line 2, the one the card's move replaces, edited.
+fn host_edited() -> String {
+    INI.replace("host = localhost", "host = db1")
+}
+
+fn position_of(live: &Live, index: usize) -> Value {
+    live.api_ok("move.list", json!({}))["moves"][index]["position"].clone()
+}
+
 #[test]
-fn ac1_a_reload_that_inserts_above_a_position_move_marks_it_stale_and_fixing_it_clears_it() {
+fn ac1_a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_its_line_marks_it()
+{
     let (live, dir) = replace_line_2("t164-ac1");
     follow(&live);
     assert_eq!(code_at(&live, 2)[1], "host = example.com");
-    // Step 1: a line on top. The text of line 2 is now line 3: stale, not followed.
+    // A line on top: one block above the target, which follows it exactly.
     reload(&live, &dir, &format!("# payments\n{INI}"), 1);
+    assert_eq!(
+        message(&live),
+        "config.ini reloaded (#1): 0 annotations kept"
+    );
+    assert_eq!(position_of(&live, 0), "3");
+    assert_eq!(code_at(&live, 2)[2], "host = example.com");
+    assert_eq!(stale_count(&live), 0);
+    reload(&live, &dir, INI, 2);
+    assert_eq!(position_of(&live, 0), "2");
+    // Its own line edited: stale, said loudly, skipped.
+    reload(&live, &dir, &host_edited(), 3);
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "1 move no longer matches the code: #1 (line 2 changed); it is skipped — fix it before the next run · config.ini reloaded (#1): 0 annotations kept"
+        "stale move skipped: #1 (line 2 changed); fix it before the next run · config.ini reloaded (#3): 0 annotations kept"
     );
     assert!(loud, "a move that stopped matching is said loudly");
     assert_eq!(
@@ -160,22 +184,19 @@ fn ac1_a_reload_that_inserts_above_a_position_move_marks_it_stale_and_fixing_it_
         vec!["move #1 [step 2] code.patch replace L2 1 line (stale: line 2 changed)"]
     );
     assert_eq!(stale_count(&live), 1);
-    let at2 = code_at(&live, 2);
-    assert_eq!(at2[1], "[server]", "step 2 applies no move");
-    assert_eq!(at2[2], "host = localhost");
+    assert_eq!(code_at(&live, 2)[1], "host = db1", "step 2 applies no move");
     assert_eq!(
         live.api_ok("status", json!({}))["max_step"],
         2,
         "steps keep their numbers"
     );
-    // Step 2: take the line out again: the mark goes, the bar says so.
-    reload(&live, &dir, INI, 2);
+    // The line back: the mark goes, the bar says so.
+    reload(&live, &dir, INI, 4);
     assert_eq!(
         message(&live),
-        "move #1 matches the code again · config.ini reloaded (#2): 0 annotations kept"
+        "move #1 matches the code again · config.ini reloaded (#4): 0 annotations kept"
     );
     assert!(stale_list(&live).is_empty());
-    assert_eq!(stale_count(&live), 0);
     assert!(
         !live
             .api_ok("status", json!({}))
@@ -188,16 +209,24 @@ fn ac1_a_reload_that_inserts_above_a_position_move_marks_it_stale_and_fixing_it_
 }
 
 #[test]
-fn ac3_a_paste_that_deletes_the_first_line_marks_it_and_u_restores_the_exact_state() {
+fn ac3_a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_and_u_restores() {
     let (live, _dir) = replace_line_2("t164-paste");
     let before = live.with(|app| app.doc.clone());
     paste(&live, INI.split_once('\n').unwrap().1);
+    assert_eq!(message(&live), "4 lines pasted (0 annotations kept)");
+    assert_eq!(position_of(&live, 0), "1");
+    assert_eq!(code_at(&live, 2)[0], "host = example.com");
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(
+        live.with(|app| app.doc.clone()),
+        before,
+        "u gives back the document"
+    );
+    paste(&live, &host_edited());
     let (msg, loud) = live.message().unwrap();
-    assert!(
-        msg.starts_with(
-            "1 move no longer matches the code: #1 (line 2 changed); it is skipped — fix it before the next run · 4 lines pasted"
-        ),
-        "{msg}"
+    assert_eq!(
+        msg,
+        "stale move skipped: #1 (line 2 changed); fix it before the next run · 5 lines pasted (0 annotations kept)"
     );
     assert!(loud);
     assert_eq!(stale_count(&live), 1);
@@ -230,7 +259,7 @@ fn corner_a_change_that_touches_no_target_and_an_identical_paste_say_nothing() {
 #[test]
 fn ac2_move_list_and_mcp_list_moves_say_stale_and_why() {
     let (live, _dir) = replace_line_2("t164-list");
-    paste(&live, &format!("# payments\n{INI}"));
+    paste(&live, &host_edited());
     let ml = live.api_ok("move.list", json!({}));
     assert_eq!(ml["moves"][0]["stale"], true, "{ml}");
     assert_eq!(ml["moves"][0]["stale_reason"], "line 2 changed", "{ml}");
@@ -250,7 +279,7 @@ fn ac2_move_list_and_mcp_list_moves_say_stale_and_why() {
     let (_, text, _) = mcp.call("list_annotations", json!({}));
     assert!(text.contains("(stale: line 2 changed)"), "{text}");
     // `scene.get` does not carry the mark: it is computed, never data.
-    let doc = live.api_ok("scene.get", json!({}));
+    let doc = live.api_ok("scene.get", json!({}))["document"].clone();
     assert!(!doc.to_string().contains("stale"), "{doc}");
 }
 
@@ -271,7 +300,7 @@ fn corner_a_find_that_now_matches_twice_is_stale_and_deleting_the_copy_clears_it
     assert_eq!(
         s,
         vec![
-            "move #1 [step 1] code.patch replace «port = 8080» 1 line (stale: find «port = 8080» matches 2 times (L3, L6); a move target must match exactly once (add occurrence: N))"
+            "move #1 [step 1] code.patch replace «port = 8080» 1 line (stale: find «port = 8080» matches 2 times (L3, L6))"
         ],
     );
     reload(&live, &dir, INI, 2);
@@ -372,17 +401,14 @@ fn corner_ranges_out_of_range_inserts_cursors_selections_and_waits() {
         "{ml}"
     );
     assert_eq!(why[1], "lines 2-3 changed", "{ml}");
-    assert!(
-        why[2]
-            .as_str()
-            .unwrap()
-            .starts_with("line 4 does not exist"),
+    assert_eq!(
+        why[2], "line 4 is past the end of the code (3 lines)",
         "{ml}"
     );
     assert!(why[3].as_str().unwrap().contains("«8080»"), "{ml}");
     assert_eq!(why[4], Value::Null, "{ml}");
     assert!(
-        message(&live).starts_with("4 moves no longer match the code: #1 (line 4 is past the end of the code (3 lines)), #2 (lines 2-3 changed), #3 (line 4 does not exist"),
+        message(&live).starts_with("stale moves skipped: #1 (line 4 is past the end of the code (3 lines)), #2 (lines 2-3 changed), #3 (line 4 is past the end"),
         "{}",
         message(&live)
     );
@@ -401,7 +427,7 @@ fn corner_a_move_whose_target_a_stale_one_wrote_is_stale_too_and_both_clear() {
         json!({}),
     );
     follow(&live);
-    reload(&live, &dir, &format!("; top\n{INI}"), 1);
+    reload(&live, &dir, &INI.replace("port = 8080", "port = 1"), 1);
     let ml = live.api_ok("move.list", json!({}));
     assert_eq!(ml["moves"][0]["stale_reason"], "line 3 changed");
     assert_eq!(
@@ -439,7 +465,7 @@ fn corner_an_annotation_on_text_a_stale_move_writes_is_unanchored_never_drawn_el
         t
     };
     assert!(drawn(&live).contains("the new host"));
-    reload(&live, &dir, &format!("# payments\n{INI}"), 1);
+    reload(&live, &dir, &host_edited(), 1);
     assert_eq!(stale_count(&live), 1);
     live.api_ok("step.set", json!({"step": 2}));
     let l = list(&live);
@@ -471,7 +497,7 @@ fn corner_a_step_whose_only_move_is_stale_is_still_stepped_through_and_types_not
         json!([]),
         json!({}),
     );
-    paste(&live, &format!("; top\n{INI}"));
+    paste(&live, &INI.replace("[server]", "[srv]"));
     assert_eq!(stale_count(&live), 1);
     live.keys(&[KeyCode::Char('n')]);
     let (step, typing) = live.with(|app| (app.doc.step, app.is_typing()));
@@ -498,9 +524,9 @@ fn corner_a_loop_says_it_once_per_change_not_once_per_round() {
             {"step": 2, "auto_advance_ms": 100}
         ]}),
     );
-    paste(&live, &format!("# payments\n{INI}"));
+    paste(&live, &host_edited());
     let notice = message(&live);
-    assert!(notice.contains("no longer matches"), "{notice}");
+    assert!(notice.starts_with("stale move skipped"), "{notice}");
     // Three rounds of the loop: watch every message the bar shows.
     let mut seen = Vec::new();
     let mut zeros = 0;
@@ -520,10 +546,7 @@ fn corner_a_loop_says_it_once_per_change_not_once_per_round() {
         }
         std::thread::sleep(Duration::from_millis(5));
     }
-    let notices = seen
-        .iter()
-        .filter(|m| m.contains("no longer match"))
-        .count();
+    let notices = seen.iter().filter(|m| m.contains("stale move")).count();
     assert!(notices <= 1, "{seen:?}");
     assert_eq!(stale_count(&live), 1);
 }
@@ -551,20 +574,15 @@ fn corner_a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
     let before = doc.clone();
     doc.view_code.insert(
         "src/queue.rs".into(),
-        [
-            "// queue",
-            "struct Queue;",
-            "impl Queue {",
-            "    fn push() {}",
-            "}",
-        ]
-        .map(String::from)
-        .to_vec(),
+        ["struct Queue;", "impl Queue {", "    fn push(x) {}", "}"]
+            .map(String::from)
+            .to_vec(),
     );
-    let notice = tiza_core::stale::revalidate(Some(&before), &mut doc).unwrap();
+    let notice = tiza_core::stale::refresh(Some(&before), &mut doc).unwrap();
+    assert!(notice.loud);
     assert_eq!(
-        notice,
-        "1 move no longer matches the code: #3 (line 3 changed); it is skipped — fix it before the next run"
+        notice.text,
+        "stale move skipped: #3 (line 3 changed); fix it before the next run"
     );
     assert!(doc.moves[0].stale.is_none(), "main.rs's move untouched");
     assert_eq!(
@@ -643,7 +661,7 @@ fn corner_restart_render_and_check_load_strictly_and_autosave_keeps_the_moves() 
 fn corner_agents_add_and_delete_moves_and_get_put_round_trips_with_stale_moves() {
     let (live, dir) = replace_line_2("t164-agents");
     follow(&live);
-    reload(&live, &dir, &format!("# payments\n{INI}"), 1);
+    reload(&live, &dir, &host_edited(), 1);
     assert_eq!(stale_count(&live), 1);
     // A put of what get gave out changes nothing and keeps the mark.
     let got = live.api_ok("scene.get", json!({}))["document"].clone();
@@ -701,10 +719,11 @@ fn corner_a_big_file_with_thirty_moves_revalidates_without_a_pause() {
     let (live, _dir) = demo("t164-big", &code, json!(moves), json!([]), json!({}));
     let mut worst = Duration::ZERO;
     for round in 0..10 {
+        // A line added on top and taken out again: every position follows.
         let text = if round % 2 == 0 {
             format!("// edit {round}\n{code}")
         } else {
-            code.replace("    n2998", &format!("    n2998 + {round}"))
+            code.clone()
         };
         let took = live.with(move |app| {
             let t = Instant::now();
@@ -719,5 +738,260 @@ fn corner_a_big_file_with_thirty_moves_revalidates_without_a_pause() {
         stale_count(&live),
         0,
         "the last paste leaves every move matching"
+    );
+}
+
+// ---------------------------------------------------------------- review
+
+/// A replace by position at step 1 and a find at step 2, both made stale
+/// by one paste.
+fn two_stale(name: &str) -> (Live, PathBuf) {
+    let (live, dir) = demo(
+        name,
+        INI,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = example.com"},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "find": "user = admin", "content": "user = root"}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, &host_edited().replace("user = admin", "user = x"));
+    assert_eq!(stale_count(&live), 2);
+    (live, dir)
+}
+
+#[test]
+fn review_live_exports_skip_what_the_screen_skips() {
+    let (live, dir) = two_stale("t164-export");
+    let mut mcp = McpClient::start(&live.socket);
+    for step in [1, 2] {
+        let path = dir.join(format!("out{step}.txt"));
+        let (err, text, _) = mcp.call(
+            "export_image",
+            json!({"path": path.to_str().unwrap(), "step": step, "width": 100}),
+        );
+        assert!(!err, "{text}");
+        let out = std::fs::read_to_string(&path).unwrap();
+        assert!(
+            !out.contains("example.com") && !out.contains("root"),
+            "{out}"
+        );
+        assert!(
+            out.contains("[server]") && out.contains("user = x"),
+            "{out}"
+        );
+    }
+    let sock = live.socket.to_str().unwrap().to_string();
+    let path = dir.join("cli.txt");
+    let o = tiza(&[
+        "--socket",
+        &sock,
+        "render",
+        "--step",
+        "2",
+        "--out",
+        path.to_str().unwrap(),
+    ]);
+    assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
+    let out = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        !out.contains("example.com") && out.contains("[server]"),
+        "{out}"
+    );
+    let got = live.api_ok("scene.get", json!({}));
+    assert_eq!(got["stale"][0]["index"], 1, "{got}");
+    assert!(!got["document"].to_string().contains("stale"));
+}
+
+#[test]
+fn review_a_held_annotation_comes_back_on_what_the_move_writes_now() {
+    let (live, _dir) = demo(
+        "t164-release",
+        INI,
+        json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "port = 8080", "content": "port = 9090"}]),
+        json!([{"id": "n1", "step": 1, "type": "note", "line": 3, "text": "new port"}]),
+        json!({}),
+    );
+    paste(&live, &INI.replace("port = 8080", "port = 1"));
+    assert_eq!(stale_count(&live), 1);
+    paste(
+        &live,
+        "[server]\nhost = localhost\n[db]\nuser = admin\nport = 8080\n",
+    );
+    assert!(
+        message(&live).starts_with("move #1 matches the code again"),
+        "{}",
+        message(&live)
+    );
+    let line = live.with(|app| match &app.doc.annotations[0].shape {
+        tiza_core::model::Shape::Note { line, .. } => *line,
+        _ => 0,
+    });
+    assert_eq!(line, 5, "on the line the move writes, not on [db]");
+    live.api_ok("step.set", json!({"step": 1}));
+    assert_eq!(list(&live), vec!["n1 [step 1] note L5 «new port»"]);
+    let got = live.api_ok("scene.get", json!({}))["document"].clone();
+    live.api_ok("scene.put", json!({"document": got}));
+}
+
+#[test]
+fn review_a_put_pairs_stale_marks_by_move_not_by_place() {
+    let (live, _dir) = demo(
+        "t164-pair",
+        INI,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = example.com"},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "position": "4", "content": "[database]"}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, &host_edited().replace("[db]", "[d]"));
+    assert_eq!(stale_count(&live), 2);
+    let mut got = live.api_ok("scene.get", json!({}))["document"].clone();
+    got["moves"].as_array_mut().unwrap().remove(0);
+    live.api_ok("scene.put", json!({"document": got}));
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["stale_reason"], "line 4 changed", "{ml}");
+    assert!(!code_at(&live, 2).contains(&"[database]".to_string()));
+}
+
+#[test]
+fn review_the_live_check_lists_position_moves() {
+    let (live, _dir) = replace_line_2("t164-check");
+    paste(&live, &host_edited());
+    let report = live.api_ok("check", json!({}));
+    assert_eq!(report["ok"], false, "{report}");
+    let f = &report["findings"][0];
+    assert_eq!(f["code"], "stale", "{report}");
+    assert_eq!(f["id"], "move #1");
+    assert!(
+        f["message"].as_str().unwrap().contains("line 2 changed"),
+        "{f}"
+    );
+}
+
+#[test]
+fn review_cursor_and_select_by_line_follow_their_lines_like_a_position() {
+    let (live, _dir) = demo(
+        "t164-lines",
+        INI,
+        json!([
+            {"at_step": 1, "action": "cursor", "line": 4},
+            {"at_step": 1, "action": "select", "from": {"line": 5, "col": 0}, "to": {"line": 5, "col": 4}}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, &format!("# top\n{INI}"));
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["line"], 5, "{ml}");
+    assert_eq!(ml["moves"][1]["from"]["line"], 6, "{ml}");
+    assert_eq!(stale_count(&live), 0);
+    live.keys(&[KeyCode::Char('u')]);
+    paste(&live, &INI.replace("[db]", "[d]").replace("admin", "x"));
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["stale_reason"], "line 4 changed", "{ml}");
+    assert_eq!(ml["moves"][1]["stale_reason"], "line 5 changed", "{ml}");
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(stale_count(&live), 0);
+}
+
+const BRACES: &str = "fn a() {\n    one();\n}\nfn b() {\n    two();\n}\n";
+
+/// A `replace position "3"` on the `}` that closes `a`.
+fn brace(name: &str) -> (Live, PathBuf) {
+    demo(
+        name,
+        BRACES,
+        json!([{"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "} // end of a"}]),
+        json!([]),
+        json!({}),
+    )
+}
+
+#[test]
+fn review_a_block_pasted_above_with_the_same_text_on_that_line_shifts_the_move_to_its_own_brace() {
+    let (live, _dir) = brace("t164-brace");
+    paste(&live, &format!("fn z() {{\n    zero();\n}}\n{BRACES}"));
+    assert_eq!(position_of(&live, 0), "6");
+    let at1 = code_at(&live, 1);
+    assert_eq!(at1[2], "}", "z's brace untouched");
+    assert_eq!(at1[5], "} // end of a");
+    assert_eq!(stale_count(&live), 0);
+}
+
+#[test]
+fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_even_on_the_same_text()
+ {
+    let (live, dir) = demo(
+        "t164-blocks",
+        BRACES,
+        json!([{"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "} // end of a"}]),
+        json!([]),
+        json!({}),
+    );
+    follow(&live);
+    reload(
+        &live,
+        &dir,
+        &format!("fn z() {{\n    zero();\n}}\n{BRACES}"),
+        1,
+    );
+    assert_eq!(position_of(&live, 0), "6");
+    assert_eq!(code_at(&live, 1)[5], "} // end of a");
+    reload(&live, &dir, BRACES, 2);
+    assert_eq!(position_of(&live, 0), "3");
+    // Line 1 and line 5 edited: line 3 is between them, its place unknown.
+    reload(
+        &live,
+        &dir,
+        &BRACES
+            .replace("fn a()", "fn a2()")
+            .replace("two()", "deux()"),
+        3,
+    );
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(
+        ml["moves"][0]["stale_reason"],
+        "line 3: the code around it changed, so where it went is not known",
+        "{ml}"
+    );
+    assert_eq!(position_of(&live, 0), "3", "never moved by a guess");
+    assert_eq!(code_at(&live, 1)[2], "}", "and never applied");
+    reload(&live, &dir, BRACES, 4);
+    assert_eq!(stale_count(&live), 0);
+}
+
+#[test]
+fn review_a_put_or_a_move_that_makes_a_stale_move_match_says_so_and_clears_it() {
+    let (live, _dir) = demo(
+        "t164-recheck",
+        "a\nb\n",
+        json!([{"at_step": 2, "action": "code.patch", "op": "replace", "find": "b", "content": "B"}]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, "a\nb\nb\n");
+    assert_eq!(stale_count(&live), 1);
+    // A move at step 1 that deletes the copy: the find matches once again.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "3"}),
+    );
+    assert_eq!(stale_count(&live), 0);
+    assert_eq!(message(&live), "move #1 matches the code again");
+    // A put whose code makes it match again says so too.
+    live.keys(&[KeyCode::Char('u')]);
+    assert_eq!(stale_count(&live), 1);
+    let mut got = live.api_ok("scene.get", json!({}))["document"].clone();
+    got["code"] = json!(["a", "b"]);
+    live.api_ok("scene.put", json!({"document": got}));
+    assert_eq!(stale_count(&live), 0);
+    assert!(
+        message(&live).starts_with("move #1 matches the code again"),
+        "{}",
+        message(&live)
     );
 }

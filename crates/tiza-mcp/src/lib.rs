@@ -1041,7 +1041,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the moves (index, step, summary), the annotation ids unanchored at the current step and the file/window a `code.link` shows (`view`). A move the code changed under (a follow reload, a paste) and that no longer matches it has `stale: true` and `stale_reason` (`line 2 changed`, `find «x» matches nothing in the code`): it is skipped when stepping, never moved, and kept in the file as written; fix it (delete and add it again on the code as it is now) or change the code back."
+        description = "Lists the moves (index, step, summary), the annotation ids unanchored at the current step and the file/window a `code.link` shows (`view`). A move the code changed under (a follow reload, a paste) and that no longer matches it has `stale: true` and `stale_reason` (`line 2 changed`, `find «x» matches nothing in the code`): it is skipped when stepping and kept in the file as written (a line-number target follows the change only when where its lines went is exact); fix it (delete and add it again on the code as it is now, preferably with `find` in a document that reads its code by reference) or change the code back."
     )]
     async fn list_moves(
         &self,
@@ -1237,6 +1237,8 @@ impl TizaServer {
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
         // Its linked files too, as the instance shows them (t-166): an
         // export never draws another file than the TUI, in silence.
+        // What the screen skips and hides, the export does too.
+        tiza_core::stale::apply_marks(&mut scene.document, &scene.stale, &scene.held);
         tiza_core::fs::load_scene(&mut scene.document).map_err(|e| {
             McpError::internal_error(format!("the live document cannot be exported: {e}"), None)
         })?;

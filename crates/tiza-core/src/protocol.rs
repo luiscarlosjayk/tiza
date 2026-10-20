@@ -711,6 +711,28 @@ pub struct Scene {
     pub step: u32,
     pub max_step: u32,
     pub document: Document,
+    /// Moves the instance skips because the code changed under them (a
+    /// follow reload, a paste); never part of `document`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub stale: Vec<StaleMark>,
+    /// Annotations the instance hides because a stale move wrote their
+    /// text, by the move that hides them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub held: Vec<HeldMark>,
+}
+
+/// A stale move of `scene.get`: its 1-based index and why.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct StaleMark {
+    pub index: usize,
+    pub reason: String,
+}
+
+/// An annotation a move hides, by the move's 1-based index.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct HeldMark {
+    pub index: usize,
+    pub id: String,
 }
 
 /// Params of `scene.put`: the document itself (a `.tiza` object with the

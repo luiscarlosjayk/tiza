@@ -943,6 +943,24 @@
             },
             "type": "object"
           },
+          "HeldMark": {
+            "description": "An annotation a move hides, by the move's 1-based index.",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "index",
+              "id"
+            ],
+            "type": "object"
+          },
           "Link": {
             "description": "`code.link`: `file` is the path as `code.file` would name it (relative to\nthe `.tiza` directory); `lines` is only a window (`\"7-30\"` or `\"7\"`) that\ncrops what is shown — annotations keep real file line numbers and the\nsame file with another window is the same view.",
             "properties": {
@@ -1369,6 +1387,24 @@
             },
             "type": "object"
           },
+          "StaleMark": {
+            "description": "A stale move of `scene.get`: its 1-based index and why.",
+            "properties": {
+              "index": {
+                "format": "uint",
+                "minimum": 0,
+                "type": "integer"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "index",
+              "reason"
+            ],
+            "type": "object"
+          },
           "Stroke": {
             "description": "How a line is drawn: `─│` (solid), `╌╎` (dashed), `┄┆` (dotted), `━┃` (thick), `═║` (double).",
             "enum": [
@@ -1504,6 +1540,13 @@
           "document": {
             "$ref": "#/$defs/Document"
           },
+          "held": {
+            "description": "Annotations the instance hides because a stale move wrote their\ntext, by the move that hides them.",
+            "items": {
+              "$ref": "#/$defs/HeldMark"
+            },
+            "type": "array"
+          },
           "max_step": {
             "format": "uint32",
             "minimum": 0,
@@ -1513,6 +1556,13 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "stale": {
+            "description": "Moves the instance skips because the code changed under them (a\nfollow reload, a paste); never part of `document`.",
+            "items": {
+              "$ref": "#/$defs/StaleMark"
+            },
+            "type": "array"
           },
           "step": {
             "format": "uint32",
@@ -5957,7 +6007,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step`.",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step`, and `stale` (a\nlive instance's move the code changed under).",
                 "type": "string"
               },
               "file": {

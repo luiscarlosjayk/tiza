@@ -1255,6 +1255,7 @@ impl Document {
                 action: MoveAction::Wait(moves::Wait { ms: 1 }),
                 rebind: BTreeMap::new(),
                 stale: None,
+                held: Vec::new(),
             },
         );
         moves::validate(&with, &numbered, &with.annotations).map_err(|e| Error::Within {

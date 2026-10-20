@@ -1186,7 +1186,7 @@ impl App {
             tiza_core::stale::inherit(&self.doc, &mut doc);
         }
         doc.normalize_loaded()?;
-        tiza_core::stale::revalidate(None, &mut doc);
+        let stale = tiza_core::stale::refresh(None, &mut doc);
         let held = tiza_core::stale::held(&doc);
         for a in doc.annotations.iter().filter(|a| !held.contains(&a.id)) {
             doc.validate_annotation(a).map_err(|e| Error::Within {
@@ -1217,6 +1217,8 @@ impl App {
         self.focus = None;
         self.scroll = 0;
         self.clamp_cursor();
+        // Said first: what is not saved, below, says it over this.
+        self.say_stale(stale);
         if other && self.autosave {
             self.autosave = false;
             self.info(format!(
@@ -1686,6 +1688,9 @@ impl App {
         match self.doc.add_move(m) {
             Ok(i) => {
                 self.history.label_last(format!("move #{} added", i + 1));
+                // The new move may make a stale one match again, or not.
+                let n = tiza_core::stale::refresh(None, &mut self.doc);
+                self.say_stale(n);
                 self.clamp_cursor();
                 self.touch();
                 Ok(i)
@@ -1717,6 +1722,8 @@ impl App {
             self.doc.step = self.doc.max_step();
             self.doc.sync_code_to_step();
         }
+        let n = tiza_core::stale::refresh(None, &mut self.doc);
+        self.say_stale(n);
         self.clamp_cursor();
         self.touch();
         Ok(m)
@@ -1917,32 +1924,62 @@ impl App {
         }
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
-        let msg = if out.dropped > 0 {
-            format!(
-                "{} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
-                self.doc.code.len(),
+        let lines = self.doc.code.len();
+        match out.stale {
+            None if out.dropped > 0 => self.info(format!(
+                "{lines} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
                 out.dropped,
                 if out.dropped == 1 { "" } else { "s" }
-            )
-        } else {
-            format!(
-                "{} lines pasted ({} annotations kept)",
-                self.doc.code.len(),
+            )),
+            None => self.info(format!(
+                "{lines} lines pasted ({} annotations kept)",
                 out.kept
-            )
-        };
-        self.stale_notice(out.stale, msg);
+            )),
+            Some(n) => self.stale_notice(
+                n,
+                out.dropped,
+                "their text is gone",
+                format!("{lines} lines pasted ({} annotations kept)", out.kept),
+            ),
+        }
         Ok(())
     }
 
-    /// The status line after a paste or a reload: what changed in the
-    /// stale moves first (the bar may cut the end), loud when a move
-    /// stopped matching, then `msg`.
-    fn stale_notice(&mut self, stale: Option<String>, msg: String) {
-        match stale {
-            Some(s) if s.contains("no longer match") => self.error(format!("{s} · {msg}")),
-            Some(s) => self.info(format!("{s} · {msg}")),
-            None => self.info(msg),
+    /// The status line after a paste or a reload that changed a stale
+    /// mark, in the order the bar can cut it: annotations dropped, the
+    /// stale moves, then what happened (`what`). Loud when a move stopped
+    /// matching.
+    fn stale_notice(
+        &mut self,
+        n: tiza_core::stale::Notice,
+        dropped: usize,
+        why: &str,
+        what: String,
+    ) {
+        let mut parts = Vec::new();
+        if dropped > 0 {
+            parts.push(format!(
+                "{dropped} annotation{} dropped ({why}; u undoes)",
+                if dropped == 1 { "" } else { "s" }
+            ));
+        }
+        parts.push(n.text);
+        parts.push(what);
+        let text = parts.join(" · ");
+        if n.loud {
+            self.error(text);
+        } else {
+            self.info(text);
+        }
+    }
+
+    /// The notice of a stale mark a document change made or cleared
+    /// (`scene.put`, a move added or deleted), when there is one.
+    fn say_stale(&mut self, n: Option<tiza_core::stale::Notice>) {
+        match n {
+            Some(n) if n.loud => self.error(n.text),
+            Some(n) => self.info(n.text),
+            None => {}
         }
     }
 
@@ -2035,6 +2072,8 @@ impl App {
                 None => {}
             }
         }
+        // Held annotations of moves that match again go where they write.
+        tiza_core::stale::release(&mut d);
         let kept = d.annotations.len();
         let harmless =
             kept == before && d.annotations == snapshot.annotations && d.moves == snapshot.moves;
@@ -2176,17 +2215,28 @@ impl App {
         if out.recorded {
             self.history.label_last(format!("reload #{reloads}"));
         }
-        let msg = format!(
-            "{name} reloaded (#{reloads}): {} annotation{} kept{}",
-            out.kept,
-            if out.kept == 1 { "" } else { "s" },
-            if out.dropped > 0 {
-                format!(", {} dropped (text gone; u undoes)", out.dropped)
-            } else {
-                String::new()
-            }
-        );
-        self.stale_notice(out.stale, msg);
+        match out.stale {
+            None => self.info(format!(
+                "{name} reloaded (#{reloads}): {} annotation{} kept{}",
+                out.kept,
+                if out.kept == 1 { "" } else { "s" },
+                if out.dropped > 0 {
+                    format!(", {} dropped (text gone; u undoes)", out.dropped)
+                } else {
+                    String::new()
+                }
+            )),
+            Some(n) => self.stale_notice(
+                n,
+                out.dropped,
+                "text gone",
+                format!(
+                    "{name} reloaded (#{reloads}): {} annotation{} kept",
+                    out.kept,
+                    if out.kept == 1 { "" } else { "s" }
+                ),
+            ),
+        }
         true
     }
 
@@ -3413,6 +3463,7 @@ impl App {
             }),
             rebind: Default::default(),
             stale: None,
+            held: Vec::new(),
         };
         let i = self.add_move(m)?;
         Ok(format!(
@@ -4635,11 +4686,14 @@ impl App {
                 // directory could not resolve a relative file reference;
                 // linked files travel embedded too (t-105).
                 let document = self.doc.embedded_copy();
+                let (stale, held) = tiza_core::stale::marks(&self.doc);
                 serde_json::to_value(Scene {
                     revision: self.revision,
                     step: self.doc.step,
                     max_step: self.doc.max_step(),
                     document,
+                    stale,
+                    held,
                 })?
             }
             "scene.list" => json!(self.list_lines()),
