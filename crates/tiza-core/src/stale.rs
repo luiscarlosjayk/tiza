@@ -275,8 +275,10 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
 /// rewritten in place). When they share a line there were several edits
 /// (or lines moved), and the common end may be a coincidence (one `}`
 /// alike after edits further up): nothing from the change down has a known
-/// place. A line whose place is ambiguous or unknown makes its move stale:
-/// one of several equal lines is never picked.
+/// place. A line whose place is ambiguous or unknown makes its move stale.
+/// This reads the change as the smallest one: a longer history that leaves
+/// the same text in the same place (`---`, `old`, `---` with the first two
+/// lines deleted and `new`, `---` appended) cannot be told from text alone.
 struct BaseMap {
     sure_prefix: usize,
     prefix: usize,
@@ -484,7 +486,7 @@ fn shifted(m: &Move, by: i64) -> Move {
     m
 }
 
-/// `stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move`,
+/// `stale move skipped (u undoes or re-add): #1 (L2 changed)`,
 /// and `move #5 matches the code again`, when some mark appeared, changed
 /// its reason or went. The moves come first: the bar may cut the end.
 fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
@@ -507,13 +509,16 @@ fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
     if loud {
         let list = now
             .iter()
-            .map(|(i, r)| format!("#{} ({r})", i + 1))
+            .map(|(i, r)| format!("#{} ({})", i + 1, short(r)))
             .collect::<Vec<_>>()
             .join(", ");
         parts.push(if now.len() == 1 {
-            format!("stale move skipped: {list}; u undoes the change, or re-add the move")
+            format!("stale move skipped (u undoes or re-add): {list}")
         } else {
-            format!("stale moves skipped: {list}; u undoes the change, or re-add the moves")
+            format!(
+                "{} stale moves skipped (u undoes or re-add): {list}",
+                now.len()
+            )
         });
     }
     match cleared.as_slice() {
@@ -525,6 +530,35 @@ fn notice(doc: &Document, was: &[Option<String>]) -> Option<Notice> {
         text: parts.join(" · "),
         loud,
     })
+}
+
+/// A reason as the bar gives it, so the first moves fit: `L6 place
+/// unknown`, `L4 past the end`, `L2 changed`, `target not found`. `move.list`,
+/// `scene.list` and `check` keep the whole reason.
+fn short(reason: &str) -> String {
+    let lines = |h: &str| h.replace("lines ", "L").replace("line ", "L");
+    let head = |sep: &str| reason.split_once(sep).map(|(h, _)| lines(h));
+    if let Some(h) = head(": the code around it changed") {
+        format!("{h} place unknown")
+    } else if let Some(h) = head(" is past the end").or_else(|| head(" does not exist")) {
+        format!("{h} past the end")
+    } else if reason.ends_with(" changed") || reason.ends_with(" changed (whitespace)") {
+        lines(reason)
+    } else if reason.starts_with("rebind") {
+        "rebind does not match".into()
+    } else if reason.contains("matches nothing") {
+        "target not found".into()
+    } else if reason.contains("occurrence") {
+        "occurrence past the matches".into()
+    } else if reason.contains(" times") {
+        "target matches more than once".into()
+    } else {
+        let mut cut: String = reason.chars().take(32).collect();
+        if cut.len() < reason.len() {
+            cut.push('…');
+        }
+        cut
+    }
 }
 
 /// Gives the moves of `doc` (a `scene.put` of the open document) the marks

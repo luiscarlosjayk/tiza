@@ -18,7 +18,7 @@
 //!   `stale_reason` in `move.list` and MCP `list_moves`; `status` says how
 //!   many moves are stale.
 //! - AC3 One notice per change names the stale moves («stale move
-//!   skipped: #1 (line 2 changed); u undoes the change, or re-add the move»). A change
+//!   skipped (u undoes or re-add): #1 (L2 changed)»). A change
 //!   that leaves every move matching says nothing new; one that makes a
 //!   move match again says so («move #1 matches the code again»).
 //! - AC4 Nothing is deleted: the `.tiza` keeps a stale move as it was; a
@@ -176,7 +176,7 @@ fn ac1_a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move · config.ini reloaded (#3): 0 annotations kept"
+        "stale move skipped (u undoes or re-add): #1 (L2 changed) · config.ini reloaded (#3): 0 annotations kept"
     );
     assert!(loud, "a move that stopped matching is said loudly");
     assert_eq!(
@@ -226,7 +226,7 @@ fn ac3_a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "stale move skipped: #1 (line 2 changed); u undoes the change, or re-add the move · 5 lines pasted (0 annotations kept)"
+        "stale move skipped (u undoes or re-add): #1 (L2 changed) · 5 lines pasted (0 annotations kept)"
     );
     assert!(loud);
     assert_eq!(stale_count(&live), 1);
@@ -408,7 +408,7 @@ fn corner_ranges_out_of_range_inserts_cursors_selections_and_waits() {
     assert!(why[3].as_str().unwrap().contains("«8080»"), "{ml}");
     assert_eq!(why[4], Value::Null, "{ml}");
     assert!(
-        message(&live).starts_with("stale moves skipped: #1 (line 4 is past the end of the code (3 lines)), #2 (lines 2-3 changed), #3 (line 4 is past the end"),
+        message(&live).starts_with("4 stale moves skipped (u undoes or re-add): #1 (L4 past the end), #2 (L2-3 changed), #3 (L4 past the end), #4 (target not found)"),
         "{}",
         message(&live)
     );
@@ -582,7 +582,7 @@ fn corner_a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
     assert!(notice.loud);
     assert_eq!(
         notice.text,
-        "stale move skipped: #3 (line 3 changed); u undoes the change, or re-add the move"
+        "stale move skipped (u undoes or re-add): #3 (L3 changed)"
     );
     assert!(doc.moves[0].stale.is_none(), "main.rs's move untouched");
     assert_eq!(
@@ -1134,5 +1134,41 @@ fn review_a_put_or_a_move_that_makes_a_stale_move_match_says_so_and_clears_it() 
         message(&live).starts_with("move #1 matches the code again"),
         "{}",
         message(&live)
+    );
+}
+
+#[test]
+fn review_4_at_120_columns_the_bar_shows_the_hint_and_the_first_move() {
+    let (live, _dir) = demo(
+        "t164-bar",
+        BRACES,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "X"},
+            {"at_step": 1, "action": "code.patch", "op": "replace", "find": "two();", "content": "Y"}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(
+        &live,
+        &BRACES
+            .replace("fn a()", "fn a2()")
+            .replace("two()", "deux()"),
+    );
+    let msg = message(&live);
+    assert!(
+        msg.starts_with("2 stale moves skipped (u undoes or re-add): #1 (L3 place unknown), #2 (target not found)"),
+        "{msg}"
+    );
+    let screen = live.screen(120, 30);
+    let bar = screen.lines().last().unwrap();
+    assert!(
+        bar.contains("(u undoes or re-add): #1 (L3 place unknown)"),
+        "{bar}"
+    );
+    // The whole reason stays in move.list.
+    assert_eq!(
+        live.api_ok("move.list", json!({}))["moves"][0]["stale_reason"],
+        "line 3: the code around it changed, so where it went is not known"
     );
 }
