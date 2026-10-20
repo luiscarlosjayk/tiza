@@ -1226,8 +1226,10 @@ impl Document {
         let mut order: Vec<usize> = (0..self.annotations.len()).collect();
         order.sort_by(|&x, &y| {
             let (a, b) = (&self.annotations[x], &self.annotations[y]);
-            (&a.file, a.step).cmp(&(&b.file, b.step))
+            (a.step, &a.file).cmp(&(b.step, &b.file))
         });
+        // One replay per step gives the code of every file at that step.
+        let mut proj: Option<(u32, Result<moves::Projection, ()>)> = None;
         let mut d = self.clone();
         d.moves.clear();
         d.base_code.clear();
@@ -1237,11 +1239,23 @@ impl Document {
         for i in order {
             let a = &self.annotations[i];
             if at.as_ref() != Some(&(a.file.clone(), a.step)) {
-                // As `validate_shape_in`: a move that no longer applies
-                // leaves the base code shown.
-                let (code, first) = self
-                    .view_code_at(&a.file, a.step)
-                    .unwrap_or_else(|_| (self.base().to_vec(), self.base_first()));
+                if proj.as_ref().map(|(k, _)| *k) != Some(a.step) {
+                    let p = moves::project(self, &self.moves, a.step).map_err(|_| ());
+                    proj = Some((a.step, p));
+                }
+                // As `view_code_at` in `validate_shape_in`: a move that no
+                // longer applies leaves the base code shown.
+                let code = match proj.as_ref().map(|(_, p)| p) {
+                    Some(Ok(p)) => p
+                        .codes
+                        .get(&a.file)
+                        .cloned()
+                        .or_else(|| self.view_base_code(&a.file))
+                        .map(|c| (c, self.view_first_line(&a.file))),
+                    _ => None,
+                };
+                let (code, first) =
+                    code.unwrap_or_else(|| (self.base().to_vec(), self.base_first()));
                 d.code = code;
                 d.source.first_line = first;
                 at = Some((a.file.clone(), a.step));
@@ -1325,36 +1339,18 @@ impl Document {
         Ok(m)
     }
 
-    /// The document as shown at `step`: the shown file (cropped to its
-    /// window) at that step and every annotation of that file with `step <=
-    /// step`, shifted deterministically through the patches of later steps
-    /// (ADR 0007 §3). Annotations of other files are left out (they come
-    /// back untouched when their file is shown); those that lose their
-    /// anchor are left out and listed in `unanchored`. When `step` is the
-    /// current step the in-memory `code` is kept (it may be a typing
-    /// animation in progress).
-    pub fn view_at(&self, step: u32) -> View {
-        let plain = || View {
-            doc: self.clone(),
-            unanchored: Vec::new(),
-            view: ViewRef::default(),
-            cursor: None,
-            selection: None,
-        };
-        if self.moves.is_empty() {
-            return plain();
-        }
-        let Ok(proj) = moves::project(self, &self.moves, step) else {
-            // An invalid move was reported at load/add time; show the base.
-            return plain();
-        };
+    /// Every annotation's shape at `step`, shifted through the patches of
+    /// `proj` (a projection at `step` or later) that run after its own step
+    /// and by `step`; `None` for one a patch unanchors or a stale move
+    /// holds.
+    pub fn shapes_at(&self, proj: &moves::Projection, step: u32) -> Vec<Option<Shape>> {
         let mut shapes: Vec<Option<Shape>> = self
             .annotations
             .iter()
             .map(|a| Some(a.shape.clone()))
             .collect();
         let mut scratch: Option<Document> = None;
-        for ap in &proj.patches {
+        for ap in proj.patches.iter().filter(|ap| ap.at_step <= step) {
             let m = &self.moves[ap.index];
             for (a, slot) in self.annotations.iter().zip(shapes.iter_mut()) {
                 // Authored on the code as shown at its own step: only later
@@ -1390,6 +1386,33 @@ impl Document {
                 *slot = None;
             }
         }
+        shapes
+    }
+
+    /// The document as shown at `step`: the shown file (cropped to its
+    /// window) at that step and every annotation of that file with `step <=
+    /// step`, shifted deterministically through the patches of later steps
+    /// (ADR 0007 §3). Annotations of other files are left out (they come
+    /// back untouched when their file is shown); those that lose their
+    /// anchor are left out and listed in `unanchored`. When `step` is the
+    /// current step the in-memory `code` is kept (it may be a typing
+    /// animation in progress).
+    pub fn view_at(&self, step: u32) -> View {
+        let plain = || View {
+            doc: self.clone(),
+            unanchored: Vec::new(),
+            view: ViewRef::default(),
+            cursor: None,
+            selection: None,
+        };
+        if self.moves.is_empty() {
+            return plain();
+        }
+        let Ok(proj) = moves::project(self, &self.moves, step) else {
+            // An invalid move was reported at load/add time; show the base.
+            return plain();
+        };
+        let shapes = self.shapes_at(&proj, step);
         let (code, first) = proj.shown_code(self);
         let mut doc = self.clone();
         doc.moves.clear();

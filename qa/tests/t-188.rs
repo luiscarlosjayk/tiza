@@ -1169,19 +1169,16 @@ fn rework_check_warns_about_an_annotation_outside_its_window() {
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(
-        text.contains("warning: a5, step 2, src/queue.rs, L4: outside the window at steps 2-3, 5 (src/queue.rs:10-36)"),
+        text.contains("warning: a5, step 2, src/queue.rs, L4: outside the window at steps 2-3 (src/queue.rs:10-36)"),
         "{text}"
     );
     let live = open(&tiza);
-    // a4 (step 2) is cropped by the step-5 window on purpose, as a5 is.
+    // a4 (step 2) is outside the step-5 window too, but that window comes
+    // from a later link: the author zooming in, not said.
     let f = findings(&live, "outside_window");
-    assert_eq!(f.len(), 2, "{f:?}");
+    assert_eq!(f.len(), 1, "{f:?}");
     assert_eq!(
         (f[0]["id"].clone(), f[0]["step"].clone()),
-        (json!("a4"), json!(5))
-    );
-    assert_eq!(
-        (f[1]["id"].clone(), f[1]["step"].clone()),
         (json!("a5"), json!(2))
     );
     // An annotation moved out of the window of its step is said too.

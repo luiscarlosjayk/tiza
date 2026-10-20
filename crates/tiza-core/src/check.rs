@@ -1139,38 +1139,75 @@ fn check_loaded(
 }
 
 /// The annotations a step would show but its `code.link` window crops
-/// away: every step from an annotation's own that shows its file, with
-/// its lines carried there by the moves. Per id, in document order: the
-/// steps and the first such window (`src/queue.rs:17-23`). Empty for a
-/// document with no window.
+/// away, from their own step on with their lines carried there by the
+/// moves. A window that comes from a link after the annotation's step is
+/// the author zooming in, so it is left out: what is said is what is
+/// outside the window of the annotation's own step, or what a patch pushed
+/// out of it. Per id, in document order: the steps and the first such
+/// window (`src/queue.rs:17-23`). Empty for a document with no window.
 pub fn outside_windows(doc: &Document) -> Vec<(String, Vec<u32>, String)> {
-    let windowed = doc.moves.iter().any(|m| {
-        m.stale.is_none()
-            && matches!(&m.action, crate::moves::MoveAction::CodeLink(l) if l.lines.is_some())
-    });
-    if !windowed {
+    outside_windows_from(doc, 1, false)
+}
+
+/// [`outside_windows`] from step `from` on; `zoom`: also the windows of
+/// links after an annotation's step.
+pub fn outside_windows_from(
+    doc: &Document,
+    from: u32,
+    zoom: bool,
+) -> Vec<(String, Vec<u32>, String)> {
+    use crate::moves::MoveAction;
+    let links: Vec<(usize, &crate::moves::Move)> = doc
+        .moves
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.stale.is_none() && matches!(m.action, MoveAction::CodeLink(_)))
+        .collect();
+    if !links
+        .iter()
+        .any(|(_, m)| matches!(&m.action, MoveAction::CodeLink(l) if l.lines.is_some()))
+    {
         return Vec::new();
     }
+    // One replay for every step: the patches up to a step are a prefix.
+    let Ok(proj) = crate::moves::project(doc, &doc.moves, u32::MAX) else {
+        return Vec::new();
+    };
     let mut found: BTreeMap<String, (Vec<u32>, String)> = BTreeMap::new();
-    for step in 1..=last_step(doc) {
-        let Some((from, to)) = doc.shown_view_at(step).window else {
+    for step in from.max(1)..=last_step(doc) {
+        // The link shown at `step`: the last one by then, in replay order.
+        let Some((_, link)) = links
+            .iter()
+            .filter(|(_, m)| m.at_step <= step)
+            .max_by_key(|(i, m)| (m.at_step, *i))
+        else {
             continue;
         };
-        let view = doc.view_at(step);
-        for a in view.doc.annotations.iter().filter(|a| a.step <= step) {
-            let inside = a
-                .shape
+        let MoveAction::CodeLink(l) = &link.action else {
+            continue;
+        };
+        let Ok(Some((wa, wb))) = l.window() else {
+            continue;
+        };
+        let file = doc.view_key(&l.file);
+        let shapes = doc.shapes_at(&proj, step);
+        for (a, shape) in doc.annotations.iter().zip(shapes) {
+            let Some(shape) = shape else { continue };
+            if a.file != file || a.step > step || (!zoom && link.at_step > a.step) {
+                continue;
+            }
+            let inside = shape
                 .line_ranges()
                 .iter()
-                .all(|(f, t)| *f >= from && *t <= to);
+                .all(|(f, t)| *f >= wa && *t <= wb);
             if !inside {
-                let e = found.entry(a.id.clone()).or_insert_with(|| {
-                    (
-                        Vec::new(),
-                        format!("{}:{from}-{to}", doc.file_label(&a.file)),
-                    )
-                });
-                e.0.push(step);
+                found
+                    .entry(a.id.clone())
+                    .or_insert_with(|| {
+                        (Vec::new(), format!("{}:{wa}-{wb}", doc.file_label(&a.file)))
+                    })
+                    .0
+                    .push(step);
             }
         }
     }

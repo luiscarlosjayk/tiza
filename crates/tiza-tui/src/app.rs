@@ -1686,7 +1686,18 @@ impl App {
     /// drawn there): `a3, a4: outside the window at step 3 (src/queue.rs:17-23)`.
     pub fn add_move_noting(&mut self, mut m: Move) -> Result<(usize, Option<String>), Error> {
         self.finish_typing();
-        let outside_before = tiza_core::check::outside_windows(&self.doc);
+        // Only a patch or a link moves lines in or out of a window, and only
+        // from its own step on.
+        let reaches = matches!(
+            m.action,
+            tiza_core::moves::MoveAction::CodePatch(_) | tiza_core::moves::MoveAction::CodeLink(_)
+        );
+        let from = m.at_step;
+        let outside_before = if reaches {
+            tiza_core::check::outside_windows_from(&self.doc, from, true)
+        } else {
+            Vec::new()
+        };
         // Recorded first: a refused move leaves nothing behind, not even
         // the file a `code.link` read.
         self.history.record(&self.doc, "move added");
@@ -1709,7 +1720,10 @@ impl App {
                 self.say_stale(n);
                 self.clamp_cursor();
                 self.touch();
-                Ok((i, newly_outside(&outside_before, &self.doc)))
+                let warning = reaches
+                    .then(|| newly_outside(&outside_before, &self.doc, from))
+                    .flatten();
+                Ok((i, warning))
             }
             Err(e) => {
                 self.history.undo(&mut self.doc);
@@ -5824,8 +5838,12 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
 /// The annotations `doc` leaves outside a `code.link` window at a step
 /// where they were not before (`before`: [`tiza_core::check::outside_windows`]
 /// of the document as it was), said in one line, or `None`.
-fn newly_outside(before: &[(String, Vec<u32>, String)], doc: &Document) -> Option<String> {
-    let now = tiza_core::check::outside_windows(doc);
+fn newly_outside(
+    before: &[(String, Vec<u32>, String)],
+    doc: &Document,
+    from: u32,
+) -> Option<String> {
+    let now = tiza_core::check::outside_windows_from(doc, from, true);
     let new: Vec<(String, Vec<u32>, String)> = now
         .into_iter()
         .filter_map(|(id, steps, window)| {
