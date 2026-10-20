@@ -1157,8 +1157,23 @@ impl Document {
             with.annotations = annotations;
         }
         with.moves = list;
-        moves::validate(&with, &with.moves, &with.annotations)?;
         let i = with.moves.len() - 1;
+        // A later move that applied before and fails now fails because of
+        // this one: say so.
+        moves::validate(&with, &with.moves, &with.annotations).map_err(|e| {
+            if e.to_string().starts_with(&format!("move #{}, ", i + 1)) {
+                e
+            } else {
+                Error::Within {
+                    what: format!(
+                        "move #{} (step {}), the one being added, makes a later move fail",
+                        i + 1,
+                        with.moves[i].at_step
+                    ),
+                    inner: Box::new(e),
+                }
+            }
+        })?;
         self.still_fit(
             &with,
             &format!("move #{} (step {})", i + 1, with.moves[i].at_step),

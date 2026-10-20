@@ -1010,7 +1010,7 @@ fn review2_a_later_range_takes_the_lines_inserted_inside() {
 
 /// The messages name the end that would be lost and say what to do.
 #[test]
-fn review2_refusals_name_the_end_that_is_lost() {
+fn review2_refusals_name_what_is_lost_and_why() {
     let dir = examples_copy("messages");
     let live = open(&dir.join("ownership.rs.tiza"));
     let a4 = ann(&get(&live), "a4");
@@ -1039,9 +1039,8 @@ fn review2_refusals_name_the_end_that_is_lost() {
         e.starts_with("annotation a2, step 1: move #5 (step 1), the one being added, removes line 7, where its end is"),
         "{e}"
     );
-    // The review's repro of «another line (line 9 instead of line 9)»: no
-    // later move's text target moves (the insert is held by the line before
-    // it), so it is accepted. The message itself: carry.rs unit tests.
+    // On the example as it is no later move looks for this text, so a line
+    // inserted before it with the same text is accepted…
     live.api_ok(
         "move.add",
         json!({"at_step": 2, "action": "code.patch", "op": "insert",
@@ -1049,6 +1048,42 @@ fn review2_refusals_name_the_end_that_is_lost() {
                "content": "    // println!(\"{s}\"); // error: value borrowed here after move // edited 10"}),
     );
     round_trip(&live, None, "the insert before a repeated line");
+    drop(live);
+    // …but once a later move finds it by `occurrence`, the same insert
+    // would move that move's `// late` line: refused, without line numbers
+    // from two sides.
+    let dir = examples_copy("messages-late");
+    let live = open(&dir.join("ownership-moves.rs.tiza"));
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 6, "action": "code.patch", "op": "insert",
+               "after": "// println!(\"{s}\");", "occurrence": 1, "content": "    // late"}),
+    );
+    let e = move_err(
+        &live,
+        json!({"at_step": 2, "action": "code.patch", "op": "insert",
+               "before": "// println!(\"{s}\"); // error: value borrowed here after move",
+               "content": "    // println!(\"{s}\"); // error: value borrowed here after move // edited 10"}),
+    );
+    assert_eq!(
+        e,
+        "move #5, step 6: move #6 (step 2), the one being added, makes its text target match another line with the same text; delete move #5 and add it again with `occurrence` or a longer text"
+    );
+    drop(live);
+    // A later move whose text the new one makes match twice: the error
+    // says the new move is why, in the same format.
+    let dir = examples_copy("messages-twice");
+    let live = open(&dir.join("ownership-moves.rs.tiza"));
+    let e = move_err(
+        &live,
+        json!({"at_step": 3, "action": "code.patch", "op": "insert",
+               "after": "let n = len(&t);", "content": "    let n = len(&t);"}),
+    );
+    assert!(
+        e.starts_with("move #3, step 4: move #5 (step 3), the one being added, makes it fail (find «let n = len(&t);» matches 2 times")
+            && e.ends_with("; delete move #3 and add it again with `occurrence` or a longer text"),
+        "{e}"
+    );
 }
 
 /// After a put of edited code (autosave off), a put of the file's code
@@ -1276,6 +1311,8 @@ fn reason(msg: &str) -> &'static str {
         ),
         ("of its window", "removes a window's end"),
         ("rebind", "moves a rebind line"),
+        ("makes it fail", "makes a later move's text target fail"),
+        ("makes a later move fail", "makes a later move fail"),
     ]
     .iter()
     .find(|(k, _)| msg.contains(k))

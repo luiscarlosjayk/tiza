@@ -491,7 +491,19 @@ pub fn carry(
                     .old
                     .apply(doc, &old[o], slot)
                     .map_err(|e| named(e, o, &old[o]))?;
-                let (_, now) = r.new.apply(doc, &m, slot).map_err(|e| named(e, o, &m))?;
+                // It applied before the change: if it fails now, the change
+                // is why (its text target gone, or matching twice).
+                let (_, now) = r.new.apply(doc, &m, slot).map_err(|e| {
+                    refused(
+                        format!("move #{}, step {}", o + 1, m.at_step),
+                        &r.who,
+                        format!("makes it fail ({e})"),
+                        format!(
+                            "delete move #{} and add it again with `occurrence` or a longer text",
+                            o + 1
+                        ),
+                    )
+                })?;
                 // It must apply on the same lines as before, carried: a text
                 // target the change makes match another line (an explicit
                 // `occurrence` counts the new text too) would move in silence.
