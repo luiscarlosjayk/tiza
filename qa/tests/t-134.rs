@@ -10,6 +10,8 @@
 //! - AC2 `--brand-font` and `export_image {brand_font}` are removed; for one
 //!   prerelease `--brand-font` (and the hidden `--mono-labels`) are accepted
 //!   as no-ops that print one stderr line; the MCP tool list stays valid.
+//!   t-136 (Luis, 2026-10-18: no grace period, the repository is private)
+//!   removed both flags: clap now rejects them like any unknown argument.
 //! - AC3 The Libron subset and its OFL license live in `docs/brand/fonts/`
 //!   (not in any crate), with a line that it is for t-069 and the Reserved
 //!   Font Name note.
@@ -49,8 +51,6 @@ fn render(extra: &[&str], out: &str) -> std::process::Output {
     o
 }
 
-const NOTICE: &str = "removed after v0.0.1: exports use the monospace";
-
 #[test]
 fn ac1_no_serif_in_the_default_svg_and_one_text_path() {
     let dir = scratch("t134-svg");
@@ -85,44 +85,36 @@ fn ac1_no_serif_in_the_default_svg_and_one_text_path() {
     assert!(!svg_rs.contains("brand_font"));
 }
 
+/// t-136: both flags are gone; clap rejects each one (exit 2, naming it)
+/// and writes nothing, and the help does not list them.
 #[test]
-fn ac2_brand_font_is_a_noop_with_one_notice() {
-    let dir = scratch("t134-flag");
-    for ext in ["svg", "png", "gif"] {
-        let a = dir.join(format!("a.{ext}"));
-        let b = dir.join(format!("b.{ext}"));
-        let c = dir.join(format!("c.{ext}"));
-        let plain = render(&[], a.to_str().unwrap());
-        assert!(!String::from_utf8_lossy(&plain.stderr).contains("removed"));
-        let brand = render(&["--brand-font"], b.to_str().unwrap());
-        let err = String::from_utf8_lossy(&brand.stderr);
-        let notices: Vec<&str> = err.lines().filter(|l| l.contains(NOTICE)).collect();
-        assert_eq!(
-            notices,
-            [format!("tiza: --brand-font was {NOTICE}").as_str()],
-            "{err}"
-        );
-        let mono = render(&["--mono-labels"], c.to_str().unwrap());
+fn ac2_t136_removed_flags_are_rejected() {
+    let dir = scratch("t136-flag");
+    let f = example("ownership.rs.tiza");
+    for flag in ["--brand-font", "--mono-labels"] {
+        let out = dir.join("a.png");
+        let r = tiza(&[
+            "render",
+            f.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            flag,
+        ]);
+        assert_eq!(r.status.code(), Some(2), "{flag}");
+        let err = String::from_utf8_lossy(&r.stderr);
         assert!(
-            String::from_utf8_lossy(&mono.stderr)
-                .contains(&format!("tiza: --mono-labels was {NOTICE}"))
+            err.contains(&format!("unexpected argument '{flag}'")),
+            "{flag}: {err}"
         );
-        let a = std::fs::read(&a).unwrap();
-        assert_eq!(a, std::fs::read(&b).unwrap(), "{ext}: same output");
-        assert_eq!(a, std::fs::read(&c).unwrap(), "{ext}: same output");
+        assert!(!out.exists(), "{flag}: nothing written");
     }
-    // Both flags: still one line.
-    let both = render(&["--brand-font", "--mono-labels"], "-");
-    let err = String::from_utf8_lossy(&both.stderr);
-    assert_eq!(
-        err.lines().filter(|l| l.contains(NOTICE)).count(),
-        1,
-        "{err}"
-    );
-    // Gone from the help.
+    // Without them the same export still succeeds (ac1 compares the bytes).
+    render(&[], dir.join("b.png").to_str().unwrap());
     let help = tiza_ok(&["render", "--help"]);
     assert!(
-        !help.contains("--brand-font") && !help.contains("Serif"),
+        !help.contains("--brand-font")
+            && !help.contains("--mono-labels")
+            && !help.contains("Serif"),
         "{help}"
     );
 }

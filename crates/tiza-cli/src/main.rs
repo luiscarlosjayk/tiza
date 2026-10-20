@@ -210,12 +210,6 @@ enum Cmd {
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
         #[arg(long)]
         no_embed_fonts: bool,
-        /// Removed (t-134): exports always use the monospace. Accepted for one prerelease as a no-op with a notice.
-        #[arg(long, hide = true)]
-        brand_font: bool,
-        /// Removed (t-134): exports always use the monospace. Accepted for one prerelease as a no-op with a notice.
-        #[arg(long, hide = true)]
-        mono_labels: bool,
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
@@ -352,17 +346,12 @@ fn real_main() -> anyhow::Result<()> {
             radius,
             scale,
             no_embed_fonts,
-            brand_font,
-            mono_labels,
             system_fonts,
             interval,
             skip_zero,
             title,
             loop_count,
         }) => {
-            if let Some(n) = removed_font_flags_notice(brand_font, mono_labels) {
-                eprintln!("tiza: {n}");
-            }
             if all_steps && out == "-" {
                 bail!("--all-steps writes one file per step: pass a directory, --out steps/");
             }
@@ -1302,21 +1291,6 @@ impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
     }
-}
-
-/// `--brand-font` and `--mono-labels` (t-134): the brand serif left the
-/// binary after v0.0.1. Both flags are still accepted, for one prerelease, so
-/// scripts keep working; they change nothing and print one line.
-fn removed_font_flags_notice(brand_font: bool, mono_labels: bool) -> Option<String> {
-    let flags = match (brand_font, mono_labels) {
-        (false, false) => return None,
-        (true, false) => "--brand-font was",
-        (false, true) => "--mono-labels was",
-        (true, true) => "--brand-font and --mono-labels were",
-    };
-    Some(format!(
-        "{flags} removed after v0.0.1: exports use the monospace"
-    ))
 }
 
 /// `:export file.svg|png` inside the TUI: the image stack lives in this binary.
