@@ -912,7 +912,8 @@ fn anchor_line(shape: &Shape) -> Option<u32> {
 }
 
 /// `4`, `4-7`, `2, 5-6`.
-fn steps_text(steps: &[u32]) -> String {
+/// `2, 4-6`: steps in runs.
+pub fn steps_text(steps: &[u32]) -> String {
     let mut out: Vec<String> = Vec::new();
     let mut i = 0;
     while i < steps.len() {
@@ -1056,28 +1057,23 @@ fn check_loaded(
             );
         }
     }
-    // ---- annotations outside the window shown at their own step ----
-    for a in doc.annotations.iter().filter(|a| !bad.contains(&a.id)) {
-        let view = doc.shown_view_at(a.step);
-        let Some((from, to)) = view.window.filter(|_| view.file == a.file) else {
+    // ---- annotations outside the window of a step that shows their file ----
+    for (id, steps, window) in outside_windows(doc) {
+        let Some(a) = doc.find_annotation(&id).filter(|a| !bad.contains(&a.id)) else {
             continue;
         };
-        let lines = a.shape.line_ranges();
-        if lines.iter().all(|(f, t)| *f >= from && *t <= to) {
-            continue;
-        }
         out.push(
             Finding::new(
                 Level::Warning,
                 "outside_window",
                 format!(
-                    "outside the window shown at step {} (lines {from}-{to} of {}): kept, but not drawn there",
-                    a.step,
-                    doc.file_label(&a.file)
+                    "outside the window at step{} {} ({window}): kept, but not drawn there",
+                    if steps.len() == 1 { "" } else { "s" },
+                    steps_text(&steps)
                 ),
             )
-            .id(a.id.clone())
-            .step(a.step)
+            .id(id)
+            .step(steps[0])
             .file(a.file.clone())
             .line(anchor_line(&a.shape)),
         );
@@ -1140,6 +1136,48 @@ fn check_loaded(
         out.push(f);
     }
     min_clean_width(doc, &theme)
+}
+
+/// The annotations a step would show but its `code.link` window crops
+/// away: every step from an annotation's own that shows its file, with
+/// its lines carried there by the moves. Per id, in document order: the
+/// steps and the first such window (`src/queue.rs:17-23`). Empty for a
+/// document with no window.
+pub fn outside_windows(doc: &Document) -> Vec<(String, Vec<u32>, String)> {
+    let windowed = doc.moves.iter().any(|m| {
+        m.stale.is_none()
+            && matches!(&m.action, crate::moves::MoveAction::CodeLink(l) if l.lines.is_some())
+    });
+    if !windowed {
+        return Vec::new();
+    }
+    let mut found: BTreeMap<String, (Vec<u32>, String)> = BTreeMap::new();
+    for step in 1..=last_step(doc) {
+        let Some((from, to)) = doc.shown_view_at(step).window else {
+            continue;
+        };
+        let view = doc.view_at(step);
+        for a in view.doc.annotations.iter().filter(|a| a.step <= step) {
+            let inside = a
+                .shape
+                .line_ranges()
+                .iter()
+                .all(|(f, t)| *f >= from && *t <= to);
+            if !inside {
+                let e = found.entry(a.id.clone()).or_insert_with(|| {
+                    (
+                        Vec::new(),
+                        format!("{}:{from}-{to}", doc.file_label(&a.file)),
+                    )
+                });
+                e.0.push(step);
+            }
+        }
+    }
+    doc.annotations
+        .iter()
+        .filter_map(|a| found.remove(&a.id).map(|(s, w)| (a.id.clone(), s, w)))
+        .collect()
 }
 
 /// The narrowest width from which no label is clipped at any step: every

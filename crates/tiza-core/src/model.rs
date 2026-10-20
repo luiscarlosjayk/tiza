@@ -1174,8 +1174,12 @@ impl Document {
                 }
             }
         })?;
-        // Only a patch changes the code annotations stand on.
-        if matches!(with.moves[i].action, MoveAction::CodePatch(_)) {
+        // Only a patch or a link changes the code annotations stand on (a
+        // link sends the later patches to another file).
+        if matches!(
+            with.moves[i].action,
+            MoveAction::CodePatch(_) | MoveAction::CodeLink(_)
+        ) {
             self.still_fit(
                 &with,
                 &format!("move #{} (step {})", i + 1, with.moves[i].at_step),

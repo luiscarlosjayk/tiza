@@ -1195,6 +1195,10 @@ pub struct MoveMutated {
     pub moves: usize,
     pub max_step: u32,
     pub revision: u64,
+    /// `move.add`: annotations the new move leaves outside a `code.link`
+    /// window at some step (kept, not drawn there), by id, steps and window.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub warning: Option<String>,
 }
 
 /// One line per move, in the `move.list` / `:moves` format; a stale move

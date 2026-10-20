@@ -1169,14 +1169,21 @@ fn rework_check_warns_about_an_annotation_outside_its_window() {
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(
-        text.contains("warning: a5, step 2, src/queue.rs, L4: outside the window shown at step 2 (lines 10-36 of src/queue.rs)"),
+        text.contains("warning: a5, step 2, src/queue.rs, L4: outside the window at steps 2-3, 5 (src/queue.rs:10-36)"),
         "{text}"
     );
     let live = open(&tiza);
+    // a4 (step 2) is cropped by the step-5 window on purpose, as a5 is.
     let f = findings(&live, "outside_window");
-    assert_eq!(f.len(), 1, "{f:?}");
-    assert_eq!(f[0]["id"], "a5");
-    assert_eq!(f[0]["step"], 2);
+    assert_eq!(f.len(), 2, "{f:?}");
+    assert_eq!(
+        (f[0]["id"].clone(), f[0]["step"].clone()),
+        (json!("a4"), json!(5))
+    );
+    assert_eq!(
+        (f[1]["id"].clone(), f[1]["step"].clone()),
+        (json!("a5"), json!(2))
+    );
     // An annotation moved out of the window of its step is said too.
     live.api_ok(
         "annotation.update",
@@ -1202,6 +1209,157 @@ fn rework_an_annotation_already_outside_the_code_is_named_as_such() {
     assert!(
         e.starts_with("annotation q1, step 2: move #2 (step 2), the one being added, cannot carry it: it was already outside the code (line 9; src/queue.rs has lines 1-")
             && e.ends_with("; move or delete q1 first"),
+        "{e}"
+    );
+}
+
+// ---------------------------------------------------------------- rework 1, review
+
+/// `a.rs` (10 lines, or `lines` given) and `b.rs`, and a `.tiza` reading
+/// `a.rs` with these moves and annotations.
+fn two_files(name: &str, moves: Value, annotations: Value) -> (PathBuf, Live) {
+    let dir = scratch(name);
+    let lines = |p: &str, n: usize| (1..=n).map(|i| format!("{p}{i}();\n")).collect::<String>();
+    std::fs::write(dir.join("a.rs"), lines("a", 10)).unwrap();
+    std::fs::write(dir.join("b.rs"), lines("b", 12)).unwrap();
+    let tiza = dir.join("a.rs.tiza");
+    std::fs::write(
+        &tiza,
+        json!({"schema": 1, "source": {"language": "rs"}, "code": {"file": "a.rs"},
+               "moves": moves, "annotations": annotations})
+        .to_string(),
+    )
+    .unwrap();
+    let live = open(&tiza);
+    (dir, live)
+}
+
+/// A new `code.link` sends the later patches to another file: an
+/// annotation those patches put in place would no longer fit, so the link
+/// is refused, naming it.
+#[test]
+fn review_a_new_link_that_leaves_an_annotation_without_its_line_is_refused() {
+    let (_dir, live) = two_files(
+        "new-link",
+        json!([{"at_step": 3, "action": "code.patch", "op": "insert", "position": "2",
+                "content": "x1();\nx2();\nx3();\nx4();\nx5();"}]),
+        json!([{"id": "n1", "step": 3, "type": "note", "line": 14, "text": "on a line the patch adds"}]),
+    );
+    let before = get(&live);
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 2, "action": "code.link", "file": "b.rs"}),
+    );
+    let e = r.error.expect("refused").message;
+    assert!(e.contains("annotation n1, step 3"), "{e}");
+    assert_eq!(get(&live)["document"], before["document"]);
+    round_trip(&live, None, "after the refused link");
+}
+
+/// `outside_window` sees the steps after an annotation's own: a later
+/// patch that pushes it out of the window is said by `check` (with the
+/// first step) and in the `move.add` reply, and the move is accepted.
+#[test]
+fn review_an_annotation_a_later_patch_pushes_out_of_a_window_is_said() {
+    // Repro A: thirty lines in queue.rs at step 3, above the step-2 box.
+    let dir = examples_copy("pushed-out");
+    let live = open(&dir.join("stack-and-queue.tiza"));
+    let content: Vec<String> = (1..=30).map(|i| format!("    // pad {i}")).collect();
+    let r = live.api_ok(
+        "move.add",
+        json!({"at_step": 3, "action": "code.patch", "op": "insert", "position": "12",
+               "content": content.join("\n")}),
+    );
+    let w = r["warning"].as_str().expect("a warning").to_string();
+    // At step 3 the step-2 window (10-36) still shows; the step-5 window
+    // is carried with the patch, so step 5 shows them.
+    assert_eq!(
+        w,
+        "a3, a4: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there"
+    );
+    let f = findings(&live, "outside_window");
+    for id in ["a3", "a4"] {
+        let one = f
+            .iter()
+            .find(|f| f["id"] == id)
+            .unwrap_or_else(|| panic!("{id}: {f:?}"));
+        assert_eq!(one["step"], 3, "{one}");
+        assert!(
+            one["message"]
+                .as_str()
+                .unwrap()
+                .contains("(src/queue.rs:10-36)"),
+            "{one}"
+        );
+    }
+    drop(live);
+    // Repro B: a window 5-10 on b.rs at step 2, a note on its last line,
+    // an insert above it at step 3.
+    let (_dir, live) = two_files(
+        "pushed-out-b",
+        json!([{"at_step": 2, "action": "code.link", "file": "b.rs", "lines": "5-10"}]),
+        json!([{"id": "n1", "step": 2, "file": "b.rs", "type": "note", "line": 10, "text": "last line"}]),
+    );
+    assert!(findings(&live, "outside_window").is_empty());
+    let r = live.api_ok(
+        "move.add",
+        json!({"at_step": 3, "action": "code.patch", "op": "insert", "position": "6", "content": "b_new();"}),
+    );
+    assert_eq!(
+        r["warning"],
+        "n1: outside the window at step 3 (b.rs:5-10): kept, not drawn there"
+    );
+    let f = findings(&live, "outside_window");
+    assert_eq!(f.len(), 1, "{f:?}");
+    assert_eq!(f[0]["id"], "n1");
+    assert_eq!(f[0]["step"], 3);
+    // A move that moves nothing out says nothing.
+    let r = live.api_ok(
+        "move.add",
+        json!({"at_step": 3, "action": "cursor", "line": 6}),
+    );
+    assert!(r.get("warning").is_none(), "{r}");
+}
+
+/// An annotation the document already had outside the code stays as it
+/// was when a patch does not touch it (another file, a later step); the
+/// refusal is only for a patch that would have to carry it.
+#[test]
+fn review_an_annotation_already_outside_blocks_only_the_patches_that_reach_it() {
+    // A note past the end, at step 2; a patch at step 5 is accepted.
+    let (_dir, live) = two_files(
+        "outside-later",
+        json!([]),
+        json!([{"id": "q1", "step": 2, "type": "note", "line": 11, "text": "past the end"}]),
+    );
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 5, "action": "code.patch", "op": "insert", "position": "1", "content": "// late"}),
+    );
+    drop(live);
+    // A note past the end of queue.rs; patches on stack.rs at steps 1 and 4.
+    let dir = examples_copy("outside-other-file");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let mut doc = read_json(&tiza);
+    doc["annotations"].as_array_mut().unwrap().push(
+        json!({"id": "q9", "step": 2, "file": "src/queue.rs", "type": "note", "line": 999, "text": "gone"}),
+    );
+    std::fs::write(&tiza, doc.to_string()).unwrap();
+    let live = open(&tiza);
+    for step in [1, 4] {
+        live.api_ok(
+            "move.add",
+            json!({"at_step": step, "action": "code.patch", "op": "insert", "position": "8", "content": "    // stack"}),
+        );
+    }
+    // A patch on queue.rs at its step would have to carry it: refused, so.
+    let e = move_err(
+        &live,
+        json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "12", "content": "    // queue"}),
+    );
+    assert!(
+        e.starts_with("annotation q9, step 2: ")
+            && e.contains("it was already outside the code (line 999"),
         "{e}"
     );
 }

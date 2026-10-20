@@ -89,23 +89,26 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
         .iter()
         .filter(|a| doc.validate_annotation(a).is_err())
         .map(|a| match &a.file {
-            // An annotation of a linked file (t-105): say which file.
+            // Each with the lines of its own file.
             Some(f) => {
                 let n = doc.view_code.get(f).map_or(0, Vec::len);
                 format!("{} ({f}, lines 1-{n})", a.id)
             }
-            None => a.id.clone(),
+            None => format!(
+                "{} (lines {}-{})",
+                a.id,
+                doc.base_first(),
+                doc.base_first() + doc.base().len().saturating_sub(1) as u32
+            ),
         })
         .collect();
     if bad.is_empty() {
         return None;
     }
     Some(format!(
-        "{} annotation{} outside the code (lines {}-{}) and not drawn: {}",
+        "{} annotation{} outside the code and not drawn: {}",
         bad.len(),
         if bad.len() == 1 { "" } else { "s" },
-        doc.base_first(),
-        doc.base_first() + doc.base().len().saturating_sub(1) as u32,
         bad.join(", ")
     ))
 }

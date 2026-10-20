@@ -1677,17 +1677,30 @@ impl App {
 
     /// Adds a move (validated against the code at its step). Undoable. A
     /// `code.link` reads its file next to the document first (t-105).
-    pub fn add_move(&mut self, mut m: Move) -> Result<usize, Error> {
+    pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
+        self.add_move_noting(m).map(|(i, _)| i)
+    }
+
+    /// [`App::add_move`], with what it says when the new move leaves
+    /// annotations outside a `code.link` window at some step (kept, not
+    /// drawn there): `a3, a4: outside the window at step 3 (src/queue.rs:17-23)`.
+    pub fn add_move_noting(&mut self, mut m: Move) -> Result<(usize, Option<String>), Error> {
         self.finish_typing();
+        let outside_before = tiza_core::check::outside_windows(&self.doc);
+        // Recorded first: a refused move leaves nothing behind, not even
+        // the file a `code.link` read.
+        self.history.record(&self.doc, "move added");
         if let tiza_core::moves::MoveAction::CodeLink(l) = &mut m.action {
             let base = self.save_path.parent().map(Path::to_path_buf);
-            // An alias of a file the document shows is that file (t-183).
+            // An alias of a file the document shows is that file.
             let mut known = self.doc.link_files();
             known.extend(self.doc.view_code.keys().cloned());
             l.file = fs::canonical_link(&self.doc, &l.file, base.as_deref(), &known);
-            fs::load_view(&mut self.doc, &l.file, base.as_deref())?;
+            if let Err(e) = fs::load_view(&mut self.doc, &l.file, base.as_deref()) {
+                self.history.discard_last();
+                return Err(e);
+            }
         }
-        self.history.record(&self.doc, "move added");
         match self.doc.add_move(m) {
             Ok(i) => {
                 self.history.label_last(format!("move #{} added", i + 1));
@@ -1696,7 +1709,7 @@ impl App {
                 self.say_stale(n);
                 self.clamp_cursor();
                 self.touch();
-                Ok(i)
+                Ok((i, newly_outside(&outside_before, &self.doc)))
             }
             Err(e) => {
                 self.history.undo(&mut self.doc);
@@ -3468,14 +3481,18 @@ impl App {
             stale: None,
             held: Vec::new(),
         };
-        let i = self.add_move(m)?;
-        Ok(format!(
+        let (i, warning) = self.add_move_noting(m)?;
+        let added = format!(
             "move #{} added: step {} shows {}{} (:ref path to change the document's own file)",
             i + 1,
             self.doc.step,
             file,
             lines.map(|l| format!(":{l}")).unwrap_or_default()
-        ))
+        );
+        Ok(match warning {
+            Some(w) => format!("{w} · {added}"),
+            None => added,
+        })
     }
 
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
@@ -4702,12 +4719,13 @@ impl App {
             "scene.list" => json!(self.list_lines()),
             "move.add" => {
                 let m: Move = parse(params)?;
-                let i = self.add_move(m)?;
+                let (i, warning) = self.add_move_noting(m)?;
                 serde_json::to_value(MoveMutated {
                     index: i + 1,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
+                    warning,
                 })?
             }
             "move.delete" => {
@@ -4718,6 +4736,7 @@ impl App {
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
+                    warning: None,
                 })?
             }
             "move.list" => serde_json::to_value(self.move_list())?,
@@ -5800,6 +5819,32 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
         occurrence,
         end: None,
     })
+}
+
+/// The annotations `doc` leaves outside a `code.link` window at a step
+/// where they were not before (`before`: [`tiza_core::check::outside_windows`]
+/// of the document as it was), said in one line, or `None`.
+fn newly_outside(before: &[(String, Vec<u32>, String)], doc: &Document) -> Option<String> {
+    let now = tiza_core::check::outside_windows(doc);
+    let new: Vec<(String, Vec<u32>, String)> = now
+        .into_iter()
+        .filter_map(|(id, steps, window)| {
+            let was: &[u32] = before
+                .iter()
+                .find(|(b, _, _)| *b == id)
+                .map_or(&[], |(_, s, _)| s.as_slice());
+            let steps: Vec<u32> = steps.into_iter().filter(|s| !was.contains(s)).collect();
+            (!steps.is_empty()).then_some((id, steps, window))
+        })
+        .collect();
+    let (_, steps, window) = new.first()?;
+    let ids: Vec<&str> = new.iter().map(|(id, _, _)| id.as_str()).collect();
+    Some(format!(
+        "{}: outside the window at step{} {} ({window}): kept, not drawn there",
+        ids.join(", "),
+        if steps.len() == 1 { "" } else { "s" },
+        tiza_core::check::steps_text(steps)
+    ))
 }
 
 #[cfg(test)]

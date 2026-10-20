@@ -504,9 +504,13 @@ pub fn carry(
         if let (Some(o), Some(n)) = *item
             && matches!(old[o].action, MoveAction::CodeLink(_))
             && old[o].stale.is_none()
-            && matches!(&new[n].action, MoveAction::CodeLink(l) if l.lines.is_some())
         {
-            windows.push((o, n));
+            // A link that another one of its step follows is never shown:
+            // its window is left as it is.
+            windows.retain(|(_, w)| new[*w].at_step != new[n].at_step);
+            if matches!(&new[n].action, MoveAction::CodeLink(l) if l.lines.is_some()) {
+                windows.push((o, n));
+            }
         }
         match *item {
             // A stale move is not applied (crate::stale), so it is neither
@@ -636,6 +640,11 @@ impl Replay<'_> {
             let Some(map) = Mapper::new(self.doc, &file, &self.old, &self.new, &self.alias) else {
                 continue;
             };
+            // The change did not touch this file up to this step: nothing to
+            // carry (an annotation already outside the code stays as it was).
+            if map.old.ids == map.new.ids {
+                continue;
+            }
             let ranges = a.shape.line_ranges();
             // Already outside the code at its step (a document that came
             // that way): nothing to carry, and nothing this change removed.
@@ -892,5 +901,33 @@ mod tests {
             e.contains("removes line 2, the first line of its window"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn the_window_of_a_link_its_step_replaces_is_left_alone() {
+        let mut d = parse_document(
+            &serde_json::json!({
+                "schema": 1,
+                "source": {"language": "rs", "path": "/x/main.rs"},
+                "code": ["a();", "b();", "c();", "d();"],
+                "moves": [
+                    {"at_step": 2, "action": "code.link", "file": "main.rs", "lines": "2-3"},
+                    {"at_step": 2, "action": "code.link", "file": "main.rs", "lines": "1-3"}
+                ]
+            })
+            .to_string(),
+            None,
+        )
+        .unwrap();
+        let before = json(&d);
+        d.add_move(patch(serde_json::json!(
+            {"at_step": 1, "action": "code.patch", "op": "delete", "position": "2"}
+        )))
+        .unwrap();
+        let j = json(&d);
+        assert_eq!(j["moves"][0]["lines"], "2-3", "{j}");
+        assert_eq!(j["moves"][1]["lines"], "1-2", "{j}");
+        d.delete_move(2).unwrap();
+        assert_eq!(json(&d), before);
     }
 }

@@ -4944,6 +4944,13 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "warning": {
+            "description": "`move.add`: annotations the new move leaves outside a `code.link`\nwindow at some step (kept, not drawn there), by id, steps and window.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -4997,6 +5004,13 @@
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
+          },
+          "warning": {
+            "description": "`move.add`: annotations the new move leaves outside a `code.link`\nwindow at some step (kept, not drawn there), by id, steps and window.",
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
