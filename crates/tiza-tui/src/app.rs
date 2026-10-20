@@ -288,6 +288,9 @@ pub struct App {
     pub selected: Option<String>,
     pub scroll: usize,
     pub message: Option<(String, bool)>,
+    /// The last notice about moves that stopped matching the code: while it
+    /// is the message, the bar gives it the room it needs.
+    pub stale_message: Option<String>,
     /// Presentation mode only (t-107): until when `message` — the result of
     /// the command just run — is drawn on the last row. `None`: hidden.
     pub present_message_until: Option<std::time::Instant>,
@@ -406,6 +409,7 @@ impl App {
             selected: None,
             scroll: 0,
             message: None,
+            stale_message: None,
             present_message_until: None,
             revision: 1,
             dirty: false,
@@ -908,6 +912,11 @@ impl App {
                 ));
                 return;
             }
+        }
+        // The marks of stale moves live only here: closing loses them.
+        if !force && let Some(msg) = tiza_core::stale::on_close(&self.doc) {
+            self.error(msg);
+            return;
         }
         self.quit = true;
     }
@@ -1997,7 +2006,8 @@ impl App {
         parts.push(what);
         let text = parts.join(" · ");
         if n.loud {
-            self.error(text);
+            self.error(text.clone());
+            self.stale_message = Some(text);
         } else {
             self.info(text);
         }
@@ -2007,10 +2017,20 @@ impl App {
     /// (`scene.put`, a move added or deleted), when there is one.
     fn say_stale(&mut self, n: Option<tiza_core::stale::Notice>) {
         match n {
-            Some(n) if n.loud => self.error(n.text),
+            Some(n) if n.loud => {
+                self.error(n.text.clone());
+                self.stale_message = Some(n.text);
+            }
             Some(n) => self.info(n.text),
             None => {}
         }
+    }
+
+    /// Whether the message on the bar is a notice about stale moves.
+    pub fn stale_message_shown(&self) -> bool {
+        self.message
+            .as_ref()
+            .is_some_and(|(m, _)| Some(m) == self.stale_message.as_ref())
     }
 
     /// Replaces the code lines (and where they come from), re-anchoring the
@@ -2882,9 +2902,10 @@ impl App {
                     }
                 }
                 "wq" => {
-                    // Quit only when the write succeeded (`:q!` leaves anyway).
+                    // Quit only when the write succeeded (`:q!` leaves anyway),
+                    // and not over stale moves without a word.
                     self.save()?;
-                    self.quit = true;
+                    self.request_quit(false);
                     Ok(String::new())
                 }
                 "box" => self.cmd_box(rest),

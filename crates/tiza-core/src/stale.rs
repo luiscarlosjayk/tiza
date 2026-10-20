@@ -336,7 +336,11 @@ impl BaseMap {
         } else if k < self.old_len - self.sure_suffix {
             None
         } else if k == self.old_len {
-            (self.sure_suffix == self.suffix).then(shifted).flatten()
+            // The end follows the last line when that line's place is sure
+            // (or the change reaches the end).
+            (self.sure_suffix > 0 || self.suffix == 0)
+                .then(shifted)
+                .flatten()
         } else {
             shifted()
         }
@@ -705,6 +709,59 @@ pub fn held(doc: &Document) -> Vec<String> {
         .iter()
         .flat_map(|m| m.held.iter().map(|h| h.id.clone()))
         .collect()
+}
+
+/// The first line number a move holds (its `position`, a `cursor` line, a
+/// `select` by line); `None` for a move on text.
+pub(crate) fn first_line(m: &Move) -> Option<u32> {
+    match &m.action {
+        MoveAction::CodePatch(p) => p
+            .position
+            .as_deref()
+            .and_then(|pos| pos.split(['-', ':']).next()?.trim().parse::<u32>().ok()),
+        MoveAction::Cursor(c) => Some(c.line),
+        MoveAction::Select(s) => s.from.line.or(s.to.line),
+        MoveAction::CodeLink(_) | MoveAction::Wait(_) => None,
+    }
+}
+
+/// What closing Tiza does to the stale moves, said before it does: the
+/// marks are not saved, so next time a move on line numbers applies on the
+/// line its number says, and one on text that does not match stops the
+/// document from opening. `None` when no move is stale.
+pub fn on_close(doc: &Document) -> Option<String> {
+    let stale: Vec<(usize, &Move)> = doc
+        .moves
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.stale.is_some())
+        .collect();
+    let next = |m: &Move| -> String {
+        match first_line(m) {
+            Some(l) => format!("applies on line {l} as written"),
+            None => "stops the document from opening".into(),
+        }
+    };
+    let ids = stale
+        .iter()
+        .map(|(i, _)| format!("#{}", i + 1))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Some(match stale.as_slice() {
+        [] => return None,
+        [(_, m)] => format!(
+            "1 stale move ({ids}): next time it {} — fix it, or :q! to quit anyway",
+            next(m)
+        ),
+        many => format!(
+            "{} stale moves ({ids}): next time {} — fix them, or :q! to quit anyway",
+            many.len(),
+            many.iter()
+                .map(|(i, m)| format!("#{} {}", i + 1, next(m)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    })
 }
 
 /// How many moves are stale.

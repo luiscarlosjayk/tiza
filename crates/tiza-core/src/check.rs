@@ -395,23 +395,28 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
 }
 
 /// The live instance's stale moves (the code changed under them, a follow
-/// reload or a paste), each an error unless the check already found that
-/// move broken: a fresh load does not see the ones on line numbers whose
-/// text changed, since the file keeps no copy of that text.
+/// reload or a paste), each one error `stale`, in place of what the load
+/// check said about the same move: a fresh load does not see one on line
+/// numbers whose text changed (the file keeps no copy of that text), and
+/// refuses the document over one on text.
 fn stale_findings(doc: &Document, report: &mut Report) {
     for (i, m) in doc.moves.iter().enumerate() {
         let Some(s) = &m.stale else { continue };
         let id = format!("move #{}", i + 1);
-        if report.findings.iter().any(|f| f.id.as_deref() == Some(&id)) {
-            continue;
-        }
+        report
+            .findings
+            .retain(|f| !(f.level == Level::Error && f.id.as_deref() == Some(&id)));
+        let next = match crate::stale::first_line(m) {
+            Some(l) => format!("a fresh load would apply it on line {l} as written"),
+            None => "a fresh load would refuse the document".into(),
+        };
         report.findings.insert(
             0,
             Finding::new(
                 Level::Error,
                 "stale",
                 format!(
-                    "the code changed under it (a reload or a paste) and it no longer matches: {}; it is skipped. Fix it before closing Tiza: a fresh load would apply it on the line now there",
+                    "the code changed under it (a reload or a paste) and it no longer matches: {}; it is skipped. Fix it before closing Tiza: {next}",
                     s.reason
                 ),
             )
@@ -419,9 +424,13 @@ fn stale_findings(doc: &Document, report: &mut Report) {
             .step(m.at_step)
             .file(s.file.clone()),
         );
-        report.errors += 1;
-        report.ok = false;
     }
+    report.errors = report
+        .findings
+        .iter()
+        .filter(|f| f.level == Level::Error)
+        .count();
+    report.ok = report.errors == 0;
 }
 
 /// Which widths below `min_clean` are clean too (see [`Narrower`]).

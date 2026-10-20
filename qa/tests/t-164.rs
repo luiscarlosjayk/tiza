@@ -26,8 +26,6 @@
 //!   mark; undoing the reload or paste restores the exact previous state.
 //! - AC6 This file; CHANGELOG; ADR 0007 §7.
 //!
-//! (AC5 and the redaction steps of the card went with the redaction, t-183.)
-//!
 //! Follow only watches the main file today (watching a linked file is
 //! t-106), so the linked-file case checks `tiza_core::stale` directly with
 //! the linked file's code changed.
@@ -1171,4 +1169,135 @@ fn review_4_at_120_columns_the_bar_shows_the_hint_and_the_first_move() {
         live.api_ok("move.list", json!({}))["moves"][0]["stale_reason"],
         "line 3: the code around it changed, so where it went is not known"
     );
+}
+
+// ---------------------------------------------------------------- rework 1
+
+/// The card's INI with three moves on line numbers, followed.
+fn three_by_line(name: &str) -> (Live, PathBuf) {
+    let (live, dir) = demo(
+        name,
+        INI,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = a"},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "position": "3", "content": "port = 1"},
+            {"at_step": 3, "action": "code.patch", "op": "replace", "position": "5", "content": "user = b"}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    follow(&live);
+    (live, dir)
+}
+
+#[test]
+fn rework_with_follow_at_120_columns_the_bar_names_every_stale_move() {
+    let (live, dir) = three_by_line("t164-bar-follow");
+    // A first reload, so the bar has a time of the last reload to show.
+    reload(&live, &dir, &INI.replace("[db]", "[database]"), 1);
+    reload(
+        &live,
+        &dir,
+        &INI.replace("localhost", "h")
+            .replace("8080", "1")
+            .replace("admin", "x"),
+        2,
+    );
+    assert_eq!(stale_count(&live), 3);
+    let screen = live.screen(120, 30);
+    let bar = screen.lines().last().unwrap();
+    for n in ["#1 (", "#2 (", "#3 ("] {
+        assert!(bar.contains(n), "{n} missing: {bar}");
+    }
+    assert!(
+        !bar.contains("last "),
+        "no reload time while the notice is up: {bar}"
+    );
+    assert!(bar.contains("following"), "{bar}");
+}
+
+#[test]
+fn rework_quitting_with_stale_moves_is_refused_until_q_bang() {
+    let (live, _dir) = demo(
+        "t164-quit",
+        INI,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = a"},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "find": "user = admin", "content": "user = b"}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, &INI.replace("localhost", "h"));
+    live.command("q");
+    let (msg, loud) = live.message().unwrap();
+    assert_eq!(
+        msg,
+        "1 stale move (#1): next time it applies on line 2 as written — fix it, or :q! to quit anyway"
+    );
+    assert!(loud);
+    assert!(!live.with(|app| app.quit));
+    live.keys(&[KeyCode::Char('q')]);
+    assert!(!live.with(|app| app.quit), "the q key asks the same");
+    live.command("wq");
+    assert!(
+        !live.with(|app| app.quit),
+        ":wq saves but does not close over it"
+    );
+    paste(&live, &INI.replace("localhost", "h").replace("admin", "x"));
+    live.command("q");
+    assert_eq!(
+        message(&live),
+        "2 stale moves (#1, #2): next time #1 applies on line 2 as written, #2 stops the document from opening — fix them, or :q! to quit anyway"
+    );
+    live.command("q!");
+    assert!(live.with(|app| app.quit));
+}
+
+#[test]
+fn rework_the_live_check_calls_a_stale_find_stale() {
+    let (live, _dir) = demo(
+        "t164-check-find",
+        "x = 1\nx + 1\n",
+        json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "x + 1", "content": "x + 2"}]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, "x = 1\nx + 3\n");
+    let report = live.api_ok("check", json!({}));
+    let mine: Vec<&Value> = report["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["id"] == "move #1")
+        .collect();
+    assert_eq!(mine.len(), 1, "{report}");
+    assert_eq!(mine[0]["code"], "stale", "{report}");
+    let msg = mine[0]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("the code changed under it")
+            && msg.contains("Fix it before closing Tiza: a fresh load would refuse the document"),
+        "{msg}"
+    );
+    assert_eq!(report["ok"], false);
+}
+
+#[test]
+fn rework_an_insert_at_the_end_follows_when_the_last_line_is_sure() {
+    // Lines 1-3 indented; undoing it makes them repeat lines 4-6.
+    let indented = "    a\n    b\n    c\na\nb\nc\nx\ny\n";
+    let (live, _dir) = demo(
+        "t164-append",
+        indented,
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "insert", "position": "9", "content": "z"},
+            {"at_step": 2, "action": "cursor", "line": 8}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, "a\nb\nc\na\nb\nc\nx\ny\n");
+    assert_eq!(stale_count(&live), 0, "{}", message(&live));
+    assert_eq!(position_of(&live, 0), "9");
+    assert_eq!(code_at(&live, 1)[8], "z");
 }

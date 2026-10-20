@@ -601,11 +601,14 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         };
         left.push(Span::styled(text, accent));
     }
+    // A notice about stale moves names every one of them: it takes the room
+    // of the optional segments, the time of the last reload included.
+    let stale = app.stale_message_shown();
     if let Some(f) = &app.follow {
         let text = match (&f.missing, &f.last_reload_clock) {
             (true, _) => "  ⟳ following (file removed; waiting)".to_string(),
-            (false, Some(at)) => format!("  ⟳ following · last {at}"),
-            (false, None) => "  ⟳ following".to_string(),
+            (false, Some(at)) if !stale => format!("  ⟳ following · last {at}"),
+            (false, _) => "  ⟳ following".to_string(),
         };
         left.push(Span::styled(text, accent));
     }
@@ -664,7 +667,9 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // truncate the right text with an ellipsis instead of hiding it.
     let width = area.width as usize;
     let lw = |left: &Vec<Span>| left.iter().map(|s| s.content.width()).sum::<usize>();
-    let need = if essential {
+    let need = if stale {
+        right_text.width()
+    } else if essential {
         right_text.width().min(width / 2)
     } else {
         0
@@ -838,7 +843,7 @@ fn help_lines() -> Vec<String> {
         "  :theme dark|light|terminal|auto   :theme file PATH   fix a theme, use the terminal's palette, follow the terminal, load token overrides",
         "  :numbers on|off   show or hide the line-number gutter (saved in the document; exports follow it)",
         "  :margin N | :margin auto   cap the right margin so long notes wrap earlier (12-200 cells; saved in the document)",
-        "  :w [path]   :wq   :q   :q! (quit even if unsaved)   :autosave on|off (--no-save at start)   :redo   :help",
+        "  :w [path]   :wq   :q   :q! (quit even if unsaved or with stale moves)   :autosave on|off (--no-save at start)   :redo   :help",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
         "MCP server (`tiza mcp`) do exactly the same thing as these commands.",
