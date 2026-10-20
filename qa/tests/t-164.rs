@@ -1233,7 +1233,7 @@ fn rework_quitting_with_stale_moves_is_refused_until_q_bang() {
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "1 stale move (#1): next time it applies on line 2 as written — fix it, or :q! to quit anyway"
+        "1 stale move (#1) — :q! quits anyway: next time it applies on line 2 as written"
     );
     assert!(loud);
     assert!(!live.with(|app| app.quit));
@@ -1248,10 +1248,45 @@ fn rework_quitting_with_stale_moves_is_refused_until_q_bang() {
     live.command("q");
     assert_eq!(
         message(&live),
-        "2 stale moves (#1, #2): next time #1 applies on line 2 as written, #2 stops the document from opening — fix them, or :q! to quit anyway"
+        "2 stale moves (#1, #2) — :q! quits anyway: next time #1 applies on line 2 as written, #2 stops the document from opening"
     );
     live.command("q!");
     assert!(live.with(|app| app.quit));
+    // What `:q!` and Ctrl-C print on stderr once the terminal is restored.
+    assert_eq!(
+        live.with(|app| tiza_core::stale::close_summary(&app.doc)),
+        Some("2 stale moves (#1, #2): next time #1 applies on line 2 as written, #2 stops the document from opening".into())
+    );
+}
+
+#[test]
+fn rework_the_refusal_to_quit_keeps_the_way_out_at_120_columns_with_follow() {
+    let (live, dir) = demo(
+        "t164-quit-bar",
+        "fn main() {\n    let a = 1;\n    let b = 2;\n    show(a, b);\n    done();\n}\n",
+        json!([
+            {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "    let a = 10;"},
+            {"at_step": 2, "action": "code.patch", "op": "replace", "find": "let b = 2;", "content": "    let b = 20;"},
+            {"at_step": 3, "action": "cursor", "line": 5}
+        ]),
+        json!([]),
+        json!({}),
+    );
+    follow(&live);
+    reload(
+        &live,
+        &dir,
+        "fn main() {\n    let a = 3;\n    let b = 4;\n    show(a, b);\n    finish();\n}\n",
+        1,
+    );
+    assert_eq!(stale_count(&live), 3);
+    live.command("q");
+    let bar = live.screen(120, 30).lines().last().unwrap().to_string();
+    assert!(
+        bar.contains("3 stale moves (#1, #2, #3) — :q! quits anyway: next time #1"),
+        "{bar}"
+    );
+    assert!(!bar.contains("last "), "{bar}");
 }
 
 #[test]

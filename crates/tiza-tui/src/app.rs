@@ -915,7 +915,9 @@ impl App {
         }
         // The marks of stale moves live only here: closing loses them.
         if !force && let Some(msg) = tiza_core::stale::on_close(&self.doc) {
-            self.error(msg);
+            // As the notice of stale moves: the bar gives it the room.
+            self.error(msg.clone());
+            self.stale_message = Some(msg);
             return;
         }
         self.quit = true;

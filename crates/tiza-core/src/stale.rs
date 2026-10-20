@@ -725,11 +725,25 @@ pub(crate) fn first_line(m: &Move) -> Option<u32> {
     }
 }
 
-/// What closing Tiza does to the stale moves, said before it does: the
-/// marks are not saved, so next time a move on line numbers applies on the
-/// line its number says, and one on text that does not match stops the
-/// document from opening. `None` when no move is stale.
+/// What the next load does with the stale moves, since their marks are not
+/// saved: a move on line numbers applies on the line its number says, one
+/// on text that does not match stops the document from opening
+/// (`1 stale move (#1): next time it applies on line 2 as written`). `None`
+/// when no move is stale.
+pub fn close_summary(doc: &Document) -> Option<String> {
+    let (count, next) = close_parts(doc)?;
+    Some(format!("{count}: {next}"))
+}
+
+/// [`close_summary`] as `:q` refuses with it, the way out first so the bar
+/// keeps it: `1 stale move (#1) — :q! quits anyway: next time it applies on
+/// line 2 as written`.
 pub fn on_close(doc: &Document) -> Option<String> {
+    let (count, next) = close_parts(doc)?;
+    Some(format!("{count} — :q! quits anyway: {next}"))
+}
+
+fn close_parts(doc: &Document) -> Option<(String, String)> {
     let stale: Vec<(usize, &Move)> = doc
         .moves
         .iter()
@@ -747,21 +761,23 @@ pub fn on_close(doc: &Document) -> Option<String> {
         .map(|(i, _)| format!("#{}", i + 1))
         .collect::<Vec<_>>()
         .join(", ");
-    Some(match stale.as_slice() {
-        [] => return None,
-        [(_, m)] => format!(
-            "1 stale move ({ids}): next time it {} — fix it, or :q! to quit anyway",
-            next(m)
-        ),
-        many => format!(
-            "{} stale moves ({ids}): next time {} — fix them, or :q! to quit anyway",
-            many.len(),
-            many.iter()
-                .map(|(i, m)| format!("#{} {}", i + 1, next(m)))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
-    })
+    match stale.as_slice() {
+        [] => None,
+        [(_, m)] => Some((
+            format!("1 stale move ({ids})"),
+            format!("next time it {}", next(m)),
+        )),
+        many => Some((
+            format!("{} stale moves ({ids})", many.len()),
+            format!(
+                "next time {}",
+                many.iter()
+                    .map(|(i, m)| format!("#{} {}", i + 1, next(m)))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        )),
+    }
 }
 
 /// How many moves are stale.

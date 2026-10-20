@@ -132,6 +132,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     };
     let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
+    // Quit over stale moves (`:q!`, Ctrl-C): their marks are lost, so say
+    // what the next load does with them where it will be read.
+    if let Some(s) = tiza_core::stale::close_summary(&app.doc) {
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
+    }
     if app.dirty && app.save().is_err() {
         // The terminal is restored by now: say it where it will be read.
         let msg = format!(
