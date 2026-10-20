@@ -6,7 +6,7 @@ measures the context they consume and checks their work through `tiza api`.
   scripts/agent-trials/run --dry-run                 # the plan: trials, fixtures, commands; no model, no Tiza
   scripts/agent-trials/run --self-check              # every check fails on the untouched fixture and passes
                                                      # after a scripted solution (no model)
-  scripts/agent-trials/run --model sonnet --max-trials 16   # a real run (paid: asks to confirm the estimate)
+  scripts/agent-trials/run --model sonnet --max-trials 14   # a real run (paid: asks to confirm the estimate)
 
 Options:
   --model M          model for every trial (an alias such as sonnet, or a full name); required for a real run

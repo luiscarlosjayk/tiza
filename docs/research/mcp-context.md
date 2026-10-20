@@ -46,7 +46,7 @@ The `tiza` binary is copied into the run directory before the first trial (with 
 | `tour` | `main.rs` + `queue.rs` | box `main` at step 1; at step 2 switch to `queue.rs` and box `push` | a `code.link` to `queue.rs` at step 2, both boxes on the right file and lines, `check` without errors |
 | `explain` | `stack.rs` | explain `parse_args` in four steps, free-form, with no errors | every step 1–4 brings something (an annotation or a move), nothing past step 4, at least one annotation over `parse_args` (its doc comment, its body, or a line that calls it; ranges count by overlap), `check` without errors |
 
-An agent that never calls a Tiza tool fails, with its tokens recorded. `--break TASK` breaks that task's fixture on purpose (a renamed function the task names, a second copy of the token in a comment, a directory where the PNG should go): its check must then fail whatever the agent says. For most tasks the check fails on its own precondition (the function it looks for is gone), which is what test step 3 asks: the harness, not the agent, decides. `--self-check` proves the checks are not vacuous without calling a model: for every task the check fails on the untouched fixture, passes after a scripted solution (sent through the socket API the MCP tools call; for `export`, through `tiza mcp` itself over JSON-RPC, since where a relative path lands depends on the bridge), and fails again on the broken fixture; it also parses a recorded sample stream and a set of self-report lines.
+An agent that never calls a Tiza tool fails, with its tokens recorded. `--break TASK` breaks that task's fixture on purpose (a renamed function or variable the task names, a directory where the PNG should go): its check must then fail whatever the agent says. For most tasks the check fails on its own precondition (the function it looks for is gone), which is what test step 3 asks: the harness, not the agent, decides. `--self-check` proves the checks are not vacuous without calling a model: for every task the check fails on the untouched fixture, passes after a scripted solution (sent through the socket API the MCP tools call; for `export`, through `tiza mcp` itself over JSON-RPC, since where a relative path lands depends on the bridge), and fails again on the broken fixture; it also parses a recorded sample stream and a set of self-report lines.
 
 ### Variants
 
@@ -74,24 +74,24 @@ Raw output goes to `scripts/agent-trials/runs/<stamp>/` (git-ignored): one `.jso
 ## How to run it
 
 ```sh
-scripts/agent-trials/run --dry-run --model sonnet --max-trials 16   # the plan and the estimate; nothing runs
+scripts/agent-trials/run --dry-run --model sonnet --max-trials 14   # the plan and the estimate; nothing runs
 scripts/agent-trials/run --self-check                               # the checks against scripted solutions; no model
-scripts/agent-trials/run --model sonnet --max-trials 16             # a real run: prints the estimate and asks first
+scripts/agent-trials/run --model sonnet --max-trials 14             # a real run: prints the estimate and asks first
 scripts/agent-trials/run --model sonnet --tasks box --repeats 1 --break box   # test step 3: must report a failure
 ```
 
-The plan is repeats × tasks × variants, in that order, so `--max-trials 14` is one pass of the 7 tasks under both variants, and the default `--repeats 2` is 28 trials. Tool search may load tools differently each time, so a cell is only trustworthy after two runs: 16 trials are a first look, 32 the baseline proper. Compare variants only within one model.
+The plan is repeats × tasks × variants, in that order, so `--max-trials 14` is one pass of the 7 tasks under both variants, and the default `--repeats 2` is 28 trials. Tool search may load tools differently each time, so a cell is only trustworthy after two runs: 14 trials are a first look, 28 the baseline proper. Compare variants only within one model.
 
 ## Cost
 
 The estimate printed before a run assumes, per trial, 1k fresh input, 8k cache writes, 80k cache reads and 1.5k output — the Sonnet check run's averages (4.4k writes, 46k reads, 0.8k output) with some headroom — at list input and output prices, cache writes at 2× input (Claude Code writes the 1-hour cache) and cache reads at the rate its `total_cost_usd` showed for Sonnet 5.5 ($0.10/M; the other models' read prices are the API table's).
 
-| model | per trial | 16 trials | 32 trials |
+| model | per trial | 14 trials | 28 trials |
 |---|---|---|---|
-| Sonnet 5.5 | ~$0.06 | ~$0.91 | ~$1.82 |
-| Opus 5.5 | ~$0.11 | ~$1.82 | ~$3.65 |
-| Fable 5.1 | ~$0.27 | ~$4.24 | ~$8.48 |
-| Haiku 5.5 | ~$0.003 | ~$0.05 | ~$0.10 |
+| Sonnet 5.5 | ~$0.06 | ~$0.80 | ~$1.60 |
+| Opus 5.5 | ~$0.11 | ~$1.60 | ~$3.19 |
+| Fable 5.1 | ~$0.27 | ~$3.71 | ~$7.42 |
+| Haiku 5.5 | ~$0.003 | ~$0.05 | ~$0.09 |
 
 Each trial is also capped at `--trial-budget` dollars (default 1.00). The measured figure is Claude Code's own `total_cost_usd`, summed at the end of the run and kept per trial. The Sonnet check run cost $0.48 for 16 trials, plus $0.10 for the two probe trials that found the `--tools ""` problem; the Opus baseline cost $2.43 for 32 (estimated $3.65).
 
@@ -99,7 +99,7 @@ Each trial is also capped at `--trial-budget` dollars (default 1.00). The measur
 
 ### Baseline: Opus 5.5, 32 trials (2026-10-18)
 
-Measured with an earlier version of the harness and of `tiza`, which had one task more (8 tasks, 32 trials, 31 tools); that task's rows are left out below and the totals and percentages still include it. **This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
+Measured with an earlier version of the harness and of `tiza`. **This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
 
 Each cell shows pass 1 / pass 2 (one value when both agree). Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
 
@@ -143,11 +143,11 @@ Usability findings for t-162 (all three from the Sonnet check run below; Opus re
 
 ### Harness check run: Sonnet 5.5, 16 trials, one pass (2026-10-18)
 
-Measured with the earlier version of the harness (8 tasks; the eighth task's rows are left out below, the totals include it).
+Measured with an earlier version of the harness.
 
 The first full run, made to check the harness before the baseline (after the two probe trials that found the `--tools ""` problem); kept for what it found (the price fit, two usability findings), not as the baseline.
 
-`claude-sonnet-5-5`, Claude Code 2.1.303, `tiza` at 472e224 (the run's `+dirty` is the harness's own `--builtin-tools` default, changed between the probe and this run; the binary is 472e224's). One pass of each cell, so treat a single cell as a first look; the corner case asks for two runs per cell (`--max-trials 32`). Raw streams outside the repo, in `pruebas/t161/20261018-191431/` on Luis's Mac. Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
+`claude-sonnet-5-5`, Claude Code 2.1.303, `tiza` at 472e224 (the run's `+dirty` is the harness's own `--builtin-tools` default, changed between the probe and this run; the binary is 472e224's). One pass of each cell, so treat a single cell as a first look; the corner case asks for two runs per cell (`--max-trials 28`). Raw streams outside the repo, in `pruebas/t161/20261018-191431/` on Luis's Mac. Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
 
 | task | variant | ok | ctx 1st request | ctx at 1st tiza call | ctx peak | input total | of which cache writes | tiza calls | ToolSearch | errors | turns | cost $ | self-report |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|

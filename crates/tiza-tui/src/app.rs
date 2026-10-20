@@ -3435,7 +3435,7 @@ impl App {
         let bytes = match format {
             ExportFormat::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
             ExportFormat::Ansi => l.canvas.to_ansi().into_bytes(),
-            // The title is shown text (t-174).
+            // The title goes in the md heading.
             ExportFormat::Md => l.canvas.to_markdown(title.as_deref()).into_bytes(),
             ExportFormat::Svg | ExportFormat::Png => {
                 let f = if format == ExportFormat::Svg {

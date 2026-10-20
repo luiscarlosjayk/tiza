@@ -53,7 +53,6 @@ Highlight specifics worth noting: whole-line highlight has a border; character-r
 | Copilot chat actions, EngageTime polls, QR | Yes / SaaS | — | **Out of scope.** |
 | macOS desktop actions (focus mode, dock, caffeine) | OS | — | **Out of scope** (a tip in the recording profile docs at most). |
 | Preflight check (validate the demo before presenting) | No | `tiza render` fails on bad anchors | **t-101** (`tiza check FILE`). |
-| Redaction mode | Editor | — | Out of scope. |
 
 ## Proposal: "moves" for Tiza (editor-agnostic)
 
