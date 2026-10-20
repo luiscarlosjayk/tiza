@@ -1,12 +1,12 @@
 # ADR 0009: Network policy — the `tiza` binary never opens a connection
 
 - Status: accepted (2026-10-18, Luis)
-- Board: t-118; read by whichever card brings the first HTTP feature (t-117, redaction, read it too; that feature was withdrawn by t-183, ADR 0010)
+- Board: t-118; read by whichever card brings the first HTTP feature
 - Related: [ADR 0003](0003-api-socket-y-mcp.md) (the local API is a Unix socket, never TCP), [ADR 0004](0004-dependencias.md) (dependency policy, `cargo-deny`), [docs/research/demo-time.md](../research/demo-time.md) (the remote-control PWA was discarded on 2026-10-17)
 
 ## Context
 
-Tiza shows code on screen — sometimes code with secrets in it (t-117 added masks for that; t-183 withdrew them). A presenter has to be able to trust that what Tiza shows stays on the machine. At the same time, some day we will add something that talks to the internet: publishing a GIF or a `.cast` to a service, a new-version notice, downloading themes or fonts. If the promise in the README is written as «Tiza never uses the network», that day either breaks the promise or ships the feature as an exception nobody planned. The policy is written now, before any such feature exists, so the promise survives it and the first HTTP feature arrives with its structure already decided.
+Tiza shows code on screen — sometimes code with secrets in it. A presenter has to be able to trust that what Tiza shows stays on the machine. At the same time, some day we will add something that talks to the internet: publishing a GIF or a `.cast` to a service, a new-version notice, downloading themes or fonts. If the promise in the README is written as «Tiza never uses the network», that day either breaks the promise or ships the feature as an exception nobody planned. The policy is written now, before any such feature exists, so the promise survives it and the first HTTP feature arrives with its structure already decided.
 
 Today the workspace has no network dependency at all: `rmcp` is built with `transport-io` only (stdio), `tokio` without the `net` feature, `mio` is there for terminal and file events (crossterm, notify, signal-hook), and `resvg` / the font loader read only embedded or local files. `Cargo.lock` has no `reqwest`, `hyper`, `ureq`, `curl`, `native-tls` or `rustls`.
 
@@ -28,7 +28,7 @@ Today the workspace has no network dependency at all: `rmcp` is built with `tran
 - **Explicit action per use.** A command or a flag the user runs (`tiza-net publish demo.gif`, `tiza-net update-check`). Never on start-up, never on a timer, never because a file was opened, never as a side effect of another command.
 - **Disclosure before sending.** One line, before the request leaves: what is sent, where to, and (when there is one) what account it is sent as. `--yes` skips the prompt, not the line.
 - **Code and annotations never leave the machine unless that is the feature's purpose and the user asked for it** — publishing a `.tiza` is such a purpose; checking for a new version is not and sends nothing about the document.
-- **What is sent is what is rendered.** An upload carries what a render of the document shows, nothing else. (This rule said «masks first» while the redact feature of t-117 existed; t-183 withdrew it, ADR 0010.)
+- **What is sent is what is rendered.** An upload carries what a render of the document shows, nothing else.
 - **No identifiers, no telemetry.** No machine id, no install id, no usage counters, no crash reports. A request carries what the feature needs and the client's `User-Agent` (`tiza-net/<version>`), nothing else. There is no «anonymous statistics» opt-out because there are no statistics.
 - **No credentials in the core.** Tokens for a publishing service live in the `tiza-net` configuration (its own file or the keychain), never in a `.tiza` and never in the core's config.
 - **Offline is the normal state.** A missing network is not an error the core ever sees; `tiza-net` says «could not reach X» and does nothing else.

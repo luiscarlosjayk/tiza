@@ -47,13 +47,13 @@ Highlight specifics worth noting: whole-line highlight has a border; character-r
 | HTTP API `/api/next`, `/runById`, `/demos`, `/screenshot` | No | Unix socket: `step.next`, `step.set`, `scene.get`, `render.text`; `tiza render` → PNG | **Exists** (socket instead of HTTP). `/screenshot` ≈ `export_image`. A `step.goto {id}` with named steps would match `runById`. |
 | Remote control PWA / clicker | No | Any client of the socket; keyboard → | **Out of scope** (decided 2026-10-17): no clicker feature; the socket and `tiza next|prev|goto` exist for automation (editor tasks, recordings). |
 | MCP server | No | `tiza mcp` | **Exists** (ours is the whole surface, theirs is new). |
-| Recording / export as video | Bundled ffmpeg records a second VS Code window | `render --out demo.gif` native (t-120), `.mp4`/`.webm` through the user's own ffmpeg, PNG/SVG per step, `.cast`/`.tape` (t-051) | **t-120** done: Tiza draws every frame itself (same pixels as the PNG export, one geometry per take, masks on), so the GIF needs nothing installed and MP4 only an ffmpeg on PATH — never bundled, not even behind a feature (Luis, 2026-10-18). t-101 (`--all-steps` stills) still open; t-089 was a duplicate (won't do). |
+| Recording / export as video | Bundled ffmpeg records a second VS Code window | `render --out demo.gif` native (t-120), `.mp4`/`.webm` through the user's own ffmpeg, PNG/SVG per step, `.cast`/`.tape` (t-051) | **t-120** done: Tiza draws every frame itself (same pixels as the PNG export, one geometry per take), so the GIF needs nothing installed and MP4 only an ffmpeg on PATH — never bundled, not even behind a feature (Luis, 2026-10-18). t-101 (`--all-steps` stills) still open; t-089 was a duplicate (won't do). |
 | Snippets gallery (parametrized step lists) | No | document `styles` (marks only) | **Not adopted** (decided 2026-10-17; t-102 won't do): boxes, arrows and notes are already one command each. |
 | Slides, themes, layouts, Mermaid, PowerPoint/Keynote | Yes (webview) | — | **Out of scope.** Tiza is the code segment of a talk; slides live elsewhere. |
 | Copilot chat actions, EngageTime polls, QR | Yes / SaaS | — | **Out of scope.** |
 | macOS desktop actions (focus mode, dock, caffeine) | OS | — | **Out of scope** (a tip in the recording profile docs at most). |
 | Preflight check (validate the demo before presenting) | No | `tiza render` fails on bad anchors | **t-101** (`tiza check FILE`). |
-| Redaction mode | Tiza, both ways | t-117, withdrawn by t-183 | Done differently and then withdrawn before any release (ADR 0010; what follows is what t-117 built): a `redact` annotation the presenter places (`:redact L:ANCHOR`, select + `r`, MCP `redact`) plus an opt-in `:redact auto` that turns the built-in patterns into ordinary, reviewable redact annotations; never on by default, never silent. Because Tiza owns the buffer, one mask covers the screen, every export, the recordings and what agents read; the file on disk and the `.tiza` never hold the secret. |
+| Redaction mode | Editor | — | Out of scope. |
 
 ## Proposal: "moves" for Tiza (editor-agnostic)
 

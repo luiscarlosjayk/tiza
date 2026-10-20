@@ -41,7 +41,6 @@ The `tiza` binary is copied into the run directory before the first trial (with 
 | `read` | `stack.rs` + `.tiza` (3 steps, open at step 2) | say the current step, the number of annotations and the function on line 4 | the answer's `STEP=`, `ANNOTATIONS=`, `FUNCTION=` against the document as it was opened (an agent may browse the steps before answering) |
 | `box` | `stack.rs` | box the method `push` with a label, at step 1 | a box at step 1 spanning exactly `fn push` … its `}` with that label |
 | `arrow-note` | `stack.rs` | at step 2, an arrow from `let max` to the `max` field, and a note on `let max` | the arrow's two lines and the note's line, both at step 2 |
-| `redact` (task removed with the feature, t-183; the results below are history) | `config.toml` with a fake token | mask the token's value, keep the rest readable | a redact exists; the token is in neither `code.get` nor `render.text`; the other lines still read |
 | `move` | `stack.rs` | a line that appears at step 3, typed char by char | a `code.patch` at step 3 with `typing: char`; the line is right after its anchor at step 3 and absent at step 2 |
 | `export` | `stack.rs` + `.tiza` (open at step 2) | a PNG of step 3 at `step3.png` | the file is byte for byte the bridge's own export of step 3 at the defaults; one that equals step 2 (the step on screen, `export_image`'s default) fails; one with other options passes only if the agent's successful `export_image` call named step 3 |
 | `tour` | `main.rs` + `queue.rs` | box `main` at step 1; at step 2 switch to `queue.rs` and box `push` | a `code.link` to `queue.rs` at step 2, both boxes on the right file and lines, `check` without errors |
@@ -81,7 +80,7 @@ scripts/agent-trials/run --model sonnet --max-trials 16             # a real run
 scripts/agent-trials/run --model sonnet --tasks box --repeats 1 --break box   # test step 3: must report a failure
 ```
 
-The plan is repeats × tasks × variants, in that order, so `--max-trials 16` is one pass of the 8 tasks under both variants, and the default `--repeats 2` is 32 trials. Tool search may load tools differently each time, so a cell is only trustworthy after two runs: 16 trials are a first look, 32 the baseline proper. Compare variants only within one model.
+The plan is repeats × tasks × variants, in that order, so `--max-trials 14` is one pass of the 7 tasks under both variants, and the default `--repeats 2` is 28 trials. Tool search may load tools differently each time, so a cell is only trustworthy after two runs: 16 trials are a first look, 32 the baseline proper. Compare variants only within one model.
 
 ## Cost
 
@@ -100,7 +99,7 @@ Each trial is also capped at `--trial-budget` dollars (default 1.00). The measur
 
 ### Baseline: Opus 5.5, 32 trials (2026-10-18)
 
-**This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
+Measured with an earlier version of the harness and of `tiza`, which had one task more (8 tasks, 32 trials, 31 tools); that task's rows are left out below and the totals and percentages still include it. **This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
 
 Each cell shows pass 1 / pass 2 (one value when both agree). Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
 
@@ -112,8 +111,6 @@ Each cell shows pass 1 / pass 2 (one value when both agree). Context figures are
 | box | upfront | 2/2 | 16,754 / 16,755 | 16,754 / 16,755 | 17,659 / 17,657 | 51,819 / 51,816 | 2,008 / 1,646 | 2 | — | 3 | 0.032 / 0.029 | 17,000 / 2,500 |
 | arrow-note | tool search | 2/2 | 4,033 | 6,079 | 9,346 / 7,729 | 42,757 / 24,902 | 6,932 / 4,921 | 6 / 4 | 2 / 1 | 9 / 6 | 0.088 / 0.062 | 9,000 / 6,000 |
 | arrow-note | upfront | 2/2 | 16,788 / 16,787 | 16,788 / 16,787 | 19,316 / 18,335 | 90,033 / 70,673 | 3,665 / 2,290 | 7 / 4 | — | 8 / 5 | 0.065 / 0.047 | 19,000 / 4,500 |
-| redact | tool search | 2/2 | 3,995 / 3,993 | 5,613 / 5,608 | 6,997 / 6,983 | 29,240 / 29,203 | 4,583 / 4,213 | 5 | 1 | 7 | 0.057 / 0.054 | 6,000 |
-| redact | upfront | 2/2 | 16,752 / 16,751 | 16,752 / 16,751 | 18,505 / 17,638 | 105,491 / 68,809 | 2,854 / 1,631 | 8 / 4 | — | 9 / 5 | 0.062 / 0.037 | 3,500 / 4,000 |
 | move | tool search | 2/2 | 4,031 | 7,230 / 7,111 | 10,433 / 10,397 | 58,246 / 65,455 | 8,019 / 7,590 | 9 | 1 | 11 | 0.094 | 11,000 / 13,000 |
 | move | upfront | 2/2 | 16,788 / 16,786 | 16,788 / 16,786 | 19,545 / 19,937 | 71,470 / 109,735 | 3,894 / 3,893 | 7 / 8 | — | 8 / 9 | 0.059 / 0.069 | 18,000 / 19,000 |
 | export | tool search | 2/2 | 3,975 | 5,298 / 5,293 | 5,540 / 5,578 | 14,813 / 14,846 | 3,126 / 2,826 | 1 | 1 | 3 | 0.034 / 0.033 | 5,000 |
@@ -135,7 +132,7 @@ What it says:
 - **The context figures do not depend on the model**: the first request is ~16,800 tokens with the 31 tools upfront and ~4,000 with tool search, as with Sonnet. With tool search the context at the first Tiza call is 4,800–7,200 tokens for the single-purpose tasks and 10,400–12,000 for `explain`. Peaks: 5,500–11,000 against 17,000–19,900 for the single-purpose tasks; for `explain`, which loaded 14 of the 31 tools (about half of the tool list's bytes), 21,500 against 24,000, so the gap closes as an agent uses more of the server.
 - **Success 32/32, with no tool errors**, no wrong tools and no retries. Opus hit neither of the two traps of Sonnet's check run: it boxed by line numbers everywhere (so `find_end` was never exercised) and, in `arrow-note`, annotated at step 2 before moving there.
 - **Tool search used 39 % fewer input tokens and cost 36 % more**: 22 % more in pass 1 (with each variant's one-time cold prefix write) and 57 % more in pass 2 (warm). It writes 1.7× as much to the cache (each lookup changes the prompt), and Opus's `total_cost_usd` fits exactly $8/M for a cache write (2× input, the 1-hour cache), $0.20/M for a read (0.05×), $4/M fresh input and $20/M output: a write costs 40 reads. It also took 22 % more wall time (335 s against 273 s), one ToolSearch round trip or two per trial.
-- **Per-cell differences are not readable; compare totals per variant.** `read`, `box`, `export` and `tour` repeat almost to the token, but identical runs of `arrow-note`, `redact` and `move` differ by up to ~70 % in input and cost (tool-search `arrow-note`: 42,757 then 24,902; upfront `redact`: 8 calls then 4; upfront `move`: 71,470 then 109,735). Context at the first call and the peak are the stable metrics (within ~20 %, mostly within 5 %).
+- **Per-cell differences are not readable; compare totals per variant.** `read`, `box`, `export` and `tour` repeat almost to the token, but identical runs of `arrow-note` and `move` differ by up to ~70 % in input and cost (tool-search `arrow-note`: 42,757 then 24,902; upfront `move`: 71,470 then 109,735). Context at the first call and the peak are the stable metrics (within ~20 %, mostly within 5 %).
 - Self-reports again range from 1,500 to 30,000 with no relation to the measured context.
 
 Usability findings for t-162 (all three from the Sonnet check run below; Opus reproduced none of them; proposals only, no code changed here):
@@ -145,6 +142,8 @@ Usability findings for t-162 (all three from the Sonnet check run below; Opus re
 3. `find_end` takes the first match after `find_start`, so `"}"` often closes an inner block (Sonnet's `tour` box came out L5-9). The agent guide warns about it; the tool descriptions do not.
 
 ### Harness check run: Sonnet 5.5, 16 trials, one pass (2026-10-18)
+
+Measured with the earlier version of the harness (8 tasks; the eighth task's rows are left out below, the totals include it).
 
 The first full run, made to check the harness before the baseline (after the two probe trials that found the `--tools ""` problem); kept for what it found (the price fit, two usability findings), not as the baseline.
 
@@ -158,8 +157,6 @@ The first full run, made to check the harness before the baseline (after the two
 | box | upfront | yes | 16,759 | 16,759 | 17,661 | 51,828 | 2,010 | 2 | — | 0 | 3 | 0.016 | 9,000 |
 | arrow-note | tool search | **no** | 4,036 | 6,363 | 7,560 | 25,307 | 5,146 | 3 | 1 | 1 | 5 | 0.030 | 14,000 |
 | arrow-note | upfront | yes | 16,792 | 16,792 | 18,121 | 52,354 | 2,470 | 3 | — | 0 | 4 | 0.021 | 9,000 |
-| redact | tool search | yes | 3,999 | 5,614 | 6,980 | 29,215 | 4,566 | 5 | 1 | 0 | 7 | 0.027 | 9,000 |
-| redact | upfront | yes | 16,755 | 16,755 | 17,761 | 69,395 | 2,110 | 4 | — | 0 | 5 | 0.019 | 6,000 |
 | move | tool search | yes | 4,035 | 6,715 | 7,629 | 25,743 | 5,215 | 2 | 1 | 0 | 4 | 0.029 | 9,000 |
 | move | upfront | yes | 16,791 | 16,791 | 17,705 | 51,936 | 2,054 | 2 | — | 0 | 3 | 0.017 | 9,000 |
 | export | tool search | yes | 3,980 | 5,300 | 5,550 | 14,830 | 3,136 | 1 | 1 | 0 | 3 | 0.018 | 6,000 |
