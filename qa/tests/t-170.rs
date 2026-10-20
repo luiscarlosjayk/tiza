@@ -13,6 +13,9 @@
 //!   at the GIF's length on every version.
 //! - AC3 This file measures the MP4 when ffmpeg is on PATH, and otherwise
 //!   skips with a clear notice.
+//! - Review of 43ac5fd: the video times each frame as the GIF does (10 ms
+//!   unit, 20 ms floor), so typed frames add up to the same length, and
+//!   `--interval 0` still writes a video stream.
 //!
 //! The per-step measure decodes the video to 128×96 grey frames at 10 fps
 //! and marks a step change wherever two consecutive frames differ by more
@@ -72,17 +75,12 @@ impl Ffmpeg {
             .any(|l| l.split_whitespace().nth(1) == Some(name))
     }
 
-    /// `format=duration` in seconds.
-    fn duration(&self, video: &Path) -> f64 {
+    /// One `format=` entry of ffprobe, as text.
+    fn format_entry(&self, video: &Path, entry: &str) -> String {
         let out = Command::new(&self.ffprobe)
-            .args([
-                "-v",
-                "error",
-                "-show_entries",
-                "format=duration",
-                "-of",
-                "csv=p=0",
-            ])
+            .args(["-v", "error", "-show_entries"])
+            .arg(format!("format={entry}"))
+            .args(["-of", "csv=p=0"])
             .arg(video)
             .output()
             .expect("run ffprobe");
@@ -92,10 +90,14 @@ impl Ffmpeg {
             video.display(),
             String::from_utf8_lossy(&out.stderr)
         );
-        String::from_utf8_lossy(&out.stdout)
-            .trim()
-            .parse()
-            .expect("ffprobe duration")
+        String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    }
+
+    /// `format=duration` in seconds.
+    fn duration(&self, video: &Path) -> f64 {
+        let text = self.format_entry(video, "duration");
+        text.parse()
+            .unwrap_or_else(|_| panic!("ffprobe duration of {}: {text:?}", video.display()))
     }
 
     /// How long each step stays on screen, in seconds, from the frames
@@ -160,9 +162,17 @@ fn gif_delays(gif: &Path) -> Vec<f64> {
 }
 
 /// Renders `doc` as a GIF and as `ext` with the same flags, and checks the
-/// video's total against the GIF's, its `-t` on the printed command, and
-/// every step's length against the GIF's delay. Returns the GIF delays.
-fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str]) -> Vec<f64> {
+/// video's total against the GIF's and its `-t` on the printed command
+/// (AC2: the sum of the durations goes to ffmpeg, so the length is not left
+/// to how this ffmpeg treats the repeated concat entry). Returns the GIF
+/// delays and the video's path.
+fn total_as_the_gif(
+    ff: &Ffmpeg,
+    dir: &Path,
+    doc: &Path,
+    ext: &str,
+    flags: &[&str],
+) -> (Vec<f64>, PathBuf) {
     let gif = dir.join(format!("{ext}.gif"));
     let video = dir.join(format!("out.{ext}"));
     let mut printed = String::new();
@@ -180,11 +190,28 @@ fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str
     }
     let delays = gif_delays(&gif);
     let total: f64 = delays.iter().sum();
+    assert_eq!(
+        ff.format_entry(&video, "nb_streams"),
+        "1",
+        "{ext} {flags:?}: the file should hold one video stream"
+    );
     let measured = ff.duration(&video);
+    // Within one 30 fps frame: a sum that is not a multiple of 1/30 s
+    // (typed frames) ends on the last whole frame before it.
     assert!(
         (measured - total).abs() < 0.05,
         "{ext} {flags:?}: ffprobe says {measured} s, the GIF lasts {total} s"
     );
+    assert!(
+        printed.contains(&format!(" -t {total:.3} ")),
+        "the printed command should carry `-t {total:.3}`:\n{printed}"
+    );
+    (delays, video)
+}
+
+/// `total_as_the_gif`, plus every step's length against the GIF's delay.
+fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str]) -> Vec<f64> {
+    let (delays, video) = total_as_the_gif(ff, dir, doc, ext, flags);
     let steps = ff.steps(&video);
     assert_eq!(
         steps.len(),
@@ -198,12 +225,6 @@ fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str
              (video {steps:?}, GIF {delays:?})"
         );
     }
-    // AC2: the sum of the durations goes to ffmpeg as `-t`, so the length
-    // is not left to how this ffmpeg treats the repeated concat entry.
-    assert!(
-        printed.contains(&format!(" -t {total:.3} ")),
-        "the printed command should carry `-t {total:.3}`:\n{printed}"
-    );
     delays
 }
 
@@ -243,6 +264,43 @@ fn corner_a_single_step_document() {
     // repeated concat entry is what makes ffmpeg hold a lone frame at all.
     let delays = same_as_the_gif(&ff, &dir, &doc, "mp4", &["--skip-zero"]);
     assert_eq!(delays, vec![4.0]);
+}
+
+#[test]
+fn review_typed_frames_are_timed_as_the_gif_times_them() {
+    let Some(ff) = ffmpeg() else { return };
+    let dir = scratch("t170-typed");
+    // A move typed at 25 ms per character: the GIF rounds each typed frame
+    // up to its 10 ms unit (30 ms), and the video uses the same delays, so
+    // both add up to the same length (the typed frames are too short for
+    // the 10 fps step measure, so only the total is compared here).
+    let (delays, _) = total_as_the_gif(
+        &ff,
+        &dir,
+        &fixture("t-170/typed.tiza"),
+        "mp4",
+        &["--scale", "1"],
+    );
+    let typed: Vec<&f64> = delays.iter().filter(|d| **d < 1.0).collect();
+    assert!(
+        typed.len() >= 10 && typed.iter().all(|d| (**d - 0.03).abs() < 1e-9),
+        "typed frames at 25 ms should be 30 ms in the GIF: {delays:?}"
+    );
+    assert_eq!(delays.first(), Some(&2.0));
+    assert_eq!(delays.last(), Some(&4.0));
+}
+
+#[test]
+fn review_interval_zero_still_writes_a_video_stream() {
+    let Some(ff) = ffmpeg() else { return };
+    let dir = scratch("t170-zero");
+    // `--interval 0`: the GIF gives each step its 20 ms floor; the video
+    // used to get `-t 0.000` and come out as a file with no stream at all.
+    let doc = fixture("t-170/one-step.tiza");
+    let (delays, video) =
+        total_as_the_gif(&ff, &dir, &doc, "mp4", &["--interval", "0", "--scale", "1"]);
+    assert_eq!(delays, vec![0.02, 0.02]);
+    assert!(ff.duration(&video) > 0.0);
 }
 
 #[test]

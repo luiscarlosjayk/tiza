@@ -21,6 +21,19 @@ pub const MIN_DELAY_MS: u64 = 20;
 /// Longest delay of one frame (u16 centiseconds); longer holds are split.
 const MAX_DELAY_CS: u64 = u16::MAX as u64;
 
+/// How long a frame asked to last `delay_ms` really lasts in the GIF, in
+/// milliseconds: at least [`MIN_DELAY_MS`], at most two maximum holds, and
+/// rounded up to the format's 10 ms unit. MP4/WebM time their frames with
+/// the same function (t-170), so a typed move at 25 ms per character lasts
+/// 30 ms per character in every format and the videos add up to the GIF's
+/// length exactly.
+pub fn frame_delay_ms(delay_ms: u64) -> u64 {
+    delay_ms
+        .clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)
+        .div_ceil(10)
+        * 10
+}
+
 #[derive(Debug, Clone)]
 pub struct GifOptions {
     pub svg: SvgOptions,
@@ -136,10 +149,7 @@ pub fn to_gif(
             // of the same rectangle.
             // Bounded (t-166): a hold past an hour is a bug upstream, and
             // u64::MAX ms would be 2.8e14 frames of 655 s.
-            let mut cs = frames[i]
-                .1
-                .clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)
-                .div_ceil(10);
+            let mut cs = frame_delay_ms(frames[i].1) / 10;
             loop {
                 let this = cs.min(MAX_DELAY_CS);
                 enc.write_frame(&gif::Frame {
@@ -166,11 +176,7 @@ pub fn to_gif(
     }
     let duration_ms = frames
         .iter()
-        .map(|(_, d)| {
-            (*d).clamp(MIN_DELAY_MS, tiza_core::model::MAX_HOLD_MS * 2)
-                .div_ceil(10)
-                * 10
-        })
+        .map(|(_, d)| frame_delay_ms(*d))
         .fold(0u64, u64::saturating_add);
     Ok((
         out,

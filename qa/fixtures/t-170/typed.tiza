@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "title": "t-170: a step typed in character by character at 25 ms",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": {
+    "file": "ownership.rs"
+  },
+  "styles": {
+    "borrow_mut": {
+      "glyph": "✎▶",
+      "legend": "&mut borrow",
+      "color": "yellow"
+    }
+  },
+  "step": 0,
+  "theme": "dark",
+  "padding": [
+    1,
+    2
+  ],
+  "annotations": [
+    {
+      "id": "a1",
+      "step": 1,
+      "type": "mark",
+      "kind": "move",
+      "span": {
+        "line": 3,
+        "start": 10,
+        "end": 11
+      },
+      "label": "s moves into takes",
+      "color": "orange"
+    },
+    {
+      "id": "a2",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 8
+      },
+      "to": {
+        "line": 15,
+        "col": 9
+      },
+      "label": "move",
+      "color": "orange"
+    },
+    {
+      "id": "a13",
+      "step": 1,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 12
+      },
+      "to": {
+        "line": 2,
+        "col": 8
+      },
+      "label": "s is born",
+      "color": "purple"
+    }
+  ],
+  "moves": [
+    {
+      "at_step": 1,
+      "action": "code.patch",
+      "op": "insert",
+      "after": "s.push('!');",
+      "content": "\n    // typed at 25 ms",
+      "typing": "char",
+      "speed_ms": 25
+    }
+  ]
+}

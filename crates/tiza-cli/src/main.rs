@@ -1205,11 +1205,16 @@ fn encode_video(
         let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
         let name = format!("f{i:05}.png");
         std::fs::write(dir.join(&name), png)?;
+        // The GIF's own timing of this frame (t-170 review): its 10 ms
+        // unit and 20 ms floor, so typed frames add up to the same length
+        // in every format, and `--interval 0` still gives each step a
+        // frame instead of `-t 0` and a file with no video stream.
+        let delay_ms = tiza_export::gif::frame_delay_ms(f.delay_ms);
         list.push_str(&format!(
             "file '{name}'\nduration {:.3}\n",
-            f.delay_ms as f64 / 1000.0
+            delay_ms as f64 / 1000.0
         ));
-        total_ms += f.delay_ms;
+        total_ms += delay_ms;
     }
     // The last frame is listed once more so it holds for its duration at
     // all: without the repeat, ffmpeg 6 emits it as a single frame (its
