@@ -493,8 +493,8 @@ pub fn carry(
                     .map_err(|e| named(e, o, &old[o]))?;
                 // It applied before the change: if it fails now, the change
                 // is why (its text target gone, or matching twice).
-                let (_, now) = r.new.apply(doc, &m, slot).map_err(|e| {
-                    refused(
+                let (_, now) = r.new.apply(doc, &m, slot).map_err(|e| Error::Because {
+                    message: refused(
                         format!("move #{}, step {}", o + 1, m.at_step),
                         &r.who,
                         format!("makes it fail ({e})"),
@@ -503,6 +503,8 @@ pub fn carry(
                             o + 1
                         ),
                     )
+                    .to_string(),
+                    inner: Box::new(e),
                 })?;
                 // It must apply on the same lines as before, carried: a text
                 // target the change makes match another line (an explicit

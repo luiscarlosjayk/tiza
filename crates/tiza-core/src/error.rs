@@ -50,6 +50,10 @@ pub enum Error {
     /// 9..9 does not fit…`); the API code is that of the error inside.
     #[error("{what}: {inner}")]
     Within { what: String, inner: Box<Error> },
+    /// A message of its own about another error (quoted in it); the API
+    /// code is that of the error inside.
+    #[error("{message}")]
+    Because { message: String, inner: Box<Error> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
@@ -73,7 +77,7 @@ impl Error {
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",
             Error::Json(_) => "invalid_json",
-            Error::Within { inner, .. } => inner.code(),
+            Error::Within { inner, .. } | Error::Because { inner, .. } => inner.code(),
         }
     }
 }
