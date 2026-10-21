@@ -2338,8 +2338,9 @@ impl App {
     /// file), the message says how to follow it again. `replaced` is the
     /// file reference [`App::embed_if_not_the_file`] embedded: the code on
     /// screen is a version of that file it no longer holds, so follow is off
-    /// whether it was on or not; with follow already off the message says
-    /// why, unless the reason is the one the screen already had.
+    /// whether it was on or not. With follow already off over embedded code
+    /// the message says why, unless the reason is the one the screen
+    /// already had.
     fn follow_after_history(
         &mut self,
         before: BeforeHistory,
@@ -2353,10 +2354,13 @@ impl App {
             self.say_first(note);
             return;
         }
-        if replaced.is_some() {
-            if let Some(why) = self.off_reason()
-                && Some(&why) != before.reason.as_ref()
-            {
+        // Follow off over embedded code that is not the file's: say why
+        // whenever the reason is not the one the screen had before (the
+        // file a moment ago, a paste, another version), once.
+        if self.follow.is_none()
+            && let Some(why) = self.off_reason()
+        {
+            if Some(&why) != before.reason.as_ref() {
                 let (said, _) = self.message.take().unwrap_or_default();
                 self.info(format!("{said}; follow is off: {why}"));
             }

@@ -688,7 +688,45 @@ fn rev_a_redo_back_to_the_paste_says_paste_not_version() {
         status(&live)["reason"],
         "the code is the paste again, not main.rs; :follow on reloads main.rs"
     );
-    // Follow was off already: the bar only names the redo.
-    assert_eq!(message(&live), "redone: paste");
+    // Follow was off already; the reason changed, so the bar says it once.
+    assert_eq!(
+        message(&live),
+        "redone: paste; follow is off: the code is the paste again, not main.rs; :follow on reloads main.rs"
+    );
     same_as_fresh(&live, &tiza, "U back to the paste");
+}
+
+#[test]
+fn rev_u_from_the_files_code_onto_an_embedded_version_says_why_once() {
+    // A note and a highlight, a reload that drops the highlight; `u` ×3
+    // (reload, highlight, note), `U` ×3 back to the reload: the file's
+    // code with follow off. The next `u` lands on a snapshot that is
+    // already embedded (x = 1): follow is off and the bar says why.
+    let (live, src, tiza) = followed("t202-u-embedded", CODE);
+    live.command("note 1 entry");
+    live.command("hl 2:1 one");
+    save(&src, SEVEN);
+    wait_reloads(&live, 1);
+    for _ in 0..3 {
+        live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    }
+    for _ in 0..3 {
+        live.keys(&[crossterm::event::KeyCode::Char('U')]);
+    }
+    assert_eq!(code(&live), lines(SEVEN));
+    assert_eq!(
+        message(&live),
+        "redone: reload #1; follow is off: :follow on reloads main.rs"
+    );
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(code(&live), lines(CODE));
+    assert_eq!(
+        message(&live),
+        format!("undone: reload #1; follow is off: {REASON}")
+    );
+    assert_eq!(status(&live)["reason"], REASON);
+    same_as_fresh(&live, &tiza, "u onto the embedded version");
+    // Once: a further `u` onto the same kind of screen says nothing new.
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert!(!message(&live).contains("follow"), "{}", message(&live));
 }
