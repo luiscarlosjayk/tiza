@@ -252,15 +252,6 @@ pub const READ_ONLY_METHODS: &[&str] = &[
     "move.list",
 ];
 
-/// `; move #3's rebind of a4 is now ignored` after the annotations a paste
-/// or a reload dropped, when a `rebind` named one of them.
-fn ignored_suffix(ignored: &Option<String>) -> String {
-    ignored
-        .as_ref()
-        .map(|t| format!("; {t}"))
-        .unwrap_or_default()
-}
-
 /// The files a `scene.put` sent different code for ([`App::keep_references`]).
 #[derive(Debug, Default)]
 struct SentCode {
@@ -306,8 +297,9 @@ pub struct App {
     pub selected: Option<String>,
     pub scroll: usize,
     pub message: Option<(String, bool)>,
-    /// The last notice about moves that stopped matching the code: while it
-    /// is the message, the bar gives it the room it needs.
+    /// The last notice about moves that stopped matching the code (or a
+    /// `rebind` entry a paste or a reload left ignored): while it is the
+    /// message, the bar gives it the room it needs.
     pub stale_message: Option<String>,
     /// Presentation mode only (t-107): until when `message` — the result of
     /// the command just run — is drawn on the last row. `None`: hidden.
@@ -1264,14 +1256,20 @@ impl App {
             }
         }
         // A `rebind` entry naming no annotation is a typo of the caller,
-        // unless the open document holds the same entry (a `scene.get` copy
-        // sent back after that annotation went away): that one loads.
+        // unless it is the open document's own: the same code, and the move
+        // at the same place, otherwise equal, holding that same entry (a
+        // `scene.get` copy sent back after that annotation went away).
+        let same_code = doc.code.as_slice() == self.doc.base();
+        let bare = |m: &Move| Move {
+            rebind: Default::default(),
+            stale: None,
+            held: Vec::new(),
+            ..m.clone()
+        };
         for (i, m) in doc.moves.iter().enumerate() {
+            let open = self.doc.moves.get(i).filter(|o| bare(o) == bare(m));
             tiza_core::moves::check_rebind_ids(m, i, &doc.annotations, |id, spec| {
-                self.doc
-                    .moves
-                    .iter()
-                    .any(|o| o.rebind.get(id) == Some(spec))
+                same_code && open.is_some_and(|o| o.rebind.get(id) == Some(spec))
             })?;
         }
         let base = self.save_path.parent().map(Path::to_path_buf);
@@ -2063,17 +2061,16 @@ impl App {
         self.scroll = 0;
         let lines = self.doc.code.len();
         match out.stale {
-            None if out.dropped > 0 => self.info(format!(
-                "{lines} lines pasted; {} annotation{} dropped (their text is gone; u undoes){}",
+            None if out.ignored.is_none() && out.dropped > 0 => self.info(format!(
+                "{lines} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
                 out.dropped,
-                if out.dropped == 1 { "" } else { "s" },
-                ignored_suffix(&out.ignored)
+                if out.dropped == 1 { "" } else { "s" }
             )),
-            None => self.info(format!(
+            None if out.ignored.is_none() => self.info(format!(
                 "{lines} lines pasted ({} annotations kept)",
                 out.kept
             )),
-            Some(n) => self.stale_notice(
+            n => self.stale_notice(
                 n,
                 out.dropped,
                 &out.ignored,
@@ -2084,13 +2081,14 @@ impl App {
         Ok(())
     }
 
-    /// The status line after a paste or a reload that changed a stale
-    /// mark, in the order the bar can cut it: annotations dropped (and the
-    /// `rebind` entries that leaves `ignored`), the stale moves, then what
-    /// happened (`what`). Loud when a move stopped matching.
+    /// The status line after a paste or a reload that changed a stale mark
+    /// (`n`) or left a `rebind` entry ignored, in the order the bar can cut
+    /// it: annotations dropped (and the entries that leaves `ignored`), the
+    /// stale moves, then what happened (`what`). Loud when a move stopped
+    /// matching. The bar gives it the room it needs (`stale_message`).
     fn stale_notice(
         &mut self,
-        n: tiza_core::stale::Notice,
+        n: Option<tiza_core::stale::Notice>,
         dropped: usize,
         ignored: &Option<String>,
         why: &str,
@@ -2101,14 +2099,23 @@ impl App {
             parts.push(format!(
                 "{dropped} annotation{} dropped ({why}; u undoes){}",
                 if dropped == 1 { "" } else { "s" },
-                ignored_suffix(ignored)
+                ignored
+                    .as_ref()
+                    .map(|t| format!("; {t}"))
+                    .unwrap_or_default()
             ));
         }
-        parts.push(n.text);
+        let loud = n.as_ref().is_some_and(|n| n.loud);
+        if let Some(n) = n {
+            parts.push(n.text);
+        }
         parts.push(what);
         let text = parts.join(" · ");
-        if n.loud {
+        if loud {
             self.error(text.clone());
+            self.stale_message = Some(text);
+        } else if ignored.is_some() {
+            self.info(text.clone());
             self.stale_message = Some(text);
         } else {
             self.info(text);
@@ -2150,24 +2157,26 @@ impl App {
         always: Option<String>,
     ) -> crate::reanchor::Outcome {
         let snapshot = self.doc.clone();
-        let (mut d, mut stale) = self.rebuilt(&code, &code_src, first_line, &[]);
         // A dropped annotation that a `rebind` names leaves that entry
-        // ignored. The moves were checked with the entry still counting (its
-        // `find` may be the text that is gone): check them again without it,
-        // so the screen applies the moves as the saved document will.
-        let gone: Vec<String> = tiza_core::moves::ignored_rebinds(&d)
-            .into_iter()
-            .map(|r| r.id)
-            .filter(|id| snapshot.find_annotation(id).is_some())
-            .collect();
-        if !gone.is_empty() {
-            let again = self.rebuilt(&code, &code_src, first_line, &gone);
-            // Only if they are still gone: a move that applies now could
-            // change the code an annotation is re-anchored on.
-            if gone.iter().all(|id| again.0.find_annotation(id).is_none()) {
-                (d, stale) = again;
+        // ignored, as a fresh load of the saved file will ignore it. The
+        // moves were checked with the entry still counting (its `find` may
+        // be the text that is gone): rebuild without those annotations, so
+        // the moves are checked as that load checks them. That rebuild can
+        // drop another one a `rebind` names; it ends when none is left, since
+        // each round only adds to `gone`.
+        let mut gone: Vec<String> = Vec::new();
+        let (d, stale) = loop {
+            let (d, stale) = self.rebuilt(&code, &code_src, first_line, &gone);
+            let more: Vec<String> = tiza_core::moves::ignored_rebinds(&d)
+                .into_iter()
+                .map(|r| r.id)
+                .filter(|id| snapshot.find_annotation(id).is_some() && !gone.contains(id))
+                .collect();
+            if more.is_empty() {
+                break (d, stale);
             }
-        }
+            gone.extend(more);
+        };
         let before = snapshot.annotations.len();
         let kept = d.annotations.len();
         let harmless =
@@ -2193,8 +2202,9 @@ impl App {
 
     /// The open document with `code` as its step-0 code and its annotations
     /// re-anchored on it ([`App::apply_new_code`]), with the notice about
-    /// stale moves. The moves are checked as if the annotations in `gone`
-    /// were not there: their `rebind` entries do not count.
+    /// stale moves. The annotations in `gone` are dropped: the moves are
+    /// checked without their `rebind` entries, and they are not re-added
+    /// even where their text would be found.
     fn rebuilt(
         &self,
         code: &[String],
@@ -2271,6 +2281,9 @@ impl App {
             }
         }
         for (a, shape) in old.annotations.iter().zip(shapes) {
+            if gone.contains(&a.id) {
+                continue;
+            }
             match shape {
                 // `add` validates against the code at the annotation's step.
                 Some(shape) if !held.contains(&a.id) => {
@@ -2407,21 +2420,17 @@ impl App {
             self.history.label_last(format!("reload #{reloads}"));
         }
         match out.stale {
-            None => self.info(format!(
+            None if out.ignored.is_none() => self.info(format!(
                 "{name} reloaded (#{reloads}): {} annotation{} kept{}",
                 out.kept,
                 if out.kept == 1 { "" } else { "s" },
                 if out.dropped > 0 {
-                    format!(
-                        ", {} dropped (text gone; u undoes){}",
-                        out.dropped,
-                        ignored_suffix(&out.ignored)
-                    )
+                    format!(", {} dropped (text gone; u undoes)", out.dropped)
                 } else {
                     String::new()
                 }
             )),
-            Some(n) => self.stale_notice(
+            n => self.stale_notice(
                 n,
                 out.dropped,
                 &out.ignored,

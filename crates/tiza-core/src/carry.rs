@@ -407,10 +407,21 @@ fn carry_window(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> 
 }
 
 /// The `rebind` lines of a patch (on the code right after it) are rare, so
-/// the change is refused when it would move one.
-fn check_rebind(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
+/// the change is refused when it would move one. An entry whose annotation
+/// is not in `annotations` is ignored, so its lines do not hold the change
+/// back (they stay as written).
+fn check_rebind(
+    m: &Move,
+    index: usize,
+    map: Option<&Mapper>,
+    who: &str,
+    annotations: &[Annotation],
+) -> Result<(), Error> {
     let Some(map) = map else { return Ok(()) };
     for (id, spec) in &m.rebind {
+        if !annotations.iter().any(|a| &a.id == id) {
+            continue;
+        }
         let lines = [&spec.at, &spec.from, &spec.to]
             .into_iter()
             .flatten()
@@ -559,7 +570,7 @@ pub fn carry(
                 let shown = r.new.shown.clone();
                 r.load(&shown);
                 let after = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                check_rebind(&m, o, after.as_ref(), &r.who)?;
+                check_rebind(&m, o, after.as_ref(), &r.who, &doc.annotations)?;
                 out[n] = m;
             }
             (None, Some(n)) => {

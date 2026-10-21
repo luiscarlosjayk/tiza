@@ -1067,6 +1067,50 @@ pub fn newly_ignored(before: &Document, after: &Document) -> Option<String> {
     })
 }
 
+/// Refuses `ann` when an ignored `rebind` entry names its id and would not
+/// work with it back: an entry that says nowhere to go, or a `find` that
+/// does not match exactly once after its patch. Taking the id would make
+/// the document fail to load; any other id is fine.
+pub fn check_named_by_rebind(doc: &Document, ann: &Annotation) -> Result<(), Error> {
+    let id = &ann.id;
+    let refused = |i: usize, why: String| {
+        Error::Invalid(format!(
+            "annotation {id}: move #{} (step {}) has a rebind for {id} that would not work with it back ({why}); use another id",
+            i + 1,
+            doc.moves[i].at_step
+        ))
+    };
+    for (i, m) in doc.moves.iter().enumerate() {
+        if m.rebind.get(id).is_some_and(|spec| spec.is_empty()) {
+            return Err(refused(i, "it says nowhere to go".into()));
+        }
+    }
+    let Ok(p) = project(doc, &doc.moves, u32::MAX) else {
+        return Ok(());
+    };
+    let mut annotations = doc.annotations.clone();
+    annotations.push(ann.clone());
+    for ap in &p.patches {
+        let m = &doc.moves[ap.index];
+        let Some(spec) = m.rebind.get(id) else {
+            continue;
+        };
+        let only = Move {
+            rebind: BTreeMap::from([(id.clone(), spec.clone())]),
+            ..m.clone()
+        };
+        if let Some(why) = rebind_problem(
+            &only,
+            &annotations,
+            &ap.after,
+            doc.view_first_line(&ap.file),
+        ) {
+            return Err(refused(ap.index, why));
+        }
+    }
+    Ok(())
+}
+
 /// Refuses a `rebind` entry of `m` (move #`index + 1`) that names an
 /// annotation not in `annotations`, unless `kept` says the document already
 /// held that entry: a caller that writes one has a typo, while one the

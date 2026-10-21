@@ -1917,6 +1917,8 @@ impl Document {
             ann.id = self.next_id();
         } else if self.find_annotation(&ann.id).is_some() {
             return Err(Error::DuplicateId(ann.id));
+        } else if self.moves.iter().any(|m| m.rebind.contains_key(&ann.id)) {
+            moves::check_named_by_rebind(self, &ann)?;
         }
         let id = ann.id.clone();
         self.annotations.push(ann);
