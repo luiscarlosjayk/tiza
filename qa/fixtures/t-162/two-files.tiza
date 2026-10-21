@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "title": "Two files, one annotation per step",
+  "source": {"language": "rs", "first_line": 1},
+  "code": {"file": "src/a.rs"},
+  "step": 0,
+  "moves": [
+    {"at_step": 2, "action": "code.link", "file": "src/b.rs"},
+    {"at_step": 3, "action": "code.link", "file": "src/a.rs"}
+  ],
+  "annotations": [
+    {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "first"},
+    {"id": "n2", "step": 2, "type": "note", "line": 1, "text": "other", "file": "src/b.rs"},
+    {"id": "n3", "step": 3, "type": "note", "line": 9, "text": "third"}
+  ]
+}

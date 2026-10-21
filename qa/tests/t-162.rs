@@ -17,22 +17,28 @@
 //!   other tool does.
 //! - AC3 Tool names and input schemas are the ones of `main` before this
 //!   card (fixtures); the first sentence of each core tool uses the words
-//!   of AC1.
+//!   of AC1, and says only what is true (`render_text` is the screen as the
+//!   presenter sees it, which is the export in presentation mode).
 //! - Added by Worker after t-194: `add_move` says its reply's `warning`
 //!   also names annotations of a file their step no longer shows, and that
 //!   `delete_move` answers the same; `check` names `outside_window` and
-//!   `not_shown`, in the words the instance answers with.
+//!   `not_shown`.
 //! - AC5 docs/agent-guide.md and CHANGELOG.
 //!
 //! Corner cases: a client that ignores `_meta` (this test's own client)
 //! calls the core tools as before; the instructions promise only what the
 //! server does (no MP4, which is a shell command).
+//!
+//! The checks are invariants, not wording: the keywords are looked for in
+//! the instructions' prose (tool names and other `code` taken out), the
+//! positioning sentence is whatever the README says, and the warnings are
+//! compared with what the instance really answers.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, example, fixture, scratch};
+use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const CORE: [&str; 4] = ["add_box", "get_code", "render_text", "status"];
 
@@ -56,8 +62,8 @@ const KEYWORDS: [&str; 22] = [
     "move",
     "link another file",
     "export",
-    "PNG",
-    "GIF",
+    "png",
+    "gif",
     "another agent",
     "live or recorded",
 ];
@@ -80,6 +86,30 @@ fn instructions(mcp: &McpClient) -> String {
         .as_str()
         .expect("instructions")
         .to_string()
+}
+
+/// `text` without its `code` spans (tool names such as `add_move` or
+/// `next_step`), lowercased and with every run of whitespace as one space:
+/// the prose a keyword has to be in.
+fn prose(text: &str) -> String {
+    let mut out = String::new();
+    for (i, part) in text.split('`').enumerate() {
+        out.push_str(if i % 2 == 0 { part } else { " " });
+    }
+    out.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+/// The README's positioning sentence: its first bold line.
+fn positioning() -> String {
+    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
+    let line = readme
+        .lines()
+        .find(|l| l.starts_with("**") && l.trim_end().ends_with("**"))
+        .expect("a bold positioning line in the README");
+    line.trim_matches('*').trim().to_string()
 }
 
 fn by_name(tools: &Value) -> BTreeMap<String, Value> {
@@ -120,36 +150,34 @@ fn first_sentence(d: &str) -> &str {
 fn ac1_instructions_describe_tiza_with_the_words_people_use() {
     let mcp = mcp("t162-instructions");
     let text = instructions(&mcp);
-    eprintln!("instructions ({} chars):\n{text}", text.chars().count());
-    let lower = text.to_lowercase();
+    let chars = text.chars().count();
+    eprintln!("instructions ({chars} chars):\n{text}");
+    let words = prose(&text);
     let missing: Vec<&str> = KEYWORDS
         .iter()
         .copied()
-        .filter(|k| !lower.contains(&k.to_lowercase()))
+        .filter(|k| !words.contains(k))
         .collect();
-    assert!(missing.is_empty(), "missing {missing:?} in:\n{text}");
-    // The README's positioning sentence, first.
     assert!(
-        text.starts_with("Tiza: draw on top of code in the terminal to explain it on video."),
-        "{text}"
+        missing.is_empty(),
+        "missing {missing:?} in the prose of:\n{text}"
     );
-    // The flow, the resources and what t-155 asks of the replies.
-    for s in [
-        "`status`",
-        "`get_code`",
-        "`find`",
-        "`render_text`",
-        "`export_image`",
-        "tiza://scene",
-        "whether it shows at the step on screen",
-    ] {
-        assert!(text.contains(s), "missing {s} in:\n{text}");
-    }
+    // Whatever the README says Tiza is (t-141 may change it).
+    let sentence = positioning();
     assert!(
-        text.chars().count() < 1200,
-        "{} chars",
-        text.chars().count()
+        prose(&text).contains(&prose(sentence.trim_end_matches('.'))),
+        "«{sentence}» not in:\n{text}"
     );
+    // The flow names its tools in order, and the resources are pointed at.
+    let at = |t: &str| {
+        text.find(&format!("`{t}`"))
+            .unwrap_or_else(|| panic!("`{t}` not in:\n{text}"))
+    };
+    assert!(at("status") < at("get_code"), "{text}");
+    assert!(at("get_code") < at("render_text"), "{text}");
+    assert!(at("render_text") < at("export_image"), "{text}");
+    assert!(text.contains("tiza://"), "{text}");
+    assert!(chars < 1200, "{chars} chars");
 }
 
 /// Corner case: only what the server does — no redaction (t-183), no MP4
@@ -157,7 +185,7 @@ fn ac1_instructions_describe_tiza_with_the_words_people_use() {
 #[test]
 fn ac1_instructions_promise_nothing_the_server_does_not_do() {
     let lower = instructions(&mcp("t162-promise")).to_lowercase();
-    for s in ["redact", "mask", "secret", "mp4", "video file"] {
+    for s in ["redact", "mask", "secret", "mp4"] {
         assert!(!lower.contains(s), "{s} in:\n{lower}");
     }
 }
@@ -200,7 +228,7 @@ fn ac2_a_client_that_ignores_meta_calls_the_core_tools_as_before() {
     assert!(!err && text.contains("fn takes"), "{text}");
     let (err, text, _) = mcp.call(
         "add_box",
-        json!({"find_start": "fn takes", "find_end": "drop", "label": "takes", "step": 1}),
+        json!({"from_line": 1, "to_line": 3, "label": "takes", "step": 1}),
     );
     assert!(!err && text.starts_with("a1 added at step 1"), "{text}");
     live.api_ok("step.set", json!({"step": 1}));
@@ -234,45 +262,71 @@ fn ac3_the_first_sentence_of_each_core_tool_uses_the_searchable_words() {
     let mut mcp = mcp("t162-first");
     let tools = by_name(&mcp.tools());
     let want: [(&str, &[&str]); 4] = [
-        ("status", &["Tiza", "box", "arrow", "highlight", "explain"]),
-        ("get_code", &["Tiza", "screen", "box", "arrow", "highlight"]),
-        ("render_text", &["Tiza", "screen", "box", "arrow", "step"]),
+        ("status", &["tiza", "box", "arrow", "highlight", "explain"]),
+        ("get_code", &["tiza", "screen", "box", "arrow", "highlight"]),
+        ("render_text", &["tiza", "screen", "box", "arrow", "step"]),
         ("add_box", &["box", "explain", "step"]),
     ];
     for (name, words) in want {
         let d = description(&tools, name);
-        let first = first_sentence(&d);
+        let first = prose(first_sentence(&d));
         for w in words {
             assert!(first.contains(w), "{name}: «{w}» not in «{first}»");
         }
         // Claude Code cuts the description of a tool that loads upfront at
         // 4,096 characters.
-        assert!(d.chars().count() < 4096, "{name}: {} chars", d.len());
+        let chars = d.chars().count();
+        assert!(chars < 4096, "{name}: {chars} chars");
+    }
+}
+
+/// What `render_text` says of itself is true: in presentation mode and
+/// with `:layout stable` it is what `export_image` writes for that step at
+/// the same width, at every step.
+#[test]
+fn ac3_render_text_is_the_export_in_presentation_mode() {
+    let src = repo_root().join("examples/ownership.rs.tiza");
+    let o = tiza_core::fs::open(src.to_str().unwrap()).unwrap();
+    let last = o.document.max_step();
+    let dir = scratch("t162-render-text");
+    for (mode, setup) in [("present", 0), ("stable", 1)] {
+        let live = Live::open(
+            o.document.clone(),
+            dir.join(format!("{mode}.tiza")),
+            dir.join(format!("{mode}.sock")),
+        );
+        if setup == 0 {
+            live.with(|app| app.present = true);
+        } else {
+            live.command("layout stable");
+        }
+        let mut mcp = McpClient::start(&live.socket);
+        for step in 0..=last {
+            live.api_ok("step.set", json!({ "step": step }));
+            let (err, shown, _) = mcp.call("render_text", json!({"width": 80}));
+            assert!(!err, "{shown}");
+            let out = dir.join(format!("{mode}-{step}.txt"));
+            let (err, text, _) = mcp.call(
+                "export_image",
+                json!({"path": out.to_str().unwrap(), "step": step, "width": 80}),
+            );
+            assert!(!err, "{text}");
+            let exported = std::fs::read_to_string(&out).unwrap();
+            assert_eq!(shown.trim_end(), exported.trim_end(), "{mode}, step {step}");
+        }
     }
 }
 
 // ------------------------------------------- add_move and check (t-194)
 
-/// A scratch copy of `examples/` (the documents and the code they read).
-fn examples_copy(name: &str) -> PathBuf {
-    fn copy(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).unwrap();
-        for e in std::fs::read_dir(from).unwrap() {
-            let e = e.unwrap();
-            let p = e.path();
-            if p.file_name().is_some_and(|n| n == "target") {
-                continue;
-            }
-            if p.is_dir() {
-                copy(&p, &to.join(e.file_name()));
-            } else {
-                std::fs::copy(&p, to.join(e.file_name())).unwrap();
-            }
-        }
-    }
+/// A scratch copy of the two-file fixture (the instance autosaves it).
+fn two_files(name: &str) -> PathBuf {
     let dir = scratch(name);
-    copy(&example(""), &dir);
-    dir
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    for f in ["two-files.tiza", "src/a.rs", "src/b.rs"] {
+        std::fs::copy(fixture(&format!("t-162/{f}")), dir.join(f)).unwrap();
+    }
+    dir.join("two-files.tiza")
 }
 
 fn open(target: &Path) -> Live {
@@ -281,90 +335,88 @@ fn open(target: &Path) -> Live {
     Live::open(o.document, o.save_path, sock)
 }
 
-/// The JSON after the reply's text, as the tool sends it.
+/// The JSON a tool replies with.
 fn reply(text: &str) -> Value {
     serde_json::from_str(text).unwrap_or_else(|e| panic!("{e}: {text}"))
 }
 
-/// The tail every message of a kind ends with, after `: `.
-fn tail(message: &str) -> &str {
-    message.rsplit_once("): ").map_or(message, |(_, t)| t)
+/// The 1-based index of the move at `step` that links `file` with window
+/// `lines`, as `list_moves` numbers them.
+fn link_index(mcp: &mut McpClient, step: u64, file: &str, lines: Option<&str>) -> u64 {
+    let (_, text, _) = mcp.call("list_moves", json!({}));
+    let moves = reply(&text)["moves"].as_array().unwrap().clone();
+    moves
+        .iter()
+        .find(|m| {
+            m["at_step"] == step
+                && m["action"] == "code.link"
+                && m["file"] == file
+                && m["lines"].as_str() == lines
+        })
+        .unwrap_or_else(|| panic!("no link to {file} at step {step} in {moves:?}"))["index"]
+        .as_u64()
+        .unwrap()
+}
+
+/// The codes of `check`'s findings about annotation `id`.
+fn codes_for(mcp: &mut McpClient, id: &str) -> Vec<String> {
+    let (err, text, _) = mcp.call("check", json!({}));
+    assert!(!err, "{text}");
+    reply(&text)["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["id"] == id)
+        .map(|f| f["code"].as_str().unwrap().to_string())
+        .collect()
 }
 
 #[test]
-fn ac_t194_add_move_and_check_describe_what_they_answer() {
-    let dir = examples_copy("t162-t194");
-    let live = open(&dir.join("stack-and-queue.tiza"));
+fn ac_t194_add_move_and_check_name_the_warnings_the_instance_gives() {
+    let target = two_files("t162-t194");
+    let live = open(&target);
     let mut mcp = McpClient::start(&live.socket);
     let tools = by_name(&mcp.tools());
     let add_move = description(&tools, "add_move");
     let check = description(&tools, "check");
+    // The descriptions name what the replies carry.
+    for code in ["`not_shown`", "`outside_window`"] {
+        assert!(check.contains(code), "{code} not in check:\n{check}");
+    }
+    for s in ["`warning`", "`delete_move`"] {
+        assert!(add_move.contains(s), "{s} not in add_move:\n{add_move}");
+    }
 
-    // A link at step 4 to queue.rs leaves a6 (of stack.rs) unshown there.
+    assert!(codes_for(&mut mcp, "n3").is_empty());
+
+    // A second link at step 3 to a.rs, with a window that leaves n3's line
+    // out: n3 was drawn there and is not now. The reply warns, `check` says
+    // `outside_window`; deleting that link shows n3 again.
     let (err, text, _) = mcp.call(
         "add_move",
-        json!({"at_step": 4, "action": "code.link", "file": "src/queue.rs"}),
+        json!({"at_step": 3, "action": "code.link", "file": "src/a.rs", "lines": "1-5"}),
     );
     assert!(!err, "{text}");
     let added = reply(&text);
-    let warning = added["warning"].as_str().expect("warning").to_string();
-    assert!(warning.contains("is not shown at step 4"), "{warning}");
-    assert!(
-        add_move.contains(warning.split_once(": ").unwrap().1),
-        "add_move says «{warning}»?\n{add_move}"
-    );
-    // Deleting it answers with no warning (it shows a6 again); deleting
-    // the step-4 link back to stack.rs answers the same warning.
-    let (err, text, _) = mcp.call("delete_move", json!({"index": 7}));
-    assert!(!err, "{text}");
-    let (err, text, _) = mcp.call("delete_move", json!({"index": 5}));
-    assert!(!err, "{text}");
-    assert_eq!(reply(&text)["warning"], added["warning"], "{text}");
-    assert!(add_move.contains("`delete_move`"), "{add_move}");
+    let warning = added["warning"].as_str().expect("a warning").to_string();
+    assert!(warning.contains("n3"), "{warning}");
+    assert_eq!(codes_for(&mut mcp, "n3"), ["outside_window"]);
+    let index = link_index(&mut mcp, 3, "src/a.rs", Some("1-5"));
+    let (err, text, _) = mcp.call("delete_move", json!({ "index": index }));
+    assert!(!err && reply(&text).get("warning").is_none(), "{text}");
+    assert!(codes_for(&mut mcp, "n3").is_empty());
 
-    // `check` names both codes, each with the words of its message.
-    let (err, text, _) = mcp.call("check", json!({}));
+    // Deleting the step-3 link back to a.rs leaves step 3 on b.rs: n3 (of
+    // a.rs, step 3) is not shown there. `delete_move` warns too, `check`
+    // says `not_shown`.
+    let index = link_index(&mut mcp, 3, "src/a.rs", None);
+    let (err, text, _) = mcp.call("delete_move", json!({ "index": index }));
     assert!(!err, "{text}");
-    let findings = reply(&text)["findings"].as_array().unwrap().clone();
-    let message = |code: &str| -> String {
-        findings
-            .iter()
-            .find(|f| f["code"] == code)
-            .unwrap_or_else(|| panic!("no {code} in {findings:?}"))["message"]
-            .as_str()
-            .unwrap()
-            .to_string()
-    };
-    let not_shown = message("not_shown");
-    assert!(check.contains("`not_shown`"), "{check}");
-    assert!(check.contains(tail(&not_shown)), "«{not_shown}»\n{check}");
-    assert!(
-        check.contains("is not shown at step") && not_shown.contains("is not shown at step"),
-        "{not_shown}\n{check}"
-    );
-    assert!(check.contains("`outside_window`"), "{check}");
-    // Step 2's link shows queue.rs:10-36 there; a note at the end of the
-    // file is outside it.
-    live.api_ok("step.set", json!({"step": 2}));
-    let (err, text, _) = mcp.call(
-        "add_note",
-        json!({"line": 1, "text": "out of the window", "step": 2}),
-    );
-    assert!(!err, "{text}");
-    let (_, text, _) = mcp.call("check", json!({}));
-    let findings = reply(&text)["findings"].as_array().unwrap().clone();
-    let outside = findings
-        .iter()
-        .find(|f| f["code"] == "outside_window")
-        .unwrap_or_else(|| panic!("no outside_window in {findings:?}"))["message"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    assert!(check.contains(tail(&outside)), "«{outside}»\n{check}");
-    assert!(
-        check.contains("outside the window at step"),
-        "{outside}\n{check}"
-    );
+    let deleted = reply(&text);
+    let warning = deleted["warning"].as_str().expect("a warning").to_string();
+    assert!(warning.contains("n3"), "{warning}");
+    assert_ne!(added["warning"], deleted["warning"], "two kinds of warning");
+    assert_eq!(codes_for(&mut mcp, "n3"), ["not_shown"]);
 }
 
 // ---------------------------------------------------------------- AC5

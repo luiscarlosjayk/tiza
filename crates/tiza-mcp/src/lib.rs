@@ -797,7 +797,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Draws a box around a range of lines (a function, a block) to explain it at a step, with an optional label on the top edge. Give from_line/to_line, or find_start/find_end (two texts that delimit the range, like Demo Time placeholders: `// begin` … `// end`, or code such as `fn takes` … `}`)."
+        description = "Draws a box around a range of lines (a function, a block) to explain it at a step, with an optional label on the top edge. Give from_line/to_line, or find_start/find_end (two texts that delimit the range, like Demo Time placeholders: `// begin` … `// end`, or code such as `let t` … `letters`). The end is the first match after the start, so a `}` is often an inner block's brace or a `{s}` in a string: to box a whole function, give its lines."
     )]
     async fn add_box(
         &self,
@@ -1184,7 +1184,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as a presentation or an export shows it. Use it to check the result of what you drew."
+        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the presenter sees it now (without the live pointer). In presentation mode (or `:layout stable`) it is what `export_image` writes for that step at the same width; while authoring, the layout takes only the room the steps so far need, so before the last step an export can be laid out wider (the code a few columns further right, for the arrow rails of later steps). Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
@@ -1710,7 +1710,7 @@ impl ServerHandler for TizaServer {
                  Use it to explain code to a person or another agent, live or recorded, step by step: \
                  a code walkthrough, tutorial, screencast or presentation, to teach or show on screen. \
                  It draws a box, arrow, highlight, note, callout or mark (move, read, write, drop…) on the live code, \
-                 groups them in steps, can type code or move it between steps (`add_move`), link another file, \
+                 groups them in steps, can type code or change it at a step (a move, `add_move`), link another file, \
                  and export PNG, SVG, GIF or text.\n\
                  Flow: `status` → `get_code` → annotate with `find` (exact text) and `step`; each reply says whether it shows at the step on screen.\n\
                  Then `next_step`/`goto_step`, `render_text` to verify and `export_image` to save.\n\
