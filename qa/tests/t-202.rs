@@ -25,6 +25,13 @@
 //! comes back it reloads (also after a paste); an undo of a paste after the
 //! file changed on disk is embedded too.
 //!
+//! Adversarial review (`rev_*`): `scene.get` → `scene.put` after such an
+//! undo, or after a paste, keeps the code embedded; an undo while follow
+//! waits for a removed file keeps the file to follow; `:follow off` keeps
+//! it too, so `:follow on` reloads it; the `reason` describes the screen
+//! after every change (a paste on top, the file edited back, a redo back to
+//! the paste).
+//!
 //! After every step the live instance is what a fresh load of its autosave
 //! gives: the same `check` report and the same `render --all-steps`.
 
@@ -310,9 +317,9 @@ const REBIND: &str = r#"{
 
 const REBIND_SRC: &str = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\n";
 
-#[test]
-fn step5_ac5_u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_file() {
-    let dir = scratch("t202-step5");
+/// The rebind document opened by reference to its main.rs, following.
+fn rebind_followed(name: &str) -> (Live, PathBuf, PathBuf) {
+    let dir = scratch(name);
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     std::fs::write(&src, REBIND_SRC).unwrap();
     let tiza = dir.join("main.rs.tiza");
@@ -321,6 +328,12 @@ fn step5_ac5_u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_fi
     let live = Live::open(doc, tiza.clone(), dir.join("live.sock"));
     live.command("follow on");
     assert_eq!(message(&live), "following main.rs");
+    (live, src, tiza)
+}
+
+#[test]
+fn step5_ac5_u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_file() {
+    let (live, src, tiza) = rebind_followed("t202-step5");
 
     save(&src, &REBIND_SRC.replace("t.len()", "t.chars().count()"));
     wait_reloads(&live, 1);
@@ -490,4 +503,192 @@ fn corner_u_of_a_paste_after_the_file_changed_is_embedded() {
     live.command("follow on");
     assert_eq!(code(&live), lines(SEVEN));
     same_as_fresh(&live, &tiza, ":follow on");
+}
+
+fn get(live: &Live) -> Value {
+    live.api_ok("scene.get", json!({}))["document"].clone()
+}
+
+fn put(live: &Live, document: &Value) -> Value {
+    let r = live.api("scene.put", json!({ "document": document }));
+    assert!(r.error.is_none(), "put refused: {:?}", r.error);
+    r.result.unwrap_or(Value::Null)
+}
+
+/// `scene.get` → `scene.put` of the same document, then of it with a new
+/// title: the code on screen stays embedded, autosave stays on, and each
+/// time the live instance is what a fresh load of the autosave gives.
+fn get_put_keeps_the_screen(live: &Live, tiza: &Path, what: &str) {
+    let shown = code(live);
+    let doc = get(live);
+    put(live, &doc);
+    let msg = message(live);
+    assert!(!msg.contains("changed on disk"), "{what}: {msg}");
+    assert_eq!(code(live), shown, "{what}");
+    assert!(live.with(|app| app.doc.is_embedded()), "{what}");
+    assert!(saved_code(tiza).is_array(), "{what}: {}", saved_code(tiza));
+    same_as_fresh(live, tiza, &format!("{what}: unchanged put"));
+    let mut edited = doc;
+    edited["title"] = json!("after a put");
+    put(live, &edited);
+    let msg = message(live);
+    assert!(!msg.contains("not saved"), "{what}: {msg}");
+    assert_eq!(live.api_ok("status", json!({}))["autosave"], true, "{what}");
+    assert!(saved_code(tiza).is_array(), "{what}: {}", saved_code(tiza));
+    same_as_fresh(live, tiza, &format!("{what}: put with a new title"));
+    // The file the code replaced is still what `:follow on` reloads.
+    assert!(
+        status(live)["path"]
+            .as_str()
+            .is_some_and(|p| p.ends_with("main.rs")),
+        "{what}"
+    );
+}
+
+#[test]
+fn rev_get_put_after_the_step5_u_keeps_the_code_embedded() {
+    let (live, src, tiza) = rebind_followed("t202-put-step5");
+    save(&src, &REBIND_SRC.replace("t.len()", "t.chars().count()"));
+    wait_reloads(&live, 1);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(live.with(|app| app.doc.annotations.len()), 1);
+    get_put_keeps_the_screen(&live, &tiza, "after u of the reload");
+    let fresh = tiza_core::fs::load_document(&tiza).expect("the autosave opens");
+    assert_eq!(fresh.code[1], "    let n = t.len();");
+}
+
+#[test]
+fn rev_get_put_after_a_paste_keeps_the_code_embedded() {
+    let (live, _src, tiza) = followed("t202-put-paste", CODE);
+    live.command("hl 3:println one");
+    live.with(|app| {
+        app.replace_code("fn other() {\n    println!(\"hi\");\n}\n")
+            .unwrap()
+    });
+    get_put_keeps_the_screen(&live, &tiza, "after a paste");
+    live.command("follow on");
+    assert_eq!(code(&live), lines(CODE));
+}
+
+#[test]
+fn rev_get_put_after_u_without_moves_keeps_the_code_embedded() {
+    let (live, _src, tiza) = reloaded_over_a_highlight("t202-put-u");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    get_put_keeps_the_screen(&live, &tiza, "after u of the reload");
+    // A fresh load draws the highlight on the `1` it was made on.
+    let fresh = tiza_core::fs::load_document(&tiza).expect("the autosave opens");
+    assert_eq!(fresh.code[1], "    let x = 1;");
+    assert_eq!(fresh.annotations.len(), 1);
+}
+
+#[test]
+fn rev_u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
+    let (live, src, tiza) = followed("t202-wait-u", CODE);
+    live.with(|app| app.replace_code("fn other() {}\n").unwrap());
+    std::fs::remove_file(&src).unwrap();
+    live.command("follow on");
+    wait_for("the file reported missing", || {
+        status(&live)["missing"] == true
+    });
+    live.command("note 1 hi");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    let msg = message(&live);
+    assert!(
+        msg.starts_with(
+            "follow off: the code is the paste again, not main.rs; :follow on reloads main.rs"
+        ),
+        "{msg}"
+    );
+    let st = status(&live);
+    assert_eq!(st["enabled"], false, "{st}");
+    assert!(
+        st["path"].as_str().is_some_and(|p| p.ends_with("main.rs")),
+        "{st}"
+    );
+    live.command("follow on");
+    assert!(
+        !message(&live).contains("nothing to follow"),
+        "{}",
+        message(&live)
+    );
+    assert_eq!(status(&live)["enabled"], true);
+    save(&src, SEVEN);
+    wait_reloads(&live, 1);
+    assert_eq!(code(&live), lines(SEVEN));
+    same_as_fresh(&live, &tiza, "after the file came back");
+}
+
+#[test]
+fn rev_follow_off_keeps_the_file_follow_on_reloads() {
+    let (live, _src, tiza) = reloaded_over_a_highlight("t202-off-on");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.command("follow off");
+    assert_eq!(message(&live), "follow off");
+    assert_eq!(status(&live)["reason"], REASON);
+    live.command("follow on");
+    assert_eq!(message(&live), "following main.rs");
+    assert_eq!(code(&live), lines(SEVEN));
+    same_as_fresh(&live, &tiza, ":follow off, :follow on");
+    // The same through the socket (what `set_follow` sends).
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.api_ok("follow.set", json!({"enabled": false}));
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["enabled"], true, "{r}");
+    assert_eq!(code(&live), lines(SEVEN));
+    same_as_fresh(&live, &tiza, "follow.set false, true");
+}
+
+#[test]
+fn rev_the_reason_says_what_the_screen_shows_after_every_change() {
+    let (live, src, tiza) = reloaded_over_a_highlight("t202-reason");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(status(&live)["reason"], REASON);
+    // A paste on top: pasted.
+    live.with(|app| app.replace_code("fn other() {}\n").unwrap());
+    assert_eq!(
+        status(&live)["reason"],
+        "the code is pasted, not main.rs; :follow on reloads main.rs"
+    );
+    // `u`: the older version again.
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(status(&live)["reason"], REASON);
+    // The file edited back to what the screen shows: nothing to say, and
+    // `:follow on` follows it without changing the screen.
+    save(&src, CODE);
+    let st = status(&live);
+    assert!(st.get("reason").is_none(), "{st}");
+    live.command("follow");
+    assert_eq!(
+        message(&live),
+        "follow off (:follow on to reload when the file is saved)"
+    );
+    live.command("follow on");
+    assert_eq!(code(&live), lines(CODE));
+    assert!(!live.with(|app| app.doc.is_embedded()));
+    same_as_fresh(&live, &tiza, ":follow on over code the file holds again");
+}
+
+#[test]
+fn rev_a_redo_back_to_the_paste_says_paste_not_version() {
+    // Paste, save main.rs, `:follow on` (reload), `u` (the paste), `u` (the
+    // code before the paste, which main.rs no longer holds), `U` (the paste).
+    let (live, src, tiza) = followed("t202-redo-paste", CODE);
+    live.with(|app| app.replace_code("fn other() {}\n").unwrap());
+    save(&src, SEVEN);
+    live.command("follow on");
+    assert_eq!(code(&live), lines(SEVEN));
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(code(&live), vec!["fn other() {}"]);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(code(&live), lines(CODE));
+    assert_eq!(status(&live)["reason"], REASON);
+    live.keys(&[crossterm::event::KeyCode::Char('U')]);
+    assert_eq!(code(&live), vec!["fn other() {}"]);
+    assert_eq!(
+        status(&live)["reason"],
+        "the code is the paste again, not main.rs; :follow on reloads main.rs"
+    );
+    // Follow was off already: the bar only names the redo.
+    assert_eq!(message(&live), "redone: paste");
+    same_as_fresh(&live, &tiza, "U back to the paste");
 }
