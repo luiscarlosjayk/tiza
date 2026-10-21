@@ -11,8 +11,11 @@
 //!   the file with the usual reload: re-anchoring, one undo step `reload #N`
 //!   and the stale rule for the moves; `u` gives the paste back (and follow
 //!   goes off again, saying so: the screen is not the file).
-//! - AC4 Undoing the paste does not turn follow back on; the notice said how
-//!   (`:follow on`).
+//! - AC4 Undoing the paste does not turn follow back on, and says how
+//!   (`undone: paste; follow is off: :follow on reloads main.rs`); the
+//!   `reason` only ever describes the code on screen.
+//! - `:link` / `:ref` at step 0 over pasted (embedded) code load the file's
+//!   code as one undo step, so the screen shows what the saved document will.
 //!
 //! Corner cases: a paste with follow already off says nothing new; a paste
 //! of exactly what the file holds keeps following (nothing to protect); a
@@ -25,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
-use tiza_qa::{Live, scratch};
+use tiza_qa::{Live, scratch, tiza};
 
 const CODE: &str = "fn main() {\n    let s = String::new();\n    takes(s);\n}\n";
 const PASTED: &str = "fn other() {\n    let t = 1;\n    t + 1;\n    t\n}\n";
@@ -169,12 +172,18 @@ fn ac4_undoing_the_paste_leaves_follow_off() {
     live.with(|app| app.replace_code(PASTED).unwrap());
     live.with(|app| app.undo());
     assert_eq!(code(&live), lines(CODE));
-    assert_eq!(live.message().unwrap().0, "undone: paste");
+    assert_eq!(
+        live.message().unwrap().0,
+        "undone: paste; follow is off: :follow on reloads main.rs"
+    );
     let st = status(&live);
     assert_eq!(st["enabled"], false, "{st}");
-    assert!(
-        st["reason"].as_str().unwrap().contains(":follow on"),
-        "{st}"
+    // No paste on screen any more: no reason about one.
+    assert!(st.get("reason").is_none(), "{st}");
+    live.command("follow");
+    assert_eq!(
+        live.message().unwrap().0,
+        "follow off (:follow on to reload when the file is saved)"
     );
     assert!(!bar(&live).contains("following"));
     save(&src, &CODE.replace("takes", "gives"));
@@ -250,4 +259,124 @@ fn step4_moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
     assert_eq!(live.with(|app| tiza_core::stale::count(&app.doc)), 0);
     live.command("step 1");
     assert_eq!(code(&live)[2], "    // before takes");
+}
+
+#[test]
+fn rev_redo_of_the_reload_and_two_undos_leave_no_stale_reason() {
+    let (live, src) = followed("t193-redo", CODE);
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    save(&src, &CODE.replace("takes", "gives"));
+    live.command("follow on");
+    live.with(|app| app.undo());
+    assert_eq!(
+        status(&live)["reason"],
+        "the code is the paste again, not main.rs; :follow on reloads main.rs"
+    );
+    // `U`: the file again, follow off, and the bar says how to follow.
+    live.with(|app| app.redo());
+    assert_eq!(code(&live), lines(&CODE.replace("takes", "gives")));
+    assert_eq!(
+        live.message().unwrap().0,
+        "redone: reload #1; follow is off: :follow on reloads main.rs"
+    );
+    assert!(status(&live).get("reason").is_none());
+    // `u` twice: the paste, then the code from before it.
+    live.with(|app| app.undo());
+    live.with(|app| app.undo());
+    assert_eq!(code(&live), lines(CODE));
+    assert_eq!(
+        live.message().unwrap().0,
+        "undone: paste; follow is off: :follow on reloads main.rs"
+    );
+    let st = status(&live);
+    assert!(st.get("reason").is_none(), "{st}");
+    assert_eq!(st["path"], src.display().to_string());
+}
+
+/// The live instance and the autosaved `.tiza`, both rendered as text.
+fn live_and_saved(live: &Live, dir: &Path) -> (String, String) {
+    live.command("w");
+    let sock = dir.join("live.sock");
+    let a = tiza(&[
+        "render",
+        "--socket",
+        sock.to_str().unwrap(),
+        "--format",
+        "txt",
+        "--width",
+        "80",
+    ]);
+    let saved = dir.join("main.rs.tiza");
+    let b = tiza(&[
+        "render",
+        saved.to_str().unwrap(),
+        "--format",
+        "txt",
+        "--width",
+        "80",
+    ]);
+    assert!(a.status.success() && b.status.success());
+    (
+        String::from_utf8_lossy(&a.stdout).into_owned(),
+        String::from_utf8_lossy(&b.stdout).into_owned(),
+    )
+}
+
+#[test]
+fn rev_link_or_ref_after_a_paste_shows_the_file_as_the_saved_document_does() {
+    let (live, src) = followed("t193-ref", CODE);
+    let dir = src.parent().unwrap().to_path_buf();
+    let other = dir.join("other.rs");
+    std::fs::write(&other, "fn other_file() {}\n").unwrap();
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    live.command(&format!("ref {}", other.display()));
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.contains("now references") && msg.contains("and shows its code"),
+        "{msg}"
+    );
+    assert_eq!(code(&live), vec!["fn other_file() {}"]);
+    let st = status(&live);
+    assert_eq!(st["path"], other.display().to_string(), "{st}");
+    assert!(st.get("reason").is_none(), "{st}");
+    let (a, b) = live_and_saved(&live, &dir);
+    assert_eq!(a, b);
+    // One undo step: the paste comes back.
+    live.with(|app| app.undo());
+    assert_eq!(code(&live), lines(PASTED));
+    // `:link` (the source file) does the same.
+    live.command("link");
+    assert_eq!(code(&live), lines(CODE));
+    let (a, b) = live_and_saved(&live, &dir);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn rev_an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
+    // Code from stdin (embedded), then referenced to a file with the same
+    // code, followed; `u` takes back the note and with it the reference.
+    let dir = scratch("t193-embedded");
+    let src = std::path::absolute(dir.join("main.rs")).unwrap();
+    std::fs::write(&src, CODE).unwrap();
+    let live = Live::open(
+        Document::from_code(CODE, "rs", None),
+        dir.join("main.rs.tiza"),
+        dir.join("live.sock"),
+    );
+    live.command("note 2 hello");
+    live.command("step 0");
+    live.command(&format!("ref {}", src.display()));
+    assert_eq!(
+        live.message().unwrap().0,
+        format!("the .tiza now references {}", src.display())
+    );
+    live.command("follow on");
+    assert_eq!(status(&live)["enabled"], true);
+    live.with(|app| app.undo());
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.starts_with("follow off: the code is embedded again, not main.rs; :follow on reloads main.rs · undone: "),
+        "{msg}"
+    );
+    assert_eq!(status(&live)["enabled"], false);
 }
