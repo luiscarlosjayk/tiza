@@ -1,0 +1,1323 @@
+{
+  "add_arrow": {
+    "$defs": {
+      "At": {
+        "description": "Where to anchor something in the code. The most robust option for an agent is `find`:\nthe exact text to search for (optionally narrowed to `line` and to the `occurrence`-th match).",
+        "properties": {
+          "col": {
+            "description": "Grapheme offset within the line (0-based). Rarely needed; prefer `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "find": {
+            "description": "Exact text to search for in the code (e.g. \"takes(s)\"). With `line`, that line is searched first.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "Absolute line number (1-based), as shown in the TUI. Optional when using `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "occurrence": {
+            "description": "Which match of `find` to use (1-based). Defaults to the first.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "color": {
+        "description": "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from": {
+        "$ref": "#/$defs/At"
+      },
+      "head_end": {
+        "description": "Head at the target: arrow (default), none, dot, bar, open. none+none draws a plain connector.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "head_start": {
+        "description": "Head at the source: none (default), arrow, dot, bar, open",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "description": "Text next to the arrow head (e.g. \"move\")",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "route": {
+        "description": "Corners: rounded (default) or sharp",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "stroke": {
+        "description": "Line stroke: solid (default), dashed, dotted, thick, double",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "to": {
+        "$ref": "#/$defs/At"
+      }
+    },
+    "required": [
+      "from",
+      "to"
+    ],
+    "type": "object"
+  },
+  "add_box": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "border": {
+        "description": "Border stroke: solid (default), dashed, dotted, thick, double",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "color": {
+        "description": "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "corners": {
+        "description": "Corners: rounded (default) or sharp",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fill": {
+        "description": "Tint the inside: true/false (boxes default to true, callouts to false)",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "find_end": {
+        "description": "Text on the last line of the box, searched after find_start (same line allowed). Fails with text_not_found naming the marker.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find_start": {
+        "description": "Text on the first line of the box (e.g. a comment marker `// begin` or code like `fn takes`), instead of from_line. Must be given with find_end.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from_line": {
+        "description": "First line enclosed by the box (1-based). Or give find_start/find_end instead.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "id": {
+        "description": "Custom id (e.g. \"box-takes\"); if omitted, a1, a2… is assigned",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "description": "Label drawn on the top edge",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "description": "Presentation step at which it appears (1-based). Defaults to the current step.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "to_line": {
+        "description": "Last line enclosed by the box (inclusive); defaults to from_line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "add_callout": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "border": {
+        "description": "Border stroke: solid (default), dashed, dotted, thick, double",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "color": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "corners": {
+        "description": "Corners: rounded (default) or sharp",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fill": {
+        "description": "Tint the inside: true/false (boxes default to true, callouts to false)",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "find_end": {
+        "description": "Text on the last line of the range, searched after find_start",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find_start": {
+        "description": "Text on the first line of the range, instead of from_line (with find_end)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from_line": {
+        "description": "First line the callout explains (1-based)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "placement": {
+        "description": "margin (default: right margin, aligned with from_line), below (own rows under to_line; drawn inside a box only when the box contains the whole range, otherwise after its bottom border) or auto",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "text": {
+        "description": "Body: two or three sentences, wrapped by words. Newlines start new paragraphs.",
+        "type": "string"
+      },
+      "title": {
+        "description": "Short title embedded in the top border",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "to_line": {
+        "description": "Last line it explains; defaults to from_line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "width": {
+        "description": "Max text width in columns (default ~34 in the margin, full code width below)",
+        "format": "uint",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "text"
+    ],
+    "type": "object"
+  },
+  "add_mark": {
+    "$defs": {
+      "At": {
+        "description": "Where to anchor something in the code. The most robust option for an agent is `find`:\nthe exact text to search for (optionally narrowed to `line` and to the `occurrence`-th match).",
+        "properties": {
+          "col": {
+            "description": "Grapheme offset within the line (0-based). Rarely needed; prefer `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "find": {
+            "description": "Exact text to search for in the code (e.g. \"takes(s)\"). With `line`, that line is searched first.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "Absolute line number (1-based), as shown in the TUI. Optional when using `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "occurrence": {
+            "description": "Which match of `find` to use (1-based). Defaults to the first.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      },
+      "InlineStyle": {
+        "properties": {
+          "color": {
+            "description": "Palette name or #rrggbb",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "glyph": {
+            "description": "Glyph, one or two cells wide (box-drawing, arrows, emoji)",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "legend": {
+            "description": "Short legend shown after the glyph",
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "at": {
+        "$ref": "#/$defs/At"
+      },
+      "color": {
+        "description": "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "emphasis": {
+        "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "kind": {
+        "description": "Built-in kind (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph.",
+        "type": "string"
+      },
+      "label": {
+        "description": "Extra text after the legend (e.g. \"s goes into t\")",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "style": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/InlineStyle"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Inline one-off style for this mark: {glyph, legend, color}. Overrides the kind's fields."
+      }
+    },
+    "required": [
+      "kind",
+      "at"
+    ],
+    "type": "object"
+  },
+  "add_move": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "action": {
+        "description": "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select` or `wait`",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "after": {
+        "description": "insert: text of the line the content goes after (must match exactly one line)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "at_step": {
+        "description": "Step at which the code changes (>= 1). Going back to an earlier step reverts it.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "before": {
+        "description": "insert: text of the line the content goes before (must match exactly one line)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "col": {
+        "description": "cursor: grapheme column (default 0)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "content": {
+        "description": "insert/replace: the new lines, separated by newlines",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "end_occurrence": {
+        "description": "The same for find_end",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "file": {
+        "description": "code.link: the file to show, relative to the .tiza directory (as `code.file` names it); naming the main file links back to it",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find": {
+        "description": "replace/delete: text of the one line to change (must match exactly one line)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find_end": {
+        "description": "replace/delete: text on the last line of the range (with find_start)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find_start": {
+        "description": "replace/delete: text on the first line of the range (with find_end)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from": {
+        "description": "select: where the selection starts — `{find}` (exactly one match at that step, or with `occurrence`) or `{line, col}`"
+      },
+      "line": {
+        "description": "cursor: the line (real file line number) of the shown file",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "lines": {
+        "description": "code.link: a window `A-B` (or `A`) of the file to show; only a crop, annotations keep real file line numbers and a note outside the window is kept but not drawn",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ms": {
+        "description": "wait: milliseconds to pause before the step's annotations appear (TUI, GIF and tape; a still render ignores it)",
+        "format": "uint64",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "occurrence": {
+        "description": "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "op": {
+        "description": "code.patch: `insert`, `replace` or `delete` (whole lines)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "position": {
+        "description": "insert: the line the content goes before (last+1 appends). replace/delete: a line or range `A-B`, as shown at that step",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "rebind": {
+        "additionalProperties": true,
+        "description": "Where annotations the patch replaces or deletes go afterwards, by id: `{\"a3\": {\"at\": {\"find\": \"text\", \"occurrence\": 2}}}`, `{\"a4\": {\"from_line\": 7, \"to_line\": 9}}` (same fields as update_annotation's move), resolved on the code after the patch; a find must match exactly once there or carry occurrence. Needed for column anchors (highlights, marks, arrow ends) on a replaced line: those go (unanchored) otherwise",
+        "type": [
+          "object",
+          "null"
+        ]
+      },
+      "speed_ms": {
+        "description": "Milliseconds per line (`line`, default 120) or per character (`char`, default 25)",
+        "format": "uint64",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "to": {
+        "description": "select: where it ends — `{find}` (the end of the found text) or `{line, col}`"
+      },
+      "typing": {
+        "description": "`instant` (default), `line` or `char`: how the content appears when the presenter reaches the step",
+        "type": [
+          "string",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "at_step"
+    ],
+    "type": "object"
+  },
+  "add_note": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "color": {
+        "description": "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "line": {
+        "description": "Line the note is anchored to",
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      },
+      "step": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "text": {
+        "description": "Note text (a short sentence: goes in the right margin or below the line)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "line",
+      "text"
+    ],
+    "type": "object"
+  },
+  "add_spotlight": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "find_end": {
+        "description": "Text on the last line of the range, searched after find_start",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "find_start": {
+        "description": "Text on the first line of the range, instead of from_line (with find_end)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from_line": {
+        "description": "First line to highlight (the rest of the code is dimmed)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "ids": {
+        "description": "Ids of annotations to highlight; the others are dimmed and their code stays in focus",
+        "items": {
+          "type": "string"
+        },
+        "type": [
+          "array",
+          "null"
+        ]
+      },
+      "step": {
+        "description": "Step at which it activates (defaults to the current one)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "to_line": {
+        "description": "Last line to highlight; defaults to from_line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "until": {
+        "description": "Last step at which it stays active; defaults to `step` only",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "check": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "width": {
+        "description": "Width in columns to check the labels at; defaults to 100, as `tiza render`",
+        "format": "uint",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "clear_annotations": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "step": {
+        "description": "If given, removes only the annotations of that step; otherwise all of them",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "clear_pointer": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "define_style": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "color": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "glyph": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "legend": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "name": {
+        "description": "Name to use later as `kind` (e.g. \"hot\")",
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "delete_annotation": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "id": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "delete_move": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "index": {
+        "description": "1-based index, as list_moves shows it",
+        "format": "uint",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "index"
+    ],
+    "type": "object"
+  },
+  "export_image": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "font_size": {
+        "description": "Font size in px (default 16)",
+        "format": "float",
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "interval": {
+        "description": "GIF: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)",
+        "format": "double",
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "path": {
+        "description": "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, or .gif (an animated GIF of every step, drawn by Tiza itself)",
+        "type": "string"
+      },
+      "scale": {
+        "description": "PNG/GIF device scale (default 2)",
+        "format": "float",
+        "type": [
+          "number",
+          "null"
+        ]
+      },
+      "skip_zero": {
+        "description": "GIF: start at the first annotated step instead of step 0 (default false)",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "step": {
+        "description": "Step to show; defaults to the current one. Past the last step, the last is exported and the reply says so in `warning`",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "theme": {
+        "description": "dark or light; defaults to the document's theme",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "width": {
+        "description": "Width in columns; defaults to the live terminal's width",
+        "format": "uint",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "path"
+    ],
+    "type": "object"
+  },
+  "get_code": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "goto_step": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "id": {
+        "description": "The `id` of a named step (the document's `steps` list), or a step number: `4` or `\"4\"` (a number always means a step number).",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "string"
+        ]
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  },
+  "highlight": {
+    "$defs": {
+      "At": {
+        "description": "Where to anchor something in the code. The most robust option for an agent is `find`:\nthe exact text to search for (optionally narrowed to `line` and to the `occurrence`-th match).",
+        "properties": {
+          "col": {
+            "description": "Grapheme offset within the line (0-based). Rarely needed; prefer `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "find": {
+            "description": "Exact text to search for in the code (e.g. \"takes(s)\"). With `line`, that line is searched first.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "Absolute line number (1-based), as shown in the TUI. Optional when using `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "occurrence": {
+            "description": "Which match of `find` to use (1-based). Defaults to the first.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "at": {
+        "$ref": "#/$defs/At"
+      },
+      "color": {
+        "description": "Color: orange, blue, green, purple, pink, cyan, yellow, red, gray or #rrggbb. Arrows without a color rotate through the palette.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "emphasis": {
+        "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "label": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "at"
+    ],
+    "type": "object"
+  },
+  "list_annotations": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "list_kinds": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "list_moves": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "next_step": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "point_at": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "find": {
+        "description": "Text that names the line: on `line` when given, else it must appear exactly once in the code shown",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "from": {
+        "description": "First line of a range to point at (instead of `line`)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "line": {
+        "description": "The line to point at (with `find`: the line the text is on)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "to": {
+        "description": "Last line of the range (defaults to `from`)",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "prev_step": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "render_text": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "width": {
+        "description": "Width in columns; defaults to that of the terminal running the TUI",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "set_focus": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "from_line": {
+        "description": "First focused line; omit both to clear the focus",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "to_line": {
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "type": "object"
+  },
+  "set_follow": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "enabled": {
+        "description": "true to reload the code whenever the source file is saved (annotations are re-anchored to their text), false to stop",
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "enabled"
+    ],
+    "type": "object"
+  },
+  "set_step": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "step": {
+        "description": "Step to show (1-based). Clamped to the valid range.",
+        "format": "uint32",
+        "minimum": 0,
+        "type": "integer"
+      }
+    },
+    "required": [
+      "step"
+    ],
+    "type": "object"
+  },
+  "set_theme": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "properties": {
+      "theme": {
+        "description": "dark, light, terminal (the host's palette), auto (follow the terminal) or toggle",
+        "type": "string"
+      }
+    },
+    "required": [
+      "theme"
+    ],
+    "type": "object"
+  },
+  "status": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object"
+  },
+  "update_annotation": {
+    "$defs": {
+      "At": {
+        "description": "Where to anchor something in the code. The most robust option for an agent is `find`:\nthe exact text to search for (optionally narrowed to `line` and to the `occurrence`-th match).",
+        "properties": {
+          "col": {
+            "description": "Grapheme offset within the line (0-based). Rarely needed; prefer `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "find": {
+            "description": "Exact text to search for in the code (e.g. \"takes(s)\"). With `line`, that line is searched first.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "line": {
+            "description": "Absolute line number (1-based), as shown in the TUI. Optional when using `find`.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "occurrence": {
+            "description": "Which match of `find` to use (1-based). Defaults to the first.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
+          }
+        },
+        "type": "object"
+      }
+    },
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
+    "properties": {
+      "at": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/At"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Move a highlight, mark or note to another position (same `find`/line/col as add_mark). Kind, style and label are kept."
+      },
+      "border": {
+        "description": "Boxes/callouts: border stroke (solid, dashed, dotted, thick, double)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "color": {
+        "description": "New color (palette name or #rrggbb); an empty string returns to automatic",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "corners": {
+        "description": "Boxes/callouts: corners (rounded, sharp)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "emphasis": {
+        "description": "Highlights/marks: how the span is drawn (fill, underline, brackets, strike)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "fill": {
+        "description": "Boxes/callouts: tint the inside (true/false)",
+        "type": [
+          "boolean",
+          "null"
+        ]
+      },
+      "from": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/At"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Arrows only: new source anchor"
+      },
+      "from_line": {
+        "description": "Boxes, callouts, spotlights and notes: new first line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "head_end": {
+        "description": "Arrows: head at the target (none, arrow, dot, bar, open)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "head_start": {
+        "description": "Arrows: head at the source (none, arrow, dot, bar, open)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "label": {
+        "description": "New label (or new text if it is a note, new title if it is a callout). An empty string removes it.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "route": {
+        "description": "Arrows: new corners (rounded, sharp)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "step": {
+        "description": "New step at which it appears",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      },
+      "stroke": {
+        "description": "Arrows: new stroke (solid, dashed, dotted, thick, double)",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "to": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/At"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Arrows only: new target anchor"
+      },
+      "to_line": {
+        "description": "Boxes, callouts and spotlights: new last line",
+        "format": "uint32",
+        "minimum": 0,
+        "type": [
+          "integer",
+          "null"
+        ]
+      }
+    },
+    "required": [
+      "id"
+    ],
+    "type": "object"
+  }
+}

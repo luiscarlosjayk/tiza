@@ -625,6 +625,17 @@ fn pretty(v: &Value) -> String {
     tiza_core::printable::escape_json_controls(&text).into_owned()
 }
 
+/// The `_meta` of the core tools (t-162): `anthropic/alwaysLoad` asks a
+/// client that defers tools (Claude Code's tool search) to load them
+/// upfront (<https://code.claude.com/docs/en/mcp>, «Mark a tool to load
+/// upfront or stay deferred»). A client that does not know the key ignores it.
+fn always_load() -> rmcp::model::MetaObject {
+    rmcp::model::MetaObject(serde_json::Map::from_iter([(
+        "anthropic/alwaysLoad".to_string(),
+        Value::Bool(true),
+    )]))
+}
+
 #[tool_router]
 impl TizaServer {
     pub fn new(socket: PathBuf) -> Self {
@@ -705,7 +716,8 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "State of the live Tiza instance: open file, lines, annotations, current step and terminal size (`stale_moves`: how many moves are skipped because the code changed under them); plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
+        meta = always_load(),
+        description = "State of the live Tiza instance, the terminal where you draw a box, arrow, highlight or note on code to explain it step by step: open file, lines, annotations, current step and terminal size (`stale_moves`: how many moves are skipped because the code changed under them); plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         let mut v = self.call("status", json!({})).await?;
@@ -717,7 +729,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (an annotation hidden as (unanchored) at some step, a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning. Runs inside the instance; read-only. Run it before showing a document."
+        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (an annotation hidden as (unanchored) at some step, one outside the `code.link` window of a step that shows its file (`outside_window`: `outside the window at step 3 (src/queue.rs:10-36): kept, but not drawn there`), one whose file its own step does not show (`not_shown`: `its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, but not drawn at its step`), a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning. Runs inside the instance; read-only. Run it before showing a document."
     )]
     async fn check(
         &self,
@@ -735,7 +747,8 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Returns the code currently shown, with line numbers (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown."
+        meta = always_load(),
+        description = "Returns the code Tiza shows on screen, with line numbers, to pick where a box, arrow, highlight or note goes (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown."
     )]
     async fn get_code(
         &self,
@@ -783,7 +796,8 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Draws a box around a range of lines, with an optional label on the top edge. Give from_line/to_line, or find_start/find_end (two texts that delimit the range, like Demo Time placeholders: `// begin` … `// end`, or code such as `fn takes` … `}`)."
+        meta = always_load(),
+        description = "Draws a box around a range of lines (a function, a block) to explain it at a step, with an optional label on the top edge. Give from_line/to_line, or find_start/find_end (two texts that delimit the range, like Demo Time placeholders: `// begin` … `// end`, or code such as `fn takes` … `}`)."
     )]
     async fn add_box(
         &self,
@@ -991,7 +1005,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; annotations of that file at that step or later, and the line numbers of later moves, are carried through it so they stay on the same text (a patch that removes or rewrites the text one of them is on is refused, naming it); `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly. A `warning` in the reply names annotations the move leaves outside a `code.link` window at some step (kept, not drawn there)."
+        description = "Adds a move (ADR 0007) that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; annotations of that file at that step or later, and the line numbers of later moves, are carried through it so they stay on the same text (a patch that removes or rewrites the text one of them is on is refused, naming it); `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly. When the move leaves annotations unseen at a step that drew them, it is made and the reply's `warning` names them: outside a `code.link` window (`a3: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`) or of a file their step no longer shows (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there`). `delete_move` answers with the same `warning`."
     )]
     async fn add_move(
         &self,
@@ -1169,7 +1183,8 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Returns what is on screen as plain text (code + annotations of the current step). Use it to check the result of what you drew."
+        meta = always_load(),
+        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as a presentation or an export shows it. Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
@@ -1691,13 +1706,18 @@ impl ServerHandler for TizaServer {
         )
             .with_server_info(Implementation::new("tiza", tiza_core::VERSION))
             .with_instructions(
-                "Tiza is a TUI that shows code and lets you draw on top of it (boxes, arrows, highlights, notes, callouts and \
-                 language-agnostic marks such as move, read, write, drop, scope) to explain it on video. Recommended flow: \
-                 1) `status` to confirm there is an instance; 2) `get_code` to see exact lines and text; \
-                 3) annotate with `add_mark`, `add_arrow`, `add_box`, `add_note` (one line), `add_callout` (a paragraph), `highlight`, using `find` with the exact text — each result starts with a sentence saying whether it shows at the step on screen (`visible`, and `hidden` with why); \
-                 4) group into steps with `step` and advance with `next_step` (or `goto_step` to a named step); 5) `render_text` to verify, `export_image` for a PNG/SVG thumbnail. \
-                 Resources `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` give the same views without a tool call. \
-                 Keep labels short: they are drawn in a ~100-column terminal.",
+                "Tiza: draw on top of code in the terminal to explain it on video. \
+                 Use it to explain code to a person or another agent, live or recorded, step by step: \
+                 a code walkthrough, tutorial, screencast or presentation, to teach or show on screen. \
+                 It draws a box, arrow, highlight, note, callout or mark (move, read, write, drop…) on the live code, \
+                 groups them in steps, can type code or move it between steps (`add_move`), link another file, \
+                 and export PNG, SVG, GIF or text.\n\
+                 Flow: `status` → `get_code` → annotate with `find` (exact text) and `step`; each reply says whether it shows at the step on screen.\n\
+                 Then `next_step`/`goto_step`, `render_text` to verify and `export_image` to save.\n\
+                 Annotating at step N creates step N (goto_step goes no further than the last). \
+                 A `find_end` of `}` takes the first brace after find_start, often an inner block's. \
+                 Keep labels short (~100 columns). \
+                 Same views without a call: `tiza://scene`, `tiza://code`, `tiza://render`, `tiza://render.md`.",
             )
     }
 }
