@@ -2,7 +2,7 @@
 //! narrow layouts do) instead of letting the second sit next to the line
 //! below.
 //!
-//! Acceptance criteria (Luis, 2026-10-18: option b; 2026-10-19: no redact):
+//! Acceptance criteria (Luis, 2026-10-18: option b):
 //! - AC1 In the side-margin layout (wide terminals), a line that carries two
 //!   or more labels at the current step (highlight/mark labels, notes, an
 //!   arrow's label at its head, a margin callout with no room for its block,
