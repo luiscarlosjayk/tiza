@@ -173,8 +173,24 @@ fn same_take(a: &tiza_core::layout::Layout, b: &tiza_core::layout::Layout) -> Re
 
 /// The take at the saturation width is the one at [`MAX_WIDTH`] at every
 /// step from 0 to the last.
+///
+/// Also that no step got there by the safety net: every step is searched
+/// from one of the two bounds (or the bound is the widest width itself),
+/// never from [`MAX_WIDTH`] because the take at both bounds differed.
 fn saturates(doc: &tiza_core::Document) -> Result<usize, String> {
-    let sat = tiza_core::check::saturation_width(doc, &tiza_core::Theme::dark());
+    use tiza_core::check::Bound;
+    let theme = tiza_core::Theme::dark();
+    let net: Vec<u32> = tiza_core::check::saturation_bounds(doc, &theme)
+        .into_iter()
+        .filter(|(_, b)| *b == Bound::Fallback)
+        .map(|(s, _)| s)
+        .collect();
+    if !net.is_empty() {
+        return Err(format!(
+            "steps {net:?} are searched from {MAX_WIDTH}: the bound is wrong"
+        ));
+    }
+    let sat = tiza_core::check::saturation_width(doc, &theme);
     for step in 0..=tiza_core::check::last_step(doc) {
         same_take(&lay(doc, sat, step), &lay(doc, MAX_WIDTH, step))
             .map_err(|e| format!("step {step}, {sat} vs {MAX_WIDTH}: {e}"))?;
@@ -380,55 +396,70 @@ impl Gen {
     }
 }
 
-/// A random document: code of random widths, labels long and short,
-/// notes, marks, callouts with and without `width` (and with titles),
-/// arrows across lines, nested boxes, sometimes a margin cap.
-fn random_doc(g: &mut Gen) -> Value {
-    let lines = 4 + g.below(10) as u32;
-    let code: Vec<String> = (0..lines)
-        .map(|i| format!("let v{i} = {};", "x".repeat(g.below(70) as usize)))
-        .collect();
+/// A line of random code: plain cells, tabs, wide characters (CJK, emoji).
+fn random_line(g: &mut Gen, i: u32) -> String {
+    let mut out = format!("let v{i} = ");
+    for _ in 0..g.below(40) {
+        out.push_str(["x", "x", "x", "\t", "変", "🦀", "y "][g.below(7) as usize]);
+    }
+    out.push(';');
+    out
+}
+
+/// A random annotation on `code` (lines from 1), shown at `step`.
+fn random_annotation(g: &mut Gen, id: String, step: u32, code: &[String]) -> Value {
+    let lines = code.len() as u32;
     let len = |l: u32| code[(l - 1) as usize].chars().count() as u64;
     let line = |g: &mut Gen| 1 + g.below(lines as u64) as u32;
+    let l = line(g);
+    let long = if g.below(3) == 0 { 20 } else { 5 };
+    match g.below(7) {
+        0 => json!({"id": id, "step": step, "type": "note", "line": l, "text": g.words(long)}),
+        1 => {
+            let end = 1 + g.below(len(l) - 1);
+            json!({"id": id, "step": step, "type": "highlight", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
+        }
+        2 => {
+            let end = 1 + g.below(len(l) - 1);
+            json!({"id": id, "step": step, "type": "mark", "kind": "warn", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
+        }
+        3 => {
+            let to = line(g);
+            json!({"id": id, "step": step, "type": "arrow", "from": {"line": l, "col": 1}, "to": {"line": to, "col": 2}, "label": g.words(4)})
+        }
+        4 => {
+            let to = (l + g.below(3) as u32).min(lines);
+            json!({"id": id, "step": step, "type": "box", "from_line": l, "to_line": to, "label": g.words(3)})
+        }
+        _ => {
+            let to = (l + g.below(2) as u32).min(lines);
+            let mut c = json!({"id": id, "step": step, "type": "callout", "from_line": l, "to_line": to, "text": g.words(25)});
+            if g.below(2) == 0 {
+                c["width"] = json!(8 + g.below(50));
+            }
+            if g.below(2) == 0 {
+                c["title"] = json!(g.words(6));
+            }
+            c["placement"] = json!(["auto", "margin", "below"][g.below(3) as usize]);
+            c
+        }
+    }
+}
+
+/// A random document: code of random widths with tabs and wide
+/// characters, labels long and short, notes, marks, callouts with and
+/// without `width` (and with titles), arrows across lines, nested boxes,
+/// sometimes a margin cap, sometimes a `code.link` to a second file with
+/// annotations of its own. Returns the document and that file (`name`,
+/// lines), to write next to it.
+fn random_doc(g: &mut Gen, name: &str) -> (Value, Option<Vec<String>>) {
+    let lines = 4 + g.below(10) as u32;
+    let code: Vec<String> = (0..lines).map(|i| random_line(g, i)).collect();
     let steps = 1 + g.below(4) as u32;
     let mut anns = Vec::new();
     for i in 0..(2 + g.below(9)) {
         let step = 1 + g.below(steps as u64) as u32;
-        let id = format!("a{i}");
-        let l = line(g);
-        let long = if g.below(3) == 0 { 20 } else { 5 };
-        let a = match g.below(7) {
-            0 => json!({"id": id, "step": step, "type": "note", "line": l, "text": g.words(long)}),
-            1 => {
-                let end = 1 + g.below(len(l) - 1);
-                json!({"id": id, "step": step, "type": "highlight", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
-            }
-            2 => {
-                let end = 1 + g.below(len(l) - 1);
-                json!({"id": id, "step": step, "type": "mark", "kind": "warn", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
-            }
-            3 => {
-                let to = line(g);
-                json!({"id": id, "step": step, "type": "arrow", "from": {"line": l, "col": 1}, "to": {"line": to, "col": 2}, "label": g.words(4)})
-            }
-            4 => {
-                let to = (l + g.below(3) as u32).min(lines);
-                json!({"id": id, "step": step, "type": "box", "from_line": l, "to_line": to, "label": g.words(3)})
-            }
-            _ => {
-                let to = (l + g.below(2) as u32).min(lines);
-                let mut c = json!({"id": id, "step": step, "type": "callout", "from_line": l, "to_line": to, "text": g.words(25)});
-                if g.below(2) == 0 {
-                    c["width"] = json!(8 + g.below(50));
-                }
-                if g.below(2) == 0 {
-                    c["title"] = json!(g.words(6));
-                }
-                c["placement"] = json!(["auto", "margin", "below"][g.below(3) as usize]);
-                c
-            }
-        };
-        anns.push(a);
+        anns.push(random_annotation(g, format!("a{i}"), step, &code));
     }
     let mut doc = json!({
         "schema": 1,
@@ -443,33 +474,71 @@ fn random_doc(g: &mut Gen) -> Value {
     if g.below(5) == 0 {
         doc["numbers"] = json!(false);
     }
-    doc
+    let mut linked = None;
+    if g.below(4) == 0 {
+        // From a step on, the take shows the second file.
+        let other: Vec<String> = (0..4 + g.below(8) as u32)
+            .map(|i| random_line(g, i))
+            .collect();
+        let at = 1 + g.below(steps as u64) as u32;
+        doc["moves"] = json!([{"at_step": at, "action": "code.link", "file": name}]);
+        for i in 0..(1 + g.below(4)) {
+            let step = at + g.below(2) as u32;
+            let mut a = random_annotation(g, format!("l{i}"), step, &other);
+            a["file"] = json!(name);
+            doc["annotations"].as_array_mut().unwrap().push(a);
+        }
+        linked = Some(other);
+    }
+    (doc, linked)
 }
 
 #[test]
 fn ac2_random_documents_saturate_at_the_bound() {
     let dir = scratch("t200-random");
     let mut g = Gen(0x7a11_2000_5eed_0001);
-    let (mut checked, mut below) = (0, 0);
+    let (mut checked, mut below, mut linked, mut brute) = (0, 0, 0, 0);
     let start = std::time::Instant::now();
     for i in 0..300 {
         let file = dir.join(format!("r{i}.tiza"));
-        std::fs::write(&file, random_doc(&mut g).to_string()).unwrap();
+        let other = format!("o{i}.rs");
+        let (doc, code) = random_doc(&mut g, &other);
+        if let Some(code) = &code {
+            std::fs::write(dir.join(&other), code.join("\n") + "\n").unwrap();
+        }
+        std::fs::write(&file, doc.to_string()).unwrap();
         // A random anchor can be refused by the loader: skip that one.
         let Ok(o) = tiza_core::fs::open(file.to_str().unwrap()) else {
             continue;
         };
-        match saturates(&o.document) {
-            Ok(sat) => below += usize::from(sat < MAX_WIDTH),
-            Err(e) => panic!(
+        let doc = o.document;
+        let show = |e: String| {
+            panic!(
                 "{}: {e}\n{}",
                 file.display(),
                 std::fs::read_to_string(&file).unwrap()
-            ),
+            )
+        };
+        match saturates(&doc) {
+            Ok(sat) => below += usize::from(sat < MAX_WIDTH),
+            Err(e) => show(e),
         }
+        // One in six: the announced width against every width and every
+        // step, the slow way.
+        if i % 6 == 0 {
+            let want =
+                widest_clipping(&doc).map_or(Some(MIN_WIDTH), |w| (w < MAX_WIDTH).then_some(w + 1));
+            let got = tiza_core::check::min_clean_width(&doc, &tiza_core::Theme::dark());
+            if got != want {
+                show(format!("announces {got:?}, every width says {want:?}"));
+            }
+            brute += 1;
+        }
+        linked += usize::from(code.is_some());
         checked += 1;
     }
     assert!(checked >= 200, "only {checked} documents opened");
+    assert!(linked >= 30, "only {linked} documents with a code.link");
     // The bound is below the widest width for most of them, or the test
     // would prove nothing.
     assert!(
@@ -477,7 +546,7 @@ fn ac2_random_documents_saturate_at_the_bound() {
         "{below} of {checked} below {MAX_WIDTH}"
     );
     eprintln!(
-        "{checked} random documents ({below} bounded below {MAX_WIDTH}) in {:?}",
+        "{checked} random documents ({below} bounded below {MAX_WIDTH}, {linked} with a code.link, {brute} against every width) in {:?}",
         start.elapsed()
     );
     let _ = std::fs::remove_dir_all(&dir);

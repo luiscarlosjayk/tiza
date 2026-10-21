@@ -1050,22 +1050,27 @@ impl<'a> Take<'a> {
 
     /// The widest width step `i` must be searched from: the first of
     /// `bounds` (see [`saturation_width`]) whose take is the one at
-    /// [`MAX_WIDTH`], else [`MAX_WIDTH`]; and whether that take clips a
-    /// label.
-    fn top(&self, i: usize, theme: &Theme, bounds: [usize; 2]) -> (usize, bool) {
+    /// [`MAX_WIDTH`], else [`MAX_WIDTH`]; whether that take clips a label;
+    /// and which of those it was.
+    fn top(&self, i: usize, theme: &Theme, bounds: [usize; 2]) -> (usize, bool, Bound) {
         if bounds[0] >= MAX_WIDTH {
-            return (MAX_WIDTH, false);
+            return (MAX_WIDTH, false, Bound::Widest);
         }
         let widest = self.layout(i, theme, MAX_WIDTH);
         let mut tried = None;
-        for b in bounds {
+        for (k, b) in bounds.into_iter().enumerate() {
             if tried == Some(b) || b >= MAX_WIDTH {
                 continue;
             }
             tried = Some(b);
             let at = self.layout(i, theme, b);
             if same_take(&at, &widest, theme) {
-                return (b, !at.clipped_labels.is_empty());
+                let which = if k == 0 {
+                    Bound::Labels
+                } else {
+                    Bound::Callouts
+                };
+                return (b, !at.clipped_labels.is_empty(), which);
             }
         }
         debug_assert!(
@@ -1073,7 +1078,12 @@ impl<'a> Take<'a> {
             "step {}: the take at {bounds:?} columns is not the one at {MAX_WIDTH}",
             self.steps[i].step
         );
-        (MAX_WIDTH, !widest.clipped_labels.is_empty())
+        let which = if bounds[1] >= MAX_WIDTH {
+            Bound::Widest
+        } else {
+            Bound::Fallback
+        };
+        (MAX_WIDTH, !widest.clipped_labels.is_empty(), which)
     }
 
     /// The layout of step `i` (an index in `steps`) at `width`.
@@ -1660,6 +1670,34 @@ pub fn saturation_width(doc: &Document, theme: &Theme) -> usize {
         .unwrap_or(bounds[0])
 }
 
+/// Which bound a step of [`saturation_width`] is searched from.
+#[doc(hidden)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Bound {
+    /// The one from the labels (the callouts' words left out).
+    Labels,
+    /// The one that counts the callouts' words as a label too.
+    Callouts,
+    /// The bound itself is [`MAX_WIDTH`]: there is nothing above it.
+    Widest,
+    /// The take at either bound is not the one at [`MAX_WIDTH`], so the
+    /// step is searched from [`MAX_WIDTH`]: the bound no longer follows the
+    /// layout's rules.
+    Fallback,
+}
+
+/// For each step that draws an annotation, which bound it is searched
+/// from (for the tests: [`Bound::Fallback`] means the bound is wrong).
+#[doc(hidden)]
+pub fn saturation_bounds(doc: &Document, theme: &Theme) -> Vec<(u32, Bound)> {
+    let take = Take::of(doc);
+    let bounds = take_saturation(&take);
+    (0..take.steps.len())
+        .filter(|&i| take.steps[i].labels)
+        .map(|i| (take.steps[i].step, take.top(i, theme, bounds).2))
+        .collect()
+}
+
 /// The two bounds of [`saturation_width`]: the first leaves out the words
 /// of the callouts, which matter only when one has no rows for its block;
 /// the second counts them as a label too.
@@ -1780,7 +1818,7 @@ fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
         if !take.steps[i].labels {
             continue;
         }
-        let (top, clips) = take.top(i, theme, bounds);
+        let (top, clips, _) = take.top(i, theme, bounds);
         if clips && top < MAX_WIDTH {
             // The same take, so the same clip, from the bound up.
             widest.store(MAX_WIDTH, Ordering::Relaxed);
