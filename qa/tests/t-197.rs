@@ -29,10 +29,17 @@
 //! looked at; two Ctrl-C sent at once cancel, then quit; Ctrl-C over a
 //! follow reload notice or a stale notice quits.
 //!
+//! Review: leaving a selection with Ctrl-C clears the bar's hint, as Esc
+//! does; cancelling a command line that a selection opened (Esc, Ctrl-C, or
+//! Backspace on the empty line) forgets that selection, so a later command
+//! typed without an anchor does not land on it.
+//!
 //! Each case runs `tiza` on a pty with a socket (a relative path, short
-//! enough for any temporary directory) and checks the state between two
-//! Ctrl-C with the API and with a key whose effect tells the modes apart.
-//! When python3 has `pyte`, the screen itself is checked too.
+//! enough for any temporary directory). After each key it waits, with a
+//! deadline, for what that key changes: the screen (rebuilt from what Tiza
+//! wrote, see `screen` in the script) or a field of `status`. Between two
+//! Ctrl-C it checks the state with the API and with a key whose effect
+//! tells the modes apart.
 
 use std::path::{Path, PathBuf};
 
@@ -64,8 +71,8 @@ struct Run {
     alive: Vec<bool>,
     /// One entry per `api` step: the reply (`null` if the call failed).
     api: Vec<Value>,
-    /// One entry per `screen` step: the rows, or `None` without pyte.
-    screens: Vec<Option<Vec<String>>>,
+    /// One entry per `screen` step: its rows.
+    screens: Vec<Vec<String>>,
     exit: Option<i64>,
     /// What the terminal shows after Tiza left the alternate screen: its
     /// stderr on the way out.
@@ -75,54 +82,86 @@ struct Run {
 
 impl Run {
     fn quit_cleanly(&self) {
+        assert!(!self.out.contains("WAIT_TIMEOUT"), "{}", self.out);
         assert_eq!(
             self.exit,
             Some(0),
             "Tiza did not quit by itself:\n{}",
             self.out
         );
-        assert!(!self.out.contains("WAIT_TIMEOUT"), "{}", self.out);
     }
 
     fn api(&self, i: usize) -> &Value {
         &self.api[i]
     }
-
-    /// The last row of screen `i` (the bar), when pyte is there.
-    fn bar(&self, i: usize) -> Option<String> {
-        self.screens[i]
-            .as_ref()
-            .map(|rows| rows.last().cloned().unwrap_or_default())
-    }
 }
 
 /// Runs `tiza ARGS FILE` on a 120×30 pty in `dir`, with `--socket s.sock`,
 /// and plays `steps`:
-/// - `["k", text]` sends the keys and lets the screen settle;
-/// - `["alive"]` settles and records whether the child is still running;
+/// - `["k", text, conds]` sends the keys, then waits for `conds` (below);
+/// - `["wait", conds]` waits for `conds`;
+/// - `["alive"]` records whether the child is still running (a short
+///   settle first: it checks that a key did not make Tiza quit);
 /// - `["api", method, params]` records the reply of the local API;
 /// - `["bg_api", method, params]` calls it without waiting (a proposal
 ///   waits for the presenter);
-/// - `["mark"]` / `["wait", text]` wait for `text` in what was drawn since
-///   the mark;
 /// - `["save", file, content]` saves a file as an editor does;
 /// - `["chmod", file, mode]`;
-/// - `["screen"]` records the screen (pyte), or `None`.
+/// - `["screen"]` records the screen.
+///
+/// A condition is `["bar", text]` / `["nobar", text]` (the last row has, or
+/// lacks, `text`), `["has", text]` / `["lacks", text]` (anywhere on the
+/// screen) or `["status", field, value]` (`status` gives that value). Each
+/// is chosen false before its key, so it holds only once the key was
+/// handled; one that never holds prints `WAIT_TIMEOUT`.
 ///
 /// The last step is expected to make Tiza quit; a child still running
 /// 10 s later is killed and the run says so (`exit` is not 0).
 fn run(dir: &Path, name: &str, args: &[&str], file: &str, steps: Value) -> Run {
     let body = r##"
-import json
+import json, unicodedata
 binary, cwd = sys.argv[1], sys.argv[2]
 args = json.loads(sys.argv[3])
 file = sys.argv[4]
 steps = json.loads(sys.argv[5])
 os.chdir(cwd)
-try:
-    import pyte
-except ImportError:
-    pyte = None
+ROWS, COLS = 30, 120
+SEQ = re.compile(r"\x1b\[([0-9;?<>=]*)([ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[P^_][^\x1b]*\x1b\\|\x1b.|([^\x1b])", re.S)
+
+def screen(raw):
+    """The rows a terminal shows after `raw`: the cursor moves, erases and
+    text that ratatui writes through crossterm; styles, modes and OSC
+    strings change no cell."""
+    grid = [[" "] * COLS for _ in range(ROWS)]
+    r = c = 0
+    for m in SEQ.finditer(raw.decode(errors="replace")):
+        params, final, ch = m.group(1), m.group(3), m.group(4)
+        if ch is not None:
+            if ch == "\r":
+                c = 0
+            elif ch == "\n":
+                r = min(r + 1, ROWS - 1)
+            elif ch >= " ":
+                w = 0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in "WF" else 1)
+                if w and c < COLS:
+                    grid[r][c] = ch
+                    if w == 2 and c + 1 < COLS:
+                        grid[r][c + 1] = ""
+                c += w
+        elif final is not None and not params.startswith("?"):
+            n = [int(x) if x else 0 for x in params.split(";")] if params else []
+            first = n[0] if n else 0
+            if final in "Hf":
+                r = min(max((n[0] if n else 1) - 1, 0), ROWS - 1)
+                c = max((n[1] if len(n) > 1 else 1) - 1, 0)
+            elif final == "J" and first == 2:
+                grid = [[" "] * COLS for _ in range(ROWS)]
+            elif final == "K":
+                lo, hi = {1: (0, c + 1), 2: (0, COLS)}.get(first, (c, COLS))
+                for x in range(lo, min(hi, COLS)):
+                    grid[r][x] = " "
+    return ["".join(row).rstrip() for row in grid]
+
 def api(method, params):
     r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params)],
                        capture_output=True, text=True, timeout=10)
@@ -130,29 +169,47 @@ def api(method, params):
         print("API_ERR", method, r.stderr.strip(), flush=True)
         return None
     return json.loads(r.stdout)
+
+def holds(cond):
+    kind = cond[0]
+    if kind == "status":
+        st = api("status", {})
+        return st is not None and st.get(cond[1]) == cond[2]
+    rows = screen(s.out)
+    text = "\n".join(rows)
+    return {"bar": lambda: cond[1] in rows[-1], "nobar": lambda: cond[1] not in rows[-1],
+            "has": lambda: cond[1] in text, "lacks": lambda: cond[1] not in text}[kind]()
+
+def wait(conds, what):
+    end = time.monotonic() + 10
+    while not all(holds(c) for c in conds):
+        if time.monotonic() > end or s.p.poll() is not None:
+            print("WAIT_TIMEOUT", json.dumps(what), json.dumps(conds), "bar:", screen(s.out)[-1], flush=True)
+            return False
+        s.settle(0.05)
+    return True
+
 bg = []
-s = Pty([binary, *args, "--socket", "s.sock", file], 30, 120)
-mark = 0
-if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    s.settle(0.5)
+s = Pty([binary, *args, "--socket", "s.sock", file], ROWS, COLS)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame") \
+        and wait([["bar", " ann."]], "first frame"):
     for step in steps:
         op = step[0]
         if op == "k":
             s.send(step[1].encode())
-            s.settle(0.3)
+            if len(step) > 2 and not wait(step[2], step[1]):
+                break
+        elif op == "wait":
+            if not wait(step[1], "wait"):
+                break
         elif op == "alive":
-            s.settle(0.5)
+            s.settle(0.3)
             print("ALIVE", 1 if s.p.poll() is None else 0, flush=True)
         elif op == "api":
             print("API", json.dumps(api(step[1], step[2])), flush=True)
         elif op == "bg_api":
             bg.append(subprocess.Popen([binary, "--socket", "s.sock", "api", step[1], json.dumps(step[2])],
                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-        elif op == "mark":
-            mark = len(s.out)
-        elif op == "wait":
-            want = step[1]
-            s.wait_for(lambda out: want in plain(out[mark:]), 10, want)
         elif op == "save":
             tmp = step[1] + ".tmp"
             with open(tmp, "w") as f:
@@ -161,12 +218,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
         elif op == "chmod":
             os.chmod(step[1], step[2])
         elif op == "screen":
-            if pyte is None:
-                print("SCREEN null", flush=True)
-            else:
-                sc = pyte.Screen(120, 30)
-                pyte.ByteStream(sc).feed(s.out)
-                print("SCREEN", json.dumps(sc.display), flush=True)
+            print("SCREEN", json.dumps(screen(s.out)), flush=True)
 code = s.finish(10)
 for p in bg:
     try:
@@ -238,8 +290,8 @@ fn ac1_ctrl_c_closes_the_command_line_runs_nothing_and_the_next_quits() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", ":note 1 hel"],
-            ["k", CTRL_C],
+            ["k", ":note 1 hel", [["bar", ":note 1 hel"]]],
+            ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
             ["api", "status", {}],
             ["screen"],
@@ -249,10 +301,8 @@ fn ac1_ctrl_c_closes_the_command_line_runs_nothing_and_the_next_quits() {
     r.quit_cleanly();
     assert_eq!(r.alive, [true], "the first Ctrl-C only closes the line");
     assert_eq!(r.api(0)["annotations"], 0, "the line did not run");
-    if let Some(bar) = r.bar(0) {
-        assert!(bar.contains("NORMAL"), "{bar}");
-        assert!(!bar.contains(":note"), "nothing typed is left: {bar}");
-    }
+    let bar = r.screens[0].last().unwrap();
+    assert!(!bar.contains(":note"), "nothing typed is left: {bar}");
     assert!(!r.tail.contains("not saved"), "nothing unsaved: {}", r.tail);
     assert_eq!(std::fs::read(&tiza).unwrap(), before);
 }
@@ -268,10 +318,10 @@ fn ac1_ctrl_c_on_an_empty_command_line_closes_it() {
         // `f` turns the pointer on only in normal mode: in the command
         // line it would be text.
         json!([
-            ["k", ":"],
-            ["k", CTRL_C],
+            ["k", ":", [["nobar", "NORMAL"]]],
+            ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
-            ["k", "f"],
+            ["k", "f", [["bar", "POINTER"]]],
             ["api", "status", {}],
             ["k", CTRL_C],
         ]),
@@ -293,11 +343,10 @@ fn ac1_corner_the_whole_line_is_dropped_and_no_c_is_typed() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", ":note 1 hello"],
-            ["k", "\x1b[D\x1b[D"],
-            ["k", CTRL_C],
+            ["k", ":note 1 hello", [["bar", ":note 1 hello"]]],
+            ["k", format!("\x1b[D\x1b[D{CTRL_C}"), [["bar", "NORMAL"]]],
             ["alive"],
-            ["k", ":note 2 x\r"],
+            ["k", ":note 2 x\r", [["status", "annotations", 1]]],
             ["api", "scene.get", {}],
             ["k", CTRL_C],
         ]),
@@ -320,23 +369,21 @@ fn ac1_corner_the_whole_line_is_dropped_and_no_c_is_typed() {
 #[test]
 fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
     // Test step 2: `v`, `j`, Ctrl-C → NORMAL, no annotation; Ctrl-C quits.
-    for (linewise, key) in [(false, "v"), (true, "V")] {
-        let (dir, tiza) = project(&format!("t197-ac2-{linewise}"));
+    for (key, mode) in [("v", "SELECT"), ("V", "V-LINE")] {
+        let (dir, tiza) = project(&format!("t197-ac2-{mode}"));
         let before = std::fs::read(&tiza).unwrap();
         let r = run(
             &dir,
-            &format!("ac2-{linewise}.py"),
+            &format!("ac2-{mode}.py"),
             &["--no-save"],
             "main.rs",
             // `f` lights the cursor line alone in normal mode, the two
             // selected lines in selection mode.
             json!([
-                ["k", key],
-                ["k", "j"],
-                ["k", CTRL_C],
+                ["k", key, [["bar", mode]]],
+                ["k", format!("j{CTRL_C}"), [["bar", "NORMAL"]]],
                 ["alive"],
-                ["screen"],
-                ["k", "f"],
+                ["k", "f", [["bar", "POINTER"]]],
                 ["api", "status", {}],
                 ["k", CTRL_C],
             ]),
@@ -345,9 +392,6 @@ fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
         assert_eq!(r.alive, [true], "{key}");
         assert_eq!(pointer(r.api(0)), Some((2, 2)), "{key}: {}", r.api(0));
         assert_eq!(r.api(0)["annotations"], 0);
-        if let Some(bar) = r.bar(0) {
-            assert!(bar.contains("NORMAL"), "{key}: {bar}");
-        }
         assert!(!r.tail.contains("not saved"), "{}", r.tail);
         assert_eq!(std::fs::read(&tiza).unwrap(), before);
     }
@@ -356,8 +400,9 @@ fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
 #[test]
 fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
     // `v a` chooses the source; Ctrl-C forgets it, so `v a` again chooses
-    // a source instead of drawing the arrow. With the target selected
-    // (`v a v`), one Ctrl-C leaves the selection and the arrow, like Esc.
+    // a source (ARROW→) instead of drawing the arrow. With the target
+    // selected (`v a j v`), one Ctrl-C leaves the selection and the arrow,
+    // like Esc.
     let (dir, _) = project("t197-ac2-arrow");
     let r = run(
         &dir,
@@ -365,26 +410,24 @@ fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", "v"],
-            ["k", "a"],
-            ["k", CTRL_C],
+            ["k", "v", [["bar", "SELECT"]]],
+            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", CTRL_C, [["bar", "NORMAL"], ["has", "arrow cancelled"]]],
             ["alive"],
-            ["screen"],
-            ["k", "v"],
-            ["k", "a"],
+            ["k", "v", [["bar", "SELECT"]]],
+            ["k", "a", [["bar", "ARROW→"]]],
             ["api", "status", {}],
-            ["k", CTRL_C],
+            ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
-            ["k", "v"],
-            ["k", "a"],
-            ["k", "j"],
-            ["k", "v"],
-            ["k", CTRL_C],
+            ["k", "v", [["bar", "SELECT"]]],
+            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", "jv", [["bar", "SELECT"]]],
+            ["k", CTRL_C, [["bar", "NORMAL"], ["lacks", "ARROW"]]],
             ["alive"],
-            ["k", "v"],
-            ["k", "a"],
+            ["k", "v", [["bar", "SELECT"]]],
+            ["k", "a", [["bar", "ARROW→"]]],
             ["api", "status", {}],
-            ["k", CTRL_C],
+            ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
             ["k", CTRL_C],
         ]),
@@ -393,10 +436,68 @@ fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
     assert_eq!(r.alive, [true, true, true, true]);
     assert_eq!(r.api(0)["annotations"], 0, "no arrow drawn");
     assert_eq!(r.api(1)["annotations"], 0, "no arrow drawn");
-    if let Some(bar) = r.bar(0) {
-        assert!(bar.contains("NORMAL") && !bar.contains("ARROW"), "{bar}");
-    }
     assert!(!r.tail.contains("not saved"), "{}", r.tail);
+}
+
+#[test]
+fn review_ctrl_c_clears_the_hint_of_a_selection_as_esc_does() {
+    // A mouse drag selects and puts its hint on the bar; Ctrl-C leaves the
+    // selection and the hint goes with it.
+    let (dir, _) = project("t197-hint");
+    let r = run(
+        &dir,
+        "hint.py",
+        &["--no-save"],
+        "main.rs",
+        json!([
+            ["k", ":mouse on\r", [["has", "mouse on"]]],
+            [
+                "k",
+                "\x1b[<0;10;3M\x1b[<32;14;3M\x1b[<0;14;3m",
+                [["bar", "SELECT"], ["has", "selected: h highlight"]]
+            ],
+            ["k", CTRL_C, [["bar", "NORMAL"], ["lacks", "selected:"]]],
+            ["alive"],
+            ["k", CTRL_C],
+        ]),
+    );
+    r.quit_cleanly();
+    assert_eq!(r.alive, [true]);
+}
+
+#[test]
+fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
+    // `j v l l m` opens `:mark ` on the selected text of line 2. Closing
+    // the line without running it (Ctrl-C, Esc, or Backspace past its
+    // start) cancels that selection too: `:mark warn` typed later on line 4
+    // has no anchor and is refused, instead of marking line 2.
+    let closers = [
+        ("ctrl-c", CTRL_C.to_string()),
+        ("esc", "\x1b".to_string()),
+        ("backspace", "\x7f".repeat(6)),
+    ];
+    for (name, close) in closers {
+        let (dir, _) = project(&format!("t197-pending-{name}"));
+        let r = run(
+            &dir,
+            &format!("pending-{name}.py"),
+            &["--no-save"],
+            "main.rs",
+            json!([
+                ["k", "j", [["bar", " L2 "]]],
+                ["k", "v", [["bar", "SELECT"]]],
+                ["k", "llm", [["bar", ":mark"]]],
+                ["k", close, [["bar", "NORMAL"]]],
+                ["k", "jj", [["bar", " L4 "]]],
+                ["k", ":mark warn\r", [["has", "usage: :mark"]]],
+                ["api", "status", {}],
+                ["k", CTRL_C],
+            ]),
+        );
+        r.quit_cleanly();
+        assert_eq!(r.api(0)["annotations"], 0, "{name}: {}", r.api(0));
+        assert!(!r.tail.contains("not saved"), "{name}: {}", r.tail);
+    }
 }
 
 // ---------------------------------------------------------------- AC3
@@ -404,34 +505,27 @@ fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
 #[test]
 fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
     // Test step 3: `?`, Ctrl-C → help closes; Ctrl-C quits. Same with `L`.
-    for key in ["?", "L"] {
-        let (dir, _) = project(&format!("t197-ac3-{}", key == "?"));
+    for (key, name) in [("?", "help"), ("L", "list")] {
+        let (dir, _) = project(&format!("t197-ac3-{name}"));
         let r = run(
             &dir,
-            &format!("ac3-{}.py", key == "?"),
+            &format!("ac3-{name}.py"),
             &["--no-save"],
             "main.rs",
             // An overlay takes `f` for itself; without it the pointer
             // turns on.
             json!([
-                ["k", key],
-                ["k", CTRL_C],
+                ["k", key, [["has", "Esc closes"]]],
+                ["k", CTRL_C, [["lacks", "Esc closes"]]],
                 ["alive"],
-                ["screen"],
-                ["k", "f"],
+                ["k", "f", [["bar", "POINTER"]]],
                 ["api", "status", {}],
                 ["k", CTRL_C],
             ]),
         );
         r.quit_cleanly();
-        assert_eq!(r.alive, [true], "{key}");
-        assert_eq!(pointer(r.api(0)), Some((1, 1)), "{key}: {}", r.api(0));
-        if let Some(rows) = &r.screens[0] {
-            assert!(
-                !rows.iter().any(|l| l.contains("Esc closes")),
-                "{key}: the overlay is gone: {rows:#?}"
-            );
-        }
+        assert_eq!(r.alive, [true], "{name}");
+        assert_eq!(pointer(r.api(0)), Some((1, 1)), "{name}: {}", r.api(0));
     }
 }
 
@@ -444,13 +538,12 @@ fn ac3_ctrl_c_closes_the_review_and_the_proposal_stays_pending() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", ":supervise on\r"],
-            ["mark"],
+            ["k", ":supervise on\r", [["status", "supervised", true]]],
             ["bg_api", "annotation.add", {"type": "note", "line": 1, "text": "agent"}],
-            ["wait", "waiting for review"],
-            ["k", CTRL_C],
+            ["wait", [["has", "Esc closes"], ["has", "agent"]]],
+            ["k", CTRL_C, [["lacks", "Esc closes"]]],
             ["alive"],
-            ["k", "f"],
+            ["k", "f", [["bar", "POINTER"]]],
             ["api", "status", {}],
             ["k", CTRL_C],
         ]),
@@ -475,7 +568,11 @@ fn ac4_ctrl_c_quits_from_normal_and_presentation_mode_as_q_bang() {
         "present.py",
         &["--no-save"],
         "main.rs",
-        json!([["k", ":note 1 hello\r"], ["k", "P"], ["k", CTRL_C]]),
+        json!([
+            ["k", ":note 1 hello\r", [["status", "annotations", 1]]],
+            ["k", "P", [["lacks", "NORMAL"]]],
+            ["k", CTRL_C],
+        ]),
     );
     r.quit_cleanly();
     assert!(
@@ -507,9 +604,9 @@ fn ac4_corner_the_command_line_in_presentation_mode_closes_and_leaves_the_frame_
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", "P"],
-            ["k", ":note 1 x"],
-            ["k", CTRL_C],
+            ["k", "P", [["lacks", "NORMAL"]]],
+            ["k", ":note 1 x", [["has", ":note 1 x"]]],
+            ["k", CTRL_C, [["lacks", ":note 1 x"]]],
             ["alive"],
             ["api", "status", {}],
             ["screen"],
@@ -519,14 +616,12 @@ fn ac4_corner_the_command_line_in_presentation_mode_closes_and_leaves_the_frame_
     r.quit_cleanly();
     assert_eq!(r.alive, [true]);
     assert_eq!(r.api(0)["annotations"], 0);
-    if let Some(rows) = &r.screens[0] {
-        let text = rows.join("\n");
-        assert!(
-            !text.contains(":note") && !text.contains("NORMAL"),
-            "{text}"
-        );
-        assert!(text.contains("let a = 1;"), "{text}");
-    }
+    let text = r.screens[0].join("\n");
+    assert!(
+        !text.contains(":note") && !text.contains("NORMAL"),
+        "{text}"
+    );
+    assert!(text.contains("let a = 1;"), "{text}");
     assert!(!r.tail.contains("not saved"), "{}", r.tail);
 }
 
@@ -538,7 +633,11 @@ fn ac4_ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
         "pointer.py",
         &["--no-save"],
         "main.rs",
-        json!([["k", "f"], ["api", "status", {}], ["k", CTRL_C]]),
+        json!([
+            ["k", "f", [["bar", "POINTER"]]],
+            ["api", "status", {}],
+            ["k", CTRL_C],
+        ]),
     );
     r.quit_cleanly();
     assert_eq!(pointer(r.api(0)), Some((1, 1)));
@@ -548,7 +647,11 @@ fn ac4_ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
         "tab.py",
         &["--no-save"],
         "main.rs",
-        json!([["k", ":note 1 hello\r"], ["k", "\t"], ["k", CTRL_C]]),
+        json!([
+            ["k", ":note 1 hello\r", [["status", "annotations", 1]]],
+            ["k", "\t", [["bar", "▸ a1"]]],
+            ["k", CTRL_C],
+        ]),
     );
     r.quit_cleanly();
     assert!(
@@ -584,7 +687,11 @@ fn ac4_ctrl_c_quits_while_a_step_types() {
         "typing.py",
         &["--no-save"],
         "typed.tiza",
-        json!([["k", "n"], ["api", "code.get", {}], ["k", CTRL_C]]),
+        json!([
+            ["k", "n", [["status", "step", 1]]],
+            ["api", "code.get", {}],
+            ["k", CTRL_C],
+        ]),
     );
     r.quit_cleanly();
     let text = r.api(0)["text"].as_str().unwrap();
@@ -625,9 +732,8 @@ fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
         &["--no-save", "--follow"],
         "config.ini.tiza",
         json!([
-            ["mark"],
             ["save", "config.ini", format!("# payments\n{INI}")],
-            ["wait", "reloaded (#1)"],
+            ["wait", [["has", "reloaded (#1)"]]],
             ["k", CTRL_C],
         ]),
     );
@@ -641,13 +747,12 @@ fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
         &["--no-save", "--follow"],
         "config.ini.tiza",
         json!([
-            ["mark"],
             [
                 "save",
                 "config.ini",
                 INI.replace("host = localhost", "host = db1")
             ],
-            ["wait", "stale move skipped"],
+            ["wait", [["has", "stale move skipped"]]],
             ["k", CTRL_C],
         ]),
     );
@@ -675,10 +780,10 @@ fn ac4_a_cancel_first_still_leaves_the_retry_of_a_failed_autosave_to_the_quit() 
         &[],
         "main.rs",
         json!([
-            ["k", ":note 1 hello\r"],
+            ["k", ":note 1 hello\r", [["status", "annotations", 1]]],
             ["chmod", "main.rs.tiza", 0o644],
-            ["k", ":"],
-            ["k", CTRL_C],
+            ["k", ":", [["nobar", "NORMAL"]]],
+            ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
             ["k", CTRL_C],
         ]),
@@ -705,9 +810,9 @@ fn ac5_q_bang_and_ctrl_u_are_unchanged() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", ":note 1 hel"],
-            ["k", "\x15"],
-            ["k", "note 2 x\r"],
+            ["k", ":note 1 hel", [["bar", ":note 1 hel"]]],
+            ["k", "\x15", [["nobar", "note 1 hel"], ["nobar", "NORMAL"]]],
+            ["k", "note 2 x\r", [["status", "annotations", 1]]],
             ["api", "scene.get", {}],
             ["k", ":q!\r"],
         ]),
@@ -741,11 +846,14 @@ fn corner_an_osc_answer_is_swallowed_before_ctrl_c_is_looked_at() {
         &["--no-save"],
         "main.rs",
         json!([
-            ["k", ":note 1 a"],
-            ["k", OSC_ANSWER],
-            ["k", "\r"],
-            ["k", ":note 2 b"],
-            ["k", format!("{OSC_ANSWER}{CTRL_C}")],
+            ["k", ":note 1 a", [["bar", ":note 1 a"]]],
+            [
+                "k",
+                format!("{OSC_ANSWER}\r"),
+                [["status", "annotations", 1]]
+            ],
+            ["k", ":note 2 b", [["bar", ":note 2 b"]]],
+            ["k", format!("{OSC_ANSWER}{CTRL_C}"), [["bar", "NORMAL"]]],
             ["alive"],
             ["api", "scene.get", {}],
             ["k", CTRL_C],
@@ -766,7 +874,10 @@ fn corner_two_ctrl_c_sent_at_once_cancel_then_quit() {
         "two.py",
         &["--no-save"],
         "main.rs",
-        json!([["k", ":note 1 hel"], ["k", format!("{CTRL_C}{CTRL_C}")]]),
+        json!([
+            ["k", ":note 1 hel", [["bar", ":note 1 hel"]]],
+            ["k", format!("{CTRL_C}{CTRL_C}")],
+        ]),
     );
     r.quit_cleanly();
     assert!(!r.tail.contains("not saved"), "nothing ran: {}", r.tail);

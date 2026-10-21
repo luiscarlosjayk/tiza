@@ -409,7 +409,7 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
     if let Mode::Command(input) = &mut app.mode {
         match code {
-            KeyCode::Esc => app.mode = Mode::Normal,
+            KeyCode::Esc => close_command_line(app),
             KeyCode::Enter => {
                 let cmd = input.clone();
                 app.mode = Mode::Normal;
@@ -418,7 +418,7 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             }
             KeyCode::Backspace => {
                 if input.pop().is_none() {
-                    app.mode = Mode::Normal;
+                    close_command_line(app);
                 }
             }
             KeyCode::Char('u') if mods.contains(KeyModifiers::CONTROL) => input.clear(),
@@ -558,6 +558,15 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
 }
 
+/// Closes the command line without running it (Esc, Ctrl-C, Backspace on
+/// an empty line). The selection that opened it (`v` then `m`, `n`, `b`…)
+/// goes with it: it is the anchor of that command only, and a later command
+/// typed without an anchor must not land on a selection that was cancelled.
+fn close_command_line(app: &mut App) {
+    app.mode = Mode::Normal;
+    app.pending_sel = None;
+}
+
 /// Ctrl-C, as in vim: it cancels what is open, the way Esc does, and
 /// quits when nothing is. Open means waiting for more input from the
 /// author: an overlay (help, list, review), the command line (its text is
@@ -573,9 +582,11 @@ fn cancel_or_quit(app: &mut App) {
         app.overlay = Overlay::None;
         app.overlay_scroll = 0;
     } else if matches!(app.mode, Mode::Command(_)) {
-        app.mode = Mode::Normal;
+        close_command_line(app);
     } else if matches!(app.mode, Mode::Select { .. }) {
-        // Like Esc in selection mode: the arrow being drawn goes too.
+        // Like Esc in selection mode: the arrow being drawn goes too, and
+        // so does the bar's hint about what the selection can do.
+        app.message = None;
         app.mode = Mode::Normal;
         app.arrow_from = None;
     } else if app.arrow_from.is_some() {
