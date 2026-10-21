@@ -30,7 +30,10 @@ pub struct Move {
     /// highlights, marks and notes; `{"from": {…}, "to": {…}}` for arrows;
     /// `{"from_line": A, "to_line": B}` for boxes, callouts and spotlights.
     /// Resolved against the code after the patch. A spec with none of those
-    /// keys (or an unknown one) is a load-time error.
+    /// keys (or an unknown one) is a load-time error. An entry whose
+    /// annotation is not in the document (deleted, or dropped by a paste or
+    /// a reload) is kept as written and ignored, and `check` names it;
+    /// `move.add` and `scene.put` refuse one the caller writes.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub rebind: BTreeMap<String, MoveSpec>,
     /// Set in a live instance when the code changed under the move by
@@ -895,8 +898,9 @@ pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> 
 }
 
 /// Validates every move against the code at its step: targets resolve to
-/// exactly one place, `at_step >= 1`, `rebind` ids exist and only on
-/// patches, linked files are loaded, cursors and selections exist.
+/// exactly one place, `at_step >= 1`, `rebind` only on patches, linked
+/// files are loaded, cursors and selections exist. A `rebind` entry whose
+/// annotation is not in `annotations` is skipped ([`ignored_rebinds`]).
 /// The numbers a move may hold (t-166): a `wait` and a `code.patch`'s
 /// typing speed within [`crate::model::MAX_HOLD_MS`], so no export of the
 /// take can hang on its holds or overflow adding them up.
@@ -929,11 +933,7 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
         }
         for (id, spec) in &m.rebind {
             if !annotations.iter().any(|a| &a.id == id) {
-                return Err(Error::Invalid(format!(
-                    "move #{}, step {}: rebind names unknown annotation «{id}»",
-                    i + 1,
-                    m.at_step
-                )));
+                continue;
             }
             if spec.is_empty() {
                 return Err(Error::Invalid(format!(
@@ -949,7 +949,8 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
     let p = project(doc, moves, u32::MAX)?;
     for ap in &p.patches {
         let m = &moves[ap.index];
-        if let Some(why) = rebind_problem(m, &ap.after, doc.view_first_line(&ap.file)) {
+        if let Some(why) = rebind_problem(m, annotations, &ap.after, doc.view_first_line(&ap.file))
+        {
             return Err(Error::Invalid(format!(
                 "move #{}, step {}: {why}",
                 ap.index + 1,
@@ -963,9 +964,17 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
 /// What is wrong with the `find`s of a patch's `rebind` on `after`, the
 /// code right after the patch (`rebind «a3» «x» matches 2 times…`), if
 /// anything: each must match exactly once or carry an `occurrence` within
-/// the matches.
-pub(crate) fn rebind_problem(m: &Move, after: &[String], first: u32) -> Option<String> {
+/// the matches. Entries for annotations not in `annotations` are ignored.
+pub(crate) fn rebind_problem(
+    m: &Move,
+    annotations: &[Annotation],
+    after: &[String],
+    first: u32,
+) -> Option<String> {
     for (id, spec) in &m.rebind {
+        if !annotations.iter().any(|a| &a.id == id) {
+            continue;
+        }
         for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
             let (Some(text), None) = (&w.find, w.line) else {
                 continue;
@@ -990,6 +999,94 @@ pub(crate) fn rebind_problem(m: &Move, after: &[String], first: u32) -> Option<S
         }
     }
     None
+}
+
+/// A `rebind` entry naming an annotation the document does not have: it is
+/// kept as written and ignored when the move applies, so the entry works
+/// again if that annotation comes back (an undo, or one added with that
+/// id).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IgnoredRebind {
+    /// 0-based, as in `doc.moves`.
+    pub index: usize,
+    pub at_step: u32,
+    pub id: String,
+}
+
+impl IgnoredRebind {
+    /// Where it is, as `check` places a move: `move #3, step 2`.
+    pub fn place(&self) -> String {
+        format!("move #{}, step {}", self.index + 1, self.at_step)
+    }
+
+    /// What `check` and an export's stderr say about it.
+    pub fn message(&self) -> String {
+        format!(
+            "rebind names {}, which is not in the document; the entry is ignored",
+            self.id
+        )
+    }
+}
+
+/// Every `rebind` entry of `doc` whose annotation is not in the document,
+/// in move order.
+pub fn ignored_rebinds(doc: &Document) -> Vec<IgnoredRebind> {
+    doc.moves
+        .iter()
+        .enumerate()
+        .flat_map(|(i, m)| {
+            m.rebind
+                .keys()
+                .filter(|id| doc.find_annotation(id).is_none())
+                .map(move |id| IgnoredRebind {
+                    index: i,
+                    at_step: m.at_step,
+                    id: id.clone(),
+                })
+        })
+        .collect()
+}
+
+/// The entries [`ignored_rebinds`] finds in `after` that were not ignored
+/// in `before` (the same moves before a change to the annotations), said on
+/// the status line as `move #3's rebind of a4 is now ignored`. `None` when
+/// there are none.
+pub fn newly_ignored(before: &Document, after: &Document) -> Option<String> {
+    let was = ignored_rebinds(before);
+    let now: Vec<String> = ignored_rebinds(after)
+        .into_iter()
+        .filter(|r| !was.contains(r))
+        .map(|r| format!("move #{}'s rebind of {}", r.index + 1, r.id))
+        .collect();
+    (!now.is_empty()).then(|| {
+        format!(
+            "{} {} now ignored",
+            now.join(", "),
+            if now.len() == 1 { "is" } else { "are" }
+        )
+    })
+}
+
+/// Refuses a `rebind` entry of `m` (move #`index + 1`) that names an
+/// annotation not in `annotations`, unless `kept` says the document already
+/// held that entry: a caller that writes one has a typo, while one the
+/// document kept after its annotation went away is loaded as it is.
+pub fn check_rebind_ids(
+    m: &Move,
+    index: usize,
+    annotations: &[Annotation],
+    kept: impl Fn(&str, &MoveSpec) -> bool,
+) -> Result<(), Error> {
+    for (id, spec) in &m.rebind {
+        if !annotations.iter().any(|a| &a.id == id) && !kept(id, spec) {
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: rebind names unknown annotation «{id}»",
+                index + 1,
+                m.at_step
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// An error from applying a move, naming the move (1-based) and its step,

@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "fn f(t: &str) -> usize {",
+    "    let n = t.chars().count();",
+    "    n + 1",
+    "}"
+  ],
+  "annotations": [],
+  "step": 0,
+  "moves": [
+    {
+      "at_step": 2,
+      "action": "code.patch",
+      "op": "replace",
+      "find": "n + 1",
+      "content": "    n * 2",
+      "rebind": {
+        "a1": {
+          "at": {
+            "find": "t.len()"
+          }
+        }
+      }
+    }
+  ]
+}

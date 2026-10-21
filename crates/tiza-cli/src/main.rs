@@ -497,6 +497,12 @@ fn real_main() -> anyhow::Result<()> {
             for w in doc.step_warnings() {
                 eprintln!("tiza: {}", tiza_core::printable::printable_text(&w));
             }
+            // A `rebind` entry whose annotation is gone is drawn as if it
+            // were not there: said once per entry.
+            for r in tiza_core::moves::ignored_rebinds(&doc) {
+                let line = format!("{}: {}", r.place(), r.message());
+                eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
+            }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             if all_steps {
                 let opts = LayoutOptions {

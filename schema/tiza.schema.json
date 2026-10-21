@@ -562,7 +562,7 @@
           "additionalProperties": {
             "$ref": "#/$defs/MoveSpec"
           },
-          "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error.",
+          "description": "Where annotations the patch replaces or deletes go afterwards, by id,\nwith the same fields as `annotation.update`'s `move`: `{\"at\": {\"find\":\n\"…\", \"occurrence\": N}}` or `{\"at\": {\"line\": N, \"col\": C}}` for\nhighlights, marks and notes; `{\"from\": {…}, \"to\": {…}}` for arrows;\n`{\"from_line\": A, \"to_line\": B}` for boxes, callouts and spotlights.\nResolved against the code after the patch. A spec with none of those\nkeys (or an unknown one) is a load-time error. An entry whose\nannotation is not in the document (deleted, or dropped by a paste or\na reload) is kept as written and ignored, and `check` names it;\n`move.add` and `scene.put` refuse one the caller writes.",
           "type": "object"
         }
       },

@@ -91,6 +91,10 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     // silence (t-099).
     if let Some(w) = app.doc.step_warnings().first() {
         app.error(w.clone());
+    } else if let Some(r) = tiza_core::moves::ignored_rebinds(&app.doc).first() {
+        // A `rebind` entry whose annotation is gone (`tiza check` lists
+        // every one).
+        app.info(format!("{}: {}", r.place(), r.message()));
     }
     if opts.follow
         && let Err(e) = app.set_follow(true)

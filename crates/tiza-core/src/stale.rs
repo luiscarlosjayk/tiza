@@ -183,6 +183,7 @@ pub fn refresh(before: Option<&Document>, doc: &mut Document) -> Option<Notice> 
 /// between does not, and a move on one is stale even when the text there is
 /// the same. Lines a move wrote keep theirs through the replay, as in
 /// [`crate::carry`]. A move that follows its lines is given the new numbers.
+/// A `rebind` entry counts only when its annotation is in `doc.annotations`.
 pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notice> {
     if doc.moves.is_empty() {
         return None;
@@ -239,7 +240,7 @@ pub fn revalidate(before: Option<&Document>, doc: &mut Document) -> Option<Notic
                 Ok(()) => {
                     let why = saved.as_ref().and_then(|_| {
                         let ap = p.patches.last()?;
-                        rebind_problem(&m, &ap.after, first)
+                        rebind_problem(&m, &doc.annotations, &ap.after, first)
                     });
                     if let (Some(_), Some(saved)) = (&why, saved) {
                         p = saved;

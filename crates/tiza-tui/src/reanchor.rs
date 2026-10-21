@@ -55,6 +55,9 @@ pub struct Outcome {
     /// What changed in the moves that no longer match the code
     /// (`tiza_core::stale`), for the status line.
     pub stale: Option<tiza_core::stale::Notice>,
+    /// The `rebind` entries the dropped annotations leave ignored
+    /// (`move #3's rebind of a4 is now ignored`), said with the drop.
+    pub ignored: Option<String>,
 }
 
 /// How a line was found in the new version.

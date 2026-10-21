@@ -1124,8 +1124,8 @@ impl Document {
         }
     }
 
-    /// Validates every move against the code at its step (ADR 0007 §3) and
-    /// the `rebind` ids against the annotations.
+    /// Validates every move against the code at its step (ADR 0007 §3). A
+    /// `rebind` entry whose annotation is gone is ignored, not an error.
     pub fn validate_moves(&self) -> Result<(), Error> {
         moves::validate(self, &self.moves, &self.annotations)
     }
@@ -1143,6 +1143,7 @@ impl Document {
         let what = format!("move #{}", self.moves.len() + 1);
         check_step(m.at_step, &what)?;
         moves::check_move_bounds(&m, &what)?;
+        moves::check_rebind_ids(&m, self.moves.len(), &self.annotations, |_, _| false)?;
         let mut with = self.clone();
         if with.moves.is_empty() {
             with.base_code = with.code.clone();
@@ -1657,12 +1658,16 @@ impl Document {
         self.annotations.iter().find(|a| a.id == id)
     }
 
-    /// Next free id with the `a` prefix (a1, a2, …).
+    /// Next free id with the `a` prefix (a1, a2, …). An id a move's
+    /// `rebind` names is never given out, even when its annotation is gone:
+    /// the entry would re-anchor the new annotation instead.
     pub fn next_id(&self) -> String {
         let mut n = self.annotations.len() as u32 + 1;
         loop {
             let id = format!("a{n}");
-            if self.find_annotation(&id).is_none() {
+            if self.find_annotation(&id).is_none()
+                && !self.moves.iter().any(|m| m.rebind.contains_key(&id))
+            {
                 return id;
             }
             n += 1;

@@ -195,11 +195,14 @@ fn ac2_every_error_of_a_broken_file_at_once() {
             .unwrap()
             .contains("nobody")
     );
+    // A rebind naming no annotation is ignored, a warning (t-199).
+    let zz = get("unknown_id", "move #3");
+    assert_eq!(zz["level"], "warning");
     assert!(
-        get("unknown_id", "move #3")["message"]
+        zz["message"]
             .as_str()
             .unwrap()
-            .contains("«zz»")
+            .contains("rebind names zz, which is not in the document")
     );
     // A move target that matches twice, one that matches nothing: both.
     assert!(
@@ -235,14 +238,14 @@ fn ac2_every_error_of_a_broken_file_at_once() {
     }
     // The broken annotation is not reported again as hidden.
     assert!(with_code(&f, "unanchored").is_empty(), "{v}");
-    assert_eq!(v["errors"], 8, "{v}");
+    assert_eq!(v["errors"], 7, "{v}");
     // The text report: one line per finding, then the summary.
     let (_, out, _) = check(&[fixture("t-101/broken.tiza").to_str().unwrap()]);
     assert!(
         out.contains("error: a1, step 1, L99: line 99 does not exist"),
         "{out}"
     );
-    assert!(out.contains("8 errors, 0 warnings"), "{out}");
+    assert!(out.contains("7 errors, 1 warning"), "{out}");
 }
 
 #[test]
@@ -388,7 +391,7 @@ fn ac4_step7_json_holds_the_same_findings_as_the_text() {
         assert!(l.ends_with(f["message"].as_str().unwrap()), "{l} / {f}");
         assert!(l.starts_with(f["level"].as_str().unwrap()));
     }
-    assert_eq!(v["errors"], 8);
+    assert_eq!(v["errors"], 7);
     assert_eq!(v["ok"], false);
 }
 

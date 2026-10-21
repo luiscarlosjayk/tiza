@@ -679,14 +679,15 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         let mut drop = Vec::new();
         for (id, spec) in &m.rebind {
             if !ids.contains(id) {
+                let r = moves::IgnoredRebind {
+                    index: i,
+                    at_step: m.at_step,
+                    id: id.clone(),
+                };
                 out.push(
-                    Finding::new(
-                        Level::Error,
-                        "unknown_id",
-                        format!("rebind names unknown annotation «{id}»"),
-                    )
-                    .id(name.clone())
-                    .step(m.at_step),
+                    Finding::new(Level::Warning, "unknown_id", r.message())
+                        .id(name.clone())
+                        .step(m.at_step),
                 );
                 drop.push(id.clone());
             } else if spec.is_empty() {
