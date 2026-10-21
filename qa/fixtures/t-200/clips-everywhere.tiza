@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "title": "A note on the last line longer than any width (t-200)",
+  "source": {
+    "language": "sh",
+    "first_line": 1
+  },
+  "code": [
+    "DB_URL=postgres://demo:demo@localhost/app",
+    "API_TOKEN=demo-token-123",
+    "LOG_LEVEL=info",
+    "PORT=8080"
+  ],
+  "annotations": [
+    {
+      "id": "h1",
+      "step": 1,
+      "type": "highlight",
+      "span": {
+        "line": 1,
+        "start": 7,
+        "end": 41
+      },
+      "label": "the key"
+    },
+    {
+      "id": "n1",
+      "step": 2,
+      "type": "note",
+      "line": 1,
+      "text": "DB connection string"
+    },
+    {
+      "id": "n3",
+      "step": 1,
+      "type": "note",
+      "line": 3,
+      "text": "how chatty the logs are"
+    },
+    {
+      "id": "n4",
+      "step": 1,
+      "type": "note",
+      "line": 4,
+      "text": "the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on the port the service listens on"
+    }
+  ]
+}

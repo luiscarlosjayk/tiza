@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::Serialize;
 
@@ -373,14 +374,16 @@ fn check_text_as(
     }
     let missing = load_links(&mut doc, base_dir, &mut out);
     let doc = tidy(doc, &missing, &mut out);
-    let clean = check_loaded(&doc, &missing, width, &mut out);
+    let take = Take::of(&doc);
+    let theme = Theme::dark();
+    let clean = check_loaded(&doc, &take, &theme, &missing, width, &mut out);
     let max = last_step(&doc);
     let mut report = Report::new(width, out, Some(max), clean);
     if let Some(c) = clean
         && width < c
         && !report.findings.iter().any(|f| f.code == "clipped_label")
     {
-        report.narrower = Some(narrower(&doc, &Theme::dark(), c));
+        report.narrower = Some(narrower(&take, &theme, c));
     }
     report
 }
@@ -455,21 +458,32 @@ fn stale_findings(doc: &Document, report: &mut Report) {
 }
 
 /// Which widths below `min_clean` are clean too (see [`Narrower`]).
-fn narrower(doc: &Document, theme: &Theme, min_clean: usize) -> Narrower {
-    let geometry = stable_geometry(doc, &take_options(doc, MAX_WIDTH, 0));
+fn narrower(take: &Take, theme: &Theme, min_clean: usize) -> Narrower {
+    // What each width shows at every step: (labels whole, code whole,
+    // labels in the margin at step 0).
+    let widths: Vec<usize> = (MIN_WIDTH..min_clean).collect();
+    let mut seen = vec![(true, true, false); widths.len()];
+    for (i, step) in take.steps.iter().enumerate() {
+        let found = take.sweep(i, theme, &widths, None, |l| {
+            (
+                l.clipped_labels.is_empty(),
+                l.clipped_code.is_none(),
+                l.labels_in_margin,
+            )
+        });
+        for (k, (labels_ok, code_ok, margin)) in found {
+            let s = &mut seen[k];
+            s.0 &= labels_ok;
+            s.1 &= code_ok;
+            if step.step == 0 {
+                s.2 = margin;
+            }
+        }
+    }
     let mut clean: Vec<[usize; 2]> = Vec::new();
     let mut code_fits_from = None;
     let mut margin_from = None;
-    for w in MIN_WIDTH..min_clean {
-        let (mut labels_ok, mut code_ok, mut margin) = (true, true, false);
-        for step in doc.change_steps(last_step(doc)) {
-            let l = layout_with(doc, theme, &take_options(doc, w, step), Some(&geometry));
-            labels_ok &= l.clipped_labels.is_empty();
-            code_ok &= l.clipped_code.is_none();
-            if step == 0 {
-                margin = l.labels_in_margin;
-            }
-        }
+    for (&w, &(labels_ok, code_ok, margin)) in widths.iter().zip(&seen) {
         if code_ok {
             code_fits_from.get_or_insert(w);
         } else {
@@ -964,30 +978,169 @@ pub fn steps_text(steps: &[u32]) -> String {
 
 /// The labels clipped at `width`, at every step of the take: `(id, text,
 /// dropped)` → the steps it is clipped at.
-fn clipped_at(
-    doc: &Document,
-    theme: &Theme,
-    geometry: &StableGeometry,
-    width: usize,
-    first_only: bool,
-) -> Vec<((String, String, bool), Vec<u32>)> {
+fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String, bool), Vec<u32>)> {
     let mut out: Vec<((String, String, bool), Vec<u32>)> = Vec::new();
     // Laid out once per step where something changes (t-166); a label is
     // clipped at every step of that step's run.
-    for (step, run) in doc.change_runs(last_step(doc)) {
-        let l = layout_with(doc, theme, &take_options(doc, width, step), Some(geometry));
-        for c in l.clipped_labels {
+    for (i, step) in take.steps.iter().enumerate() {
+        if !step.labels {
+            continue;
+        }
+        for c in take.layout(i, theme, width).clipped_labels {
             let key = (c.id, c.text, c.dropped);
             match out.iter_mut().find(|(k, _)| k.0 == key.0 && k.1 == key.1) {
-                Some((_, steps)) => steps.extend(run.clone()),
-                None => out.push((key, run.clone().collect())),
+                Some((_, steps)) => steps.extend(step.run.clone()),
+                None => out.push((key, step.run.clone().collect())),
             }
-        }
-        if first_only && !out.is_empty() {
-            break;
         }
     }
     out
+}
+
+/// A take of a document as `check` lays it out: one entry per step where
+/// something changes, each with the document as that step shows it (the
+/// moves applied, the shown file cropped to its window). Replaying the
+/// moves is the same for every width, so it is done once per step here
+/// instead of once per layout; laying out that document gives the same
+/// labels as laying out the whole one at that step.
+struct Take<'a> {
+    doc: &'a Document,
+    geometry: StableGeometry,
+    steps: Vec<TakeStep<'a>>,
+}
+
+struct TakeStep<'a> {
+    step: u32,
+    /// The steps that draw like this one (up to the next change).
+    run: std::ops::RangeInclusive<u32>,
+    shown: std::borrow::Cow<'a, Document>,
+    /// Some annotation is drawn at this step: without one, no width can
+    /// clip a label here.
+    labels: bool,
+}
+
+impl<'a> Take<'a> {
+    fn of(doc: &'a Document) -> Self {
+        let steps = doc
+            .change_runs(last_step(doc))
+            .into_iter()
+            .map(|(step, run)| {
+                let shown = if doc.moves.is_empty() {
+                    std::borrow::Cow::Borrowed(doc)
+                } else {
+                    std::borrow::Cow::Owned(doc.view_at(step).doc)
+                };
+                let labels = shown.annotations.iter().any(|a| a.step <= step);
+                TakeStep {
+                    step,
+                    run,
+                    shown,
+                    labels,
+                }
+            })
+            .collect();
+        Take {
+            doc,
+            // From the whole document (every step, every file it shows),
+            // as a take sizes it.
+            geometry: stable_geometry(doc, &take_options(doc, MAX_WIDTH, 0)),
+            steps,
+        }
+    }
+
+    /// The layout of step `i` (an index in `steps`) at `width`.
+    fn layout(&self, i: usize, theme: &Theme, width: usize) -> crate::layout::Layout {
+        let s = &self.steps[i];
+        layout_with(
+            &s.shown,
+            theme,
+            &take_options(self.doc, width, s.step),
+            Some(&self.geometry),
+        )
+    }
+
+    /// Lays step `i` out at each of `widths` (on every core: each layout
+    /// stands alone) and returns `seen` of each, by index in `widths`, in
+    /// no particular order. With `widest`, `widths` must be in descending
+    /// order and the sweep is a search for the widest width whose layout
+    /// clips a label: a width at or below the widest one found so far
+    /// (`widest`, shared with the caller, 0 for none) is skipped, since it
+    /// cannot be the widest; every width above the final value is laid out.
+    fn sweep<T: Send>(
+        &self,
+        i: usize,
+        theme: &Theme,
+        widths: &[usize],
+        widest: Option<&AtomicUsize>,
+        seen: impl Fn(&crate::layout::Layout) -> T + Sync,
+    ) -> Vec<(usize, T)> {
+        if widths.is_empty() {
+            return Vec::new();
+        }
+        // The first layout of the step fills the highlight cache for its
+        // code before the other threads need it.
+        let first = self.layout(i, theme, widths[0]);
+        if let Some(w) = widest
+            && !first.clipped_labels.is_empty()
+        {
+            w.fetch_max(widths[0], Ordering::Relaxed);
+        }
+        let mut out = vec![(0, seen(&first))];
+        let next = AtomicUsize::new(1);
+        let work = || {
+            let mut mine = Vec::new();
+            loop {
+                let k = next.fetch_add(1, Ordering::Relaxed);
+                let Some(&width) = widths.get(k) else { break };
+                if let Some(w) = widest
+                    && width <= w.load(Ordering::Relaxed)
+                {
+                    break;
+                }
+                let l = self.layout(i, theme, width);
+                if let Some(w) = widest
+                    && !l.clipped_labels.is_empty()
+                {
+                    w.fetch_max(width, Ordering::Relaxed);
+                }
+                mine.push((k, seen(&l)));
+            }
+            mine
+        };
+        let threads = sweep_threads(self.doc, widths.len());
+        std::thread::scope(|s| {
+            let handles: Vec<_> = (1..threads)
+                .filter_map(|n| {
+                    // A thread that cannot be spawned only means less
+                    // parallelism: the others take its widths.
+                    std::thread::Builder::new()
+                        .name(format!("tiza-check-{n}"))
+                        .spawn_scoped(s, work)
+                        .ok()
+                })
+                .collect();
+            out.extend(work());
+            for h in handles {
+                match h.join() {
+                    Ok(mine) => out.extend(mine),
+                    Err(panic) => std::panic::resume_unwind(panic),
+                }
+            }
+        });
+        out
+    }
+}
+
+/// Threads for a sweep: one per core (at most 8), fewer when there is
+/// little to lay out (a short document lays out in microseconds, less than
+/// starting a thread costs).
+fn sweep_threads(doc: &Document, widths: usize) -> usize {
+    let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());
+    // About a microsecond per row and width: a thread pays for itself from
+    // a few thousand.
+    let rows: usize = doc.code.len() + doc.annotations.len();
+    let work = rows.saturating_mul(widths);
+    (work / 4_000).clamp(1, cpus.clamp(1, 8))
 }
 
 /// How a take lays `doc` out: what `render` and the recordings pass.
@@ -1007,6 +1160,8 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
 
 fn check_loaded(
     doc: &Document,
+    take: &Take,
+    theme: &Theme,
     missing: &BTreeSet<String>,
     width: usize,
     out: &mut Vec<Finding>,
@@ -1142,9 +1297,7 @@ fn check_loaded(
         }
     }
     // ---- labels clipped with … at the width of the take ----
-    let theme = Theme::dark();
-    let geometry = stable_geometry(doc, &take_options(doc, width, 0));
-    for ((id, text, dropped), steps) in clipped_at(doc, &theme, &geometry, width, false) {
+    for ((id, text, dropped), steps) in clipped_at(take, theme, width) {
         let a = doc.find_annotation(&id);
         // A mark's label is drawn behind its glyph: the text is what the
         // author wrote (`legend: label`).
@@ -1183,7 +1336,7 @@ fn check_loaded(
         f.text = Some(text);
         out.push(f);
     }
-    min_clean_width(doc, &theme)
+    widest_clipped(take, theme).map_or(Some(MIN_WIDTH), clean_above)
 }
 
 /// The annotations a step would show but its `code.link` window crops
@@ -1437,32 +1590,36 @@ impl Unseen {
 /// wider than that would clip them again). `None`: clipped even at
 /// [`MAX_WIDTH`].
 pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
-    let geometry = stable_geometry(doc, &take_options(doc, MAX_WIDTH, 0));
-    let clips = |w: usize| !clipped_at(doc, theme, &geometry, w, true).is_empty();
-    // Down from the widest in strides, then cell by cell above the first
-    // stride that clips: in the margin a wider take only gives a label more
-    // room, so this finds the same width as trying every one, in a tenth
-    // of the layouts.
-    const STRIDE: usize = 8;
-    let mut w = MAX_WIDTH;
-    let coarse = loop {
-        if clips(w) {
-            break Some(w);
+    widest_clipped(&Take::of(doc), theme).map_or(Some(MIN_WIDTH), clean_above)
+}
+
+/// The width above the widest one that clips: `None` when that one is
+/// [`MAX_WIDTH`] itself.
+fn clean_above(clipped: usize) -> Option<usize> {
+    (clipped < MAX_WIDTH).then_some(clipped + 1)
+}
+
+/// The widest width from [`MIN_WIDTH`] to [`MAX_WIDTH`] at which a label
+/// is clipped at some step (`None`: no width clips one). Every width above
+/// it is laid out at every step: a wider take does not always clip less
+/// (where the margin first appears it is narrower than the rows under the
+/// lines were, and a callout that moves into the margin can find no room
+/// there), so no width is assumed from its neighbours.
+fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
+    let widths: Vec<usize> = (MIN_WIDTH..=MAX_WIDTH).rev().collect();
+    let widest = AtomicUsize::new(0);
+    // The last steps first: they usually draw the most labels, so the
+    // widest clip is found early and the other steps stop above it.
+    for i in (0..take.steps.len()).rev() {
+        if !take.steps[i].labels {
+            continue;
         }
-        if w == MIN_WIDTH {
-            break None;
-        }
-        w = w.saturating_sub(STRIDE).max(MIN_WIDTH);
-    };
-    let clipped = coarse.map(|c| {
-        (c + 1..(c + STRIDE).min(MAX_WIDTH + 1))
-            .rev()
-            .find(|&w| clips(w))
-            .unwrap_or(c)
-    });
-    match clipped {
-        None => Some(MIN_WIDTH),
-        Some(MAX_WIDTH) => None,
-        Some(w) => Some(w + 1),
+        let above = widest.load(Ordering::Relaxed);
+        let todo: Vec<usize> = widths.iter().copied().filter(|&w| w > above).collect();
+        take.sweep(i, theme, &todo, Some(&widest), |_| ());
+    }
+    match widest.into_inner() {
+        0 => None,
+        w => Some(w),
     }
 }
