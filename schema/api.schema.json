@@ -6249,6 +6249,13 @@
               "null"
             ]
           },
+          "reason": {
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`).",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "reloads": {
             "format": "uint64",
             "minimum": 0,
@@ -6304,6 +6311,13 @@
           },
           "path": {
             "description": "Absolute path of the followed (or followable) file; null when embedded.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`).",
             "type": [
               "string",
               "null"

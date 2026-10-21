@@ -63,7 +63,7 @@ Point instead of adding a spotlight when the focus is for this moment of the con
 
 ## While the presenter edits
 
-`set_follow {"enabled": true}` makes the TUI reload the code every time the source file is saved (the presenter can also type `:follow on`). Annotations stay anchored to their text; the ones whose text disappears are dropped, and the reply (same as `follow.status`) reports `reloads` and `last_reload`, so after a save you can call `list_annotations` to see what survived and re-add what matters. It fails with `invalid_argument` when the code is embedded in the document.
+`set_follow {"enabled": true}` makes the TUI reload the code every time the source file is saved (the presenter can also type `:follow on`). Annotations stay anchored to their text; the ones whose text disappears are dropped, and the reply (same as `follow.status`) reports `reloads` and `last_reload`, so after a save you can call `list_annotations` to see what survived and re-add what matters. It fails with `invalid_argument` when the code is embedded in the document. A paste by the presenter turns follow off, since the pasted code is theirs and a save must not replace it: `follow.status` then says `enabled: false` with a `reason` (`the code is pasted, not main.rs; :follow on reloads main.rs`), and `set_follow {"enabled": true}` loads the file over the paste as one reload the presenter can undo.
 
 A reload or a paste re-anchors every annotation by its text; one whose text is gone is dropped and the presenter is told.
 

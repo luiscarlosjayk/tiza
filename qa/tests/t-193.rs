@@ -1,0 +1,253 @@
+//! t-193 — A paste turns follow off with a notice.
+//!
+//! Acceptance criteria:
+//! - AC1 A paste while following turns follow off and says so once
+//!   (`follow off: the code is pasted, not main.rs; :follow on reloads
+//!   main.rs · …`); `follow.status` gives `enabled: false` with the
+//!   `reason`, and the bar no longer shows `⟳ following`.
+//! - AC2 After the paste, a save in the editor changes nothing on screen and
+//!   says nothing about a reload.
+//! - AC3 `:follow on` (or `follow.set {enabled: true}`) after the paste loads
+//!   the file with the usual reload: re-anchoring, one undo step `reload #N`
+//!   and the stale rule for the moves; `u` gives the paste back (and follow
+//!   goes off again, saying so: the screen is not the file).
+//! - AC4 Undoing the paste does not turn follow back on; the notice said how
+//!   (`:follow on`).
+//!
+//! Corner cases: a paste with follow already off says nothing new; a paste
+//! of exactly what the file holds keeps following (nothing to protect); a
+//! paste is refused while a move is applied, so a `code.link` view on screen
+//! never meets one; a document with moves on line numbers gets the stale
+//! rule of the reload when follow comes back.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use serde_json::{Value, json};
+use tiza_core::Document;
+use tiza_qa::{Live, scratch};
+
+const CODE: &str = "fn main() {\n    let s = String::new();\n    takes(s);\n}\n";
+const PASTED: &str = "fn other() {\n    let t = 1;\n    t + 1;\n    t\n}\n";
+const NOTICE: &str = "follow off: the code is pasted, not main.rs; :follow on reloads main.rs";
+
+const WAIT: Duration = Duration::from_secs(10);
+
+/// A source file next to its sidecar, opened by reference, following.
+fn followed(name: &str, code: &str) -> (Live, PathBuf) {
+    let dir = scratch(name);
+    let src = std::path::absolute(dir.join("main.rs")).unwrap();
+    std::fs::write(&src, code).unwrap();
+    let mut doc = Document::from_code(code, "rs", Some(src.display().to_string()));
+    doc.reference_file(src.display().to_string(), None);
+    let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
+    live.command("follow on");
+    assert_eq!(live.message().unwrap().0, "following main.rs");
+    (live, src)
+}
+
+fn status(live: &Live) -> Value {
+    live.api_ok("follow.status", json!({}))
+}
+
+fn code(live: &Live) -> Vec<String> {
+    live.with(|app| app.doc.code.clone())
+}
+
+fn lines(text: &str) -> Vec<String> {
+    text.lines().map(str::to_string).collect()
+}
+
+fn bar(live: &Live) -> String {
+    let screen = live.screen(120, 30);
+    screen.lines().last().unwrap_or_default().to_string()
+}
+
+fn reloads(live: &Live) -> u64 {
+    status(live)["reloads"].as_u64().unwrap_or(0)
+}
+
+fn wait_reloads(live: &Live, n: u64) {
+    let start = Instant::now();
+    while reloads(live) < n {
+        assert!(start.elapsed() < WAIT, "timed out waiting for reload #{n}");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// Quiet time after which "nothing happened" is believed (several times
+/// the debounce plus the worst event latency seen on CI), as in t-011.
+fn settle() {
+    std::thread::sleep(Duration::from_millis(700));
+}
+
+fn save(path: &Path, content: &str) {
+    let tmp = path.with_extension("rs.tmp");
+    std::fs::write(&tmp, content).unwrap();
+    std::fs::rename(&tmp, path).unwrap();
+}
+
+#[test]
+fn ac1_ac2_a_paste_turns_follow_off_and_a_save_changes_nothing() {
+    let (live, src) = followed("t193-ac1", CODE);
+    assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    let (msg, err) = live.message().unwrap();
+    assert!(!err, "{msg}");
+    assert_eq!(
+        msg,
+        format!("{NOTICE} · 5 lines pasted (0 annotations kept)")
+    );
+    let st = status(&live);
+    assert_eq!(st["enabled"], false, "{st}");
+    assert_eq!(
+        st["reason"],
+        "the code is pasted, not main.rs; :follow on reloads main.rs"
+    );
+    assert_eq!(st["path"], src.display().to_string());
+    let b = bar(&live);
+    assert!(!b.contains("following") && b.contains(NOTICE), "{b}");
+    live.command("follow");
+    assert_eq!(
+        live.message().unwrap().0,
+        "follow off: the code is pasted, not main.rs; :follow on reloads main.rs"
+    );
+
+    // A save in the editor: the pasted code stays, nothing is said.
+    live.with(|app| app.info("before the save"));
+    save(&src, &CODE.replace("takes", "gives"));
+    settle();
+    assert_eq!(code(&live), lines(PASTED));
+    assert_eq!(live.message().unwrap().0, "before the save");
+}
+
+#[test]
+fn ac3_follow_on_reloads_the_file_and_u_gives_the_paste_back() {
+    let (live, src) = followed("t193-ac3", CODE);
+    live.command("note 2 the string");
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    save(&src, &CODE.replace("takes", "gives"));
+    live.command("follow on");
+    let edited = lines(&CODE.replace("takes", "gives"));
+    assert_eq!(code(&live), edited);
+    let st = status(&live);
+    assert_eq!(st["enabled"], true, "{st}");
+    assert!(st.get("reason").is_none(), "{st}");
+    assert_eq!(st["reloads"], 1);
+    // The note on line 2 was dropped by the paste; the reload is its own
+    // undo step even though it changes no annotation.
+    assert_eq!(live.with(|app| app.doc.annotations.len()), 0);
+    live.with(|app| app.undo());
+    assert_eq!(code(&live), lines(PASTED));
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(
+        msg,
+        "follow off: the code is the paste again, not main.rs; :follow on reloads main.rs · undone: reload #1"
+    );
+    assert_eq!(status(&live)["enabled"], false);
+    // The saved document holds the paste, not a reference to main.rs.
+    live.command("w");
+    let saved: Value =
+        serde_json::from_str(&std::fs::read_to_string(src.with_file_name("main.rs.tiza")).unwrap())
+            .unwrap();
+    assert_eq!(saved["code"][0], "fn other() {", "{saved}");
+    // Redo: main.rs again; follow stays as the notice left it.
+    live.with(|app| app.redo());
+    assert_eq!(code(&live), edited);
+    assert_eq!(status(&live)["enabled"], false);
+    // Following again from there: further saves reload as usual.
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["enabled"], true, "{r}");
+    save(&src, CODE);
+    wait_reloads(&live, 1);
+    assert_eq!(code(&live), lines(CODE));
+}
+
+#[test]
+fn ac4_undoing_the_paste_leaves_follow_off() {
+    let (live, src) = followed("t193-ac4", CODE);
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    live.with(|app| app.undo());
+    assert_eq!(code(&live), lines(CODE));
+    assert_eq!(live.message().unwrap().0, "undone: paste");
+    let st = status(&live);
+    assert_eq!(st["enabled"], false, "{st}");
+    assert!(
+        st["reason"].as_str().unwrap().contains(":follow on"),
+        "{st}"
+    );
+    assert!(!bar(&live).contains("following"));
+    save(&src, &CODE.replace("takes", "gives"));
+    settle();
+    assert_eq!(code(&live), lines(CODE));
+    // `:follow on` from there is the usual one.
+    live.command("follow on");
+    assert_eq!(code(&live), lines(&CODE.replace("takes", "gives")));
+}
+
+#[test]
+fn corner_a_paste_with_follow_off_says_nothing_new() {
+    let (live, _) = followed("t193-off", CODE);
+    live.command("follow off");
+    live.with(|app| app.replace_code(PASTED).unwrap());
+    let (msg, _) = live.message().unwrap();
+    assert_eq!(msg, "5 lines pasted (0 annotations kept)");
+    assert!(status(&live).get("reason").is_none());
+}
+
+#[test]
+fn corner_a_paste_of_what_the_file_holds_keeps_following() {
+    let (live, src) = followed("t193-same", CODE);
+    live.with(|app| app.replace_code(CODE).unwrap());
+    let (msg, _) = live.message().unwrap();
+    assert!(!msg.contains("follow off"), "{msg}");
+    assert_eq!(status(&live)["enabled"], true);
+    assert!(!live.with(|app| app.doc.is_embedded()));
+    save(&src, &CODE.replace("takes", "gives"));
+    wait_reloads(&live, 1);
+    assert_eq!(code(&live), lines(&CODE.replace("takes", "gives")));
+}
+
+#[test]
+fn corner_a_paste_at_a_step_with_a_move_applied_is_refused_and_follow_stays() {
+    let (live, _) = followed("t193-link", CODE);
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "2",
+               "content": "    // one"}),
+    );
+    live.command("step 1");
+    let r = live.with(|app| app.replace_code(PASTED));
+    assert!(r.is_err());
+    assert_eq!(status(&live)["enabled"], true);
+}
+
+#[test]
+fn step4_moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
+    let (live, _) = followed("t193-moves", CODE);
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "3",
+               "content": "    // before takes"}),
+    );
+    live.command("step 0");
+    // A line on top: the move follows its line to 4.
+    let pasted = format!("// header\n{CODE}");
+    live.with(move |app| app.replace_code(&pasted).unwrap());
+    assert_eq!(status(&live)["enabled"], false);
+    let position = |live: &Live| {
+        live.with(|app| match &app.doc.moves[0].action {
+            tiza_core::moves::MoveAction::CodePatch(p) => p.position.clone(),
+            _ => None,
+        })
+    };
+    assert_eq!(position(&live).as_deref(), Some("4"));
+    // Back to the file: the header goes, the move follows back to 3 (never
+    // applied on another line), and it still matches.
+    live.command("follow on");
+    assert_eq!(code(&live), lines(CODE));
+    assert_eq!(position(&live).as_deref(), Some("3"));
+    assert_eq!(live.with(|app| tiza_core::stale::count(&app.doc)), 0);
+    live.command("step 1");
+    assert_eq!(code(&live)[2], "    // before takes");
+}

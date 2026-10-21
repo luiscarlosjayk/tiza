@@ -466,7 +466,12 @@ pub type Migration = fn(&mut serde_json::Value);
 /// file reference (`code: {file, lines}`); `None` for embedded code.
 /// Relative references resolve against `base_dir` (the document's directory).
 pub fn source_file(doc: &Document, base_dir: Option<&Path>) -> Option<PathBuf> {
-    match &doc.code_src {
+    code_source_file(&doc.code_src, base_dir)
+}
+
+/// [`source_file`] of a code source.
+pub fn code_source_file(src: &CodeSource, base_dir: Option<&Path>) -> Option<PathBuf> {
+    match src {
         CodeSource::Embedded(_) => None,
         CodeSource::File { file, .. } => {
             let raw = Path::new(file);

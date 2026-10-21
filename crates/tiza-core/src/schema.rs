@@ -112,6 +112,11 @@ pub struct FollowStatus {
     /// The file is currently missing on disk (waiting for it to come back).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing: Option<bool>,
+    /// Why follow is off, when something other than `follow.set` turned it
+    /// off: a paste (`the code is pasted, not main.rs; :follow on reloads
+    /// main.rs`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
     /// What `follow.set` did, in words.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
