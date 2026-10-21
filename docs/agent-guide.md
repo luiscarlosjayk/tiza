@@ -122,6 +122,10 @@ If your client supports MCP resources, `tiza://scene`, `tiza://code`, `tiza://re
 
 Pass your own `id` (`"id": "move-s"`) so that a retry does not duplicate the annotation: the second attempt fails with `duplicate_id` and you can move on.
 
+## Finding the tools (deferred tools)
+
+A client may defer MCP tools and load only their names and the server `instructions` at the start (Claude Code's tool search, on by default), so the instructions are written to be searched by (t-162): what Tiza is, when to use it (explain code to a person or another agent, live or recorded, step by step), the words people use for it and the flow in two lines. `status`, `get_code`, `render_text` and `add_box` carry `_meta["anthropic/alwaysLoad"]: true`, which asks such a client to load them upfront, so the first call needs no search; the others (`add_arrow`, `highlight`, `add_note`, `add_move`, `export_image`…) are found by searching for what you want to draw. A client that does not know the key ignores it and loads every tool as before; in Claude Code the person who configures the server can override it for the whole server (`alwaysLoad` in its entry).
+
 ## After a rebuild
 
 `status` returns a `bridge` object: `version`, `build` (git commit of this MCP server) and, when the `tiza` binary on disk is newer than the running server, `binary_rebuilt: true` plus a `hint`. That means the tool list you hold may be stale: tell the user to reconnect the server (Claude Code: `/mcp` → tiza → reconnect) before relying on a tool you cannot see. `instance_build` appears when the TUI was built from a different commit than the bridge: ask the user to restart the TUI as well.
