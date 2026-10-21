@@ -380,3 +380,37 @@ fn rev_an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
     );
     assert_eq!(status(&live)["enabled"], false);
 }
+
+#[test]
+fn rev_ref_with_moves_applied_is_refused_when_it_would_change_the_code() {
+    let dir = scratch("t193-ref-step");
+    for f in ["ownership-moves.rs.tiza", "ownership.rs"] {
+        std::fs::copy(tiza_qa::example(f), dir.join(f)).unwrap();
+    }
+    let path = dir.join("ownership-moves.rs.tiza");
+    let doc = tiza_core::fs::load_document(&path).unwrap();
+    let live = Live::open(doc, path.clone(), dir.join("live.sock"));
+    live.api_ok("step.set", json!({"step": 2}));
+    let file = dir.join("ownership.rs");
+    live.command(&format!("ref {}", file.display()));
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        err && msg.contains("while moves are applied (step 2): go back to step 0 first"),
+        "{msg}"
+    );
+    assert!(live.with(|app| app.doc.is_embedded()));
+    // The saved file still opens.
+    live.command("w");
+    tiza_core::fs::load_document(&path).expect("the saved file opens");
+    // A file that cannot be read is an error, also on a reference.
+    live.api_ok("step.set", json!({"step": 0}));
+    live.command(&format!("ref {}", file.display()));
+    assert!(!live.with(|app| app.doc.is_embedded()));
+    live.command("ref nope.rs");
+    let (msg, err) = live.message().unwrap();
+    assert!(err && msg.contains("nope.rs"), "{msg}");
+    assert_eq!(
+        status(&live)["path"],
+        std::path::absolute(&file).unwrap().display().to_string()
+    );
+}

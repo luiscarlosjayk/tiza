@@ -3281,39 +3281,43 @@ impl App {
                         let (p, r) = fs::parse_target(rest);
                         (p.to_string_lossy().into_owned(), r)
                     };
-                    // Embedded code (pasted, or never from a file) that is
-                    // not the file's: the screen shows the file's code, as
-                    // the saved document will, through the usual reload
-                    // (one undo step).
-                    if self.doc.is_embedded() && !self.doc.moves_applied() {
-                        let mut probe = self.doc.clone();
-                        probe.reference_file(file.clone(), range);
-                        let base = self.save_path.parent().map(Path::to_path_buf);
-                        let (code, first) = fs::reread_reference(&probe, base.as_deref())?;
-                        if code.as_slice() != self.doc.base() || first != self.doc.base_first() {
-                            let out = self.apply_new_code(
-                                code,
-                                probe.code_src,
-                                first,
-                                Some(format!("link {file}")),
-                            );
-                            let what = format!(
-                                "the .tiza now references {file} and shows its code ({} annotation{} kept; u undoes)",
-                                out.kept,
-                                if out.kept == 1 { "" } else { "s" }
-                            );
-                            if out.dropped == 0 && out.stale.is_none() {
-                                return Ok(what);
-                            }
-                            self.stale_notice(
-                                out.stale,
-                                out.dropped,
-                                &out.ignored,
-                                "their text is gone",
-                                what,
-                            );
-                            return Ok(String::new());
+                    // The file must be readable. Embedded code (pasted, or
+                    // never from a file) that is not the file's: the screen
+                    // shows the file's code, as the saved document will,
+                    // through the usual reload (one undo step), which needs
+                    // step 0 like a paste.
+                    let mut probe = self.doc.clone();
+                    probe.reference_file(file.clone(), range);
+                    let base = self.save_path.parent().map(Path::to_path_buf);
+                    let (code, first) = fs::reread_reference(&probe, base.as_deref())?;
+                    if self.doc.is_embedded()
+                        && (code.as_slice() != self.doc.base() || first != self.doc.base_first())
+                    {
+                        if let Some(e) = self.moves_block_reason("show another file's code") {
+                            return Err(e);
                         }
+                        let out = self.apply_new_code(
+                            code,
+                            probe.code_src,
+                            first,
+                            Some(format!("link {file}")),
+                        );
+                        let what = format!(
+                            "the .tiza now references {file} and shows its code ({} annotation{} kept; u undoes)",
+                            out.kept,
+                            if out.kept == 1 { "" } else { "s" }
+                        );
+                        if out.dropped == 0 && out.stale.is_none() {
+                            return Ok(what);
+                        }
+                        self.stale_notice(
+                            out.stale,
+                            out.dropped,
+                            &out.ignored,
+                            "their text is gone",
+                            what,
+                        );
+                        return Ok(String::new());
                     }
                     self.doc.reference_file(file.clone(), range);
                     self.touch();
