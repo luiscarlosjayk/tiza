@@ -21,11 +21,13 @@
 //! - AC4 An insert at the first line of a window, at the link's own step,
 //!   grows the window to start at the new lines (17-23 → 17-24); at other
 //!   steps the window is carried as before; `move.delete` gives it back.
-//! - AC5 The warning of a move names only what that move hides (a step it
-//!   creates past the last one does not repeat what was already outside
-//!   there); a file is named the same in the warning, the bar and `check`
-//!   (live and on disk): a linked file by its path, the main file as
-//!   `code.file` names it (its file name when the code is embedded).
+//! - AC5 The warning of a move names only what was drawn at a step before
+//!   it and is not after it (a step it creates past the last one does not
+//!   repeat what was already outside there; what that step showed of
+//!   another file, or already outside the window, is not named); a file is
+//!   named the same in the warning, the bar's message and `check` (live and
+//!   on disk): a linked file by its path, the main file as `code.file`
+//!   names it (its file name when the code is embedded).
 //! - AC6 This file; agent guide and CHANGELOG.
 //!
 //! Corner cases: an annotation of a file shown at another step only (still
@@ -302,17 +304,10 @@ fn ac3_deleting_a_link_that_leaves_a_step_on_another_file_is_said_and_accepted()
     delete(&live, 7);
     assert_eq!(get(&live)["document"], before["document"]);
     // Step 4 now shows queue.rs through the step-2 link, with its window:
-    // a5 is outside it there too, which a new link without a window does
-    // not do. What step 4 no longer shows is said in the same words.
+    // a5 is outside it there, but step 4 did not draw it before either
+    // (it showed stack.rs), so only a6 is named, in the same words.
     let r = delete(&live, 5);
-    assert_eq!(
-        r["warning"],
-        format!(
-            "a5: outside the window at step 4 (src/queue.rs:10-36): kept, not drawn there; {}",
-            added["warning"].as_str().unwrap()
-        ),
-        "{r}"
-    );
+    assert_eq!(r["warning"], added["warning"], "{r}");
     assert_eq!(not_shown(&findings(&live)), not_shown(&after_add));
     same_as_fresh(&live, &tiza, "stack-and-queue without its step-4 link");
     round_trip(&live, "stack-and-queue without its step-4 link");
@@ -465,8 +460,30 @@ fn ac5_a_new_step_does_not_repeat_what_was_already_outside() {
     same_as_fresh(&live, &tiza, "a new step 6");
 }
 
-/// The file label is one form in the reply, the bar and `check`, live and
-/// on disk: a window on the main file is `src/stack.rs:20-30` (as
+/// A link with a window at a step that showed another file: what that step
+/// did not draw before (a5, of queue.rs, outside the zoom of step 5 only;
+/// q2, a queue.rs note of a step that showed stack.rs) is not named, though
+/// the new window leaves it outside. a6, drawn at step 4 before, is.
+#[test]
+fn ac5_a_link_names_only_what_its_step_drew_before() {
+    let dir = examples_copy("drawn-before");
+    let tiza = dir.join("stack-and-queue.tiza");
+    let live = open(&tiza);
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "q2", "step": 4, "file": "src/queue.rs", "type": "note", "line": 4, "text": "outside 10-36"}),
+    );
+    assert_eq!(not_shown(&findings(&live)), [("q2".into(), 4)]);
+    let r = add(&live, link(4, "src/queue.rs", Some("10-36")));
+    assert_eq!(
+        r["warning"],
+        "a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there"
+    );
+    same_as_fresh(&live, &tiza, "a windowed queue.rs link at step 4");
+}
+
+/// The file label is one form in the reply, the bar's message and `check`,
+/// live and on disk (the fixed status line keeps the file name): a window on the main file is `src/stack.rs:20-30` (as
 /// `code.file` names it) and `tally/src/main.rs:4-9`, never `stack.rs` or
 /// `main.rs`.
 #[test]

@@ -1276,9 +1276,10 @@ pub fn outside_windows_from(
         .collect()
 }
 
-/// An annotation whose own step shows another file (a `code.link` of that
-/// step, or a later one of the same step, shows it): it is never drawn at
-/// its step. The files as [`Document::file_label`] names them.
+/// An annotation whose own step shows another file (said even when its
+/// file shows at other steps, since it is never drawn at its own): a link
+/// of that step shows another one, or its file is linked only at other
+/// steps. The files as [`Document::file_label`] names them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unshown {
     pub id: String,
@@ -1334,6 +1335,8 @@ pub struct Unseen {
     last: u32,
     outside: Vec<(String, Vec<u32>, String)>,
     unshown: Vec<Unshown>,
+    /// The file each step shows, from step 0 to `last`.
+    shown: Vec<ViewKey>,
 }
 
 impl Unseen {
@@ -1345,7 +1348,14 @@ impl Unseen {
             // From the last step at most, which stands for the steps after it.
             outside: outside_windows_from(doc, from.min(last), true),
             unshown: unshown(doc),
+            shown: (0..=last).map(|s| doc.shown_view_at(s).file).collect(),
         }
+    }
+
+    /// The file step `s` showed (a step past the last one shows what the
+    /// last one does).
+    fn shown_at(&self, s: u32) -> Option<&ViewKey> {
+        self.shown.get(s.min(self.last) as usize)
     }
 
     /// The `warning` of a `move.add` or `move.delete` that turned the
@@ -1353,9 +1363,11 @@ impl Unseen {
     /// when it hides nothing new: `a3, a4: outside the window at step 3
     /// (src/queue.rs:10-36): kept, not drawn there; a6: its file
     /// src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not
-    /// drawn there`. A step the move creates past the old last one counts
-    /// as that last one (nothing else happens there), so what was already
-    /// outside it is not said again.
+    /// drawn there`. Only what was drawn at a step before the change and is
+    /// not after it is named: not what was already outside the window
+    /// there, nor what that step did not show because it showed another
+    /// file. A step the move creates past the old last one counts as that
+    /// last one (nothing else happens there).
     pub fn warning(&self, after: &Document) -> Option<String> {
         let now = Unseen::of(after, self.from);
         let mut parts: Vec<String> = Vec::new();
@@ -1368,10 +1380,12 @@ impl Unseen {
                     .iter()
                     .find(|(b, _, _)| *b == id)
                     .map_or(&[], |(_, s, _)| s.as_slice());
+                let file = after.find_annotation(&id).map(|a| a.file.clone());
+                let was_shown = |s: u32| file.as_ref().is_some_and(|f| self.shown_at(s) == Some(f));
                 let was_out = |s: u32| was.contains(&s.min(self.last));
                 let steps: Vec<u32> = steps
                     .into_iter()
-                    .filter(|s| *s >= self.from && !was_out(*s))
+                    .filter(|s| *s >= self.from && was_shown(*s) && !was_out(*s))
                     .collect();
                 (!steps.is_empty()).then_some((id, steps, window))
             })
@@ -1388,7 +1402,13 @@ impl Unseen {
         // Grouped by step and files, in document order.
         let mut groups: Vec<(Unshown, Vec<String>)> = Vec::new();
         for u in now.unshown {
-            if self.unshown.iter().any(|b| b.id == u.id) {
+            // Already unseen at its step: of another file, or outside the
+            // window of its own.
+            let was_outside = self
+                .outside
+                .iter()
+                .any(|(b, steps, _)| *b == u.id && steps.contains(&u.step));
+            if was_outside || self.unshown.iter().any(|b| b.id == u.id) {
                 continue;
             }
             let same = |g: &Unshown| (g.step, &g.file, &g.shown) == (u.step, &u.file, &u.shown);
