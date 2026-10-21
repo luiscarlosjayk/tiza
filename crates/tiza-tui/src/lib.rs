@@ -123,8 +123,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     install_crash_hook(&app.save_path);
     let mut terminal = ratatui::init();
     spare_answered_requests();
-    // A terminal gone already fails the first draw, which ends the loop.
-    let _ = execute!(io::stdout(), EnableBracketedPaste);
+    execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
     }
