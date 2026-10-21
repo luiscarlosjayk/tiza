@@ -53,7 +53,9 @@ resvg = { version = "0.48.1", default-features = false, features = ["text", "sys
 # Character coverage of the embedded faces (t-130): the SVG embeds only the faces it draws. Already in the tree through usvg.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 # Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm.
-rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs"] }
+rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio"] }
+# SIGHUP as a flag the event loop reads (t-205): the terminal went away, exit in order. Already in the tree through crossterm.
+signal-hook = "0.3.18"
 # Theme override files (t-119): `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
 # Animated GIF (t-120): encoder only, LZW through weezl; our own palette, no color_quant.

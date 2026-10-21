@@ -4877,27 +4877,7 @@ impl App {
         let (at, message) = LAST_PANIC
             .with(|p| p.borrow_mut().take())
             .unwrap_or_else(|| ("unknown place".into(), String::new()));
-        let path = tiza_core::socket::runtime_dir().join("panics.log");
-        tiza_core::socket::prepare_dir(&path).ok()?;
-        let stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)
-            .ok()?;
-        writeln!(
-            f,
-            "{stamp} tiza {} ({}) pid {}: {what} panicked at {at}: {message}",
-            tiza_core::VERSION,
-            tiza_core::GIT_SHA,
-            std::process::id()
-        )
-        .ok()?;
-        Some(path)
+        crate::log_line(&format!("{what} panicked at {at}: {message}"))
     }
 
     fn answer(&mut self, req: Request) -> Response {

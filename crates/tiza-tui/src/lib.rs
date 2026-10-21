@@ -9,6 +9,8 @@ pub mod ui;
 
 use std::io;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use crossterm::event::{
@@ -117,6 +119,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     };
 
     install_crash_hook(&app.save_path);
+    let hangup = HangUp::install();
     let mut terminal = ratatui::init();
     spare_answered_requests();
     execute!(io::stdout(), EnableBracketedPaste)?;
@@ -130,16 +133,29 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         terminal
             .draw(|f| ui::draw(f, &mut app))
             .and_then(|_| event::poll(Duration::from_millis(100)))
-            .map(|_| ())
+            .map(|_| End::Quit)
     } else {
-        event_loop(&mut terminal, &mut app, ipc.as_ref())
+        event_loop(&mut terminal, &mut app, ipc.as_ref(), &hangup)
     };
+    // The terminal went away (t-205): Ctrl-C's rules for what is saved, and
+    // stderr off the dead terminal before anything writes there — ratatui
+    // reports a failed restore (and its `Terminal`, dropped at the end, a
+    // cursor it could not show) with `eprintln!`, which panics on a write
+    // error, and a panic in the panic hook aborts. What is said on the way
+    // out goes to the log instead.
+    let gone = matches!(result, Ok(End::HangUp));
+    if gone {
+        app.retry_save_on_exit = true;
+        if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+            let _ = rustix::stdio::dup2_stderr(&null);
+        }
+    }
     let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
     // Quit over stale moves (`:q!`, Ctrl-C): their marks are lost, so say
     // what the next load does with them where it will be read.
     if let Some(s) = tiza_core::stale::close_summary(&app.doc) {
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
+        say_on_exit(gone, &s);
     }
     // No way out writes the sidecar: with autosave on every change is on
     // disk already; with it off (or a read-only file) the author kept the
@@ -152,13 +168,96 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         && let Err(e) = app.save()
     {
         let msg = format!("could not save {}: {e}", app.save_path.display());
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&msg));
+        say_on_exit(gone, &msg);
     }
     if let Some(s) = app.unsaved_summary() {
-        eprintln!("tiza: {}", tiza_core::printable::printable_text(&s));
+        say_on_exit(gone, &s);
     }
     drop(ipc);
-    result
+    result.map(|_| ())
+}
+
+/// How the event loop ended.
+enum End {
+    /// `:q`, `:q!`, Ctrl-C…
+    Quit,
+    /// The terminal went away (t-205).
+    HangUp,
+}
+
+/// One line for the author once the terminal is restored: on stderr, or in
+/// Tiza's log when the terminal is gone (t-205).
+fn say_on_exit(gone: bool, msg: &str) {
+    if gone {
+        log_line(&format!("the terminal went away: {msg}"));
+    } else {
+        eprintln!("tiza: {}", tiza_core::printable::printable_text(msg));
+    }
+}
+
+/// Appends one line to `panics.log` in Tiza's runtime directory (owner
+/// only, like the sockets): the time, the version, the process and `what`.
+/// Returns the log's path when it was written.
+pub(crate) fn log_line(what: &str) -> Option<PathBuf> {
+    let path = tiza_core::socket::runtime_dir().join("panics.log");
+    tiza_core::socket::prepare_dir(&path).ok()?;
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()?;
+    writeln!(
+        f,
+        "{stamp} tiza {} ({}) pid {}: {what}",
+        tiza_core::VERSION,
+        tiza_core::GIT_SHA,
+        std::process::id()
+    )
+    .ok()?;
+    Some(path)
+}
+
+/// The terminal going away (t-205): a pane or a tab closed, an SSH session
+/// dropped. SIGHUP is caught as a flag, so the loop ends in order (the
+/// socket removed, Ctrl-C's save rules) instead of the process dying where
+/// it stands; and where no SIGHUP comes (a pty that is not the controlling
+/// terminal, SIGHUP ignored as under `nohup`) the tty itself says so.
+struct HangUp(Arc<AtomicBool>);
+
+impl HangUp {
+    fn install() -> Self {
+        let flag = Arc::new(AtomicBool::new(false));
+        let _ = signal_hook::flag::register(signal_hook::consts::SIGHUP, Arc::clone(&flag));
+        Self(flag)
+    }
+
+    fn happened(&self) -> bool {
+        self.0.load(Ordering::Relaxed) || tty_gone()
+    }
+}
+
+/// Whether the terminal Tiza draws on (stdout) is hung up: a zero-byte write
+/// fails with EIO on a hung-up tty (Linux and macOS, also one that is not
+/// the controlling terminal) and does nothing on a live one. It never reads,
+/// so no key is taken from crossterm.
+fn tty_gone() -> bool {
+    rustix::io::write(io::stdout(), &[]) == Err(rustix::io::Errno::IO)
+}
+
+/// The event loop's answer to an I/O error: the end of the session when the
+/// terminal went away (a draw or a read on a hung-up tty fails), the error
+/// otherwise.
+fn hung_up_or(hangup: &HangUp, e: io::Error) -> io::Result<End> {
+    if hangup.happened() {
+        Ok(End::HangUp)
+    } else {
+        Err(e)
+    }
 }
 
 /// What the crash hook needs to say where the work is.
@@ -232,19 +331,24 @@ fn event_loop(
     terminal: &mut ratatui::DefaultTerminal,
     app: &mut App,
     ipc: Option<&ipc::IpcServer>,
-) -> io::Result<()> {
+    hangup: &HangUp,
+) -> io::Result<End> {
     // crossterm creates its input source, and starts catching SIGWINCH, on
     // the first poll (t-180). Done here, before the first frame: a resize
     // until now is read by that frame (ratatui asks the size on every draw),
     // and one from now on arrives as `Event::Resize`. Polling only after the
     // first draw lost a resize that came while it was laid out, and nothing
     // redrew until a key.
-    event::poll(Duration::ZERO)?;
+    if let Err(e) = event::poll(Duration::ZERO) {
+        return hung_up_or(hangup, e);
+    }
     let mut needs_draw = true;
     let mut mouse_captured = app.mouse;
     loop {
         if needs_draw {
-            terminal.draw(|f| ui::draw(f, app))?;
+            if let Err(e) = terminal.draw(|f| ui::draw(f, app)) {
+                return hung_up_or(hangup, e);
+            }
             needs_draw = false;
         }
         // `:mouse on|off` changed the flag: tell the terminal.
@@ -279,8 +383,22 @@ fn event_loop(
         }
         // While typing, poll often enough for a smooth animation.
         let wait = if app.is_typing() { 15 } else { 50 };
-        if event::poll(Duration::from_millis(wait))? {
-            match event::read()? {
+        let ready = match event::poll(Duration::from_millis(wait)) {
+            Ok(ready) => ready,
+            Err(e) => return hung_up_or(hangup, e),
+        };
+        // Nothing came: was it the terminal going away? crossterm takes a
+        // hung-up tty for one that is always readable and empty, and would
+        // poll it again at once, at 100 % of a CPU (t-205).
+        if !ready && hangup.happened() {
+            return Ok(End::HangUp);
+        }
+        if ready {
+            let ev = match event::read() {
+                Ok(ev) => ev,
+                Err(e) => return hung_up_or(hangup, e),
+            };
+            match ev {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
                     on_key(app, k.code, k.modifiers);
                     needs_draw = true;
@@ -322,7 +440,7 @@ fn event_loop(
             }
         }
         if app.quit {
-            return Ok(());
+            return Ok(End::Quit);
         }
     }
 }
