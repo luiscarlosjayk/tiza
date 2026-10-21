@@ -1268,6 +1268,24 @@ impl App {
         };
         for (i, m) in doc.moves.iter().enumerate() {
             let open = self.doc.moves.get(i).filter(|o| bare(o) == bare(m));
+            for (id, spec) in &m.rebind {
+                // An entry the open document already ignores, sent on a move
+                // or with code that changed: the caller did not write it.
+                let ignored_here = self.doc.find_annotation(id).is_none()
+                    && self
+                        .doc
+                        .moves
+                        .iter()
+                        .any(|o| o.rebind.get(id) == Some(spec));
+                let kept = same_code && open.is_some_and(|o| o.rebind.get(id) == Some(spec));
+                if ignored_here && !kept && doc.find_annotation(id).is_none() {
+                    return Err(Error::Invalid(format!(
+                        "move #{}, step {}: rebind names {id}, which was dropped earlier: the entry is ignored and stays only on the same move with the same code; remove it from the rebind to change this move or the code",
+                        i + 1,
+                        m.at_step
+                    )));
+                }
+            }
             tiza_core::moves::check_rebind_ids(m, i, &doc.annotations, |id, spec| {
                 same_code && open.is_some_and(|o| o.rebind.get(id) == Some(spec))
             })?;

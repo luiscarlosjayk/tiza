@@ -333,7 +333,8 @@ fn ac5_scene_put_keeps_only_the_entry_of_the_same_move() {
             .unwrap_or_else(|| panic!("{what}: accepted"))
             .message;
         assert!(
-            e.contains("rebind names unknown annotation «a1»"),
+            e.contains("rebind names a1, which was dropped earlier: the entry is ignored")
+                && e.contains("remove it from the rebind"),
             "{what}: {e}"
         );
     };
@@ -481,6 +482,42 @@ fn corner_an_annotation_that_comes_back_without_its_rebind_stays_dropped() {
     opens_clean(&save);
     let out = tiza_ok_render(&save, 2);
     assert!(out.contains("U1;") && out.contains("U2;"), "{out}");
+}
+
+#[test]
+fn corner_an_ignored_entry_by_line_is_carried_and_a1_comes_back_on_its_text() {
+    let mut v: Value = serde_json::from_str(DOC).unwrap();
+    v["moves"][0]["rebind"] = json!({"a1": {"at": {"line": 3, "col": 4}}});
+    v["annotations"] = json!([
+        { "id": "a1", "step": 1, "type": "highlight", "span": { "line": 3, "start": 4, "end": 5 } }
+    ]);
+    let (live, save) = live_doc(&v.to_string(), "t199-by-line-back");
+    live.api_ok("annotation.delete", json!({"id": "a1"}));
+    // A line inserted on top: the ignored entry's line goes with its text.
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// hi"}),
+    );
+    assert_eq!(
+        live.with(|app| app.doc.moves[0].rebind["a1"]
+            .at
+            .as_ref()
+            .and_then(|w| w.line)),
+        Some(4)
+    );
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "a1", "type": "highlight", "at": {"line": 4, "find": "n"}, "step": 1}),
+    );
+    live.api_ok("step.set", json!({"step": 2}));
+    // On `n * 2`, the line the entry was written for (L3 before the insert).
+    let text = live.api_ok("scene.list", json!({})).to_string();
+    assert!(text.contains("highlight L4 4..9"), "{text}");
+    assert_eq!(live.with(|app| app.doc.code[3].clone()), "    n * 2");
+    let f = findings(&live);
+    assert!(f.iter().all(|x| x["level"] != "error"), "{f:?}");
+    live.command("w");
+    opens_clean(&save);
 }
 
 #[test]

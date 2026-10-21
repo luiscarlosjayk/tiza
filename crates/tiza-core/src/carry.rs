@@ -408,33 +408,39 @@ fn carry_window(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> 
 
 /// The `rebind` lines of a patch (on the code right after it) are rare, so
 /// the change is refused when it would move one. An entry whose annotation
-/// is not in `annotations` is ignored, so its lines do not hold the change
-/// back (they stay as written).
-fn check_rebind(
-    m: &Move,
+/// is not in `annotations` is ignored: its lines are carried instead, so it
+/// keeps pointing at its text if that annotation comes back, and one whose
+/// line the change removes stays as written.
+fn carry_rebind(
+    m: &mut Move,
     index: usize,
     map: Option<&Mapper>,
     who: &str,
     annotations: &[Annotation],
 ) -> Result<(), Error> {
     let Some(map) = map else { return Ok(()) };
-    for (id, spec) in &m.rebind {
-        if !annotations.iter().any(|a| &a.id == id) {
-            continue;
-        }
-        let lines = [&spec.at, &spec.from, &spec.to]
+    let mut rebind = std::mem::take(&mut m.rebind);
+    for (id, spec) in rebind.iter_mut() {
+        let ignored = !annotations.iter().any(|a| &a.id == id);
+        let wheres = [&mut spec.at, &mut spec.from, &mut spec.to]
             .into_iter()
             .flatten()
-            .filter_map(|w: &Where| w.line)
-            .chain(spec.from_line)
-            .chain(spec.to_line);
-        for l in lines {
-            if map.line(l) != Some(l) {
-                let what = format!("moves line {l}, where its rebind puts {id}");
-                return Err(lost_line(m, index, who, what));
+            .map(|w: &mut Where| &mut w.line);
+        let lines = wheres.chain([&mut spec.from_line, &mut spec.to_line]);
+        for line in lines {
+            let Some(l) = *line else { continue };
+            match map.line(l) {
+                Some(now) if ignored => *line = Some(now),
+                _ if ignored => {}
+                Some(now) if now == l => {}
+                _ => {
+                    let what = format!("moves line {l}, where its rebind puts {id}");
+                    return Err(lost_line(m, index, who, what));
+                }
             }
         }
     }
+    m.rebind = rebind;
     Ok(())
 }
 
@@ -531,7 +537,7 @@ pub fn carry(
                 let shown = r.old.shown.clone();
                 r.load(&shown);
                 let before = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                let m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
+                let mut m = carry_before(&new[n], o, before.as_ref(), &r.who)?;
                 let (_, was) = r
                     .old
                     .apply(doc, &old[o], slot)
@@ -570,7 +576,7 @@ pub fn carry(
                 let shown = r.new.shown.clone();
                 r.load(&shown);
                 let after = Mapper::new(doc, &shown, &r.old, &r.new, &r.alias);
-                check_rebind(&m, o, after.as_ref(), &r.who, &doc.annotations)?;
+                carry_rebind(&mut m, o, after.as_ref(), &r.who, &doc.annotations)?;
                 out[n] = m;
             }
             (None, Some(n)) => {
