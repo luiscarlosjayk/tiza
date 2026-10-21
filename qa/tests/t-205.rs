@@ -78,11 +78,17 @@ fn typing_project(name: &str) -> (PathBuf, PathBuf) {
 enum Close {
     /// The pty is the controlling terminal: closing the master sends SIGHUP.
     Sighup,
-    /// The same with SIGHUP ignored (as under `nohup`).
+    /// The same with SIGHUP inherited as ignored (as under `nohup`): Tiza
+    /// catches it all the same.
     SighupIgnored,
     /// The pty is only stdin/stdout/stderr, not the controlling terminal:
     /// no SIGHUP, the tty just hangs up.
     NoSighup,
+    /// The code piped in (`cat main.rs | tiza --lang rs`) by a shell that
+    /// ignores SIGHUP, so the keys come from `/dev/tty`; the pty closes.
+    Piped,
+    /// The terminal stays: `kill -HUP` to Tiza.
+    KillHup,
 }
 
 struct Outcome {
@@ -92,6 +98,12 @@ struct Outcome {
 impl Outcome {
     fn field(&self, key: &str) -> Option<&str> {
         self.out.lines().find_map(|l| l.strip_prefix(key))
+    }
+
+    /// What the terminal shows after Tiza left the alternate screen (only
+    /// with [`Close::KillHup`], where the terminal stays).
+    fn tail(&self) -> &str {
+        self.field("TAIL ").unwrap_or("")
     }
 
     /// The process exited on its own, soon, cleanly, without burning CPU.
@@ -136,12 +148,17 @@ fn run(dir: &Path, name: &str, args: &[&str], close: Close, steps: Value) -> Out
     let body = r##"
 import json
 binary, cwd = sys.argv[1], sys.argv[2]
-args, ctty, ignore_hup, steps = json.loads(sys.argv[3])
+args, close, steps = json.loads(sys.argv[3])
 os.chdir(cwd)
 env = dict(os.environ, XDG_RUNTIME_DIR=os.path.join(cwd, "run"), TERM="xterm-256color", TIZA_NO_OSC="1")
-if ignore_hup:
+if close == "nohup":
     signal.signal(signal.SIGHUP, signal.SIG_IGN)  # inherited through exec
-s = Pty([binary, "--socket", "s.sock", *args], 30, 100, env=env, ctty=ctty)
+argv = [binary, "--socket", "s.sock", *args]
+if close == "piped":
+    # sh leads the session and ignores SIGHUP, so it waits for tiza and
+    # exits with its status.
+    argv = ["sh", "-c", 'trap "" HUP; cat main.rs | "$0" --socket s.sock "$@"', binary, *args]
+s = Pty(argv, 30, 100, env=env, ctty=close != "tty")
 
 def api(method, params):
     r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params)],
@@ -174,11 +191,16 @@ for step in steps if ok else []:
     elif op == "wait_file":
         until(lambda: os.path.exists(step[1]), step[1])
 
-# The terminal goes away: the master side closes, nobody reads it any more.
-s._stop_reader()
-os.close(s.master)
-s.closed = True
-t0 = time.monotonic()
+if close == "kill":
+    # The terminal stays: SIGHUP to tiza alone.
+    t0 = time.monotonic()
+    os.kill(s.p.pid, signal.SIGHUP)
+else:
+    # The terminal goes away: the master side closes, nobody reads it any more.
+    s._stop_reader()
+    os.close(s.master)
+    s.closed = True
+    t0 = time.monotonic()
 done = {}
 def reap():
     done["r"] = os.wait4(s.p.pid, 0)
@@ -190,16 +212,23 @@ if "r" in done:
     _, status, ru = done["r"]
     s.p.returncode = os.waitstatus_to_exitcode(status)
     print("GONE %.3f %.3f %d" % (done["t"] - t0, ru.ru_utime + ru.ru_stime, s.p.returncode), flush=True)
+    if not s.closed:
+        s.finish(10)
+        out = s.out
+        left = out.rfind(b"\x1b[?1049l")
+        print("TAIL", plain(out[left + 8:] if left >= 0 else b"NOT_LEFT").replace("\n", " ").strip(), flush=True)
 else:
     cpu = subprocess.run(["ps", "-o", "%cpu=", "-p", str(s.p.pid)], capture_output=True, text=True).stdout.strip()
     print("STILL_ALIVE %cpu", cpu, flush=True)
     os.killpg(s.p.pid, signal.SIGKILL)
     th.join(5)
 "##;
-    let (ctty, ignore_hup) = match close {
-        Close::Sighup => (true, false),
-        Close::SighupIgnored => (true, true),
-        Close::NoSighup => (false, false),
+    let close = match close {
+        Close::Sighup => "hup",
+        Close::SighupIgnored => "nohup",
+        Close::NoSighup => "tty",
+        Close::Piped => "piped",
+        Close::KillHup => "kill",
     };
     let out = tiza_qa::pty_script(
         dir,
@@ -208,7 +237,7 @@ else:
         &[
             tiza_qa::bin().to_str().unwrap(),
             dir.to_str().unwrap(),
-            &json!([args, ctty, ignore_hup, steps]).to_string(),
+            &json!([args, close, steps]).to_string(),
         ],
     );
     Outcome { out }
@@ -303,18 +332,98 @@ fn ac3_presentation_while_a_step_types() {
 }
 
 #[test]
-fn ac1_sighup_ignored_and_idle_does_not_spin() {
+fn ac1_no_sighup_and_idle_does_not_spin() {
     // The 100 % case: nothing to draw, no SIGHUP, the tty hung up.
     let (dir, tiza) = project("t205-idle");
-    let r = run(
-        &dir,
-        "idle.py",
-        &["main.rs"],
-        Close::SighupIgnored,
-        json!([]),
-    );
+    let r = run(&dir, "idle.py", &["main.rs"], Close::NoSighup, json!([]));
     r.gone_cleanly();
     assert!(read(&tiza).contains("\"code\""));
+}
+
+#[test]
+fn ac2_autosave_off_live_writes_nothing() {
+    let (dir, tiza) = project("t205-autosave-off");
+    let before = std::fs::read(&tiza).unwrap();
+    let r = run(
+        &dir,
+        "off.py",
+        &["main.rs"],
+        Close::NoSighup,
+        json!([
+            ["k", ":autosave off\r"],
+            ["status", "autosave", false],
+            note("hello"),
+            ["status", "annotations", 1],
+        ]),
+    );
+    r.gone_cleanly();
+    assert_eq!(std::fs::read(&tiza).unwrap(), before);
+    let log = read(&dir.join("run/tiza/panics.log"));
+    assert!(log.contains("1 change not saved (note a1)"), "{log}");
+}
+
+#[test]
+fn ac2_ac3_a_retry_that_fails_again_goes_to_the_log() {
+    // The sidecar stays read-only: the save tried on the way out fails
+    // again, and says so in the log.
+    let (dir, tiza) = project("t205-retry-fails");
+    let r = run(
+        &dir,
+        "retry.py",
+        &["main.rs"],
+        Close::NoSighup,
+        json!([
+            ["chmod", "main.rs.tiza", "444"],
+            note("hello"),
+            ["status", "annotations", 1],
+        ]),
+    );
+    r.gone_cleanly();
+    assert!(!read(&tiza).contains("hello"));
+    let log = read(&dir.join("run/tiza/panics.log"));
+    assert!(
+        log.contains("the terminal went away: could not save")
+            && log.contains("1 change not saved (note a1)"),
+        "{log}"
+    );
+}
+
+#[test]
+fn corner_piped_stdin_only_the_tty_matters() {
+    let dir = scratch("t205-piped");
+    std::fs::write(dir.join("main.rs"), CODE).unwrap();
+    let r = run(
+        &dir,
+        "piped.py",
+        &["--lang", "rs", "--no-save"],
+        Close::Piped,
+        json!([note("hello"), ["status", "annotations", 1]]),
+    );
+    r.gone_cleanly();
+    assert!(!dir.join("s.sock").exists());
+}
+
+#[test]
+fn ac3_kill_hup_on_a_live_terminal_still_prints_there() {
+    // SIGHUP with the terminal still there (`kill -HUP`): it quits in
+    // order, and stderr is that terminal, not the log.
+    let (dir, _) = project("t205-kill-hup");
+    let r = run(
+        &dir,
+        "kill.py",
+        &["--no-save", "main.rs"],
+        Close::KillHup,
+        json!([note("hello"), ["status", "annotations", 1]]),
+    );
+    r.gone_cleanly();
+    assert!(
+        r.tail()
+            .contains("tiza: quit without saving main.rs.tiza: 1 change not saved (note a1)"),
+        "{}",
+        r.out
+    );
+    assert!(!read(&dir.join("run/tiza/panics.log")).contains("went away"));
+    assert!(!dir.join("s.sock").exists());
 }
 
 #[test]

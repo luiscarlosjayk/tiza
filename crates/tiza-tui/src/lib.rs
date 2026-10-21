@@ -104,6 +104,8 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         app.error(e.to_string());
     }
 
+    // Before the socket exists, so a SIGHUP never leaves it behind.
+    let hangup = HangUp::install();
     let ipc = match &opts.socket {
         Some(path) => match ipc::start(path) {
             Ok(s) => {
@@ -119,10 +121,10 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     };
 
     install_crash_hook(&app.save_path);
-    let hangup = HangUp::install();
     let mut terminal = ratatui::init();
     spare_answered_requests();
-    execute!(io::stdout(), EnableBracketedPaste)?;
+    // A terminal gone already fails the first draw, which ends the loop.
+    let _ = execute!(io::stdout(), EnableBracketedPaste);
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
     }
@@ -137,19 +139,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     } else {
         event_loop(&mut terminal, &mut app, ipc.as_ref(), &hangup)
     };
-    // The terminal went away (t-205): Ctrl-C's rules for what is saved, and
-    // stderr off the dead terminal before anything writes there — ratatui
-    // reports a failed restore (and its `Terminal`, dropped at the end, a
-    // cursor it could not show) with `eprintln!`, which panics on a write
-    // error, and a panic in the panic hook aborts. What is said on the way
-    // out goes to the log instead.
-    let gone = matches!(result, Ok(End::HangUp));
-    if gone {
+    // The terminal went away (t-205): Ctrl-C's rules for what is saved.
+    if matches!(result, Ok(End::HangUp)) {
         app.retry_save_on_exit = true;
-        if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
-            let _ = rustix::stdio::dup2_stderr(&null);
-        }
     }
+    let gone = silence_dead_stderr();
     let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
     // Quit over stale moves (`:q!`, Ctrl-C): their marks are lost, so say
@@ -186,9 +180,10 @@ enum End {
 }
 
 /// One line for the author once the terminal is restored: on stderr, or in
-/// Tiza's log when the terminal is gone (t-205).
+/// Tiza's log when stderr was a terminal that is gone (t-205).
 fn say_on_exit(gone: bool, msg: &str) {
     if gone {
+        let msg = tiza_core::printable::printable_text(msg);
         log_line(&format!("the terminal went away: {msg}"));
     } else {
         eprintln!("tiza: {}", tiza_core::printable::printable_text(msg));
@@ -222,11 +217,28 @@ pub(crate) fn log_line(what: &str) -> Option<PathBuf> {
     Some(path)
 }
 
+/// Points stderr at /dev/null when it is a hung-up terminal, and says so
+/// (t-205). ratatui reports a restore it could not do (and its `Terminal`,
+/// dropped at the end, a cursor it could not show) with `eprintln!`, which
+/// panics on a write error, and a panic in the panic hook aborts. Asked of
+/// stderr itself, however the session ended: a `kill -HUP` on a live
+/// terminal still prints there, and a `2>file` keeps its file.
+fn silence_dead_stderr() -> bool {
+    if !hung_up(io::stderr()) {
+        return false;
+    }
+    if let Ok(null) = std::fs::OpenOptions::new().write(true).open("/dev/null") {
+        let _ = rustix::stdio::dup2_stderr(&null);
+    }
+    true
+}
+
 /// The terminal going away (t-205): a pane or a tab closed, an SSH session
 /// dropped. SIGHUP is caught as a flag, so the loop ends in order (the
 /// socket removed, Ctrl-C's save rules) instead of the process dying where
-/// it stands; and where no SIGHUP comes (a pty that is not the controlling
-/// terminal, SIGHUP ignored as under `nohup`) the tty itself says so.
+/// it stands — also when it came in ignored (`nohup`): without its terminal
+/// Tiza has nothing left to do. Where no SIGHUP comes (a pty that is not the
+/// controlling terminal) the tty itself says so.
 struct HangUp(Arc<AtomicBool>);
 
 impl HangUp {
@@ -237,16 +249,16 @@ impl HangUp {
     }
 
     fn happened(&self) -> bool {
-        self.0.load(Ordering::Relaxed) || tty_gone()
+        self.0.load(Ordering::Relaxed) || hung_up(io::stdout())
     }
 }
 
-/// Whether the terminal Tiza draws on (stdout) is hung up: a zero-byte write
-/// fails with EIO on a hung-up tty (Linux and macOS, also one that is not
-/// the controlling terminal) and does nothing on a live one. It never reads,
-/// so no key is taken from crossterm.
-fn tty_gone() -> bool {
-    rustix::io::write(io::stdout(), &[]) == Err(rustix::io::Errno::IO)
+/// Whether `fd` is a hung-up terminal (stdout: the one Tiza draws on): a
+/// zero-byte write fails with EIO on a hung-up tty (Linux and macOS, also
+/// one that is not the controlling terminal) and does nothing on a live one
+/// or on a file. It never reads, so no key is taken from crossterm.
+fn hung_up(fd: impl std::os::fd::AsFd) -> bool {
+    rustix::io::write(fd, &[]) == Err(rustix::io::Errno::IO)
 }
 
 /// The event loop's answer to an I/O error: the end of the session when the
@@ -322,6 +334,9 @@ fn spare_answered_requests() {
             // Caught and answered: its place and message go to panics.log.
             crate::app::note_request_panic(info);
         } else {
+            // A dead terminal on stderr would make ratatui's restore and the
+            // crash message panic in the hook, an abort (t-205).
+            silence_dead_stderr();
             inner(info);
         }
     }));
