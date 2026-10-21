@@ -280,17 +280,24 @@ fn rev_redo_of_the_reload_and_two_undos_leave_no_stale_reason() {
         "redone: reload #1; follow is off: :follow on reloads main.rs"
     );
     assert!(status(&live).get("reason").is_none());
-    // `u` twice: the paste, then the code from before it.
+    // `u` twice: the paste, then the code from before it. main.rs was
+    // saved with `gives` since, so that code is not the file's: it stays
+    // embedded (a fresh load of the autosave shows the same) and the reason
+    // describes it.
     live.with(|app| app.undo());
     live.with(|app| app.undo());
     assert_eq!(code(&live), lines(CODE));
     assert_eq!(
         live.message().unwrap().0,
-        "undone: paste; follow is off: :follow on reloads main.rs"
+        "undone: paste; follow is off: the code on screen is not main.rs; :follow on reloads main.rs"
     );
     let st = status(&live);
-    assert!(st.get("reason").is_none(), "{st}");
+    assert_eq!(
+        st["reason"], "the code on screen is not main.rs; :follow on reloads main.rs",
+        "{st}"
+    );
     assert_eq!(st["path"], src.display().to_string());
+    assert!(live.with(|app| app.doc.is_embedded()));
 }
 
 /// The live instance and the autosaved `.tiza`, both rendered as text.

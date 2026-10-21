@@ -32,6 +32,42 @@ pub enum Mode {
     },
 }
 
+/// Follow off over code that is not the followed file's ([`App::paused`]).
+#[derive(Debug, Clone)]
+struct FollowOff {
+    /// `follow.status.reason`: `the code is pasted, not main.rs; :follow on
+    /// reloads main.rs`.
+    why: String,
+    /// The file reference the code on screen replaced: what `:follow on`
+    /// reloads.
+    followed: tiza_core::model::CodeSource,
+    /// The code is a paste (or one an undo brought back), not another
+    /// version of the file that an undo or a redo brought back.
+    pasted: bool,
+}
+
+/// What the screen shows instead of the followed file, for the reason
+/// follow is off.
+#[derive(Debug, Clone, Copy)]
+enum NotTheFile {
+    /// Pasted code: `the code is pasted`, `the code is the paste again`…
+    Paste(&'static str),
+    /// A version of the file it no longer holds, which an undo or a redo
+    /// brought back.
+    Version,
+}
+
+impl NotTheFile {
+    fn why(self, name: &str) -> String {
+        match self {
+            NotTheFile::Paste(what) => format!("{what}, not {name}; :follow on reloads {name}"),
+            NotTheFile::Version => {
+                format!("the code on screen is not {name}; :follow on reloads {name}")
+            }
+        }
+    }
+}
+
 /// What the last selection was, so a command typed right after can use it as its anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Selection {
@@ -351,11 +387,13 @@ pub struct App {
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
-    /// Why follow is off when a paste turned it off (for `follow.status`
-    /// and `:follow`), and the file reference the pasted code replaced,
-    /// which `:follow on` reloads. It holds only while that code is on
-    /// screen ([`App::paused`]): an undo back to the file ends it.
-    follow_off: Option<(String, tiza_core::model::CodeSource)>,
+    /// Why follow is off when the code on screen stopped being the followed
+    /// file's (a paste, or an undo past a reload), for `follow.status` and
+    /// `:follow`, and the file reference that code replaced, which `:follow
+    /// on` reloads. It holds only while that code is on screen
+    /// ([`App::paused`]): an undo back to the file ends it, and a reload
+    /// keeps it only to word an undo of that reload the same way.
+    follow_off: Option<FollowOff>,
     /// Typing animation of the step just reached (t-098).
     pub typing: Option<TypingState>,
     /// When the current step became ready (reached, its typing finished
@@ -1976,17 +2014,24 @@ impl App {
         self.finish_typing();
         let followed = self.doc.code_src.clone();
         let was = self.paused_file();
+        let before = self.code_now();
         if let Some(what) = self.history.undo(&mut self.doc) {
+            // Before the save `touch` makes: it must write the code as it is
+            // on screen now.
+            let replaced = self.embed_if_not_the_file(&before);
             self.rebuild_theme();
             self.touch();
             self.info(format!("undone: {what}"));
-            // Undoing the reload that replaced a paste brings the paste back.
-            let again = if what.starts_with("reload") {
-                "the code is the paste again"
+            // Undoing the reload that replaced a paste brings the paste back;
+            // the one that replaced an older version of the file, that version.
+            let again = if !what.starts_with("reload") {
+                NotTheFile::Paste("the code is embedded again")
+            } else if self.follow_off.as_ref().is_some_and(|o| !o.pasted) {
+                NotTheFile::Version
             } else {
-                "the code is embedded again"
+                NotTheFile::Paste("the code is the paste again")
             };
-            self.follow_after_history(followed, again, was);
+            self.follow_after_history(followed, replaced, again, was);
         } else {
             self.info("nothing to undo");
         }
@@ -1997,19 +2042,62 @@ impl App {
         self.finish_typing();
         let followed = self.doc.code_src.clone();
         let was = self.paused_file();
+        let before = self.code_now();
         if let Some(what) = self.history.redo(&mut self.doc) {
+            let replaced = self.embed_if_not_the_file(&before);
             self.rebuild_theme();
             self.touch();
             self.info(format!("redone: {what}"));
-            let again = if what == "paste" {
+            let again = NotTheFile::Paste(if what == "paste" {
                 "the code is the paste again"
             } else {
                 "the code is embedded again"
-            };
-            self.follow_after_history(followed, again, was);
+            });
+            self.follow_after_history(followed, replaced, again, was);
         } else {
             self.info("nothing to redo");
         }
+    }
+
+    /// The step-0 code, its first line and whether it is embedded: what
+    /// [`App::embed_if_not_the_file`] compares after an undo or a redo.
+    fn code_now(&self) -> (Vec<String>, u32, bool) {
+        (
+            self.doc.base().to_vec(),
+            self.doc.base_first(),
+            self.doc.is_embedded(),
+        )
+    }
+
+    /// After an undo or a redo that put a file reference back with other
+    /// code than the screen had (or over embedded code): when that file does
+    /// not hold the code now on screen (the undo went back past a follow
+    /// reload, or the file changed on disk since), the code is kept
+    /// embedded, as after a paste. Saved as `code: {file}`, a fresh load
+    /// would show the file's text under annotations and `rebind` entries
+    /// made for the code on screen: drawn on other text, or a move that no
+    /// longer finds its text. A file that cannot be read counts as not
+    /// holding it. An undo that leaves the same reference and the same code
+    /// changes nothing here. Returns the reference it replaced.
+    fn embed_if_not_the_file(
+        &mut self,
+        before: &(Vec<String>, u32, bool),
+    ) -> Option<tiza_core::model::CodeSource> {
+        let (code, first, embedded) = before;
+        if self.doc.is_embedded()
+            || (!embedded && self.doc.base() == code.as_slice() && self.doc.base_first() == *first)
+        {
+            return None;
+        }
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        let holds = fs::reread_reference(&self.doc, base.as_deref())
+            .is_ok_and(|(code, first)| code == self.doc.base() && first == self.doc.base_first());
+        if holds {
+            return None;
+        }
+        let reference = self.doc.code_src.clone();
+        self.doc.code_src = tiza_core::model::CodeSource::Embedded(self.doc.base().to_vec());
+        Some(reference)
     }
 
     /// Enters or leaves presentation mode. Proposals that arrived while
@@ -2107,7 +2195,7 @@ impl App {
             (d.code_src, d.source.first_line)
         };
         let out = self.apply_new_code(d.code, code_src, first, Some("paste".into()));
-        let paused = self.pause_follow(followed, "the code is pasted");
+        let paused = self.pause_follow(followed, NotTheFile::Paste("the code is pasted"));
         if let Some(det) = detected {
             self.doc.source.language = det.language;
         }
@@ -2146,37 +2234,72 @@ impl App {
     fn pause_follow(
         &mut self,
         followed: tiza_core::model::CodeSource,
-        what: &str,
+        what: NotTheFile,
     ) -> Option<String> {
         if !self.doc.is_embedded() {
             return None;
         }
         let mut f = self.follow.take()?;
         f.stop();
-        let name = f.file_name();
-        let why = format!("{what}, not {name}; :follow on reloads {name}");
-        self.follow_off = Some((why.clone(), followed));
+        let why = what.why(&f.file_name());
+        self.follow_off = Some(FollowOff {
+            why: why.clone(),
+            followed,
+            pasted: matches!(what, NotTheFile::Paste(_)),
+        });
         Some(format!("follow off: {why}"))
     }
 
-    /// The name of the file `:follow on` would reload while follow is off
-    /// over pasted code ([`App::paused`]).
-    fn paused_file(&self) -> Option<String> {
-        let (_, src) = self.paused()?;
+    /// The file name of a file reference, as follow names it.
+    fn reference_name(&self, src: &tiza_core::model::CodeSource) -> Option<String> {
         let path = fs::code_source_file(src, self.save_path.parent())?;
         Some(path.file_name()?.to_string_lossy().into_owned())
+    }
+
+    /// The name of the file `:follow on` would reload while follow is off
+    /// over code that is not the file's ([`App::paused`]).
+    fn paused_file(&self) -> Option<String> {
+        self.reference_name(&self.paused()?.followed)
     }
 
     /// After an undo or a redo: follow goes off when the code on screen is
     /// no longer the followed file's (`again` says what it is); and when it
     /// brought the file back while follow was off over a paste (`was` names
-    /// that file), the message says how to follow it again.
+    /// that file), the message says how to follow it again. `replaced` is
+    /// the file reference [`App::embed_if_not_the_file`] embedded: the code
+    /// on screen is a version of that file it no longer holds, so follow is
+    /// off whether it was on or not, and `:follow on` reloads that file.
     fn follow_after_history(
         &mut self,
         followed: tiza_core::model::CodeSource,
-        again: &str,
+        replaced: Option<tiza_core::model::CodeSource>,
+        again: NotTheFile,
         was: Option<String>,
     ) {
+        if let Some(reference) = replaced {
+            if let Some(note) = self.pause_follow(reference.clone(), NotTheFile::Version) {
+                self.say_first(note);
+                return;
+            }
+            // Follow was off already: no notice of it going off, only what
+            // `:follow on` does from here, and not again while the screen
+            // was already another version of the file.
+            let said_before = was.is_some() && self.follow_off.as_ref().is_some_and(|o| !o.pasted);
+            let name = self
+                .reference_name(&reference)
+                .unwrap_or_else(|| "the file".into());
+            let why = NotTheFile::Version.why(&name);
+            self.follow_off = Some(FollowOff {
+                why: why.clone(),
+                followed: reference,
+                pasted: false,
+            });
+            if !said_before {
+                let (said, _) = self.message.take().unwrap_or_default();
+                self.info(format!("{said}; follow is off: {why}"));
+            }
+            return;
+        }
         if let Some(note) = self.pause_follow(followed, again) {
             self.say_first(note);
         } else if let Some(name) = was
@@ -2440,13 +2563,13 @@ impl App {
     /// Why follow is off and what it would reload, while the code a paste
     /// (or an undo) put over the followed file is on screen; `None` once the
     /// screen shows a file reference again.
-    fn paused(&self) -> Option<&(String, tiza_core::model::CodeSource)> {
+    fn paused(&self) -> Option<&FollowOff> {
         self.follow_off.as_ref().filter(|_| self.doc.is_embedded())
     }
 
     fn followed_source(&self) -> Option<tiza_core::model::CodeSource> {
         if self.doc.is_embedded() {
-            self.paused().map(|(_, src)| src.clone())
+            self.paused().map(|o| o.followed.clone())
         } else {
             Some(self.doc.code_src.clone())
         }
@@ -2498,7 +2621,10 @@ impl App {
                 self.touch();
             }
         }
-        self.follow_off = None;
+        // `follow_off` stays: while the code on screen is still not the
+        // file's (the file is missing, or unreadable for now) it names the
+        // file the next reload reads, so the file coming back reloads it;
+        // once the file is on screen it only words an undo of the reload.
         Ok(format!("following {name}"))
     }
 
@@ -2581,6 +2707,11 @@ impl App {
         } else {
             self.doc.source.first_line
         };
+        // Code that is not the file's (a paste, an older version) replaced
+        // by the file's is always one undo step, so `u` gives it back, even
+        // when no annotation moved: the reload `:follow on` asked for, or
+        // the one of a file that came back after it.
+        let always = always || self.doc.is_embedded();
         let out = self.apply_new_code(new, code_src, first, always.then(|| "reload".into()));
         if out.recorded {
             self.history.label_last(format!("reload #{reloads}"));
@@ -2623,8 +2754,8 @@ impl App {
             }),
             None => {
                 let mut st = json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())});
-                if let Some((why, _)) = self.paused() {
-                    st["reason"] = json!(why);
+                if let Some(off) = self.paused() {
+                    st["reason"] = json!(off.why);
                 }
                 st
             }
@@ -3340,7 +3471,7 @@ impl App {
                                 .unwrap_or_default()
                         ),
                         None => match self.paused() {
-                            Some((why, _)) => format!("follow off: {why}"),
+                            Some(off) => format!("follow off: {}", off.why),
                             None => {
                                 "follow off (:follow on to reload when the file is saved)".into()
                             }

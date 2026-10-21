@@ -902,21 +902,39 @@ fn step19_u_says_what_it_undid() {
     assert_eq!(count(&live), 1);
     live.keys(&[KeyCode::Char('u')]);
     let (msg, _) = live.message().unwrap();
-    assert_eq!(msg, "undone: note a1");
+    // The note was added on the code before that save, which main.rs no
+    // longer holds: the undo brings that code back, so follow goes off and
+    // says so before naming the note (the bar never claims to follow a file
+    // the screen does not show).
+    assert_eq!(
+        msg,
+        "follow off: the code on screen is not main.rs; :follow on reloads main.rs · undone: note a1"
+    );
     assert_eq!(count(&live), 0);
     live.keys(&[KeyCode::Char('U')]);
     let (msg, _) = live.message().unwrap();
-    assert_eq!(msg, "redone: note a1");
+    assert_eq!(
+        msg,
+        "redone: note a1; follow is off: :follow on reloads main.rs"
+    );
+    // Following again from the file's code: nothing to reload, and the
+    // reloads are counted anew.
+    live.command("follow on");
+    assert_eq!(live.message().unwrap().0, "following main.rs");
     // A reload that dropped something is named by its number.
     let mut e2 = e.clone();
     e2[3] = "    items: VecDeque<T>, // changed".into();
     live.command("hl 4:Vec<T> y");
     save_like_zed(&src, &(e2.join("\n") + "\n"));
-    wait_reloads(&live, 2);
+    wait_reloads(&live, 1);
     assert_eq!(count(&live), 1, "{:?}", live.message());
     live.keys(&[KeyCode::Char('u')]);
     let (msg, _) = live.message().unwrap();
-    assert_eq!(msg, "undone: reload #2");
+    // Undoing the reload shows the code before it, again not main.rs's.
+    assert_eq!(
+        msg,
+        "follow off: the code on screen is not main.rs; :follow on reloads main.rs · undone: reload #1"
+    );
     assert_eq!(count(&live), 2);
     live.command("clear");
     live.keys(&[KeyCode::Char('u')]);
