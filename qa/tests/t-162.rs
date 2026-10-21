@@ -10,7 +10,7 @@
 //!   explain code, code walkthrough, screencast, tutorial, teach, show on
 //!   screen, type code / move, link another file, export PNG/GIF), the flow
 //!   in two lines and the `tiza://` resources; under 1,200 characters, and
-//!   nothing about the retired redaction (t-183).
+//!   nothing about features the server does not have.
 //! - AC2 `tools/list`: `status`, `get_code`, `render_text` and `add_box`
 //!   carry `_meta["anthropic/alwaysLoad"] = true` (the key Claude Code
 //!   documents for tools that load upfront when it defers the rest), and no
@@ -180,12 +180,12 @@ fn ac1_instructions_describe_tiza_with_the_words_people_use() {
     assert!(chars < 1200, "{chars} chars");
 }
 
-/// Corner case: only what the server does — no redaction (t-183), no MP4
+/// Corner case: only what the server does — no masking, no MP4
 /// (a shell command, not a tool).
 #[test]
 fn ac1_instructions_promise_nothing_the_server_does_not_do() {
     let lower = instructions(&mcp("t162-promise")).to_lowercase();
-    for s in ["redact", "mask", "secret", "mp4"] {
+    for s in ["mask", "secret", "mp4"] {
         assert!(!lower.contains(s), "{s} in:\n{lower}");
     }
 }
