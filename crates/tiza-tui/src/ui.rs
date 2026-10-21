@@ -816,6 +816,7 @@ fn help_lines() -> Vec<String> {
         "P        presentation mode           L      annotation list      :  command line",
         "f        pointer: the cursor line (or the selection) stays lit, the rest dims; j/k move it, f or Esc ends it (live only: never saved nor exported)",
         "         (presenting, : shows the command line on the last row and its result for 2 s)",
+        "Ctrl-C   cancels, or quits: closes the command line, a selection, an arrow or this window like Esc; with nothing open it quits as :q!",
         "",
         "Commands (L = line number, text = fragment to find on that line):",
         "  :mark KIND[@COLOR] L:text [label]   KIND: info warn error ok question important read write move new drop scope flow todo",

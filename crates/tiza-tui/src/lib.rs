@@ -338,6 +338,12 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     if swallowed {
         return;
     }
+    // Ctrl-C is looked at before anything else can take it as text (the
+    // command line would type a `c`, a typing animation would only end).
+    if code == KeyCode::Char('c') && mods.contains(KeyModifiers::CONTROL) {
+        cancel_or_quit(app);
+        return;
+    }
     // A typing animation (t-098) ends on any key; the key itself is consumed.
     if app.is_typing() {
         let _ = (code, mods);
@@ -495,10 +501,6 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
     }
     match code {
-        KeyCode::Char('c') if ctrl => {
-            app.retry_save_on_exit = true;
-            app.quit = true;
-        }
         KeyCode::Tab => app.select_annotation(1),
         KeyCode::BackTab => app.select_annotation(-1),
         KeyCode::Char('v') => app.start_select(false),
@@ -553,5 +555,34 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             }
         }
         _ => {}
+    }
+}
+
+/// Ctrl-C, as in vim: it cancels what is open, the way Esc does, and
+/// quits when nothing is. Open means waiting for more input from the
+/// author: an overlay (help, list, review), the command line (its text is
+/// dropped, never run), a `v`/`V` selection, an arrow whose source is
+/// chosen. The rest is a state of the view, not something to cancel — the
+/// presentation mode, the live pointer, a typing animation, an annotation
+/// selected with Tab, a notice on the bar — so there it quits. Quitting is
+/// `:q!`: nothing is written, except that a failed autosave is tried once
+/// more on the way out (`run` does it, and prints what was not saved).
+fn cancel_or_quit(app: &mut App) {
+    if app.overlay != Overlay::None {
+        // Like Esc on any overlay: a pending proposal stays pending.
+        app.overlay = Overlay::None;
+        app.overlay_scroll = 0;
+    } else if matches!(app.mode, Mode::Command(_)) {
+        app.mode = Mode::Normal;
+    } else if matches!(app.mode, Mode::Select { .. }) {
+        // Like Esc in selection mode: the arrow being drawn goes too.
+        app.mode = Mode::Normal;
+        app.arrow_from = None;
+    } else if app.arrow_from.is_some() {
+        app.arrow_from = None;
+        app.info("arrow cancelled");
+    } else {
+        app.retry_save_on_exit = true;
+        app.quit = true;
     }
 }
