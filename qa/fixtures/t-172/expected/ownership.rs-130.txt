@@ -1,0 +1,237 @@
+== step-00.txt
+  1          fn main() {
+  2              let s = String::from("hello");
+  3              takes(s);
+  4              // println!("{s}"); // error: value borrowed here after move
+  5
+  6              let t = String::from("world");
+  7              let n = len(&t);
+  8              println!("{t} has {n} letters");
+  9
+ 10              let mut u = String::from("hey");
+ 11              push(&mut u);
+ 12              println!("{u}");
+ 13          }
+ 14
+ 15          fn takes(s: String) {
+ 16              println!("{s}");
+ 17          }
+ 18
+ 19          fn len(s: &String) -> usize {
+ 20              s.len()
+ 21          }
+ 22
+ 23          fn push(s: &mut String) {
+ 24              s.push('!');
+ 25          }
+== step-01.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move
+  5 │
+  6 │            let t = String::from("world");
+  7 │            let n = len(&t);
+  8 │            println!("{t} has {n} letters");
+  9 │
+ 10 │            let mut u = String::from("hey");
+ 11 │            push(&mut u);
+ 12 │            println!("{u}");
+ 13 │        }
+ 14 │
+ 15 ╰──────▶ fn takes(s: String) {                                              move
+ 16              println!("{s}");
+ 17          }
+ 18
+ 19          fn len(s: &String) -> usize {
+ 20              s.len()
+ 21          }
+ 22
+ 23          fn push(s: &mut String) {
+ 24              s.push('!');
+ 25          }
+== step-02.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move
+  5 │
+  6 │            let t = String::from("world");
+  7 │            let n = len(&t);
+  8 │            println!("{t} has {n} letters");
+  9 │
+ 10 │            let mut u = String::from("hey");
+ 11 │            push(&mut u);
+ 12 │            println!("{u}");
+ 13 │        }
+ 14 │
+ 15 ╰──────▶ fn takes(s: String) {                                              move
+ 16              println!("{s}");
+ 17          }
+ 18
+ 19          fn len(s: &String) -> usize {
+ 20              s.len()
+ 21          }
+ 22
+ 23          fn push(s: &mut String) {
+ 24              s.push('!');
+ 25          }
+== step-03.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
+  5 │                                                                             compile
+  6 │            let t = String::from("world");
+  7 │            let n = len(&t);
+  8 │            println!("{t} has {n} letters");
+  9 │
+ 10 │            let mut u = String::from("hey");
+ 11 │            push(&mut u);
+ 12 │            println!("{u}");
+ 13 │        }
+ 14 │
+    │     ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─────┼▶ fn takes(s: String) {                                            │ move
+ 16       │      println!("{s}");                                             │
+ 17       │  }                                                                │ ╳ drop: s dies here
+          ╰───────────────────────────────────────────────────────────────────╯
+ 18
+ 19          fn len(s: &String) -> usize {
+ 20              s.len()
+ 21          }
+ 22
+ 23          fn push(s: &mut String) {
+ 24              s.push('!');
+ 25          }
+== step-04.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
+  5 │                                                                             compile
+  6 │            let t = String::from("world");
+  7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
+  8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+  9 │ ╎
+ 10 │ ╎          let mut u = String::from("hey");
+ 11 │ ╎          push(&mut u);
+ 12 │ ╎          println!("{u}");
+ 13 │ ╎      }
+ 14 │ ╎
+    │ ╎   ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─╎───┼▶ fn takes(s: String) {                                            │ move
+ 16   ╎   │      println!("{s}");                                             │
+ 17   ╎   │  }                                                                │ ╳ drop
+      ╎   ╰───────────────────────────────────────────────────────────────────╯
+ 18   ╎
+ 19   ╰╌╌╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+ 20              s.len()
+ 21          }
+ 22
+ 23          fn push(s: &mut String) {
+ 24              s.push('!');
+ 25          }
+== step-05.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
+  5 │                                                                             compile
+  6 │            let t = String::from("world");
+  7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
+  8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+  9 │ ╎
+ 10 │ ╎          let mut u = String::from("hey");
+ 11 │ ╎ ┏━━━     push(&mut u);                                                  ✎▶ &mut borrow
+ 12 │ ╎ ┃        println!("{u}");
+ 13 │ ╎ ┃    }
+ 14 │ ╎ ┃
+    │ ╎ ┃ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─╎─┃─┼▶ fn takes(s: String) {                                            │ move
+ 16   ╎ ┃ │      println!("{s}");                                             │
+ 17   ╎ ┃ │  }                                                                │ ╳ drop: s dies here
+      ╎ ┃ ╰───────────────────────────────────────────────────────────────────╯
+ 18   ╎ ┃
+ 19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+ 20     ┃        s.len()
+ 21     ┃    }
+ 22     ┃
+        ┃ ╭─ mutates without taking ownership ────────────────────────────────╮
+ 23     ┗━┿▶ fn push(s: &mut String) {                                        │ &mut
+ 24       │      s.push('!');                                                 │
+ 25       │  }                                                                │
+          ╰───────────────────────────────────────────────────────────────────╯
+== step-06.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
+  5 │                                                                             compile
+  6 │            let t = String::from("world");
+  7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
+  8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+  9 │ ╎
+ 10 │ ╎          let mut u = String::from("hey");
+ 11 │ ╎ ┏━━━     push(&mut u);                                                  ✎▶ &mut borrow
+ 12 │ ╎ ┃        println!("{u}");                                               ┆ u is now "hey!"
+ 13 │ ╎ ┃    }
+ 14 │ ╎ ┃
+    │ ╎ ┃ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─╎─┃─┼▶ fn takes(s: String) {                                            │ move
+ 16   ╎ ┃ │      println!("{s}");                                             │
+ 17   ╎ ┃ │  }                                                                │ ╳ drop: s dies here
+      ╎ ┃ ╰───────────────────────────────────────────────────────────────────╯
+ 18   ╎ ┃
+ 19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+ 20     ┃        s.len()
+ 21     ┃    }
+ 22     ┃
+        ┃ ╭─ mutates without taking ownership ────────────────────────────────╮
+ 23     ┗━┿▶ fn push(s: &mut String) {                                        │ &mut
+ 24       │      s.push('!');                                                 │
+ 25       │  }                                                                │
+          ╰───────────────────────────────────────────────────────────────────╯
+== step-07.txt
+  1          fn main() {
+  2 ╭───────     let s = String::from("hello");
+    │                ◀───╯                                                      s is born
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
+  4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
+  5 │                                                                             compile
+  6 │            let t = String::from("world");
+  7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
+  8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+  9 │ ╎
+ 10 │ ╎          let mut u = String::from("hey");
+ 11 │ ╎ ┏━━━     push(&mut u);                                                  ✎▶ &mut borrow
+ 12 │ ╎ ┃        println!("{u}");                                               ┆ u is now "hey!"
+ 13 │ ╎ ┃    }
+ 14 │ ╎ ┃
+    │ ╎ ┃ ╭─ takes owns s and frees it at the end ────────────────────────────╮
+ 15 ╰─╎─┃─┼▶ fn takes(s: String) {                                            │ move
+ 16   ╎ ┃ │      println!("{s}");                                             │
+ 17   ╎ ┃ │  }                                                                │ ╳ drop: s dies here
+      ╎ ┃ ╰───────────────────────────────────────────────────────────────────╯
+ 18   ╎ ┃
+ 19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+ 20     ┃        s.len()
+ 21     ┃    }
+ 22     ┃
+        ┃ ╭─ mutates without taking ownership ────────────────────────────────╮
+ 23     ┗━┿▶ fn push(s: &mut String) {                                        │ &mut
+ 24       │      s.push('!');                                                 │
+ 25       │  }                                                                │
+          ╰───────────────────────────────────────────────────────────────────╯
+             ╭─ three ways to pass a value ─────────────────────────────────╮
+             │ takes(s) moves the String: main loses it. len(&s) borrows it │
+             │ read-only, so main keeps using t afterwards. push(&mut s)    │
+             │ borrows it mutably: only one such borrow may exist at a      │
+             │ time, and the caller sees the change.                        │
+             ╰──────────────────────────────────────────────────────────────╯

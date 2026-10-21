@@ -1,0 +1,149 @@
+== step-00.txt
+  7    impl<T> Stack<T> {
+  8        pub fn new() -> Self {
+  9            Self { items: Vec::new() }
+ 10        }
+ 11
+ 12        pub fn push(&mut self, item: T) {
+ 13            self.items.push(item);
+ 14        }
+ 15
+ 16        pub fn pop(&mut self) -> Option<T> {
+ 17            self.items.pop()
+ 18        }
+ 19
+ 20        pub fn peek(&self) -> Option<&T> {
+ 21            self.items.last()
+ 22        }
+ 23
+ 24        pub fn len(&self) -> usize {
+ 25            self.items.len()
+ 26        }
+ 27
+ 28        pub fn is_empty(&self) -> bool {
+ 29            self.items.is_empty()
+ 30        }
+== step-01.txt
+  7    impl<T> Stack<T> {
+  8        pub fn new() -> Self {
+  9            Self { items: Vec::new() }
+ 10        }
+ 11
+    ╭─ LIFO: push and pop at the same end ──────────╮
+ 12 │      pub fn push(&mut self, item: T) {        │ ═▶ write: mutates: needs &mut
+ 13 │          self.items.push(item);               │
+ 14 │      }                                        │
+ 15 │                                               │
+ 16 │      pub fn pop(&mut self) -> Option<T> {     │
+ 17 │          self.items.pop()                     │
+ 18 │      }                                        │
+    ╰───────────────────────────────────────────────╯
+ 19
+ 20        pub fn peek(&self) -> Option<&T> {
+ 21            self.items.last()
+ 22        }
+ 23
+ 24        pub fn len(&self) -> usize {
+ 25            self.items.len()
+ 26        }
+ 27
+ 28        pub fn is_empty(&self) -> bool {
+ 29            self.items.is_empty()
+ 30        }
+== step-02.txt
+ 10    impl<T> Queue<T> {
+ 11        pub fn new() -> Self {
+ 12            Self {
+ 13                items: VecDeque::new(),            ┆ a VecDeque, so both ends are O(1)
+ 14            }
+ 15        }
+ 16
+    ╭─ FIFO: in at the back, out at the front ──────╮
+ 17 │      pub fn enqueue(&mut self, item: T) {     │
+ 18 │          self.items.push_back(item);          │
+ 19 │      }                                        │
+ 20 │                                               │
+ 21 │      pub fn dequeue(&mut self) -> Option<T> { │
+ 22 │          self.items.pop_front()               │
+ 23 │      }                                        │
+    ╰───────────────────────────────────────────────╯
+ 24
+ 25        pub fn peek(&self) -> Option<&T> {
+ 26            self.items.front()
+ 27        }
+ 28
+ 29        pub fn len(&self) -> usize {
+ 30            self.items.len()
+ 31        }
+ 32
+ 33        pub fn is_empty(&self) -> bool {
+ 34            self.items.is_empty()
+ 35        }
+ 36    }
+== step-03.txt
+ 10    impl<T> Queue<T> {
+ 11        pub fn new() -> Self {
+ 12            Self {
+ 13                items: VecDeque::new(),            ┆ a VecDeque, so both ends are O(1)
+ 14            }
+ 15        }
+ 16
+    ╭─ FIFO: in at the back, out at the front ──────╮
+ 17 │      pub fn enqueue(&mut self, item: T) {     │
+ 18 │          self.items.push_back(item);          │
+ 19 │      }                                        │
+ 20 │                                               │
+ 21 │      pub fn dequeue(&mut self) -> Option<T> { │
+ 22 │          self.items.pop_front()               │
+ 23 │      }                                        │
+    ╰───────────────────────────────────────────────╯
+ 24
+ 25        pub fn peek(&self) -> Option<&T> {
+ 26            self.items.front()
+ 27        }
+ 28
+ 29        pub fn len(&self) -> usize {
+ 30            self.items.len()
+ 31        }
+ 32
+ 33        pub fn is_empty(&self) -> bool {
+ 34            self.items.is_empty()
+ 35        }
+ 36    }
+== step-04.txt
+  7    impl<T> Stack<T> {
+  8        pub fn new() -> Self {
+  9            Self { items: Vec::new() }
+ 10        }
+ 11
+    ╭─ LIFO: push and pop at the same end ──────────╮
+ 12 │      pub fn push(&mut self, item: T) {        │ ═▶ write: mutates: needs &mut
+ 13 │          self.items.push(item);               │
+ 14 │      }                                        │
+ 15 │                                               │
+ 16 │      pub fn pop(&mut self) -> Option<T> {     │
+ 17 │          self.items.pop()                     │
+ 18 │      }                                        │
+    ╰───────────────────────────────────────────────╯
+ 19
+ 20        pub fn peek(&self) -> Option<&T> {         ┆ same signature in both files: a shared
+ 21            self.items.last()                        borrow
+ 22        }
+ 23
+ 24        pub fn len(&self) -> usize {
+ 25            self.items.len()
+ 26        }
+ 27
+ 28        pub fn is_empty(&self) -> bool {
+ 29            self.items.is_empty()
+ 30        }
+== step-05.txt
+    ╭─ FIFO: in at the back, out at the front ──────╮
+ 17 │      pub fn enqueue(&mut self, item: T) {     │
+ 18 │          self.items.push_back(item);          │
+ 19 │      }                                        │
+ 20 │                                               │
+ 21 │      pub fn dequeue(&mut self) -> Option<T> { │
+ 22 │          self.items.pop_front()               │ ╌▶ read: the window crops; the box above
+ 23 │      }                                        │ still shows
+    ╰───────────────────────────────────────────────╯

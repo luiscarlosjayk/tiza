@@ -5,7 +5,8 @@
 //! Acceptance criteria (Luis, 2026-10-18: option b; 2026-10-19: no redact):
 //! - AC1 In the side-margin layout (wide terminals), a line that carries two
 //!   or more labels at the current step (highlight/mark labels, notes, an
-//!   arrow's label at its head, any mix) draws all of them under that line,
+//!   arrow's label at its head, a margin callout with no room for its block,
+//!   any mix) draws all of them under that line,
 //!   with the under-line rows the narrow layout already uses (`· the key`,
 //!   `┆ DB connection string`), in the narrow layout's order. Every other
 //!   line keeps its labels in the margin.
@@ -172,51 +173,52 @@ fn ac3_step3_sixty_columns_are_the_narrow_layout_as_before() {
 }
 
 #[test]
-fn ac3_step4_examples_without_multi_label_lines_keep_the_margin_layout() {
-    // Byte-for-byte against the old binary is in the card note (diff of
-    // `render --all-steps` at 100 and 130); here: a shipped example whose
-    // lines carry one label each lays out exactly as before, with no row
-    // under any line in the margin layout. ownership-moves (L7 at steps
-    // 4-5) and stack-impl (L20 at steps 4-5) are the two that change.
-    let changing = [
-        ("ownership-moves.rs.tiza", 7u32, [4u32, 5]),
-        ("stack-impl.tiza", 20, [4, 5]),
-    ];
-    for name in [
-        "ownership.rs.tiza",
-        "ownership-moves.rs.tiza",
-        "stack-and-queue.tiza",
-        "stack-impl.tiza",
-        "tally-tour.tiza",
+fn ac3_step4_examples_with_one_label_per_line_render_as_before() {
+    // `qa/fixtures/t-172/expected/<example>-<width>.txt`: `render
+    // --all-steps --format txt` of the example by the binary of c8a271e
+    // (before t-172), the steps one after another behind `== step-NN.txt`.
+    // ownership.rs at 108 is the README's width (scripts/readme-images.sh).
+    // ownership-moves (L7) and stack-impl (L20) change on purpose at steps
+    // 4-5 and are not here.
+    for (name, width) in [
+        ("ownership.rs", 108),
+        ("ownership.rs", 130),
+        ("stack-and-queue", 100),
+        ("stack-and-queue", 130),
+        ("tally-tour", 100),
+        ("tally-tour", 130),
     ] {
-        let doc = tiza_core::fs::open(example(name).to_str().unwrap())
+        let dir = scratch(&format!("t172-ac3-{name}-{width}"));
+        let out = format!("{}/", dir.display());
+        let file = example(&format!("{name}.tiza"));
+        let w = width.to_string();
+        tiza_ok(&[
+            "render",
+            file.to_str().unwrap(),
+            "--all-steps",
+            "--width",
+            &w,
+            "--format",
+            "txt",
+            "--out",
+            &out,
+        ]);
+        let mut steps: Vec<String> = std::fs::read_dir(&dir)
             .unwrap()
-            .document;
-        for width in [100usize, 130] {
-            for step in 0..=tiza_core::check::last_step(&doc) {
-                let l = lay(&doc, width, step, false);
-                if !l.labels_in_margin {
-                    // tally-tour's code is too wide for a margin at these
-                    // widths: the narrow layout, which t-172 leaves alone.
-                    assert_eq!(name, "tally-tour.tiza", "{name} at {width}");
-                    continue;
-                }
-                let under: Vec<u32> = l
-                    .rows
-                    .windows(2)
-                    .filter_map(|w| match w {
-                        [Row::Code(line), Row::Under(_)] => Some(*line),
-                        _ => None,
-                    })
-                    .collect();
-                let want: Vec<u32> = changing
-                    .iter()
-                    .filter(|(n, _, steps)| *n == name && steps.contains(&step))
-                    .map(|(_, line, _)| *line)
-                    .collect();
-                assert_eq!(under, want, "{name} at {width}, step {step}");
-            }
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        steps.sort();
+        let mut got = String::new();
+        for s in &steps {
+            got.push_str(&format!("== {s}\n"));
+            got.push_str(&std::fs::read_to_string(dir.join(s)).unwrap());
         }
+        let want = std::fs::read_to_string(fixture(&format!("t-172/expected/{name}-{width}.txt")))
+            .unwrap();
+        assert!(
+            got == want,
+            "{name} at {width} differs from before t-172:\n{got}"
+        );
     }
 }
 
@@ -488,4 +490,83 @@ fn ac5_every_export_draws_the_same_rows() {
         s[..s.find('"').unwrap()].parse().unwrap()
     };
     assert_eq!(h as f32, svg_h * 2.0);
+}
+
+#[test]
+fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
+    // QA's callout-short: the callout has no room for its block on L3 and
+    // falls back to a label; with the note it goes under L3 (it sat beside
+    // L4 before).
+    let t = render("callout-short.tiza", 100, &["--step", "1"]);
+    assert_eq!(
+        t,
+        " 1   DB_URL=postgres://demo:demo@localhost/app
+ 2   API_TOKEN=demo-token-123
+ 3   LOG_LEVEL=info
+     ┆ how chatty the logs are
+     ┆ set to debug locally
+ 4   PORT=8080
+",
+        "{t}"
+    );
+    // callout-short2: L4 has a label of its own, and the callout was not
+    // drawn at all; `check` said no width showed every label.
+    let t = render("callout-short2.tiza", 100, &["--step", "1"]);
+    assert_eq!(
+        t,
+        " 1   DB_URL=postgres://demo:demo@localhost/app
+ 2   API_TOKEN=demo-token-123
+ 3   LOG_LEVEL=info
+     ┆ how chatty the logs are
+     ┆ set to debug locally
+ 4   PORT=8080                                  ┆ the port
+",
+        "{t}"
+    );
+    let p = path("callout-short2.tiza");
+    let out = tiza_ok(&["check", &p, "--width", "100"]);
+    assert!(out.contains("0 errors, 0 warnings"), "{out}");
+    assert!(out.contains("no label is clipped at 30 or wider"), "{out}");
+    // A callout whose block fits stays a block in the margin, beside the
+    // two labels under L1.
+    let t = render("callout-fits.tiza", 100, &[]);
+    assert!(
+        t.starts_with(
+            " 1   DB_URL=postgres://demo:demo@localhost/app  ╭─────────╮
+     · the key                                  │ short   │
+     ┆ DB connection string                     │ callout │
+"
+        ),
+        "{t}"
+    );
+}
+
+#[test]
+fn ac5_corner_labels_under_a_line_keep_the_fill_of_their_box() {
+    // stack-impl step 5: the rows under L20 are inside the filled `impl`
+    // box; every cell of them between the rails has the fill the code rows
+    // have (it was the base background behind the text), at 100 and 60.
+    let doc = tiza_core::fs::open(example("stack-impl.tiza").to_str().unwrap())
+        .unwrap()
+        .document;
+    for width in [100usize, 60] {
+        let l = lay(&doc, width, 5, false);
+        let y20 = l.row_of_line[&20];
+        let y21 = l.row_of_line[&21];
+        assert!(y21 > y20 + 1, "rows under L20 at {width}");
+        let fill = l.canvas.get(l.code_x, y21).unwrap().style.bg;
+        for y in y20 + 1..y21 {
+            assert!(matches!(l.rows[y], Row::Under(_)));
+            for x in l.code_x..l.code_x + 20 {
+                let c = l.canvas.get(x, y).unwrap();
+                assert_eq!(
+                    c.style.bg,
+                    fill,
+                    "width {width}, cell {x},{y} «{}»\n{}",
+                    c.sym.as_str(),
+                    l.canvas.to_plain_text()
+                );
+            }
+        }
+    }
 }

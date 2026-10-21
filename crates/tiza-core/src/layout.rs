@@ -361,6 +361,38 @@ pub fn layout_with(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> Layout {
+    let owned;
+    let geometry = match geometry {
+        None if opts.stable => {
+            owned = stable_geometry(doc, opts);
+            Some(&owned)
+        }
+        g => g,
+    };
+    let none = std::collections::BTreeSet::new();
+    let (l, under_callouts) = layout_pass(doc, theme, opts, geometry, &none);
+    if under_callouts.is_empty() {
+        return l;
+    }
+    // A margin callout with no room for its block becomes a label of its
+    // first line; when that line has another label too, it goes under the
+    // line with them (t-172). Whether the block fits is only known once the
+    // rows exist, so the layout runs once more with those callouts as labels
+    // (the extra rows only give the other blocks more room).
+    layout_pass(doc, theme, opts, geometry, &under_callouts).0
+}
+
+/// One run of the layout. `under_callouts`: ids of margin callouts drawn
+/// as labels under their first line (see [`layout_with`]). Also returns
+/// the margin callouts that fell back to a label on a line that has
+/// another label, for the second run.
+fn layout_pass(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    under_callouts: &std::collections::BTreeSet<String>,
+) -> (Layout, std::collections::BTreeSet<String>) {
     let width = opts.width.max(20);
     let stable = opts.stable.then(|| {
         geometry
@@ -568,11 +600,14 @@ pub fn layout_with(
     // draws them all under itself, as the narrow layout does (t-172):
     // stacked in the margin, the second one sat beside the next line and
     // read as if it explained that line.
-    let under_lines: std::collections::BTreeSet<u32> = if labels_in_margin {
-        let mut count: BTreeMap<u32, usize> = BTreeMap::new();
+    // Labels per line in the margin layout (a margin callout counts once
+    // it is drawn as a label, see `under_callouts`).
+    let mut label_count: BTreeMap<u32, usize> = BTreeMap::new();
+    if labels_in_margin {
         for a in &vis {
             let line = match &a.shape {
                 Shape::Note { line, .. } => *line,
+                Shape::Callout { from_line, .. } if under_callouts.contains(&a.id) => *from_line,
                 Shape::Mark { span, .. }
                 | Shape::Highlight {
                     span,
@@ -587,16 +622,14 @@ pub fn layout_with(
                 } if from.line != to.line => to.line,
                 _ => continue,
             };
-            *count.entry(line).or_insert(0) += 1;
+            *label_count.entry(line).or_insert(0) += 1;
         }
-        count
-            .into_iter()
-            .filter(|&(_, n)| n >= 2)
-            .map(|(line, _)| line)
-            .collect()
-    } else {
-        Default::default()
-    };
+    }
+    let under_lines: std::collections::BTreeSet<u32> = label_count
+        .iter()
+        .filter(|&(_, n)| *n >= 2)
+        .map(|(line, _)| *line)
+        .collect();
     let in_margin = |line: u32| labels_in_margin && !under_lines.contains(&line);
 
     // ---- callouts: decide placement and pre-wrap their text ----
@@ -738,6 +771,15 @@ pub fn layout_with(
                     Shape::Note { line: l, text } if *l == line => {
                         Some((text.clone(), color_of(a), true))
                     }
+                    // A margin callout drawn as a label (t-172): its words,
+                    // as the margin would wrap them.
+                    Shape::Callout {
+                        from_line, text, ..
+                    } if *from_line == line && under_callouts.contains(&a.id) => Some((
+                        text.split_whitespace().collect::<Vec<_>>().join(" "),
+                        color_of(a),
+                        true,
+                    )),
                     Shape::Mark {
                         kind,
                         span,
@@ -1388,10 +1430,18 @@ pub fn layout_with(
         let (lbl, is_note) = &unders[*i];
         let style = base.fg(lbl.color).italic();
         let x = match &lbl.glyph {
-            Some(g) => code_x + canvas.put_str(code_x, y, g, base.fg(lbl.color).bold()) + 1,
+            Some(g) => {
+                code_x
+                    + keep_bg(&mut canvas, code_x, y, |c| {
+                        c.put_str(code_x, y, g, base.fg(lbl.color).bold())
+                    })
+                    + 1
+            }
             None => {
                 let prefix = if *is_note { "┆ " } else { "· " };
-                canvas.put_str(code_x, y, prefix, style);
+                keep_bg(&mut canvas, code_x, y, |c| {
+                    c.put_str(code_x, y, prefix, style)
+                });
                 code_x + 2
             }
         };
@@ -1399,7 +1449,9 @@ pub fn layout_with(
         if display_width(&lbl.text, 4) > avail {
             clip(&mut clipped, &lbl.id, &lbl.text, avail <= 1);
         }
-        canvas.put_str_clipped(x, y, &lbl.text, avail, style.prose());
+        keep_bg(&mut canvas, x, y, |c| {
+            c.put_str_clipped(x, y, &lbl.text, avail, style.prose())
+        });
     }
     // Arrow labels beside the code of their target line (t-116): after the
     // code and the arrows, inside the code column, so a box border is never
@@ -1417,13 +1469,17 @@ pub fn layout_with(
                 clip(&mut clipped, id, text, true);
                 continue;
             }
-            let gw = canvas.put_str_clipped(x0, y, glyph, end - x0, base.fg(*color).bold());
+            let gw = keep_bg(&mut canvas, x0, y, |c| {
+                c.put_str_clipped(x0, y, glyph, end - x0, base.fg(*color).bold())
+            });
             let x1 = x0 + gw + 1;
             if x1 >= end || display_width(text, 4) > end - x1 {
                 clip(&mut clipped, id, text, x1 + 1 >= end);
             }
             let tw = if x1 < end {
-                canvas.put_str_clipped(x1, y, text, end - x1, base.fg(*color).italic().prose())
+                keep_bg(&mut canvas, x1, y, |c| {
+                    c.put_str_clipped(x1, y, text, end - x1, base.fg(*color).italic().prose())
+                })
             } else {
                 0
             };
@@ -1491,9 +1547,11 @@ pub fn layout_with(
         }
     }
     // Margin: reserve rows from the callout's first line.
+    // Callouts that fell back to a label, by first line (t-172).
+    let mut fallbacks: Vec<(&str, u32)> = Vec::new();
     if labels_in_margin && margin_w > 0 {
         for c in &callouts {
-            if c.below {
+            if c.below || under_callouts.contains(&vis[c.idx].id) {
                 continue;
             }
             let Shape::Callout { from_line, .. } = &vis[c.idx].shape else {
@@ -1515,6 +1573,7 @@ pub fn layout_with(
                     note: true,
                     glyph: None,
                 });
+                fallbacks.push((vis[c.idx].id.as_str(), *from_line));
                 continue;
             }
             if draw_block(&mut canvas, c, margin_x, y0, color_of(vis[c.idx])) {
@@ -1530,12 +1589,14 @@ pub fn layout_with(
     }
 
     // ---- 7. margin ----
-    // Each label takes its own margin row. If a line has several, the next
-    // ones move down to the free rows below; if a label does not fit, it is
-    // split into words and continues on the next row. A row that belongs to
+    // Each label takes its own margin row; if it does not fit, it is split
+    // into words and continues on the free rows below. A row that belongs to
     // another line's label is never taken by a continuation or an overflow
     // (so labels do not drift away from their line); what does not fit is
-    // clipped with an ellipsis on the last row it got.
+    // clipped with an ellipsis on the last row it got. A line with several
+    // labels draws them under itself (t-172, `under_lines`), so a code row
+    // here holds one label; should a row still get several, the next ones
+    // start on the free rows after the previous one.
     if labels_in_margin && margin_w > 0 {
         let height = canvas.height;
         let reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
@@ -1630,15 +1691,29 @@ pub fn layout_with(
         }
     }
 
-    Layout {
-        canvas,
-        rows,
-        row_of_line,
-        code_x,
-        clipped_code: (code_full_w > code_w).then_some(code_full_w),
-        labels_in_margin,
-        clipped_labels: clipped,
-    }
+    // A fallen-back callout sharing its line with another label goes under
+    // that line in the second run (see `layout_with`).
+    let retry = fallbacks
+        .iter()
+        .filter(|(_, line)| {
+            label_count.get(line).copied().unwrap_or(0)
+                + fallbacks.iter().filter(|(_, l)| l == line).count()
+                >= 2
+        })
+        .map(|(id, _)| id.to_string())
+        .collect();
+    (
+        Layout {
+            canvas,
+            rows,
+            row_of_line,
+            code_x,
+            clipped_code: (code_full_w > code_w).then_some(code_full_w),
+            labels_in_margin,
+            clipped_labels: clipped,
+        },
+        retry,
+    )
 }
 
 /// Splits `text` into chunks of at most `width` cells, breaking on words
@@ -1691,6 +1766,28 @@ impl Glyphs {
     fn for_border(bs: &crate::model::BorderStyle) -> Glyphs {
         Glyphs::new(bs.border, bs.corners)
     }
+}
+
+/// Runs `draw` (text written from `x` on row `y`, returning its width) and
+/// gives the cells it wrote back the background they had: a label under a
+/// line or beside the code takes the fill of the box it sits in, not the
+/// base background (t-172).
+fn keep_bg(
+    canvas: &mut Canvas,
+    x: usize,
+    y: usize,
+    draw: impl FnOnce(&mut Canvas) -> usize,
+) -> usize {
+    let before: Vec<Option<Rgb>> = (x..canvas.width)
+        .map(|cx| canvas.get(cx, y).and_then(|c| c.style.bg))
+        .collect();
+    let w = draw(canvas);
+    for (cx, bg) in (x..x + w).zip(before) {
+        if let Some(bg) = bg {
+            canvas.restyle(cx, y, 1, CellStyle::new().bg(bg));
+        }
+    }
+    w
 }
 
 /// Glyph for a head at a line end, or `None` to continue the line.
@@ -2080,7 +2177,7 @@ mod tests {
     }
 
     #[test]
-    fn margin_labels_wrap_and_stack_instead_of_clipping() {
+    fn margin_label_wraps_over_free_rows_and_is_clipped_before_the_next_lines_label() {
         let mut d = doc();
         // A long note on a line whose next line has its own label.
         d.add(Annotation {
@@ -2277,6 +2374,173 @@ mod tests {
         assert!(!l.rows.iter().any(|r| matches!(r, Row::Callout(..))));
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 114);
+        }
+    }
+
+    /// `callout_doc` with the callout moved to the last lines, where its
+    /// block has no room (fewer rows below than it is tall) and it falls
+    /// back to a label of its first line.
+    /// `tail`: code after `main`, so the label has free rows to wrap into.
+    fn short_callout_doc(tail: &str, with_note: bool) -> Document {
+        let mut d = Document::from_code(
+            &format!(
+                "fn main() {{\n    let s = String::from(\"hola\");\n    takes(s);\n}}\n{tail}"
+            ),
+            "rs",
+            None,
+        );
+        d.add(Annotation {
+            id: "c1".into(),
+            step: 1,
+            color: None,
+            markers: None,
+            file: None,
+            shape: Shape::Callout {
+                from_line: 3,
+                to_line: None,
+                text: "takes(s) moves the String: main cannot use s after this line".into(),
+                title: None,
+                placement: Placement::Margin,
+                width: None,
+                frame: Default::default(),
+            },
+        })
+        .unwrap();
+        if with_note {
+            d.add(Annotation {
+                id: "n1".into(),
+                step: 1,
+                color: None,
+                markers: None,
+                file: None,
+                shape: Shape::Note {
+                    line: 3,
+                    text: "the call".into(),
+                },
+            })
+            .unwrap();
+        }
+        d
+    }
+
+    #[test]
+    fn fallen_back_callout_alone_on_its_line_stays_in_the_margin_and_wraps() {
+        let d = short_callout_doc("\nfn f() {}\n", false);
+        let l = layout(
+            &d,
+            &Theme::dark(),
+            &LayoutOptions {
+                width: 70,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        assert!(l.labels_in_margin);
+        assert!(!l.rows.iter().any(|r| matches!(r, Row::Under(_))), "{text}");
+        // On the row of L3, then over the free rows of L4 and L5 (t-172
+        // keeps the margin path for a line with one label).
+        let r3 = l.canvas.row_text(l.row_of_line[&3]);
+        assert!(
+            r3.contains("takes(s);") && r3.contains("┆ takes(s) moves"),
+            "{text}"
+        );
+        assert!(
+            l.canvas.row_text(l.row_of_line[&4]).contains("main cannot"),
+            "{text}"
+        );
+        assert!(l.clipped_labels.is_empty(), "{:?}", l.clipped_labels);
+    }
+
+    #[test]
+    fn fallen_back_callout_with_another_label_goes_under_its_line() {
+        let d = short_callout_doc("", true);
+        let l = layout(
+            &d,
+            &Theme::dark(),
+            &LayoutOptions {
+                width: 100,
+                step: 1,
+                ..Default::default()
+            },
+        );
+        let text = l.canvas.to_plain_text();
+        println!("{text}");
+        let y = l.row_of_line[&3];
+        let r3 = l.canvas.row_text(y);
+        assert!(r3.contains("takes(s);") && !r3.contains('┆'), "{text}");
+        assert!(
+            l.canvas
+                .row_text(y + 1)
+                .contains("┆ takes(s) moves the String: main cannot use s after this line")
+        );
+        assert!(l.canvas.row_text(y + 2).contains("┆ the call"), "{text}");
+        assert_eq!(l.row_of_line[&4], y + 3);
+        assert!(l.clipped_labels.is_empty(), "{:?}", l.clipped_labels);
+    }
+
+    #[test]
+    fn under_labels_keep_the_fill_of_the_box_they_sit_in() {
+        // Three labels on L3 inside a filled box: the cells of their under
+        // rows keep the box's tint, as the code rows around them (t-172).
+        let mut d = doc();
+        for (id, text) in [("n1", "first"), ("n2", "second")] {
+            d.add(Annotation {
+                id: id.into(),
+                step: 1,
+                color: None,
+                markers: None,
+                file: None,
+                shape: Shape::Note {
+                    line: 3,
+                    text: text.into(),
+                },
+            })
+            .unwrap();
+        }
+        d.add(Annotation {
+            id: "b1".into(),
+            step: 1,
+            color: None,
+            markers: None,
+            file: None,
+            shape: Shape::Box {
+                from_line: 2,
+                to_line: 4,
+                label: None,
+                frame: Default::default(),
+            },
+        })
+        .unwrap();
+        let th = Theme::dark();
+        for width in [60, 100] {
+            let l = layout(
+                &d,
+                &th,
+                &LayoutOptions {
+                    width,
+                    step: 1,
+                    ..Default::default()
+                },
+            );
+            let text = l.canvas.to_plain_text();
+            let fill = l.canvas.get(l.code_x, l.row_of_line[&4]).unwrap().style.bg;
+            assert_ne!(fill, Some(th.bg), "the box is filled\n{text}");
+            // The mark of `doc()` and the two notes, under L3.
+            let y = row_with("┆ first", &l);
+            assert_eq!(y, l.row_of_line[&3] + 2, "{text}");
+            for y in y - 1..=y + 1 {
+                for x in l.code_x..l.code_x + 8 {
+                    let c = l.canvas.get(x, y).unwrap();
+                    assert_eq!(
+                        c.style.bg,
+                        fill,
+                        "width {width}, cell {x},{y} «{}»\n{text}",
+                        c.sym.as_str()
+                    );
+                }
+            }
         }
     }
 
