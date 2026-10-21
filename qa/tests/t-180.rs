@@ -29,10 +29,12 @@
 //! sends SIGWINCH as a real terminal does), waits the delay — counted from
 //! the terminal setup (`ESC[?2004h`, written right before the first frame,
 //! so the resize lands while it is laid out), or from the spawn as the card
-//! measured it — and sets the final size. Then it waits (30 s at most) for
-//! the emulated screen, characters and styles, to equal a fresh start at
-//! the final size, and asks `tiza api status` for the size of the last
-//! frame drawn. Before the fix, in the debug build `cargo test` makes, a
+//! measured it — and sets the final size. Then the emulated screen,
+//! characters and styles, has to equal a fresh start at the final size
+//! within `BUDGET_S` (1 s) of the resize — of the end of the first frame
+//! when the resize came before it, since nothing can be redrawn before
+//! something is drawn — and `tiza api status` has to give that size for the
+//! last frame drawn. Before the fix, in the debug build `cargo test` makes, a
 //! resize 0 to 200 ms after the setup was lost on every run (4 of 4 at each
 //! delay; the first frame takes longer than that to lay out), so on `main`
 //! every case but the host-query and smoke ones fails, every time. With the
@@ -52,6 +54,9 @@ use tiza_qa::{bin, fixture, scratch};
 static ONE_CASE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 const DELAYS: [u64; 7] = [0, 5, 10, 20, 50, 100, 200];
+/// How long after the resize (or after the first frame, when the resize
+/// came before it) the frame at the final size may take: AC1's «after 1 s».
+const BUDGET_S: f64 = 1.0;
 const W: u16 = 60;
 const H: u16 = 30;
 
@@ -69,6 +74,9 @@ if not spec.get("osc"):
 # Bracketed paste on: the last thing Tiza writes before its first frame.
 SETUP = b"\x1b[?2004h"
 QUERY = b"\x1b]11;?"
+# ratatui ends every frame by hiding (or placing) the cursor.
+FRAME_END = (b"\x1b[?25l", b"\x1b[?25h")
+BUDGET = spec["budget_s"]
 ANSWER = spec.get("answer", "").encode()
 COUNT = [0]
 
@@ -256,6 +264,12 @@ if spec.get("answer"):
         print("ANSWER_INVISIBLE the reference without the host answer is the same frame", flush=True)
 
 
+def drew(o):
+    """A whole frame is out (after the terminal setup)."""
+    i = o.find(SETUP)
+    return i >= 0 and any(m in o[i:] for m in FRAME_END)
+
+
 def race(run, p, t_spawn, results):
     name = "%s@%dms" % (run["name"], run["delay_ms"])
     start = tuple(run["start"])
@@ -276,12 +290,19 @@ def race(run, p, t_spawn, results):
         p.resize(rows, cols)
     if anchor == "query" and ANSWER:
         p.send(ANSWER)
-    t_resize = time.monotonic()
     ref = REFS[final]
     rows, cols = max(start[0], *(s[0] for s in sizes)), max(start[1], *(s[1] for s in sizes))
     same = lambda o: screen(o, rows, cols, final[0], final[1]) == ref
-    ok = p.wait_for(same, 30, name + " frame at the final size")
-    took = time.monotonic() - t_resize
+    # The deadline (AC1): BUDGET seconds after the resize, or after the
+    # first frame when the resize came before it (nothing can be fixed
+    # before something is drawn). Waiting for that frame is a condition;
+    # the frame at the final size has to follow within the budget.
+    if not p.wait_for(drew, 30, name + " first frame"):
+        results[name] = "WRONG no frame drawn"
+        return
+    t_base = time.monotonic()
+    ok = p.wait_for(same, BUDGET, name + " frame at the final size within %.1fs" % BUDGET)
+    took = time.monotonic() - t_base
     st = status(run["sock"])
     if ok and st == final:
         results[name] = "OK %.2fs" % took
@@ -290,7 +311,7 @@ def race(run, p, t_spawn, results):
         path = os.path.join(tmp, "wrong-%s.txt" % name.replace("@", "-"))
         with open(path, "w") as f:
             f.write("got:\n%s\n\nexpected:\n%s\n" % (text(got), text(ref)))
-        results[name] = "WRONG status=%s frame_equal=%s (%s)" % (st, ok, path)
+        results[name] = "WRONG status=%s frame_within_%.1fs=%s (%s)" % (st, BUDGET, ok, path)
 
 
 results = {}
@@ -376,7 +397,7 @@ fn race(case: &str, argv: Vec<String>, runs: Vec<Value>, extra: Value) {
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let dir = scratch(&format!("t180-{case}"));
-    let mut spec = json!({ "argv": argv, "runs": runs });
+    let mut spec = json!({ "argv": argv, "runs": runs, "budget_s": BUDGET_S });
     if let (Some(s), Some(e)) = (spec.as_object_mut(), extra.as_object()) {
         s.extend(e.clone());
     }
@@ -395,6 +416,8 @@ fn race(case: &str, argv: Vec<String>, runs: Vec<Value>, extra: Value) {
     );
     let n = spec["runs"].as_array().map_or(0, Vec::len);
     let results: Vec<&str> = out.lines().filter(|l| l.starts_with("RESULT ")).collect();
+    // How long each frame took (shown with --nocapture).
+    println!("{case}:\n{}", results.join("\n"));
     let wrong: Vec<&&str> = results.iter().filter(|l| !l.contains(" OK ")).collect();
     assert_eq!(results.len(), n, "every race reports a result:\n{out}");
     assert!(
@@ -533,16 +556,14 @@ fn corner_a_resize_while_a_big_document_loads() {
     code.push_str("}\n");
     let src = dir.join("big.rs");
     std::fs::write(&src, code).unwrap();
-    // From the spawn: while it loads, before the socket server is up; from
-    // the setup: while its first frame is laid out.
-    let mut runs = at_every_delay("61to60-spawn", (H, W + 1), &[(H, W)], "spawn");
-    runs.extend(at_every_delay(
-        "61to60-setup",
-        (H, W + 1),
-        &[(H, W)],
-        "setup",
-    ));
-    race("big", normal_args(&src), runs, json!({}));
+    // While its first frame is laid out (a resize while it loads, before
+    // the socket server is up, is the `spawn` case of AC1).
+    race(
+        "big",
+        normal_args(&src),
+        at_every_delay("61to60", (H, W + 1), &[(H, W)], "setup"),
+        json!({}),
+    );
 }
 
 #[test]
