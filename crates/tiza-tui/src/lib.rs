@@ -233,6 +233,13 @@ fn event_loop(
     app: &mut App,
     ipc: Option<&ipc::IpcServer>,
 ) -> io::Result<()> {
+    // crossterm creates its input source, and starts catching SIGWINCH, on
+    // the first poll (t-180). Done here, before the first frame: a resize
+    // until now is read by that frame (ratatui asks the size on every draw),
+    // and one from now on arrives as `Event::Resize`. Polling only after the
+    // first draw lost a resize that came while it was laid out, and nothing
+    // redrew until a key.
+    event::poll(Duration::ZERO)?;
     let mut needs_draw = true;
     let mut mouse_captured = app.mouse;
     loop {
