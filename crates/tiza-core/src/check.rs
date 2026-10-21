@@ -1048,6 +1048,34 @@ impl<'a> Take<'a> {
         }
     }
 
+    /// The widest width step `i` must be searched from: the first of
+    /// `bounds` (see [`saturation_width`]) whose take is the one at
+    /// [`MAX_WIDTH`], else [`MAX_WIDTH`]; and whether that take clips a
+    /// label.
+    fn top(&self, i: usize, theme: &Theme, bounds: [usize; 2]) -> (usize, bool) {
+        if bounds[0] >= MAX_WIDTH {
+            return (MAX_WIDTH, false);
+        }
+        let widest = self.layout(i, theme, MAX_WIDTH);
+        let mut tried = None;
+        for b in bounds {
+            if tried == Some(b) || b >= MAX_WIDTH {
+                continue;
+            }
+            tried = Some(b);
+            let at = self.layout(i, theme, b);
+            if same_take(&at, &widest, theme) {
+                return (b, !at.clipped_labels.is_empty());
+            }
+        }
+        debug_assert!(
+            bounds[1] >= MAX_WIDTH,
+            "step {}: the take at {bounds:?} columns is not the one at {MAX_WIDTH}",
+            self.steps[i].step
+        );
+        (MAX_WIDTH, !widest.clipped_labels.is_empty())
+    }
+
     /// The layout of step `i` (an index in `steps`) at `width`.
     fn layout(&self, i: usize, theme: &Theme, width: usize) -> crate::layout::Layout {
         let s = &self.steps[i];
@@ -1593,6 +1621,143 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
     widest_clipped(&Take::of(doc), theme).map_or(Some(MIN_WIDTH), clean_above)
 }
 
+/// The width from which no step of `doc` changes any more, other than by
+/// blank columns on the right (at most [`MAX_WIDTH`]). It follows the rules
+/// of [`layout_with`] on a stable take, which sizes everything from
+/// [`StableGeometry`]:
+/// - the code column ends at `margin_x` = line numbers + two cells per
+///   arrow lane + the box band on both sides of the code + its two gaps +
+///   the widest code line (at least 10, `code_w` never goes below) + the
+///   two cells before the margin; every arrow is counted as a lane, since a
+///   step may need more lanes than the take's own count when it estimates
+///   the margin;
+/// - with a cap (`:margin N`) the frame and the margin stop growing one
+///   column past `margin_x + N`;
+/// - without one, the margin is past every decision once it holds a margin
+///   callout (its block is at most `max(width or 34, 8, title + 4) + 4`
+///   wide, `auto` moves into the margin at `width + 19`, and the labels
+///   beside it get the rows once the block plus 15 fits) and, beside it,
+///   the longest label on one row (its `┆ ` and the gap after it), and the
+///   rows under the lines hold that label whole too;
+/// - a callout with no rows for its block below its line is drawn as a
+///   label of its words, which wrap in the margin or are cut under the
+///   line: past the bound that leaves them out, the take changes only if
+///   one of those labels does, and then the wrap or the cut differs at
+///   [`MAX_WIDTH`] (a greedy wrap that is the same at two widths is the
+///   same at every width between them).
+///
+/// Each step is laid out at the bound and at [`MAX_WIDTH`]: the first bound
+/// whose take is the one at [`MAX_WIDTH`] is that step's; where neither is,
+/// the step is searched from [`MAX_WIDTH`] (a change in the layout's rules
+/// costs time, never a wrong answer).
+pub fn saturation_width(doc: &Document, theme: &Theme) -> usize {
+    let take = Take::of(doc);
+    let bounds = take_saturation(&take);
+    (0..take.steps.len())
+        .filter(|&i| take.steps[i].labels)
+        .map(|i| take.top(i, theme, bounds).0)
+        .max()
+        .unwrap_or(bounds[0])
+}
+
+/// The two bounds of [`saturation_width`]: the first leaves out the words
+/// of the callouts, which matter only when one has no rows for its block;
+/// the second counts them as a label too.
+fn take_saturation(take: &Take) -> [usize; 2] {
+    use crate::canvas::display_width;
+    let doc = take.doc;
+    let g = &take.geometry;
+    let w = |t: &str| display_width(t, 4);
+    let arrows = doc
+        .annotations
+        .iter()
+        .filter(|a| matches!(a.shape, Shape::Arrow { .. }))
+        .count();
+    let margin_x =
+        g.num_w + 2 * arrows.max(g.lane_count) + 2 * g.box_depth + 2 + g.code_full_w.max(10) + 2;
+    // The widest label; the widest margin callout's text column (`width`,
+    // 34 by default, at least 8, and its title with the `─ ` before and
+    // ` ─` after); the widest callout's words as a label.
+    let (mut longest, mut callout, mut fallback) = (0, 0, 0);
+    for a in &doc.annotations {
+        let text = match &a.shape {
+            Shape::Note { text, .. } => w(text),
+            Shape::Highlight { label, .. }
+            | Shape::Box { label, .. }
+            | Shape::Arrow { label, .. } => label.as_deref().map_or(0, w),
+            Shape::Mark {
+                kind, style, label, ..
+            } => {
+                // `glyph legend: label`, the legend defaulting to the kind.
+                let st = doc.resolve_style(kind, style).unwrap_or_default();
+                st.glyph.as_deref().map_or(0, |g| w(g) + 1)
+                    + st.legend.as_deref().map_or(w(kind), w)
+                    + label.as_deref().map_or(0, |l| 2 + w(l))
+            }
+            Shape::Callout {
+                text, title, width, ..
+            } => {
+                let inner = width
+                    .unwrap_or(34)
+                    .max(8)
+                    .max(title.as_deref().map_or(0, |t| w(t) + 4));
+                callout = callout.max(inner);
+                // A callout with no room for its block (no rows left below
+                // it) is drawn as a label of its words.
+                fallback = fallback.max(w(&text.split_whitespace().collect::<Vec<_>>().join(" ")));
+                0
+            }
+            Shape::Spotlight { .. } => 0,
+        };
+        longest = longest.max(text);
+    }
+    let bound = |longest: usize| {
+        // A margin of `room` cells: past every margin decision (14 cells),
+        // past the callout rules (`auto` moves in at `width + 19`, the
+        // labels beside a block get its rows from `block + 1 + 14`), and
+        // with the longest label on one row after its `┆ ` and a gap, also
+        // beside a callout's block (`block + 1` further right).
+        let mut room = 14usize.max(3 + longest);
+        if callout > 0 {
+            room = room.max(callout + 19).max(callout + 4 + 1 + 3 + longest);
+        }
+        let open = margin_x + room + 2;
+        let capped = doc
+            .margin
+            .map_or(open, |cap| open.min(margin_x + usize::from(cap) + 1));
+        capped.clamp(MIN_WIDTH, MAX_WIDTH)
+    };
+    [bound(longest), bound(longest.max(fallback))]
+}
+
+/// Two layouts of one step at two widths draw the same take: the same rows
+/// and labels, the same cells, and only blank columns on the right of the
+/// wider one.
+fn same_take(a: &crate::layout::Layout, b: &crate::layout::Layout, theme: &Theme) -> bool {
+    let (narrow, wide) = if a.canvas.width <= b.canvas.width {
+        (a, b)
+    } else {
+        (b, a)
+    };
+    let blank = crate::canvas::Cell {
+        style: theme.base(),
+        ..Default::default()
+    };
+    narrow.rows == wide.rows
+        && narrow.row_of_line == wide.row_of_line
+        && narrow.code_x == wide.code_x
+        && narrow.clipped_code == wide.clipped_code
+        && narrow.labels_in_margin == wide.labels_in_margin
+        && narrow.clipped_labels == wide.clipped_labels
+        && narrow.canvas.height == wide.canvas.height
+        && (0..wide.canvas.height).all(|y| {
+            (0..wide.canvas.width).all(|x| match narrow.canvas.get(x, y) {
+                Some(c) => wide.canvas.get(x, y) == Some(c),
+                None => wide.canvas.get(x, y) == Some(&blank),
+            })
+        })
+}
+
 /// The width above the widest one that clips: `None` when that one is
 /// [`MAX_WIDTH`] itself.
 fn clean_above(clipped: usize) -> Option<usize> {
@@ -1601,12 +1766,13 @@ fn clean_above(clipped: usize) -> Option<usize> {
 
 /// The widest width from [`MIN_WIDTH`] to [`MAX_WIDTH`] at which a label
 /// is clipped at some step (`None`: no width clips one). Every width above
-/// it is laid out at every step: a wider take does not always clip less
-/// (where the margin first appears it is narrower than the rows under the
-/// lines were, and a callout that moves into the margin can find no room
-/// there), so no width is assumed from its neighbours.
+/// it, up to the one from which the take no longer changes
+/// ([`saturation_width`]), is laid out at every step: a wider take does not
+/// always clip less (where the margin first appears it is narrower than the
+/// rows under the lines were, and a callout that moves into the margin can
+/// find no room there), so no width is assumed from its neighbours.
 fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
-    let widths: Vec<usize> = (MIN_WIDTH..=MAX_WIDTH).rev().collect();
+    let bounds = take_saturation(take);
     let widest = AtomicUsize::new(0);
     // The last steps first: they usually draw the most labels, so the
     // widest clip is found early and the other steps stop above it.
@@ -1614,8 +1780,14 @@ fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
         if !take.steps[i].labels {
             continue;
         }
+        let (top, clips) = take.top(i, theme, bounds);
+        if clips && top < MAX_WIDTH {
+            // The same take, so the same clip, from the bound up.
+            widest.store(MAX_WIDTH, Ordering::Relaxed);
+            break;
+        }
         let above = widest.load(Ordering::Relaxed);
-        let todo: Vec<usize> = widths.iter().copied().filter(|&w| w > above).collect();
+        let todo: Vec<usize> = (MIN_WIDTH..=top).rev().filter(|&w| w > above).collect();
         take.sweep(i, theme, &todo, Some(&widest), |_| ());
     }
     match widest.into_inner() {

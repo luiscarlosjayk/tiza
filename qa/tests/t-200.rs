@@ -16,10 +16,13 @@
 //!   widest one that clips is laid out at every step; the announced width is
 //!   the one above that.)
 //! - AC2 Cost: checking every width from 30 to 400 must stay fast; report
-//!   the time on the t-138 big file. (The moves are replayed once per step
-//!   instead of once per layout, a step that draws no annotation is not laid
-//!   out, the widths are shared among the cores, and the search stops at the
-//!   widest width that clips; times in the card's note.)
+//!   the time on the t-138 big file. (The search starts at the width from
+//!   which the take no longer changes, `check::saturation_width`, a bound
+//!   from the layout's rules checked on every step against the take at 400;
+//!   the moves are replayed once per step instead of once per layout, a step
+//!   that draws no annotation is not laid out, the widths are shared among
+//!   the cores, and the search stops at the widest width that clips; times
+//!   in the card's note.)
 //! - AC3 Same in `check` over the socket/MCP and in `status`. (The socket
 //!   and MCP `check` run the same search on the live document; `status`
 //!   reports no clean width, only the live layout's warnings.)
@@ -55,35 +58,46 @@ fn open(path: &str) -> tiza_core::Document {
     tiza_core::fs::open(path).unwrap().document
 }
 
-/// The widths from [`MIN_WIDTH`] to [`MAX_WIDTH`] at which some step of a
-/// take clips a label, found the slow way: every width, every step, the
-/// whole document laid out as `tiza render` lays it out.
-fn clipping_widths(doc: &tiza_core::Document) -> Vec<usize> {
-    let theme = tiza_core::Theme::dark();
-    let steps = doc.change_steps(tiza_core::check::last_step(doc));
-    let clips = |width: usize| {
-        steps.iter().any(|&step| {
-            let opts = LayoutOptions {
-                width,
-                step,
-                line_numbers: doc.numbers,
-                margin_cap: doc.margin.map(usize::from),
-                ..Default::default()
-            };
-            !layout(doc, &theme, &opts).clipped_labels.is_empty()
-        })
+/// The layout `tiza render --step STEP --width WIDTH` draws of the whole
+/// document.
+fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout::Layout {
+    let opts = LayoutOptions {
+        width,
+        step,
+        line_numbers: doc.numbers,
+        margin_cap: doc.margin.map(usize::from),
+        ..Default::default()
     };
-    // One width in every `n` per thread: the layouts are independent.
+    layout(doc, &tiza_core::Theme::dark(), &opts)
+}
+
+/// Some step of the take, every one from 0 to the last (not only those
+/// where something changes), clips a label at `width`.
+fn clips(doc: &tiza_core::Document, width: usize) -> bool {
+    (0..=tiza_core::check::last_step(doc))
+        .any(|step| !lay(doc, width, step).clipped_labels.is_empty())
+}
+
+/// `f` on every width from [`MIN_WIDTH`] to [`MAX_WIDTH`], one width in
+/// every `n` per thread (the layouts are independent), widest first; a
+/// thread stops at a width `stop` says is no longer needed.
+fn per_width(f: impl Fn(usize) -> bool + Sync, stop: impl Fn(usize) -> bool + Sync) -> Vec<usize> {
     let n = std::thread::available_parallelism().map_or(1, |n| n.get());
     let mut out: Vec<usize> = std::thread::scope(|s| {
         let handles: Vec<_> = (0..n)
             .map(|k| {
-                let clips = &clips;
+                let (f, stop) = (&f, &stop);
                 s.spawn(move || {
-                    (MIN_WIDTH + k..=MAX_WIDTH)
-                        .step_by(n)
-                        .filter(|&w| clips(w))
-                        .collect::<Vec<_>>()
+                    let mut mine = Vec::new();
+                    for w in (MIN_WIDTH..=MAX_WIDTH - k).rev().step_by(n) {
+                        if stop(w) {
+                            break;
+                        }
+                        if f(w) {
+                            mine.push(w);
+                        }
+                    }
+                    mine
                 })
             })
             .collect();
@@ -94,6 +108,78 @@ fn clipping_widths(doc: &tiza_core::Document) -> Vec<usize> {
     });
     out.sort_unstable();
     out
+}
+
+/// The widths from [`MIN_WIDTH`] to [`MAX_WIDTH`] at which some step of a
+/// take clips a label, found the slow way: every width, every step, the
+/// whole document laid out as `tiza render` lays it out.
+fn clipping_widths(doc: &tiza_core::Document) -> Vec<usize> {
+    per_width(|w| clips(doc, w), |_| false)
+}
+
+/// The widest width that clips, the slow way: down from [`MAX_WIDTH`],
+/// every width and every step until one clips.
+fn widest_clipping(doc: &tiza_core::Document) -> Option<usize> {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let found = AtomicUsize::new(0);
+    per_width(
+        |w| {
+            let c = clips(doc, w);
+            if c {
+                found.fetch_max(w, Ordering::Relaxed);
+            }
+            c
+        },
+        |w| w <= found.load(Ordering::Relaxed),
+    )
+    .last()
+    .copied()
+}
+
+/// Two layouts draw the same take: the same rows, labels and text, the
+/// wider one only blank on the right.
+fn same_take(a: &tiza_core::layout::Layout, b: &tiza_core::layout::Layout) -> Result<(), String> {
+    let text = |l: &tiza_core::layout::Layout| {
+        l.canvas
+            .to_plain_text()
+            .lines()
+            .map(|r| r.trim_end().to_string())
+            .collect::<Vec<_>>()
+    };
+    if a.rows != b.rows {
+        return Err("rows differ".into());
+    }
+    if a.clipped_labels != b.clipped_labels {
+        return Err(format!(
+            "clipped {:?} / {:?}",
+            a.clipped_labels, b.clipped_labels
+        ));
+    }
+    if (a.labels_in_margin, a.clipped_code, a.code_x)
+        != (b.labels_in_margin, b.clipped_code, b.code_x)
+    {
+        return Err("margin, code or code column differ".into());
+    }
+    let (ta, tb) = (text(a), text(b));
+    if ta != tb {
+        return Err(format!(
+            "text differs:\n{}\n---\n{}",
+            ta.join("\n"),
+            tb.join("\n")
+        ));
+    }
+    Ok(())
+}
+
+/// The take at the saturation width is the one at [`MAX_WIDTH`] at every
+/// step from 0 to the last.
+fn saturates(doc: &tiza_core::Document) -> Result<usize, String> {
+    let sat = tiza_core::check::saturation_width(doc, &tiza_core::Theme::dark());
+    for step in 0..=tiza_core::check::last_step(doc) {
+        same_take(&lay(doc, sat, step), &lay(doc, MAX_WIDTH, step))
+            .map_err(|e| format!("step {step}, {sat} vs {MAX_WIDTH}: {e}"))?;
+    }
+    Ok(sat)
 }
 
 /// What the slow way says the narrowest clean width is.
@@ -208,35 +294,193 @@ fn ac1_ac4_tally_tour_clips_at_106_to_108_and_says_109() {
     );
 }
 
+/// Every `.tiza` under `examples/` and `qa/fixtures/` that opens.
+fn corpus() -> Vec<String> {
+    fn walk(dir: &std::path::Path, out: &mut Vec<String>) {
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else if p.extension().is_some_and(|x| x == "tiza") {
+                out.push(p.to_str().unwrap().to_string());
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&fixture(""), &mut out);
+    walk(&example(""), &mut out);
+    out.sort();
+    out
+}
+
 #[test]
-fn ac1_every_example_and_fixture_agrees_with_trying_every_width() {
-    let mut files: Vec<String> = AT_62.iter().map(|(r, _)| path(r)).collect();
-    for rel in [
-        "t-172/consecutive.tiza",
-        "t-172/callout-fits.tiza",
-        "t-172/callout-short.tiza",
-        "t-172/callout-short2.tiza",
-        "t-172/geometry.tiza",
-        "t-200/capped.tiza",
-        "t-200/clips-everywhere.tiza",
-    ] {
-        files.push(path(rel));
+fn ac1_ac2_every_example_and_fixture_saturates_at_the_bound_and_agrees_with_every_width() {
+    let mut opened = Vec::new();
+    for p in corpus() {
+        let Ok(o) = tiza_core::fs::open(&p) else {
+            continue;
+        };
+        opened.push((p, o.document));
     }
-    for name in [
+    let names: Vec<&str> = opened.iter().map(|(p, _)| p.as_str()).collect();
+    for want in [
+        "ownership-moves.rs.tiza",
+        "stack-impl.tiza",
         "tally-tour.tiza",
-        "ownership.rs.tiza",
-        "stack-and-queue.tiza",
+        "t-200/capped.tiza",
     ] {
-        files.push(example(name).to_str().unwrap().to_string());
+        assert!(
+            names.iter().any(|p| p.ends_with(want)),
+            "{want} not in {names:?}"
+        );
     }
-    for p in files {
-        let doc = open(&p);
-        let want = true_clean_width(&clipping_widths(&doc));
-        let got = tiza_core::check::min_clean_width(&doc, &tiza_core::Theme::dark());
-        assert_eq!(got, want, "{p}");
-        let v = check_json(&p, &[]);
-        assert_eq!(v["min_clean_width"], json!(want), "{p}");
+    assert!(opened.len() >= 35, "{names:?}");
+    for (p, doc) in &opened {
+        // The bound holds: the take does not change above it.
+        let sat = saturates(doc).unwrap_or_else(|e| panic!("{p}: {e}"));
+        eprintln!("{p}: bound {sat}");
+        // The announced width is the one trying every width says.
+        let want =
+            widest_clipping(doc).map_or(Some(MIN_WIDTH), |w| (w < MAX_WIDTH).then_some(w + 1));
+        let got = tiza_core::check::min_clean_width(doc, &tiza_core::Theme::dark());
+        assert_eq!(got, want, "{p} (bound {sat})");
+        let v = check_json(p, &[]);
+        if v["max_step"].is_number() {
+            assert_eq!(v["min_clean_width"], json!(want), "{p}");
+        }
     }
+}
+
+/// A small deterministic generator (xorshift): the same documents on every
+/// run.
+struct Gen(u64);
+
+impl Gen {
+    fn next(&mut self) -> u64 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        self.0
+    }
+    fn below(&mut self, n: u64) -> u64 {
+        self.next() % n.max(1)
+    }
+    fn words(&mut self, max: u64) -> String {
+        const W: [&str; 8] = [
+            "the", "borrow", "checker", "moves", "a", "value", "here", "once",
+        ];
+        let n = 1 + self.below(max);
+        (0..n)
+            .map(|_| W[self.below(8) as usize])
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// A random document: code of random widths, labels long and short,
+/// notes, marks, callouts with and without `width` (and with titles),
+/// arrows across lines, nested boxes, sometimes a margin cap.
+fn random_doc(g: &mut Gen) -> Value {
+    let lines = 4 + g.below(10) as u32;
+    let code: Vec<String> = (0..lines)
+        .map(|i| format!("let v{i} = {};", "x".repeat(g.below(70) as usize)))
+        .collect();
+    let len = |l: u32| code[(l - 1) as usize].chars().count() as u64;
+    let line = |g: &mut Gen| 1 + g.below(lines as u64) as u32;
+    let steps = 1 + g.below(4) as u32;
+    let mut anns = Vec::new();
+    for i in 0..(2 + g.below(9)) {
+        let step = 1 + g.below(steps as u64) as u32;
+        let id = format!("a{i}");
+        let l = line(g);
+        let long = if g.below(3) == 0 { 20 } else { 5 };
+        let a = match g.below(7) {
+            0 => json!({"id": id, "step": step, "type": "note", "line": l, "text": g.words(long)}),
+            1 => {
+                let end = 1 + g.below(len(l) - 1);
+                json!({"id": id, "step": step, "type": "highlight", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
+            }
+            2 => {
+                let end = 1 + g.below(len(l) - 1);
+                json!({"id": id, "step": step, "type": "mark", "kind": "warn", "span": {"line": l, "start": 0, "end": end}, "label": g.words(long)})
+            }
+            3 => {
+                let to = line(g);
+                json!({"id": id, "step": step, "type": "arrow", "from": {"line": l, "col": 1}, "to": {"line": to, "col": 2}, "label": g.words(4)})
+            }
+            4 => {
+                let to = (l + g.below(3) as u32).min(lines);
+                json!({"id": id, "step": step, "type": "box", "from_line": l, "to_line": to, "label": g.words(3)})
+            }
+            _ => {
+                let to = (l + g.below(2) as u32).min(lines);
+                let mut c = json!({"id": id, "step": step, "type": "callout", "from_line": l, "to_line": to, "text": g.words(25)});
+                if g.below(2) == 0 {
+                    c["width"] = json!(8 + g.below(50));
+                }
+                if g.below(2) == 0 {
+                    c["title"] = json!(g.words(6));
+                }
+                c["placement"] = json!(["auto", "margin", "below"][g.below(3) as usize]);
+                c
+            }
+        };
+        anns.push(a);
+    }
+    let mut doc = json!({
+        "schema": 1,
+        "title": "random",
+        "source": {"language": "rs", "first_line": 1},
+        "code": code,
+        "annotations": anns,
+    });
+    if g.below(4) == 0 {
+        doc["margin"] = json!(12 + g.below(40));
+    }
+    if g.below(5) == 0 {
+        doc["numbers"] = json!(false);
+    }
+    doc
+}
+
+#[test]
+fn ac2_random_documents_saturate_at_the_bound() {
+    let dir = scratch("t200-random");
+    let mut g = Gen(0x7a11_2000_5eed_0001);
+    let (mut checked, mut below) = (0, 0);
+    let start = std::time::Instant::now();
+    for i in 0..300 {
+        let file = dir.join(format!("r{i}.tiza"));
+        std::fs::write(&file, random_doc(&mut g).to_string()).unwrap();
+        // A random anchor can be refused by the loader: skip that one.
+        let Ok(o) = tiza_core::fs::open(file.to_str().unwrap()) else {
+            continue;
+        };
+        match saturates(&o.document) {
+            Ok(sat) => below += usize::from(sat < MAX_WIDTH),
+            Err(e) => panic!(
+                "{}: {e}\n{}",
+                file.display(),
+                std::fs::read_to_string(&file).unwrap()
+            ),
+        }
+        checked += 1;
+    }
+    assert!(checked >= 200, "only {checked} documents opened");
+    // The bound is below the widest width for most of them, or the test
+    // would prove nothing.
+    assert!(
+        below * 2 >= checked,
+        "{below} of {checked} below {MAX_WIDTH}"
+    );
+    eprintln!(
+        "{checked} random documents ({below} bounded below {MAX_WIDTH}) in {:?}",
+        start.elapsed()
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
