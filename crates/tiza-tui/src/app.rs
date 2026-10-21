@@ -1813,22 +1813,15 @@ impl App {
     }
 
     /// [`App::add_move`], with what it says when the new move leaves
-    /// annotations outside a `code.link` window at some step (kept, not
-    /// drawn there): `a3, a4: outside the window at step 3 (src/queue.rs:17-23)`.
+    /// annotations unseen at some step (kept, not drawn there): outside a
+    /// `code.link` window (`a3, a4: outside the window at step 3
+    /// (src/queue.rs:17-23)`) or of a file their own step no longer shows
+    /// (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs
+    /// is)`). Only what this move hides is named.
     pub fn add_move_noting(&mut self, mut m: Move) -> Result<(usize, Option<String>), Error> {
         self.finish_typing();
-        // Only a patch or a link moves lines in or out of a window, and only
-        // from its own step on.
-        let reaches = matches!(
-            m.action,
-            tiza_core::moves::MoveAction::CodePatch(_) | tiza_core::moves::MoveAction::CodeLink(_)
-        );
         let from = m.at_step;
-        let outside_before = if reaches {
-            tiza_core::check::outside_windows_from(&self.doc, from, true)
-        } else {
-            Vec::new()
-        };
+        let before = hides(&m).then(|| tiza_core::check::Unseen::of(&self.doc, from));
         // Recorded first: a refused move leaves nothing behind, not even
         // the file a `code.link` read.
         self.history.record(&self.doc, "move added");
@@ -1851,9 +1844,7 @@ impl App {
                 self.say_stale(n);
                 self.clamp_cursor();
                 self.touch();
-                let warning = reaches
-                    .then(|| newly_outside(&outside_before, &self.doc, from))
-                    .flatten();
+                let warning = before.and_then(|b| b.warning(&self.doc));
                 Ok((i, warning))
             }
             Err(e) => {
@@ -1865,11 +1856,20 @@ impl App {
 
     /// Deletes a move by 1-based index. Undoable.
     pub fn delete_move(&mut self, index: usize) -> Result<Move, Error> {
+        self.delete_move_noting(index).map(|(m, _)| m)
+    }
+
+    /// [`App::delete_move`], with what it says when the deletion leaves
+    /// annotations unseen at some step, as [`App::add_move_noting`] does:
+    /// deleting a `code.link` can leave a step showing another file.
+    pub fn delete_move_noting(&mut self, index: usize) -> Result<(Move, Option<String>), Error> {
         self.finish_typing();
         let i = index
             .checked_sub(1)
             .filter(|i| *i < self.doc.moves.len())
             .ok_or_else(|| Error::MoveNotFound(format!("#{index}")))?;
+        let before = hides(&self.doc.moves[i])
+            .then(|| tiza_core::check::Unseen::of(&self.doc, self.doc.moves[i].at_step));
         self.history
             .record(&self.doc, format!("move #{index} deleted"));
         let m = match self.doc.delete_move(i) {
@@ -1887,7 +1887,8 @@ impl App {
         self.say_stale(n);
         self.clamp_cursor();
         self.touch();
-        Ok(m)
+        let warning = before.and_then(|b| b.warning(&self.doc));
+        Ok((m, warning))
     }
 
     /// `scene.list` / `:list`: one line per annotation, in document order.
@@ -5133,13 +5134,13 @@ impl App {
             }
             "move.delete" => {
                 let p: MoveIndexParams = parse(params)?;
-                self.delete_move(p.index)?;
+                let (_, warning) = self.delete_move_noting(p.index)?;
                 serde_json::to_value(MoveMutated {
                     index: p.index,
                     moves: self.doc.moves.len(),
                     max_step: self.doc.max_step(),
                     revision: self.revision,
-                    warning: None,
+                    warning,
                 })?
             }
             "move.list" => serde_json::to_value(self.move_list())?,
@@ -6224,34 +6225,14 @@ pub fn parse_where(s: &str, cursor_line: u32) -> Result<Where, Error> {
     })
 }
 
-/// The annotations `doc` leaves outside a `code.link` window at a step
-/// where they were not before (`before`: [`tiza_core::check::outside_windows`]
-/// of the document as it was), said in one line, or `None`.
-fn newly_outside(
-    before: &[(String, Vec<u32>, String)],
-    doc: &Document,
-    from: u32,
-) -> Option<String> {
-    let now = tiza_core::check::outside_windows_from(doc, from, true);
-    let new: Vec<(String, Vec<u32>, String)> = now
-        .into_iter()
-        .filter_map(|(id, steps, window)| {
-            let was: &[u32] = before
-                .iter()
-                .find(|(b, _, _)| *b == id)
-                .map_or(&[], |(_, s, _)| s.as_slice());
-            let steps: Vec<u32> = steps.into_iter().filter(|s| !was.contains(s)).collect();
-            (!steps.is_empty()).then_some((id, steps, window))
-        })
-        .collect();
-    let (_, steps, window) = new.first()?;
-    let ids: Vec<&str> = new.iter().map(|(id, _, _)| id.as_str()).collect();
-    Some(format!(
-        "{}: outside the window at step{} {} ({window}): kept, not drawn there",
-        ids.join(", "),
-        if steps.len() == 1 { "" } else { "s" },
-        tiza_core::check::steps_text(steps)
-    ))
+/// Whether adding or deleting `m` can hide an annotation: only a patch or
+/// a link moves lines in or out of a window or changes the file a step
+/// shows, and only from its own step on.
+fn hides(m: &Move) -> bool {
+    matches!(
+        m.action,
+        tiza_core::moves::MoveAction::CodePatch(_) | tiza_core::moves::MoveAction::CodeLink(_)
+    )
 }
 
 #[cfg(test)]

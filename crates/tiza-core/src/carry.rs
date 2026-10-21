@@ -382,16 +382,69 @@ fn lost_line(m: &Move, index: usize, who: &str, what: String) -> Error {
     )
 }
 
+/// The insert being added or deleted, when the change is one: its place in
+/// the replay (the slot its lines are written with) and its step.
+#[derive(Debug, Clone, Copy)]
+struct Insert {
+    slot: usize,
+    at_step: u32,
+    change: Change,
+}
+
+/// Where the first line of a window goes when the change is an insert of
+/// the link's own step right before that line: the window grows to start
+/// at the inserted lines, so they are seen at the step that adds them
+/// (with `typing`, typed on screen). Deleting that insert gives the start
+/// back to the line after them. `None`: the usual carry.
+fn grown_start(a: u32, map: &Mapper, insert: Option<Insert>, link_step: u32) -> Option<u32> {
+    let ins = insert.filter(|i| i.at_step == link_step)?;
+    let mine =
+        |id: Option<LineId>| matches!(id, Some(LineId::Written { slot, .. }) if slot == ins.slot);
+    match ins.change {
+        Change::Added => {
+            // The lines right above the window's first line, written by it.
+            let at = |n: u32| map.new.ids.get(n.checked_sub(map.first)? as usize).copied();
+            let mut x = map.line(a)?;
+            if !mine(x.checked_sub(1).and_then(at)) {
+                return None;
+            }
+            while mine(x.checked_sub(1).and_then(at)) {
+                x -= 1;
+            }
+            Some(x)
+        }
+        Change::Deleted(_) => {
+            // The window starts on the first line it wrote: the line after
+            // them takes its place.
+            if !mine(map.id(a)) || (a > map.first && mine(map.id(a - 1))) {
+                return None;
+            }
+            let mut l = a;
+            while mine(map.id(l)) {
+                l += 1;
+            }
+            map.line(l)
+        }
+    }
+}
+
 /// A `code.link` window, on the file it shows at the end of its step: both
 /// ends must still be there.
-fn carry_window(m: &mut Move, index: usize, map: Option<&Mapper>, who: &str) -> Result<(), Error> {
+fn carry_window(
+    m: &mut Move,
+    index: usize,
+    map: Option<&Mapper>,
+    who: &str,
+    insert: Option<Insert>,
+) -> Result<(), Error> {
     let Some(map) = map else { return Ok(()) };
     let at = m.clone();
     if let MoveAction::CodeLink(l) = &mut m.action
         && let Some(w) = l.lines.clone()
         && let Some((a, b)) = parse_range(&w)
     {
-        match (map.line(a), map.line(b)) {
+        let start = grown_start(a, map, insert, at.at_step).or_else(|| map.line(a));
+        match (start, map.line(b)) {
             (Some(x), Some(y)) => l.lines = Some(position_text(&w, x, y)),
             (None, _) => {
                 let what = format!("removes line {a}, the first line of its window");
@@ -497,6 +550,18 @@ pub fn carry(
         (None, None) => (u32::MAX, usize::MAX),
     };
     order.sort_by_key(step_of);
+    let insert = order.iter().enumerate().find_map(|(slot, (o, n))| {
+        let m = match (o, n) {
+            (None, Some(n)) => &new[*n],
+            (Some(o), None) => &old[*o],
+            _ => return None,
+        };
+        matches!(&m.action, MoveAction::CodePatch(p) if p.op == PatchOp::Insert).then_some(Insert {
+            slot,
+            at_step: m.at_step,
+            change,
+        })
+    });
 
     let mut out: Vec<Move> = new.to_vec();
     let mut r = Replay {
@@ -508,6 +573,7 @@ pub fn carry(
         old: World::default(),
         new: World::default(),
         alias: HashMap::new(),
+        insert,
     };
     r.by_step.sort_by_key(|i| r.anns[*i].step);
     let named = |e: Error, i: usize, m: &Move| crate::moves::name_move(e, i, m.at_step);
@@ -612,6 +678,7 @@ struct Replay<'d> {
     old: World,
     new: World,
     alias: HashMap<LineId, LineId>,
+    insert: Option<Insert>,
 }
 
 impl Replay<'_> {
@@ -633,7 +700,7 @@ impl Replay<'_> {
             let key = self.doc.view_key(&l.file);
             self.load(&key);
             let map = Mapper::new(self.doc, &key, &self.old, &self.new, &self.alias);
-            carry_window(&mut out[n], o, map.as_ref(), &self.who)?;
+            carry_window(&mut out[n], o, map.as_ref(), &self.who, self.insert)?;
         }
         Ok(())
     }
@@ -918,6 +985,66 @@ mod tests {
             e.contains("removes line 2, the first line of its window"),
             "{e}"
         );
+    }
+
+    #[test]
+    fn an_insert_at_a_window_first_line_at_its_step_grows_it_and_its_delete_shrinks_it() {
+        let doc = |moves: serde_json::Value| {
+            parse_document(
+                &serde_json::json!({
+                    "schema": 1,
+                    "source": {"language": "rs", "path": "/x/main.rs"},
+                    "code": ["a();", "b();", "c();", "d();", "e();"],
+                    "moves": moves
+                })
+                .to_string(),
+                None,
+            )
+            .unwrap()
+        };
+        let link = serde_json::json!({"at_step": 2, "action": "code.link", "file": "main.rs", "lines": "2-4"});
+        let mut d = doc(serde_json::json!([link]));
+        let before = json(&d);
+        let insert = |step: u32| {
+            patch(serde_json::json!(
+                {"at_step": step, "action": "code.patch", "op": "insert", "position": "2", "content": "x();\ny();"}
+            ))
+        };
+        // At the link's step: the new lines are inside the window.
+        d.add_move(insert(2)).unwrap();
+        assert_eq!(json(&d)["moves"][0]["lines"], "2-6");
+        assert_eq!(
+            d.code_at(2).unwrap(),
+            (
+                vec![
+                    "x();".into(),
+                    "y();".into(),
+                    "b();".into(),
+                    "c();".into(),
+                    "d();".into()
+                ],
+                2
+            )
+        );
+        d.delete_move(1).unwrap();
+        assert_eq!(json(&d), before);
+        // At an earlier step: the window follows its text.
+        d.add_move(insert(1)).unwrap();
+        assert_eq!(json(&d)["moves"][0]["lines"], "4-6");
+        d.delete_move(1).unwrap();
+        assert_eq!(json(&d), before);
+        // A window set on the lines an insert of its step wrote: deleting
+        // the insert starts it at the line after them, and adding the
+        // insert again gives the same document back.
+        let mut d = doc(serde_json::json!([
+            {"at_step": 2, "action": "code.link", "file": "main.rs", "lines": "2-6"},
+            {"at_step": 2, "action": "code.patch", "op": "insert", "position": "2", "content": "x();\ny();"}
+        ]));
+        let with = json(&d);
+        d.delete_move(1).unwrap();
+        assert_eq!(json(&d)["moves"][0]["lines"], "2-4");
+        d.add_move(insert(2)).unwrap();
+        assert_eq!(json(&d), with);
     }
 
     #[test]

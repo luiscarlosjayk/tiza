@@ -4946,7 +4946,7 @@
             "type": "integer"
           },
           "warning": {
-            "description": "`move.add`: annotations the new move leaves outside a `code.link`\nwindow at some step (kept, not drawn there), by id, steps and window.",
+            "description": "`move.add` and `move.delete`: annotations the change leaves unseen\nat some step (kept, not drawn there) that were seen before it:\noutside a `code.link` window (by id, steps and window), or of a\nfile their own step no longer shows (by id, step and both files).",
             "type": [
               "string",
               "null"
@@ -5006,7 +5006,7 @@
             "type": "integer"
           },
           "warning": {
-            "description": "`move.add`: annotations the new move leaves outside a `code.link`\nwindow at some step (kept, not drawn there), by id, steps and window.",
+            "description": "`move.add` and `move.delete`: annotations the change leaves unseen\nat some step (kept, not drawn there) that were seen before it:\noutside a `code.link` window (by id, steps and window), or of a\nfile their own step no longer shows (by id, step and both files).",
             "type": [
               "string",
               "null"
@@ -6021,7 +6021,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `clipped_label`, `empty_step`, and `stale` (a\nlive instance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, and `stale` (a\nlive instance's move the code changed under).",
                 "type": "string"
               },
               "file": {

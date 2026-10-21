@@ -1195,8 +1195,10 @@ pub struct MoveMutated {
     pub moves: usize,
     pub max_step: u32,
     pub revision: u64,
-    /// `move.add`: annotations the new move leaves outside a `code.link`
-    /// window at some step (kept, not drawn there), by id, steps and window.
+    /// `move.add` and `move.delete`: annotations the change leaves unseen
+    /// at some step (kept, not drawn there) that were seen before it:
+    /// outside a `code.link` window (by id, steps and window), or of a
+    /// file their own step no longer shows (by id, step and both files).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
 }

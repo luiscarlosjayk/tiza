@@ -1,7 +1,8 @@
 //! Preflight (t-101): `tiza check FILE` loads a document the way the TUI
 //! does, but instead of stopping at the first problem it lists them all —
 //! every anchor and marker, every move at its step, every linked file,
-//! every annotation a move hides,
+//! every annotation a move hides (unanchored, outside a window, or of a
+//! file its own step does not show),
 //! every label clipped with `…` at the width of the take and every step
 //! with nothing new — naming the annotation or move, the step, the file
 //! (for linked views) and the line.
@@ -17,7 +18,7 @@ use serde::Serialize;
 use crate::layout::{
     LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_with, stable_geometry,
 };
-use crate::model::{Document, SCHEMA_VERSION, Shape, sanitize_texts};
+use crate::model::{CodeSource, Document, SCHEMA_VERSION, Shape, sanitize_texts};
 use crate::moves::{self, Move, MoveAction, ViewKey, Wait};
 use crate::theme::Theme;
 
@@ -38,7 +39,9 @@ pub struct Finding {
     pub level: Level,
     /// Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
-    /// `steps`, `unanchored`, `clipped_label`, `empty_step`, and `stale` (a
+    /// `steps`, `unanchored`, `outside_window` (outside the `code.link`
+    /// window of a step that shows its file), `not_shown` (its own step
+    /// shows another file), `clipped_label`, `empty_step`, and `stale` (a
     /// live instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
@@ -287,6 +290,20 @@ pub fn check_path(path: &Path, opts: &CheckOptions) -> Result<Report, crate::Err
 
 /// Checks the text of a `.tiza`; `base_dir` resolves its relative files.
 pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
+    check_text_as(text, base_dir, opts, None)
+}
+
+/// [`check_text`]; `main`: where the live document's own code comes from,
+/// when the text embeds it only to check the code held in memory. The
+/// document then names its main file as a fresh load of the saved `.tiza`
+/// does (`src/stack.rs`, as `code.file` says, not `stack.rs`), so a
+/// finding reads the same live and on disk.
+fn check_text_as(
+    text: &str,
+    base_dir: Option<&Path>,
+    opts: &CheckOptions,
+    main: Option<CodeSource>,
+) -> Report {
     let width = opts.width.unwrap_or(DEFAULT_WIDTH);
     let mut out: Vec<Finding> = Vec::new();
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
@@ -345,6 +362,9 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
         out.push(Finding::new(Level::Error, "code", e.to_string()));
         return Report::new(width, out, None, None);
     }
+    if let Some(src @ CodeSource::File { .. }) = main {
+        doc.code_src = src;
+    }
     // ---- the numbers (t-166): a step past the cap or a first line near
     // `u32::MAX` is one error, before anything is laid out step by step.
     if let Err(e) = doc.check_bounds() {
@@ -373,7 +393,8 @@ pub fn check_text(text: &str, base_dir: Option<&Path>, opts: &CheckOptions) -> R
 pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptions) -> Report {
     let mut d = doc.clone();
     d.sync_code_src();
-    d.code_src = crate::model::CodeSource::Embedded(d.base().to_vec());
+    let embedded = CodeSource::Embedded(d.base().to_vec());
+    let main = std::mem::replace(&mut d.code_src, embedded);
     for file in d.link_files() {
         if let Some(code) = d.view_code.get(&file) {
             d.views.insert(file, code.clone());
@@ -381,7 +402,7 @@ pub fn check_document(doc: &Document, base_dir: Option<&Path>, opts: &CheckOptio
     }
     match serde_json::to_string(&d) {
         Ok(text) => {
-            let mut report = check_text(&text, base_dir, opts);
+            let mut report = check_text_as(&text, base_dir, opts, Some(main));
             stale_findings(doc, &mut report);
             report
         }
@@ -1088,6 +1109,23 @@ fn check_loaded(
             .line(anchor_line(&a.shape)),
         );
     }
+    // ---- annotations of a file their own step does not show ----
+    for u in unshown(doc) {
+        let Some(a) = doc.find_annotation(&u.id).filter(|a| !bad.contains(&a.id)) else {
+            continue;
+        };
+        out.push(
+            Finding::new(
+                Level::Warning,
+                "not_shown",
+                format!("{}: kept, but not drawn at its step", u.text(false)),
+            )
+            .id(u.id)
+            .step(u.step)
+            .file(a.file.clone())
+            .line(anchor_line(&a.shape)),
+        );
+    }
     // ---- steps with nothing new ----
     for step in 1..=max {
         let has = doc.annotations.iter().any(|a| a.step == step)
@@ -1236,6 +1274,141 @@ pub fn outside_windows_from(
         .iter()
         .filter_map(|a| found.remove(&a.id).map(|(s, w)| (a.id.clone(), s, w)))
         .collect()
+}
+
+/// An annotation whose own step shows another file (a `code.link` of that
+/// step, or a later one of the same step, shows it): it is never drawn at
+/// its step. The files as [`Document::file_label`] names them.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unshown {
+    pub id: String,
+    pub step: u32,
+    pub file: String,
+    pub shown: String,
+}
+
+impl Unshown {
+    /// `its file src/stack.rs is not shown at step 4 (src/queue.rs is)`,
+    /// or `their file …` for several annotations; the same words as
+    /// [`crate::model::Hidden::OtherFile`].
+    pub fn text(&self, several: bool) -> String {
+        format!(
+            "{} file {} is not shown at step {} ({} is)",
+            if several { "their" } else { "its" },
+            self.file,
+            self.step,
+            self.shown
+        )
+    }
+}
+
+/// Every annotation whose file is not the one shown at its own step, in
+/// document order. A window does not count (an annotation of the shown
+/// file outside its window is [`outside_windows`]).
+pub fn unshown(doc: &Document) -> Vec<Unshown> {
+    if doc.moves.is_empty() {
+        return Vec::new();
+    }
+    doc.annotations
+        .iter()
+        .filter_map(|a| {
+            let shown = doc.shown_view_at(a.step).file;
+            (a.file != shown).then(|| Unshown {
+                id: a.id.clone(),
+                step: a.step,
+                file: doc.file_label(&a.file),
+                shown: doc.file_label(&shown),
+            })
+        })
+        .collect()
+}
+
+/// What a document leaves unseen, taken before a move is added or deleted
+/// so that the reply names only what that move hides: the annotations
+/// outside a `code.link` window from step `from` on (the windows of later
+/// links included: the move may be that zoom) and those whose own step
+/// shows another file.
+#[derive(Debug, Clone, Default)]
+pub struct Unseen {
+    from: u32,
+    last: u32,
+    outside: Vec<(String, Vec<u32>, String)>,
+    unshown: Vec<Unshown>,
+}
+
+impl Unseen {
+    pub fn of(doc: &Document, from: u32) -> Unseen {
+        let last = last_step(doc);
+        Unseen {
+            from,
+            last,
+            // From the last step at most, which stands for the steps after it.
+            outside: outside_windows_from(doc, from.min(last), true),
+            unshown: unshown(doc),
+        }
+    }
+
+    /// The `warning` of a `move.add` or `move.delete` that turned the
+    /// document `self` was taken of into `after`, in one line, or `None`
+    /// when it hides nothing new: `a3, a4: outside the window at step 3
+    /// (src/queue.rs:10-36): kept, not drawn there; a6: its file
+    /// src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not
+    /// drawn there`. A step the move creates past the old last one counts
+    /// as that last one (nothing else happens there), so what was already
+    /// outside it is not said again.
+    pub fn warning(&self, after: &Document) -> Option<String> {
+        let now = Unseen::of(after, self.from);
+        let mut parts: Vec<String> = Vec::new();
+        let new: Vec<(String, Vec<u32>, String)> = now
+            .outside
+            .into_iter()
+            .filter_map(|(id, steps, window)| {
+                let was: &[u32] = self
+                    .outside
+                    .iter()
+                    .find(|(b, _, _)| *b == id)
+                    .map_or(&[], |(_, s, _)| s.as_slice());
+                let was_out = |s: u32| was.contains(&s.min(self.last));
+                let steps: Vec<u32> = steps
+                    .into_iter()
+                    .filter(|s| *s >= self.from && !was_out(*s))
+                    .collect();
+                (!steps.is_empty()).then_some((id, steps, window))
+            })
+            .collect();
+        if let Some((_, steps, window)) = new.first() {
+            let ids: Vec<&str> = new.iter().map(|(id, _, _)| id.as_str()).collect();
+            parts.push(format!(
+                "{}: outside the window at step{} {} ({window}): kept, not drawn there",
+                ids.join(", "),
+                if steps.len() == 1 { "" } else { "s" },
+                steps_text(steps)
+            ));
+        }
+        // Grouped by step and files, in document order.
+        let mut groups: Vec<(Unshown, Vec<String>)> = Vec::new();
+        for u in now.unshown {
+            if self.unshown.iter().any(|b| b.id == u.id) {
+                continue;
+            }
+            let same = |g: &Unshown| (g.step, &g.file, &g.shown) == (u.step, &u.file, &u.shown);
+            match groups.iter_mut().find(|(g, _)| same(g)) {
+                Some((_, ids)) => ids.push(u.id),
+                None => {
+                    let id = u.id.clone();
+                    groups.push((u, vec![id]));
+                }
+            }
+        }
+        for (u, ids) in groups {
+            parts.push(format!(
+                "{}: {}: kept, not drawn there",
+                ids.join(", "),
+                u.text(ids.len() > 1)
+            ));
+        }
+        (!parts.is_empty()).then(|| parts.join("; "))
+    }
 }
 
 /// The narrowest width from which no label is clipped at any step: every
