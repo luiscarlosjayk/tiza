@@ -8,6 +8,8 @@
 //! - Arrows within the same line use a virtual row below it.
 //! - Notes and legends go in the right margin when there are ≥ 14 cells;
 //!   otherwise in a virtual row below the line. This works in a 75-column terminal.
+//!   A line with two or more labels at the step draws them all below it,
+//!   also when the margin is there (t-172).
 
 use std::collections::BTreeMap;
 
@@ -562,6 +564,40 @@ pub fn layout_with(
         .saturating_sub(code_x_est + code_w + 1 + box_depth + 1)
         .min(opts.margin_cap.unwrap_or(usize::MAX));
     let labels_in_margin = margin_est >= 14;
+    // A line whose margin row would get two or more labels at this step
+    // draws them all under itself, as the narrow layout does (t-172):
+    // stacked in the margin, the second one sat beside the next line and
+    // read as if it explained that line.
+    let under_lines: std::collections::BTreeSet<u32> = if labels_in_margin {
+        let mut count: BTreeMap<u32, usize> = BTreeMap::new();
+        for a in &vis {
+            let line = match &a.shape {
+                Shape::Note { line, .. } => *line,
+                Shape::Mark { span, .. }
+                | Shape::Highlight {
+                    span,
+                    label: Some(_),
+                    ..
+                } => span.line,
+                Shape::Arrow {
+                    from,
+                    to,
+                    label: Some(_),
+                    ..
+                } if from.line != to.line => to.line,
+                _ => continue,
+            };
+            *count.entry(line).or_insert(0) += 1;
+        }
+        count
+            .into_iter()
+            .filter(|&(_, n)| n >= 2)
+            .map(|(line, _)| line)
+            .collect()
+    } else {
+        Default::default()
+    };
+    let in_margin = |line: u32| labels_in_margin && !under_lines.contains(&line);
 
     // ---- callouts: decide placement and pre-wrap their text ----
     struct CalloutPlan {
@@ -696,7 +732,7 @@ pub fn layout_with(
                 }
             }
         }
-        if !labels_in_margin {
+        if !in_margin(line) {
             for a in &vis {
                 let lbl = match &a.shape {
                     Shape::Note { line: l, text } if *l == line => {
@@ -737,7 +773,9 @@ pub fn layout_with(
                         let text_w =
                             display_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
                         let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
-                        if need <= code_w {
+                        // A wide layout's line with several labels keeps
+                        // every one of them under it (t-172).
+                        if !labels_in_margin && need <= code_w {
                             beside.push((line, glyph, l.clone(), color_of(a), a.id.clone()));
                         } else {
                             unders.push((
@@ -1045,7 +1083,9 @@ pub fn layout_with(
                 }
             }
         }
-        if labels_in_margin && let Some(l) = label {
+        if in_margin(span.line)
+            && let Some(l) = label
+        {
             margin[y].push(Label {
                 id: a.id.clone(),
                 text: l,
@@ -1204,7 +1244,9 @@ pub fn layout_with(
             opts.tab_width,
             arrow_color,
         );
-        if labels_in_margin && let Some(l) = label {
+        if in_margin(to.line)
+            && let Some(l) = label
+        {
             margin[yt].push(Label {
                 id: a.ann.id.clone(),
                 text: l.clone(),
@@ -1328,6 +1370,7 @@ pub fn layout_with(
     if labels_in_margin {
         for a in &vis {
             if let Shape::Note { line, text } = &a.shape
+                && in_margin(*line)
                 && let Some(&y) = row_of_line.get(line)
             {
                 margin[y].push(Label {
@@ -2039,7 +2082,7 @@ mod tests {
     #[test]
     fn margin_labels_wrap_and_stack_instead_of_clipping() {
         let mut d = doc();
-        // Two labels on the same line and a long note.
+        // A long note on a line whose next line has its own label.
         d.add(Annotation {
             id: "n1".into(),
             step: 1,
@@ -2049,18 +2092,6 @@ mod tests {
             shape: Shape::Note {
                 line: 2,
                 text: "s is born here with String::from and lives until it is moved".into(),
-            },
-        })
-        .unwrap();
-        d.add(Annotation {
-            id: "n2".into(),
-            step: 1,
-            color: None,
-            markers: None,
-            file: None,
-            shape: Shape::Note {
-                line: 2,
-                text: "second note".into(),
             },
         })
         .unwrap();
@@ -2077,9 +2108,9 @@ mod tests {
         let text = l.canvas.to_plain_text();
         println!("{text}");
         // Line 3 has its own label (the mark), so the long note on line 2
-        // cannot continue onto row 3: it is clipped there with an ellipsis
-        // and the second note takes the next free row. Labels never drift
-        // away from their line.
+        // cannot continue onto row 3: it is clipped there with an ellipsis.
+        // Labels never drift away from their line (a second label on line 2
+        // goes under it with the first, t-172).
         let row = |line: u32| l.row_of_line[&line];
         assert!(
             l.canvas.row_text(row(2)).contains("s is born here"),
@@ -2090,7 +2121,6 @@ mod tests {
             l.canvas.row_text(row(3)).contains("━▶ move"),
             "line 3 keeps its label: {text}"
         );
-        assert!(l.canvas.row_text(row(4)).contains("second note"), "{text}");
         for y in 0..l.canvas.height {
             assert!(display_width(&l.canvas.row_text(y), 4) <= 80);
         }
