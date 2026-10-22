@@ -1554,12 +1554,26 @@ impl App {
         self.clamp_cursor();
         // Said first: what is not saved, below, says it over this.
         self.say_stale(stale);
+        // Another document is not the followed file's code: follow goes off
+        // and says so, as after a paste (its file is not this one's).
+        let unfollowed = if other && let Some(f) = &self.follow {
+            let name = f.file_name();
+            let _ = self.set_follow(false);
+            Some(format!("follow off: the code on screen is not {name}"))
+        } else {
+            None
+        };
         if other && self.autosave {
             self.autosave = false;
             self.info(format!(
                 "another document loaded: autosave off (:w saves over {}, :w PATH saves elsewhere, :autosave on resumes)",
                 self.save_path.display()
             ));
+            if let Some(note) = unfollowed {
+                self.say_first(note);
+            }
+        } else if other && let Some(note) = &unfollowed {
+            self.info(format!("another document loaded; {note}"));
         } else if !sent.edited.is_empty() || !sent.stale.is_empty() {
             // What is not saved first: the bar may cut the end.
             let mut msg = String::new();
@@ -2235,6 +2249,10 @@ impl App {
         self.touch();
         self.info(said);
         self.follow_after_history(before, replaced);
+        if !self.doc.is_embedded() {
+            self.follow_file = Some(self.doc.code_src.clone());
+            self.follow_the_reference();
+        }
     }
 
     /// The step-0 code, its first line and whether it is embedded: what
@@ -2361,16 +2379,23 @@ impl App {
         // Code pasted while following is the author's on purpose: a save in
         // the editor must not throw it away, so follow goes off and says so.
         // A paste of exactly what the file holds has nothing to protect: it
-        // stays a reference to the file and follow stays on.
-        let same = self
-            .follow
-            .as_ref()
-            .is_some_and(|f| f.last_content == d.code && !self.doc.is_embedded());
-        let followed = self.doc.code_src.clone();
-        let (code_src, first) = if same {
-            (self.doc.code_src.clone(), self.doc.base_first())
+        // stays a reference to the file (numbered as its lines are) and
+        // follow stays on; with follow off, what the file holds is read.
+        let same = if self.doc.is_embedded() {
+            None
+        } else if let Some(f) = &self.follow {
+            (f.last_content == d.code).then(|| self.doc.base_first())
         } else {
-            (d.code_src, d.source.first_line)
+            let base = self.save_path.parent().map(Path::to_path_buf);
+            fs::reread_reference(&self.doc, base.as_deref())
+                .ok()
+                .filter(|(code, _)| *code == d.code)
+                .map(|(_, first)| first)
+        };
+        let followed = self.doc.code_src.clone();
+        let (code_src, first) = match same {
+            Some(first) => (self.doc.code_src.clone(), first),
+            None => (d.code_src, d.source.first_line),
         };
         let out = self.apply_new_code(d.code, code_src, first, Some("paste".into()));
         self.screen_via_history = false;
@@ -2906,6 +2931,33 @@ impl App {
             Some(w) => format!("following {name} ({w})"),
             None => format!("following {name}"),
         })
+    }
+
+    /// Follow on while the document reads another file now (`:ref`, or an
+    /// undo or a redo past one): the watch moves to that file, its counts
+    /// kept. Returns the file's name when it moved.
+    fn follow_the_reference(&mut self) -> Option<String> {
+        let path = self.source_file()?;
+        let old = self.follow.as_mut()?;
+        if old.path == path {
+            return None;
+        }
+        old.stop();
+        let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
+        self.reload_waits = false;
+        match crate::follow::Follow::start(path, self.doc.base().to_vec()) {
+            Ok(mut f) => {
+                (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
+                let name = f.file_name();
+                self.follow = Some(f);
+                Some(name)
+            }
+            Err(e) => {
+                self.follow = None;
+                self.error(format!("follow off: {e}"));
+                None
+            }
+        }
     }
 
     /// Called every loop iteration: reloads when the watcher says so.
@@ -3776,17 +3828,17 @@ impl App {
                         let (p, r) = fs::parse_target(rest);
                         (p.to_string_lossy().into_owned(), r)
                     };
-                    // The file must be readable. Embedded code (pasted, or
-                    // never from a file) that is not the file's: the screen
-                    // shows the file's code, as the saved document will,
-                    // through the usual reload (one undo step), which needs
-                    // step 0 like a paste.
+                    // The file must be readable. Code on screen that is not
+                    // the file's (pasted, never from a file, or another
+                    // file's): the screen shows the file's code, as the saved
+                    // document will, through the usual reload (one undo
+                    // step), which needs step 0 like a paste.
                     let mut probe = self.doc.clone();
                     probe.reference_file(file.clone(), range);
                     let base = self.save_path.parent().map(Path::to_path_buf);
                     let (code, first) = fs::reread_reference(&probe, base.as_deref())?;
-                    if self.doc.is_embedded()
-                        && (code.as_slice() != self.doc.base() || first != self.doc.base_first())
+                    let mut said = if code.as_slice() != self.doc.base()
+                        || first != self.doc.base_first()
                     {
                         if let Some(e) = self.moves_block_reason("show another file's code") {
                             return Err(e);
@@ -3802,21 +3854,32 @@ impl App {
                             out.kept,
                             if out.kept == 1 { "" } else { "s" }
                         );
-                        if out.dropped == 0 && out.stale.is_none() {
-                            return Ok(what);
+                        if out.dropped > 0 || out.stale.is_some() {
+                            self.stale_notice(
+                                out.stale,
+                                out.dropped,
+                                &out.ignored,
+                                "their text is gone",
+                                what,
+                            );
+                            String::new()
+                        } else {
+                            what
                         }
-                        self.stale_notice(
-                            out.stale,
-                            out.dropped,
-                            &out.ignored,
-                            "their text is gone",
-                            what,
-                        );
-                        return Ok(String::new());
+                    } else {
+                        self.doc.reference_file(file.clone(), range);
+                        self.touch();
+                        format!("the .tiza now references {file}")
+                    };
+                    // What `:follow on` reloads, and what follow watches, is
+                    // the file the document references now.
+                    self.follow_file = Some(self.doc.code_src.clone());
+                    if let Some(name) = self.follow_the_reference()
+                        && !said.is_empty()
+                    {
+                        said.push_str(&format!("; following {name}"));
                     }
-                    self.doc.reference_file(file.clone(), range);
-                    self.touch();
-                    Ok(format!("the .tiza now references {file}"))
+                    Ok(said)
                 }
                 "spot" | "spotlight" => self.cmd_spot(rest),
                 "callout" | "co" => self.cmd_callout(rest),
