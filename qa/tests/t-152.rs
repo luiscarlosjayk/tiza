@@ -108,7 +108,14 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
         toml.contains("channel = \"1.99.1\""),
         "rust-toolchain.toml pins 1.99.1"
     );
-    for wf in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+    // The jobs that run cargo (`schema` runs only Python, cargo-deny-action
+    // installs the toolchain itself, the release job only downloads the
+    // archives).
+    let expected: [(&str, &[&str]); 2] = [
+        (".github/workflows/ci.yml", &["check", "legibility"]),
+        (".github/workflows/release.yml", &["build"]),
+    ];
+    for (wf, cargo_jobs) in expected {
         let yml = read(wf);
         for line in yml.lines().map(str::trim).filter(|l| !l.starts_with('#')) {
             for stale in ["dtolnay/rust-toolchain", "@stable", "1.99", "rust-version:"] {
@@ -119,12 +126,12 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
             }
             assert!(!line.starts_with("toolchain:"), "{wf}: {line}");
         }
-        let mut with_cargo = 0;
+        let mut with_cargo = Vec::new();
         for (name, body) in jobs(&yml) {
             let Some(cargo) = first_cargo(&body) else {
                 continue;
             };
-            with_cargo += 1;
+            with_cargo.push(name.clone());
             let install = position(&body, "rustup toolchain install").unwrap_or_else(|| {
                 panic!("{wf} job `{name}` runs cargo without `rustup toolchain install`")
             });
@@ -133,7 +140,7 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
                 "{wf} job `{name}`: the toolchain is installed after the first cargo command"
             );
         }
-        assert!(with_cargo >= 2, "{wf}: the jobs were not read");
+        assert_eq!(with_cargo, cargo_jobs, "{wf}: the jobs that run cargo");
     }
 }
 
