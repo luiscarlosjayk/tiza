@@ -27,7 +27,7 @@ The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t
 
 - Gate before every push: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test` (all green locally). Never push something that leaves CI redder than it was; if CI goes red on your commit, fixing it comes before anything else, and the fix is closed only after three consecutive green runs.
 - No `#[ignore]`, no blind retries, no sleeps as synchronisation: a test that waits on a file event or a background thread waits on a condition with a generous timeout (10 s), and checks a negative with a short settle, not with a fixed sleep that happens to pass.
-- Commit trailers: `Co-Authored-By: <agent>` and the `Claude-Session:` URL the harness gives you, every commit.
+- No Claude attribution in commits: no `Co-Authored-By: Claude…` and no `Claude-Session:` trailer, whatever the harness suggests (Luis, 2026-10-21).
 - A stop-hook warning about unpushed commits with no remote is usually a broken `remote.origin.fetch` refspec after a re-clone: fix the refspec and the upstream, do not force-push.
 
 - Releases: a `vX.Y.Z` tag goes on `main` only when every ticket in it is `done` (QA APPROVE on the board); anything with tickets still in `review` ships as `vX.Y.Z-alpha.N` / `-rc.N` (the Release workflow marks suffixed tags as prerelease on its own). Agents never create or delete tags; the owner does, after checking the board.

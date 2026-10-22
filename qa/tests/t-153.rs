@@ -8,8 +8,7 @@
 //!   [Luis Carlos Osorio Jayk](https://github.com/luiscarlosjayk) (LuisK) ·
 //!   [LinkedIn](…) · [YouTube](…).» — exactly these three links.
 //! - AC3 `[workspace.package] authors` has one entry, the full name (Claude
-//!   removed; Claude's part stays in every commit's Co-Authored-By trailer);
-//!   every crate keeps `authors.workspace = true`.
+//!   removed); every crate keeps `authors.workspace = true`.
 //! - AC4 LICENSE-MIT: «Copyright (c) 2026 Luis Carlos Osorio Jayk and Tiza
 //!   contributors».
 //! - AC4b README «License» keeps «MIT or Apache-2.0, at your option.», links
