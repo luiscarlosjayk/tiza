@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::model::{Annotation, CodeSource, Document, MarkStyle};
+use crate::model::{Annotation, CodeSource, Document, FileRef, MarkStyle};
 use crate::moves::Move;
 
 #[derive(Debug, Clone)]
@@ -27,6 +27,7 @@ struct Snapshot {
     view_code: BTreeMap<String, Vec<String>>,
     moves: Vec<Move>,
     code_src: CodeSource,
+    follows: Option<FileRef>,
     annotations: Vec<Annotation>,
     styles: BTreeMap<String, MarkStyle>,
     title: Option<String>,
@@ -52,6 +53,7 @@ impl Snapshot {
             view_code: doc.view_code.clone(),
             moves: doc.moves.clone(),
             code_src: doc.code_src.clone(),
+            follows: doc.follows.clone(),
             annotations: doc.annotations.clone(),
             styles: doc.styles.clone(),
             title: doc.title.clone(),
@@ -75,6 +77,7 @@ impl Snapshot {
         doc.view_code = self.view_code;
         doc.moves = self.moves;
         doc.code_src = self.code_src;
+        doc.follows = self.follows;
         doc.annotations = self.annotations;
         doc.styles = self.styles;
         doc.title = self.title;

@@ -561,6 +561,11 @@ fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(),
 
 /// `"12-48"`, `"12..48"` or `"7"` → (12, 48).
 fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
+    parse_range(spec, "code.lines")
+}
+
+/// [`parse_lines`] for any field (`follows.lines`), named in the error.
+pub(crate) fn parse_range(spec: &str, field: &str) -> Result<(u32, u32), Error> {
     let s = spec.trim();
     let parts: Vec<&str> = if s.contains("..") {
         s.split("..").collect()
@@ -569,13 +574,13 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
     };
     let nums: Result<Vec<u32>, _> = parts.iter().map(|p| p.trim().parse::<u32>()).collect();
     match nums
-        .map_err(|_| Error::Invalid(format!("invalid line range in code.lines: {spec}")))?
+        .map_err(|_| Error::Invalid(format!("invalid line range in {field}: {spec}")))?
         .as_slice()
     {
         [a] => Ok((*a, *a)),
         [a, b] => Ok((*a.min(b), *a.max(b))),
         _ => Err(Error::Invalid(format!(
-            "invalid line range in code.lines: {spec}"
+            "invalid line range in {field}: {spec}"
         ))),
     }
 }
@@ -584,6 +589,10 @@ fn parse_lines(spec: &str) -> Result<(u32, u32), Error> {
 pub fn document_json(doc: &Document) -> Result<String, Error> {
     let mut doc = doc.clone();
     doc.sync_code_src();
+    // `follows` is written with embedded code only.
+    if !doc.is_embedded() {
+        doc.follows = None;
+    }
     Ok(serde_json::to_string_pretty(&doc)?)
 }
 

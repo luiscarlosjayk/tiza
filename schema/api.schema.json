@@ -780,7 +780,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload when the document is opened again. Written only\nwith embedded code; `:embed`, `:link` and a reload back to the file\nclear it."
+                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload, also when the document is opened again. Written\nonly with embedded code, so `:link` and a reload back to the file\nleave it out; `:embed` clears it. In memory it may stay beside a\nfile reference (a later paste over it names the file again), and\nundo brings it back with the code."
               },
               "loop": {
                 "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
@@ -3545,7 +3545,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload when the document is opened again. Written only\nwith embedded code; `:embed`, `:link` and a reload back to the file\nclear it."
+                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload, also when the document is opened again. Written\nonly with embedded code, so `:link` and a reload back to the file\nleave it out; `:embed` clears it. In memory it may stay beside a\nfile reference (a later paste over it names the file again), and\nundo brings it back with the code."
               },
               "loop": {
                 "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",

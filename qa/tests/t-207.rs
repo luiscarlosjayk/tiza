@@ -415,3 +415,156 @@ fn ac5_schema_and_changelog() {
     let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
     assert!(guide.contains("`follows`"), "agent guide");
 }
+
+// ---------- Review: undo, a failed request, bad values ----------
+
+#[test]
+fn rev_a_put_that_changes_only_follows_is_undone_with_u() {
+    let _w = shared();
+    let (live, src, tiza) = followed("t207-rev-only");
+    std::fs::write(src.with_file_name("other.rs"), SEVEN).unwrap();
+    paste(&live);
+    let mut doc = get(&live);
+    doc["follows"] = json!({"file": "other.rs"});
+    put(&live, &doc);
+    assert_eq!(saved(&tiza)["follows"], json!({"file": "other.rs"}));
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}));
+    live.command("follow on");
+    assert_eq!(message(&live), "following main.rs");
+    assert_eq!(code(&live), lines(CODE));
+}
+
+#[test]
+fn rev_u_back_to_the_first_paste_follows_the_file_it_replaced() {
+    let _w = shared();
+    // Paste over main.rs, `:ref other.rs`, paste again, `u`, `u`: the first
+    // paste is back, and so is the file it replaced.
+    let (live, src, tiza) = followed("t207-rev-ref");
+    std::fs::write(src.with_file_name("other.rs"), SEVEN).unwrap();
+    paste(&live);
+    live.command("ref other.rs");
+    assert_eq!(code(&live), lines(SEVEN));
+    live.with(|app| app.replace_code("fn second() {}\n").unwrap());
+    assert_eq!(saved(&tiza)["follows"], json!({"file": "other.rs"}));
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(code(&live), lines(PASTED));
+    assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}));
+    assert!(
+        status(&live)["reason"]
+            .as_str()
+            .is_some_and(|r| r.ends_with(":follow on reloads main.rs")),
+        "{}",
+        status(&live)
+    );
+    live.command("follow on");
+    assert_eq!(code(&live), lines(CODE));
+}
+
+#[test]
+fn rev_u_of_a_put_of_another_document_brings_the_file_back() {
+    let _w = shared();
+    let (live, _src, tiza) = followed("t207-rev-other-u");
+    paste(&live);
+    let mut other = get(&live);
+    other["source"]["path"] = json!("elsewhere.rs");
+    other.as_object_mut().unwrap().remove("follows");
+    put(&live, &other);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.command("autosave on");
+    assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}));
+    live.command("follow on");
+    assert_eq!(message(&live), "following main.rs");
+    assert_eq!(code(&live), lines(CODE));
+}
+
+#[test]
+fn rev_a_bad_follows_is_refused_on_load_and_on_put() {
+    let _w = shared();
+    let (live, _src, tiza) = followed("t207-rev-bad");
+    paste(&live);
+    for (bad, says) in [
+        (
+            json!({"file": "main.rs", "lines": "abc"}),
+            "invalid line range in follows.lines: abc",
+        ),
+        (json!({"file": ""}), "follows.file is empty"),
+    ] {
+        let mut doc = get(&live);
+        doc["follows"] = bad.clone();
+        let r = live.api("scene.put", json!({ "document": doc }));
+        let err = format!("{:?}", r.error);
+        assert!(err.contains(says), "{bad}: {err}");
+        assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}), "{bad}");
+        let file = tiza.with_file_name(format!("bad-{}.tiza", says.len()));
+        let mut v = saved(&tiza);
+        v["follows"] = bad.clone();
+        std::fs::write(&file, v.to_string()).unwrap();
+        let e = tiza_core::fs::load_document(&file).unwrap_err().to_string();
+        assert!(e.contains(says), "{bad}: {e}");
+    }
+}
+
+#[test]
+fn rev_pty_a_put_that_panics_leaves_follows_as_it_was() {
+    let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
+    let dir = scratch("t207-rev-panic");
+    std::fs::write(dir.join("main.rs"), CODE).unwrap();
+    std::fs::write(dir.join("other.rs"), SEVEN).unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"path": "main.rs", "language": "rs", "first_line": 1},
+        "code": lines(PASTED),
+        "follows": {"file": "main.rs"},
+        "step": 0
+    });
+    std::fs::write(dir.join("main.rs.tiza"), doc.to_string()).unwrap();
+    let body = r##"
+import json
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:scene.put")
+s = Pty([binary, "--socket", "s.sock", "main.rs.tiza"], 30, 160, env=env)
+
+def api(method, params=None):
+    r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params or {})],
+                       capture_output=True, text=True, timeout=10)
+    return r.returncode, r.stdout + r.stderr
+
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+    doc = json.loads(api("scene.get")[1])["document"]
+    same = dict(doc, follows={"file": "other.rs"}, title="kept?")
+    print("PUT_SAME", json.dumps(api("scene.put", {"document": same})[0]), flush=True)
+    print("SAVED", json.dumps(json.load(open("main.rs.tiza"))), flush=True)
+    other = dict(doc, source=dict(doc["source"], path="elsewhere.rs"))
+    other.pop("follows", None)
+    print("PUT_OTHER", json.dumps(api("scene.put", {"document": other})[0]), flush=True)
+    print("SAVED", json.dumps(json.load(open("main.rs.tiza"))), flush=True)
+    print("STATUS", json.dumps(json.loads(api("follow.status")[1])), flush=True)
+    s.send(b":q!\r")
+print("EXIT", s.finish(10))
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "panic.py",
+        body,
+        &[bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(out.contains("EXIT 0"), "{out}");
+    // Both puts failed (the hook), and nothing of them was kept.
+    assert!(
+        out.contains("PUT_SAME 1") && out.contains("PUT_OTHER 1"),
+        "{out}"
+    );
+    for saved in out.lines().filter_map(|l| l.strip_prefix("SAVED ")) {
+        let v: Value = serde_json::from_str(saved).unwrap();
+        assert_eq!(v["follows"], json!({"file": "main.rs"}), "{out}");
+        assert!(v.get("title").is_none(), "{out}");
+    }
+    let st = line_json(&out, "STATUS");
+    assert!(
+        st["path"].as_str().is_some_and(|p| p.ends_with("main.rs")),
+        "{out}"
+    );
+}

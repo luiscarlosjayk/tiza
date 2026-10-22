@@ -75,9 +75,11 @@ pub struct Document {
     pub code_src: CodeSource,
     /// The file the embedded code replaced while follow mode watched it (a
     /// paste over it, or an undo past a reload): what `:follow on` and
-    /// `--follow` reload when the document is opened again. Written only
-    /// with embedded code; `:embed`, `:link` and a reload back to the file
-    /// clear it.
+    /// `--follow` reload, also when the document is opened again. Written
+    /// only with embedded code, so `:link` and a reload back to the file
+    /// leave it out; `:embed` clears it. In memory it may stay beside a
+    /// file reference (a later paste over it names the file again), and
+    /// undo brings it back with the code.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follows: Option<FileRef>,
     /// Code lines in memory, without the trailing newline. Filled in on load
@@ -184,6 +186,20 @@ pub struct FileRef {
     pub file: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lines: Option<String>,
+}
+
+impl FileRef {
+    /// What `code` asks of a file reference: a file named, and a range
+    /// that parses. `field` names it in the error (`follows`).
+    pub fn check(&self, field: &str) -> Result<(), Error> {
+        if self.file.trim().is_empty() {
+            return Err(Error::Invalid(format!("{field}.file is empty")));
+        }
+        if let Some(lines) = &self.lines {
+            crate::fs::parse_range(lines, &format!("{field}.lines"))?;
+        }
+        Ok(())
+    }
 }
 
 impl From<FileRef> for CodeSource {
@@ -926,6 +942,10 @@ impl Document {
     pub fn embedded_copy(&self) -> Document {
         let mut d = self.clone();
         d.sync_code_src();
+        // `follows` goes with embedded code only.
+        if !d.is_embedded() {
+            d.follows = None;
+        }
         d.embed_code();
         d
     }
@@ -1727,6 +1747,9 @@ impl Document {
     /// characters become spaces), `step` within range, unique ids.
     pub fn normalize_loaded(&mut self) -> Result<(), Error> {
         self.check_bounds()?;
+        if let Some(f) = &self.follows {
+            f.check("follows")?;
+        }
         if self.code.is_empty() {
             // Every layout assumes at least one row (see `from_code`).
             self.code.push(String::new());

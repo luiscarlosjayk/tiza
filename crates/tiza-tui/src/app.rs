@@ -505,14 +505,6 @@ pub struct App {
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
-    /// The followed file reference that embedded code on screen replaced
-    /// (a paste, or an undo past a reload): what `:follow on` reloads. A
-    /// paste with follow off sets it too once one is known (follow was on
-    /// before). It counts only while the code is embedded ([`App::paused`]);
-    /// `:follow off` keeps it, `:embed` and another document drop it. Why
-    /// follow is off is worked out from the screen each time
-    /// ([`App::off_reason`]).
-    follow_file: Option<tiza_core::model::CodeSource>,
     /// The followed file changed while moves were applied: its
     /// reload waits for step 0, and the code on screen is embedded meanwhile.
     reload_waits: bool,
@@ -563,13 +555,11 @@ pub struct App {
 
 impl App {
     pub fn new(mut doc: Document, save_path: PathBuf) -> Self {
-        // The file the embedded code replaced while it was followed: what
-        // `:follow on` reloads. Beside a file reference it means nothing.
-        let follow_file = doc
-            .follows
-            .take()
-            .filter(|_| doc.is_embedded())
-            .map(Into::into);
+        // The file the embedded code replaced while it was followed (what
+        // `:follow on` reloads) means nothing beside a file reference.
+        if !doc.is_embedded() {
+            doc.follows = None;
+        }
         let theme_auto = doc.theme.is_none();
         let reference = (!doc.is_embedded()).then(|| doc.code_src.clone());
         let frozen_views = doc.views.keys().cloned().collect();
@@ -632,7 +622,6 @@ impl App {
             checks: Default::default(),
             overlay_scroll: 0,
             follow: None,
-            follow_file,
             reload_waits: false,
             pasted_codes: Vec::new(),
             screen_via_history: false,
@@ -1200,11 +1189,7 @@ impl App {
         if !self.theme_auto {
             self.doc.theme = Some(self.theme.name);
         }
-        self.doc.follows = self.follows();
-        let saved = fs::save_document(&self.doc, &self.save_path);
-        // In memory the followed file is `follow_file`'s alone.
-        self.doc.follows = None;
-        match saved {
+        match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
                 self.mark_saved();
@@ -1238,7 +1223,6 @@ impl App {
         if !self.theme_auto {
             d.theme = Some(self.theme.name);
         }
-        d.follows = self.follows();
         fs::document_json(&d).ok()
     }
 
@@ -1567,9 +1551,6 @@ impl App {
         // Its numbers first: a first line near `u32::MAX` or a step
         // past the cap is refused before anything counts with them.
         doc.check_bounds()?;
-        // Kept apart, as in memory (`follow_file`): it is not part of what a
-        // put compares.
-        let follows = doc.follows.take();
         if doc.code.is_empty() {
             match &doc.code_src {
                 tiza_core::model::CodeSource::Embedded(lines) => doc.code = lines.clone(),
@@ -1645,11 +1626,14 @@ impl App {
                 inner: Box::new(e),
             })?;
         }
-        // The file the document says its embedded code replaced: what
-        // `:follow on` reloads from now on.
-        let follows: Option<tiza_core::model::CodeSource> =
-            follows.filter(|_| doc.is_embedded()).map(Into::into);
-        if self.same_document(&doc) && (follows.is_none() || follows.as_ref() == self.paused()) {
+        // What `:follow on` reloads is the document's own `follows`; a put of
+        // the open document without one keeps the file it knows (`:follow
+        // on` still reloads it), another document follows nothing the open
+        // one did.
+        if doc.follows.is_none() && !other {
+            doc.follows = self.doc.follows.clone();
+        }
+        if self.same_document(&doc) {
             return Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()));
         }
         self.finish_typing();
@@ -1663,14 +1647,6 @@ impl App {
         // files is shown but not saved over them.
         self.history.record_with_step(&self.doc, "scene.put");
         self.doc = doc;
-        // Another document follows nothing the open one did, unless it
-        // says what it follows; a put of the open one keeps the file its
-        // embedded code replaced (`:follow on` still reloads it).
-        match follows {
-            Some(f) => self.follow_file = Some(f),
-            None if other => self.follow_file = None,
-            None => {}
-        }
         self.screen_via_history = false;
         self.step_ready_at = Some(std::time::Instant::now());
         match self.doc.theme {
@@ -2389,7 +2365,7 @@ impl App {
         // screen now.
         let replaced = self.embed_if_not_the_file(&before.code);
         if let Some(reference) = &replaced {
-            self.follow_file = Some(reference.clone());
+            self.doc.follows = reference.file_ref();
         }
         self.rebuild_theme();
         self.touch();
@@ -2557,11 +2533,11 @@ impl App {
         // With follow off, a paste over a file reference still says which
         // file `:follow on` reloads, once one is known (follow was on).
         if self.follow.is_none()
-            && self.follow_file.is_some()
+            && self.doc.follows.is_some()
             && self.doc.is_embedded()
             && matches!(followed, tiza_core::model::CodeSource::File { .. })
         {
-            self.follow_file = Some(followed.clone());
+            self.doc.follows = followed.file_ref();
         }
         let paused = self.pause_follow(Some(followed), NotTheFile::Paste("the code is pasted"));
         self.save_follows();
@@ -2613,7 +2589,7 @@ impl App {
         let mut f = self.follow.take()?;
         f.stop();
         if let Some(src @ tiza_core::model::CodeSource::File { .. }) = followed {
-            self.follow_file = Some(src);
+            self.doc.follows = src.file_ref();
         }
         let why = self
             .off_reason()
@@ -2631,9 +2607,9 @@ impl App {
     /// on disk): there is nothing to say, and `:follow on` still follows it.
     fn off_reason(&self) -> Option<String> {
         let src = self.paused()?;
-        let name = self.reference_name(src)?;
+        let name = self.reference_name(&src)?;
         let mut probe = self.doc.clone();
-        probe.code_src = src.clone();
+        probe.code_src = src;
         let base = self.save_path.parent().map(Path::to_path_buf);
         if fs::reread_reference(&probe, base.as_deref())
             .is_ok_and(|(code, first)| code == self.doc.base() && first == self.doc.base_first())
@@ -2661,7 +2637,7 @@ impl App {
     /// The name of the file `:follow on` would reload while follow is off
     /// over code that is not the file's ([`App::paused`]).
     fn paused_file(&self) -> Option<String> {
-        self.reference_name(self.paused()?)
+        self.reference_name(&self.paused()?)
     }
 
     /// After an undo or a redo: follow goes off when the code on screen is
@@ -2981,14 +2957,13 @@ impl App {
     /// Why follow is off and what it would reload, while the code a paste
     /// (or an undo) put over the followed file is on screen; `None` once the
     /// screen shows a file reference again.
-    fn paused(&self) -> Option<&tiza_core::model::CodeSource> {
-        self.follow_file.as_ref().filter(|_| self.doc.is_embedded())
-    }
-
-    /// `follows` as the document is saved: the file the embedded code on
-    /// screen replaced ([`App::paused`]).
-    fn follows(&self) -> Option<tiza_core::model::FileRef> {
-        self.paused().and_then(|src| src.file_ref())
+    fn paused(&self) -> Option<tiza_core::model::CodeSource> {
+        let file = self
+            .doc
+            .follows
+            .as_ref()
+            .filter(|_| self.doc.is_embedded())?;
+        Some(file.clone().into())
     }
 
     /// The autosave of a paste or an undo comes before follow goes off and
@@ -3002,7 +2977,7 @@ impl App {
 
     fn followed_source(&self) -> Option<tiza_core::model::CodeSource> {
         if self.doc.is_embedded() {
-            self.paused().cloned()
+            self.paused()
         } else {
             Some(self.doc.code_src.clone())
         }
@@ -3098,7 +3073,7 @@ impl App {
                 self.touch();
             }
         }
-        // `follow_file` stays: while the code on screen is still embedded
+        // `follows` stays: while the code on screen is still embedded
         // (the file is missing, or unreadable for now) it names the file the
         // next reload reads, so the file coming back reloads it.
         Ok(match self.follow_waits() {
@@ -3190,7 +3165,7 @@ impl App {
         if self.follow.is_none() || self.doc.moves_applied() {
             return false;
         }
-        let Some(src) = self.paused().cloned() else {
+        let Some(src) = self.paused() else {
             return false;
         };
         let mut probe = self.doc.clone();
@@ -3277,7 +3252,7 @@ impl App {
             // show it — saved as `code: {file}` they would read the new text
             // under the annotations and `rebind` entries made for this one.
             if !self.doc.is_embedded() {
-                self.follow_file = Some(self.doc.code_src.clone());
+                self.doc.follows = self.doc.code_src.file_ref();
                 self.doc.code_src =
                     tiza_core::model::CodeSource::Embedded(self.doc.base().to_vec());
                 self.touch();
@@ -3975,7 +3950,7 @@ impl App {
                 "embed" => {
                     self.doc.embed_code();
                     self.reference = None;
-                    self.follow_file = None;
+                    self.doc.follows = None;
                     self.frozen_views = self.doc.views.keys().cloned().collect();
                     self.touch();
                     // The code no longer comes from the file: there is
@@ -5918,8 +5893,7 @@ impl App {
                 // On the wire the code travels embedded: a client in another
                 // directory could not resolve a relative file reference;
                 // linked files travel embedded too.
-                let mut document = self.doc.embedded_copy();
-                document.follows = self.follows();
+                let document = self.doc.embedded_copy();
                 let (stale, held) = tiza_core::stale::marks(&self.doc);
                 serde_json::to_value(Scene {
                     revision: self.revision,
