@@ -18,7 +18,7 @@
 //! Before: 222 ms per frame (98 ms syntect, a second layout for the status
 //! bar, ~10 ms of `String` allocations for 260,000 cells). After: ~7 ms.
 
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -26,6 +26,12 @@ use tiza_core::canvas::Sym;
 use tiza_core::highlight::highlight_cached;
 use tiza_qa::Live;
 use two_face::theme::EmbeddedThemeName;
+
+/// The highlight cache is the process's, and the other tests here
+/// highlight too (each `annotation.add` lays the take out to say whether
+/// the annotation is drawn): `ac2` runs alone, or it counts entries they
+/// put there.
+static CACHE: RwLock<()> = RwLock::new(());
 
 fn big_doc() -> String {
     let mut s = String::new();
@@ -72,6 +78,7 @@ fn big_live(name: &str) -> Live {
 
 #[test]
 fn ac1_frame_under_budget() {
+    let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
     let live = big_live("t054-budget");
     let _ = live.screen(120, 40); // warm the caches (syntect grammars, highlight)
     let mut samples: Vec<Duration> = (0..21)
@@ -103,6 +110,7 @@ fn ac1_frame_under_budget() {
 
 #[test]
 fn ac2_highlight_is_memoized_and_invalidated() {
+    let _alone = CACHE.write().unwrap_or_else(|e| e.into_inner());
     let code: Vec<String> = big_doc().lines().map(str::to_string).collect();
     let a = highlight_cached(&code, "rs", EmbeddedThemeName::OneHalfDark);
     let t = Instant::now();
@@ -127,6 +135,7 @@ fn ac2_highlight_is_memoized_and_invalidated() {
 
 #[test]
 fn ac3_status_bar_reuses_the_layout() {
+    let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
     let live = big_live("t054-status");
     live.with(|a| a.size = (120, 40));
     // The warnings computed from a given layout equal the standalone ones.
@@ -160,6 +169,7 @@ fn ac3_status_bar_reuses_the_layout() {
 
 #[test]
 fn ac4_cells_are_inline_and_long_clusters_still_work() {
+    let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
     assert!(matches!(Sym::new("╭"), Sym::Inline { .. }));
     assert!(matches!(Sym::new("名"), Sym::Inline { .. }));
     assert!(matches!(Sym::new("🔥"), Sym::Inline { .. }));

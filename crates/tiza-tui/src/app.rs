@@ -794,19 +794,24 @@ impl App {
 
     /// Why annotation `id` is not on the screen now: the document's reasons
     /// at the current step, or a note or a callout (its text is all it
-    /// draws) that the take leaves out (`cuts`, [`App::screen_cuts`]).
+    /// draws) that the take leaves out. `cuts` holds [`App::screen_cuts`]
+    /// once it is needed, so a layout runs only for those.
     fn not_shown(
         &self,
         id: &str,
-        cuts: &(usize, Vec<tiza_core::layout::ClippedLabel>),
+        cuts: &mut Option<(usize, Vec<tiza_core::layout::ClippedLabel>)>,
     ) -> Option<tiza_core::model::Hidden> {
         if let Some(why) = self.doc.hidden_reason(id, self.doc.step) {
             return Some(why);
         }
         let a = self.doc.find_annotation(id)?;
-        let text_only = matches!(a.shape, Shape::Note { .. } | Shape::Callout { .. });
-        (text_only && cuts.1.iter().any(|c| c.id == id && c.dropped))
-            .then_some(tiza_core::model::Hidden::NoRoom { width: cuts.0 })
+        if !matches!(a.shape, Shape::Note { .. } | Shape::Callout { .. }) {
+            return None;
+        }
+        let (width, cut) = cuts.get_or_insert_with(|| self.screen_cuts());
+        cut.iter()
+            .any(|c| c.id == id && c.dropped)
+            .then_some(tiza_core::model::Hidden::NoRoom { width: *width })
     }
 
     /// The reply to `annotation.add` and `annotation.update`: where the
@@ -818,14 +823,15 @@ impl App {
         if !m.visible {
             return m;
         }
-        let cuts = self.screen_cuts();
-        if let Some(why) = self.not_shown(&m.id, &cuts) {
+        let mut cuts = None;
+        if let Some(why) = self.not_shown(&m.id, &mut cuts) {
             m.visible = false;
             m.hidden = Some(why.to_string());
             return m;
         }
-        let width = cuts.0;
-        let mine = || cuts.1.iter().filter(|c| c.id == m.id);
+        let (width, cut) = cuts.get_or_insert_with(|| self.screen_cuts());
+        let width = *width;
+        let mine = || cut.iter().filter(|c| c.id == m.id);
         m.clipped = match (mine().any(|c| c.dropped), mine().next()) {
             (true, _) => Some(format!(
                 "its label is not drawn: no room at {width} columns (check at width {width} lists it)"
@@ -5343,12 +5349,12 @@ impl App {
     /// The bar's text for agent changes (t-155), as the view stands now:
     /// those it shows meanwhile are left out; `None` when it shows them all.
     fn agent_notice_text(&self, items: &[(String, &'static str)]) -> Option<String> {
-        let cuts = self.screen_cuts();
+        let mut cuts = None;
         let hidden: Vec<_> = items
             .iter()
             .filter_map(|(id, verb)| {
                 let a = self.doc.find_annotation(id)?;
-                let why = self.not_shown(id, &cuts)?;
+                let why = self.not_shown(id, &mut cuts)?;
                 Some((a, *verb, why))
             })
             .collect();
@@ -5419,7 +5425,7 @@ impl App {
         // Accepted but not on screen: the acceptance says where (t-155).
         let tail = match (&resp.result, mutates_annotation) {
             (Some(r), true) => mutated_id(r)
-                .and_then(|id| self.not_shown(&id, &self.screen_cuts()))
+                .and_then(|id| self.not_shown(&id, &mut None))
                 .map(|why| self.hidden_tail(&why, &p.summary))
                 .unwrap_or_default(),
             _ => String::new(),
