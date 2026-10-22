@@ -991,7 +991,9 @@ fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String,
         }
         for c in take.layout(i, theme, width).clipped_labels {
             let key = (c.id, c.text, c.dropped);
-            match out.iter_mut().find(|(k, _)| k.0 == key.0 && k.1 == key.1) {
+            // Cut at some steps and left out at others: two findings, each
+            // with its own steps, so each step is reported as it draws.
+            match out.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, steps)) => steps.extend(step.run.clone()),
                 None => out.push((key, step.run.clone().collect())),
             }

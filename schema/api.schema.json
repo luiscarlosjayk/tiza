@@ -26,7 +26,7 @@
       "result": {
         "$defs": {
           "PointerAt": {
-            "description": "Where the live pointer is.",
+            "description": "Where the live pointer is (t-030).",
             "properties": {
               "by": {
                 "$ref": "#/$defs/PointerBy",
@@ -53,7 +53,7 @@
             "type": "object"
           },
           "PointerBy": {
-            "description": "Who moved the live pointer last.",
+            "description": "Who moved the live pointer last (t-030).",
             "enum": [
               "presenter",
               "agent"
@@ -97,14 +97,14 @@
             "type": "integer"
           },
           "document": {
-            "description": "The `.tiza` this instance saves to (absolute), when it exists on disk; absent\nbefore the first save. What a `.tape` of the live instance opens.",
+            "description": "The `.tiza` this instance saves to (absolute), when it exists on disk; absent\nbefore the first save. What a `.tape` of the live instance opens\n(t-166).",
             "type": [
               "string",
               "null"
             ]
           },
           "file": {
-            "description": "The file shown: the source file, or the one a `code.link` move\nleft up at the current step.",
+            "description": "The file shown: the source file, or the one a `code.link` move\nleft up at the current step (t-105).",
             "type": [
               "string",
               "null"
@@ -168,7 +168,7 @@
               }
             ],
             "default": null,
-            "description": "The live pointer: the lines the presenter (`f`) or an agent\n(`pointer.set`) is pointing at on the screen right now, or `null`.\nNever saved nor exported. Always present."
+            "description": "The live pointer (t-030): the lines the presenter (`f`) or an agent\n(`pointer.set`) is pointing at on the screen right now, or `null`.\nNever saved nor exported. Always present."
           },
           "protocol": {
             "format": "uint32",
@@ -198,7 +198,7 @@
             "type": "integer"
           },
           "step_id": {
-            "description": "The `id` and `title` of the current step, when `steps` names it;\n`step_label` is what the status line shows (`step 3/7 · Shared borrow`).",
+            "description": "The `id` and `title` of the current step, when `steps` names it\n(t-099); `step_label` is what the status line shows\n(`step 3/7 · Shared borrow`).",
             "type": [
               "string",
               "null"
@@ -672,7 +672,7 @@
                 ]
               },
               "file": {
-                "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
+                "description": "The file (view) the annotation belongs to, as a `code.link` names it\n(t-105). Absent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
                   "string",
                   "null"
@@ -691,7 +691,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`): kept so the range can be\nre-resolved after the code changes. Lines stay the truth."
+                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
               },
               "step": {
                 "default": 1,
@@ -776,7 +776,7 @@
                 "type": "boolean"
               },
               "margin": {
-                "description": "Cap on the right margin, in cells: long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
+                "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
                 "format": "uint16",
                 "maximum": 65535,
                 "minimum": 0,
@@ -793,7 +793,7 @@
                 "type": "array"
               },
               "numbers": {
-                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "description": "Line-number gutter (t-112). Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
                 "type": "boolean"
               },
               "padding": {
@@ -835,7 +835,7 @@
                 "type": "integer"
               },
               "steps": {
-                "description": "Named steps (ADR 0007 §4): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+                "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
                 "items": {
                   "$ref": "#/$defs/NamedStep"
                 },
@@ -867,7 +867,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Per-token theme overrides, the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
+                "description": "Per-token theme overrides (t-119), the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
               },
               "title": {
                 "type": [
@@ -894,7 +894,7 @@
             "type": "object"
           },
           "Emphasis": {
-            "description": "How a highlighted or marked span is drawn.",
+            "description": "How a highlighted or marked span is drawn (t-096).",
             "oneOf": [
               {
                 "const": "fill",
@@ -1453,7 +1453,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette (t-119): default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]
@@ -1602,7 +1602,7 @@
       "params": {
         "$defs": {
           "Emphasis": {
-            "description": "How a highlighted or marked span is drawn.",
+            "description": "How a highlighted or marked span is drawn (t-096).",
             "oneOf": [
               {
                 "const": "fill",
@@ -1853,7 +1853,7 @@
               },
               "find_start": {
                 "default": null,
-                "description": "Text markers instead of line numbers: the box runs from\nthe line of `find_start` to the line of `find_end`.",
+                "description": "Text markers instead of line numbers (t-097): the box runs from\nthe line of `find_start` to the line of `find_end`.",
                 "type": [
                   "string",
                   "null"
@@ -2106,7 +2106,7 @@
           },
           "file": {
             "default": null,
-            "description": "The file (view) the annotation belongs to, as a `code.link` names\nit. Default: the file shown at its step.",
+            "description": "The file (view) the annotation belongs to, as a `code.link` names\nit (t-105). Default: the file shown at its step.",
             "type": [
               "string",
               "null"
@@ -2134,7 +2134,7 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of `annotation.add` / `annotation.update`: the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
+        "description": "Result of `annotation.add` / `annotation.update` (t-155): the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
           "clipped": {
             "description": "While visible, a label the screen draws cut with `…` or not at all,\nat the width of the screen at that moment, in words (`its label is\ncut with … at 98 columns (check at width 98 lists it)`); absent when\nit is drawn whole.",
@@ -2171,14 +2171,14 @@
             "type": "integer"
           },
           "step_title": {
-            "description": "Title (or id) of that step when it is a named step.",
+            "description": "Title (or id) of that step when it is a named step (t-099).",
             "type": [
               "string",
               "null"
             ]
           },
           "visible": {
-            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one), its\nanchor kept and its lines inside the window.",
+            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one), its anchor\nkept, its lines inside the window and, for a note or a callout, room\nfor its text in the take at the screen's width (what presentation\nmode, the exports and `check` draw).",
             "type": "boolean"
           }
         },
@@ -2199,7 +2199,7 @@
       "params": {
         "$defs": {
           "Emphasis": {
-            "description": "How a highlighted or marked span is drawn.",
+            "description": "How a highlighted or marked span is drawn (t-096).",
             "oneOf": [
               {
                 "const": "fill",
@@ -2470,7 +2470,7 @@
                   },
                   "find_start": {
                     "default": null,
-                    "description": "Text markers instead of line numbers: the box runs from\nthe line of `find_start` to the line of `find_end`.",
+                    "description": "Text markers instead of line numbers (t-097): the box runs from\nthe line of `find_start` to the line of `find_end`.",
                     "type": [
                       "string",
                       "null"
@@ -2905,7 +2905,7 @@
       },
       "result": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of `annotation.add` / `annotation.update`: the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
+        "description": "Result of `annotation.add` / `annotation.update` (t-155): the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
           "clipped": {
             "description": "While visible, a label the screen draws cut with `…` or not at all,\nat the width of the screen at that moment, in words (`its label is\ncut with … at 98 columns (check at width 98 lists it)`); absent when\nit is drawn whole.",
@@ -2942,14 +2942,14 @@
             "type": "integer"
           },
           "step_title": {
-            "description": "Title (or id) of that step when it is a named step.",
+            "description": "Title (or id) of that step when it is a named step (t-099).",
             "type": [
               "string",
               "null"
             ]
           },
           "visible": {
-            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one), its\nanchor kept and its lines inside the window.",
+            "description": "Whether the annotation is drawn at `shown_step`: its step reached,\nits file shown (a `code.link` may show another one), its anchor\nkept, its lines inside the window and, for a note or a callout, room\nfor its text in the take at the screen's width (what presentation\nmode, the exports and `check` draw).",
             "type": "boolean"
           }
         },
@@ -3408,7 +3408,7 @@
                 ]
               },
               "file": {
-                "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
+                "description": "The file (view) the annotation belongs to, as a `code.link` names it\n(t-105). Absent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
                   "string",
                   "null"
@@ -3427,7 +3427,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`): kept so the range can be\nre-resolved after the code changes. Lines stay the truth."
+                "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
               },
               "step": {
                 "default": 1,
@@ -3512,7 +3512,7 @@
                 "type": "boolean"
               },
               "margin": {
-                "description": "Cap on the right margin, in cells: long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
+                "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
                 "format": "uint16",
                 "maximum": 65535,
                 "minimum": 0,
@@ -3529,7 +3529,7 @@
                 "type": "array"
               },
               "numbers": {
-                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "description": "Line-number gutter (t-112). Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
                 "type": "boolean"
               },
               "padding": {
@@ -3571,7 +3571,7 @@
                 "type": "integer"
               },
               "steps": {
-                "description": "Named steps (ADR 0007 §4): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+                "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
                 "items": {
                   "$ref": "#/$defs/NamedStep"
                 },
@@ -3603,7 +3603,7 @@
                     "type": "null"
                   }
                 ],
-                "description": "Per-token theme overrides, the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
+                "description": "Per-token theme overrides (t-119), the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
               },
               "title": {
                 "type": [
@@ -3630,7 +3630,7 @@
             "type": "object"
           },
           "Emphasis": {
-            "description": "How a highlighted or marked span is drawn.",
+            "description": "How a highlighted or marked span is drawn (t-096).",
             "oneOf": [
               {
                 "const": "fill",
@@ -4153,7 +4153,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette (t-119): default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]
@@ -4388,7 +4388,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette (t-119): default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]
@@ -4407,14 +4407,14 @@
             ]
           },
           "loop": {
-            "description": "`loop` on or off.",
+            "description": "`loop` on or off (t-099).",
             "type": [
               "boolean",
               "null"
             ]
           },
           "margin": {
-            "description": "Right-margin cap in cells (saved in the document); `null`\nrestores the dynamic margin.",
+            "description": "Right-margin cap in cells (t-113; saved in the document); `null`\nrestores the dynamic margin.",
             "format": "uint16",
             "maximum": 65535,
             "minimum": 0,
@@ -4424,7 +4424,7 @@
             ]
           },
           "numbers": {
-            "description": "Line-number gutter on or off (saved in the document).",
+            "description": "Line-number gutter on or off (t-112; saved in the document).",
             "type": [
               "boolean",
               "null"
@@ -4462,7 +4462,7 @@
             ]
           },
           "steps": {
-            "description": "Named steps: the whole list, replaced (`[]` clears it).",
+            "description": "Named steps (t-099): the whole list, replaced (`[]` clears it).",
             "items": {
               "$ref": "#/$defs/NamedStep"
             },
@@ -5503,7 +5503,7 @@
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
           "id": {
-            "description": "The `id` of the step reached, when `steps` names it.",
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
             "type": [
               "string",
               "null"
@@ -5560,7 +5560,7 @@
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
           "id": {
-            "description": "The `id` of the step reached, when `steps` names it.",
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
             "type": [
               "string",
               "null"
@@ -5617,7 +5617,7 @@
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
           "id": {
-            "description": "The `id` of the step reached, when `steps` names it.",
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
             "type": [
               "string",
               "null"
@@ -5665,7 +5665,7 @@
       "method": "step.goto",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Parameters of `step.goto`.",
+        "description": "Parameters of `step.goto` (t-099).",
         "properties": {
           "id": {
             "description": "The `id` of a named step (`\"borrow\"`), or a step number (`3` or\n`\"3\"`: a number always means a step number).",
@@ -5687,7 +5687,7 @@
         "description": "Result of `step.set`, `step.next`, `step.prev` and `step.goto`.",
         "properties": {
           "id": {
-            "description": "The `id` of the step reached, when `steps` names it.",
+            "description": "The `id` of the step reached, when `steps` names it (t-099).",
             "type": [
               "string",
               "null"
@@ -5768,12 +5768,12 @@
       }
     },
     {
-      "description": "Points at a line on the live screen: `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
+      "description": "Points at a line on the live screen (t-030): `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
       "method": "pointer.set",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "Parameters of `pointer.set`: `{line}`, `{line, find}`,\n`{find}` (the text must appear once in the shown code) or\n`{from, to}`.",
+        "description": "Parameters of `pointer.set` (t-030): `{line}`, `{line, find}`,\n`{find}` (the text must appear once in the shown code) or\n`{from, to}`.",
         "properties": {
           "find": {
             "description": "Text that names the line: on `line` when given, else it must appear\nexactly once in the code shown.",
@@ -5816,7 +5816,7 @@
       "result": {
         "$defs": {
           "PointerAt": {
-            "description": "Where the live pointer is.",
+            "description": "Where the live pointer is (t-030).",
             "properties": {
               "by": {
                 "$ref": "#/$defs/PointerBy",
@@ -5843,7 +5843,7 @@
             "type": "object"
           },
           "PointerBy": {
-            "description": "Who moved the live pointer last.",
+            "description": "Who moved the live pointer last (t-030).",
             "enum": [
               "presenter",
               "agent"
@@ -5852,7 +5852,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of `pointer.set` and `pointer.clear`.",
+        "description": "Result of `pointer.set` and `pointer.clear` (t-030).",
         "properties": {
           "pointer": {
             "anyOf": [
@@ -5889,7 +5889,7 @@
       "result": {
         "$defs": {
           "PointerAt": {
-            "description": "Where the live pointer is.",
+            "description": "Where the live pointer is (t-030).",
             "properties": {
               "by": {
                 "$ref": "#/$defs/PointerBy",
@@ -5916,7 +5916,7 @@
             "type": "object"
           },
           "PointerBy": {
-            "description": "Who moved the live pointer last.",
+            "description": "Who moved the live pointer last (t-030).",
             "enum": [
               "presenter",
               "agent"
@@ -5925,7 +5925,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of `pointer.set` and `pointer.clear`.",
+        "description": "Result of `pointer.set` and `pointer.clear` (t-030).",
         "properties": {
           "pointer": {
             "anyOf": [
@@ -6010,11 +6010,11 @@
       }
     },
     {
-      "description": "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
+      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy` (t-210)",
       "method": "check",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Parameters of `check`.",
+        "description": "Parameters of `check` (t-101).",
         "properties": {
           "width": {
             "description": "Columns to check the labels at; defaults to 100, as `tiza render`.",
@@ -6141,7 +6141,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of the live `check`: the report of `tiza check --json`,\nfield for field, plus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document, so a change\nmade while it runs is not in it, and one that waited for another check\nmay be about a revision later than the call: compare `revision` with\nthe one `status` or a mutation gave, and check again.",
+        "description": "Result of the live `check` (t-210): the report of `tiza check --json`,\nfield for field, plus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document, so a change\nmade while it runs is not in it, and one that waited for another check\nmay be about a revision later than the call: compare `revision` with\nthe one `status` or a mutation gave, and check again.",
         "properties": {
           "errors": {
             "format": "uint",

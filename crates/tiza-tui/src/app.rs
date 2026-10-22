@@ -777,16 +777,24 @@ impl App {
         usize::from(cols.saturating_sub(2 * pad_h)).max(1)
     }
 
-    /// The labels the screen draws cut with `…` or leaves out at
-    /// [`App::screen_width`], with that width: what `check` reports at it.
+    /// The labels cut with `…` or left out at the screen's width (within
+    /// the widths `check` takes), with that width: the take, the layout
+    /// presentation mode, the exports and `check` draw, with the step as it
+    /// is once typed. While authoring the screen reserves room for the
+    /// steps so far only, so before the last step it may place a label
+    /// otherwise; what the audience sees is the take.
     fn screen_cuts(&self) -> (usize, Vec<tiza_core::layout::ClippedLabel>) {
-        let width = self.screen_width();
-        (width, self.layout(width).clipped_labels)
+        use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
+        let width = self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH);
+        let mut opts = self.layout_options(width);
+        opts.stable = true;
+        opts.typing = false;
+        (width, layout(&self.doc, &self.theme, &opts).clipped_labels)
     }
 
     /// Why annotation `id` is not on the screen now: the document's reasons
     /// at the current step, or a note or a callout (its text is all it
-    /// draws) that the layout leaves out (`cuts`, [`App::screen_cuts`]).
+    /// draws) that the take leaves out (`cuts`, [`App::screen_cuts`]).
     fn not_shown(
         &self,
         id: &str,
@@ -802,9 +810,9 @@ impl App {
     }
 
     /// The reply to `annotation.add` and `annotation.update`: where the
-    /// annotation stands against the view, and against the screen's layout
-    /// at its width at this moment (a note left out is not visible; a label
-    /// cut or left out is said in `clipped`).
+    /// annotation stands against the view, and against the take at the
+    /// screen's width at this moment (a note left out is not visible; a
+    /// label cut or left out is said in `clipped`).
     fn mutated(&self, id: String) -> AnnotationMutated {
         let mut m = AnnotationMutated::of(&self.doc, id, self.revision);
         if !m.visible {
@@ -5353,13 +5361,19 @@ impl App {
             }
             many => {
                 let msg = format!("{} agent annotations not shown", many.len());
+                // `press n` never shows one that has no room: no step hint
+                // then, unless every one of them has that same tail.
+                let no_room = many
+                    .iter()
+                    .any(|(_, _, w)| matches!(w, tiza_core::model::Hidden::NoRoom { .. }));
                 let first_later = many
                     .iter()
                     .filter_map(|(_, _, w)| match w {
                         tiza_core::model::Hidden::Later(s) => Some(*s),
                         _ => None,
                     })
-                    .min();
+                    .min()
+                    .filter(|_| !no_room);
                 let tail = match first_later {
                     Some(s) => self.hidden_tail(&tiza_core::model::Hidden::Later(s), &msg),
                     None => {

@@ -998,8 +998,10 @@ pub struct AnnotationMutated {
     /// The step the view was showing when the change was applied.
     pub shown_step: u32,
     /// Whether the annotation is drawn at `shown_step`: its step reached,
-    /// its file shown (a `code.link` may show another one), its
-    /// anchor kept and its lines inside the window.
+    /// its file shown (a `code.link` may show another one), its anchor
+    /// kept, its lines inside the window and, for a note or a callout, room
+    /// for its text in the take at the screen's width (what presentation
+    /// mode, the exports and `check` draw).
     pub visible: bool,
     /// Why it is not visible, in words (`it appears at step 1`, `its file
     /// lib.rs is not shown at step 2 (main.rs is)`, `it is not drawn: no

@@ -21,8 +21,16 @@
 //! Decisions: only a note or a callout is not visible when its text is
 //! left out (its text is all it draws); a box, an arrow, a highlight or a
 //! mark is still drawn, so it stays visible and `clipped` says its label is
-//! not drawn. The width is the screen's code area (the terminal less its
-//! side padding), the one `check` must be given to agree.
+//! not drawn. The step is laid out as presentation mode, the exports and
+//! `check` do (the take, once typed), at the screen's code area (the
+//! terminal less its side padding, within the widths `check` takes), so
+//! `check` at the width the reply names agrees.
+//!
+//! Review (`rev_*`): a later step with arrows (the take differs from the
+//! authoring screen there), a note added while its step is typed, a
+//! terminal narrower than `check` takes, a grouped bar notice, and `check`
+//! keeping a label cut at one step apart from the same label left out at
+//! another.
 //!
 //! Corner cases: the reply is about the size at that moment (a resize
 //! later changes nothing in it); presentation mode follows the same rule;
@@ -40,9 +48,11 @@ const ENV: &str = "DATABASE_URL=postgres://app:s3cr3t-pass@db.internal:5432/app\
 /// of L2 and L3, so a label on L2 finds no row; from 116 columns the
 /// callout falls back to a label and every label is drawn.
 fn opened(name: &str) -> (Live, std::path::PathBuf) {
-    let dir = scratch(name);
-    std::fs::write(dir.join("demo.env"), ENV).unwrap();
-    let doc = json!({
+    opened_with(name, base_doc())
+}
+
+fn base_doc() -> Value {
+    json!({
         "schema": 1,
         "source": {"path": "demo.env", "language": "env", "first_line": 1},
         "code": {"file": "demo.env"},
@@ -51,7 +61,12 @@ fn opened(name: &str) -> (Live, std::path::PathBuf) {
             "text": "user, password, host, port and database in one value"
         }],
         "step": 1
-    });
+    })
+}
+
+fn opened_with(name: &str, doc: Value) -> (Live, std::path::PathBuf) {
+    let dir = scratch(name);
+    std::fs::write(dir.join("demo.env"), ENV).unwrap();
     let tiza = dir.join("demo.env.tiza");
     std::fs::write(&tiza, doc.to_string()).unwrap();
     let loaded = tiza_core::fs::load_document(&tiza).unwrap();
@@ -72,6 +87,14 @@ fn add(live: &Live, params: Value) -> Value {
 /// `tiza check --json --width W` on the autosave: each annotation's
 /// `clipped_label` findings, as (id, has no room).
 fn check_cuts(tiza: &std::path::Path, width: usize) -> Vec<(String, bool)> {
+    check_findings(tiza, width)
+        .into_iter()
+        .map(|(id, no_room, _)| (id, no_room))
+        .collect()
+}
+
+/// [`check_cuts`] with the first step of each finding.
+fn check_findings(tiza: &std::path::Path, width: usize) -> Vec<(String, bool, u64)> {
     let out = std::process::Command::new(bin())
         .args(["check", "--json", "--width", &width.to_string()])
         .arg(tiza)
@@ -90,6 +113,7 @@ fn check_cuts(tiza: &std::path::Path, width: usize) -> Vec<(String, bool)> {
                     .as_str()
                     .unwrap_or_default()
                     .contains("has no room"),
+                f["step"].as_u64().unwrap_or_default(),
             )
         })
         .collect()
@@ -243,17 +267,14 @@ fn corner_presentation_mode_follows_the_same_rule() {
         app.size = (102, 30);
         app.set_present(true);
     });
-    let width = live.with(|app| app.screen_width());
     let r = add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
     );
     assert_eq!(r["visible"], false, "{r}");
+    // 102 columns less the default side padding (1 each side).
     assert!(
-        r["hidden"]
-            .as_str()
-            .unwrap()
-            .contains(&format!("at {width} columns")),
+        r["hidden"].as_str().unwrap().contains("at 100 columns"),
         "{r}"
     );
 }
@@ -290,4 +311,148 @@ fn corner_the_reply_is_about_the_size_at_that_moment() {
     let id = r["id"].as_str().unwrap();
     let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
     assert_eq!(r["visible"], true, "{r}");
+}
+
+// ---------- review ----------
+
+/// The reply's verdict on `id`, as check's words: `Some(true)` left out,
+/// `Some(false)` cut with …, `None` drawn whole; and the width it names.
+fn verdict(r: &Value) -> (Option<bool>, Option<usize>) {
+    let text = r["hidden"].as_str().or(r["clipped"].as_str());
+    let width = text.and_then(|t| {
+        let at = t.find(" columns")?;
+        t[..at].rsplit(' ').next()?.parse().ok()
+    });
+    let v = if r["visible"] == false {
+        Some(true)
+    } else {
+        r["clipped"].as_str().map(|c| c.contains("not drawn"))
+    };
+    (v, width)
+}
+
+#[test]
+fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
+    // Arrows at step 2 make the take keep room for their rails at step 1
+    // too, where the authoring screen does not: the reply follows the take.
+    let mut doc = base_doc();
+    doc["annotations"].as_array_mut().unwrap().extend([
+        json!({"id": "r1", "step": 2, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}}),
+        json!({"id": "r2", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0}, "to": {"line": 4, "col": 0}}),
+        json!({"id": "r3", "step": 2, "type": "arrow", "from": {"line": 3, "col": 0}, "to": {"line": 1, "col": 0}}),
+    ]);
+    let (live, tiza) = opened_with("t171-arrows", doc);
+    terminal(&live, 102);
+    let r = add(
+        &live,
+        json!({"type": "note", "line": 2, "text": "secret token", "step": 1}),
+    );
+    let id = r["id"].as_str().unwrap().to_string();
+    let mut seen = std::collections::BTreeSet::new();
+    for cols in 100..=130u16 {
+        terminal(&live, cols);
+        let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
+        let (v, named) = verdict(&r);
+        let width = usize::from(cols) - 2;
+        if v.is_some() {
+            assert_eq!(named, Some(width), "{cols}: {r}");
+        }
+        // The note first appears at step 1, the step on screen.
+        let from_check = check_findings(&tiza, width)
+            .into_iter()
+            .find(|(i, _, step)| *i == id && *step == 1)
+            .map(|(_, no_room, _)| no_room);
+        assert_eq!(v, from_check, "{cols} columns: reply {r}");
+        seen.insert(format!("{v:?}"));
+    }
+    // The sweep crosses both answers.
+    assert!(seen.len() >= 2, "{seen:?}");
+}
+
+#[test]
+fn rev_a_note_added_while_its_step_is_typed() {
+    // Right after `next_step` the step's typing runs: the reply is about
+    // the step once typed, as the screen shows it then.
+    let mut doc = base_doc();
+    doc["step"] = json!(0);
+    doc["moves"] = json!([{
+        "at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
+        "content": "PORT=9090", "typing": "char", "speed_ms": 1000
+    }]);
+    let (live, tiza) = opened_with("t171-typing", doc);
+    terminal(&live, 102);
+    live.api_ok("step.next", json!({}));
+    assert!(live.with(|app| app.typing.is_some()), "the step is typing");
+    let r = add(
+        &live,
+        json!({"type": "note", "line": 2, "text": "secret token"}),
+    );
+    assert!(live.with(|app| app.typing.is_some()), "still typing");
+    assert_eq!(r["visible"], false, "{r}");
+    let id = r["id"].as_str().unwrap().to_string();
+    assert!(check_cuts(&tiza, 100).contains(&(id, true)));
+}
+
+#[test]
+fn rev_a_terminal_narrower_than_check_takes_names_a_width_it_takes() {
+    let (live, tiza) = opened("t171-tiny");
+    terminal(&live, 12);
+    let r = add(
+        &live,
+        json!({"type": "note", "line": 2, "text": "the secret token the API calls carry"}),
+    );
+    let (v, named) = verdict(&r);
+    assert_eq!(named, Some(20), "{r}");
+    let id = r["id"].as_str().unwrap().to_string();
+    let from_check = check_cuts(&tiza, 20)
+        .into_iter()
+        .find(|(i, _)| *i == id)
+        .map(|(_, no_room)| no_room);
+    assert_eq!(v, from_check, "{r}");
+}
+
+#[test]
+fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
+    // `press n` would never show the note that has no room.
+    let (live, _tiza) = opened("t171-group");
+    terminal(&live, 102);
+    add(
+        &live,
+        json!({"type": "note", "line": 2, "text": "secret token"}),
+    );
+    add(
+        &live,
+        json!({"type": "box", "from_line": 3, "to_line": 4, "step": 2}),
+    );
+    let (msg, _) = live.message().unwrap();
+    assert!(msg.starts_with("2 agent annotations not shown"), "{msg}");
+    assert!(!msg.contains("press n"), "{msg}");
+}
+
+#[test]
+fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
+    // The callout comes at step 2: the long note on L2 is cut with … at
+    // step 1 and left out at step 2, where the callout's block takes its row.
+    let mut doc = base_doc();
+    doc["annotations"][0]["step"] = json!(2);
+    doc["annotations"].as_array_mut().unwrap().push(json!({
+        "id": "n1", "step": 1, "type": "note", "line": 2,
+        "text": "the token every call to the API carries in its Authorization header, rotated each month by the platform team"
+    }));
+    doc["step"] = json!(2);
+    let (live, tiza) = opened_with("t171-steps", doc);
+    terminal(&live, 102);
+    let mut findings: Vec<(bool, u64)> = check_findings(&tiza, 100)
+        .into_iter()
+        .filter(|(i, _, _)| i == "n1")
+        .map(|(_, no_room, step)| (no_room, step))
+        .collect();
+    findings.sort();
+    assert_eq!(findings, vec![(false, 1), (true, 2)]);
+    // The reply says what each step draws.
+    let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "green"}));
+    assert_eq!(verdict(&r).0, Some(true), "{r}");
+    live.api_ok("step.set", json!({"step": 1}));
+    let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "blue"}));
+    assert_eq!(verdict(&r).0, Some(false), "{r}");
 }
