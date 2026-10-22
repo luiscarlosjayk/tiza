@@ -28,6 +28,18 @@
 //! - AC7 This file with the repro documents of QA 1 (`qa/fixtures/t-201/`,
 //!   p1–p6 and their variants, as Luis decided on them) and a width sweep, `visible`/`clipped` in the `annotation.add`
 //!   reply agreeing with `check` at every width; CHANGELOG (Fixed).
+//!
+//! Decided by Luis after the first QA round (2026-10-22), over AC2 as
+//! written:
+//! - A margin callout with no room for its block in the margin is always a
+//!   block under its line, also alone on its line; never a `┆` label in the
+//!   margin, cut with «…» or whole (p1b, p6 at 81–97).
+//! - A margin block starts only on the rows of its own line, like a label
+//!   (AC3): beside the blocks there when the margin holds it, else a block
+//!   under its line (never on the rows of a later line, as on
+//!   `consecutive-lines.tiza` at 130).
+//! - The «…» of a label cut inside a box sits one cell before the rail, as
+//!   the code does (`servi… │`).
 
 use serde_json::{Value, json};
 use tiza_core::check::{CheckOptions, check_document};
@@ -41,10 +53,14 @@ fn path(name: &str) -> String {
 }
 
 fn render_as(name: &str, width: usize, format: &str) -> String {
-    let w = width.to_string();
+    render_step(name, 1, width, format)
+}
+
+fn render_step(name: &str, step: u32, width: usize, format: &str) -> String {
+    let (s, w) = (step.to_string(), width.to_string());
     let p = path(name);
     tiza_ok(&[
-        "render", &p, "--step", "1", "--width", &w, "--format", format, "--out", "-",
+        "render", &p, "--step", &s, "--width", &w, "--format", format, "--out", "-",
     ])
 }
 
@@ -76,44 +92,122 @@ fn check_cuts(name: &str, width: usize) -> Vec<(String, bool)> {
         .collect()
 }
 
-/// The texts a fixture shows (note and callout texts, labels, titles), by
-/// annotation id.
-fn texts(name: &str) -> Vec<(String, String)> {
-    let doc: Value = serde_json::from_str(&std::fs::read_to_string(path(name)).unwrap()).unwrap();
-    let mut out = Vec::new();
-    for a in doc["annotations"].as_array().unwrap() {
-        for k in ["text", "label", "title"] {
-            if let Some(t) = a[k].as_str()
-                && !t.trim().is_empty()
-            {
-                out.push((a["id"].as_str().unwrap().to_string(), t.to_string()));
-            }
+/// The lines an annotation belongs to: a callout's range, a note's line, a
+/// span's line, an arrow's target line (where its label goes).
+fn lines_of(a: &Value) -> Option<(u32, u32)> {
+    let n = |v: &Value| v.as_u64().and_then(|n| u32::try_from(n).ok());
+    match a["type"].as_str()? {
+        "callout" => {
+            let from = n(&a["from_line"])?;
+            Some((from, n(&a["to_line"]).unwrap_or(from)))
+        }
+        "note" => n(&a["line"]).map(|l| (l, l)),
+        "highlight" | "mark" => n(&a["span"]["line"]).map(|l| (l, l)),
+        "arrow" => n(&a["to"]["line"]).map(|l| (l, l)),
+        _ => None,
+    }
+}
+
+/// The words drawn from column `col` of row `row` on: that row and the
+/// rows under it at the same column (a wrapped label, a block's text), each
+/// up to a border or the end of the row, until `want` words or an empty
+/// piece.
+fn words_from(rows: &[Vec<char>], row: usize, col: usize, want: usize) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for r in &rows[row..] {
+        let piece: String = r
+            .iter()
+            .skip(col)
+            .take_while(|c| !"│┆╮╯╭╰".contains(**c))
+            .collect();
+        if piece.trim().is_empty() {
+            break;
+        }
+        out.extend(piece.split_whitespace().map(str::to_string));
+        if out.len() >= want {
+            break;
         }
     }
     out
 }
 
-/// Every word of every text of `name` is on the render at `width`, unless
-/// `check` lists that annotation: nothing is lost or overdrawn silently.
-fn assert_nothing_lost(name: &str, width: usize) {
-    let t = render(name, width);
+/// Every text of `name` at step 1 and `width` (note and callout texts,
+/// labels, titles) is drawn whole and in its place, unless `check` lists
+/// its annotation: it starts on the rows of its own line (a callout's text
+/// on the row after its top border) and reads in order from there, so
+/// nothing is lost, overdrawn or moved beside another line silently.
+fn assert_in_place(name: &str, width: usize) {
+    assert_in_place_at(name, 1, width);
+}
+
+/// [`assert_in_place`] at `step` (an annotation `check` lists at any step
+/// is skipped).
+fn assert_in_place_at(name: &str, step: u32, width: usize) {
+    let t = render_step(name, step, width, "txt");
     let listed: Vec<String> = check_cuts(name, width).into_iter().map(|c| c.0).collect();
-    for (id, text) in texts(name) {
-        if listed.contains(&id) {
+    let doc: Value = serde_json::from_str(&std::fs::read_to_string(path(name)).unwrap()).unwrap();
+    let rows: Vec<Vec<char>> = t.lines().map(|r| r.chars().collect()).collect();
+    for a in doc["annotations"].as_array().unwrap() {
+        let id = a["id"].as_str().unwrap();
+        if listed.iter().any(|l| l == id) || a["step"].as_u64().unwrap_or(0) > u64::from(step) {
             continue;
         }
-        let missing: Vec<&str> = text.split_whitespace().filter(|w| !t.contains(w)).collect();
-        assert!(
-            missing.is_empty(),
-            "{name} at {width}: {id} loses {missing:?} and check says nothing\n{t}"
-        );
+        for k in ["text", "label", "title"] {
+            let Some(text) = a[k].as_str().filter(|t| !t.trim().is_empty()) else {
+                continue;
+            };
+            let words: Vec<&str> = text.split_whitespace().collect();
+            let Some((first, last)) = lines_of(a) else {
+                // A box's label is in its top border.
+                assert!(t.contains(text), "{name} at {width}: {id} «{text}»\n{t}");
+                continue;
+            };
+            let from = row_of(&t, first);
+            let to = t
+                .lines()
+                .enumerate()
+                .skip(row_of(&t, last) + 1)
+                .find(|(_, r)| code_line(r).is_some())
+                .map_or(rows.len(), |(i, _)| i);
+            // A callout's text is on the row after its border, which may be
+            // the next line's.
+            let to = if k == "text" && a["type"] == "callout" {
+                (to + 1).min(rows.len())
+            } else {
+                to
+            };
+            // From each place the first word starts at (a block's text
+            // wraps after any word).
+            let found = (from..to).any(|r| {
+                let row: String = rows[r].iter().collect();
+                row.match_indices(words[0]).any(|(at, _)| {
+                    let col = row[..at].chars().count();
+                    let starts = col == 0 || rows[r][col - 1] == ' ';
+                    starts
+                        && words_from(&rows, r, col, words.len())
+                            .iter()
+                            .take(words.len())
+                            .eq(words.iter())
+                })
+            });
+            assert!(
+                found,
+                "{name} at {width}: {id} «{text}» is not drawn whole from the rows of L{first} \
+                 (rows {from}..{to}) and check says nothing\n{t}"
+            );
+        }
     }
 }
 
-/// The index of the row of code line `n` (`" 2 "` prefix) in a render.
+/// The code line a row of a render draws (its line number first), if any.
+fn code_line(row: &str) -> Option<u32> {
+    row.split_whitespace().next()?.parse().ok()
+}
+
+/// The index of the row of code line `n` in a render.
 fn row_of(text: &str, n: u32) -> usize {
     text.lines()
-        .position(|r| r.starts_with(&format!("{n:>2} ")))
+        .position(|r| code_line(r) == Some(n))
         .unwrap_or_else(|| panic!("no row for L{n}\n{text}"))
 }
 
@@ -184,6 +278,46 @@ fn ac1_a_fallen_back_callout_next_to_a_note_is_a_block_at_80() {
     );
 }
 
+/// p1b (p1 without the note) at `width`: the callout's block under L3.
+const P1B_BLOCK: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
+ 2   API_TOKEN=demo-token-123
+ 3   LOG_LEVEL=info
+     ╭──────────────────────────────────────╮
+     │ set it to debug locally to see every │
+     │ SQL query and every request the      │
+     │ server answers, with timings         │
+     ╰──────────────────────────────────────╯
+ 4   PORT=8080
+";
+
+#[test]
+fn ac1_a_callout_alone_on_its_line_with_no_room_in_the_margin_is_a_block_under_it() {
+    // p1b: four lines, so the block never has the rows in the margin; it
+    // was a `┆` label there, cut with … up to 100 columns, whole from 101.
+    for w in [61, 62, 81, 90, 100, 101, 140, 200] {
+        let t = render("p1b.tiza", w);
+        assert_eq!(t, P1B_BLOCK, "at {w}\n{t}");
+        assert!(check_cuts("p1b.tiza", w).is_empty(), "at {w}");
+    }
+    // p6 from 81 to 97: the block is wider than the margin; it was a `┆`
+    // label cut with … beside L1.
+    for w in 81..=97 {
+        let t = render("p6.tiza", w);
+        let r = row_of(&t, 1);
+        let rows: Vec<&str> = t.lines().collect();
+        assert!(
+            !rows[r].contains('┆') && rows[r + 1].contains('╭'),
+            "at {w}\n{t}"
+        );
+        assert!(
+            rows[r + 2].contains("│ user, password, host, port"),
+            "at {w}\n{t}"
+        );
+        assert_label_on_its_line(&t, "┆ the API", 2);
+        assert!(check_cuts("p6.tiza", w).is_empty(), "at {w}\n{t}");
+    }
+}
+
 #[test]
 fn ac2_p2b_at_100_the_second_block_does_not_overlap_the_first() {
     let t = render("p2b.tiza", 100);
@@ -205,12 +339,24 @@ fn ac2_p2b_at_100_the_second_block_does_not_overlap_the_first() {
 }
 
 #[test]
-fn ac2_p2_at_100_both_callouts_are_drawn() {
-    // The second does not fit beside the first nor below it: it falls back
-    // to a label, beside the first block where 14 columns are left.
+fn ac2_p2_at_100_the_second_callout_is_a_block_under_its_line() {
+    // The second does not fit beside the first, and the rows of L2 hold no
+    // other spot: a block under L2, never a label beside the first block.
     let t = render("p2.tiza", 100);
-    assert!(t.contains("│ rotate it every month │"), "{t}");
-    assert!(t.contains("┆ never commit the real"), "{t}");
+    assert_eq!(
+        t,
+        " 1   DB_URL=postgres://demo:demo@localhost/app
+ 2   API_TOKEN=demo-token-123                   ╭───────────────────────╮
+     ╭───────────────────────────╮              │ rotate it every month │
+     │ never commit the real one │              ╰───────────────────────╯
+     ╰───────────────────────────╯
+ 3   LOG_LEVEL=info
+ 4   PORT=8080
+ 5   WORKERS=4
+ 6   TIMEOUT=30
+",
+        "{t}"
+    );
     assert!(check_cuts("p2.tiza", 100).is_empty());
 }
 
@@ -218,7 +364,7 @@ fn ac2_p2_at_100_both_callouts_are_drawn() {
 fn ac2_p2_and_p2b_never_lose_text_silently_from_60_to_140() {
     for name in ["p2.tiza", "p2b.tiza"] {
         for w in 60..=140 {
-            assert_nothing_lost(name, w);
+            assert_in_place(name, w);
         }
     }
 }
@@ -233,6 +379,71 @@ fn ac2_two_blocks_side_by_side_when_the_margin_holds_both() {
         t.contains("│ rotate it every month │ │ never commit the real one │"),
         "{t}"
     );
+}
+
+#[test]
+fn ac2_three_callouts_on_one_line_go_side_by_side_or_under_it() {
+    // At 140 two blocks fit beside each other on L2 and the third goes
+    // under L2; at 180 the three are side by side.
+    let t = render("three-on-one-line.tiza", 140);
+    let rows: Vec<&str> = t.lines().collect();
+    let r = row_of(&t, 2);
+    assert_eq!(rows[r].matches('╭').count(), 2, "{t}");
+    assert!(
+        rows[r + 1].contains("╭") && rows[r + 2].contains("│ the staging token"),
+        "{t}"
+    );
+    let t = render("three-on-one-line.tiza", 180);
+    assert_eq!(
+        t.lines().nth(row_of(&t, 2)).unwrap().matches('╭').count(),
+        3,
+        "{t}"
+    );
+}
+
+#[test]
+fn ac2_a_block_never_starts_beside_a_later_line() {
+    // consecutive-lines at 130: the callout of L4 has no room beside the
+    // blocks of L2 and L3; it was drawn beside L6–L8, it is now a block
+    // under L4.
+    let t = render("consecutive-lines.tiza", 130);
+    let rows: Vec<&str> = t.lines().collect();
+    let r4 = row_of(&t, 4);
+    assert!(rows[r4 + 1].starts_with("      ╭"), "{t}");
+    assert!(
+        rows[r4 + 2].contains("│ the port the server listens on │"),
+        "{t}"
+    );
+    for n in 5..=10 {
+        assert!(!rows[row_of(&t, n)].contains('│'), "L{n}\n{t}");
+    }
+    // later-steps at step 3, 100 columns: the second callout of L2 under
+    // L2, not beside L5–L7.
+    let p = path("later-steps.tiza");
+    let t = tiza_ok(&[
+        "render", &p, "--step", "3", "--width", "100", "--format", "txt", "--out", "-",
+    ]);
+    let rows: Vec<&str> = t.lines().collect();
+    let r2 = row_of(&t, 2);
+    assert!(
+        rows[r2 + 2].contains("╭") && rows[r2 + 3].contains("│ never commit the real one │"),
+        "{t}"
+    );
+    assert!(!rows[row_of(&t, 5)].contains('│'), "{t}");
+}
+
+#[test]
+fn ac2_three_and_consecutive_never_lose_text_silently_from_60_to_140() {
+    for name in ["three-on-one-line.tiza", "consecutive-lines.tiza"] {
+        for w in 60..=140 {
+            assert_in_place(name, w);
+        }
+    }
+    for step in 1..=5 {
+        for w in (60..=140).step_by(4) {
+            assert_in_place_at("later-steps.tiza", step, w);
+        }
+    }
 }
 
 const P3_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
@@ -281,7 +492,7 @@ fn ac3_every_label_starts_on_its_own_line_from_60_to_140() {
         ] {
             let t = render(name, w);
             assert_label_on_its_line(&t, label, line);
-            assert_nothing_lost(name, w);
+            assert_in_place(name, w);
         }
     }
 }
@@ -296,7 +507,7 @@ fn ac4_p4_the_note_is_cut_at_the_box_rail() {
  1 │  DB_URL=postgres://demo:demo@localhost/app │
  2 │  API_TOKEN=demo-token-123                  │
    │  · demo token                              │
-   │  ┆ sent as a bearer header to every servic…│
+   │  ┆ sent as a bearer header to every servi… │
  3 │  LOG_LEVEL=info                            │
    ╰────────────────────────────────────────────╯
  4    PORT=8080
@@ -329,6 +540,26 @@ fn ac5_an_empty_highlight_label_is_no_label() {
         " 1   DB_URL=postgres://demo:demo@localhost/app  ┆ DB connection string"
     );
     assert!(!t.lines().any(|r| r.trim() == "·"), "{t}");
+}
+
+#[test]
+fn ac5_labels_of_only_spaces_are_no_label_for_every_kind() {
+    // blank-spaces has `"  "` as the label of a highlight, a mark, an arrow
+    // and a box and as the title of two callouts; blank-null has none.
+    for w in [61, 80, 100, 140] {
+        for format in ["txt", "svg"] {
+            let a = render_as("blank-spaces.tiza", w, format);
+            let b = render_as("blank-null.tiza", w, format);
+            assert_eq!(a, b, "{format} at {w}\n{a}");
+        }
+        assert_eq!(
+            check_cuts("blank-spaces.tiza", w),
+            check_cuts("blank-null.tiza", w)
+        );
+    }
+    let t = render("blank-spaces.tiza", 100);
+    assert!(!t.lines().any(|r| r.trim().ends_with('·')), "{t}");
+    assert!(!t.contains("warning:"), "{t}");
 }
 
 #[test]
@@ -380,33 +611,13 @@ fn ac5_an_empty_callout_title_is_no_title() {
 }
 
 #[test]
-fn ac6_cases_outside_the_card_draw_as_before() {
-    // As origin/main (b2016b5) drew them: a fallen-back callout alone on its
-    // line stays in the margin (p1b), and p6 where the block does not fit
-    // (90) or leaves room beside it (118).
-    assert_eq!(
-        render("p1b.tiza", 100),
-        " 1   DB_URL=postgres://demo:demo@localhost/app
- 2   API_TOKEN=demo-token-123
- 3   LOG_LEVEL=info                             ┆ set it to debug locally to see every SQL query
- 4   PORT=8080                                    and every request the server answers, with timin…
-"
-    );
-    // p6's first two code lines are the fixture's (`four.env`), not
-    // repeated here.
+fn ac6_p6_with_room_beside_the_block_draws_as_before() {
+    // As origin/main drew it: the block fits in the margin at 118 and the
+    // note of L2 is beside it. p6's first two code lines are the fixture's
+    // (`four.env`), not repeated here.
     let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
-    assert_eq!(
-        render("p6.tiza", 90),
-        fill(
-            " 1   {L1}  ┆ user, password, hos…
- 2   {L2}                       ┆ the API token
- 3   LOG_LEVEL=info
- 4   PORT=8080
-"
-        )
-    );
     assert_eq!(
         render("p6.tiza", 118),
         fill(
@@ -503,6 +714,13 @@ fn ac7_reply_agrees_with_check_p4_p5_p5b() {
 #[test]
 fn ac7_reply_agrees_with_check_p5c_p6() {
     for name in ["p5c.tiza", "p6.tiza"] {
+        reply_agrees_with_check(name);
+    }
+}
+
+#[test]
+fn ac7_reply_agrees_with_check_three_and_consecutive() {
+    for name in ["three-on-one-line.tiza", "consecutive-lines.tiza"] {
         reply_agrees_with_check(name);
     }
 }

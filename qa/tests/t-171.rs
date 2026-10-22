@@ -30,7 +30,9 @@
 //! authoring screen there), a note added while its step is typed, a
 //! terminal narrower than `check` takes, a grouped bar notice, and `check`
 //! keeping a label cut at one step apart from the same label left out at
-//! another.
+//! another (an arrow label beside the code of its target line, which a
+//! label that comes before it at a later step pushes out of the code
+//! column).
 //!
 //! Corner cases: the reply is about the size at that moment (a resize
 //! later changes nothing in it); presentation mode follows the same rule;
@@ -438,32 +440,34 @@ fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
 }
 
 #[test]
-fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_whole_at_another() {
-    // The box comes at step 2: at 88 columns the long note under L2 is
-    // whole at step 1 and cut with … at the box's rail at step 2. (Until
-    // t-201 the note crossed the rail; this test had a callout's block
-    // leave it out at step 2, which no longer happens.)
+fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
+    // At 88 columns the labels go beside the code of L4, one after the
+    // other. At step 1 `a2` comes second and is cut with …; at step 2 `a0`
+    // comes first and leaves `a2` no room. (Until t-201 a callout's block at
+    // step 2 took the note's row; its labels now go under their line.)
     let mut doc = base_doc();
     doc["annotations"].as_array_mut().unwrap().extend([
-        json!({"id": "b1", "step": 2, "type": "box", "from_line": 1, "to_line": 3}),
-        json!({
-            "id": "n1", "step": 1, "type": "note", "line": 2,
-            "text": "the token that every call to the API carries, rotated each month"
-        }),
+        json!({"id": "a0", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0},
+            "to": {"line": 4, "col": 0}, "label": "the port every client of the service dials"}),
+        json!({"id": "a1", "step": 1, "type": "arrow", "from": {"line": 3, "col": 0},
+            "to": {"line": 4, "col": 0}, "label": "logs at info say which port"}),
+        json!({"id": "a2", "step": 1, "type": "arrow", "from": {"line": 1, "col": 0},
+            "to": {"line": 4, "col": 0}, "label": "the database answers on another port"}),
     ]);
     doc["step"] = json!(2);
     let (live, tiza) = opened_with("t171-steps", doc);
     terminal(&live, 90);
-    let findings: Vec<(bool, u64)> = check_findings(&tiza, 88)
+    let mut findings: Vec<(bool, u64)> = check_findings(&tiza, 88)
         .into_iter()
-        .filter(|(i, _, _)| i == "n1")
+        .filter(|(i, _, _)| i == "a2")
         .map(|(_, no_room, step)| (no_room, step))
         .collect();
-    assert_eq!(findings, vec![(false, 2)]);
+    findings.sort();
+    assert_eq!(findings, vec![(false, 1), (true, 2)]);
     // The reply says what each step draws.
-    let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "green"}));
-    assert_eq!(verdict(&r).0, Some(false), "{r}");
+    let r = live.api_ok("annotation.update", json!({"id": "a2", "color": "green"}));
+    assert_eq!(verdict(&r).0, Some(true), "{r}");
     live.api_ok("step.set", json!({"step": 1}));
-    let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "blue"}));
-    assert_eq!(verdict(&r).0, None, "{r}");
+    let r = live.api_ok("annotation.update", json!({"id": "a2", "color": "blue"}));
+    assert_eq!(verdict(&r).0, Some(false), "{r}");
 }

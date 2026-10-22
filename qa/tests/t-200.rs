@@ -277,36 +277,32 @@ fn ac1_ac4_the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_cl
 }
 
 #[test]
-fn ac1_ac4_tally_tour_clips_at_106_to_108_and_says_109() {
+fn ac1_ac4_tally_tour_says_55_and_its_callout_is_never_cut_at_106_to_108() {
     let p = example("tally-tour.tiza");
     let p = p.to_str().unwrap();
-    // At the default 100 columns nothing is clipped, and the narrower
-    // widths that are clean too are below the 106 where the margin appears.
+    // Until t-201 the `auto` callout of step 3 moved into the margin at 106
+    // and, with no room for its block until 109, was a label cut with …
+    // there (`check` said «109 or wider; 91-105 are clean too»). With no
+    // room for its block in the margin it is now a block under its lines,
+    // so nothing is clipped from 55 columns on.
     let out = tiza_ok(&["check", p]);
     assert!(out.contains("0 errors, 0 warnings"), "{out}");
     assert_eq!(
         last_line(&out),
-        "no label is clipped at 109 or wider; 91-105 are clean too (notes go under the lines below 106 columns)",
+        "no label is clipped at 55 or wider (`tiza render --width 55`)",
         "{out}"
     );
-    // The `auto` callout of step 3 moves into the margin at 106 and has no
-    // room for its block until 109.
-    for w in ["106", "107", "108"] {
+    for w in ["55", "105", "106", "107", "108", "109", "130"] {
         let v = check_json(p, &["--width", w]);
-        assert_eq!(clipped_ids(&v), ["c1"], "{w}: {v}");
-        assert_eq!(v["min_clean_width"], 109, "{w}");
+        assert!(clipped_ids(&v).is_empty(), "{w}: {v}");
+        assert_eq!(v["min_clean_width"], 55, "{w}");
     }
-    for w in ["105", "109", "130"] {
-        assert!(
-            clipped_ids(&check_json(p, &["--width", w])).is_empty(),
-            "{w}"
-        );
-    }
-    let out = tiza_ok(&["check", p, "--width", "109"]);
-    assert_eq!(
-        last_line(&out),
-        "no label is clipped at 109 or wider (`tiza render --width 109`)",
-        "{out}"
+    let t = tiza_ok(&[
+        "render", p, "--step", "3", "--width", "107", "--format", "txt", "--out", "-",
+    ]);
+    assert!(
+        t.contains("╭─ bytes come free") && !t.contains("┆ text.len()"),
+        "{t}"
     );
 }
 
