@@ -68,8 +68,8 @@ struct BeforeHistory {
     reason: Option<String>,
 }
 
-/// What a `:` command does with the selection a `v`/`V` left pending
-/// (t-203): `:hl` and `:mark` take it as their anchor and keep it when they
+/// What a `:` command does with the selection a `v`/`V` left pending:
+/// `:hl` and `:mark` take it as their anchor and keep it when they
 /// used it, so ↑ + Enter runs them again on the same text; the commands
 /// that only look (`:help`, `:ls`, `:kinds`, `:style`) and `:undo`/`:redo`
 /// leave it as it is; every other command lets it go once it has run
@@ -112,11 +112,11 @@ pub enum Overlay {
     None,
     Help,
     List,
-    /// Pending agent proposals (supervised mode, t-045).
+    /// Pending agent proposals (supervised mode).
     Review,
 }
 
-/// A typing animation in progress (t-098): the moves of the step just
+/// A typing animation in progress: the moves of the step just
 /// reached whose `typing` is `line`/`char`, revealed unit by unit. The code
 /// shown is `full` with the content of the pending items blanked out, so the
 /// line count — and every shifted annotation — stays put while it types.
@@ -140,11 +140,11 @@ pub struct Proposal {
 }
 
 /// Agent changes the view does not show that arrive within this long of
-/// each other share one status-bar message (t-155).
+/// each other share one status-bar message.
 pub const AGENT_NOTICE_GROUP: std::time::Duration = std::time::Duration::from_secs(1);
 
-/// The status-bar message about agent changes the view does not show
-/// (t-155): what it names, so a change arriving within
+/// The status-bar message about agent changes the view does not show:
+/// what it names, so a change arriving within
 /// [`AGENT_NOTICE_GROUP`] joins it, and the text it put on the bar.
 #[derive(Debug, Clone)]
 struct AgentNotice {
@@ -158,7 +158,7 @@ struct AgentNotice {
 pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// How long the result of a `:` command stays on the last row in
-/// presentation mode, where there is no status bar to keep it (t-107).
+/// presentation mode, where there is no status bar to keep it.
 pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
 /// How many pasted codes [`App`] remembers to tell a paste on screen from
@@ -172,8 +172,8 @@ thread_local! {
     static LAST_PANIC: std::cell::RefCell<Option<(String, String)>> = const { std::cell::RefCell::new(None) };
 }
 
-/// Called by the crash hook for a panic [`App::handle_request`] catches
-/// (t-166): keeps its place and message for `panics.log`.
+/// Called by the crash hook for a panic [`App::handle_request`] catches:
+/// keeps its place and message for `panics.log`.
 pub fn note_request_panic(info: &std::panic::PanicHookInfo<'_>) {
     let at = info
         .location()
@@ -188,7 +188,7 @@ pub fn note_request_panic(info: &std::panic::PanicHookInfo<'_>) {
     LAST_PANIC.with(|p| *p.borrow_mut() = Some((at, message)));
 }
 
-/// What one socket request may change in the [`App`] (t-166), taken
+/// What one socket request may change in the [`App`], taken
 /// before it runs and put back if it panics, so a dropped request leaves
 /// nothing behind: not its document, not a typing animation that would
 /// keep drawing the code it wrote, not an undo entry.
@@ -301,14 +301,14 @@ impl RequestState {
 }
 
 /// Whether this thread is answering a socket request inside
-/// [`App::handle_request`]'s guard (t-166): the crash hook then leaves the
+/// [`App::handle_request`]'s guard: the crash hook then leaves the
 /// terminal as it is, since the panic is caught, answered as an error and
 /// the TUI keeps running.
 pub fn answering_request() -> bool {
     ANSWERING.with(|a| a.get())
 }
 
-/// Runs `f` as a socket request is answered, on any thread (t-210: the
+/// Runs `f` as a socket request is answered, on any thread (the
 /// live `check` runs on one of its own): a panic in it is caught, the crash
 /// hook leaves the terminal alone ([`answering_request`]), and its place
 /// and message go to `panics.log`, whose path is the error when written.
@@ -426,7 +426,7 @@ pub struct App {
     pub cursor_col: u32,
     /// Selection captured when a `v`/`V` action opened the command line; commands may use it.
     pub pending_sel: Option<Selection>,
-    /// The `:` command running now anchored itself on `pending_sel` (t-203).
+    /// The `:` command running now anchored itself on `pending_sel`.
     selection_used: bool,
     /// Command-line history (most recent last) and the index while browsing it.
     pub history_cmds: Vec<String>,
@@ -441,7 +441,7 @@ pub struct App {
     /// `rebind` entry a paste or a reload left ignored): while it is the
     /// message, the bar gives it the room it needs.
     pub stale_message: Option<String>,
-    /// Presentation mode only (t-107): until when `message` — the result of
+    /// Presentation mode only: until when `message` — the result of
     /// the command just run — is drawn on the last row. `None`: hidden.
     pub present_message_until: Option<std::time::Instant>,
     pub revision: u64,
@@ -471,7 +471,7 @@ pub struct App {
     /// frozen by `:embed`), as opposed to ones a put sent embedded.
     frozen_views: std::collections::BTreeSet<String>,
     /// `:layout stable`: the authoring screen uses the take's geometry
-    /// (lanes, box band and margin sized for every step at once, t-111) so
+    /// (lanes, box band and margin sized for every step at once) so
     /// rehearsing looks like presenting. Presentation mode and every
     /// export are always stable.
     pub layout_stable: bool,
@@ -485,7 +485,7 @@ pub struct App {
     pub padding_override: Option<(u16, u16)>,
     /// SVG/PNG renderer for `:export`, installed by the binary.
     pub image_exporter: Option<ImageExporter>,
-    /// Mouse capture (t-033): opt-in, because capturing the mouse takes the
+    /// Mouse capture: opt-in, because capturing the mouse takes the
     /// terminal's native text selection away (Shift/Option-drag gets it back).
     pub mouse: bool,
     /// Where the last frame put things, so a click can be mapped to a line
@@ -499,7 +499,7 @@ pub struct App {
     next_proposal: u64,
     /// Decisions taken (accepted, rejected) since the app started, for `status`.
     pub decided: (u64, u64),
-    /// The live `check` requests, answered off this thread (t-210).
+    /// The live `check` requests, answered off this thread.
     checks: crate::checks::Checks,
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
@@ -513,7 +513,7 @@ pub struct App {
     /// follow is off is worked out from the screen each time
     /// ([`App::off_reason`]).
     follow_file: Option<tiza_core::model::CodeSource>,
-    /// The followed file changed while moves were applied (t-206): its
+    /// The followed file changed while moves were applied: its
     /// reload waits for step 0, and the code on screen is embedded meanwhile.
     reload_waits: bool,
     /// Code pasted in this session (the newest last, at most
@@ -523,13 +523,13 @@ pub struct App {
     /// The code on screen was reached by an undo or a redo, not by the edit
     /// itself: a paste is then «the paste again».
     screen_via_history: bool,
-    /// Typing animation of the step just reached (t-098).
+    /// Typing animation of the step just reached.
     pub typing: Option<TypingState>,
     /// When the current step became ready (reached, its typing finished
     /// and its `wait` moves elapsed): the `auto_advance_ms` countdown runs
-    /// from here (t-099). `None` while typing or after it fired.
+    /// from here. `None` while typing or after it fired.
     pub step_ready_at: Option<std::time::Instant>,
-    /// Follow the host terminal's appearance (t-119): light or dark from
+    /// Follow the host terminal's appearance: light or dark from
     /// OSC 11, re-asked on resize. Off once the document, `--theme`, `t`
     /// or `:theme NAME` fixes a theme; `:theme auto` turns it back on.
     pub theme_auto: bool,
@@ -544,7 +544,7 @@ pub struct App {
     pub theme_notes: Vec<String>,
     /// OSC answers arriving through the key stream after a re-query.
     pub osc: crate::appearance::OscCapture,
-    /// The live pointer (t-030): `f` (or `pointer.set`) turns it on; while
+    /// The live pointer: `f` (or `pointer.set`) turns it on; while
     /// on, its lines are drawn normally and the rest of the code dimmed on
     /// this screen only. Never in the document, the undo stack, a save or
     /// an export.
@@ -553,11 +553,11 @@ pub struct App {
     /// change since then is a motion of the presenter's, and the pointer
     /// follows it ([`App::sync_pointer`]).
     pointer_seen: ((u32, u32), Option<u32>),
-    /// The last message about an agent change the view does not show
-    /// (t-155), while it may still group the next one.
+    /// The last message about an agent change the view does not show,
+    /// while it may still group the next one.
     agent_notice: Option<AgentNotice>,
     /// Agent changes not shown that arrived in presentation mode: told on
-    /// the bar when it ends, never on the take (t-155).
+    /// the bar when it ends, never on the take.
     agent_deferred: Vec<(String, &'static str)>,
 }
 
@@ -641,7 +641,7 @@ impl App {
         app
     }
 
-    // ---------- themes (t-119) ----------
+    // ---------- themes ----------
 
     /// Builds the current theme name again with the host's appearance and
     /// the override tables (config file, then the document's).
@@ -775,7 +775,7 @@ impl App {
     }
 
     /// Every annotation id with its step: taken before an action so
-    /// [`App::add_step_hint`] can tell which ones it added or moved (t-132).
+    /// [`App::add_step_hint`] can tell which ones it added or moved.
     fn annotation_steps(&self) -> HashMap<String, u32> {
         self.doc
             .annotations
@@ -785,9 +785,9 @@ impl App {
     }
 
     /// An action that added (or moved) annotations to a step after the one
-    /// on screen — a new one at step 0 goes to step 1 (t-079), `:step ID N`
+    /// on screen — a new one at step 0 goes to step 1, `:step ID N`
     /// past the view — ends its confirmation saying where they went and how
-    /// to get there: `a17: box 3-5 (step 1, press n)` (t-132). Only a new
+    /// to get there: `a17: box 3-5 (step 1, press n)`. Only a new
     /// info message gets it; errors, an unchanged message and a message that
     /// already carries the hint are left alone.
     fn add_step_hint(
@@ -949,7 +949,7 @@ impl App {
         m
     }
 
-    /// [`App::layout`] with the live pointer (t-030). Only the presenter's
+    /// [`App::layout`] with the live pointer. Only the presenter's
     /// frame (`ui::draw`) calls it; `layout` (`render.text`, screen
     /// captures) and every export never draw the pointer.
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
@@ -970,14 +970,14 @@ impl App {
             line_numbers: self.doc.numbers,
             tab_width: 4,
             typing: self.typing.is_some(),
-            // Presentation mode is a take: one geometry for every step
-            // (t-111). Authoring grows as it goes unless `:layout stable`.
+            // Presentation mode is a take: one geometry for every step.
+            // Authoring grows as it goes unless `:layout stable`.
             stable: self.present || self.layout_stable,
             margin_cap: self.doc.margin.map(usize::from),
         }
     }
 
-    // ---------- live pointer (t-030) ----------
+    // ---------- live pointer ----------
 
     /// The lines the presenter's cursor names: the selection's lines while
     /// one is open (`v`/`V`), else the cursor line.
@@ -1045,7 +1045,7 @@ impl App {
         }
     }
 
-    /// `pointer.set` (t-030): resolves the lines on the code shown, moves
+    /// `pointer.set`: resolves the lines on the code shown, moves
     /// the cursor there (the view scrolls to it, `j`/`k` go on from it) and
     /// points. Nothing is recorded: no revision, no undo, no save.
     pub fn set_pointer(
@@ -1146,7 +1146,7 @@ impl App {
     }
 
     /// A step change keeps the pointer on its line, carried through the
-    /// moves of the steps in between (t-030); off when the line is gone.
+    /// moves of the steps in between; off when the line is gone.
     /// The cursor goes with it, so the view and `j`/`k` stay with it.
     fn carry_pointer(&mut self, from_step: u32) {
         let Some(p) = self.pointer else { return };
@@ -1183,13 +1183,13 @@ impl App {
     /// Writes the sidecar. A sidecar that cannot be written (read-only
     /// file or folder) puts the instance in the same state as `:autosave
     /// off` — one rule for `--no-save`, `:autosave off`, a foreign `scene
-    /// put` and read-only (t-110, t-039): ONE notice on the first failed
+    /// put` and read-only: ONE notice on the first failed
     /// autosave, then silence on the message line and the persistent
     /// `read-only • unsaved (:w)` on the bar; `:q` refuses while there are
     /// unsaved changes; the first autosave that works again says so.
     pub fn save(&mut self) -> Result<(), Error> {
         // A document that follows the terminal keeps following it: only a
-        // fixed theme is written (t-119).
+        // fixed theme is written.
         if !self.theme_auto {
             self.doc.theme = Some(self.theme.name);
         }
@@ -1330,7 +1330,7 @@ impl App {
     }
 
     /// `add_annotation_colored` plus the range markers a box/callout/spotlight
-    /// was created from (t-097).
+    /// was created from.
     pub fn add_annotation_full(
         &mut self,
         id: Option<String>,
@@ -1345,7 +1345,7 @@ impl App {
         {
             return Err(Error::Invalid(unknown_color()));
         }
-        // A mark's inline style color too (t-167 review): checked like the
+        // A mark's inline style color too: checked like the
         // annotation's, without repeating it.
         if let Shape::Mark { style, .. } = &shape
             && let Some(c) = &style.color
@@ -1552,7 +1552,7 @@ impl App {
     /// that changes nothing (the `scene.get` copy sent back as it was)
     /// changes nothing: no undo step, no save.
     pub fn put_scene(&mut self, mut doc: Document) -> Result<SceneChanged, Error> {
-        // Its numbers first (t-166): a first line near `u32::MAX` or a step
+        // Its numbers first: a first line near `u32::MAX` or a step
         // past the cap is refused before anything counts with them.
         doc.check_bounds()?;
         if doc.code.is_empty() {
@@ -1610,7 +1610,7 @@ impl App {
         } else {
             self.keep_references(&mut doc, base.as_deref())?
         };
-        // Linked files (t-105): embedded in `views`, else read next to the
+        // Linked files: embedded in `views`, else read next to the
         // open document.
         fs::load_views(&mut doc, base.as_deref())?;
         // The open document's stale moves come back stale (and the
@@ -1634,7 +1634,7 @@ impl App {
             return Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()));
         }
         self.finish_typing();
-        // Saving rule (t-039/t-110): a document from another source must
+        // Saving rule: a document from another source must
         // never be autosaved over the file that was open. Autosave stops;
         // `:w` writes it over that file on purpose, `:w PATH` elsewhere,
         // `:autosave on` resumes. The same source (an agent re-putting an
@@ -1979,7 +1979,7 @@ impl App {
     }
 
     /// `n`, `→`, `:next`, `step.next` and the auto-advance: one step on, or
-    /// back to step 0 past the last one when the document loops (t-099).
+    /// back to step 0 past the last one when the document loops.
     pub fn next_step(&mut self) -> bool {
         match self.doc.next_step_from(self.doc.step) {
             Some(0) => self.step_to_with(0, true),
@@ -1989,7 +1989,7 @@ impl App {
         }
     }
 
-    /// `step.goto`, MCP `goto_step`, `tiza goto ID`, `:goto ID` (t-099):
+    /// `step.goto`, MCP `goto_step`, `tiza goto ID`, `:goto ID`:
     /// the step a named id (or a number) names, landed on exactly as `n`
     /// would after a full replay — the document is recomputed from step 0
     /// (moves, views), the typing of that step complete. Returns
@@ -2000,7 +2000,7 @@ impl App {
         Ok(self.doc.step)
     }
 
-    /// The `auto_advance_ms` countdown (t-099): when the current step has
+    /// The `auto_advance_ms` countdown: when the current step has
     /// one and has been ready that long, go to the next step. Deferred while
     /// the command line, a `v`/`V` selection or an overlay is open (it fires
     /// once they close, so a selection is never lost under the presenter),
@@ -2051,7 +2051,7 @@ impl App {
                 loud = true;
             } else {
                 // A `cursor` move left at this step moves the TUI cursor
-                // too; a `code.link` puts it on the first shown line (t-105).
+                // too; a `code.link` puts it on the first shown line.
                 if !self.doc.moves.is_empty() {
                     let v = self.doc.view_at(s);
                     if let Some(c) = v.cursor {
@@ -2088,7 +2088,7 @@ impl App {
         loud
     }
 
-    // ---------- moves (t-098) ----------
+    // ---------- moves ----------
 
     /// Starts the typing animation of the current step, when any of its
     /// moves asks for one. The content of those moves is blanked out and
@@ -2149,7 +2149,7 @@ impl App {
             self.doc.code = t.plan.full;
             // The take was sized from the code typed so far.
             *self.geometry.get_mut() = None;
-            // The step is ready: its auto-advance countdown starts (t-099).
+            // The step is ready: its auto-advance countdown starts.
             self.step_ready_at = Some(std::time::Instant::now());
         }
     }
@@ -2159,7 +2159,7 @@ impl App {
     }
 
     /// Adds a move (validated against the code at its step). Undoable. A
-    /// `code.link` reads its file next to the document first (t-105).
+    /// `code.link` reads its file next to the document first.
     pub fn add_move(&mut self, m: Move) -> Result<usize, Error> {
         self.add_move_noting(m).map(|(i, _)| i)
     }
@@ -2425,7 +2425,7 @@ impl App {
     /// Enters or leaves presentation mode. Proposals that arrived while
     /// presenting were only a chip on screen; coming back opens the list.
     /// Agent changes the view did not show while presenting are told on
-    /// the bar now (t-155).
+    /// the bar now.
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
@@ -2443,7 +2443,7 @@ impl App {
     }
 
     /// A `:` command just ran (Enter): in presentation mode its message
-    /// stays on the last row for [`PRESENT_MESSAGE_TTL`] (t-107).
+    /// stays on the last row for [`PRESENT_MESSAGE_TTL`].
     pub fn command_finished(&mut self, now: std::time::Instant) {
         self.present_message_until = if self.present && self.message.is_some() {
             Some(now + PRESENT_MESSAGE_TTL)
@@ -2664,7 +2664,7 @@ impl App {
             self.reload_waits = false;
             f.last_content = self.doc.base().to_vec();
         }
-        // A change on disk waits for step 0 (t-206) and the undo left the
+        // A change on disk waits for step 0 and the undo left the
         // step-0 code as it was (a note, a move): follow stays on, the code
         // embedded, and step 0 still reloads.
         if self.reload_waits
@@ -2886,7 +2886,7 @@ impl App {
         steps.sort_unstable();
         steps.dedup();
         // Only the main file changed: its annotations are re-anchored on
-        // its own code at their step; those of a linked file (t-105) keep
+        // its own code at their step; those of a linked file keep
         // their coordinates.
         let at_step = |doc: &Document, step: u32| -> Document {
             let mut s = doc.clone();
@@ -3124,7 +3124,7 @@ impl App {
     }
 
     /// Back where no move is applied with a change on disk that waited for
-    /// it (t-206): reloaded now, as a normal reload — one undo step, since
+    /// it: reloaded now, as a normal reload — one undo step, since
     /// the code on screen is embedded meanwhile. A file saved back as the
     /// screen has it is no reload: the document references it again.
     /// `true` when the screen changed.
@@ -3232,10 +3232,10 @@ impl App {
             return true;
         }
         if self.doc.moves_applied() {
-            // ADR 0007 §7: follow is paused while moves are applied (t-106
-            // reconciles the edits); until then, say so instead of reloading.
-            // The code on screen is no longer the file's: embedded meanwhile
-            // (t-206), as after a paste, so the autosave and a fresh load
+            // ADR 0007 §7: follow is paused while moves are applied (the edits
+            // are not reconciled yet); until then, say so instead of reloading.
+            // The code on screen is no longer the file's: embedded meanwhile,
+            // as after a paste, so the autosave and a fresh load
             // show it — saved as `code: {file}` they would read the new text
             // under the annotations and `rebind` entries made for this one.
             if !self.doc.is_embedded() {
@@ -3721,7 +3721,7 @@ impl App {
     }
 
     /// Whether the `:` command `name` (or one of its aliases) takes the
-    /// pending selection as its anchor ([`SelectionUse`], t-203).
+    /// pending selection as its anchor ([`SelectionUse`]).
     pub fn selection_use(name: &str) -> Option<SelectionUse> {
         selection_use(name)
     }
@@ -3941,7 +3941,7 @@ impl App {
                     self.frozen_views = self.doc.views.keys().cloned().collect();
                     self.touch();
                     // The code no longer comes from the file: there is
-                    // nothing to follow (t-117; `:follow on` says the same).
+                    // nothing to follow (`:follow on` says the same).
                     if self.follow.is_some() {
                         self.set_follow(false)?;
                         return Ok(
@@ -3953,7 +3953,7 @@ impl App {
                 }
                 "link" if !rest.is_empty() && self.doc.step >= 1 => {
                     // At a step: a `code.link` move that shows `path` (with
-                    // `A-B` as a window) from this step on (t-105). At step 0,
+                    // `A-B` as a window) from this step on. At step 0,
                     // or as `:ref`, the one-shot form: reference the file.
                     self.cmd_link_move(rest)
                 }
@@ -4581,7 +4581,7 @@ impl App {
                     _ => Err(Error::Invalid("usage: :autosave [on|off]".into())),
                 },
                 // Only with TIZA_TEST_PANIC set: lets the crash hook be
-                // exercised from a test (t-115 AC2).
+                // exercised from a test.
                 "panic" if std::env::var_os("TIZA_TEST_PANIC").is_some() => {
                     panic!("forced by :panic (TIZA_TEST_PANIC)")
                 }
@@ -4601,7 +4601,7 @@ impl App {
             }
         };
         let result = exec();
-        // A command that ran lets the selection go (t-203): a later `:mark`
+        // A command that ran lets the selection go: a later `:mark`
         // must not land on it. One that anchored itself on it keeps it, so
         // ↑ + Enter runs it again on the same text, and one that only looks
         // (or undoes) leaves it; a command that failed leaves it as it was,
@@ -4902,7 +4902,7 @@ impl App {
                 width,
                 step,
                 focus: self.focus,
-                // `:export` never draws the live pointer (t-030).
+                // `:export` never draws the live pointer.
                 pointer: None,
                 line_numbers: self.doc.numbers,
                 tab_width: 4,
@@ -5388,7 +5388,7 @@ impl App {
 
     // ---------- local API ----------
 
-    /// Answers one socket request (t-166): a panic while it runs (a bug)
+    /// Answers one socket request: a panic while it runs (a bug)
     /// answers an `internal` error instead of closing the presenter's TUI,
     /// as the release profile's `panic = "unwind"` promises. The request is
     /// dropped whole: everything it could change in the instance — the
@@ -5400,7 +5400,7 @@ impl App {
     /// saved a half-done change. The crash hook leaves the terminal alone
     /// meanwhile ([`answering_request`]); the panic's place and message go
     /// to `panics.log` in Tiza's runtime directory, and nothing of it is
-    /// shown or returned (it may quote the document, t-167).
+    /// shown or returned (it may quote the document).
     pub fn handle_request(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         let method = req.method.clone();
@@ -5453,7 +5453,7 @@ impl App {
     fn answer(&mut self, req: Request) -> Response {
         let id = req.id.clone();
         let result = self.dispatch(&req.method, req.params);
-        // Test hook (t-166), only with the `test-hooks` feature: a panic on
+        // Test hook, only with the `test-hooks` feature: a panic on
         // purpose after the request did its work, for the tests that a
         // caught panic leaves the instance as it was.
         #[cfg(feature = "test-hooks")]
@@ -5474,7 +5474,7 @@ impl App {
     }
 
     /// [`App::handle_ipc`] at `now`, the clock that groups the messages
-    /// about agent changes the view does not show (t-155); tests pass
+    /// about agent changes the view does not show; tests pass
     /// their own.
     pub fn handle_ipc_at(
         &mut self,
@@ -5522,7 +5522,7 @@ impl App {
         ));
     }
 
-    /// `check` (t-210): answered from a thread of its own on a copy of the
+    /// `check`: answered from a thread of its own on a copy of the
     /// document as it is now, so the screen, the keys and the other
     /// requests do not wait for it ([`crate::checks`]). Its parameters are
     /// read here: a bad width is answered at once.
@@ -5547,7 +5547,7 @@ impl App {
     /// says so — `a17: box 3-5 added by agent (step 1, press n)` — and
     /// changes within [`AGENT_NOTICE_GROUP`] of the last one join it
     /// (`3 agent annotations not shown (step 1, press n)`). In presentation
-    /// mode nothing is drawn: it waits for the bar (t-155). An error the
+    /// mode nothing is drawn: it waits for the bar. An error the
     /// request itself raised (a failed save) keeps the bar.
     fn agent_changed(
         &mut self,
@@ -5598,7 +5598,7 @@ impl App {
         });
     }
 
-    /// The bar's text for agent changes (t-155), as the view stands now:
+    /// The bar's text for agent changes, as the view stands now:
     /// those it shows meanwhile are left out; `None` when it shows them all.
     fn agent_notice_text(&self, items: &[(String, &'static str)]) -> Option<String> {
         let mut cuts = None;
@@ -5652,9 +5652,9 @@ impl App {
     }
 
     /// The tail of a message about something the view does not show: the
-    /// t-132 hint when it appears later (` (step 1, press n)`), the file
+    /// step hint when it appears later (` (step 1, press n)`), the file
     /// when a link shows another one (` (src/queue.rs, not shown at step
-    /// 2)`), else the reason in words (t-155).
+    /// 2)`), else the reason in words.
     fn hidden_tail(&self, why: &tiza_core::model::Hidden, msg: &str) -> String {
         use tiza_core::model::Hidden;
         match why {
@@ -5674,7 +5674,7 @@ impl App {
         let mutates_annotation = annotation_verb(&p.req.method).is_some();
         let resp = self.handle_request(p.req);
         let ok = resp.error.is_none();
-        // Accepted but not on screen: the acceptance says where (t-155).
+        // Accepted but not on screen: the acceptance says where.
         let tail = match (&resp.result, mutates_annotation) {
             (Some(r), true) => mutated_id(r)
                 .and_then(|id| self.not_shown(&id, &mut None))
@@ -5795,7 +5795,7 @@ impl App {
     }
 
     pub fn supervise_status(&self) -> Value {
-        // A method the API does not have is never repeated (t-167 R1).
+        // A method the API does not have is never repeated.
         let method = |m: &str| -> String {
             if !tiza_core::protocol::METHODS.iter().any(|(k, _)| *k == m) {
                 tiza_core::error::ELIDED.into()
@@ -5879,7 +5879,7 @@ impl App {
                 }
                 // On the wire the code travels embedded: a client in another
                 // directory could not resolve a relative file reference;
-                // linked files travel embedded too (t-105).
+                // linked files travel embedded too.
                 let document = self.doc.embedded_copy();
                 let (stale, held) = tiza_core::stale::marks(&self.doc);
                 serde_json::to_value(Scene {
@@ -5917,7 +5917,7 @@ impl App {
             "move.list" => serde_json::to_value(self.move_list())?,
             "annotation.add" => {
                 let mut p: AddParams = parse(params)?;
-                // An alias of a linked file is that file, as on load (t-183).
+                // An alias of a linked file is that file, as on load.
                 if let Some(f) = &p.file {
                     let base = self.save_path.parent().map(Path::to_path_buf);
                     let mut known = self.doc.link_files();
@@ -5926,7 +5926,7 @@ impl App {
                 }
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
-                // Where it stands against the view right now (t-155).
+                // Where it stands against the view right now.
                 serde_json::to_value(self.mutated(id))?
             }
             "annotation.update" => {
@@ -6050,9 +6050,9 @@ impl App {
                 json!({"text": self.layout(width).canvas.to_plain_text()})
             }
             "focus.set" => {
-                // A line given is a line number (t-167 review 2: a negative
-                // one cleared or cut the focus without a word); `null` or
-                // absent is no line. The value is never repeated.
+                // A line given is a line number (a negative one is an error,
+                // never a silent clear or cut of the focus); `null` or absent
+                // is no line. The value is never repeated.
                 let line = |k: &str| -> Result<Option<u32>, Error> {
                     match params.get(k) {
                         None | Some(Value::Null) => Ok(None),
@@ -6080,7 +6080,7 @@ impl App {
                     _ => None,
                 };
                 // Like `:focus`: the first line must exist, the last one is
-                // clamped (t-167 review: the reply repeated any number sent).
+                // clamped, so the reply gives the focus as set, not the numbers sent.
                 let (first, last) = (self.doc.source.first_line, self.doc.last_line());
                 if let Some((a, _)) = focus
                     && (a < first || a > last)
@@ -6285,17 +6285,17 @@ fn names_step(msg: &str, n: u32) -> bool {
 
 /// Byte index where a [`step_hint`] tail starts in `msg`, if it ends with
 /// one: the status bar and the presentation line keep that tail when they
-/// cut a long message (t-132).
+/// cut a long message.
 pub fn step_hint_start(msg: &str) -> Option<usize> {
     let i = msg.rfind(" (")?;
     let inner = msg[i + 2..].strip_suffix(')')?;
     let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     // ` (src/queue.rs, not shown at step 2)`: an agent change whose file a
-    // link hides (t-155).
+    // link hides.
     if let Some((file, n)) = inner.rsplit_once(", not shown at step ") {
         // A file may have ` (` in its name (`src/stack (v2).rs`): the tail
         // starts at the first ` (` after which the file's parentheses
-        // balance (t-173).
+        // balance.
         let end = i + 2 + file.len();
         let balanced = |f: &str| {
             let mut depth = 0i32;
@@ -6351,8 +6351,8 @@ fn opt(s: &str) -> Option<String> {
 }
 
 /// The error for a color that is neither a palette name nor `#rrggbb`:
-/// it lists the valid names and never repeats the one given (t-167
-/// rework: a closed value's error quotes nothing the caller wrote).
+/// it lists the valid names and never repeats the one given (a closed
+/// value's error quotes nothing the caller wrote).
 fn unknown_color() -> String {
     format!(
         "unknown color (use {} or #rrggbb)",
@@ -6429,7 +6429,7 @@ impl App {
         // Presentation mode hides the status bar, the cursor and the
         // selection, so annotating with the mouse there would be blind: the
         // capture stays on (back in normal mode it works again) but every
-        // event is ignored (t-033 AC6).
+        // event is ignored.
         if !self.mouse || self.present || self.overlay != Overlay::None {
             return MouseOutcome::Ignored;
         }
@@ -6452,7 +6452,7 @@ impl App {
                     return MouseOutcome::Ignored;
                 }
                 // A new place on the code: the selection a `:` command could
-                // still take is not the one meant any more (t-203).
+                // still take is not the one meant any more.
                 self.pending_sel = None;
                 self.mode = Mode::Normal;
                 self.cursor_line = line;
@@ -6518,8 +6518,8 @@ pub enum MouseKind {
     ScrollDown,
 }
 
-/// `added` / `updated` for the methods that add or change one annotation
-/// (t-155), `None` for the rest.
+/// `added` / `updated` for the methods that add or change one annotation,
+/// `None` for the rest.
 fn annotation_verb(method: &str) -> Option<&'static str> {
     match method {
         "annotation.add" => Some("added"),
@@ -6534,7 +6534,7 @@ fn mutated_id(result: &Value) -> Option<String> {
 }
 
 /// An annotation in a few words, as the `:` command that makes it
-/// confirms it: `box 3-5`, `note L13`, `arrow L2 → L6` (t-155).
+/// confirms it: `box 3-5`, `note L13`, `arrow L2 → L6`.
 pub fn shape_summary(a: &Annotation) -> String {
     match &a.shape {
         Shape::Box {
@@ -6566,8 +6566,8 @@ pub fn shape_summary(a: &Annotation) -> String {
 
 /// One line describing an agent request for the review overlay. It goes to
 /// the list, the y/n/expiry messages and `supervise.status`. A closed value
-/// that is none of its names (a `type`, a method) is never repeated (t-167
-/// R1): it reads [`tiza_core::error::ELIDED`].
+/// that is none of its names (a `type`, a method) is never repeated:
+/// it reads [`tiza_core::error::ELIDED`].
 pub fn proposal_summary(req: &Request) -> String {
     let p = &req.params;
     let s = |k: &str| p.get(k).and_then(|v| v.as_str()).unwrap_or("").to_string();
@@ -6888,8 +6888,7 @@ fn edit_distance(a: &str, b: &str) -> usize {
 /// Parameters of a socket request. Ones that do not deserialize: serde
 /// quotes the value it could not read (`unknown variant `x``, `invalid
 /// type: string "x"`); that value is taken out, like the MCP's own
-/// deserialization errors, and serde's list of valid names stays (t-167
-/// rework).
+/// deserialization errors, and serde's list of valid names stays.
 fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
     T::deserialize(&v).map_err(|e| {
         Error::Invalid(format!(
@@ -7311,7 +7310,7 @@ mod tests {
     #[test]
     fn command_completion_and_history() {
         let mut a = app();
-        // `ma` is ambiguous since `:margin` (t-113): both are offered.
+        // `ma` is ambiguous since `:margin`: both are offered.
         let (text, many) = a.complete("ma");
         assert_eq!(text, "mar");
         assert!(many.contains(&"mark".to_string()) && many.contains(&"margin".to_string()));
