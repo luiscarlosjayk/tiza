@@ -433,13 +433,12 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
 /// useful part of a message. A message that ends saying where to find what
 /// it names — a step hint (`(step 1, press n)`, t-132) or a file tail
 /// (`(src/queue.rs, not shown at step 2)`, t-155) — keeps that tail whole
-/// and cuts the middle instead (t-173): first a file tail names the file
-/// alone (`(queue.rs, not shown at step 2)`); then as much of the beginning
-/// as fits, as long as it keeps the message's subject
-/// ([`message_subject`]): `a17: box… (step 1, press n)`, down to
-/// `a17 … (step 1, press n)`; then the tail alone, `(step 1, press n)`; and
+/// (t-173): the middle goes first, never below the message's subject
+/// ([`message_subject`]: `a17: box… (step 1, press n)`, down to
+/// `a17… (step 1, press n)`); then the subject (`(step 1, press n)`); and
 /// with no room for the tail either, the beginning without it. A tail is
-/// never cut.
+/// never cut. The status bar has more to give way in between (the
+/// directory of a file, the badge): [`fit_bar_message`].
 pub fn fit_message(m: &str, room: usize) -> String {
     if m.width() <= room {
         return m.to_string();
@@ -451,39 +450,34 @@ pub fn fit_message(m: &str, room: usize) -> String {
         return format!("{}…", cut_to_width(m, room - 1));
     };
     let (head, tail) = m.split_at(i);
-    let tail = short_file_tail(tail).unwrap_or_else(|| tail.to_string());
-    let tw = tail.width();
-    if head.width() + tw <= room {
-        return format!("{head}{tail}");
-    }
-    let subject = &head[..message_subject(head)];
-    if room > tw + 1 {
-        let kept = cut_to_width(head, room - tw - 1);
-        let kept = kept.trim_end();
-        // The whole subject and more (than its colon): the beginning as it is.
-        let more = kept
-            .strip_prefix(subject)
-            .is_some_and(|rest| !rest.trim_start_matches([':', ',']).trim().is_empty());
-        if more {
-            return format!("{kept}…{tail}");
-        }
-        if !subject.is_empty() && subject.width() + 2 + tw <= room {
-            return format!("{subject} …{tail}");
-        }
-    }
-    let alone = tail.trim_start();
-    if alone.width() <= room {
-        return alone.to_string();
-    }
-    format!("{}…", cut_to_width(head, room - 1))
+    keep_subject_and_tail(head, tail, room).unwrap_or_else(|| tail_or_beginning(head, tail, room))
 }
 
-/// The cells [`fit_message`] needs to keep the tail of `m` whole, if it
-/// has one (t-173): the status bar makes that room before cutting.
-pub fn message_tail_width(m: &str) -> Option<usize> {
-    let tail = &m[crate::app::step_hint_start(m)?..];
-    let short = short_file_tail(tail);
-    Some(short.as_deref().unwrap_or(tail).trim_start().width())
+/// `head` + `tail` in `room` cells with the subject of `head` and the whole
+/// `tail`, the middle cut (t-173): `a17: box… (step 1, press n)`; `None`
+/// when not even the subject and the tail fit.
+fn keep_subject_and_tail(head: &str, tail: &str, room: usize) -> Option<String> {
+    let tw = tail.width();
+    if head.width() + tw <= room {
+        return Some(format!("{head}{tail}"));
+    }
+    let kept = cut_to_width(head, room.checked_sub(tw + 1)?);
+    let kept = kept.trim_end();
+    let subject = &head[..message_subject(head)];
+    (!kept.is_empty() && kept.starts_with(subject)).then(|| format!("{kept}…{tail}"))
+}
+
+/// With no room for the subject: the tail alone, or, with no room for it
+/// either, the beginning without it — never a cut tail (t-173).
+fn tail_or_beginning(head: &str, tail: &str, room: usize) -> String {
+    let alone = tail.trim_start();
+    if alone.width() <= room {
+        alone.to_string()
+    } else if room == 0 {
+        String::new()
+    } else {
+        format!("{}…", cut_to_width(head, room - 1))
+    }
 }
 
 /// The beginning of `s` that fits in `max` cells, by whole graphemes.
@@ -503,9 +497,9 @@ fn cut_to_width(s: &str, max: usize) -> String {
 /// What a cut message with a tail keeps of its beginning at the least
 /// (t-173), as a byte length of `head`: the ids before the first `: `
 /// (`a17` of `a17: box 3-5`, `a3, a4`, or `accepted p1` of a supervised
-/// acceptance); else, for a count, the count and the word after it (`3
-/// agent` of `3 agent annotations not shown`: `3 …` alone says nothing);
-/// else the first word (`a3` of `a3 now appears at step 4`).
+/// acceptance); else, for a count, the count and what it counts (`3 agent
+/// annotations` of `3 agent annotations not shown`); else the first word
+/// (`a3` of `a3 now appears at step 4`).
 fn message_subject(head: &str) -> usize {
     if let Some(c) = head.find(": ") {
         return c;
@@ -513,20 +507,104 @@ fn message_subject(head: &str) -> usize {
     let word_end = |from: usize| head[from..].find(' ').map_or(head.len(), |k| from + k);
     let first = word_end(0);
     let is_count = first > 0 && head[..first].bytes().all(|b| b.is_ascii_digit());
-    if is_count && first < head.len() {
-        return word_end(first + 1);
+    if is_count && let Some(j) = head.find(" annotation") {
+        return word_end(j + 1);
     }
     first
 }
 
-/// ` (src/queue.rs, not shown at step 2)` → ` (queue.rs, not shown at step
-/// 2)`: the file tail of t-155 with the file's name alone; `None` for any
-/// other tail, or when the file has no directory to drop.
-fn short_file_tail(tail: &str) -> Option<String> {
+/// ` (src/queue.rs, not shown at step 2)` → `src/queue.rs` and the same
+/// tail with the file's name alone, ` (queue.rs, not shown at step 2)`;
+/// `None` for any other tail, or when the file has no directory to drop.
+fn short_file_tail(tail: &str) -> Option<(&str, String)> {
     let inner = tail.strip_prefix(" (")?.strip_suffix(')')?;
     let (file, step) = inner.rsplit_once(", not shown at step ")?;
     let (_, name) = file.rsplit_once('/')?;
-    (!name.is_empty()).then(|| format!(" ({name}, not shown at step {step})"))
+    (!name.is_empty()).then(|| (file, format!(" ({name}, not shown at step {step})")))
+}
+
+/// Whether `file`'s name alone names one file of the document: its main
+/// file and every `code.link`, at any step (t-173). Two `mod.rs` keep
+/// their directories.
+fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
+    let name = |f: &str| f.rsplit('/').next().unwrap_or(f).to_string();
+    let wanted = name(file);
+    let mut files = doc.link_files();
+    files.push(doc.file_label(&None));
+    files.iter().filter(|f| name(f) == wanted).count() <= 1
+}
+
+/// The status bar's message `m` when it ends in a tail and does not fit
+/// (t-173), as the text for the right of the bar (with its trailing blank),
+/// giving way in this order: the optional left segments, the middle of the
+/// message, the directory of a file tail (only when no other file of the
+/// document has its name), the terminal-size badge in `left[badge]` (`⚠
+/// labels`, then `⚠`), the subject; the tail is never cut. Each step is
+/// taken only when the one before is not enough, so a wider bar never shows
+/// less of the subject, the tail, the directory or the badge. `None`:
+/// nothing fits on the right.
+fn fit_bar_message(
+    app: &App,
+    left: &mut [Span<'static>],
+    badge: Option<usize>,
+    m: &str,
+    width: usize,
+    bar: Style,
+) -> Option<String> {
+    let lw = |left: &[Span]| left.iter().map(|s| s.content.width()).sum::<usize>();
+    // The room after a blank cell on the left and the message's own
+    // trailing blank, which is also the cell a ⚠ drawn two cells wide
+    // takes: nothing on the bar is pushed off the edge.
+    let room = |left: &[Span]| width.saturating_sub(lw(left) + 2);
+    for drop_idx in [4usize, 6, 7, 5, 3] {
+        if m.width() <= room(left) {
+            break;
+        }
+        if drop_idx < left.len() {
+            left[drop_idx] = Span::styled("", bar);
+        }
+    }
+    if m.width() <= room(left) {
+        return Some(format!("{m} "));
+    }
+    let i = crate::app::step_hint_start(m)?;
+    let (head, tail) = m.split_at(i);
+    let short = short_file_tail(tail)
+        .filter(|(file, _)| short_name_is_unique(&app.doc, file))
+        .map(|(_, short)| short);
+    // The terminal-size notice gives way (its short forms, then its sign);
+    // `code clipped` never does.
+    let forms: &[&'static str] = match badge.map(|b| left[b].content.as_ref()) {
+        Some("  ⚠ labels under the lines") => {
+            &["  ⚠ labels under the lines", "  ⚠ labels", "  ⚠"]
+        }
+        Some("  ⚠ small terminal") => &["  ⚠ small terminal", "  ⚠ small", "  ⚠"],
+        _ => &[""],
+    };
+    let layout_badge = badge.filter(|_| forms.len() > 1);
+    for (k, form) in forms.iter().enumerate() {
+        if let Some(b) = layout_badge {
+            left[b] = Span::styled(*form, left[b].style);
+        }
+        // The directory goes before the badge: once the badge gives way, the
+        // file is named alone.
+        let tails: Vec<&str> = match (&short, k) {
+            (Some(s), 0) => vec![tail, s],
+            (Some(s), _) => vec![s],
+            (None, _) => vec![tail],
+        };
+        for t in tails {
+            if let Some(s) = keep_subject_and_tail(head, t, room(left)) {
+                return Some(format!("{s} "));
+            }
+        }
+    }
+    // The subject gives way. The badge stays at its sign: one column more
+    // brings the subject back with that sign, and must not take a longer
+    // badge away.
+    let tail = short.as_deref().unwrap_or(tail);
+    let r = room(left);
+    (r >= 3).then(|| format!("{} ", tail_or_beginning(head, tail, r)))
 }
 
 /// The result of the command just run, on the last row in presentation
@@ -760,21 +838,24 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             left[drop_idx] = Span::styled("", bar);
         }
     }
-    // A message's tail says where to find what it names and is never cut
-    // (t-173): when the room left cannot hold it, the badge keeps only its
-    // sign (the full warning stays in `status.warnings` and comes back with
-    // the bar's next message).
-    let tail = message.and_then(|(m, _)| message_tail_width(m));
-    if let Some(tw) = tail
-        && badge < left.len()
-        && width.saturating_sub(lw(&left) + 1) < tw + 1
-    {
-        left[badge] = Span::styled("  ⚠", left[badge].style);
-    }
+    // A message with a tail that does not fit gives way in its own order
+    // (t-173); every other message, as before.
+    let tailed = match message {
+        Some((m, _)) if essential && lw(&left) + right_text.width() + 1 > width => {
+            crate::app::step_hint_start(m).map(|_| m.as_str())
+        }
+        _ => None,
+    };
+    let badge = (badge < left.len()).then_some(badge);
+    let tailed_text = tailed.map(|m| fit_bar_message(app, &mut left, badge, m, width, bar));
     // One blank cell between the left segments and the message.
     let room = width.saturating_sub(lw(&left) + 1);
     let mut right: Vec<Span> = Vec::new();
-    if essential {
+    if let Some(text) = tailed_text {
+        if let Some(t) = text {
+            right.push(Span::styled(t, right_style));
+        }
+    } else if essential {
         if right_text.width() <= room {
             right.push(Span::styled(right_text, right_style));
         } else if room >= 4 {
@@ -948,6 +1029,7 @@ mod tests {
         FILE_TAIL,
         GROUPED,
         "3 agent annotations not shown (src/queue.rs, not shown at step 2)",
+        "a1: box 12-18 updated by agent (src/stack (v2).rs, not shown at step 2)",
         "a17: box 3-5 (step 3, :step 3 shows it)",
         "a4: note L13 updated by agent (step 3, :step 3 shows it)",
         "a3 now appears at step 4 (:step 4 shows it)",
@@ -961,80 +1043,89 @@ mod tests {
         "a long message with no tail at all that goes on and on",
     ];
 
-    fn tail_of(m: &str) -> Option<(String, String)> {
-        let i = crate::app::step_hint_start(m)?;
-        let tail = &m[i..];
-        let short = short_file_tail(tail).unwrap_or_else(|| tail.to_string());
-        Some((tail.to_string(), short))
+    /// Whether `r` ends in a cut form of `tail`: a piece of its beginning
+    /// and `…` (`(st…`, as main drew it before t-173).
+    fn ends_in_cut_tail(r: &str, tail: &str) -> bool {
+        let Some(before) = r.strip_suffix('…') else {
+            return false;
+        };
+        let tail = tail.trim_start();
+        tail.char_indices()
+            .skip(1)
+            .any(|(k, _)| before.ends_with(&tail[..k]))
     }
 
     #[test]
     fn fit_message_keeps_the_tail_whole_at_every_width() {
         for m in SHAPES {
-            let mut last_width = 0;
-            for room in 0..=120 {
+            let tail = crate::app::step_hint_start(m).map(|i| &m[i..]);
+            let mut last = String::new();
+            for room in 0..=130 {
                 let r = fit_message(m, room);
-                let w = r.width();
-                assert!(w <= room, "{m:?} at {room}: {r:?} is {w} cells");
-                // A wider room never shows less.
-                assert!(w >= last_width, "{m:?} at {room}: {r:?} shrank");
-                last_width = w;
+                assert!(r.width() <= room, "{m:?} at {room}: {r:?}");
                 if m.width() <= room {
-                    // AC3: what fits is untouched, byte for byte.
+                    // What fits is untouched, byte for byte.
                     assert_eq!(r, *m, "at {room}");
                     continue;
                 }
-                let Some((tail, short)) = tail_of(m) else {
+                let Some(tail) = tail else {
                     if room > 0 {
                         let kept = r.strip_suffix('…').expect("an ellipsis");
                         assert!(m.starts_with(kept), "{m:?} at {room}: {r:?}");
                     }
                     continue;
                 };
-                // A file tail is shortened before anything else is cut.
-                assert!(
-                    !r.ends_with(&tail) || tail == short,
-                    "{m:?} at {room}: {r:?}"
-                );
                 let head = &m[..m.len() - tail.len()];
-                let alone = short.trim_start();
+                let alone = tail.trim_start();
+                assert!(!ends_in_cut_tail(&r, tail), "{m:?} at {room}: {r:?}");
                 if r.ends_with(alone) {
-                    // The tail whole, after the subject or alone.
                     let before = &r[..r.len() - alone.len()];
                     let subject = &head[..message_subject(head)];
                     assert!(
                         before.is_empty() || before.starts_with(subject),
                         "{m:?} at {room}: {r:?} lost {subject:?}"
                     );
+                    // A wider room never drops the subject it kept.
+                    let had_subject = last.ends_with(alone) && last.len() > alone.len();
+                    assert!(!had_subject || !before.is_empty(), "{m:?} at {room}: {r:?}");
                 } else {
-                    // AC1: never a cut tail — with no room for it, the
-                    // beginning alone.
+                    // No room for the tail: the beginning alone.
                     assert!(alone.width() > room, "{m:?} at {room}: {r:?}");
                     if room > 0 {
                         let kept = r.strip_suffix('…').expect("an ellipsis");
                         assert!(head.starts_with(kept), "{m:?} at {room}: {r:?}");
                     }
                 }
+                last = r;
             }
         }
     }
 
     #[test]
+    fn the_cut_tail_detector_catches_mains_cut() {
+        // What `fit_message` drew before t-173 at 16 cells.
+        assert!(ends_in_cut_tail("a1: box 3-5 (st…", " (step 1, press n)"));
+        assert!(ends_in_cut_tail(
+            "a1: box (step 1, pr…",
+            " (step 1, press n)"
+        ));
+        assert!(!ends_in_cut_tail("a1: box 3-5 add…", " (step 1, press n)"));
+    }
+
+    #[test]
     fn fit_message_cuts_the_middle_then_keeps_the_tail() {
-        // AC3: fits, unchanged.
         assert_eq!(fit_message(AGENT_BOX, 120), AGENT_BOX);
         assert_eq!(fit_message(AGENT_BOX, 44), AGENT_BOX);
-        // AC1: the middle goes first …
         assert_eq!(
             fit_message(AGENT_BOX, 43),
             "a1: box 3-5 added by age… (step 1, press n)"
         );
         assert_eq!(fit_message(AGENT_BOX, 27), "a1: box… (step 1, press n)");
-        // … down to the id and the tail …
-        assert_eq!(fit_message(AGENT_BOX, 22), "a1 … (step 1, press n)");
-        assert_eq!(fit_message(AGENT_BOX, 23), "a1 … (step 1, press n)");
-        // … then the tail wins over the id …
-        assert_eq!(fit_message(AGENT_BOX, 21), "(step 1, press n)");
+        assert_eq!(fit_message(AGENT_BOX, 22), "a1:… (step 1, press n)");
+        // The subject and the ellipsis with no blank between, as before.
+        assert_eq!(fit_message(AGENT_BOX, 21), "a1… (step 1, press n)");
+        // Then the tail wins over the subject …
+        assert_eq!(fit_message(AGENT_BOX, 20), "(step 1, press n)");
         assert_eq!(fit_message(AGENT_BOX, 17), "(step 1, press n)");
         // … and a tail that does not fit is not shown cut.
         assert_eq!(fit_message(AGENT_BOX, 16), "a1: box 3-5 add…");
@@ -1048,32 +1139,37 @@ mod tests {
     }
 
     #[test]
-    fn fit_message_shortens_the_file_first() {
-        // AC2: the file's name alone before the message is cut.
+    fn fit_message_keeps_the_directory() {
+        // The directory is the status bar's to give way (it knows the
+        // document's files): the presentation line keeps it.
         assert_eq!(fit_message(FILE_TAIL, 63), FILE_TAIL);
         assert_eq!(
-            fit_message(FILE_TAIL, 62),
-            "a9: note L17 added by agent (queue.rs, not shown at step 2)"
+            fit_message(FILE_TAIL, 44),
+            "a9: not… (src/queue.rs, not shown at step 2)"
         );
         assert_eq!(
-            fit_message(FILE_TAIL, 40),
-            "a9: not… (queue.rs, not shown at step 2)"
+            fit_message(FILE_TAIL, 35),
+            "(src/queue.rs, not shown at step 2)"
         );
         assert_eq!(
-            fit_message(FILE_TAIL, 36),
-            "a9 … (queue.rs, not shown at step 2)"
+            short_file_tail(" (src/queue.rs, not shown at step 2)"),
+            Some((
+                "src/queue.rs",
+                " (queue.rs, not shown at step 2)".to_string()
+            ))
+        );
+        assert_eq!(short_file_tail(" (queue.rs, not shown at step 2)"), None);
+        assert_eq!(short_file_tail(" (step 1, press n)"), None);
+        // A ` (` in the file's name is part of the file.
+        let m = "a1: box 12-18 updated by agent (src/stack (v2).rs, not shown at step 2)";
+        assert_eq!(
+            fit_message(m, 50),
+            "a1: box… (src/stack (v2).rs, not shown at step 2)"
         );
         assert_eq!(
-            fit_message(FILE_TAIL, 31),
-            "(queue.rs, not shown at step 2)"
+            short_file_tail(" (src/stack (v2).rs, not shown at step 2)").map(|t| t.1),
+            Some(" (stack (v2).rs, not shown at step 2)".to_string())
         );
-        assert_eq!(fit_message(FILE_TAIL, 30), "a9: note L17 added by agent…");
-        // A file with no directory has nothing to drop.
-        let m = "a9: note L17 added by agent (queue.rs, not shown at step 2)";
-        assert_eq!(fit_message(m, 36), "a9 … (queue.rs, not shown at step 2)");
-        assert_eq!(message_tail_width(FILE_TAIL), Some(31));
-        assert_eq!(message_tail_width(AGENT_BOX), Some(17));
-        assert_eq!(message_tail_width("a1: box 3-5"), None);
     }
 
     #[test]
@@ -1083,27 +1179,19 @@ mod tests {
             fit_message(GROUPED, 41),
             "3 agent annotations no… (step 1, press n)"
         );
-        assert_eq!(fit_message(GROUPED, 30), "3 agent ann… (step 1, press n)");
-        assert_eq!(fit_message(GROUPED, 27), "3 agent … (step 1, press n)");
-        // «3 …» alone says nothing: the tail.
-        assert_eq!(fit_message(GROUPED, 26), "(step 1, press n)");
-        let m = "3 agent annotations not shown (src/queue.rs, not shown at step 2)";
         assert_eq!(
-            fit_message(m, 61),
-            "3 agent annotations not shown (queue.rs, not shown at step 2)"
+            fit_message(GROUPED, 38),
+            "3 agent annotations… (step 1, press n)"
         );
-        assert_eq!(
-            fit_message(m, 41),
-            "3 agent … (queue.rs, not shown at step 2)"
-        );
-        assert_eq!(fit_message(m, 40), "(queue.rs, not shown at step 2)");
+        assert_eq!(fit_message(GROUPED, 37), "(step 1, press n)");
     }
 
     #[test]
     fn fit_message_wide_characters_near_the_cut() {
         let m = "注釈1: box 3-5 added by agent (step 1, press n)";
-        assert_eq!(fit_message(m, 25), "注釈1 … (step 1, press n)");
-        assert_eq!(fit_message(m, 24), "(step 1, press n)");
+        assert_eq!(fit_message(m, 25), "注釈1:… (step 1, press n)");
+        assert_eq!(fit_message(m, 24), "注釈1… (step 1, press n)");
+        assert_eq!(fit_message(m, 23), "(step 1, press n)");
         assert_eq!(fit_message(m, 4), "注…");
         // A wide character that would straddle the cut is left out whole.
         let m = "a1: 日本語のラベルがここで切れる (step 1, press n)";
@@ -1120,8 +1208,8 @@ mod tests {
         assert_eq!(s("a17: box 3-5"), "a17");
         assert_eq!(s("a3, a4: box 3-5"), "a3, a4");
         assert_eq!(s("accepted p1: add box L3-5"), "accepted p1");
-        assert_eq!(s("3 agent annotations not shown"), "3 agent");
-        assert_eq!(s("3"), "3");
+        assert_eq!(s("3 agent annotations not shown"), "3 agent annotations");
+        assert_eq!(s("3 things"), "3");
         assert_eq!(s("a3 now appears at step 4"), "a3");
         assert_eq!(s("a1: hl 3:takes"), "a1");
     }
