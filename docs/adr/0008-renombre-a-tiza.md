@@ -1,7 +1,6 @@
 # ADR 0008: Rename CodeDraw to Tiza
 
-- Status: accepted (2026-10-17, decided by Luis; repo changes applied in t-108)
-- Board: t-108 (repo), t-063 (name reservation), t-067 (first release)
+- Status: accepted (2026-10-17, decided by Luis)
 - Project document: `claude/adr-006-renombre-tiza.md` (numbered 0008 here: 0006 and 0007 already existed in `docs/adr/`)
 
 ## Context
@@ -23,7 +22,7 @@ Checked on 2026-10-17 against the crates.io and npm APIs.
 | patina | taken | taken | Active (UEFI). |
 | overdraw | free | taken | npm: a WebGL GPU-leak detector (Aug 2026). |
 | codechalk | free | taken | `code-chalk` and `chalkcode` free on both. Discarded for how it sounds. |
-| **tiza** | **free** | taken | `tizas`, `tizarr` and `tiza-rs` free on both. `tiza-core`, `tiza-tui`, `tiza-mcp`, `tiza-export` free on crates.io (checked when t-108 was implemented). |
+| **tiza** | **free** | taken | `tizas`, `tizarr` and `tiza-rs` free on both. `tiza-core`, `tiza-tui`, `tiza-mcp`, `tiza-export` free on crates.io (checked when the rename was applied). |
 
 ## Decision
 
@@ -37,7 +36,7 @@ Writing convention (Luis):
 
 CodeDraw remains the former name of the v0.0.1 demo.
 
-### What changed in the repo (t-108)
+### What changed in the repo
 
 - Crates: `codedraw-core|tui|mcp|export` → `tiza-core|tui|mcp|export`; `codedraw-cli` → package `tiza` (binary `tiza`, directory `crates/tiza-cli`); QA crate `tiza-qa`. The library crates stay publishable so that `cargo publish --dry-run -p tiza` passes.
 - Environment: `CODEDRAW_SOCKET` → `TIZA_SOCKET`, `CODEDRAW_SESSION` → `TIZA_SESSION`, `CODEDRAW_GIT_SHA[_OVERRIDE]` → `TIZA_GIT_SHA[_OVERRIDE]` (build), `CODEDRAW_BIN` → `TIZA_BIN` (scripts). Session sockets live under `tiza/<session>.sock`.

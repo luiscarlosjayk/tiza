@@ -129,7 +129,10 @@ fn ac4_the_closing_list_names_only_what_will_be_built() {
         .filter(|l| l.starts_with("- "))
         .collect();
     assert_eq!(items.len(), 1, "{items:?}");
-    assert!(items[0].contains("t-166"), "{items:?}");
+    assert!(
+        items[0].contains("Exporting the live instance of a multi-file document"),
+        "{items:?}"
+    );
     assert!(scenarios().iter().all(|(t, _)| !t.starts_with("Planned")));
 }
 
@@ -598,8 +601,8 @@ fn the_t166_list_names_exactly_the_scenarios_that_use_code_link() {
     let text = doc();
     let item = text
         .lines()
-        .find(|l| l.starts_with("- **t-166"))
-        .expect("the t-166 item");
+        .find(|l| l.starts_with("- **Exporting the live instance"))
+        .expect("the live-export item");
     let listed: Vec<usize> = item[item.find("** (").unwrap() + 4..item.find(").").unwrap()]
         .split(", ")
         .map(|n| n.parse().unwrap())

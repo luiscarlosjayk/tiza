@@ -778,7 +778,10 @@ fn ac10_schema_scene_get_and_docs_cover_steps_and_loop() {
         ("docs/agent-guide.md", "step.goto"),
         ("docs/agent-guide.md", "goto_step"),
         ("CHANGELOG.md", "t-099"),
-        ("docs/adr/0007-moves-y-pasos-con-nombre.md", "t-099"),
+        (
+            "docs/adr/0007-moves-y-pasos-con-nombre.md",
+            "Named steps shipped the `tiza next|prev|goto` CLI",
+        ),
     ] {
         let text = std::fs::read_to_string(root.join(file)).unwrap();
         assert!(text.contains(needle), "{file} does not mention {needle}");

@@ -184,7 +184,10 @@ fn ac3_libron_is_brand_material_outside_the_crates() {
             .exists()
     );
     let readme = std::fs::read_to_string(brand.join("README.md")).unwrap();
-    assert!(readme.contains("t-069") && readme.contains("Reserved Font Name"));
+    assert!(
+        readme.contains("for the brand work — the README wordmark, thumbnails and video titles")
+            && readme.contains("Reserved Font Name")
+    );
     assert!(readme.contains("not compiled"));
     let fonts =
         std::fs::read_to_string(r.join("crates/tiza-export/assets/fonts/README.md")).unwrap();
@@ -196,7 +199,9 @@ fn ac4_docs_record_the_removal() {
     let r = root();
     let adr = std::fs::read_to_string(r.join("docs/adr/0006-exportacion-svg-png.md")).unwrap();
     assert!(
-        adr.contains("t-134") && adr.contains("2026-10-18") && adr.contains("docs/brand/fonts")
+        adr.contains(
+            "Superseded on 2026-10-18 (Luis's decision): the serif is no longer in the binary."
+        ) && adr.contains("docs/brand/fonts")
     );
     let changelog = std::fs::read_to_string(r.join("CHANGELOG.md")).unwrap();
     let unreleased = &changelog[..changelog.find("\n## [0").unwrap_or(changelog.len())];

@@ -1,7 +1,7 @@
 # ADR 0009: Network policy — the `tiza` binary never opens a connection
 
 - Status: accepted (2026-10-18, Luis)
-- Board: t-118; read by whichever card brings the first HTTP feature
+- Read by whatever change brings the first HTTP feature
 - Related: [ADR 0003](0003-api-socket-y-mcp.md) (the local API is a Unix socket, never TCP), [ADR 0004](0004-dependencias.md) (dependency policy, `cargo-deny`), [docs/research/demo-time.md](../research/demo-time.md) (the remote-control PWA was discarded on 2026-10-17)
 
 ## Context
@@ -39,9 +39,9 @@ Today the workspace has no network dependency at all: `rmcp` is built with `tran
 |---|---|
 | Publish a GIF / `.cast` / `.png` / `.svg` to a service (asciinema.org, a Gist, an S3 bucket) | Yes, as `tiza-net publish FILE` when a card asks for it: the file is produced locally first by `tiza render` (so the user can look at it), the upload is a second explicit step with the disclosure line, and the `.tiza` itself is uploaded only with an explicit flag. The service, endpoint and payload go in the amendment. |
 | New-version notice | Only `tiza-net update-check`, run by the user; it sends the request to the release endpoint with no payload beyond the version it is comparing against (in the User-Agent). Never automatic, never from `tiza` itself, no «check on start-up» setting. |
-| Downloading themes or fonts | Fonts ship inside the binary (ADR 0006) and themes are text (t-119): a user can paste a theme file; `tiza-net theme get NAME` may fetch one from the project's own repository when a card asks, with the URL shown first. Nothing is fetched at render time. |
+| Downloading themes or fonts | Fonts ship inside the binary (ADR 0006) and themes are text: a user can paste a theme file; `tiza-net theme get NAME` may fetch one from the project's own repository when a card asks, with the URL shown first. Nothing is fetched at render time. |
 | HTTP remote control / clicker / PWA | Discarded on 2026-10-17 with the Demo Time decisions (product criterion: no speaker tooling). Stays out unless Luis reopens it; if he does, it is a `tiza-net` feature bound to localhost by default, with the ADR amendment saying so. |
-| Telemetry / crash reporting | No. A crash prints one line with how to report it by hand (t-115). |
+| Telemetry / crash reporting | No. A crash prints one line with how to report it by hand. |
 
 ### How a new case is added
 

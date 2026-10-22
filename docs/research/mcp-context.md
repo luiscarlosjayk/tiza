@@ -1,6 +1,6 @@
-# MCP context trials (t-161)
+# MCP context trials
 
-How much context does an agent spend to use Tiza through `tiza mcp`, and what changes it? This page holds the method, the harness that measures it and the results. It is the first card of a chain: measure before changing anything (t-161), then re-run the same trials after each change — instructions and always-load (t-162), lean schemas (t-163) — and decide (t-160).
+How much context does an agent spend to use Tiza through `tiza mcp`, and what changes it? This page holds the method, the harness that measures it and the results. It is the first card of a chain: measure before changing anything, then re-run the same trials after each change — instructions and always-load, lean schemas — and decide.
 
 ## What the server offers today
 
@@ -55,7 +55,7 @@ An agent that never calls a Tiza tool fails, with its tokens recorded. `--break 
 | `tool-search` | today's server, Claude Code's default: `ENABLE_TOOL_SEARCH` unset, MCP tools deferred and loaded through `ToolSearch` |
 | `no-tool-search` | today's server with `ENABLE_TOOL_SEARCH=false`: every Tiza tool loaded upfront |
 
-Later cards re-run the same matrix with the same model. t-162 (server instructions and always-load) changed the server itself, so its run, variant C below, is the `tool-search` variant against a newer `tiza`; t-163 (lean schemas) adds its variant to `VARIANTS` in the script if it needs one.
+Later changes re-run the same matrix with the same model. The server instructions and always-load changed the server itself, so their run, variant C below, is the `tool-search` variant against a newer `tiza`; lean schemas, if they come, add their variant to `VARIANTS` in the script if they need one.
 
 ### What each trial reports
 
@@ -99,7 +99,7 @@ Each trial is also capped at `--trial-budget` dollars (default 1.00). The measur
 
 ### Baseline: Opus 5.5, 32 trials (2026-10-18)
 
-Measured with an earlier version of the harness and of `tiza`. **This is the baseline t-162 and t-163 compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
+Measured with an earlier version of the harness and of `tiza`. **This is the baseline later changes (server instructions, lean schemas) compare against**: the same matrix, the same model and the same harness, re-run after each change. `claude-opus-5-5`, Claude Code 2.1.303, `tiza` built at commit 1d9bbbc (a debug build; SHA-256 `a8d98369c25b2553e66f66087b7cc5f81b0ba7450db3d8e8eb4bf39e275f8792`; its `tiza --version` still prints the build stamp `acdbd8f4bd`, which is not refreshed on every rebuild). Its `tools/list` is the one measured above: 31 tools, 34,178 bytes. Two passes of every cell (`--max-trials 32`), run `20261018-194207`, $2.43 in all; raw streams outside the repo, in `pruebas/t161/20261018-194207/` on Luis's Mac.
 
 Each cell shows pass 1 / pass 2 (one value when both agree). Context figures are tokens of one request (fresh input + cache read + cache write); "input" is the sum over every request of the trial.
 
@@ -135,15 +135,15 @@ What it says:
 - **Per-cell differences are not readable; compare totals per variant.** `read`, `box`, `export` and `tour` repeat almost to the token, but identical runs of `arrow-note` and `move` differ by up to ~70 % in input and cost (tool-search `arrow-note`: 42,757 then 24,902; upfront `move`: 71,470 then 109,735). Context at the first call and the peak are the stable metrics (within ~20 %, mostly within 5 %).
 - Self-reports again range from 1,500 to 30,000 with no relation to the measured context.
 
-Usability findings for t-162 (all three from the Sonnet check run below; Opus reproduced none of them; proposals only, no code changed here):
+Usability findings for the server instructions (all three from the Sonnet check run below; Opus reproduced none of them; proposals only, no code changed here):
 
 1. Annotating at step N creates step N. Sonnet called `goto_step 2` on a one-step document, read `step 2 is beyond the last step (1)` and gave up drawing at step 2. The server instructions should say it.
 2. The `goto_step` error itself could say how: `step 2 is beyond the last step (1); annotate with step: 2 to add it`.
 3. `find_end` takes the first match after `find_start`, so `"}"` often closes an inner block (Sonnet's `tour` box came out L5-9). The agent guide warns about it; the tool descriptions do not.
 
-### Variant C (t-162): new instructions + alwaysLoad, Opus 5.5, 14 trials (2026-10-21)
+### Variant C: new instructions + alwaysLoad, Opus 5.5, 14 trials (2026-10-21)
 
-The server after t-162: instructions rewritten as a searchable description of Tiza, and four core tools (`status`, `get_code`, `add_box`, `render_text`) marked `anthropic/alwaysLoad`, so Claude Code loads them upfront while the rest stay deferred. Only the tool-search variant was run: with tool search off every tool is upfront anyway. `claude-opus-5-5`, Claude Code 2.1.307, `tiza` release built at 30c270c, `scripts/agent-trials/run --variants tool-search --repeats 2`, run `20261021-183901` by QA 1 with Luis's OK for the spend: 14 trials, $1.01 (estimate $1.60). Raw streams outside the repo, in `pruebas/t162/qa1/trials/` on Luis's Mac. Compared with the «tool search» rows of the Opus baseline above.
+The server after the instructions change: instructions rewritten as a searchable description of Tiza, and four core tools (`status`, `get_code`, `add_box`, `render_text`) marked `anthropic/alwaysLoad`, so Claude Code loads them upfront while the rest stay deferred. Only the tool-search variant was run: with tool search off every tool is upfront anyway. `claude-opus-5-5`, Claude Code 2.1.307, `tiza` release built at 30c270c, `scripts/agent-trials/run --variants tool-search --repeats 2`, run `20261021-183901` by QA 1 with Luis's OK for the spend: 14 trials, $1.01 (estimate $1.60). Raw streams outside the repo, in `pruebas/t162/qa1/trials/` on Luis's Mac. Compared with the «tool search» rows of the Opus baseline above.
 
 Each cell shows pass 1 / pass 2 (one value when both agree), baseline → variant C.
 
@@ -207,7 +207,7 @@ What it says:
 - **The Tiza tool list costs about 12,700 tokens of context when it is loaded upfront**: the first request of the upfront variant is ~16,800 tokens against ~4,000 with tool search (net of tool search's own definition and its list of deferred names: ~410 tokens per tool for 31 tools). With tool search, the context when the agent makes its first Tiza call is 4,800–6,700 tokens for single-purpose tasks and 10,900 for `explain`, and the peak stays under 15,000 even for the longest tasks.
 - **Smaller context did not mean cheaper here.** Tool search used 38 % fewer input tokens in all but cost 62 % more ($0.296 against $0.182). Claude Code's `total_cost_usd` fits Sonnet 5.5 at $4/M for a cache write (every write in the streams is a 1-hour cache write, 2× the input price), $0.10/M for a cache read (0.05×) and $10/M for output: a write costs 40 reads. What tool search loads changes the prompt and is written to the cache; the upfront list is a stable prefix that is read. That prefix is shared by every trial through the API's prompt cache (it lasts an hour and spans processes and runs), and the probe run that stopped a minute earlier had already written it, so the upfront trials never paid for it (trial 2, the first upfront one, read 16,049 tokens from the cache on its first request). Counting that write once, the run would have cost about $0.307 with tool search against $0.245 upfront: tool search ~25 % dearer, not 62 %. Of the measured gap, cache writes account for +$0.115, output +$0.021 and reads −$0.022. Whether a long session reverses it (the saving is paid on every request; a warm upfront prefix costs ~$0.0013 per request to read) was not measured: a later run with a multi-task session would tell.
 - **`tour` took 18 turns and 14 Tiza calls with tool search against 8 and 7 upfront**, the one task where it used more input in total, for two reasons. The agent boxed `main` with `find_start "fn main"` / `find_end "}"`, and the first `}` after it closes the `for` loop, so the box came out L5-9 (the agent said so); the upfront agent used line numbers. Then it called `update_annotation` with no schema loaded (`missing field id`), searched again, and deleted and re-added the box. Tool search's own share is that call and two extra lookups; the `find_end` ambiguity is a usability finding of its own (the agent guide warns about it, the tool descriptions do not). One trial, so neither is a rule yet.
-- **The one failure is a usability finding, not a harness one.** In `arrow-note` with tool search the agent called `goto_step 2` on a document with one step, got `step 2 is beyond the last step (1)`, concluded that it could not draw at step 2 and asked the user instead of adding the annotations with `step: 2` (which creates the step). The upfront agent did it right. Input for t-162: the instructions should say that annotating at step N creates step N.
+- **The one failure is a usability finding, not a harness one.** In `arrow-note` with tool search the agent called `goto_step 2` on a document with one step, got `step 2 is beyond the last step (1)`, concluded that it could not draw at step 2 and asked the user instead of adding the annotations with `step: 2` (which creates the step). The upfront agent did it right. Input for the server instructions: they should say that annotating at step N creates step N.
 - **Self-reports are not a measure.** The agents' own estimates (2,500–30,000) mostly overshoot the peak with tool search (9,000 against ~6,000) and undershoot it upfront (6,000–9,000 against ~17,000; `explain` upfront, 22,000 against 21,838, is the exception), and against the total input every one undershoots, by 1.6–5.8×: an agent does not see what its tool list costs. The measured figures are the ones to compare.
 - Success 15/16; tool errors 2 (both counted as invalid arguments); no retries of a failed call, no wrong tools.
 

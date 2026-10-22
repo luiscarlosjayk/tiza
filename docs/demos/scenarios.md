@@ -35,13 +35,13 @@ Common setup for every scenario with an agent: Tiza in one terminal, the agent i
 
 **What the audience sees:** step 1, `main.rs` with its three calls numbered as a flow (parse, count, report) and the error path noted; step 2, `args.rs` with its loop boxed and the error marked; step 3, `count.rs` with a callout on why bytes come free; step 4, `report.rs` with the sort boxed; step 5, `main.rs` again, its step-1 annotations exactly as they were, the `report::table` call selected, a callout that sums the flow up and everything else dimmed.
 
-**Features:** `code.link` views with their own annotations, `lines` windows, named steps, `select`, spotlight, callouts, `check`, the `visible` reply of every `add_*` (t-155), autosave to the sidecar.
+**Features:** `code.link` views with their own annotations, `lines` windows, named steps, `select`, spotlight, callouts, `check`, the `visible` reply of every `add_*`, autosave to the sidecar.
 
 **Recording:** a screen recording of the terminal and the agent side by side while it draws (2-4 min), or the finished take replayed: `cp examples/tally-tour.tiza /tmp/` (its code points at `tally/src/main.rs`, which resolves to the copy in `/tmp/tally`), `tiza /tmp/tally-tour.tiza --present` and `n`. Native GIF of the finished take: `tiza render examples/tally-tour.tiza --out tally-tour.gif --width 130 --interval 3` (6 frames, about 440 kB; `render` never writes the document).
 
 ### Worked example: a tour of tally
 
-`examples/tally-tour.tiza` is the take the prompts below produce: a document over `examples/tally/src/main.rs` with four `code.link` moves (to `args.rs` lines 14-30, `count.rs`, `report.rs`, and back to `main.rs` lines 9-28), one `select`, five named steps (`main`, `args`, `count`, `report`, `recap`) and 16 annotations. `tiza check examples/tally-tour.tiza --width 130` reports 0 errors and 0 warnings. `qa/tests/t-046.rs` replays the tool calls these prompts lead to on a live instance and checks that every step of the sidecar it autosaves draws exactly as the shipped file.
+`examples/tally-tour.tiza` is the take the prompts below produce: a document over `examples/tally/src/main.rs` with four `code.link` moves (to `args.rs` lines 14-30, `count.rs`, `report.rs`, and back to `main.rs` lines 9-28), one `select`, five named steps (`main`, `args`, `count`, `report`, `recap`) and 16 annotations. `tiza check examples/tally-tour.tiza --width 130` reports 0 errors and 0 warnings. A QA test replays the tool calls these prompts lead to on a live instance and checks that every step of the sidecar it autosaves draws exactly as the shipped file.
 
 Copy the sample and open the bare file, with the agent connected:
 
@@ -63,7 +63,7 @@ Then, to Claude Code (one prompt at a time; wait for each to finish):
 
 Now present it: `P` for presentation mode and `n` through the steps (or `tiza next` / `tiza goto recap` from another terminal). Each `add_*` reply says whether the annotation is on screen (`m1 added at step 1; visible now …`); if the agent ever answers `not visible now`, it says why, and the take is still right. The agent may phrase things differently or pick other columns; `examples/tally-tour.tiza` is the reference result.
 
-The agent's version is already on disk: every call above was autosaved to `/tmp/tally/src/main.rs.tiza`. Check it and render it like any `.tiza` (the file is the take's result; since [t-166](#planned-changes-that-touch-these-scenarios) a render of the live instance draws the same):
+The agent's version is already on disk: every call above was autosaved to `/tmp/tally/src/main.rs.tiza`. Check it and render it like any `.tiza` (the file is the take's result; since the [live export change](#planned-changes-that-touch-these-scenarios) a render of the live instance draws the same):
 
 ```sh
 tiza check /tmp/tally/src/main.rs.tiza --width 130
@@ -238,4 +238,4 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 Nothing above waits on these; they change how a script can be written once they land.
 
-- **t-166, exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen, so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.
+- **Exporting the live instance of a multi-file document** (1, 3, 5, 10, 12). Landed, waiting for Luis's QA: `tiza render` with no FILE (or `--socket`) and the MCP `export_image` now draw the files a `code.link` move shows, as the instance has them on screen, so a script can export the live instance instead of the sidecar. The scripts keep rendering the `.tiza` the TUI autosaved, which is the take's result either way.

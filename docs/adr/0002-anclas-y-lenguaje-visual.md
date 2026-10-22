@@ -27,5 +27,5 @@ Annotations must survive scrolling, terminal resizing and theme changes. Termina
 ## Consequences
 
 - Virtual rows change the row↔line mapping; `Layout::row_of_line` is the single source of truth for scrolling and the cursor.
-- Arrow routing does not avoid text: it crosses box rails with `─`. Enough for the demo; fine routing is a follow-up (t-022).
+- Arrow routing does not avoid text: it crosses box rails with `─`. Enough for the demo; fine routing is a follow-up.
 - We avoid emojis in the default themes (ambiguous width).

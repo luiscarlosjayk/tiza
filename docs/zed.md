@@ -51,7 +51,7 @@ Shortcut in `~/.config/zed/keymap.json`:
 
 **Rust files need a Cargo workspace.** In a Rust buffer Zed resolves `$ZED_FILE` / `$ZED_ROW` through rust-analyzer, and when it fails to find a workspace («Failed to discover workspace») every task that uses them is hidden from the picker and the shortcut does nothing, with no error. Open a loose `.rs` file from a crate (a `Cargo.toml` next to it is enough); any other language works from anywhere.
 
-## Driving the demo from Zed (t-099)
+## Driving the demo from Zed
 
 `tiza next`, `tiza prev` and `tiza goto ID` step the Tiza instance that is running (its session socket; add `--session NAME` for another), so a Zed task can advance the demo while Zed shows the code. These three were run in Zed 1.24.2 on macOS 27.0.1 on 2026-10-18, with Tiza in Zed's terminal dock (inside Herdr, which also ran there). `goto` takes a step id from your document, e.g. `count` in `examples/tally-tour.tiza`, whose steps are main, args, count, report and recap:
 

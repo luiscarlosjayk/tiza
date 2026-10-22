@@ -22,4 +22,4 @@ Requirement: agents (Claude Code, Zed) must be able to create, edit and delete a
 
 - One instance per session; several sessions with `--session`.
 - No authentication beyond the socket permissions: enough for a local, single-user tool; documented in the README (zero telemetry).
-- `codedraw api schema --json` (JSON Schema of the protocol) remains a follow-up (t-040).
+- `codedraw api schema --json` (JSON Schema of the protocol) remains a follow-up.
