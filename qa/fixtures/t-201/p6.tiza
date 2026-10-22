@@ -1,0 +1,1 @@
+{"schema": 1, "title": "p6", "source": {"path": "four.env", "language": "env", "first_line": 1}, "code": {"file": "four.env"}, "annotations": [{"id": "c1", "step": 1, "type": "callout", "from_line": 1, "to_line": 1, "text": "user, password, host, port and database in one value"}, {"id": "n2", "step": 1, "type": "note", "line": 2, "text": "the API token"}], "step": 1}

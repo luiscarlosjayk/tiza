@@ -1,0 +1,42 @@
+# gitleaks false positives, all fake test and demo values (checked 2026-10-22):
+# Stripe-like strings of the wrong length or Stripe's public docs example key, a JWT with {"sub":"1234"},
+# and invented tokens in old tests, fixtures, demo docs and the agent-trials harness (FAKE_TOKEN).
+08d0da6bf7f77eaee450b4c4865dd13d6496db3f:crates/tiza-core/src/redact.rs:generic-api-key:1039
+08d0da6bf7f77eaee450b4c4865dd13d6496db3f:qa/fixtures/t-167/w-redact.tiza:generic-api-key:5
+08d0da6bf7f77eaee450b4c4865dd13d6496db3f:qa/tests/t-167.rs:generic-api-key:30
+08d0da6bf7f77eaee450b4c4865dd13d6496db3f:qa/tests/t-167.rs:stripe-access-token:890
+14df005fd1f93c1634b1a21d30c6cb808c9ff4c9:crates/tiza-tui/src/reanchor.rs:stripe-access-token:1123
+14df005fd1f93c1634b1a21d30c6cb808c9ff4c9:qa/tests/t-117.rs:generic-api-key:513
+14df005fd1f93c1634b1a21d30c6cb808c9ff4c9:qa/tests/t-117.rs:generic-api-key:537
+469bea41e3b6a1b6625325f6aaa29a8e057cd938:qa/tests/t-156.rs:stripe-access-token:22
+472e2249d93453a943a44e7a20d7316c1a4b017f:scripts/agent-trials/fixtures/config/config.toml:generic-api-key:8
+472e2249d93453a943a44e7a20d7316c1a4b017f:scripts/agent-trials/run:generic-api-key:59
+508d7f53c7ed8d334e8d254a72a8c09bcf7b04a3:docs/demos/scenarios.md:generic-api-key:140
+51a824f68b2286342ce096f8d6f52311fe857f8f:qa/tests/t-157.rs:generic-api-key:401
+51a824f68b2286342ce096f8d6f52311fe857f8f:qa/tests/t-157.rs:generic-api-key:541
+6f57b3200695c7146db7879d42360113da15f776:qa/tests/t-120.rs:generic-api-key:145
+7f71f9fb2d565f94907906863c3e8a6a34074a89:qa/tests/t-154.rs:stripe-access-token:300
+8428f377bf0b4e4389cd9d7de4061d732b0a8316:docs/demos/scenarios.md:generic-api-key:140
+844caf521aec137d686052f261d2459db0886388:crates/tiza-tui/src/reanchor.rs:stripe-access-token:1022
+844caf521aec137d686052f261d2459db0886388:crates/tiza-tui/src/reanchor.rs:stripe-access-token:1031
+844caf521aec137d686052f261d2459db0886388:crates/tiza-tui/src/reanchor.rs:stripe-access-token:1036
+99099b0217062c4d00e23c90842ab40d488c2a92:qa/tests/t-135.rs:stripe-access-token:24
+a0121b46a84a8d5b28ff60b492294127249a3767:qa/tests/t-030.rs:stripe-access-token:217
+a0121b46a84a8d5b28ff60b492294127249a3767:qa/tests/t-030.rs:stripe-access-token:481
+d2057db74176d3cbe5a4411c027ea325dfc66a77:qa/fixtures/t-101/w-redact-only.tiza:generic-api-key:5
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:940
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:951
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:955
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:957
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:968
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:969
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:974
+d592b5495d451b5954aa91a53f6a954b8403d667:crates/tiza-tui/src/reanchor.rs:stripe-access-token:975
+dbd7192f8a63ae4733df8dbc6d9d6c25824f28ca:qa/tests/t-174.rs:stripe-access-token:2699
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:generic-api-key:356
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:generic-api-key:425
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:jwt:426
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:jwt:472
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:stripe-access-token:449
+ff04161cbd40466e8b375d81f4a43760f4f61455:crates/tiza-core/src/redact.rs:stripe-access-token:462
+ff04161cbd40466e8b375d81f4a43760f4f61455:qa/tests/t-117.rs:jwt:28

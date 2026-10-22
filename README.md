@@ -273,6 +273,7 @@ A release is a version commit on `main`, a `vX.Y.Z` tag on it and then crates.io
 
 ```sh
 git switch main && git pull && git status --short   # must print nothing
+gitleaks git --gitleaks-ignore-path qa/.gitleaksignore   # no secret in the history (the fake ones in tests and demos are listed there)
 scripts/bump-version.sh X.Y.Z                       # Cargo.toml, Cargo.lock, CHANGELOG.md
 git diff                                            # check the five versions and the CHANGELOG heading
 git commit -am "vX.Y.Z"
