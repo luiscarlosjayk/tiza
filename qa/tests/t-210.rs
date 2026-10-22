@@ -45,8 +45,10 @@ use serde_json::{Value, json};
 use tiza_core::protocol::Response;
 use tiza_qa::{Live, McpClient, scratch, tiza};
 
-/// How long a request answered while a check runs may take.
-const QUICK: Duration = Duration::from_secs(2);
+/// How long a request answered while a check runs is waited for: a
+/// condition's timeout; that it did not wait for the check is shown by the
+/// order of the replies.
+const QUICK: Duration = Duration::from_secs(10);
 /// How long a check may take at all.
 const CHECK: Duration = Duration::from_secs(120);
 
@@ -542,6 +544,11 @@ fn ac5_quitting_while_a_check_runs_exits_at_once() {
 import json
 binary, doc = sys.argv[1], sys.argv[2]
 os.chdir(os.path.dirname(doc))
+# How long one check of this document takes here and now (a loaded machine
+# stretches it as it stretches the quit): the quit must take far less.
+t = time.monotonic()
+subprocess.run([binary, "check", doc, "--json"], capture_output=True, timeout=120)
+print("CHECK_TIME %.3f" % (time.monotonic() - t), flush=True)
 for how in ["q", "ctrl-c", "hup", "close"]:
     sock = how + ".sock"
     s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120)
@@ -595,6 +602,12 @@ for how in ["q", "ctrl-c", "hup", "close"]:
         &[tiza_qa::bin().to_str().unwrap(), file.to_str().unwrap()],
         150,
     );
+    let check_time: f64 = out
+        .lines()
+        .find_map(|l| l.strip_prefix("CHECK_TIME "))
+        .unwrap_or_else(|| panic!("{out}"))
+        .parse()
+        .unwrap();
     for how in ["q", "ctrl-c", "hup", "close"] {
         let has = |what: &str| out.contains(&format!("{how} {what}"));
         assert!(has("STATUS 0"), "{how}:\n{out}");
@@ -613,6 +626,14 @@ for how in ["q", "ctrl-c", "hup", "close"]:
         // condition with a generous timeout, not a budget.
         let took: f64 = fields[3].parse().unwrap();
         assert!(took < 10.0, "{how}: exited {took} s after quitting\n{out}");
+        println!("{how}: exited {took} s after quitting; one check takes {check_time} s");
+        // Waiting for the running check would take about one check.
+        if check_time >= 1.0 {
+            assert!(
+                took < check_time / 2.0,
+                "{how}: exited {took} s after quitting, a check takes {check_time} s\n{out}"
+            );
+        }
         assert!(has("SOCKET_LEFT False"), "{how}:\n{out}");
         if how != "close" {
             assert!(has("TTY True True"), "{how}:\n{out}");
@@ -640,6 +661,11 @@ fn corner_mcp_check_with_a_client_timeout_shorter_than_the_check() {
         .reply_within(status, QUICK)
         .unwrap_or_else(|| panic!("MCP status was not answered within {QUICK:?}"));
     assert!(s["result"]["isError"] != true, "{s}");
+    // Answered before the check: its reply had not come yet.
+    assert!(
+        !mcp.replied(check),
+        "status was answered only after the check"
+    );
     let v = mcp
         .reply_within(check, CHECK)
         .expect("the MCP check never answered");

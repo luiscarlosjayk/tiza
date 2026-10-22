@@ -397,6 +397,12 @@ impl McpClient {
         id
     }
 
+    /// Whether the reply to request `id` already came while waiting for
+    /// another one (it is kept for its own call): which of two came first.
+    pub fn replied(&self, id: u64) -> bool {
+        self.early.contains_key(&id)
+    }
+
     /// The reply to request `id`, waiting at most `timeout`; replies to
     /// other requests that arrive meanwhile are kept for their own call.
     pub fn reply_within(

@@ -59,10 +59,15 @@ os.chdir(cwd)
 s = Pty([binary, *args, "main.rs"], 30, 120)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
     s.settle(0.5)
+    mark = 0
     for k in keys[:-1]:
         if k == "CHMOD644":
+            # The key before failed to autosave over the read-only file:
+            # only then is it writable again (a condition, not the settle).
+            s.wait_for(lambda out: "could not save" in plain(out[mark:]), 10, "the failed autosave")
             os.chmod("main.rs.tiza", 0o644)
             continue
+        mark = len(s.out)
         s.send(k.encode())
         s.settle(0.4)
     if ready:

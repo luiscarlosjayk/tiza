@@ -36,10 +36,11 @@
 //! status` has to give that size for the last frame drawn. No time budget:
 //! the bug never redraws without input, so the frame at the final size does
 //! not come at all, however long the wait, and a loaded machine (the whole
-//! suite alongside, a slow CI runner) only makes a correct frame come later. Before the fix, in the debug build `cargo test` makes, a
-//! resize 0 to 200 ms after the setup was lost on every run (4 of 4 at each
-//! delay; the first frame takes longer than that to lay out), so on `main`
-//! every case but the host-query and smoke ones fails, every time. With the
+//! suite alongside, a slow CI runner) only makes a correct frame come later.
+//! Before the fix, in the debug build `cargo test` makes, a resize in the
+//! first 200 ms after the setup was lost at most delays (a late one may land
+//! after the first poll and be an event), so every case but the host-query
+//! and smoke ones fails, every time. With the
 //! fix it cannot fail by timing: a resize before the poll is read by the
 //! first draw (ratatui asks the size on every draw) and one after it is an
 //! event. The host-query and `--smoke` cases pass on `main` too: the query
@@ -561,7 +562,9 @@ fn corner_a_resize_while_a_big_document_loads() {
     let src = dir.join("big.rs");
     std::fs::write(&src, code).unwrap();
     // While its first frame is laid out (a resize while it loads, before
-    // the socket server is up, is the `spawn` case of AC1).
+    // the socket server is up, is the `spawn` case of AC1). Its lines are
+    // narrower than both sizes, so the frames for 61 and 60 columns look the
+    // same: here `tiza api status` (the size of the last frame) is the guard.
     race(
         "big",
         normal_args(&src),

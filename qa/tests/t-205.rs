@@ -131,6 +131,8 @@ impl Outcome {
             self.out
         );
         assert!(cpu < CPU_AT_MOST_S, "used {cpu:.2} s of CPU:\n{}", self.out);
+        // How soon (the AC's 1 s), for `--nocapture`.
+        println!("gone {elapsed:.3} s after the close, {cpu:.3} s of CPU");
         assert!(
             !self.out.contains("WAIT_TIMEOUT") && !self.out.contains("API_ERR"),
             "{}",
