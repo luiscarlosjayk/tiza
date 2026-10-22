@@ -1053,42 +1053,31 @@ impl<'a> Take<'a> {
         }
     }
 
-    /// The widest width step `i` must be searched from: the first of
-    /// `bounds` (see [`saturation_width`]) whose take is the one at
-    /// [`MAX_WIDTH`], else [`MAX_WIDTH`]; whether that take clips a label;
-    /// and which of those it was.
-    fn top(&self, i: usize, theme: &Theme, bounds: [usize; 2]) -> (usize, bool, Bound) {
-        if bounds[0] >= MAX_WIDTH {
+    /// The widest width step `i` must be searched from: `bound` (see
+    /// [`saturation_width`]) when its take is the one at [`MAX_WIDTH`], else
+    /// [`MAX_WIDTH`]; whether that take clips a label; and which of those it
+    /// was.
+    fn top(&self, i: usize, theme: &Theme, bound: usize) -> (usize, bool, Bound) {
+        if bound >= MAX_WIDTH {
             return (MAX_WIDTH, false, Bound::Widest);
         }
         let widest = self.layout(i, theme, MAX_WIDTH);
-        let mut tried = None;
-        for (k, b) in bounds.into_iter().enumerate() {
-            if tried == Some(b) || b >= MAX_WIDTH {
-                continue;
-            }
-            tried = Some(b);
-            let at = self.layout(i, theme, b);
-            if same_take(&at, &widest, theme) {
-                let which = if k == 0 {
-                    Bound::Labels
-                } else {
-                    Bound::Callouts
-                };
-                return (b, !at.clipped_labels.is_empty(), which);
-            }
-        }
+        let at = self.layout(i, theme, bound);
+        let same = same_take(&at, &widest, theme);
         debug_assert!(
-            bounds[1] >= MAX_WIDTH,
-            "step {}: the take at {bounds:?} columns is not the one at {MAX_WIDTH}",
+            same,
+            "step {}: the take at {bound} columns is not the one at {MAX_WIDTH}",
             self.steps[i].step
         );
-        let which = if bounds[1] >= MAX_WIDTH {
-            Bound::Widest
+        if same {
+            (bound, !at.clipped_labels.is_empty(), Bound::Labels)
         } else {
-            Bound::Fallback
-        };
-        (MAX_WIDTH, !widest.clipped_labels.is_empty(), which)
+            (
+                MAX_WIDTH,
+                !widest.clipped_labels.is_empty(),
+                Bound::Fallback,
+            )
+        }
     }
 
     /// The layout of step `i` (an index in `steps`) at `width`.
@@ -1651,45 +1640,42 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
 /// - without one, the margin is past every decision once it holds a margin
 ///   callout (its block is at most `max(width or 34, 8, title + 4, its
 ///   widest character) + 4` wide, `auto` moves into the margin at `width +
-///   19`, two blocks on one line go side by side once both fit, and the
-///   labels beside the blocks get their rows once every block, each with
-///   its gap, plus 14 fits) and, beside them, the longest label on one row
-///   (its `┆ ` and the gap after it), and the rows under the lines hold
-///   that label whole too; a label is measured as the canvas draws it (a
-///   zero-width space takes a cell there);
-/// - a callout with no rows for its block below its line is drawn as a
-///   label of its words, which wrap in the margin (sharing its line with
-///   another label, it is a block under the line, as wide as the code):
-///   past the bound that leaves them out, the take changes only if
-///   one of those labels does, and then the wrap or the cut differs at
-///   [`MAX_WIDTH`] (a greedy wrap that is the same at two widths is the
-///   same at every width between them).
+///   19`, a block goes beside the blocks it shares rows with once it fits
+///   there, and the labels beside the blocks get their rows once the
+///   blocks, each with its gap, plus 14 fit) and, beside them, the longest
+///   label on one row (its `┆ ` and the gap after it), and the rows under
+///   the lines hold that label whole too; a label is measured as the canvas
+///   draws it (a zero-width space takes a cell there). Blocks only share
+///   rows with the blocks they can reach: a block of `h` rows from line `L`
+///   covers at most lines `L` to `L + h - 1`, so the blocks side by side
+///   are bounded by the widest chain of blocks whose lines meet, in the
+///   order the layout places them;
+/// - a margin callout with no room for its block is a block under its
+///   line, no wider than the code column.
 ///
-/// Each step is laid out at the bound and at [`MAX_WIDTH`]: the first bound
-/// whose take is the one at [`MAX_WIDTH`] is that step's; where neither is,
-/// the step is searched from [`MAX_WIDTH`] (a change in the layout's rules
-/// costs time, never a wrong answer).
+/// Each step is laid out at the bound and at [`MAX_WIDTH`]: when the two
+/// takes are the same the bound is that step's; otherwise the step is
+/// searched from [`MAX_WIDTH`] (a change in the layout's rules costs time,
+/// never a wrong answer).
 pub fn saturation_width(doc: &Document, theme: &Theme) -> usize {
     let take = Take::of(doc);
-    let bounds = take_saturation(&take);
+    let bound = take_saturation(&take);
     (0..take.steps.len())
         .filter(|&i| take.steps[i].labels)
-        .map(|i| take.top(i, theme, bounds).0)
+        .map(|i| take.top(i, theme, bound).0)
         .max()
-        .unwrap_or(bounds[0])
+        .unwrap_or(bound)
 }
 
 /// Which bound a step of [`saturation_width`] is searched from.
 #[doc(hidden)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Bound {
-    /// The one from the labels (the callouts' words left out).
+    /// The bound from the labels and the margin blocks.
     Labels,
-    /// The one that counts the callouts' words as a label too.
-    Callouts,
     /// The bound itself is [`MAX_WIDTH`]: there is nothing above it.
     Widest,
-    /// The take at either bound is not the one at [`MAX_WIDTH`], so the
+    /// The take at the bound is not the one at [`MAX_WIDTH`], so the
     /// step is searched from [`MAX_WIDTH`]: the bound no longer follows the
     /// layout's rules.
     Fallback,
@@ -1700,17 +1686,15 @@ pub enum Bound {
 #[doc(hidden)]
 pub fn saturation_bounds(doc: &Document, theme: &Theme) -> Vec<(u32, Bound)> {
     let take = Take::of(doc);
-    let bounds = take_saturation(&take);
+    let bound = take_saturation(&take);
     (0..take.steps.len())
         .filter(|&i| take.steps[i].labels)
-        .map(|i| (take.steps[i].step, take.top(i, theme, bounds).2))
+        .map(|i| (take.steps[i].step, take.top(i, theme, bound).2))
         .collect()
 }
 
-/// The two bounds of [`saturation_width`]: the first leaves out the words
-/// of the callouts, which matter only when one has no rows for its block;
-/// the second counts them as a label too.
-fn take_saturation(take: &Take) -> [usize; 2] {
+/// The bound of [`saturation_width`].
+fn take_saturation(take: &Take) -> usize {
     use crate::canvas::{display_width, drawn_width};
     let doc = take.doc;
     let g = &take.geometry;
@@ -1723,13 +1707,34 @@ fn take_saturation(take: &Take) -> [usize; 2] {
         .count();
     let margin_x =
         g.num_w + 2 * arrows.max(g.lane_count) + 2 * g.box_depth + 2 + g.code_full_w.max(10) + 2;
-    // The widest label; the widest margin callout's text column (`width`,
-    // 34 by default, at least 8, and its title with the `─ ` before and
-    // ` ─` after); the widest callout's words as a label.
-    // `blocks`: every margin callout's block side by side, each with the
-    // gap after it (two blocks on one line go beside each other when the
-    // margin holds both).
-    let (mut longest, mut callout, mut fallback, mut blocks) = (0, 0, 0, 0);
+    // A margin callout's block: its inner width at most (`width`, 34 by
+    // default, at least 8, its title with the `─ ` before and ` ─` after, and
+    // a character wider than the text column, which is a line of its own and
+    // grows the block) and its rows (its words wrapped at `width`, and the
+    // two borders).
+    let block = |text: &str, title: &Option<String>, width: Option<usize>| {
+        let widest = unicode_segmentation::UnicodeSegmentation::graphemes(text, true)
+            .map(&w)
+            .max()
+            .unwrap_or(0);
+        let text_w = width.unwrap_or(34).max(8);
+        let inner = text_w
+            .max(title.as_deref().map_or(0, |t| w(t) + 4))
+            .max(widest);
+        let rows: usize = text
+            .split('\n')
+            .map(|p| {
+                if p.trim().is_empty() {
+                    1
+                } else {
+                    crate::layout::wrap_words(p, text_w).len()
+                }
+            })
+            .sum();
+        (inner, rows + 2)
+    };
+    // The widest label; the widest margin callout's text column.
+    let (mut longest, mut callout) = (0, 0);
     for a in &doc.annotations {
         let text = match &a.shape {
             Shape::Note { text, .. } => w(text),
@@ -1746,57 +1751,74 @@ fn take_saturation(take: &Take) -> [usize; 2] {
                     + label.as_deref().map_or(0, |l| 2 + w(l))
             }
             Shape::Callout {
-                text,
-                title,
-                width,
-                placement,
-                ..
+                text, title, width, ..
             } => {
-                // A character wider than the text column is a line of its
-                // own, and the block grows to hold it.
-                let widest =
-                    unicode_segmentation::UnicodeSegmentation::graphemes(text.as_str(), true)
-                        .map(&w)
-                        .max()
-                        .unwrap_or(0);
-                let inner = width
-                    .unwrap_or(34)
-                    .max(8)
-                    .max(title.as_deref().map_or(0, |t| w(t) + 4))
-                    .max(widest);
-                callout = callout.max(inner);
-                if *placement != crate::model::Placement::Below {
-                    blocks += inner + 4 + 1;
-                }
-                // A callout with no room for its block (no rows left below
-                // it) is drawn as a label of its words.
-                fallback = fallback.max(w(&text.split_whitespace().collect::<Vec<_>>().join(" ")));
+                callout = callout.max(block(text, title, *width).0);
                 0
             }
             Shape::Spotlight { .. } => 0,
         };
         longest = longest.max(text);
     }
-    let bound = |longest: usize| {
-        // A margin of `room` cells: past every margin decision (14 cells),
-        // past the callout rules (`auto` moves in at `width + 19`, the
-        // labels beside a block get its rows from `block + 1 + 14`), and
-        // with the longest label on one row after its `┆ ` and a gap, also
-        // beside a callout's block (`block + 1` further right).
-        let mut room = 14usize.max(3 + longest);
-        if callout > 0 {
-            room = room
-                .max(callout + 19)
-                .max(blocks + 14)
-                .max(blocks + 3 + longest);
+    // `blocks`: the widest run of margin blocks side by side, each with the
+    // gap after it, at any step. The layout places the blocks from the first
+    // line down (one line's in the document's order), each right after the
+    // rightmost block it would overlap; so a block ends at most at its own
+    // width past the end of the widest chain of earlier blocks whose lines
+    // meet its own.
+    let mut blocks = 0;
+    for s in &take.steps {
+        let mut margin: Vec<(u32, u32, usize)> = s
+            .shown
+            .annotations
+            .iter()
+            .filter(|a| a.step <= s.step)
+            .filter_map(|a| match &a.shape {
+                Shape::Callout {
+                    from_line,
+                    text,
+                    title,
+                    width,
+                    placement,
+                    ..
+                } if *placement != crate::model::Placement::Below => {
+                    let (inner, h) = block(text, title, *width);
+                    let last = from_line.saturating_add(u32::try_from(h - 1).unwrap_or(u32::MAX));
+                    Some((*from_line, last, inner + 4))
+                }
+                _ => None,
+            })
+            .collect();
+        margin.sort_by_key(|&(first, _, _)| first);
+        // Where each block ends, past the margin's start, at most.
+        let mut ends: Vec<usize> = Vec::with_capacity(margin.len());
+        for (k, &(first, last, width)) in margin.iter().enumerate() {
+            let start = (0..k)
+                .filter(|&j| margin[j].0 <= last && first <= margin[j].1)
+                .map(|j| ends[j] + 1)
+                .max()
+                .unwrap_or(0);
+            ends.push(start + width);
+            blocks = blocks.max(start + width + 1);
         }
-        let open = margin_x + room + 2;
-        let capped = doc
-            .margin
-            .map_or(open, |cap| open.min(margin_x + usize::from(cap) + 1));
-        capped.clamp(MIN_WIDTH, MAX_WIDTH)
-    };
-    [bound(longest), bound(longest.max(fallback))]
+    }
+    // A margin of `room` cells: past every margin decision (14 cells),
+    // past the callout rules (`auto` moves in at `width + 19`, the labels
+    // beside the blocks get their rows from `blocks + 14`), and with the
+    // longest label on one row after its `┆ ` and a gap, also beside the
+    // blocks.
+    let mut room = 14usize.max(3 + longest);
+    if callout > 0 {
+        room = room
+            .max(callout + 19)
+            .max(blocks + 14)
+            .max(blocks + 3 + longest);
+    }
+    let open = margin_x + room + 2;
+    let capped = doc
+        .margin
+        .map_or(open, |cap| open.min(margin_x + usize::from(cap) + 1));
+    capped.clamp(MIN_WIDTH, MAX_WIDTH)
 }
 
 /// Two layouts of one step at two widths draw the same take: the same rows
@@ -1841,7 +1863,7 @@ fn clean_above(clipped: usize) -> Option<usize> {
 /// rows under the lines were, and a callout that moves into the margin can
 /// find no room there), so no width is assumed from its neighbours.
 fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
-    let bounds = take_saturation(take);
+    let bound = take_saturation(take);
     let widest = AtomicUsize::new(0);
     // The last steps first: they usually draw the most labels, so the
     // widest clip is found early and the other steps stop above it.
@@ -1849,7 +1871,7 @@ fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
         if !take.steps[i].labels {
             continue;
         }
-        let (top, clips, _) = take.top(i, theme, bounds);
+        let (top, clips, _) = take.top(i, theme, bound);
         if clips && top < MAX_WIDTH {
             // The same take, so the same clip, from the bound up.
             widest.store(MAX_WIDTH, Ordering::Relaxed);
