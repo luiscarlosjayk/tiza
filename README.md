@@ -45,7 +45,7 @@ Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://git
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza
 ```
 
-The release binaries are built with `scripts/release-local.sh vX.Y.Z` on a clean checkout of the tag (GitHub Actions is off): it builds every target the machine can (on macOS, arm64 and Intel cross-compiled; on Linux, x86_64) and leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand.
+The release binaries are built with `scripts/release-local.sh vX.Y.Z` on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand.
 
 Inside a checkout, `rust-toolchain.toml` pins Rust 1.99.1 (with rustfmt and clippy) so local builds and the gate use the same toolchain; 1.88 stays the minimum supported version.
 

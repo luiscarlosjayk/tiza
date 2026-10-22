@@ -25,7 +25,7 @@ usage() {
 tag=""
 targets=()
 allow_untagged=0
-out_root="dist"
+out_root=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage 0 ;;
@@ -37,9 +37,16 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ -n "$tag" ] || { echo "missing the tag (for example v0.1.0)" >&2; usage 2; }
-case "$tag" in v[0-9]*) ;; *) echo "the tag must look like v0.1.0 or v0.1.0-rc.1, got '$tag'" >&2; exit 2 ;; esac
+if ! [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "the tag must look like v0.1.0 or v0.1.0-rc.1, got '$tag'" >&2
+  exit 2
+fi
+# --out is read from where the script was called, as any path argument;
+# without it, dist/ at the top of the checkout.
+case "$out_root" in ""|/*) ;; *) out_root="$PWD/$out_root" ;; esac
 
 cd "$(git rev-parse --show-toplevel)"
+[ -n "$out_root" ] || out_root="dist"
 
 # The release must be exactly what the tag names: a clean tree at the tag.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
@@ -56,6 +63,18 @@ elif [ "$allow_untagged" -eq 0 ]; then
   exit 1
 else
   echo "note: $tag is not a tag yet; packaging HEAD $(git rev-parse --short HEAD) under that name (rehearsal)"
+fi
+
+# The binary says its version (`tiza --version`): the tag must name it.
+version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+# v0.1.0-rc.1 goes with 0.1.0: the X.Y.Z parts must be equal.
+tag_base="${tag#v}"; tag_base="${tag_base%%-*}"
+if [ "$tag_base" != "${version%%-*}" ]; then
+  if [ "$allow_untagged" -eq 0 ]; then
+    echo "tag $tag does not match the workspace version $version (Cargo.toml): make the version commit first" >&2
+    exit 1
+  fi
+  echo "note: the binaries say version $version, not ${tag#v} (rehearsal)"
 fi
 
 if [ ${#targets[@]} -eq 0 ]; then
@@ -80,7 +99,8 @@ for target in "${targets[@]}"; do
   if command -v rustup >/dev/null 2>&1 && ! rustup target list --installed | grep -qx "$target"; then
     rustup target add "$target"
   fi
-  cargo build --release --locked --target "$target" -p tiza
+  # Into ./target whatever CARGO_TARGET_DIR says: the copy below reads it.
+  cargo build --release --locked --target "$target" --target-dir target -p tiza
   name="tiza-$tag-$target"
   stage="$out/$name"
   mkdir -p "$stage"
@@ -89,20 +109,29 @@ for target in "${targets[@]}"; do
   # Only what the tag has: release.yml packs a fresh checkout, and a local
   # tree may hold build output or scratch files under examples/.
   git archive HEAD examples | tar -x -C "$stage"
-  tar -C "$out" -czf "$out/$name.tar.gz" "$name"
+  # No macOS extended attributes: the archive release.yml would make.
+  COPYFILE_DISABLE=1 tar --no-xattrs -C "$out" -czf "$out/$name.tar.gz" "$name"
   (cd "$out" && sha256 "$name.tar.gz" > "$name.tar.gz.sha256")
   rm -rf "$stage"
   # Smoke: the binary for this machine must start from the archive.
   if [ "$target" = "$host" ]; then
     check="$(mktemp -d)"
     tar -C "$check" -xzf "$out/$name.tar.gz"
-    "$check/$name/tiza" --version
+    said="$("$check/$name/tiza" --version)"
+    echo "$said"
+    # The build stamp names this commit, clean: not an older binary.
+    case "$said" in
+      *"($(git rev-parse --short=10 HEAD))"*) ;;
+      *) echo "the packaged binary is not HEAD's clean build: $said" >&2; exit 1 ;;
+    esac
     rm -rf "$check"
   fi
 done
 
 prev="$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
-repo="$(git config --get remote.origin.url | sed -E 's#^(git@github.com:|https://github.com/)##; s#\.git$##')"
+repo="$(git config --get remote.origin.url || true)"
+repo="$(printf '%s' "$repo" | sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' | sed 's#\.git$##')"
+[ -n "$repo" ] || repo="luiscarlosjayk/tiza"
 {
   echo "## Tiza $tag"
   echo
