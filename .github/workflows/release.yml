@@ -1,8 +1,10 @@
 name: Release
 
 # Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
-# and Linux (x86_64), checksums and notes generated from the commits.
-# Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
+# and Linux (x86_64), checksums and notes generated from the commits, and then
+# publishes the crates to crates.io (job `publish`, secret CARGO_REGISTRY_TOKEN).
+# Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease and stay off crates.io.
+# scripts/release-local.sh builds the same archives when Actions is off.
 
 on:
   push:
@@ -29,9 +31,15 @@ jobs:
           - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
+      # The toolchain rust-toolchain.toml pins (the only place its version is
+      # written; rustup >= 1.28 installs it with a bare `toolchain install`),
+      # and the target added to that toolchain: with a separate `stable` the
+      # target landed there and the x86_64-apple-darwin build had no std.
+      - name: Rust toolchain (rust-toolchain.toml) and target
+        run: |
+          rustup toolchain install
+          rustup target add ${{ matrix.target }}
+          rustc --version
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release --locked --target ${{ matrix.target }} -p tiza
       - name: package
@@ -81,3 +89,62 @@ jobs:
           files: dist/*
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
+
+  publish:
+    name: publish to crates.io
+    # After the GitHub Release exists, and only for a final vX.Y.Z tag: a tag
+    # with a suffix is a prerelease (same test as `prerelease:` above).
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
+      - name: cargo publish
+        shell: bash
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        # `cargo publish --workspace` publishes in dependency order (tiza-core,
+        # then tiza-export and tiza-tui, tiza-mcp, tiza) and skips tiza-qa
+        # (publish = false). A re-run excludes what is already on crates.io
+        # (read from the sparse index), so it finishes a half-done publish.
+        run: |
+          set -euo pipefail
+          version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.toml)"
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match the workspace version $version (Cargo.toml)"
+            exit 1
+          fi
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
+            echo "::error::the CARGO_REGISTRY_TOKEN secret is not set (README, Installation)"
+            exit 1
+          fi
+          # Path of a crate in the sparse index: ab/cd/abcd... for 4+ letters.
+          index_path() {
+            case ${#1} in
+              1) echo "1/$1" ;;
+              2) echo "2/$1" ;;
+              3) echo "3/${1:0:1}/$1" ;;
+              *) echo "${1:0:2}/${1:2:2}/$1" ;;
+            esac
+          }
+          crates=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json, sys; print("\n".join(p["name"] for p in json.load(sys.stdin)["packages"] if p["publish"] != []))')
+          exclude=()
+          left=0
+          for crate in $crates; do
+            if curl -fsS "https://index.crates.io/$(index_path "$crate")" 2>/dev/null | grep -q "\"vers\":\"$version\""; then
+              echo "$crate $version is already on crates.io: skipped"
+              exclude+=(--exclude "$crate")
+            else
+              left=$((left + 1))
+            fi
+          done
+          if [ "$left" -eq 0 ]; then
+            echo "every crate is already on crates.io at $version: nothing to publish"
+            exit 0
+          fi
+          # ${a[@]+...}: an empty array under `set -u` in any bash (3.2 on macOS too).
+          cargo publish --workspace --locked ${exclude[@]+"${exclude[@]}"}

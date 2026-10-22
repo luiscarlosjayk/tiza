@@ -39,15 +39,20 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ## Installation
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88):
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88), from crates.io or from the repository's `main`:
 
 ```sh
+cargo install tiza
 cargo install --git https://github.com/luiscarlosjayk/tiza tiza
 ```
 
-The release binaries are built with `scripts/release-local.sh vX.Y.Z` on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand.
+`tiza-core`, `tiza-tui`, `tiza-mcp` and `tiza-export` are on crates.io only so that `cargo install tiza` works: they have no stable API.
 
-Inside a checkout, `rust-toolchain.toml` pins Rust 1.99.1 (with rustfmt and clippy) so local builds and the gate use the same toolchain; 1.88 stays the minimum supported version.
+**Releases (maintainers).** Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`: it builds the three archives, creates the GitHub Release and then, for a tag without suffix (not `-rc.N`/`-alpha.N`), publishes the five crates with `cargo publish --workspace` (dependency order; a re-run skips what is already published). It needs one repository secret, **`CARGO_REGISTRY_TOKEN`**: a crates.io API token (crates.io → Account Settings → API Tokens, scope `publish-update` for `tiza*`) saved in GitHub under Settings → Secrets and variables → Actions. The tag must match the workspace version in `Cargo.toml`, or the job stops before publishing.
+
+When Actions is not available, `scripts/release-local.sh vX.Y.Z` builds the same archives on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand (crates.io is then `cargo publish --workspace`, by hand).
+
+Inside a checkout, `rust-toolchain.toml` pins Rust 1.99.1 (with rustfmt and clippy) so local builds, the gate, CI and the release workflow use the same toolchain (the workflows install it from that file); 1.88 stays the minimum supported version.
 
 ## Quick start
 

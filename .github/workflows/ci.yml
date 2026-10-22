@@ -19,9 +19,12 @@ jobs:
         os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # The toolchain is the one rust-toolchain.toml pins, with its components
+      # (rustfmt, clippy): that file is the only place the version is written,
+      # and a bare `rustup toolchain install` (rustup >= 1.28, on the runners)
+      # installs what it says. Before the cache, which keys on rustc's version.
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets --all-features -- -D warnings
@@ -82,6 +85,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      # No toolchain step: the action's entrypoint runs `rustup show ||
+      # rustup toolchain install` next to the manifest, so it installs and
+      # uses the toolchain of rust-toolchain.toml too.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -91,7 +97,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-python@v7
         with:
