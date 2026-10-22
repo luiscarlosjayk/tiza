@@ -7,6 +7,7 @@
 pub mod app;
 pub mod appearance;
 pub mod checks;
+pub mod early_keys;
 pub mod follow;
 pub mod ipc;
 pub mod reanchor;
@@ -76,11 +77,15 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         app.theme_follow_host();
     }
     // The host's appearance: asked before crossterm owns the
-    // input, 100 ms at most, silent fallback to dark.
-    if (app.theme_auto || app.theme.is_terminal())
-        && let Some(host) = appearance::query_host(Duration::from_millis(100))
-    {
-        app.set_host(host);
+    // input, 100 ms at most, silent fallback to dark. Keys typed meanwhile
+    // were read with the answer: handled before the first frame.
+    let mut early = Vec::new();
+    if app.theme_auto || app.theme.is_terminal() {
+        let (host, typed) = appearance::query_host(Duration::from_millis(100));
+        if let Some(host) = host {
+            app.set_host(host);
+        }
+        early = typed;
     }
     if let Some(s) = opts.step {
         app.set_step(s);
@@ -130,7 +135,17 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     };
 
     install_crash_hook(&app.save_path);
-    let mut terminal = ratatui::init();
+    // No terminal at all (a service, `setsid` with no tty): a plain error,
+    // not a crash; nothing was drawn, so only the raw mode may need undoing.
+    let mut terminal = match ratatui::try_init() {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = crossterm::terminal::disable_raw_mode();
+            return Err(io::Error::other(format!(
+                "the TUI needs a terminal to read keys from ({e}); use `tiza render` for text output or `tiza check` to check a document"
+            )));
+        }
+    };
     spare_answered_requests();
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
@@ -145,6 +160,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             .and_then(|_| event::poll(Duration::from_millis(100)))
             .map(|_| End::Quit)
     } else {
+        for (code, mods) in early_keys::keys(&early) {
+            on_key(&mut app, code, mods);
+        }
         event_loop(&mut terminal, &mut app, ipc.as_ref(), &hangup)
     };
     // The terminal went away: Ctrl-C's rules for what is saved.

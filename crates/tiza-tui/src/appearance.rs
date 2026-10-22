@@ -99,10 +99,12 @@ pub fn parse_answers(input: &str) -> Host {
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
 /// on `/dev/tty`, the query, a timed read (VTIME), the old mode back. `None`
 /// when there is no tty, it does not answer within `timeout`, or the
-/// `TIZA_NO_OSC` variable is set (tests, pipelines).
-pub fn query_host(timeout: Duration) -> Option<Host> {
+/// `TIZA_NO_OSC` variable is set (tests, pipelines). Also returns what else
+/// the read took from the terminal: keys typed meanwhile, in order, for the
+/// event loop ([`crate::early_keys`]); they are not the query's to eat.
+pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<u8>) {
     if std::env::var_os("TIZA_NO_OSC").is_some() {
-        return None;
+        return (None, Vec::new());
     }
     // The controlling terminal, or stdin when that is the terminal (a pty
     // without a session, as in tests).
@@ -116,24 +118,30 @@ pub fn query_host(timeout: Duration) -> Option<Host> {
             use std::os::fd::AsFd;
             let stdin = std::io::stdin();
             if !rustix::termios::isatty(stdin.as_fd()) {
-                return None;
+                return (None, Vec::new());
             }
-            let dup = rustix::io::dup(stdin.as_fd()).ok()?;
+            let Ok(dup) = rustix::io::dup(stdin.as_fd()) else {
+                return (None, Vec::new());
+            };
             std::fs::File::from(dup)
         }
     };
-    let saved = rustix::termios::tcgetattr(&tty).ok()?;
+    let Ok(saved) = rustix::termios::tcgetattr(&tty) else {
+        return (None, Vec::new());
+    };
     let mut raw = saved.clone();
     raw.make_raw();
     // A read returns after `deciseconds` with nothing rather than blocking.
     let deciseconds = (timeout.as_millis() / 100).clamp(1, 25) as u8;
     raw.special_codes[rustix::termios::SpecialCodeIndex::VMIN] = 0;
     raw.special_codes[rustix::termios::SpecialCodeIndex::VTIME] = deciseconds;
-    rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &raw).ok()?;
-    let result = (|| {
+    if rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &raw).is_err() {
+        return (None, Vec::new());
+    }
+    let mut buf = Vec::new();
+    let host = (|| {
         tty.write_all(QUERY.as_bytes()).ok()?;
         tty.flush().ok()?;
-        let mut buf = Vec::new();
         let mut chunk = [0u8; 256];
         let start = Instant::now();
         loop {
@@ -155,7 +163,33 @@ pub fn query_host(timeout: Duration) -> Option<Host> {
         (host.bg.is_some()).then_some(host)
     })();
     let _ = rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &saved);
-    result
+    (host, without_answers(&buf))
+}
+
+/// What the start-up read took from the terminal besides the answers: every
+/// `ESC ]` … `ESC \` (or BEL) sequence left out, and one cut short by the
+/// timeout too (the rest of an answer, never keys).
+pub fn without_answers(buf: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < buf.len() {
+        if buf[i] == 0x1b && buf.get(i + 1) == Some(&b']') {
+            let body = &buf[i + 2..];
+            let end = (0..body.len()).find_map(|k| match body[k] {
+                0x07 => Some(k + 1),
+                0x1b if body.get(k + 1) == Some(&b'\\') => Some(k + 2),
+                _ => None,
+            });
+            match end {
+                Some(n) => i += 2 + n,
+                None => break,
+            }
+            continue;
+        }
+        out.push(buf[i]);
+        i += 1;
+    }
+    out
 }
 
 /// Sends the query while the TUI runs; the answer comes back through the
@@ -265,6 +299,19 @@ mod tests {
         assert_eq!(h.dark(), Some(false));
         assert!(is_dark(Rgb(0x15, 0x17, 0x1B)) && !is_dark(Rgb(0xF7, 0xF5, 0xEF)));
         assert_eq!(parse_answers("nothing").dark(), None);
+    }
+
+    #[test]
+    fn the_start_up_read_gives_back_what_is_not_an_answer() {
+        assert_eq!(
+            without_answers(b"n\x1b]11;rgb:f7f7/f5f5/efef\x1b\\n\x1b]10;rgb:1/2/3\x07q"),
+            b"nnq"
+        );
+        // An answer cut short by the timeout is not keys.
+        assert_eq!(without_answers(b"j\x1b]11;rgb:f7f7/f5"), b"j");
+        // An ESC typed early stays a key.
+        assert_eq!(without_answers(b":\x1b"), b":\x1b");
+        assert_eq!(without_answers(b""), b"");
     }
 
     #[test]
