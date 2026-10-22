@@ -1151,7 +1151,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "follow.set",
-        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads at step 0 (`reason` says so, t-212)",
+        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads back at a step with no moves applied (`reason` says which, t-212)",
     ),
     (
         "follow.status",

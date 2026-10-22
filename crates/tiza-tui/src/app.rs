@@ -2416,6 +2416,15 @@ impl App {
         before: BeforeHistory,
         replaced: Option<tiza_core::model::CodeSource>,
     ) {
+        // Follow on over a file reference again (an undo of the paste a wait
+        // was for, t-212): the file holds the code on screen
+        // ([`App::embed_if_not_the_file`] checked it), so nothing waits.
+        if !self.doc.is_embedded()
+            && let Some(f) = &mut self.follow
+        {
+            self.reload_waits = false;
+            f.last_content = self.doc.base().to_vec();
+        }
         // A change on disk waits for step 0 (t-206) and the undo left the
         // step-0 code as it was (a note, a move): follow stays on, the code
         // embedded, and step 0 still reloads.
@@ -2721,21 +2730,30 @@ impl App {
     }
 
     /// Following while moves are applied: why a save does not load now
-    /// (it waits for step 0, t-206), as the reply, the bar and
-    /// `follow.status` say it (t-212). `None` when a save loads at once.
+    /// (it waits for a step with no moves applied, t-206), as the reply,
+    /// the bar and `follow.status` say it (t-212). `None` when a save loads
+    /// at once.
     pub fn follow_waits(&self) -> Option<String> {
         if self.follow.is_none() || !self.doc.moves_applied() {
             return None;
         }
         let step = self.doc.step;
-        let changed = self
-            .follow
-            .as_ref()
-            .filter(|_| self.reload_waits)
-            .map(|f| format!("{} changed on disk, ", f.file_name()))
-            .unwrap_or_default();
+        // The last step before the first move: a save loads there or earlier.
+        let back = self
+            .doc
+            .moves
+            .iter()
+            .map(|m| m.at_step)
+            .min()
+            .unwrap_or(1)
+            .saturating_sub(1);
+        let when = if back == 0 {
+            "at step 0".to_string()
+        } else {
+            format!("at step {back} or earlier")
+        };
         Some(format!(
-            "waiting: {changed}moves applied at step {step}; loads at step 0"
+            "waiting: moves applied at step {step}; loads {when}"
         ))
     }
 
@@ -2755,7 +2773,11 @@ impl App {
             return Ok("follow off".into());
         }
         if let Some(f) = &self.follow {
-            return Ok(format!("already following {}", f.file_name()));
+            let name = f.file_name();
+            return Ok(match self.follow_waits() {
+                Some(w) => format!("already following {name} ({w})"),
+                None => format!("already following {name}"),
+            });
         }
         let path = self.source_file().ok_or_else(|| {
             Error::Invalid(
@@ -2773,9 +2795,17 @@ impl App {
         // pasted over the file is replaced on purpose: always one undo step,
         // so `u` gives the paste back.
         let pasted = self.doc.is_embedded();
+        let said = self.message.clone();
         let _ = self.reload_from_disk(pasted);
-        // Pasted code that is what the file holds: nothing was reloaded, and
-        // the document references the file again.
+        if self.reload_waits {
+            // With moves applied what differs waits, and the reply says so
+            // (`waiting: …`): over pasted code the file did not change on
+            // disk, as the deferral's own notice would say.
+            self.message = said;
+        }
+        // Pasted code that is what the file holds, numbered as the file's
+        // lines are: nothing was reloaded, and the document references the
+        // file again.
         if pasted
             && self.doc.is_embedded()
             && let Some(src) = self.followed_source()
@@ -2783,7 +2813,9 @@ impl App {
             let mut probe = self.doc.clone();
             probe.code_src = src.clone();
             let base = self.save_path.parent().map(Path::to_path_buf);
-            if fs::reread_code(&probe, base.as_deref()).is_ok_and(|c| c == self.doc.base()) {
+            if fs::reread_reference(&probe, base.as_deref()).is_ok_and(|(code, first)| {
+                code == self.doc.base() && first == self.doc.base_first()
+            }) {
                 self.doc.code_src = src;
                 self.touch();
             }
@@ -2904,11 +2936,20 @@ impl App {
             f.defer();
             return false;
         }
-        if new == f.last_content && !was_missing {
+        // Embedded code numbered from another line than the file's (a paste
+        // over a range of the file): the same text is still a change to
+        // load, or saved as `code: {file}` it would load numbered otherwise.
+        let renumbered = self.doc.is_embedded() && read_first != self.doc.base_first();
+        if new == f.last_content && !was_missing && !renumbered {
             // Nothing new to load; embedded code the file holds again (a
             // change that waited for step 0, then saved back) is the
             // file's once more.
             return self.back_to_reference();
+        }
+        if self.doc.moves_applied() && new == f.last_content && !renumbered {
+            // Back as it was before it went missing: nothing waits for it.
+            self.info(format!("{name} is back; following it"));
+            return true;
         }
         if self.doc.moves_applied() {
             // ADR 0007 §7: follow is paused while moves are applied (t-106
@@ -5466,10 +5507,13 @@ impl App {
                         Error::Invalid("follow.set needs `enabled`: true|false".into())
                     })?;
                 let was = self.follow.is_some();
+                let said = self.message.clone();
                 let msg = self.set_follow(enabled)?;
                 // Turned on where a save waits for step 0: the presenter is
-                // told too, or the next save would seem lost (t-212).
-                if !was && self.follow_waits().is_some() {
+                // told too, or the next save would seem lost (t-212); unless
+                // turning it on said something of its own (a file that
+                // cannot be read).
+                if !was && self.follow_waits().is_some() && self.message == said {
                     self.info(msg.clone());
                 }
                 let mut st = self.follow_status();

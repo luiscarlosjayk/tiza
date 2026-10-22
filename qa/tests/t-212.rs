@@ -1,6 +1,6 @@
 //! t-212 — `--follow` and `follow.set` were refused at a step with moves
-//! applied: a `.tiza` with a move at step 1 and no `step` opens at step 1,
-//! and `tiza --follow doc.tiza` came up with follow off and the bar saying
+//! applied: a `.tiza` opens at its saved `step` (1 when it names none), so
+//! with a move at step 1 `tiza --follow doc.tiza` came up with follow off and the bar saying
 //! «cannot follow while moves are applied (step 1): go back to step 0
 //! first» (Zed's «Tiza: current file, live» task on any document with
 //! moves).
@@ -26,6 +26,14 @@
 //! document loads), so step 0 always loads; `--no-save` writes nothing; the
 //! file missing when follow is turned on at step 1 waits for it to come
 //! back, then for step 0; a change made while follow was off waits too.
+//!
+//! Review (`rev_*`): with the first move at step 3 the wait says `loads at
+//! step 2 or earlier`; the wait over pasted code does not say the file
+//! changed; `u` of that paste leaves nothing to reload; a file back as it
+//! was is no change; pasted code numbered otherwise than the file's lines
+//! is never saved as a reference with the paste's numbers; `already
+//! following` says it waits; `follow.set` keeps an error of its own on the
+//! bar.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -38,7 +46,6 @@ const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
 const WAITING: &str = "waiting: moves applied at step 1; loads at step 0";
-const CHANGED: &str = "waiting: main.rs changed on disk, moves applied at step 1; loads at step 0";
 const DEFERRED: &str =
     "main.rs changed on disk but moves are applied at step 1: go back to step 0 to reload";
 
@@ -200,7 +207,7 @@ fn save_then_step_0(live: &Live, src: &Path, tiza: &Path) {
     assert_eq!(base(live), lines(OLD), "the screen keeps the code");
     assert!(saved_code(tiza).is_array(), "{}", saved_code(tiza));
     assert_eq!(status(live)["enabled"], true);
-    assert_eq!(status(live)["reason"], CHANGED);
+    assert_eq!(status(live)["reason"], WAITING);
     same_as_fresh(live, tiza, "a save waits at step 1");
     live.command("step 0");
     assert_eq!(base(live), lines(NEW));
@@ -293,7 +300,7 @@ fn ac1_a_change_made_while_follow_was_off_waits_too() {
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(
         r["message"],
-        format!("following main.rs ({CHANGED})"),
+        format!("following main.rs ({WAITING})"),
         "{r}"
     );
     assert_eq!(base(&live), lines(OLD));
@@ -381,6 +388,198 @@ fn corner_pasted_code_then_step_1_then_follow_on() {
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(base(&live), lines(pasted));
     same_as_fresh(&live, &tiza, "u gives the paste back");
+}
+
+// ---------- review ----------
+
+/// A scratch folder with `main.rs` = `code` and `doc.tiza` = `doc`, opened.
+fn opened_doc(name: &str, doc: Value, code: &str) -> (Live, PathBuf, PathBuf) {
+    let dir = scratch(name);
+    let src = dir.join("main.rs");
+    std::fs::write(&src, code).unwrap();
+    let tiza = dir.join("doc.tiza");
+    std::fs::write(&tiza, doc.to_string()).unwrap();
+    let loaded = tiza_core::fs::load_document(&tiza).unwrap();
+    (
+        Live::open(loaded, tiza.clone(), dir.join("live.sock")),
+        src,
+        tiza,
+    )
+}
+
+/// The first line of the first annotation.
+fn a1_line(live: &Live) -> u32 {
+    live.with(|app| app.doc.annotations[0].shape.line_ranges()[0].0)
+}
+
+#[test]
+fn rev_a_first_move_at_step_3_loads_at_step_2() {
+    let mut doc = repro(false);
+    doc["moves"][0]["at_step"] = json!(3);
+    doc["step"] = json!(3);
+    doc["annotations"] = json!([
+        {"id": "a1", "step": 1, "type": "note", "line": 1, "text": "one"},
+        {"id": "a2", "step": 2, "type": "note", "line": 1, "text": "two"}
+    ]);
+    let (live, src, tiza) = opened_doc("t212-step3", doc, OLD);
+    live.command("follow on");
+    let waits = "waiting: moves applied at step 3; loads at step 2 or earlier";
+    assert_eq!(message(&live), format!("following main.rs ({waits})"));
+    assert_eq!(status(&live)["reason"], waits);
+    live.with(|app| app.message = None);
+    save(&src, NEW);
+    wait_for("the save to wait", || {
+        message(&live).starts_with("main.rs changed on disk but moves are applied at step 3")
+    });
+    same_as_fresh(&live, &tiza, "waiting at step 3");
+    live.command("step 2");
+    assert_eq!(base(&live), lines(NEW));
+    assert_eq!(status(&live)["reloads"], 1);
+    same_as_fresh(&live, &tiza, "loaded at step 2");
+}
+
+/// QA's repro with `a1`, pasted over at step 0 (follow goes off), at step 1.
+fn pasted_at_step_1(name: &str) -> (Live, PathBuf) {
+    let (live, _src, tiza) = opened(name);
+    live.command("step 0");
+    live.command("follow on");
+    let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
+    live.with(move |app| app.replace_code(pasted)).unwrap();
+    assert_eq!(status(&live)["enabled"], false);
+    live.command("step 1");
+    (live, tiza)
+}
+
+#[test]
+fn rev_over_a_paste_the_wait_does_not_say_the_file_changed() {
+    let (live, tiza) = pasted_at_step_1("t212-paste-words");
+    live.with(|app| app.message = None);
+    live.command("follow on");
+    assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
+    assert_eq!(status(&live)["reason"], WAITING);
+    same_as_fresh(&live, &tiza, ":follow on over the paste");
+    live.command("follow off");
+    live.with(|app| app.message = None);
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(
+        r["message"],
+        format!("following main.rs ({WAITING})"),
+        "{r}"
+    );
+    assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
+}
+
+#[test]
+fn rev_u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
+    // The paste undone at step 1: the file's code again, a reference, so
+    // step 0 has nothing to load (no reload, no undo step that does nothing).
+    let (live, tiza) = pasted_at_step_1("t212-paste-u");
+    live.command("follow on");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(base(&live), lines(OLD));
+    assert!(live.with(|app| !app.doc.is_embedded()));
+    assert_eq!(status(&live)["enabled"], true);
+    same_as_fresh(&live, &tiza, "u of the paste at step 1");
+    live.command("step 0");
+    assert_eq!(status(&live)["reloads"], 0, "{}", message(&live));
+    assert_eq!(base(&live), lines(OLD));
+    assert_eq!(saved_code(&tiza), json!({"file": "main.rs"}));
+    same_as_fresh(&live, &tiza, "step 0 after the u");
+}
+
+#[test]
+fn rev_the_file_back_unchanged_at_step_1_is_no_change() {
+    let (live, src, tiza) = opened("t212-back-same");
+    std::fs::remove_file(&src).unwrap();
+    live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(status(&live)["missing"], true);
+    save(&src, OLD);
+    wait_for("the file back", || status(&live)["missing"] == false);
+    assert_eq!(message(&live), "main.rs is back; following it");
+    assert_eq!(saved_code(&tiza), json!({"file": "main.rs"}));
+    same_as_fresh(&live, &tiza, "back unchanged at step 1");
+    live.command("step 0");
+    assert_eq!(status(&live)["reloads"], 0);
+    same_as_fresh(&live, &tiza, "step 0");
+}
+
+/// A range of the file (`lines 2-5`) pasted over at step 0 with a changed
+/// line, numbered from 1 (follow goes off); the file then edited so that
+/// lines 2-5 hold the paste.
+fn ranged_paste(name: &str) -> (Live, PathBuf) {
+    let six = "// head\nfn main() {\n    let x = 1;\n    let y = 2;\n}\n// tail\n";
+    let mut doc = repro(false);
+    doc["source"]["first_line"] = json!(2);
+    doc["code"] = json!({"file": "main.rs", "lines": "2-5"});
+    doc["annotations"] = json!([{"id": "a1", "step": 1, "type": "note", "line": 3, "text": "x"}]);
+    let (live, src, tiza) = opened_doc(name, doc, six);
+    live.command("step 0");
+    live.command("follow on");
+    let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
+    live.with(move |app| app.replace_code(pasted)).unwrap();
+    assert_eq!(live.with(|app| app.doc.base_first()), 1);
+    // a1 went with its text: the paste's second line.
+    assert_eq!(a1_line(&live), 2);
+    std::fs::write(
+        &src,
+        "// head\nfn main() {\n    let x = 1;\n    let y = 3;\n}\n// tail\n",
+    )
+    .unwrap();
+    (live, tiza)
+}
+
+#[test]
+fn rev_a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
+    // At step 1 it waits (the paste stays, embedded with its numbers); step
+    // 0 loads the file's lines, numbered from 2, and a1 stays on its text.
+    let (live, tiza) = ranged_paste("t212-range-1");
+    live.command("step 1");
+    live.command("follow on");
+    assert_eq!(status(&live)["reason"], WAITING);
+    assert!(live.with(|app| app.doc.is_embedded()));
+    same_as_fresh(&live, &tiza, "follow on over the paste at step 1");
+    live.command("step 0");
+    assert_eq!(live.with(|app| app.doc.base_first()), 2);
+    assert_eq!(a1_line(&live), 3);
+    assert_eq!(
+        saved_code(&tiza),
+        json!({"file": "main.rs", "lines": "2-5"})
+    );
+    same_as_fresh(&live, &tiza, "loaded at step 0");
+}
+
+#[test]
+fn rev_a_paste_the_file_holds_on_other_lines_at_step_0() {
+    let (live, tiza) = ranged_paste("t212-range-0");
+    live.command("follow on");
+    assert_eq!(live.with(|app| app.doc.base_first()), 2);
+    assert_eq!(a1_line(&live), 3);
+    assert_eq!(
+        saved_code(&tiza),
+        json!({"file": "main.rs", "lines": "2-5"})
+    );
+    same_as_fresh(&live, &tiza, "follow on over the paste at step 0");
+}
+
+#[test]
+fn rev_already_following_says_it_waits() {
+    let (live, _src, _tiza) = opened("t212-already");
+    live.command("follow on");
+    live.command("follow on");
+    let again = format!("already following main.rs ({WAITING})");
+    assert_eq!(message(&live), again);
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["message"], again);
+}
+
+#[test]
+fn rev_follow_set_keeps_an_error_of_its_own_on_the_bar() {
+    let (live, src, _tiza) = opened("t212-utf8");
+    std::fs::write(&src, b"fn main() {\n    \xff\xfe\n}\n").unwrap();
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["enabled"], true, "{r}");
+    let (msg, loud) = live.message().unwrap();
+    assert!(loud && msg.contains("not valid UTF-8"), "{msg}");
 }
 
 // ---------- AC4: the real binary on a pty ----------
@@ -512,7 +711,7 @@ fn pty_repro(name: &str, mode: &str) {
     assert_eq!(st["enabled"], true, "{st}");
     assert_eq!(st["reason"], WAITING, "{st}");
     let waiting = &line_json(&out, "WAITING")[0];
-    assert_eq!(waiting["reason"], CHANGED, "{waiting}");
+    assert_eq!(waiting["reason"], WAITING, "{waiting}");
     let step0 = &line_json(&out, "STEP0")[0];
     assert_eq!(step0["reloads"], 1, "{step0}");
     assert!(step0.get("reason").is_none(), "{step0}");

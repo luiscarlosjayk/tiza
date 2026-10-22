@@ -115,8 +115,7 @@ pub struct FollowStatus {
     /// Why follow is off, when something other than `follow.set` turned it
     /// off: a paste (`the code is pasted, not main.rs; :follow on reloads
     /// main.rs`). With follow on, why a save does not load now: moves are
-    /// applied (`waiting: moves applied at step 1; loads at step 0`, with
-    /// `main.rs changed on disk, ` before `moves` when a change waits).
+    /// applied (`waiting: moves applied at step 1; loads at step 0`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// What `follow.set` did, in words.

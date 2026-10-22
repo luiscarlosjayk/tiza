@@ -647,7 +647,7 @@ fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
 }
 
 #[test]
-fn ac5_paste_and_follow_are_refused_while_moves_are_applied() {
+fn ac5_paste_is_refused_and_follow_waits_while_moves_are_applied() {
     let dir = scratch("t098-ac5");
     std::fs::write(dir.join("src.rs"), CODE).unwrap();
     let doc = tiza_core::fs::open(dir.join("src.rs").to_str().unwrap())
@@ -661,14 +661,15 @@ fn ac5_paste_and_follow_are_refused_while_moves_are_applied() {
         err.contains("cannot paste while moves are applied (step 1)"),
         "{err}"
     );
-    let r = live.api("follow.set", json!({"enabled": true}));
-    assert!(
-        r.error
-            .unwrap()
-            .message
-            .contains("cannot follow while moves are applied")
+    // Follow turns on and waits for step 0 (t-212; it was refused).
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["enabled"], true, "{r}");
+    assert_eq!(
+        r["reason"], "waiting: moves applied at step 1; loads at step 0",
+        "{r}"
     );
-    // At step 0 nothing is applied: both work on the step-0 code.
+    live.api_ok("follow.set", json!({"enabled": false}));
+    // At step 0 nothing is applied: a paste works on the step-0 code.
     live.api_ok("step.set", json!({"step": 0}));
     live.with(|a| {
         a.replace_code("fn main() {\n    let a = 1;\n    let b = 2;\n    let z = 0;\n}\n")

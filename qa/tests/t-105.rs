@@ -679,7 +679,7 @@ fn ac6_link_command_socket_and_mcp_record_the_moves() {
 }
 
 #[test]
-fn ac7_follow_and_paste_stay_refused_while_a_link_is_applied() {
+fn ac7_paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
     let (_dir, live) = open_demo("t105-ac7");
     live.api_ok("step.set", json!({"step": 2}));
     let err = live.with(|a| a.replace_code("fn other() {}\n").unwrap_err().to_string());
@@ -687,13 +687,17 @@ fn ac7_follow_and_paste_stay_refused_while_a_link_is_applied() {
         err.contains("cannot paste while moves are applied (step 2)"),
         "{err}"
     );
-    let r = live.api("follow.set", json!({"enabled": true}));
+    // Follow turns on and waits for a step with no move applied (t-212;
+    // it was refused).
+    let r = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(r["enabled"], true, "{r}");
     assert!(
-        r.error
-            .unwrap()
-            .message
-            .contains("cannot follow while moves are applied")
+        r["reason"]
+            .as_str()
+            .is_some_and(|w| w.starts_with("waiting: moves applied at step 2")),
+        "{r}"
     );
+    live.api_ok("follow.set", json!({"enabled": false}));
     // Undo of a link move brings the previous view back.
     live.api_ok("step.set", json!({"step": 1}));
     live.api_ok(
