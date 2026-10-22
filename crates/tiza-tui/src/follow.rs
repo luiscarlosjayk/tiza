@@ -1,4 +1,4 @@
-//! Follow mode (t-011): reload the code when the source file changes on disk
+//! Follow mode: reload the code when the source file changes on disk
 //! (Zed saves with tmp + rename, so the *parent directory* is watched), with
 //! a debounce, keeping the annotations by re-anchoring them to their text.
 

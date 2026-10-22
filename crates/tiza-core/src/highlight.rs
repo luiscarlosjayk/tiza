@@ -253,8 +253,8 @@ pub type Highlighted = Arc<Vec<Vec<Segment>>>;
 /// theme); the last four results are kept (TUI + MCP bridge + exports).
 /// A syntect colour as a canvas colour. bat's terminal themes (`Ansi`,
 /// `Base16`) encode the host palette in the alpha channel: `a == 0` means
-/// indexed colour `r` and `a == 1` the terminal's default foreground
-/// (t-119); real colours have `a == 255`.
+/// indexed colour `r` and `a == 1` the terminal's default foreground;
+/// real colours have `a == 255`.
 fn syntect_color(c: syntect::highlighting::Color) -> Rgb {
     match c.a {
         0 => crate::theme::ansi(c.r),
@@ -288,7 +288,7 @@ pub fn highlight_cached(code: &[String], language: &str, theme: EmbeddedThemeNam
 
 /// Highlights every line. If the language is unknown, returns plain text.
 ///
-/// Long files are split into chunks highlighted on several threads (t-138);
+/// Long files are split into chunks highlighted on several threads;
 /// the result is identical to one sequential pass (see [`highlight_chunked`]).
 pub fn highlight(code: &[String], language: &str, theme: EmbeddedThemeName) -> Vec<Vec<Segment>> {
     highlight_chunked(code, language, theme, default_threads(code.len())).0

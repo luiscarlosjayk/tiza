@@ -1,9 +1,9 @@
 //! Moves (ADR 0007): the code changes between steps. A move is applied when
 //! the presenter reaches `at_step` and reverted when going back; the document
 //! is a pure function of the step, recomputed from the step-0 code.
-//! `code.patch` edits lines (t-098); `code.link` switches the shown file
+//! `code.patch` edits lines; `code.link` switches the shown file
 //! (a *view*, with an optional window of lines); `cursor`, `select` and
-//! `wait` set the cursor, a selection and a pause (t-105). Annotations are
+//! `wait` set the cursor, a selection and a pause. Annotations are
 //! authored against the code at their own step, belong to the view shown at
 //! that step, and are shifted through that view's later patches by the
 //! patch's own line map — never by a text search.
@@ -352,7 +352,7 @@ fn parse_position(s: &str) -> Result<(u32, u32), Error> {
     {
         [a] => Ok((*a, *a)),
         [a, b] if a <= b => Ok((*a, *b)),
-        // Never the text received (t-167 rework): a malformed value is not
+        // Never the text received: a malformed value is not
         // repeated.
         _ => Err(Error::Invalid("position: use a line or A-B".into())),
     }
@@ -860,7 +860,7 @@ impl Projection {
     }
 }
 
-/// Where `line` of the code shown at step `from` is at step `to` (t-030:
+/// Where `line` of the code shown at step `from` is at step `to` (so
 /// the live pointer stays on its line across `n`/`p`): carried forward
 /// through every patch of the shown view between the two steps, or back
 /// through them in reverse. `None` when a patch removed the line, when the
@@ -901,7 +901,7 @@ pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> 
 /// exactly one place, `at_step >= 1`, `rebind` only on patches, linked
 /// files are loaded, cursors and selections exist. A `rebind` entry whose
 /// annotation is not in `annotations` is skipped ([`ignored_rebinds`]).
-/// The numbers a move may hold (t-166): a `wait` and a `code.patch`'s
+/// The numbers a move may hold: a `wait` and a `code.patch`'s
 /// typing speed within [`crate::model::MAX_HOLD_MS`], so no export of the
 /// take can hang on its holds or overflow adding them up.
 pub fn check_move_bounds(m: &Move, what: &str) -> Result<(), Error> {
@@ -1297,7 +1297,7 @@ pub struct TypingItem {
 
 /// The typing animation of a step: the code with every move of the step
 /// applied, and the typed moves in order. The TUI reveals it over time;
-/// the GIF export (t-120) turns the same plan into frames.
+/// the GIF export turns the same plan into frames.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TypingPlan {
     pub full: Vec<String>,

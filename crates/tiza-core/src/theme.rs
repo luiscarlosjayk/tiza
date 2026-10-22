@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::canvas::{CellStyle, Rgb};
 use crate::model::{MarkStyle, ThemeName};
 
-// ---- the host terminal's colours (t-119) ----
+// ---- the host terminal's colours ----
 //
 // The canvas carries `Rgb` everywhere. The `terminal` theme needs "the
 // terminal's default" and "ANSI colour n" instead, so those are encoded as
@@ -129,7 +129,7 @@ impl Theme {
         }
     }
 
-    /// The host terminal's palette (t-119): default background and text,
+    /// The host terminal's palette: default background and text,
     /// the roles on the 16 ANSI colours, syntax on the terminal's colours
     /// (bat's `ansi` theme), so Tiza looks like the rest of the terminal.
     /// `host_dark` picks the tint behind highlights and the status bar
@@ -214,7 +214,7 @@ impl Theme {
         }
     }
 
-    /// A softened ink (the emphasis glyphs, t-096): `ink` at opacity `t`
+    /// A softened ink (the emphasis glyphs): `ink` at opacity `t`
     /// over the background. With the host's colours the ink stays as it is.
     pub fn tint_ink(&self, ink: Rgb, t: f32) -> Rgb {
         if host_color(ink).is_some() || host_color(self.bg).is_some() {
@@ -419,7 +419,7 @@ impl Theme {
     }
 }
 
-// ---- per-token overrides (t-119) ----
+// ---- per-token overrides ----
 
 /// One value of a `[theme]` table: a colour, or the `dark` / `light`
 /// subtable that applies on top when that base theme is active.
@@ -587,7 +587,7 @@ impl Theme {
             };
             *slot = color;
         }
-        // Text must still read at 4.5:1 (t-072): push what an override
+        // Text must still read at 4.5:1: push what an override
         // left too faint and say so.
         if host_color(self.bg).is_none() {
             for (name, slot) in [
@@ -625,7 +625,7 @@ impl Theme {
         notes
     }
 
-    /// Built-in → config file → document (t-119): the theme `name` with
+    /// Built-in → config file → document: the theme `name` with
     /// both override tables applied, and the notes they produced.
     pub fn resolve(
         name: ThemeName,

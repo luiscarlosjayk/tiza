@@ -131,7 +131,7 @@ fn export_theme(
         file.as_ref().or(doc.theme_overrides.as_ref()),
     );
     // The notes quote the overrides as written, from the document or a
-    // theme file: shown, never sent raw to the terminal (t-182).
+    // theme file: shown, never sent raw to the terminal.
     for n in notes {
         eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
     }
@@ -324,7 +324,7 @@ enum SceneCmd {
 fn main() {
     if let Err(e) = real_main() {
         // An error can quote the document or a find text: its control
-        // characters are shown, never sent to the terminal (t-182).
+        // characters are shown, never sent to the terminal.
         let e = format!("{e:#}");
         eprintln!("tiza: {}", tiza_core::printable::printable_text(&e));
         std::process::exit(1);
@@ -387,7 +387,7 @@ fn real_main() -> anyhow::Result<()> {
                 });
             // The document: a file, or the live instance's scene.
             // The live instance's `.tiza` and whether it autosaves: what a
-            // `.tape` of it opens (t-166).
+            // `.tape` of it opens.
             let mut live_document: Option<(Option<String>, bool)> = None;
             let (doc, step, width) = match &file {
                 Some(f) => {
@@ -419,8 +419,8 @@ fn real_main() -> anyhow::Result<()> {
                         serde_json::json!({}),
                     )?)
                     .context("unexpected scene.get response")?;
-                    // Its linked files too, as the instance shows them
-                    // (t-166): opening the `.tiza` loads them the same way.
+                    // Its linked files too, as the instance shows them:
+                    // opening the `.tiza` loads them the same way.
                     // What the screen skips and hides, the export does too.
                     tiza_core::stale::apply_marks(&mut scene.document, &scene.stale, &scene.held);
                     fs::load_scene(&mut scene.document).map_err(|e| {
@@ -441,7 +441,7 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
-            // The gutter: the document's `numbers` field (t-112) unless a
+            // The gutter: the document's `numbers` field unless a
             // flag forces it for this export.
             let line_numbers = if no_numbers {
                 false
@@ -450,7 +450,7 @@ fn real_main() -> anyhow::Result<()> {
             } else {
                 doc.numbers
             };
-            // Sizes from the command line are bounded (t-115): a typo must be
+            // Sizes from the command line are bounded: a typo must be
             // an error, never an aborted process.
             let width =
                 tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -460,12 +460,12 @@ fn real_main() -> anyhow::Result<()> {
                 ),
                 None => doc.margin.map(usize::from),
             };
-            // A hold past one hour (or not a number) is refused (t-166):
+            // A hold past one hour (or not a number) is refused:
             // `1e308` overflowed and `1e7` hung the GIF encoder.
             let interval =
                 tiza_core::anim::check_interval(interval).map_err(|e| anyhow::anyhow!("{e}"))?;
             let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
-            // Scale 2 for stills and the GIF (t-121: long italic notes are soft
+            // Scale 2 for stills and the GIF (long italic notes are soft
             // at 1); video stays at 1, the player scales it.
             let video = matches!(format, Format::Mp4 | Format::Webm);
             let scale = scale.unwrap_or(if video { 1.0 } else { 2.0 });
@@ -493,7 +493,7 @@ fn real_main() -> anyhow::Result<()> {
                 );
             }
             // A `steps` entry past the last step is kept, never dropped in
-            // silence (t-099).
+            // silence.
             for w in doc.step_warnings() {
                 eprintln!("tiza: {}", tiza_core::printable::printable_text(&w));
             }
@@ -558,7 +558,7 @@ fn real_main() -> anyhow::Result<()> {
                         from_zero: !skip_zero,
                     };
                     let frames = tiza_core::anim::frames(&doc, &theme, &anim_opts);
-                    // Which steps the document timed itself (t-099).
+                    // Which steps the document timed itself.
                     let timed = tiza_core::anim::timed_steps(&doc, &anim_opts);
                     let timed_note = match timed.as_slice() {
                         [] => String::new(),
@@ -631,12 +631,12 @@ fn real_main() -> anyhow::Result<()> {
                         let mut tape_note: Option<String> = None;
                         let document_path = match (&file, &live_document) {
                             (Some(f), _) => f.clone(),
-                            // The instance's own `.tiza` (t-166; it typed
+                            // The instance's own `.tiza` (the tape typed
                             // `tiza scene.tiza`, a file that does not exist).
                             (None, Some((Some(d), autosave))) => {
                                 // Relative to the tape's folder, where `vhs`
                                 // runs it, never the absolute path with the
-                                // home in it (t-166 verification).
+                                // home in it.
                                 let base = if out == "-" {
                                     std::env::current_dir()?
                                 } else {
@@ -672,7 +672,7 @@ fn real_main() -> anyhow::Result<()> {
                         // it quotes: a path with a newline, a control
                         // character or a `"` would add commands of its
                         // own. Refused, never rewritten: the tape would
-                        // open another file (t-182).
+                        // open another file.
                         for (what, p) in [("document", &document_path), ("output", &out)] {
                             if !tiza_core::cast::tape_safe_path(p) {
                                 bail!(
@@ -748,7 +748,7 @@ fn real_main() -> anyhow::Result<()> {
             Ok(())
         }
         Some(cmd @ (Cmd::Next | Cmd::Prev | Cmd::Goto { .. })) => {
-            // Automation for scripts and editor tasks (t-099): the same
+            // Automation for scripts and editor tasks: the same
             // socket as `tiza api`, no JSON to quote; no instance → exit 1.
             let (method, params) = match cmd {
                 Cmd::Next => ("step.next", serde_json::json!({})),
@@ -913,7 +913,7 @@ fn real_main() -> anyhow::Result<()> {
 }
 
 /// Pretty JSON for the terminal: the value as is, with DEL, C1 and bidi
-/// controls as `\uXXXX` escapes (serde_json escapes only C0; t-182).
+/// controls as `\uXXXX` escapes (serde_json escapes only C0).
 fn json_text(pretty: String) -> String {
     tiza_core::printable::escape_json_controls(&pretty).into_owned()
 }
@@ -936,7 +936,7 @@ fn call(
 }
 
 /// `path` relative to `base` (both absolute): `doc.tiza`, `../demo/doc.tiza`
-/// (t-166: a live `.tape` names the document from its own folder). Paths
+/// (a live `.tape` names the document from its own folder). Paths
 /// with nothing in common come back as they are.
 fn relative_to(path: &Path, base: &Path) -> PathBuf {
     let p: Vec<_> = path.components().collect();
@@ -955,7 +955,7 @@ fn relative_to(path: &Path, base: &Path) -> PathBuf {
     out
 }
 
-/// `render --all-steps --out DIR/` (t-101): one file per step, step 0
+/// `render --all-steps --out DIR/`: one file per step, step 0
 /// included, every canvas padded to the same size (the stable geometry of
 /// a take), named `step-00.png` … so they sort in step order.
 #[allow(clippy::too_many_arguments)]
@@ -1071,7 +1071,7 @@ fn render_all_steps(
     if n > 1 && !size.is_empty() {
         size.push_str(" each");
     }
-    // File and folder names as found on disk: shown, never raw (t-182).
+    // File and folder names as found on disk: shown, never raw.
     let shown_dir = tiza_core::printable::printable_line(&dir.display().to_string()).into_owned();
     eprintln!(
         "wrote {n} file{} to {} ({steps}{size})",
@@ -1136,7 +1136,7 @@ fn name_list(names: &[String]) -> String {
             names.len() - SHOWN
         )
     };
-    // Names found on disk: shown, never raw (t-182).
+    // Names found on disk: shown, never raw.
     tiza_core::printable::printable_line(&list).into_owned()
 }
 
@@ -1271,7 +1271,7 @@ fn encode_video(
         let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
         let name = format!("f{i:05}.png");
         std::fs::write(dir.join(&name), png)?;
-        // The GIF's own timing of this frame (t-170 review): its 10 ms
+        // The GIF's own timing of this frame: its 10 ms
         // unit and 20 ms floor, so typed frames add up to the same length
         // in every format, and `--interval 0` still gives each step a
         // frame instead of `-t 0` and a file with no video stream.
@@ -1286,7 +1286,7 @@ fn encode_video(
     // all: without the repeat, ffmpeg 6 emits it as a single frame (its
     // `duration` only places the next entry, and there is none). What the
     // repeat itself lasts depends on the ffmpeg: 6.x gives it one frame,
-    // 7+ (Luis's 9.0.2, t-170) holds it as long as the previous entry, so
+    // 7+ (9.0.2 from Homebrew) holds it as long as the previous entry, so
     // the last step came out twice as long — a `duration` on the repeated
     // entry changes nothing there. `-t` with the sum of every frame's
     // duration cuts the output at exactly the GIF's length on every
@@ -1323,7 +1323,7 @@ fn encode_video(
         total,
     ];
     match format {
-        // yuv420p spelled out for the WebM too (t-170): ffmpeg 6 picked it
+        // yuv420p spelled out for the WebM too: ffmpeg 6 picked it
         // on its own for the RGBA frames, a newer one keeps them as
         // `gbrap`, which libvpx refuses, and no file is written.
         Format::Webm => args.extend([

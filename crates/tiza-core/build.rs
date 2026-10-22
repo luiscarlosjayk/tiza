@@ -14,7 +14,7 @@
 //! the ignored `target/package/` is stamped `unknown`, not with a commit
 //! that did not build it. Its version already says what it is.
 //!
-//! The script reruns when the commit can have moved (t-181). The files to
+//! The script reruns when the commit can have moved. The files to
 //! watch come from git itself, because in a worktree `.git` is a file and
 //! HEAD, the index and the branch refs live elsewhere (`--git-path` maps
 //! each name to this checkout's or the common dir): HEAD and its reflog

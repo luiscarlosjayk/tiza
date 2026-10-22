@@ -1,4 +1,4 @@
-//! Animated GIF from Tiza's own frames (t-120): every frame is rasterized
+//! Animated GIF from Tiza's own frames: every frame is rasterized
 //! by the PNG path (same pixels as `render --out x.png`), the palette is
 //! built once for the whole animation (the colours that cover most pixels
 //! — background, code, rails — are kept exactly; the anti-aliasing blends
@@ -24,7 +24,7 @@ const MAX_DELAY_CS: u64 = u16::MAX as u64;
 /// How long a frame asked to last `delay_ms` really lasts in the GIF, in
 /// milliseconds: at least [`MIN_DELAY_MS`], at most two maximum holds, and
 /// rounded up to the format's 10 ms unit. MP4/WebM time their frames with
-/// the same function (t-170), so a typed move at 25 ms per character lasts
+/// the same function, so a typed move at 25 ms per character lasts
 /// 30 ms per character in every format and the videos add up to the GIF's
 /// length exactly.
 pub fn frame_delay_ms(delay_ms: u64) -> u64 {
@@ -147,7 +147,7 @@ pub fn to_gif(
             }
             // A hold longer than the format's 655 s is split into frames
             // of the same rectangle.
-            // Bounded (t-166): a hold past an hour is a bug upstream, and
+            // Bounded: a hold past an hour is a bug upstream, and
             // u64::MAX ms would be 2.8e14 frames of 655 s.
             let mut cs = frame_delay_ms(frames[i].1) / 10;
             loop {

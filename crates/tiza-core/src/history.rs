@@ -102,7 +102,7 @@ pub struct History {
     seq: u64,
 }
 
-/// Where the history stood before a request (t-166): see
+/// Where the history stood before a request: see
 /// [`History::rollback`].
 #[derive(Debug, Clone)]
 pub struct Checkpoint {
@@ -178,7 +178,7 @@ impl History {
     }
 
     /// Forgets the entries recorded since `c` and brings back its redo
-    /// stack (t-166): a request that panicked leaves no undo entry behind
+    /// stack: a request that panicked leaves no undo entry behind
     /// (an entry the cap of 200 pushed out meanwhile is not brought back).
     pub fn rollback(&mut self, c: Checkpoint) {
         while self.undo.last().is_some_and(|s| s.id > c.newest) {

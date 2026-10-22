@@ -69,7 +69,7 @@ fn hex(c: Rgb) -> String {
 }
 
 /// XML text: the markup characters as entities, and a character XML 1.0
-/// does not allow written as its picture or `�` (t-182). The cells never
+/// does not allow written as its picture or `�`. The cells never
 /// hold a control character (they come out of `Canvas::put`), but a title
 /// can, and one stray byte would make the whole file invalid.
 fn escape(s: &str, out: &mut String) {
@@ -136,8 +136,8 @@ fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
 /// their own run pinned to their cells and the words start on the next cell.
 /// Each run is stretched to its cells with `textLength`, and a glyph from the
 /// fallback font is not exactly one cell wide; in one run, the difference
-/// would be spread over the words and shift them off the grid. (Before t-134
-/// the words could also be set in the brand serif; the split stays because
+/// would be spread over the words and shift them off the grid. (The words
+/// could once also be set in the brand serif; the split stays because
 /// the exported image is the same as with it.)
 fn split_glyph_prefix(runs: Vec<Run>) -> Vec<Run> {
     let mut out = Vec::with_capacity(runs.len());
@@ -193,7 +193,7 @@ fn is_prose_char(c: char) -> bool {
     c.is_alphanumeric() || c == ' ' || (c.is_ascii_punctuation() && c != '|')
 }
 
-/// Which of [`fonts::FACES`] a frame draws with (t-130). The regular face is
+/// Which of [`fonts::FACES`] a frame draws with. The regular face is
 /// always in; bold, italic and bold italic only when a run with that style
 /// has text; the symbols fallback only when a character is missing from the
 /// run's JetBrains Mono face and the symbols font has it (the browser falls

@@ -9,7 +9,7 @@
 //! - Notes and legends go in the right margin when there are ≥ 14 cells;
 //!   otherwise in a virtual row below the line. This works in a 75-column terminal.
 //!   A line with two or more labels at the step draws them all below it,
-//!   also when the margin is there (t-172).
+//!   also when the margin is there.
 
 use std::collections::BTreeMap;
 
@@ -27,7 +27,7 @@ pub struct LayoutOptions {
     pub step: u32,
     /// Focused line range; the rest is dimmed.
     pub focus: Option<(u32, u32)>,
-    /// The live pointer (t-030): these lines are drawn normally and every
+    /// The live pointer: these lines are drawn normally and every
     /// other code line is dimmed, over any focus or spotlight. Only the
     /// presenter's own screen passes it; every export, recording and
     /// `render.text` passes `None` (it is never part of the document).
@@ -35,14 +35,14 @@ pub struct LayoutOptions {
     pub line_numbers: bool,
     pub tab_width: usize,
     /// A typing animation of `step` is running: the code is drawn as it is
-    /// but the annotations of `step` wait until it ends (t-098).
+    /// but the annotations of `step` wait until it ends.
     pub typing: bool,
-    /// Cap on the right margin, in cells (t-113): notes, labels and legends
+    /// Cap on the right margin, in cells: notes, labels and legends
     /// wrap at it instead of spreading across a wide terminal, and the
     /// canvas ends there (a PNG is no wider than the content). `None`: the
     /// margin takes what the width leaves.
     pub margin_cap: Option<usize>,
-    /// Stable geometry (t-111): the arrow lanes, the box band, the code
+    /// Stable geometry: the arrow lanes, the box band, the code
     /// column and the margin are sized once for the maximum over every step
     /// of the document, so the code never slides sideways between steps and
     /// the margin never shrinks mid-take. Presentation mode and every export
@@ -89,7 +89,7 @@ pub enum Row {
     BoxTop(usize),
     BoxBottom(usize),
     ArrowUnder(usize),
-    /// Row under a code line with ▔ / ⌊ ⌋ for underline/bracket emphases (t-096).
+    /// Row under a code line with ▔ / ⌊ ⌋ for underline/bracket emphases.
     Emphasis(u32),
     /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
@@ -109,11 +109,11 @@ pub struct Layout {
     /// Whether labels and notes go to the right margin (false: under the line).
     pub labels_in_margin: bool,
     /// Labels and notes drawn clipped with `…`, or left out for lack of
-    /// room, in drawing order (t-101: `tiza check` warns about them).
+    /// room, in drawing order (`tiza check` warns about them).
     pub clipped_labels: Vec<ClippedLabel>,
 }
 
-/// One label the layout could not draw whole (t-101).
+/// One label the layout could not draw whole.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClippedLabel {
     /// The annotation it belongs to.
@@ -149,12 +149,12 @@ struct ArrowInfo<'a> {
 /// Text waiting to be placed in the margin (or below) of a row.
 #[derive(Clone)]
 struct Label {
-    /// The annotation it belongs to (t-101: `tiza check` names clipped labels).
+    /// The annotation it belongs to (`tiza check` names clipped labels).
     id: String,
     text: String,
     color: Rgb,
     note: bool,
-    /// Narrow mode, arrow labels (t-116): the arrow's own glyph (`─▶`)
+    /// Narrow mode, arrow labels: the arrow's own glyph (`─▶`)
     /// drawn before the text instead of the bare `·`, so the label reads
     /// as the arrow's and not as a loose comment.
     glyph: Option<String>,
@@ -202,7 +202,7 @@ fn assign_lanes<T: Copy + Ord + std::ops::Sub<Output = T>>(
     (out, lanes.len())
 }
 
-/// The geometry a take shares across its steps (t-111): computed from the
+/// The geometry a take shares across its steps: computed from the
 /// maximum over every step, so a frame at step 1 and one at step 7 put the
 /// code at the same x and keep the same margin.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -228,7 +228,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
     // Each arrow's span in the coordinates of the last step it is drawn at
     // (moves shift them together with the code, so the overlaps hold).
     let mut arrow_span: Vec<(String, u32, u32)> = Vec::new();
-    // Only the steps where something changes (t-166): the others draw
+    // Only the steps where something changes: the others draw
     // like the last of these before them.
     for step in doc.change_steps(last) {
         let projected;
@@ -291,7 +291,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
 pub const UNDERLINE_GLYPH: &str = "‾";
 /// How much of the annotation colour the emphasis glyphs keep (the rest is
 /// the background): softened so the code reads first, still visible after
-/// video compression (checked by the t-072 gate). Owner's calls on t-096:
+/// video compression (checked by the legibility gate). Tried and set by eye:
 /// 1.0 shouted, 0.55 was too soft; 0.75 sits between them.
 pub const EMPHASIS_GLYPH_OPACITY: f32 = 0.75;
 
@@ -354,7 +354,7 @@ pub fn layout(doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
 
 /// [`layout`] with the stable geometry already computed (it depends on the
 /// document, not on the width or the step): `tiza check` lays a document
-/// out at every step and many widths (t-101). Ignored unless `opts.stable`.
+/// out at every step and many widths. Ignored unless `opts.stable`.
 pub fn layout_with(
     doc: &Document,
     theme: &Theme,
@@ -376,7 +376,7 @@ pub fn layout_with(
     }
     // A margin callout with no room for its block becomes a label of its
     // first line; when that line has another label too, it goes under the
-    // line with them (t-172). Whether the block fits is only known once the
+    // line with them. Whether the block fits is only known once the
     // rows exist, so the layout runs once more with those callouts as labels
     // (the extra rows only give the other blocks more room).
     layout_pass(doc, theme, opts, geometry, &under_callouts).0
@@ -603,7 +603,7 @@ fn layout_pass(
         .min(opts.margin_cap.unwrap_or(usize::MAX));
     let labels_in_margin = margin_est >= 14;
     // A line whose margin row would get two or more labels at this step
-    // draws them all under itself, as the narrow layout does (t-172):
+    // draws them all under itself, as the narrow layout does:
     // stacked in the margin, the second one sat beside the next line and
     // read as if it explained that line.
     // Labels per line in the margin layout (a margin callout counts once
@@ -716,7 +716,7 @@ fn layout_pass(
     let mut row_of_line = BTreeMap::new();
     // "Under" texts: index into `unders` referenced by Row::Under
     let mut unders: Vec<(Label, bool)> = Vec::new(); // (label, is_note)
-    // Labels drawn with `…` or left out (t-101).
+    // Labels drawn with `…` or left out.
     let mut clipped: Vec<ClippedLabel> = Vec::new();
     let clip = |clipped: &mut Vec<ClippedLabel>, id: &str, text: &str, dropped: bool| {
         if !clipped.iter().any(|c| c.id == id && c.text == text) {
@@ -728,7 +728,7 @@ fn layout_pass(
         }
     };
     // Arrow labels drawn beside the code of their target line (narrow
-    // mode, t-116): (line, glyph, text, colour).
+    // mode): (line, glyph, text, colour).
     let mut beside: Vec<(u32, String, String, Rgb, String)> = Vec::new();
     for line in doc.source.first_line..=doc.last_line() {
         let mut tops: Vec<usize> = (0..boxes.len())
@@ -777,7 +777,7 @@ fn layout_pass(
                     Shape::Note { line: l, text } if *l == line => {
                         Some((text.clone(), color_of(a), true))
                     }
-                    // A margin callout drawn as a label (t-172): its words,
+                    // A margin callout drawn as a label: its words,
                     // as the margin would wrap them.
                     Shape::Callout {
                         from_line, text, ..
@@ -808,7 +808,7 @@ fn layout_pass(
                         label: Some(l),
                         line: ls,
                     } if from.line != to.line && to.line == line => {
-                        // The label belongs to the arrowhead (t-116): beside
+                        // The label belongs to the arrowhead: beside
                         // the code of the target line when it fits inside the
                         // code column, else on the row below behind the
                         // arrow's own glyph.
@@ -822,7 +822,7 @@ fn layout_pass(
                             display_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
                         let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
                         // A wide layout's line with several labels keeps
-                        // every one of them under it (t-172).
+                        // every one of them under it.
                         if !labels_in_margin && need <= code_w {
                             beside.push((line, glyph, l.clone(), color_of(a), a.id.clone()));
                         } else {
@@ -938,7 +938,7 @@ fn layout_pass(
         .max(10);
     let rbox_x0 = code_x + code_w + 1; // right rail: the innermost one here
     let margin_x = rbox_x0 + box_depth + 1;
-    // The cap (t-113) ends the frame: the margin is at most `cap` cells and
+    // The cap ends the frame: the margin is at most `cap` cells and
     // the canvas no wider than the content, so a capped PNG has no blank
     // band on the right and a capped terminal leaves its right columns free.
     let width = match opts.margin_cap {
@@ -959,7 +959,7 @@ fn layout_pass(
         let Row::Code(line) = row else { continue };
         let text = doc.line_text(*line).unwrap_or("");
         let in_focus = match opts.pointer {
-            // The pointer wins over the focus and the spotlights (t-030).
+            // The pointer wins over the focus and the spotlights.
             Some((a, b)) => *line >= a && *line <= b,
             None => opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line),
         };
@@ -968,7 +968,7 @@ fn layout_pass(
             canvas.put_str(0, y, &n, base.fg(theme.muted));
         }
         // A view with no loaded lines (a linked file a caller did not load)
-        // draws an empty row, never an index out of bounds (t-166).
+        // draws an empty row, never an index out of bounds.
         let segs = line
             .checked_sub(doc.source.first_line)
             .and_then(|i| segments.get(i as usize))
@@ -1071,7 +1071,7 @@ fn layout_pass(
             };
             // The emphasis glyphs (not the span's text) are drawn in a
             // softened shade of the annotation colour, so the eye lands on
-            // the code first (Luis, t-096 review: the full colour shouted).
+            // the code first (the full colour shouted).
             let soft = theme.tint_ink(ink, EMPHASIS_GLYPH_OPACITY);
             match emphasis {
                 Emphasis::Fill => {
@@ -1241,8 +1241,8 @@ fn layout_pass(
         });
         // Source row: line up to the code, with the start head in the last cell.
         // Inside the lane band the stub skips the cells of other arrows'
-        // rails, so it reads as passing *under* them (t-091, option B);
-        // crossings with a box rail become junction glyphs (t-094 AC4) in
+        // rails, so it reads as passing *under* them;
+        // crossings with a box rail become junction glyphs in
         // the rail's color (Canvas::put_line), whatever the drawing order.
         for x in lane_x + 1..code_x - 2 {
             if x < box_x0 && stub_cells.contains(&(x, ys)) {
@@ -1459,7 +1459,7 @@ fn layout_pass(
             c.put_str_clipped(x, y, &lbl.text, avail, style.prose())
         });
     }
-    // Arrow labels beside the code of their target line (t-116): after the
+    // Arrow labels beside the code of their target line: after the
     // code and the arrows, inside the code column, so a box border is never
     // touched. Several on one line follow each other.
     {
@@ -1514,7 +1514,7 @@ fn layout_pass(
             canvas.put(xx, y0, g.h, border);
         }
         canvas.put(x + w - 1, y0, g.tr, border);
-        // Whether the title had to be clipped (t-101).
+        // Whether the title had to be clipped.
         let mut title_clipped = false;
         if let Some(t) = &c.title {
             canvas.put(x + 2, y0, " ", border);
@@ -1553,7 +1553,7 @@ fn layout_pass(
         }
     }
     // Margin: reserve rows from the callout's first line.
-    // Callouts that fell back to a label, by first line (t-172).
+    // Callouts that fell back to a label, by first line.
     let mut fallbacks: Vec<(&str, u32)> = Vec::new();
     if labels_in_margin && margin_w > 0 {
         for c in &callouts {
@@ -1600,7 +1600,7 @@ fn layout_pass(
     // another line's label is never taken by a continuation or an overflow
     // (so labels do not drift away from their line); what does not fit is
     // clipped with an ellipsis on the last row it got. A line with several
-    // labels draws them under itself (t-172, `under_lines`), so a code row
+    // labels draws them under itself (`under_lines`), so a code row
     // here holds one label; should a row still get several, the next ones
     // start on the free rows after the previous one.
     if labels_in_margin && margin_w > 0 {
@@ -1619,7 +1619,7 @@ fn layout_pass(
                     base.fg(l.color)
                 };
                 // No free row or no room: this label and the next ones
-                // of the line are left out (t-101 reports them).
+                // of the line are left out (`tiza check` reports them).
                 let left_out = |clipped: &mut Vec<ClippedLabel>| {
                     for l in &labels[k..] {
                         clip(clipped, &l.id, &l.text, true);
@@ -1665,7 +1665,7 @@ fn layout_pass(
         }
     }
 
-    // ---- scripted selection and cursor (t-105): what `select` and
+    // ---- scripted selection and cursor: what `select` and
     // `cursor` moves left at this step, drawn like the TUI's own ----
     if let Some((from, to)) = scripted_selection {
         let sel = CellStyle::new().bg(theme.tint(theme.accent, 0.35));
@@ -1777,7 +1777,7 @@ impl Glyphs {
 /// Runs `draw` (text written from `x` on row `y`, returning its width) and
 /// gives the cells it wrote back the background they had: a label under a
 /// line or beside the code takes the fill of the box it sits in, not the
-/// base background (t-172).
+/// base background.
 fn keep_bg(
     canvas: &mut Canvas,
     x: usize,
@@ -2213,7 +2213,7 @@ mod tests {
         // Line 3 has its own label (the mark), so the long note on line 2
         // cannot continue onto row 3: it is clipped there with an ellipsis.
         // Labels never drift away from their line (a second label on line 2
-        // goes under it with the first, t-172).
+        // goes under it with the first).
         let row = |line: u32| l.row_of_line[&line];
         assert!(
             l.canvas.row_text(row(2)).contains("s is born here"),
@@ -2445,8 +2445,8 @@ mod tests {
         println!("{text}");
         assert!(l.labels_in_margin);
         assert!(!l.rows.iter().any(|r| matches!(r, Row::Under(_))), "{text}");
-        // On the row of L3, then over the free rows of L4 and L5 (t-172
-        // keeps the margin path for a line with one label).
+        // On the row of L3, then over the free rows of L4 and L5 (a line
+        // with one label keeps the margin path).
         let r3 = l.canvas.row_text(l.row_of_line[&3]);
         assert!(
             r3.contains("takes(s);") && r3.contains("┆ takes(s) moves"),
@@ -2489,7 +2489,7 @@ mod tests {
     #[test]
     fn under_labels_keep_the_fill_of_the_box_they_sit_in() {
         // Three labels on L3 inside a filled box: the cells of their under
-        // rows keep the box's tint, as the code rows around them (t-172).
+        // rows keep the box's tint, as the code rows around them.
         let mut d = doc();
         for (id, text) in [("n1", "first"), ("n2", "second")] {
             d.add(Annotation {
@@ -2666,7 +2666,7 @@ mod tests {
             );
             assert!(!row.contains("│  ╭"), "row {y} carries a box rail: {row}");
         }
-        // The narrower case (t-092's test) is unchanged: callout inside the box.
+        // The narrower case is unchanged: callout inside the box.
         let inside = layout(
             &callout_doc(Placement::Below),
             &th,

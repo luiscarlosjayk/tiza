@@ -15,7 +15,7 @@ use unicode_width::UnicodeWidthStr;
 use crate::app::{App, Mode, Overlay, Selection};
 
 /// A canvas colour for ratatui: real colours as they are, the host-palette
-/// sentinels of the `terminal` theme (t-119) as the terminal's own.
+/// sentinels of the `terminal` theme as the terminal's own.
 fn rgb(c: Rgb) -> Color {
     match tiza_core::theme::host_color(c) {
         Some(tiza_core::theme::HostColor::Default) => Color::Reset,
@@ -149,7 +149,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     // Keep the cursor visible — with the virtual rows that belong to its
     // line: the title rows of boxes that open on it (above) and the rows
-    // under it (emphasis, labels, bottom borders) when they fit (t-114).
+    // under it (emphasis, labels, bottom borders) when they fit.
     // Otherwise a box whose first line is the first visible row loses its
     // top border and title.
     if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {
@@ -330,7 +330,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         draw_status(frame, app, &layout, last_row);
     } else if let Mode::Command(input) = &app.mode {
         // Presentation mode has no status bar, but what is typed after `:`
-        // and its result must be seen (t-107): the last row, only then.
+        // and its result must be seen: the last row, only then.
         draw_command_line(frame, app, input, last_row);
     } else if app.present_message_shown() {
         draw_present_message(frame, app, last_row);
@@ -382,8 +382,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 }
 
 /// The `:` line being typed, with completions and notices on the right:
-/// the status bar's place outside presentation mode, the last row in it
-/// (t-107).
+/// the status bar's place outside presentation mode, the last row in it.
 fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
     let th = &app.theme;
     let cmd = Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg));
@@ -431,9 +430,9 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
 
 /// `m` cut to `room` cells with an ellipsis, keeping the beginning — the
 /// useful part of a message. A message that ends saying where to find what
-/// it names — a step hint (`(step 1, press n)`, t-132) or a file tail
-/// (`(src/queue.rs, not shown at step 2)`, t-155) — keeps that tail whole
-/// (t-173): the middle goes first, never below the message's subject
+/// it names — a step hint (`(step 1, press n)`) or a file tail
+/// (`(src/queue.rs, not shown at step 2)`) — keeps that tail whole:
+/// the middle goes first, never below the message's subject
 /// ([`message_subject`]: `a17: box… (step 1, press n)`, down to
 /// `a17… (step 1, press n)`); then the subject (`(step 1, press n)`); and
 /// with no room for the tail either, the beginning without it. A tail is
@@ -454,7 +453,7 @@ pub fn fit_message(m: &str, room: usize) -> String {
 }
 
 /// `head` + `tail` in `room` cells with the subject of `head` and the whole
-/// `tail`, the middle cut (t-173): `a17: box… (step 1, press n)`; `None`
+/// `tail`, the middle cut: `a17: box… (step 1, press n)`; `None`
 /// when not even the subject and the tail fit.
 fn keep_subject_and_tail(head: &str, tail: &str, room: usize) -> Option<String> {
     let tw = tail.width();
@@ -468,7 +467,7 @@ fn keep_subject_and_tail(head: &str, tail: &str, room: usize) -> Option<String> 
 }
 
 /// With no room for the subject: the tail alone, or, with no room for it
-/// either, the beginning without it — never a cut tail (t-173).
+/// either, the beginning without it — never a cut tail.
 fn tail_or_beginning(head: &str, tail: &str, room: usize) -> String {
     let alone = tail.trim_start();
     if alone.width() <= room {
@@ -494,8 +493,8 @@ fn cut_to_width(s: &str, max: usize) -> String {
     out
 }
 
-/// What a cut message with a tail keeps of its beginning at the least
-/// (t-173), as a byte length of `head`: the ids before the first `: `
+/// What a cut message with a tail keeps of its beginning at the least,
+/// as a byte length of `head`: the ids before the first `: `
 /// (`a17` of `a17: box 3-5`, `a3, a4`, or `accepted p1` of a supervised
 /// acceptance); else, for a count, the count and what it counts (`3 agent
 /// annotations` of `3 agent annotations not shown`); else the first word
@@ -524,7 +523,7 @@ fn short_file_tail(tail: &str) -> Option<(&str, String)> {
 }
 
 /// Whether `file`'s name alone names one file of the document: its main
-/// file and every `code.link`, at any step (t-173). Two `mod.rs` keep
+/// file and every `code.link`, at any step. Two `mod.rs` keep
 /// their directories.
 fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
     let name = |f: &str| f.rsplit('/').next().unwrap_or(f).to_string();
@@ -534,12 +533,12 @@ fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
     files.iter().filter(|f| name(f) == wanted).count() <= 1
 }
 
-/// The status bar's message `m` when it ends in a tail and does not fit
-/// (t-173), as the text for the right of the bar (with its trailing blank),
+/// The status bar's message `m` when it ends in a tail and does not fit,
+/// as the text for the right of the bar (with its trailing blank),
 /// giving way in this order: the optional left segments, the middle of the
 /// message, the directory of a file tail (only when no other file of the
 /// document has its name), the `↪ file` view indicator in `left[view]`
-/// (t-209: it names the other file the message is often about), the
+/// (it names the other file the message is often about), the
 /// terminal-size badge in `left[badge]` (`⚠ labels`, then `⚠`), the
 /// subject; the tail is never cut. Each step is taken only when the one
 /// before is not enough, so a wider bar never shows less of the subject,
@@ -585,7 +584,7 @@ fn fit_bar_message(
         _ => &[""],
     };
     let layout_badge = badge.filter(|_| forms.len() > 1);
-    // The steps: the badge whole with the indicator, then (t-209) the
+    // The steps: the badge whole with the indicator, then the
     // indicator gone with the badge still whole, then the badge's shorter
     // forms.
     let mut steps: Vec<(&'static str, bool)> = vec![(forms[0], false)];
@@ -622,7 +621,7 @@ fn fit_bar_message(
 }
 
 /// The result of the command just run, on the last row in presentation
-/// mode, for [`crate::app::PRESENT_MESSAGE_TTL`] (t-107): the status bar's
+/// mode, for [`crate::app::PRESENT_MESSAGE_TTL`]: the status bar's
 /// text on the command line's row, nothing else of the bar.
 fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
     let Some((m, is_err)) = &app.message else {
@@ -705,7 +704,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         Span::styled(" ╭▶ ", accent),
         Span::styled(mode, accent),
         Span::styled(
-            // `step 3/7 · Shared borrow` on a named step (t-099); a long
+            // `step 3/7 · Shared borrow` on a named step; a long
             // title is cut so the rest of the bar keeps its room.
             match app.doc.step_title(app.doc.step) {
                 Some(t) => format!(
@@ -730,7 +729,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.layout_stable && !app.present {
         left.push(Span::styled("  ⊞ stable", muted));
     }
-    // One indicator for every way of not writing the sidecar (t-110): a
+    // One indicator for every way of not writing the sidecar: a
     // read-only file, `--no-save`, `:autosave off`, a foreign `scene put`.
     if app.save_error.is_some() {
         left.push(Span::styled(
@@ -792,7 +791,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     }
     // What goes on the right, by priority: the last message, then the
     // selection hint, then the key hints. A failed save is not repeated
-    // here: it was said once and the left indicator keeps it (t-110).
+    // here: it was said once and the left indicator keeps it.
     let err_style = Style::default()
         .fg(rgb(th.error))
         .bg(rgb(th.status_bg))
@@ -823,7 +822,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             ),
         };
     // A message with a tail keeps the `↪ file` view indicator until its
-    // middle and the directory have given way (t-209).
+    // middle and the directory have given way.
     let view = (app.shown_view().is_some()
         && message.is_some_and(|(m, _)| crate::app::step_hint_start(m).is_some()))
     .then_some(5);
@@ -857,8 +856,8 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             left[drop_idx] = Span::styled("", bar);
         }
     }
-    // A message with a tail that does not fit gives way in its own order
-    // (t-173); every other message, as before.
+    // A message with a tail that does not fit gives way in its own order;
+    // every other message, as before.
     let tailed = match message {
         Some((m, _)) if essential && lw(&left) + right_text.width() + 1 > width => {
             crate::app::step_hint_start(m).map(|_| m.as_str())
@@ -1041,7 +1040,7 @@ mod tests {
     const FILE_TAIL: &str = "a9: note L17 added by agent (src/queue.rs, not shown at step 2)";
     const GROUPED: &str = "3 agent annotations not shown (step 1, press n)";
 
-    /// Every message shape that reaches the bar with a tail (t-132, t-155),
+    /// Every message shape that reaches the bar with a tail,
     /// with wide characters near the cut, and two without one.
     const SHAPES: &[&str] = &[
         AGENT_BOX,
@@ -1063,7 +1062,7 @@ mod tests {
     ];
 
     /// Whether `r` ends in a cut form of `tail`: a piece of its beginning
-    /// and `…` (`(st…`, as main drew it before t-173).
+    /// and `…` (`(st…`, as `fit_message` once drew it).
     fn ends_in_cut_tail(r: &str, tail: &str) -> bool {
         let Some(before) = r.strip_suffix('…') else {
             return false;
@@ -1122,7 +1121,7 @@ mod tests {
 
     #[test]
     fn the_cut_tail_detector_catches_mains_cut() {
-        // What `fit_message` drew before t-173 at 16 cells.
+        // What `fit_message` once drew at 16 cells.
         assert!(ends_in_cut_tail("a1: box 3-5 (st…", " (step 1, press n)"));
         assert!(ends_in_cut_tail(
             "a1: box (step 1, pr…",
@@ -1150,7 +1149,7 @@ mod tests {
         assert_eq!(fit_message(AGENT_BOX, 16), "a1: box 3-5 add…");
         assert_eq!(fit_message(AGENT_BOX, 1), "…");
         assert_eq!(fit_message(AGENT_BOX, 0), "");
-        // t-132's cases keep their output.
+        // The step-hint cases keep their output.
         let m = "a17: box 3-5 a long label (step 1, press n)";
         assert_eq!(fit_message(m, 27), "a17: box… (step 1, press n)");
         assert_eq!(fit_message(m, 10), "a17: box …");

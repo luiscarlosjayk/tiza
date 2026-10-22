@@ -1,4 +1,4 @@
-//! Property tests (t-052): anchors and layout never panic and never overflow
+//! Property tests: anchors and layout never panic and never overflow
 //! for arbitrary code, sizes and annotations; documents round-trip through JSON.
 
 use proptest::prelude::*;

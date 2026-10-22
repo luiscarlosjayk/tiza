@@ -246,14 +246,14 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     // A linked file that cannot be read is named by the document's own
-    // `code.link` (t-166).
+    // `code.link`.
     load_views(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
 }
 
 /// Readies the document a live instance handed out (`scene.get`) for an
-/// export, as [`parse_document`] readies a `.tiza` (t-166): its main code
+/// export, as [`parse_document`] readies a `.tiza`: its main code
 /// and the code of every file a `code.link` move names come embedded in it
 /// (the instance's own copy, [`Document::embedded_copy`]), so the export
 /// draws the files the live
@@ -383,8 +383,8 @@ pub fn canonicalize_links(doc: &mut Document, base_dir: Option<&Path>) {
     }
 }
 
-/// Loads the code of every file the document's `code.link` moves name
-/// (t-105): from the embedded `views` when present, else from disk next to
+/// Loads the code of every file the document's `code.link` moves name:
+/// from the embedded `views` when present, else from disk next to
 /// the document. A missing file is an error naming the move and the path.
 /// Aliases of one file are one view first ([`canonicalize_links`]).
 pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
@@ -456,7 +456,7 @@ pub fn read_view_file(file: &str, base_dir: Option<&Path>) -> Result<Vec<String>
 /// Migrations between schema versions: `(from, f)` turns a schema-`from`
 /// JSON value into schema `from + 1`. Applied in order on load; files are
 /// written in the current schema. Every bump of `SCHEMA_VERSION` adds one
-/// entry here and a fixture under `qa/fixtures/compat/` (t-073 checks both).
+/// entry here and a fixture under `qa/fixtures/compat/` (a QA test checks both).
 pub const MIGRATIONS: &[(u32, Migration)] = &[];
 
 /// A function that rewrites a raw document of one schema into the next.

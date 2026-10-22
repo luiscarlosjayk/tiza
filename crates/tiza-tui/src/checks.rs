@@ -1,6 +1,6 @@
-//! The live `check` off the TUI thread (t-210).
+//! The live `check` off the TUI thread.
 //!
-//! A check of a long tutorial takes seconds (t-200's search for the
+//! A check of a long tutorial takes seconds (the search for the
 //! narrowest clean width lays every step out at many widths). Run where the
 //! socket requests are answered, it froze the screen, the keys and every
 //! other request until it ended. Here it runs on a thread of its own, on a
@@ -175,7 +175,7 @@ fn check(job: &Job, width: usize) -> Result<tiza_core::check::Report, String> {
             job.base.as_deref(),
             &CheckOptions { width: Some(width) },
         );
-        // Test hook (t-166), only with the `test-hooks` feature: a panic
+        // Test hook, only with the `test-hooks` feature: a panic
         // after the check did its work.
         #[cfg(feature = "test-hooks")]
         if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "request:check") {

@@ -10,7 +10,7 @@
 //! - [`protocol`][]: types of the local NDJSON API shared by the TUI, CLI and MCP.
 //! - [`fs`][]: open sources/`.tiza` files and save.
 //! - [`history`][]: undo/redo.
-//! - [`printable`][]: control characters made visible (t-182).
+//! - [`printable`][]: control characters made visible.
 
 pub mod anim;
 pub mod canvas;

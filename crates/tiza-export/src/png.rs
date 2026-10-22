@@ -55,7 +55,7 @@ pub fn rasterize(svg: &str, o: &PngOptions) -> Result<resvg::tiny_skia::Pixmap, 
     let w = (size.width() * o.scale).ceil().max(1.0) as u32;
     let h = (size.height() * o.scale).ceil().max(1.0) as u32;
     // Bounded before any allocation: a typo in width or scale must be an
-    // error, never an aborted process (t-115).
+    // error, never an aborted process.
     if w > crate::MAX_SIDE_PX
         || h > crate::MAX_SIDE_PX
         || u64::from(w) * u64::from(h) > crate::MAX_PIXELS

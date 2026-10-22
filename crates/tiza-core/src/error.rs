@@ -26,13 +26,13 @@ pub enum Error {
     #[error("text {0:?} not found in the code")]
     TextNotFound(String),
     /// A target named with its role, quoted the Tiza way (`find «x»`,
-    /// `start marker «x»`), that matches nothing (t-167: never put inside
+    /// `start marker «x»`), that matches nothing (never put inside
     /// another pair of quotes as if the phrase were the text searched).
     #[error("{0} matches nothing in the code")]
     NoMatch(String),
     /// A move's target that matches nothing at its step, in the words of
     /// `tiza check`: `move #2, step 3: find «x» matches nothing in the code
-    /// at this step` (t-167). `index` is 1-based; `what` names the target.
+    /// at this step`. `index` is 1-based; `what` names the target.
     #[error("move #{index}, step {step}: {what} matches nothing in the code at this step")]
     MoveNoMatch {
         index: usize,
@@ -41,7 +41,7 @@ pub enum Error {
     },
     #[error("{0}")]
     Invalid(String),
-    /// `step.goto` / `tiza goto` with an id no named step has (t-099).
+    /// `step.goto` / `tiza goto` with an id no named step has.
     #[error("{0}")]
     StepNotFound(String),
     #[error(".tiza file with schema {found}; this version understands up to {supported}")]
@@ -57,7 +57,7 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     /// serde's message, an `invalid type` value cut to [`QUOTED_MAX`]
-    /// characters (t-189). Not a `source`: a chain printed with `{:#}`
+    /// characters. Not a `source`: a chain printed with `{:#}`
     /// would repeat serde's message whole after the cut one.
     #[error("{}", shorten_quoted_value(&.0.to_string()))]
     Json(serde_json::Error),
@@ -107,14 +107,14 @@ const QUOTED: [(&str, char); 5] = [
     ("character `", '`'),
 ];
 
-/// Longest string an `invalid type` message quotes, in characters (t-189).
+/// Longest string an `invalid type` message quotes, in characters.
 pub const QUOTED_MAX: usize = 40;
 
 /// What may come before serde's own text in a message that reaches
 /// [`serde_text`]: rmcp's wording for MCP arguments.
 const SERDE_PREFIXES: [&str; 2] = ["", "failed to deserialize parameters: "];
 
-/// serde's message for a value it could not read (t-167 R1, R2; t-189):
+/// serde's message for a value it could not read:
 /// a closed value (a color, a type, an op…: `unknown variant`) is answered
 /// with the valid names only, never with what was sent, and so is an
 /// `invalid value`; an `invalid type` names what was sent (`invalid type:
@@ -155,7 +155,7 @@ fn invalid_type_at(msg: &str) -> Option<usize> {
 }
 
 /// An `invalid type` message with the string it quotes cut to
-/// [`QUOTED_MAX`] characters and `…` (t-189): `invalid type: string
+/// [`QUOTED_MAX`] characters and `…`: `invalid type: string
 /// "xxxx…", expected u32`. serde writes a string as Rust's `{:?}` does, so
 /// a newline or an escape is already `\n` or `\u{1b}`, never raw; the cut
 /// never splits one. Numbers and other kinds are short and stay; any
@@ -226,7 +226,7 @@ mod tests {
                 "unknown variant `x, expected `y`, expected `box`",
                 "unknown variant «…», expected `box`",
             ),
-            // `invalid type` names what was sent (t-189).
+            // `invalid type` names what was sent.
             (
                 "invalid type: string \"Zq7\\\"v\", expected u32",
                 "invalid type: string \"Zq7\\\"v\", expected u32",

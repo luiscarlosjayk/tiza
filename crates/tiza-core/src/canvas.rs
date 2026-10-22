@@ -26,7 +26,7 @@ pub struct CellStyle {
     pub italic: bool,
     /// Prose (notes, labels, legends). The SVG exporter keeps a label's
     /// leading mark glyphs in their own run so the words stay on the grid
-    /// (until t-134 it could also set the words in a brand serif).
+    /// (it once could also set the words in a brand serif).
     /// Terminals ignore it.
     pub prose: bool,
 }
@@ -98,7 +98,7 @@ impl Default for Cell {
 /// One grapheme cluster, stored inline (no heap allocation) when it fits in
 /// 22 bytes — every box-drawing glyph, ASCII, CJK and nearly every emoji do. A
 /// 2,000-line document is ~250,000 cells, so a `String` per cell was ~10 ms
-/// of allocation per frame (t-054).
+/// of allocation per frame.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Sym {
     Inline { len: u8, bytes: [u8; 22] },
@@ -228,7 +228,7 @@ impl Canvas {
 
     /// Writes a grapheme (width 1 or 2) at (x, y). Returns the width used.
     ///
-    /// The one door into the cells (t-182): a control character is stored
+    /// The one door into the cells: a control character is stored
     /// as its one-cell picture (`␛`, `␀`, `␡`, `�`…) and a bidi control as
     /// nothing (it takes no cell, so nothing is written and the width is
     /// 0), so no drawing or export ever holds a raw control byte. See

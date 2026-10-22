@@ -1,4 +1,4 @@
-//! The host terminal's appearance (t-119): asks for the background (OSC 11)
+//! The host terminal's appearance: asks for the background (OSC 11)
 //! and foreground (OSC 10) colours, decides light or dark by luminance, and
 //! parses the answers — the one that comes back before crossterm reads the
 //! terminal (at start-up, through `/dev/tty` with a timed read) and the ones

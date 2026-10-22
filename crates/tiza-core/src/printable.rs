@@ -1,4 +1,4 @@
-//! Control characters made visible (t-182).
+//! Control characters made visible.
 //!
 //! Code and annotation text can carry bytes a terminal or an XML parser
 //! acts on: ESC starts a sequence that moves the cursor or retitles the

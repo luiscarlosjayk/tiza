@@ -66,7 +66,7 @@ pub fn mono_face(bold: bool, italic: bool) -> usize {
 pub const SYMBOLS_FACE: usize = 4;
 
 /// Character maps of [`FACES`], in the same order, to ask which face draws a
-/// character (t-130: the SVG embeds only the faces a frame uses).
+/// character (the SVG embeds only the faces a frame uses).
 pub struct Coverage {
     maps: Vec<Option<skrifa::charmap::Charmap<'static>>>,
 }

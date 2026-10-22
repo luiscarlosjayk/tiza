@@ -1,4 +1,4 @@
-//! Preflight (t-101): `tiza check FILE` loads a document the way the TUI
+//! Preflight: `tiza check FILE` loads a document the way the TUI
 //! does, but instead of stopping at the first problem it lists them all —
 //! every anchor and marker, every move at its step, every linked file,
 //! every annotation a move hides (unanchored, outside a window, or of a
@@ -369,7 +369,7 @@ fn check_text_as(
     if let Some(src @ CodeSource::File { .. }) = main {
         doc.code_src = src;
     }
-    // ---- the numbers (t-166): a step past the cap or a first line near
+    // ---- the numbers: a step past the cap or a first line near
     // `u32::MAX` is one error, before anything is laid out step by step.
     if let Err(e) = doc.check_bounds() {
         out.push(Finding::new(Level::Error, "bounds", e.to_string()));
@@ -392,7 +392,7 @@ fn check_text_as(
 }
 
 /// Checks a document already loaded in memory — the live one of a TUI, for
-/// the socket's `check` (t-101): the same checks as `tiza check` on the
+/// the socket's `check`: the same checks as `tiza check` on the
 /// file, on the code and linked files the TUI holds. Only the report
 /// leaves. `base_dir` resolves relative files the document names but did
 /// not load.
@@ -518,7 +518,7 @@ fn load_links(
     base_dir: Option<&Path>,
     out: &mut Vec<Finding>,
 ) -> BTreeSet<String> {
-    // Aliases of one file are one view (t-183 review A1).
+    // Aliases of one file are one view.
     crate::fs::canonicalize_links(doc, base_dir);
     let mut missing = BTreeSet::new();
     let mut by_file: BTreeMap<String, Vec<(usize, u32, String)>> = BTreeMap::new();
@@ -888,7 +888,7 @@ fn lines_text(lines: &[u32]) -> String {
         .join(", ")
 }
 
-/// A range made from two markers (t-097): an error when it cannot be found
+/// A range made from two markers: an error when it cannot be found
 /// again, a warning when a marker matches more than once (the range takes
 /// the first match, so an edit above it can move it).
 fn check_markers(
@@ -983,7 +983,7 @@ pub fn steps_text(steps: &[u32]) -> String {
 /// dropped)` → the steps it is clipped at.
 fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String, bool), Vec<u32>)> {
     let mut out: Vec<((String, String, bool), Vec<u32>)> = Vec::new();
-    // Laid out once per step where something changes (t-166); a label is
+    // Laid out once per step where something changes; a label is
     // clipped at every step of that step's run.
     for (i, step) in take.steps.iter().enumerate() {
         if !step.labels {

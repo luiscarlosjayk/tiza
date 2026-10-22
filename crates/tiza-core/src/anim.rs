@@ -1,6 +1,6 @@
-//! The frames of a recording (t-120): every step of the document, the
-//! intermediate frames of its typed moves (t-098) and how long each one
-//! stays. One geometry for the whole take (t-111), so the canvases are what
+//! The frames of a recording: every step of the document, the
+//! intermediate frames of its typed moves and how long each one
+//! stays. One geometry for the whole take, so the canvases are what
 //! the audience sees; the GIF encoder in `tiza-export`
 //! and an MP4 muxer draw them without any further decision.
 
@@ -14,7 +14,7 @@ use crate::theme::Theme;
 pub struct AnimOptions {
     /// Seconds each step stays on screen (the last one twice as long, so a
     /// loop does not cut the end short). A step with `auto_advance_ms`
-    /// (t-099) stays that long instead: the document's own timing.
+    /// stays that long instead: the document's own timing.
     pub interval: f64,
     pub width: usize,
     pub line_numbers: bool,
@@ -47,7 +47,7 @@ pub struct Frame {
 
 /// Validates the seconds each step of a recording stays (`--interval`,
 /// `export_image {interval}`): a finite number from 0 to one hour
-/// ([`crate::model::MAX_HOLD_MS`]) (t-166: `1e308` overflowed, `1e7` hung
+/// ([`crate::model::MAX_HOLD_MS`]) (`1e308` would overflow, `1e7` would hang
 /// the GIF encoder).
 pub fn check_interval(secs: f64) -> Result<f64, crate::Error> {
     let max = crate::model::MAX_HOLD_MS as f64 / 1000.0;
@@ -61,7 +61,7 @@ pub fn check_interval(secs: f64) -> Result<f64, crate::Error> {
 }
 
 /// Steps whose frame holds for their own `auto_advance_ms` instead of the
-/// interval (t-099), for the export's summary line.
+/// interval, for the export's summary line.
 pub fn timed_steps(doc: &Document, opts: &AnimOptions) -> Vec<u32> {
     let first = if opts.from_zero { 0 } else { 1 };
     (first..=doc.max_step().max(first))
@@ -74,7 +74,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
     let first = if opts.from_zero { 0 } else { 1 };
     let last = doc.max_step().max(first);
     // Bounded by the callers (`check_interval`); saturating anyway, so a
-    // caller that forgets cannot overflow (t-166).
+    // caller that forgets cannot overflow.
     let max = crate::model::MAX_HOLD_MS;
     let hold = ((opts.interval.max(0.0) * 1000.0).round() as u64).min(max);
     let options = |d: &Document, step: u32, typing: bool| LayoutOptions {
@@ -122,8 +122,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 });
             }
         }
-        // The document's own timing first (t-099, decided by Luis
-        // 2026-10-18): a named step's `auto_advance_ms` is how long its
+        // The document's own timing first: a named step's `auto_advance_ms` is how long its
         // frame stays, after its typed frames, as in the TUI.
         let delay = match doc.auto_advance_ms(step) {
             Some(ms) => ms.min(max),
@@ -147,7 +146,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
 }
 
 /// Pads every canvas with the theme background to the widest and tallest
-/// of them, so the frames of a take (or `render --all-steps`, t-101) all
+/// of them, so the frames of a take (or `render --all-steps`) all
 /// have the same pixel size.
 pub fn same_size(canvases: &mut [Canvas], theme: &Theme) {
     let width = canvases.iter().map(|c| c.width).max().unwrap_or(1);
@@ -211,7 +210,7 @@ mod tests {
         assert!(f[3].canvas.to_plain_text().contains("hello"));
         assert!(!f[1].canvas.to_plain_text().contains("fn b()"));
         assert!(f[2].canvas.to_plain_text().contains("fn b()"));
-        // t-099: `auto_advance_ms` is the step's duration, after its typing.
+        // `auto_advance_ms` is the step's duration, after its typing.
         d.steps = vec![crate::steps::NamedStep {
             step: 1,
             id: Some("b".into()),

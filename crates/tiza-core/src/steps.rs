@@ -1,4 +1,4 @@
-//! Named steps (ADR 0007 §4, t-099): an optional `steps` list in the
+//! Named steps (ADR 0007 §4): an optional `steps` list in the
 //! document gives a step a title, an id that `step.goto` / `tiza goto`
 //! jump to, and an `auto_advance_ms` after which the TUI (and the native
 //! GIF/MP4) moves on by itself. Each entry names its step by number
