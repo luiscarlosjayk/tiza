@@ -1707,10 +1707,11 @@ pub fn saturation_bounds(doc: &Document, theme: &Theme) -> Vec<(u32, Bound)> {
 /// of the callouts, which matter only when one has no rows for its block;
 /// the second counts them as a label too.
 fn take_saturation(take: &Take) -> [usize; 2] {
-    use crate::canvas::display_width;
+    use crate::canvas::{display_width, drawn_width};
     let doc = take.doc;
     let g = &take.geometry;
-    let w = |t: &str| display_width(t, 4);
+    // A label as it is drawn: a zero-width space takes a cell there.
+    let w = |t: &str| display_width(t, 4).max(drawn_width(t));
     let arrows = doc
         .annotations
         .iter()

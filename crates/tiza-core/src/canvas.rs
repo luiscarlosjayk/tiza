@@ -434,6 +434,24 @@ pub fn display_width(s: &str, tab_width: usize) -> usize {
     w
 }
 
+/// Columns `s` takes once drawn with [`Canvas::put_str`]: every grapheme
+/// takes at least one cell (a zero-width space or a lone combining mark
+/// too), except one with nothing to show (a bidi control). A tab is one
+/// cell there (its control picture). Wider than [`display_width`] for text
+/// with zero-width graphemes.
+pub fn drawn_width(s: &str) -> usize {
+    s.graphemes(true)
+        .map(|g| {
+            let shown = crate::printable::cell_symbol(g);
+            if shown.is_empty() {
+                0
+            } else {
+                UnicodeWidthStr::width(&*shown).max(1)
+            }
+        })
+        .sum()
+}
+
 /// Weight of a line glyph: light, thick or double; `None` for anything else.
 fn weight(g: &str) -> Option<(bool, u8)> {
     // (horizontal?, weight) with weight 0 light, 1 thick, 2 double
