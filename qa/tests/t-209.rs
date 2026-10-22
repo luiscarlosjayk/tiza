@@ -18,7 +18,8 @@
 //!   `↪ file` view indicator, then the warning badge, before the subject;
 //!   (4) the subject; the tail never.
 //! - AC4 Monotonic: widening never removes an element (the middle may lose
-//!   a few letters). Narrow widths are another card's (t-214).
+//!   a few letters). Narrow widths keep t-173's order on purpose (t-214,
+//!   won't do).
 //! - AC5 This file: the badge's bytes are ASCII; the `code.link` document
 //!   at 125 columns keeps `↪ src/b/mod.rs`; a width sweep for AC4.
 //!   CHANGELOG.
