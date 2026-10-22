@@ -350,7 +350,10 @@ fn check_text_as(
                 Finding::new(
                     Level::Error,
                     "schema",
-                    format!("does not follow the .tiza format: {e}"),
+                    format!(
+                        "does not follow the .tiza format: {}",
+                        crate::error::shorten_quoted_value(&e.to_string())
+                    ),
                 )
                 .line(line),
             );

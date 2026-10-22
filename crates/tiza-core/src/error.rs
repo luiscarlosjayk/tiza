@@ -56,7 +56,9 @@ pub enum Error {
     Because { message: String, inner: Box<Error> },
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
+    /// serde's message, an `invalid type` value cut to [`QUOTED_MAX`]
+    /// characters (t-189).
+    #[error("{}", shorten_quoted_value(&.0.to_string()))]
     Json(#[from] serde_json::Error),
 }
 
@@ -89,33 +91,76 @@ pub const ELIDED: &str = "«…»";
 /// rest is serde's message, through [`serde_text`].
 pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
 
-/// serde's message for a value it could not read without that value
-/// (t-167 R1, R2): a closed value (a color, a type, an op…) is answered
-/// with the valid names only, never with what was sent.
-/// serde's list of what it expected (after the last `, expected `) is
-/// Tiza's own names and stays whole; before it, the value received
-/// (`unknown variant `x``, `invalid type: string "x"`, a number) becomes
-/// [`ELIDED`]. A field name stays: `unknown field `x`` names it, as
-/// `missing field` and `duplicate field` do.
+/// The values serde quotes in its messages: how each opens and closes.
+const QUOTED: [(&str, char); 5] = [
+    ("unknown variant `", '`'),
+    ("string \"", '"'),
+    ("integer `", '`'),
+    ("floating point `", '`'),
+    ("character `", '`'),
+];
+
+/// Longest value an `invalid type` message quotes, in characters (t-189).
+pub const QUOTED_MAX: usize = 40;
+
+/// Where the value serde quotes in `head` is: the range from its opening
+/// delimiter to its closing one, both included.
+fn quoted_range(head: &str, open: &str, close: char) -> Option<std::ops::Range<usize>> {
+    let k = head.find(open)?;
+    let from = k + open.len() - 1;
+    let to = head[from + 1..]
+        .rfind(close)
+        .map_or(head.len(), |e| from + 1 + e + 1);
+    Some(from..to)
+}
+
+/// serde's message for a value it could not read (t-167 R1, R2; t-189):
+/// a closed value (a color, a type, an op…: `unknown variant`) is answered
+/// with the valid names only, never with what was sent, and so is an
+/// `invalid value`; an `invalid type` names what was sent (`invalid type:
+/// string "three", expected u32`), cut by [`shorten_quoted_value`]. serde's
+/// list of what it expected (after the last `, expected `) is Tiza's own
+/// names and stays whole. A field name stays: `unknown field `x`` names
+/// it, as `missing field` and `duplicate field` do.
 pub fn serde_text(msg: &str) -> String {
+    if msg.contains("invalid type: ") {
+        return shorten_quoted_value(msg);
+    }
     let (head, tail) = msg.split_at(msg.rfind(", expected ").unwrap_or(msg.len()));
     let mut head = head.to_string();
-    for (open, close) in [
-        ("unknown variant `", '`'),
-        ("string \"", '"'),
-        ("integer `", '`'),
-        ("floating point `", '`'),
-        ("character `", '`'),
-    ] {
-        if let Some(k) = head.find(open) {
-            let from = k + open.len() - 1;
-            let to = head[from + 1..]
-                .rfind(close)
-                .map_or(head.len(), |e| from + 1 + e + 1);
-            head.replace_range(from..to, ELIDED);
+    for (open, close) in QUOTED {
+        if let Some(r) = quoted_range(&head, open, close) {
+            head.replace_range(r, ELIDED);
         }
     }
     head + tail
+}
+
+/// An `invalid type` message with the value it quotes cut to
+/// [`QUOTED_MAX`] characters and `…` (t-189): `invalid type: string
+/// "xxxx…", expected u32`. serde writes a string as Rust's `{:?}` does, so
+/// a newline or an escape is already `\n` or `\u{1b}`, never raw. What comes
+/// before `invalid type: ` (a caller's prefix, as rmcp's `failed to
+/// deserialize parameters: `) stays; any other message is returned as it
+/// is.
+pub fn shorten_quoted_value(msg: &str) -> String {
+    let Some(at) = msg.find("invalid type: ") else {
+        return msg.to_string();
+    };
+    let (prefix, msg) = msg.split_at(at);
+    let (head, tail) = msg.split_at(msg.rfind(", expected ").unwrap_or(msg.len()));
+    let mut head = head.to_string();
+    for (open, close) in QUOTED {
+        if let Some(r) = quoted_range(&head, open, close) {
+            let inner = &head[r.start + 1..r.end.saturating_sub(1).max(r.start + 1)];
+            if inner.chars().count() > QUOTED_MAX {
+                let cut: String = inner.chars().take(QUOTED_MAX).collect();
+                head.replace_range(r.start + 1..r.end - 1, &format!("{cut}…"));
+            }
+            break;
+        }
+    }
+    format!("{prefix}{head}{tail}")
 }
 
 #[cfg(test)]
@@ -138,13 +183,14 @@ mod tests {
                 "unknown variant `x, expected `y`, expected `box`",
                 "unknown variant «…», expected `box`",
             ),
+            // `invalid type` names what was sent (t-189).
             (
                 "invalid type: string \"Zq7\\\"v\", expected u32",
-                "invalid type: string «…», expected u32",
+                "invalid type: string \"Zq7\\\"v\", expected u32",
             ),
             (
                 "invalid type: integer `48213`, expected a string",
-                "invalid type: integer «…», expected a string",
+                "invalid type: integer `48213`, expected a string",
             ),
             (
                 "invalid value: floating point `1.5`, expected u8",
@@ -162,5 +208,22 @@ mod tests {
         ] {
             assert_eq!(serde_text(msg), want, "{msg}");
         }
+    }
+
+    #[test]
+    fn shorten_quoted_value_cuts_a_long_value_and_nothing_else() {
+        let long = format!(
+            "invalid type: string \"{}\\n\", expected u32",
+            "x".repeat(60)
+        );
+        assert_eq!(
+            shorten_quoted_value(&long),
+            format!("invalid type: string \"{}…\", expected u32", "x".repeat(40))
+        );
+        let short = "invalid type: string \"three\", expected u32 at line 2 column 7";
+        assert_eq!(shorten_quoted_value(short), short);
+        let variant =
+            "unknown variant `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`, expected `a`";
+        assert_eq!(shorten_quoted_value(variant), variant);
     }
 }

@@ -174,6 +174,9 @@ fn supervised_summaries_quote_the_target() {
 
 #[test]
 fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
+    // Since t-189 an `invalid type` names the value sent (it is not a
+    // closed value): `invalid type: string "…", expected u32`. Any other
+    // message that does not deserialize still quotes nothing.
     let live = live("t167-r2");
     let mut mcp = McpClient::start(&live.socket);
     for (tool, args) in [
@@ -184,7 +187,14 @@ fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
         let (is_err, text, _) = mcp.call(tool, args.clone());
         assert!(is_err, "{tool} {args}: {text}");
         assert!(text.contains("failed to deserialize"), "{text}");
-        assert_clean(&format!("MCP {tool} {args}"), &text);
+        if text.contains("invalid type: ") {
+            assert!(
+                text.contains("string \"Q7valueXyz789\""),
+                "MCP {tool} {args}: {text}"
+            );
+        } else {
+            assert_clean(&format!("MCP {tool} {args}"), &text);
+        }
     }
 }
 
