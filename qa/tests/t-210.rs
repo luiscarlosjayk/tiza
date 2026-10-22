@@ -308,6 +308,131 @@ fn ac3_two_checks_at_once_share_one_computation() {
     assert_eq!(c["revision"], a["revision"], "{c}\n{a}");
 }
 
+/// AC3, replace: while a check runs, one at another width waits; one more
+/// at a third width takes its place, and the replaced request is told at
+/// once (`busy`, naming the width that replaced it) instead of waiting
+/// for a computation. The running check and the newest one answer with
+/// their reports.
+#[test]
+fn ac3_another_width_while_one_waits_replaces_it_and_it_is_told_at_once() {
+    let (_, live) = big_live("t210-ac3-replace");
+    let running = ask_check(&live, json!({}));
+    let replaced = ask_check(&live, json!({"width": 60}));
+    let newest = ask_check(&live, json!({"width": 70}));
+    let (_, r) = replaced
+        .recv_timeout(QUICK)
+        .unwrap_or_else(|_| panic!("the replaced check was not answered within {QUICK:?}"));
+    let err = r.error.expect("the replaced check got a report");
+    assert_eq!(err.code, "busy", "{err:?}");
+    assert!(
+        err.message.contains("width 70") && err.message.contains("ask again"),
+        "{err:?}"
+    );
+    assert!(
+        matches!(running.try_recv(), Err(mpsc::TryRecvError::Empty)),
+        "the running check answered before the replaced one was told: it did not run long enough to tell"
+    );
+    let (_, a) = check_reply(&running);
+    assert_eq!(a["width"], 100, "{a}");
+    let (_, c) = check_reply(&newest);
+    assert_eq!(c["width"], 70, "{c}");
+    assert_eq!(c["revision"], a["revision"], "{c}\n{a}");
+}
+
+/// AC3, the effective width: `{}` and `{"width": 100}` (the default) are
+/// the same check, so the second joins the first instead of waiting for it
+/// and running again.
+#[test]
+fn ac3_the_default_width_and_the_same_width_given_share_one_computation() {
+    let (_, live) = big_live("t210-ac3-default");
+    let t0 = Instant::now();
+    let implicit = ask_check(&live, json!({}));
+    let explicit = ask_check(&live, json!({"width": tiza_core::check::DEFAULT_WIDTH}));
+    let (t1, a) = check_reply(&implicit);
+    let (t2, b) = check_reply(&explicit);
+    assert_eq!(a, b, "{a}\n{b}");
+    let took = t1 - t0;
+    let gap = if t2 > t1 { t2 - t1 } else { t1 - t2 };
+    assert!(
+        gap < took / 2,
+        "`{{\"width\": 100}}` answered {gap:?} after `{{}}` (one check takes {took:?}): it ran again"
+    );
+}
+
+/// AC3, a burst: while a check runs, many checks at other widths at once
+/// leave at most one waiting. Counted with the test hook (one line in
+/// `panics.log` per computation): all of them but one are told `busy`
+/// while the first still runs, and only two computations happen in all —
+/// the first and the one left waiting — so no copy of the document piles
+/// up behind them.
+#[test]
+fn ac3_a_burst_of_widths_leaves_one_check_waiting() {
+    let file = big_file("t210-ac3-burst");
+    let dir = file.parent().unwrap().to_path_buf();
+    let runtime = dir.join("run");
+    std::fs::create_dir_all(&runtime).unwrap();
+    let body = r##"
+import json
+binary, doc, runtime = sys.argv[1], sys.argv[2], sys.argv[3]
+os.chdir(os.path.dirname(doc))
+sock = "b.sock"
+env = dict(os.environ, TIZA_TEST_HOOK="request:check", XDG_RUNTIME_DIR=runtime)
+def check(params):
+    return subprocess.Popen([binary, "api", "check", json.dumps(params), "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120, env=env)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
+    first = check({})
+    r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=5)
+    print("STATUS", r.returncode, flush=True)
+    burst = [check({"width": w}) for w in range(30, 50)]
+    # Every one but one is told it was replaced; the last waits.
+    end = time.monotonic() + 30
+    while sum(p.poll() is not None for p in burst) < len(burst) - 1 and time.monotonic() < end:
+        s.settle(0.05)
+    told = [p for p in burst if p.poll() is not None]
+    print("TOLD", len(told), flush=True)
+    print("FIRST_IN_FLIGHT", first.poll() is None, flush=True)
+    print("BUSY", sum('busy' in p.communicate(timeout=5)[0] for p in told), flush=True)
+    print("FIRST", json.dumps(first.communicate(timeout=120)[0]), flush=True)
+    for p in burst:
+        if p not in told:
+            print("LAST", json.dumps(p.communicate(timeout=120)[0]), flush=True)
+s.send(b":q\r")
+s.finish(10)
+"##;
+    let out = tiza_qa::pty_script_with_deadline(
+        &dir,
+        "burst.py",
+        body,
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            file.to_str().unwrap(),
+            runtime.to_str().unwrap(),
+        ],
+        150,
+    );
+    assert!(out.contains("STATUS 0"), "{out}");
+    assert!(out.contains("TOLD 19"), "{out}");
+    assert!(
+        out.contains("FIRST_IN_FLIGHT True"),
+        "the first check ended before the burst was told: it did not run long enough to tell\n{out}"
+    );
+    assert!(out.contains("BUSY 19"), "{out}");
+    for who in ["FIRST", "LAST"] {
+        let line = out
+            .lines()
+            .find(|l| l.starts_with(&format!("{who} ")))
+            .unwrap_or_else(|| panic!("{who}:\n{out}"));
+        assert!(
+            line.contains("a bug in Tiza stopped this request"),
+            "{line}"
+        );
+    }
+    let log = std::fs::read_to_string(runtime.join("tiza/panics.log"))
+        .unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert_eq!(log.lines().count(), 2, "{log}");
+}
+
 /// Step 3 / AC3, counted: with the test hook every check computation
 /// panics once it is done (one line in `panics.log` each). Two checks at
 /// once leave one line and two `internal` replies, and the TUI keeps
@@ -399,10 +524,15 @@ fn ac4_the_live_check_is_the_cli_check() {
     assert!(v["warnings"].as_u64().unwrap() > 0, "{v}");
 }
 
-/// Step 4 / AC5: `:q`, Ctrl-C and the terminal going away (SIGHUP, t-205)
-/// while a check runs: `status` is answered first (so the check is in
-/// flight and the TUI is not waiting for it), then Tiza exits within a
-/// second and the check's client gets no report.
+/// Step 4 / AC5: `:q`, Ctrl-C, SIGHUP and the terminal going away without
+/// a SIGHUP (the pty closed from the master side, t-205) while a check
+/// runs inside the instance. That it runs there is shown by the instance
+/// itself: of three checks at three widths (the default, 60 and 70), one is
+/// told `busy` — replaced while it waited, which only happens while another
+/// check runs — and the other two get no reply before the quit. Then Tiza
+/// exits within a second with status 0, leaves the alternate screen with
+/// the line discipline restored (canonical mode and echo on), removes its
+/// socket, and no check's client gets a report.
 #[test]
 fn ac5_quitting_while_a_check_runs_exits_at_once() {
     let file = big_file("t210-ac5");
@@ -411,32 +541,51 @@ fn ac5_quitting_while_a_check_runs_exits_at_once() {
 import json
 binary, doc = sys.argv[1], sys.argv[2]
 os.chdir(os.path.dirname(doc))
-for how in ["q", "ctrl-c", "hup"]:
+for how in ["q", "ctrl-c", "hup", "close"]:
     sock = how + ".sock"
     s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120)
     if not s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
         break
-    chk = subprocess.Popen([binary, "api", "check", "{}", "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    checks = [subprocess.Popen([binary, "api", "check", json.dumps(p), "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+              for p in [{}, {"width": 60}, {"width": 70}]]
     try:
         r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=2)
         print(how, "STATUS", r.returncode, flush=True)
     except subprocess.TimeoutExpired:
         print(how, "STATUS_TIMEOUT", flush=True)
-    print(how, "IN_FLIGHT", chk.poll() is None, flush=True)
+    end = time.monotonic() + 5
+    while not any(c.poll() is not None for c in checks) and time.monotonic() < end:
+        s.settle(0.02)
+    done = [c for c in checks if c.poll() is not None]
+    print(how, "TOLD", len(done), all("busy" in c.communicate(timeout=5)[0] for c in done), flush=True)
     t0 = time.monotonic()
     if how == "q":
         s.send(b":q\r")
     elif how == "ctrl-c":
         s.send(b"\x03")
-    else:
+    elif how == "hup":
         os.kill(s.p.pid, signal.SIGHUP)
-    while s.p.poll() is None and time.monotonic() - t0 < 10:
-        s.settle(0.02)
+    else:
+        s._stop_reader()
+        os.close(s.master)
+        s.closed = True
+    try:
+        s.p.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        pass
     took = time.monotonic() - t0
     print(how, "EXIT", s.p.poll(), "%.2f" % took, flush=True)
-    got = chk.communicate(timeout=120)[0]
-    print(how, "CLIENT_GOT_REPORT", '"findings"' in got, flush=True)
-    s.finish(5)
+    print(how, "SOCKET_LEFT", os.path.exists(sock), flush=True)
+    if how != "close":
+        lflag = termios.tcgetattr(s.master)[3]
+        print(how, "TTY", bool(lflag & termios.ICANON), bool(lflag & termios.ECHO), flush=True)
+        s.finish(5)
+        out = s.out
+        print(how, "LEFT_ALT", out.rfind(b"\x1b[?1049l") > out.rfind(b"\x1b[?1049h"), flush=True)
+    else:
+        s.finish(5)
+    got = [c.communicate(timeout=120)[0] for c in checks if c not in done]
+    print(how, "CLIENT_GOT_REPORT", any('"findings"' in g for g in got), flush=True)
 "##;
     let out = tiza_qa::pty_script_with_deadline(
         &dir,
@@ -445,11 +594,12 @@ for how in ["q", "ctrl-c", "hup"]:
         &[tiza_qa::bin().to_str().unwrap(), file.to_str().unwrap()],
         150,
     );
-    for how in ["q", "ctrl-c", "hup"] {
-        assert!(out.contains(&format!("{how} STATUS 0")), "{how}:\n{out}");
+    for how in ["q", "ctrl-c", "hup", "close"] {
+        let has = |what: &str| out.contains(&format!("{how} {what}"));
+        assert!(has("STATUS 0"), "{how}:\n{out}");
         assert!(
-            out.contains(&format!("{how} IN_FLIGHT True")),
-            "{how}:\n{out}"
+            has("TOLD 1 True"),
+            "{how}: no check was told `busy`, so none was shown running in the instance\n{out}"
         );
         let exit = out
             .lines()
@@ -459,10 +609,12 @@ for how in ["q", "ctrl-c", "hup"]:
         assert_eq!(fields[2], "0", "{how}: {exit}");
         let took: f64 = fields[3].parse().unwrap();
         assert!(took < 1.0, "{how}: exited {took} s after quitting\n{out}");
-        assert!(
-            out.contains(&format!("{how} CLIENT_GOT_REPORT False")),
-            "{how}:\n{out}"
-        );
+        assert!(has("SOCKET_LEFT False"), "{how}:\n{out}");
+        if how != "close" {
+            assert!(has("TTY True True"), "{how}:\n{out}");
+            assert!(has("LEFT_ALT True"), "{how}:\n{out}");
+        }
+        assert!(has("CLIENT_GOT_REPORT False"), "{how}:\n{out}");
     }
 }
 

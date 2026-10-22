@@ -5125,7 +5125,9 @@ impl App {
     /// read here: a bad width is answered at once.
     fn ask_check(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
         let width = match check_width(req.params) {
-            Ok(w) => w,
+            // The width the check uses: `{}` and `{"width": 100}` are one
+            // check and share one run.
+            Ok(w) => w.unwrap_or(tiza_core::check::DEFAULT_WIDTH),
             Err(e) => {
                 let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
                 return;
