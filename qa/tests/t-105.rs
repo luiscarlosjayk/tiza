@@ -687,8 +687,8 @@ fn ac7_paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
         err.contains("cannot paste while moves are applied (step 2)"),
         "{err}"
     );
-    // Follow turns on and waits for a step with no move applied (t-212;
-    // it was refused).
+    // Follow turns on and waits for a step with no move applied (it used
+    // to be refused).
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
     assert!(

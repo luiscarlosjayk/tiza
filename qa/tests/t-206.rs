@@ -356,7 +356,7 @@ fn rev_follow_on_while_a_change_waits_keeps_the_wait() {
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     live.command("follow on");
-    // It says it waits (t-212).
+    // It says it waits.
     assert_eq!(
         message(&live),
         "already following main.rs (waiting: moves applied at step 2; loads at step 1 or earlier)"

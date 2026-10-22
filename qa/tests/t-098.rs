@@ -661,7 +661,7 @@ fn ac5_paste_is_refused_and_follow_waits_while_moves_are_applied() {
         err.contains("cannot paste while moves are applied (step 1)"),
         "{err}"
     );
-    // Follow turns on and waits for step 0 (t-212; it was refused).
+    // Follow turns on and waits for step 0 (it used to be refused).
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
     assert_eq!(

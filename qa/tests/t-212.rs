@@ -1,4 +1,4 @@
-//! t-212 — `--follow` and `follow.set` were refused at a step with moves
+//! `--follow` and `follow.set` were refused at a step with moves
 //! applied: a `.tiza` opens at its saved `step` (1 when it names none), so
 //! with a move at step 1 `tiza --follow doc.tiza` came up with follow off and the bar saying
 //! «cannot follow while moves are applied (step 1): go back to step 0
@@ -8,14 +8,14 @@
 //! Acceptance criteria:
 //! - AC1 `tiza --follow DOC`, `follow.set {enabled: true}`, the MCP
 //!   `set_follow` and `:follow on` are accepted at any step. At a step with
-//!   moves applied follow starts waiting (the t-206 state): a save is
+//!   moves applied follow starts waiting (the state a save at such a step already had): a save is
 //!   deferred and loads as a normal reload when a step with no moves is
 //!   reached; at step 0 it behaves as before.
 //! - AC2 The reply and the bar say it is on and waiting in one short line
 //!   (`following main.rs (waiting: moves applied at step 1; loads at step
 //!   0)`); `follow.status` gives `enabled: true` and says why it waits in
 //!   `reason`.
-//! - AC3 What is saved always agrees with a fresh load (t-202/t-206):
+//! - AC3 What is saved always agrees with a fresh load:
 //!   `tiza check` on the autosave is clean and `render` equals the screen
 //!   at every step, before and after a save.
 //! - AC4 This file (pty, condition waits): the repro with `--follow`, with
@@ -41,7 +41,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tiza_qa::{Live, McpClient, bin, scratch};
 
-/// QA 1's repro (pruebas/t106/qa1): a move at step 1, no `step`.
+/// QA 1's repro: a move at step 1, no `step`.
 const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";

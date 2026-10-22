@@ -420,7 +420,7 @@ fn corner_moves_applied_the_undo_is_embedded_and_follow_on_waits_for_step_0() {
     same_as_fresh(&live, &tiza, "u at step 2");
 
     // Follow turns on and waits for a step with no move applied (ADR 0007
-    // §7; t-212, it was refused): the file loads over the undone code there.
+    // §7; it used to be refused): the file loads over the undone code there.
     live.command("follow on");
     assert_eq!(
         message(&live),

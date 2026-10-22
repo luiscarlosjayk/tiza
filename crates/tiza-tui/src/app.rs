@@ -2417,7 +2417,7 @@ impl App {
         replaced: Option<tiza_core::model::CodeSource>,
     ) {
         // Follow on over a file reference again (an undo of the paste a wait
-        // was for, t-212): the file holds the code on screen
+        // was for): the file holds the code on screen
         // ([`App::embed_if_not_the_file`] checked it), so nothing waits.
         if !self.doc.is_embedded()
             && let Some(f) = &mut self.follow
@@ -2729,10 +2729,9 @@ impl App {
         }
     }
 
-    /// Following while moves are applied: why a save does not load now
-    /// (it waits for a step with no moves applied, t-206), as the reply,
-    /// the bar and `follow.status` say it (t-212). `None` when a save loads
-    /// at once.
+    /// Following while moves are applied: why a save does not load now (it
+    /// waits for a step with no moves applied), as the reply, the bar and
+    /// `follow.status` say it. `None` when a save loads at once.
     pub fn follow_waits(&self) -> Option<String> {
         if self.follow.is_none() || !self.doc.moves_applied() {
             return None;
@@ -2759,8 +2758,8 @@ impl App {
 
     /// Enables or disables follow mode. Enabling needs a file reference
     /// (`:link` first when the code is embedded). At a step with moves
-    /// applied it starts waiting (t-212): a save, or a change made while
-    /// follow was off, loads when a step with no moves is reached.
+    /// applied it starts waiting: a save, or a change made while follow was
+    /// off, loads when a step with no moves is reached.
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
         if !enabled {
             self.reload_waits = false;
@@ -5510,9 +5509,9 @@ impl App {
                 let said = self.message.clone();
                 let msg = self.set_follow(enabled)?;
                 // Turned on where a save waits for step 0: the presenter is
-                // told too, or the next save would seem lost (t-212); unless
-                // turning it on said something of its own (a file that
-                // cannot be read).
+                // told too, or the next save would seem lost; unless turning
+                // it on said something of its own (a file that cannot be
+                // read).
                 if !was && self.follow_waits().is_some() && self.message == said {
                     self.info(msg.clone());
                 }

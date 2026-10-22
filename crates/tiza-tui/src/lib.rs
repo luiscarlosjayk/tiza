@@ -101,8 +101,8 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     if opts.follow {
         match app.set_follow(true) {
-            // At a step with moves applied a save waits for step 0 (t-212):
-            // said unless the bar already has something from the load.
+            // At a step with moves applied a save waits for step 0: said
+            // unless the bar already has something from the load.
             Ok(m) if app.follow_waits().is_some() && app.message.is_none() => app.info(m),
             Ok(_) => {}
             Err(e) => app.error(e.to_string()),
