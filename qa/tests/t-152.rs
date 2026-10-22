@@ -11,9 +11,12 @@
 //!   command, and the release build adds its target to that toolchain, not
 //!   to `stable`.
 //! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
-//!   crates.io and no secret is needed; the README gives the maintainers the
-//!   manual steps (workspace dry run, then one crate at a time in dependency
-//!   order, checking the index before the next).
+//!   crates.io and no secret is needed; the README's `## Releases
+//!   (maintainers)` section gives every manual step in order (version with
+//!   `scripts/bump-version.sh`, commit, workspace dry run before the tag,
+//!   tag, then one crate at a time in dependency order, checking the index
+//!   before the next). Every `.crate` carries the licence texts; `tiza`
+//!   leaves out its tests (QA round 0).
 //! - AC2 crates.io page of `tiza`: a readme packaged in the crate with no
 //!   relative links or images, `homepage`, `documentation` on GitHub (not
 //!   docs.rs), at most five keywords and valid categories.
@@ -24,7 +27,8 @@
 //! - Build stamp (QA note 1, 2026-10-18): a crate unpacked from crates.io
 //!   under a directory that is a git repository (a home kept in git) is
 //!   stamped `unknown`, not with that repository's commit; a checkout of Tiza
-//!   keeps its commit; `TIZA_GIT_SHA_OVERRIDE` still wins.
+//!   keeps its commit; `TIZA_GIT_SHA_OVERRIDE` still wins; the first commit
+//!   of a repository made around the crate stamps it (QA round 0).
 //!
 //! The workflows cannot run here (Actions is off while the repository is
 //! private): their structure is read as text (and parsed as YAML).
@@ -229,19 +233,66 @@ fn publish_no_workflow_publishes_to_crates_io() {
     }
 }
 
-/// The README gives the maintainers the manual steps: the workspace dry run
-/// first, then one crate at a time in dependency order, and how to check
-/// the index before the next one.
+/// The README section of the release, as GitHub anchors it: lowercase,
+/// letters, digits, `-` and `_` kept, spaces to `-`, the rest dropped.
+fn anchor(heading: &str) -> String {
+    heading
+        .to_lowercase()
+        .chars()
+        .filter_map(|c| match c {
+            ' ' => Some('-'),
+            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The text of the README's `## Releases (maintainers)` section.
+fn release_section() -> String {
+    let readme = read("README.md");
+    let start = readme
+        .find("\n## Releases (maintainers)\n")
+        .expect("a `## Releases (maintainers)` section in the README");
+    let body = &readme[start + 1..];
+    let end = body[3..].find("\n## ").map_or(body.len(), |i| i + 4);
+    body[..end].to_string()
+}
+
+/// QA P3-4: a real section, with the anchor release.yml points at.
+#[test]
+fn publish_release_section_has_an_anchor_release_yml_uses() {
+    let section = release_section();
+    let heading = section.lines().next().unwrap().trim_start_matches("## ");
+    assert_eq!(anchor(heading), "releases-maintainers");
+    let yml = read(".github/workflows/release.yml");
+    assert!(
+        yml.contains("README.md#releases-maintainers"),
+        "release.yml points at the section"
+    );
+    // QA P3-5: no blank line at the end of the workflow.
+    assert!(yml.ends_with('\n') && !yml.ends_with("\n\n"));
+}
+
+/// QA P2-1: the section gives every step, in order: the version (script,
+/// commit), the dry run before the tag (pushing the tag starts the
+/// release), the tag, then one crate at a time in dependency order, and how
+/// to check the index before the next one.
 #[test]
 fn publish_readme_has_the_manual_steps_in_order() {
-    let readme = read("README.md");
+    let section = release_section();
     let at = |needle: &str| {
-        readme
+        section
             .find(needle)
-            .unwrap_or_else(|| panic!("the README lacks `{needle}`"))
+            .unwrap_or_else(|| panic!("the section lacks `{needle}`"))
     };
     let steps = [
-        "cargo publish --workspace --dry-run --locked\n",
+        "git status --short",
+        "scripts/bump-version.sh X.Y.Z",
+        "git commit -am \"vX.Y.Z\"",
+        "cargo publish --workspace --dry-run --locked",
+        "git push origin main",
+        "git tag vX.Y.Z && git push origin vX.Y.Z",
+        "cargo login",
         "cargo publish --locked -p tiza-core\n",
         "cargo publish --locked -p tiza-export\n",
         "cargo publish --locked -p tiza-tui\n",
@@ -249,11 +300,11 @@ fn publish_readme_has_the_manual_steps_in_order() {
         "cargo publish --locked -p tiza\n",
     ];
     let positions: Vec<usize> = steps.iter().map(|s| at(s)).collect();
-    assert!(
-        positions.windows(2).all(|w| w[0] < w[1]),
-        "dry run, then core → export, tui → mcp → tiza: {positions:?}"
-    );
-    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[5]);
+    for (w, pair) in positions.windows(2).zip(steps.windows(2)) {
+        assert!(w[0] < w[1], "`{}` comes after `{}`", pair[0], pair[1]);
+    }
+    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[11]);
+    assert!(read("scripts/bump-version.sh").starts_with("#!/usr/bin/env bash\n"));
     // The order is the dependency order of the manifests.
     let meta = metadata();
     let deps = |name: &str| -> Vec<String> {
@@ -285,6 +336,133 @@ fn publish_readme_has_the_manual_steps_in_order() {
     let mut expected: Vec<String> = order.iter().map(|s| s.to_string()).collect();
     expected.sort();
     assert_eq!(sorted, expected);
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let (src, dst) = (entry.path(), to.join(entry.file_name()));
+        if src.is_dir() {
+            copy_dir(&src, &dst);
+        } else {
+            std::fs::copy(&src, &dst).unwrap();
+        }
+    }
+}
+
+/// A copy of the workspace (manifests, lock, sources, CHANGELOG and the
+/// script) in a scratch directory.
+fn workspace_copy(name: &str) -> PathBuf {
+    let dir = scratch(name).join("ws");
+    for f in [
+        "Cargo.toml",
+        "Cargo.lock",
+        "CHANGELOG.md",
+        "rust-toolchain.toml",
+    ] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::copy(root().join(f), dir.join(f)).unwrap();
+    }
+    for d in ["crates", "qa/src", "scripts"] {
+        copy_dir(&root().join(d), &dir.join(d));
+    }
+    std::fs::create_dir_all(dir.join("qa/tests")).unwrap();
+    std::fs::copy(root().join("qa/Cargo.toml"), dir.join("qa/Cargo.toml")).unwrap();
+    dir
+}
+
+/// `scripts/bump-version.sh ARGS` in `dir`, offline, with this toolchain's
+/// cargo first on PATH.
+fn bump(dir: &Path, args: &[&str]) -> Output {
+    let cargo_dir = Path::new(env!("CARGO")).parent().unwrap().to_path_buf();
+    let path = format!(
+        "{}:{}",
+        cargo_dir.display(),
+        std::env::var("PATH").unwrap_or_default()
+    );
+    Command::new("bash")
+        .arg(dir.join("scripts/bump-version.sh"))
+        .args(args)
+        .current_dir(dir)
+        .env("PATH", path)
+        .env("CARGO_NET_OFFLINE", "true")
+        .output()
+        .unwrap()
+}
+
+fn versions(dir: &Path) -> Vec<(String, String)> {
+    let out = Command::new(env!("CARGO"))
+        .args([
+            "metadata",
+            "--no-deps",
+            "--locked",
+            "--offline",
+            "--format-version",
+            "1",
+        ])
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", text(&out));
+    let meta: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let mut v: Vec<(String, String)> = meta["packages"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["name"].as_str().unwrap().to_string(),
+                p["version"].as_str().unwrap().to_string(),
+            )
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// QA P2-1: the script moves the five versions, the lock and the CHANGELOG
+/// together, so `--locked` passes right after it; it refuses a bad version
+/// and a second run, and then writes nothing.
+#[test]
+fn publish_bump_version_moves_versions_lock_and_changelog() {
+    let dir = workspace_copy("t152-bump");
+    let before = read("CHANGELOG.md");
+    let out = bump(&dir, &["9.8.7"]);
+    assert!(out.status.success(), "{}", text(&out));
+    for (name, version) in versions(&dir) {
+        assert_eq!(version, "9.8.7", "{name}");
+    }
+    let toml = std::fs::read_to_string(dir.join("Cargo.toml")).unwrap();
+    assert_eq!(toml.matches("version = \"9.8.7\"").count(), 5, "{toml}");
+    let changelog = std::fs::read_to_string(dir.join("CHANGELOG.md")).unwrap();
+    let (head, rest) = before.split_once("## [Unreleased]\n").unwrap();
+    assert!(changelog.starts_with(&format!("{head}## [Unreleased]\n\n## [9.8.7] - ")));
+    let after_heading = changelog
+        .split_once("## [9.8.7] - ")
+        .unwrap()
+        .1
+        .split_once('\n')
+        .unwrap();
+    let date = after_heading.0;
+    assert!(
+        date.len() == 10 && date.chars().filter(|c| *c == '-').count() == 2,
+        "{date}"
+    );
+    assert_eq!(after_heading.1, rest, "the entries move under the version");
+
+    let snapshot = |d: &Path| {
+        ["Cargo.toml", "Cargo.lock", "CHANGELOG.md"]
+            .map(|f| std::fs::read_to_string(d.join(f)).unwrap())
+    };
+    let done = snapshot(&dir);
+    let again = bump(&dir, &["9.8.7"]);
+    assert_eq!(again.status.code(), Some(1), "{}", text(&again));
+    for bad in ["v9.9.9", "9.9", "9.9.9-rc.1"] {
+        let out = bump(&dir, &[bad]);
+        assert_eq!(out.status.code(), Some(2), "{bad}: {}", text(&out));
+    }
+    assert_eq!(snapshot(&dir), done, "a refused run writes nothing");
 }
 
 fn text(o: &Output) -> String {
@@ -430,6 +608,37 @@ fn ac2_tiza_readme_is_packaged_and_works_on_crates_io() {
             t.starts_with("https://") || t.starts_with('#'),
             "relative link `{t}` does not work on crates.io"
         );
+    }
+}
+
+/// QA P2-2: every crate carries the licence texts (links in each crate
+/// directory to the repository's, packaged as files), and QA P3-6: `tiza`
+/// leaves out its `tests/`, which read `../../examples/`.
+#[test]
+fn packages_carry_the_licences_and_tiza_not_its_tests() {
+    for (name, dir) in [
+        ("tiza", "crates/tiza-cli"),
+        ("tiza-core", "crates/tiza-core"),
+        ("tiza-export", "crates/tiza-export"),
+        ("tiza-tui", "crates/tiza-tui"),
+        ("tiza-mcp", "crates/tiza-mcp"),
+    ] {
+        let files = packaged(name);
+        for licence in ["LICENSE-MIT", "LICENSE-APACHE"] {
+            assert!(files.iter().any(|f| f == licence), "{name}: {licence}");
+            assert_eq!(
+                read(&format!("{dir}/{licence}")),
+                read(licence),
+                "{name}: the repository's {licence}"
+            );
+        }
+        if name == "tiza" {
+            assert!(
+                !files.iter().any(|f| f.starts_with("tests/")),
+                "tiza packages {files:?}"
+            );
+            assert!(files.iter().any(|f| f == "src/main.rs"));
+        }
     }
 }
 
@@ -602,7 +811,7 @@ fn stamp_crate_from_crates_io_in_a_home_kept_in_git_is_unknown() {
     let (home, krate) = home_in_git("t152-home");
     let target = home.parent().unwrap().join("target");
     assert_eq!(stamp(&krate, &target, &[]), "unknown");
-    // A commit in that repository changes nothing (no rerun, same stamp).
+    // A commit in that repository reruns the script, with the same stamp.
     git(
         &home,
         &["commit", "-q", "--allow-empty", "-m", "more dotfiles"],
@@ -631,6 +840,26 @@ fn stamp_a_repository_that_tracks_the_crate_gives_its_commit() {
     git(&home, &["commit", "-q", "-m", "vendored"]);
     let head = git(&home, &["rev-parse", "--short=10", "HEAD"]);
     assert_eq!(stamp(&krate, &target, &[]), head);
+}
+
+/// QA P3-3: an unpacked tarball becomes a repository after a first build
+/// (`git init`, then a commit): that commit reruns the script and stamps
+/// itself, with no `touch build.rs`; so does the next one.
+#[test]
+fn stamp_first_commit_of_a_new_repository_stamps_it() {
+    let root = scratch("t152-new-repo");
+    let krate = root.join("tarball");
+    write_crate(&krate);
+    let target = root.join("target");
+    git(&krate, &["init", "-q", "-b", "main"]);
+    assert_eq!(stamp(&krate, &target, &[]), "unknown", "nothing tracked");
+    git(&krate, &["add", "."]);
+    git(&krate, &["commit", "-q", "-m", "first"]);
+    let first = git(&krate, &["rev-parse", "--short=10", "HEAD"]);
+    assert_eq!(stamp(&krate, &target, &[]), first);
+    git(&krate, &["commit", "-q", "--allow-empty", "-m", "second"]);
+    let second = git(&krate, &["rev-parse", "--short=10", "HEAD"]);
+    assert_eq!(stamp(&krate, &target, &[]), second);
 }
 
 /// Corner case: `cargo package` verifies the crate in `target/package/` of

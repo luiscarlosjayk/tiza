@@ -3,7 +3,7 @@ name: Release
 # Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
 # and Linux (x86_64), checksums and notes generated from the commits.
 # Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
-# crates.io is published by hand (README, "Releases (maintainers)").
+# crates.io is published by hand: README.md#releases-maintainers.
 # scripts/release-local.sh builds the same archives when Actions is off.
 
 on:
@@ -89,4 +89,3 @@ jobs:
           files: dist/*
           prerelease: ${{ contains(github.ref_name, '-') }}
           generate_release_notes: false
-
