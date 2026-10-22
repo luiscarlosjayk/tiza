@@ -5667,7 +5667,27 @@ pub fn step_hint_start(msg: &str) -> Option<usize> {
     // ` (src/queue.rs, not shown at step 2)`: an agent change whose file a
     // link hides (t-155).
     if let Some((file, n)) = inner.rsplit_once(", not shown at step ") {
-        return (!file.is_empty() && digits(n)).then_some(i);
+        // A file may have ` (` in its name (`src/stack (v2).rs`): the tail
+        // starts at the first ` (` after which the file's parentheses
+        // balance (t-173).
+        let end = i + 2 + file.len();
+        let balanced = |f: &str| {
+            let mut depth = 0i32;
+            f.chars().all(|c| {
+                depth += match c {
+                    '(' => 1,
+                    ')' => -1,
+                    _ => 0,
+                };
+                depth >= 0
+            }) && depth == 0
+        };
+        let start = msg[..i]
+            .match_indices(" (")
+            .map(|(j, _)| j)
+            .find(|&j| balanced(&msg[j + 2..end]))
+            .unwrap_or(i);
+        return (start + 2 < end && digits(n)).then_some(start);
     }
     let how = match inner.strip_prefix("step ") {
         Some(rest) => {
