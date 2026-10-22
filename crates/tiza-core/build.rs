@@ -8,6 +8,12 @@
 //! edit alone does not rerun this script), or `unknown` outside git or
 //! without a working `git`.
 //!
+//! Only a repository that tracks this package names its commit (t-152): a
+//! crate unpacked from crates.io under a directory that happens to be a git
+//! repository (a home kept in git, say) or verified by `cargo package` in
+//! the ignored `target/package/` is stamped `unknown`, not with a commit
+//! that did not build it. Its version already says what it is.
+//!
 //! The script reruns when the commit can have moved (t-181). The files to
 //! watch come from git itself, because in a worktree `.git` is a file and
 //! HEAD, the index and the branch refs live elsewhere (`--git-path` maps
@@ -71,6 +77,12 @@ fn watched() -> Vec<PathBuf> {
     paths
 }
 
+/// Whether the git repository around the package directory tracks this
+/// build script, that is, whether its commit is the source being built.
+fn tracked_here() -> bool {
+    git(&["ls-files", "--error-unmatch", "--", "build.rs"]).is_some()
+}
+
 fn stamp() -> String {
     let Some(sha) = git(&["rev-parse", "--short=10", "HEAD"]) else {
         return "unknown".into();
@@ -83,12 +95,13 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TIZA_GIT_SHA_OVERRIDE");
     let sha = match std::env::var("TIZA_GIT_SHA_OVERRIDE") {
         Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ => {
+        _ if tracked_here() => {
             for p in watched() {
                 println!("cargo:rerun-if-changed={}", p.display());
             }
             stamp()
         }
+        _ => "unknown".into(),
     };
     println!("cargo:rustc-env=TIZA_GIT_SHA={sha}");
 }
