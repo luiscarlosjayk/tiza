@@ -754,6 +754,25 @@ pub fn single_line(s: &str) -> String {
         .collect()
 }
 
+/// [`Document::map_files`] for the `code.link` files of `moves` and the
+/// annotations of those files.
+pub fn map_link_files(
+    moves: &mut [Move],
+    annotations: &mut [Annotation],
+    f: &dyn Fn(&str) -> String,
+) {
+    for m in moves {
+        if let crate::moves::MoveAction::CodeLink(l) = &mut m.action {
+            l.file = f(&l.file);
+        }
+    }
+    for a in annotations {
+        if let Some(file) = &mut a.file {
+            *file = f(file);
+        }
+    }
+}
+
 /// Applies [`single_line`] to the texts of a shape (callout bodies keep newlines).
 pub fn sanitize_texts(shape: &mut Shape) {
     match shape {
@@ -908,6 +927,27 @@ impl Document {
                 }
             }),
         };
+    }
+
+    /// Applies `f` to every path the document names relative to its folder:
+    /// the code's file, `follows`, and each `code.link` file with the
+    /// annotations and `views` that name it (by the same string).
+    pub fn map_files(&mut self, f: &dyn Fn(&str) -> String) {
+        if let CodeSource::File { file, .. } = &mut self.code_src {
+            *file = f(file);
+        }
+        if let Some(r) = &mut self.follows {
+            r.file = f(&r.file);
+        }
+        map_link_files(&mut self.moves, &mut self.annotations, f);
+        self.views = std::mem::take(&mut self.views)
+            .into_iter()
+            .map(|(k, v)| (f(&k), v))
+            .collect();
+        self.view_code = std::mem::take(&mut self.view_code)
+            .into_iter()
+            .map(|(k, v)| (f(&k), v))
+            .collect();
     }
 
     /// Freezes the code inside the document (no longer depends on the file).

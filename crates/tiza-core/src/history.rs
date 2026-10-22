@@ -190,6 +190,29 @@ impl History {
         self.redo = c.redo;
     }
 
+    /// Applies `f` to the paths every snapshot names relative to the
+    /// document's folder ([`Document::map_files`]): the document moved to
+    /// another folder, and undo must still find its files.
+    pub fn map_files(&mut self, f: &dyn Fn(&str) -> String) {
+        for s in self.undo.iter_mut().chain(self.redo.iter_mut()) {
+            if let CodeSource::File { file, .. } = &mut s.code_src {
+                *file = f(file);
+            }
+            if let Some(r) = &mut s.follows {
+                r.file = f(&r.file);
+            }
+            crate::model::map_link_files(&mut s.moves, &mut s.annotations, f);
+            s.views = std::mem::take(&mut s.views)
+                .into_iter()
+                .map(|(k, v)| (f(&k), v))
+                .collect();
+            s.view_code = std::mem::take(&mut s.view_code)
+                .into_iter()
+                .map(|(k, v)| (f(&k), v))
+                .collect();
+        }
+    }
+
     /// The id of the newest edit that can be undone (0: none).
     pub fn newest(&self) -> u64 {
         self.undo.last().map_or(0, |s| s.id)

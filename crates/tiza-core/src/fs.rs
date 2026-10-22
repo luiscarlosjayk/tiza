@@ -585,6 +585,59 @@ pub(crate) fn parse_range(spec: &str, field: &str) -> Result<(u32, u32), Error> 
     }
 }
 
+/// The folder of a `.tiza` saved at `path`, absolute, symlinks resolved
+/// (as the system resolves a `..` from it); the path itself when it cannot
+/// be resolved.
+pub fn document_dir(path: &Path) -> PathBuf {
+    let dir = path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    dir.canonicalize()
+        .or_else(|_| std::path::absolute(dir))
+        .unwrap_or_else(|_| dir.to_path_buf())
+}
+
+/// `.` and `..` of an absolute path resolved by the text alone.
+fn normalize(p: &Path) -> PathBuf {
+    let mut out = PathBuf::new();
+    for c in p.components() {
+        match c {
+            std::path::Component::ParentDir => {
+                out.pop();
+            }
+            std::path::Component::CurDir => {}
+            c => out.push(c.as_os_str()),
+        }
+    }
+    out
+}
+
+/// `file` as a `.tiza` in the folder `to` names the file that one in `from`
+/// names `file` (both folders as [`document_dir`] gives them): relative
+/// (`../main.rs`), or absolute when the two folders share only the root
+/// (another volume). An absolute `file`, or the same folder, keeps it.
+pub fn rebase_path(file: &str, from: &Path, to: &Path) -> String {
+    if Path::new(file).is_absolute() || from == to {
+        return file.to_string();
+    }
+    let target = normalize(&from.join(file));
+    let t: Vec<_> = target.components().collect();
+    let d: Vec<_> = to.components().collect();
+    let common = t.iter().zip(&d).take_while(|(a, b)| a == b).count();
+    if common <= 1 {
+        return target.to_string_lossy().into_owned();
+    }
+    let mut rel = PathBuf::new();
+    for _ in common..d.len() {
+        rel.push("..");
+    }
+    for c in &t[common..] {
+        rel.push(c.as_os_str());
+    }
+    rel.to_string_lossy().into_owned()
+}
+
 /// The text [`save_document`] writes for `doc`.
 pub fn document_json(doc: &Document) -> Result<String, Error> {
     let mut doc = doc.clone();

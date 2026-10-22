@@ -90,11 +90,12 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
     Some(match name {
         "hl" | "highlight" | "mark" | "m" => Takes,
         "help" | "h" | "?" | "ls" | "list" | "style" | "kinds" | "undo" | "u" | "redo" => Neutral,
-        "q" | "quit" | "q!" | "quit!" | "w" | "write" | "export" | "supervise" | "supervised"
-        | "mouse" | "review" | "wq" | "box" | "arrow" | "ar" | "note" | "n" | "embed" | "link"
-        | "ref" | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until"
-        | "clear" | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next"
-        | "goto" | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
+        "q" | "quit" | "q!" | "quit!" | "w" | "write" | "w!" | "write!" | "saveas" | "sav"
+        | "saveas!" | "sav!" | "export" | "supervise" | "supervised" | "mouse" | "review"
+        | "wq" | "wq!" | "box" | "arrow" | "ar" | "note" | "n" | "embed" | "link" | "ref"
+        | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
+        | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
+        | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
         | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
         _ => return None,
     })
@@ -1205,7 +1206,7 @@ impl App {
             Err(e) => {
                 if self.save_error.is_none() {
                     self.error(format!(
-                        "read-only: could not save {} — :w PATH to save elsewhere",
+                        "read-only: could not save {} — :saveas PATH to save elsewhere",
                         self.save_path.display()
                     ));
                     self.save_warning_pending = true;
@@ -1214,6 +1215,92 @@ impl App {
                 Err(e)
             }
         }
+    }
+
+    /// The document as a `.tiza` at `path` holds it: the theme as `save`
+    /// sets it, and every path it names relative to its folder rewritten
+    /// to name the same file from `path`'s folder.
+    fn rebased_copy(&self, path: &Path) -> Document {
+        let mut d = self.doc.clone();
+        if !self.theme_auto {
+            d.theme = Some(self.theme.name);
+        }
+        let (from, to) = (fs::document_dir(&self.save_path), fs::document_dir(path));
+        if from != to {
+            d.map_files(&|f| fs::rebase_path(f, &from, &to));
+        }
+        d
+    }
+
+    /// Whether `path` names the file the document is saved to.
+    fn is_save_path(&self, path: &Path) -> bool {
+        let real = |p: &Path| p.canonicalize().or_else(|_| std::path::absolute(p)).ok();
+        real(path).is_some_and(|p| Some(p) == real(&self.save_path))
+    }
+
+    fn refuse_existing(path: &Path, force: bool) -> Result<(), Error> {
+        if path.exists() && !force {
+            return Err(Error::Invalid(format!(
+                "{} exists (add ! to overwrite)",
+                path.display()
+            )));
+        }
+        Ok(())
+    }
+
+    /// `:w PATH`: a copy of the document at `path`, its paths rewritten for
+    /// that folder; the document stays saved where it was. `path` naming
+    /// the open file is a plain save.
+    fn write_copy(&mut self, path: &Path, force: bool) -> Result<String, Error> {
+        if self.is_save_path(path) {
+            self.save()?;
+            return Ok(format!("saved to {}", self.save_path.display()));
+        }
+        Self::refuse_existing(path, force)?;
+        fs::save_document(&self.rebased_copy(path), path)?;
+        Ok(format!(
+            "wrote a copy to {} ({} is still the file open)",
+            path.display(),
+            self.save_path.display()
+        ))
+    }
+
+    /// `:saveas PATH`: the document is written to `path` and saved there
+    /// from then on; the paths it names, in memory and in the undo history,
+    /// are rewritten for that folder once the file is written.
+    fn save_as(&mut self, rest: &str, force: bool) -> Result<String, Error> {
+        if rest.is_empty() {
+            return Err(Error::Invalid(
+                "usage: :saveas PATH   (saves there from now on; ! overwrites an existing file)"
+                    .into(),
+            ));
+        }
+        let path = PathBuf::from(rest);
+        if self.is_save_path(&path) {
+            self.save()?;
+            return Ok(format!("saved to {}", self.save_path.display()));
+        }
+        Self::refuse_existing(&path, force)?;
+        fs::save_document(&self.rebased_copy(&path), &path)?;
+        let (from, to) = (fs::document_dir(&self.save_path), fs::document_dir(&path));
+        if from != to {
+            let f = |s: &str| fs::rebase_path(s, &from, &to);
+            self.doc.map_files(&f);
+            self.history.map_files(&f);
+            if let Some(tiza_core::model::CodeSource::File { file, .. }) = &mut self.reference {
+                *file = f(file);
+            }
+            self.frozen_views = self.frozen_views.iter().map(|v| f(v)).collect();
+            self.revision += 1;
+        }
+        self.save_path = path;
+        // The same text again, through the one door: `dirty`, what quitting
+        // compares with, and a read-only state left behind.
+        self.save()?;
+        Ok(format!(
+            "saved as {}: changes are saved there from now on",
+            self.save_path.display()
+        ))
     }
 
     /// The sidecar as a save would write it now (the theme as `save` sets
@@ -1283,14 +1370,14 @@ impl App {
         if !force && self.dirty {
             if self.save_error.is_some() {
                 self.error(format!(
-                    "unsaved (read-only): :q! quits without saving, :w PATH saves elsewhere — {}",
+                    "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — {}",
                     self.save_path.display()
                 ));
                 return;
             }
             if !self.autosave {
                 self.error(format!(
-                    "unsaved changes (autosave off): :w saves to {}, :w PATH saves elsewhere, :q! quits without saving",
+                    "unsaved changes (autosave off): :w saves to {}, :saveas PATH saves elsewhere, :q! quits without saving",
                     self.save_path.display()
                 ));
                 return;
@@ -1639,7 +1726,7 @@ impl App {
         self.finish_typing();
         // Saving rule: a document from another source must
         // never be autosaved over the file that was open. Autosave stops;
-        // `:w` writes it over that file on purpose, `:w PATH` elsewhere,
+        // `:w` writes it over that file on purpose, `:saveas PATH` elsewhere,
         // `:autosave on` resumes. The same source (an agent re-putting an
         // edited copy of the open document, `scene get` → `scene put`)
         // keeps saving as usual, and the files it reads stay references
@@ -1671,7 +1758,7 @@ impl App {
         if other && self.autosave {
             self.autosave = false;
             self.info(format!(
-                "another document loaded: autosave off (:w saves over {}, :w PATH saves elsewhere, :autosave on resumes)",
+                "another document loaded: autosave off (:w saves over {}, :saveas PATH saves elsewhere, :autosave on resumes)",
                 self.save_path.display()
             ));
             if let Some(note) = unfollowed {
@@ -1686,7 +1773,7 @@ impl App {
                 msg = if self.autosave {
                     self.autosave = false;
                     format!(
-                        "not saved — autosave off: {} (:w saves it embedded in {}, :w PATH saves elsewhere, :autosave on resumes)",
+                        "not saved — autosave off: {} (:w saves it embedded in {}, :saveas PATH saves elsewhere, :autosave on resumes)",
                         sent.edited.join("; "),
                         self.save_path.display()
                     )
@@ -3773,6 +3860,7 @@ impl App {
         "q",
         "redo",
         "review",
+        "saveas",
         "set",
         "spot",
         "step",
@@ -3901,13 +3989,16 @@ impl App {
                     self.request_quit(true);
                     Ok(String::new())
                 }
-                "w" | "write" => {
-                    if !rest.is_empty() {
-                        self.save_path = PathBuf::from(rest);
-                    }
-                    self.save()
-                        .map(|_| format!("saved to {}", self.save_path.display()))
+                // As in Vim: `:w PATH` writes a copy and the open file stays
+                // the one saved to; `:saveas PATH` moves to PATH. An existing
+                // file needs `!`.
+                "w" | "write" | "w!" | "write!" if !rest.is_empty() => {
+                    self.write_copy(Path::new(rest), cmd.ends_with('!'))
                 }
+                "w" | "write" | "w!" | "write!" => self
+                    .save()
+                    .map(|_| format!("saved to {}", self.save_path.display())),
+                "saveas" | "sav" | "saveas!" | "sav!" => self.save_as(rest, cmd.ends_with('!')),
                 "export" => self.export_command(rest),
                 "supervise" | "supervised" => match rest.trim() {
                     "" => Ok(format!(
@@ -3934,7 +4025,17 @@ impl App {
                         Ok(String::new())
                     }
                 }
-                "wq" => {
+                "wq" | "wq!" if !rest.is_empty() => {
+                    // The copy holds the changes: quit as if they were saved.
+                    self.write_copy(Path::new(rest), cmd == "wq!")?;
+                    let dirty = std::mem::replace(&mut self.dirty, false);
+                    self.request_quit(false);
+                    if !self.quit {
+                        self.dirty = dirty;
+                    }
+                    Ok(String::new())
+                }
+                "wq" | "wq!" => {
                     // Quit only when the write succeeded (`:q!` leaves anyway),
                     // and not over stale moves without a word.
                     self.save()?;

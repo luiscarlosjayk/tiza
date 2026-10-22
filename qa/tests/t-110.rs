@@ -11,7 +11,7 @@
 //! - AC3 A sidecar that cannot be written warns once (`read-only: …`) and
 //!   the TUI keeps working; no panic, no message per autosave.
 //! - AC4 `:q` with unsaved changes while autosave is off says how to save or
-//!   discard (`:w`, `:w PATH`, `:q!`).
+//!   discard (`:w`, `:saveas PATH` since t-221, `:q!`).
 //! - AC5 Without the flag everything is as before (autosave on).
 //! - AC6 A copy of an example opened with `--no-save` and annotated over the
 //!   socket is byte-identical afterwards.
@@ -116,7 +116,7 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     let (msg, err) = live.message().unwrap();
     assert!(
         err && msg.starts_with("read-only: could not save")
-            && msg.ends_with("— :w PATH to save elsewhere"),
+            && msg.ends_with("— :saveas PATH to save elsewhere"),
         "{msg}"
     );
     // (2) Then silence: the second annotation's own confirmation shows,
@@ -169,7 +169,7 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
 }
 
 #[test]
-fn ac3_read_only_then_w_elsewhere_clears_the_state() {
+fn ac3_read_only_then_saveas_elsewhere_clears_the_state() {
     let dir = scratch("t110-readonly-w");
     let path = dir.join("doc.tiza");
     std::fs::copy(fixture("t-050/export.tiza"), &path).unwrap();
@@ -180,8 +180,9 @@ fn ac3_read_only_then_w_elsewhere_clears_the_state() {
     std::fs::set_permissions(&path, perms.clone()).unwrap();
     live.command("note 1 first");
     assert!(live.message().unwrap().1);
+    // (`:w PATH` only writes a copy since t-221, as in Vim.)
     let elsewhere = dir.join("elsewhere.tiza");
-    live.command(&format!("w {}", elsewhere.display()));
+    live.command(&format!("saveas {}", elsewhere.display()));
     assert!(elsewhere.exists());
     let bar = live.screen(140, 20).lines().last().unwrap().to_string();
     assert!(!bar.contains("read-only"), "{bar}");
@@ -204,7 +205,7 @@ fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
     let (msg, err) = live.message().unwrap();
     assert!(
         err && msg.contains("unsaved changes (autosave off)")
-            && msg.contains(":w PATH saves elsewhere")
+            && msg.contains(":saveas PATH saves elsewhere")
             && msg.contains(":q! quits without saving"),
         "{msg}"
     );
