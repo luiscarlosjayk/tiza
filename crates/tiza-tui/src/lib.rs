@@ -99,10 +99,14 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         // every one).
         app.info(format!("{}: {}", r.place(), r.message()));
     }
-    if opts.follow
-        && let Err(e) = app.set_follow(true)
-    {
-        app.error(e.to_string());
+    if opts.follow {
+        match app.set_follow(true) {
+            // At a step with moves applied a save waits for step 0 (t-212):
+            // said unless the bar already has something from the load.
+            Ok(m) if app.follow_waits().is_some() && app.message.is_none() => app.info(m),
+            Ok(_) => {}
+            Err(e) => app.error(e.to_string()),
+        }
     }
 
     // Before the socket exists, so a SIGHUP never leaves it behind.

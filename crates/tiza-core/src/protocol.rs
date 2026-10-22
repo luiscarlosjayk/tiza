@@ -1151,11 +1151,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "follow.set",
-        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
+        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads at step 0 (`reason` says so, t-212)",
     ),
     (
         "follow.status",
-        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing",
+        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, reason (why it is off, or why a save waits for step 0)",
     ),
     (
         "supervise.set",

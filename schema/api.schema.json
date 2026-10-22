@@ -6204,7 +6204,7 @@
       }
     },
     {
-      "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded",
+      "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads at step 0 (`reason` says so, t-212)",
       "method": "follow.set",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6257,7 +6257,7 @@
             ]
           },
           "reason": {
-            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`).",
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`). With follow on, why a save does not load now: moves are\napplied (`waiting: moves applied at step 1; loads at step 0`, with\n`main.rs changed on disk, ` before `moves` when a change waits).",
             "type": [
               "string",
               "null"
@@ -6280,7 +6280,7 @@
       }
     },
     {
-      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing",
+      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, reason (why it is off, or why a save waits for step 0)",
       "method": "follow.status",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6324,7 +6324,7 @@
             ]
           },
           "reason": {
-            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`).",
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`). With follow on, why a save does not load now: moves are\napplied (`waiting: moves applied at step 1; loads at step 0`, with\n`main.rs changed on disk, ` before `moves` when a change waits).",
             "type": [
               "string",
               "null"

@@ -2720,8 +2720,29 @@ impl App {
         }
     }
 
+    /// Following while moves are applied: why a save does not load now
+    /// (it waits for step 0, t-206), as the reply, the bar and
+    /// `follow.status` say it (t-212). `None` when a save loads at once.
+    pub fn follow_waits(&self) -> Option<String> {
+        if self.follow.is_none() || !self.doc.moves_applied() {
+            return None;
+        }
+        let step = self.doc.step;
+        let changed = self
+            .follow
+            .as_ref()
+            .filter(|_| self.reload_waits)
+            .map(|f| format!("{} changed on disk, ", f.file_name()))
+            .unwrap_or_default();
+        Some(format!(
+            "waiting: {changed}moves applied at step {step}; loads at step 0"
+        ))
+    }
+
     /// Enables or disables follow mode. Enabling needs a file reference
-    /// (`:link` first when the code is embedded).
+    /// (`:link` first when the code is embedded). At a step with moves
+    /// applied it starts waiting (t-212): a save, or a change made while
+    /// follow was off, loads when a step with no moves is reached.
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
         if !enabled {
             self.reload_waits = false;
@@ -2736,17 +2757,15 @@ impl App {
         if let Some(f) = &self.follow {
             return Ok(format!("already following {}", f.file_name()));
         }
-        if let Some(e) = self.moves_block_reason("follow") {
-            return Err(e);
-        }
         let path = self.source_file().ok_or_else(|| {
             Error::Invalid(
                 "nothing to follow: the code is embedded (use :link path to reference a file)"
                     .into(),
             )
         })?;
+        // The step-0 code: with moves applied, `doc.code` is what they made.
         let f =
-            crate::follow::Follow::start(path, self.doc.code.clone()).map_err(Error::Invalid)?;
+            crate::follow::Follow::start(path, self.doc.base().to_vec()).map_err(Error::Invalid)?;
         let name = f.file_name();
         self.follow = Some(f);
         self.reload_waits = false;
@@ -2772,7 +2791,10 @@ impl App {
         // `follow_file` stays: while the code on screen is still embedded
         // (the file is missing, or unreadable for now) it names the file the
         // next reload reads, so the file coming back reloads it.
-        Ok(format!("following {name}"))
+        Ok(match self.follow_waits() {
+            Some(w) => format!("following {name} ({w})"),
+            None => format!("following {name}"),
+        })
     }
 
     /// Called every loop iteration: reloads when the watcher says so.
@@ -2953,13 +2975,19 @@ impl App {
     /// `follow.status` payload.
     pub fn follow_status(&self) -> Value {
         match &self.follow {
-            Some(f) => json!({
-                "enabled": true,
-                "path": f.path.display().to_string(),
-                "reloads": f.reloads,
-                "last_reload": f.last_reload_clock,
-                "missing": f.missing,
-            }),
+            Some(f) => {
+                let mut st = json!({
+                    "enabled": true,
+                    "path": f.path.display().to_string(),
+                    "reloads": f.reloads,
+                    "last_reload": f.last_reload_clock,
+                    "missing": f.missing,
+                });
+                if let Some(why) = self.follow_waits() {
+                    st["reason"] = json!(why);
+                }
+                st
+            }
             None => {
                 let mut st = json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())});
                 if let Some(why) = self.off_reason() {
@@ -3676,13 +3704,16 @@ impl App {
                 "follow" => match rest.trim() {
                     "" => Ok(match &self.follow {
                         Some(f) => format!(
-                            "following {} ({} reload{}{})",
+                            "following {} ({} reload{}{}{})",
                             f.file_name(),
                             f.reloads,
                             if f.reloads == 1 { "" } else { "s" },
                             f.last_reload_clock
                                 .as_ref()
                                 .map(|t| format!(", last at {t}"))
+                                .unwrap_or_default(),
+                            self.follow_waits()
+                                .map(|w| format!("; {w}"))
                                 .unwrap_or_default()
                         ),
                         None => match self.off_reason() {
@@ -5434,7 +5465,13 @@ impl App {
                     .ok_or_else(|| {
                         Error::Invalid("follow.set needs `enabled`: true|false".into())
                     })?;
+                let was = self.follow.is_some();
                 let msg = self.set_follow(enabled)?;
+                // Turned on where a save waits for step 0: the presenter is
+                // told too, or the next save would seem lost (t-212).
+                if !was && self.follow_waits().is_some() {
+                    self.info(msg.clone());
+                }
                 let mut st = self.follow_status();
                 st["message"] = json!(msg);
                 st
