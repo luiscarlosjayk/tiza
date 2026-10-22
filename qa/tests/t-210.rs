@@ -672,9 +672,7 @@ fn corner_render_and_smoke_are_unchanged() {
     let body = r##"
 binary, doc = sys.argv[1], sys.argv[2]
 s = Pty([binary, doc, "--smoke", "--no-socket", "--no-save"], 30, 120, ctty=True)
-s.wait_for(lambda out: False, 10, "exit")
-print("SMOKE", s.p.poll(), flush=True)
-s.finish(5)
+print("SMOKE", s.finish(10), flush=True)
 "##;
     let out = tiza_qa::pty_script(
         file.parent().unwrap(),
