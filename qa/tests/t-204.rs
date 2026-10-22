@@ -10,12 +10,17 @@
 //! - AC2 With no controlling terminal, a plain error: one line saying a
 //!   terminal is needed and pointing at `tiza render` / `tiza check`; exit
 //!   code 1; nothing in `panics.log`.
-//! - AC3 Nothing changes when nothing is typed early (t-180, t-119 and t-205
-//!   stay green).
+//! - AC3 Nothing changes when nothing is typed early (the start-up race,
+//!   theme detection and hang-up tests stay green).
 //! - AC4 This file; CHANGELOG (Fixed).
 //!
 //! Corner cases: a terminal that never answers (the 100 ms timeout) still
 //! gives the keys back; an ESC typed early is a key, not part of an answer.
+//!
+//! Review (`rev_*`): an early key that quits ends them (nothing after it
+//! runs, nothing is saved); an early ESC stays Esc when the next key comes
+//! in a later read or after the answer; an early `:mouse on` turns the
+//! mouse capture on.
 
 use std::path::Path;
 
@@ -65,6 +70,7 @@ while ok and time.monotonic() < end:
     s.settle(0.05)
 print("STEP", step, flush=True)
 print("LIGHT", "light·auto" in plain(s.out), flush=True)
+print("MOUSE_ON", b"\x1b[?1000h" in s.out, flush=True)
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
 "##;
@@ -225,9 +231,67 @@ print("STDERR", repr(out.decode(errors="replace")))
     // One line and nothing else: no screen set up, no escape codes.
     assert_eq!(stderr.matches("\\n").count(), 1, "{stderr}");
     assert!(!stderr.contains("\\x1b"), "{stderr}");
-    assert!(!runtime.join("panics.log").exists(), "a panic was logged");
+    assert!(
+        !runtime.join("tiza").join("panics.log").exists(),
+        "a panic was logged"
+    );
     assert!(
         !Path::new(&dir.join("s.sock")).exists(),
         "the socket was left"
     );
+}
+
+// ---------- review ----------
+
+#[test]
+fn rev_an_early_key_that_quits_ends_them() {
+    // Ctrl-C (or `q`) first: the keys after it never run, and nothing is
+    // saved (`x` would delete the selected annotation, autosaved).
+    for (name, seed) in [("ctrl-c", b"\x03n\tx".as_slice()), ("q", b"qn\tx")] {
+        let dir = scratch(&format!("t204-quit-{name}"));
+        std::fs::copy(example("ownership.rs.tiza"), dir.join("doc.tiza")).unwrap();
+        std::fs::copy(example("ownership.rs"), dir.join("ownership.rs")).unwrap();
+        let before = std::fs::read(dir.join("doc.tiza")).unwrap();
+        let body = r##"
+binary, cwd, seed = sys.argv[1], sys.argv[2], bytes.fromhex(sys.argv[3])
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color")
+env.pop("TIZA_NO_OSC", None)
+s = Pty([binary, "--theme", "auto", "--step", "2", "--socket", "s.sock", "doc.tiza"], 30, 120,
+        env=env, ctty=True, raw=True, seed=seed)
+print("EXIT", s.finish(10), flush=True)
+"##;
+        let out = tiza_qa::pty_script(
+            &dir,
+            &format!("quit-{name}.py"),
+            body,
+            &[bin().to_str().unwrap(), dir.to_str().unwrap(), &hex(seed)],
+        );
+        assert!(out.contains("EXIT 0"), "{name}: {out}");
+        assert_eq!(
+            std::fs::read(dir.join("doc.tiza")).unwrap(),
+            before,
+            "{name}: the document was written"
+        );
+    }
+}
+
+#[test]
+fn rev_an_early_esc_stays_esc_when_the_next_key_comes_later() {
+    // The next key after the terminal's answer. (One in a later read of the
+    // query is the same rule, `appearance::without_answers`, tested there:
+    // in the same read, `ESC n` is Alt+n, as crossterm reads it too, so the
+    // read boundary cannot be timed from here.)
+    let mut seed = b"n:\x1b".to_vec();
+    seed.extend_from_slice(LIGHT);
+    seed.push(b'n');
+    let out = run("t204-esc-answer", &[], &seed, b"", 0, b"");
+    assert_eq!(step_of(&out), "2", "{out}");
+    assert!(out.contains("LIGHT True"), "{out}");
+}
+
+#[test]
+fn rev_an_early_mouse_on_turns_the_capture_on() {
+    let out = run("t204-mouse", &[], b":mouse on\r", b"", 0, b"nn");
+    assert!(out.contains("MOUSE_ON True"), "{out}");
 }

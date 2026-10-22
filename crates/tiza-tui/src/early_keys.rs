@@ -1,12 +1,15 @@
 //! Keys typed while the start-up colour query read the terminal
 //! ([`crate::appearance::query_host`]): that read takes them along with the
-//! answer, before crossterm owns the input, so they are turned into the key
-//! presses crossterm would have read from the same bytes and handled first.
-//! The rules are crossterm's (0.29, `event/sys/unix/parse.rs`): `ESC x` is
-//! Alt+x, `\r` Enter, `\n` Ctrl-J (the terminal is in raw mode), control
-//! bytes Ctrl+letter, an uppercase letter carries Shift; the arrows, Home,
-//! End, BackTab, the numbered keys (`ESC [ 3 ~`…) and F1-F12, with their
-//! modifiers. A sequence it does not know is skipped, whole.
+//! answer, before crossterm owns the input, so they are turned into key
+//! presses and handled first. The rules follow crossterm's for the keys of
+//! a plain terminal (0.29, `event/sys/unix/parse.rs`): `ESC x` is Alt+x and
+//! `ESC ESC` one Esc, `\r` Enter, `\n` Ctrl-J (the terminal is in raw
+//! mode), control bytes Ctrl+letter, an uppercase letter carries Shift; the
+//! arrows, Home, End, BackTab, the numbered keys (`ESC [ 3 ~`…) and F1-F12,
+//! with their modifiers. Not covered, and skipped whole: the kitty
+//! keyboard protocol (`CSI … u`), mouse reports, and a bracketed paste
+//! (paste mode is not on yet; one left on by another program is not typed
+//! out as keys).
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -35,7 +38,7 @@ fn one(b: &[u8]) -> (Option<(KeyCode, KeyModifiers)>, usize) {
                 None => (Some((KeyCode::Char('O'), KeyModifiers::ALT)), 2),
                 Some(&c) => (ss3(c).map(|k| (k, none)), 3),
             },
-            Some(0x1b) => (Some((KeyCode::Esc, none)), 1),
+            Some(0x1b) => (Some((KeyCode::Esc, none)), 2),
             Some(_) => {
                 let (key, used) = one(&b[1..]);
                 (key.map(|(c, m)| (c, m | KeyModifiers::ALT)), used + 1)
@@ -104,6 +107,12 @@ fn csi(b: &[u8]) -> (Option<(KeyCode, KeyModifiers)>, usize) {
     };
     let used = end + 3;
     let params = std::str::from_utf8(&b[2..2 + end]).unwrap_or("");
+    // A bracketed paste: skipped through its end, never typed out.
+    if params == "200" && b[2 + end] == b'~' {
+        let rest = &b[used..];
+        let close = rest.windows(6).position(|w| w == b"\x1b[201~");
+        return (None, used + close.map_or(rest.len(), |c| c + 6));
+    }
     let nums: Vec<u8> = params.split(';').map(|p| p.parse().unwrap_or(0)).collect();
     let mods = match nums.get(1) {
         Some(&m) if m > 1 => {
@@ -180,7 +189,14 @@ mod tests {
     fn escape_alt_and_sequences() {
         assert_eq!(keys(b"\x1b"), vec![(Esc, NO)]);
         assert_eq!(keys(b"\x1bn"), vec![(Char('n'), KeyModifiers::ALT)]);
-        assert_eq!(keys(b"\x1b\x1b"), vec![(Esc, NO), (Esc, NO)]);
+        // As crossterm: `ESC ESC` is one Esc.
+        assert_eq!(keys(b"\x1b\x1b"), vec![(Esc, NO)]);
+        assert_eq!(keys(b"\x1b\x1bn"), vec![(Esc, NO), (Char('n'), NO)]);
+        // A paste is not typed out.
+        assert_eq!(
+            keys(b"a\x1b[200~:q!\r\x1b[201~b"),
+            vec![(Char('a'), NO), (Char('b'), NO)]
+        );
         assert_eq!(
             keys(b"\x1b[A\x1bOB\x1b[1;5C\x1b[3~\x1b[6~\x1b[Z\x1b[15~"),
             vec![

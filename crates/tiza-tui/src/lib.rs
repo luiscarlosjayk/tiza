@@ -85,7 +85,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         if let Some(host) = host {
             app.set_host(host);
         }
-        early = typed;
+        early = typed.iter().flat_map(|p| early_keys::keys(p)).collect();
     }
     if let Some(s) = opts.step {
         app.set_step(s);
@@ -147,6 +147,20 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         }
     };
     spare_answered_requests();
+    // Keys typed while the colour query waited, at the terminal's size and
+    // before the mouse capture follows `app.mouse` (`:mouse on` may be one
+    // of them); one that quits ends them, and the loop does not start.
+    if !opts.smoke {
+        if let Ok(size) = terminal.size() {
+            app.size = (size.width, size.height);
+        }
+        for (code, mods) in early {
+            on_key(&mut app, code, mods);
+            if app.quit {
+                break;
+            }
+        }
+    }
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {
         let _ = execute!(io::stdout(), EnableMouseCapture);
@@ -159,10 +173,9 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             .draw(|f| ui::draw(f, &mut app))
             .and_then(|_| event::poll(Duration::from_millis(100)))
             .map(|_| End::Quit)
+    } else if app.quit {
+        Ok(End::Quit)
     } else {
-        for (code, mods) in early_keys::keys(&early) {
-            on_key(&mut app, code, mods);
-        }
         event_loop(&mut terminal, &mut app, ipc.as_ref(), &hangup)
     };
     // The terminal went away: Ctrl-C's rules for what is saved.

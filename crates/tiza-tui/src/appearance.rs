@@ -101,29 +101,33 @@ pub fn parse_answers(input: &str) -> Host {
 /// when there is no tty, it does not answer within `timeout`, or the
 /// `TIZA_NO_OSC` variable is set (tests, pipelines). Also returns what else
 /// the read took from the terminal: keys typed meanwhile, in order, for the
-/// event loop ([`crate::early_keys`]); they are not the query's to eat.
-pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<u8>) {
+/// event loop ([`crate::early_keys`]); they are not the query's to eat. They
+/// come in pieces, as crossterm would have read them: one per read, cut
+/// where an answer was taken out (so an ESC that ends one is Esc, not Alt
+/// with the next key).
+pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>) {
     if std::env::var_os("TIZA_NO_OSC").is_some() {
         return (None, Vec::new());
     }
-    // The controlling terminal, or stdin when that is the terminal (a pty
-    // without a session, as in tests).
-    let mut tty = match std::fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open("/dev/tty")
-    {
-        Ok(f) => f,
-        Err(_) => {
-            use std::os::fd::AsFd;
-            let stdin = std::io::stdin();
-            if !rustix::termios::isatty(stdin.as_fd()) {
-                return (None, Vec::new());
-            }
+    // The terminal crossterm reads keys from: stdin when it is one, else
+    // the controlling terminal.
+    let mut tty = {
+        use std::os::fd::AsFd;
+        let stdin = std::io::stdin();
+        if rustix::termios::isatty(stdin.as_fd()) {
             let Ok(dup) = rustix::io::dup(stdin.as_fd()) else {
                 return (None, Vec::new());
             };
             std::fs::File::from(dup)
+        } else {
+            match std::fs::OpenOptions::new()
+                .read(true)
+                .write(true)
+                .open("/dev/tty")
+            {
+                Ok(f) => f,
+                Err(_) => return (None, Vec::new()),
+            }
         }
     };
     let Ok(saved) = rustix::termios::tcgetattr(&tty) else {
@@ -139,6 +143,8 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<u8>) {
         return (None, Vec::new());
     }
     let mut buf = Vec::new();
+    // Where each read began in `buf`.
+    let mut reads = Vec::new();
     let host = (|| {
         tty.write_all(QUERY.as_bytes()).ok()?;
         tty.flush().ok()?;
@@ -149,6 +155,7 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<u8>) {
             if n == 0 {
                 break;
             }
+            reads.push(buf.len());
             buf.extend_from_slice(&chunk[..n]);
             let text = String::from_utf8_lossy(&buf);
             let host = parse_answers(&text);
@@ -163,16 +170,25 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<u8>) {
         (host.bg.is_some()).then_some(host)
     })();
     let _ = rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &saved);
-    (host, without_answers(&buf))
+    (host, without_answers(&buf, &reads))
 }
 
-/// What the start-up read took from the terminal besides the answers: every
-/// `ESC ]` … `ESC \` (or BEL) sequence left out, and one cut short by the
-/// timeout too (the rest of an answer, never keys).
-pub fn without_answers(buf: &[u8]) -> Vec<u8> {
-    let mut out = Vec::new();
+/// What the start-up read took from the terminal besides the answers, in
+/// pieces: every `ESC ]` … `ESC \` (or BEL) sequence left out, and one cut
+/// short by the timeout too (the rest of an answer, never keys); a piece
+/// ends where a read (`reads`: where each began in `buf`) or an answer did.
+pub fn without_answers(buf: &[u8], reads: &[usize]) -> Vec<Vec<u8>> {
+    let mut out: Vec<Vec<u8>> = vec![Vec::new()];
+    let cut = |out: &mut Vec<Vec<u8>>| {
+        if out.last().is_some_and(|p| !p.is_empty()) {
+            out.push(Vec::new());
+        }
+    };
     let mut i = 0;
     while i < buf.len() {
+        if i > 0 && reads.contains(&i) {
+            cut(&mut out);
+        }
         if buf[i] == 0x1b && buf.get(i + 1) == Some(&b']') {
             let body = &buf[i + 2..];
             let end = (0..body.len()).find_map(|k| match body[k] {
@@ -184,11 +200,15 @@ pub fn without_answers(buf: &[u8]) -> Vec<u8> {
                 Some(n) => i += 2 + n,
                 None => break,
             }
+            cut(&mut out);
             continue;
         }
-        out.push(buf[i]);
+        if let Some(p) = out.last_mut() {
+            p.push(buf[i]);
+        }
         i += 1;
     }
+    out.retain(|p| !p.is_empty());
     out
 }
 
@@ -303,15 +323,21 @@ mod tests {
 
     #[test]
     fn the_start_up_read_gives_back_what_is_not_an_answer() {
+        let one = |b: &[u8]| without_answers(b, &[0]);
         assert_eq!(
-            without_answers(b"n\x1b]11;rgb:f7f7/f5f5/efef\x1b\\n\x1b]10;rgb:1/2/3\x07q"),
-            b"nnq"
+            one(b"n\x1b]11;rgb:f7f7/f5f5/efef\x1b\\n\x1b]10;rgb:1/2/3\x07q"),
+            vec![b"n".to_vec(), b"n".to_vec(), b"q".to_vec()]
         );
         // An answer cut short by the timeout is not keys.
-        assert_eq!(without_answers(b"j\x1b]11;rgb:f7f7/f5"), b"j");
-        // An ESC typed early stays a key.
-        assert_eq!(without_answers(b":\x1b"), b":\x1b");
-        assert_eq!(without_answers(b""), b"");
+        assert_eq!(one(b"j\x1b]11;rgb:f7f7/f5"), vec![b"j".to_vec()]);
+        // An ESC typed early stays a key, and ends its piece: a key read
+        // later is not Alt with it.
+        assert_eq!(one(b":\x1b"), vec![b":\x1b".to_vec()]);
+        assert_eq!(
+            without_answers(b":\x1bn", &[0, 2]),
+            vec![b":\x1b".to_vec(), b"n".to_vec()]
+        );
+        assert!(one(b"").is_empty());
     }
 
     #[test]
