@@ -397,6 +397,9 @@ pub struct App {
     /// off` keeps it, `:embed` and another document drop it. Why follow is
     /// off is worked out from the screen each time ([`App::off_reason`]).
     follow_file: Option<tiza_core::model::CodeSource>,
+    /// The followed file changed while moves were applied (t-206): its
+    /// reload waits for step 0, and the code on screen is embedded meanwhile.
+    reload_waits: bool,
     /// Code pasted in this session (the newest last, at most
     /// [`PASTES_KEPT`]): embedded code on screen equal to one of them is
     /// «pasted», anything else a version of the file.
@@ -501,6 +504,7 @@ impl App {
             overlay_scroll: 0,
             follow: None,
             follow_file: None,
+            reload_waits: false,
             pasted_codes: Vec::new(),
             screen_via_history: false,
             typing: None,
@@ -1797,6 +1801,10 @@ impl App {
             self.revision += 1;
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
+            // Its notice stays on the bar over the step's label.
+            if self.reload_waiting() {
+                loud = true;
+            }
         }
         loud
     }
@@ -2642,6 +2650,7 @@ impl App {
     /// Enables or disables follow mode. Enabling needs a file reference
     /// (`:link` first when the code is embedded).
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
+        self.reload_waits = false;
         if !enabled {
             if let Some(f) = &mut self.follow {
                 f.stop();
@@ -2699,9 +2708,43 @@ impl App {
             return false;
         };
         if !f.poll() {
-            return false;
+            // A step change that is not `step_to` (a step cleared away)
+            // can end the wait too.
+            return self.reload_waiting();
         }
         self.reload_from_disk(false)
+    }
+
+    /// Back where no move is applied with a change on disk that waited for
+    /// it (t-206): reloaded now, as a normal reload — one undo step, since
+    /// the code on screen is embedded meanwhile. A file saved back as the
+    /// screen has it is no reload: the document references it again.
+    /// `true` when the screen changed.
+    fn reload_waiting(&mut self) -> bool {
+        if !self.reload_waits || self.doc.moves_applied() || self.follow.is_none() {
+            return false;
+        }
+        self.reload_waits = false;
+        if self.reload_from_disk(true) {
+            return true;
+        }
+        let Some(src) = self.paused().cloned() else {
+            return false;
+        };
+        let mut probe = self.doc.clone();
+        probe.code_src = src.clone();
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        if fs::reread_reference(&probe, base.as_deref())
+            .is_ok_and(|(code, first)| code == self.doc.base() && first == self.doc.base_first())
+        {
+            self.doc.code_src = src;
+            self.touch();
+            if let Some(f) = &self.follow {
+                self.info(format!("following {}", f.file_name()));
+            }
+            return true;
+        }
+        false
     }
 
     /// Re-reads the followed file and applies it; `always` records the
@@ -2758,6 +2801,17 @@ impl App {
         if self.doc.moves_applied() {
             // ADR 0007 §7: follow is paused while moves are applied (t-106
             // reconciles the edits); until then, say so instead of reloading.
+            // The code on screen is no longer the file's: embedded meanwhile
+            // (t-206), as after a paste, so the autosave and a fresh load
+            // show it — saved as `code: {file}` they would read the new text
+            // under the annotations and `rebind` entries made for this one.
+            if !self.doc.is_embedded() {
+                self.follow_file = Some(self.doc.code_src.clone());
+                self.doc.code_src =
+                    tiza_core::model::CodeSource::Embedded(self.doc.base().to_vec());
+                self.touch();
+            }
+            self.reload_waits = true;
             let step = self.doc.step;
             self.error(format!(
                 "{name} changed on disk but moves are applied at step {step}: go back to step 0 to reload"
