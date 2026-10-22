@@ -370,72 +370,16 @@ pub fn layout_with(
         }
         g => g,
     };
-    // Whether a margin block fits, and which rows it covers, is only known
-    // once the rows exist, so the layout runs again while a run finds
-    // something to move under its line:
-    // - a margin callout with no room for its block whose line has another
-    //   label too (or whose row another block takes) is drawn as a block
-    //   under its line, as the narrow layout does;
-    // - a line with a label whose margin row a block leaves fewer than 14
-    //   cells beside it puts its labels under itself.
-    // Both sets only grow (the extra rows only give the blocks more room),
-    // so this ends; a document with no margin callout runs once.
-    let mut under = Under::default();
-    loop {
-        let (l, more) = layout_pass(doc, theme, opts, geometry, &under);
-        let before = (under.callouts.len(), under.lines.len());
-        under.callouts.extend(more.callouts);
-        under.lines.extend(more.lines);
-        if (under.callouts.len(), under.lines.len()) == before {
-            return l;
-        }
-    }
-}
-
-/// What a run of the layout moves under its line (see [`layout_with`]).
-#[derive(Default)]
-struct Under {
-    /// Margin callouts drawn as a block under their line.
-    callouts: std::collections::BTreeSet<String>,
-    /// Lines whose labels go under them because a margin block covers
-    /// their row.
-    lines: std::collections::BTreeSet<u32>,
-}
-
-/// One run of the layout with `under` (see [`layout_with`]). Also returns
-/// what this run found must go under its line, for the next run.
-fn layout_pass(
-    doc: &Document,
-    theme: &Theme,
-    opts: &LayoutOptions,
-    geometry: Option<&StableGeometry>,
-    under: &Under,
-) -> (Layout, Under) {
-    let under_callouts = &under.callouts;
-    let width = opts.width.max(20);
-    // Borrowed when the caller computed it (once per document, not per
-    // frame or per pass).
-    let owned;
-    let stable: Option<&StableGeometry> = match (opts.stable, geometry) {
-        (false, _) => None,
-        (true, Some(g)) => Some(g),
-        (true, None) => {
-            owned = stable_geometry(doc, opts);
-            Some(&owned)
-        }
-    };
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.
     let projected;
-    let mut scripted_cursor = None;
-    let mut scripted_selection = None;
+    let (mut cursor, mut selection) = (None, None);
     let doc = if doc.moves.is_empty() {
         doc
     } else {
         let v = doc.view_at(opts.step);
-        scripted_cursor = v.cursor;
-        scripted_selection = v.selection;
+        (cursor, selection) = (v.cursor, v.selection);
         projected = v.doc;
         &projected
     };
@@ -448,6 +392,103 @@ fn layout_pass(
             &filled
         }
         None => doc,
+    };
+    let shared = Shared {
+        cursor,
+        selection,
+        code_w: doc
+            .code
+            .iter()
+            .map(|l| display_width(l, opts.tab_width))
+            .max()
+            .unwrap_or(0)
+            .max(1),
+    };
+    // Whether a margin block fits, and which rows it covers, is only known
+    // once the rows exist, so the rows are planned again while a plan finds
+    // something to move under its line:
+    // - a margin callout with no room for its block on the rows of its own
+    //   line is drawn as a block under its line, as the narrow layout does;
+    // - a line with a label whose margin row a block leaves fewer than 14
+    //   cells beside it puts its labels under itself.
+    // Both sets only grow (the extra rows only give the blocks more room),
+    // so this ends. A plan places the rows and the blocks without drawing
+    // anything; the layout is drawn once, from the last plan (a document
+    // with no margin callout at the step has nothing to plan).
+    let mut planning = doc.annotations.iter().any(|a| {
+        a.step <= opts.step
+            && matches!(&a.shape, Shape::Callout { placement, .. }
+                if *placement != crate::model::Placement::Below)
+    });
+    let mut under = Under::default();
+    while planning {
+        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, false)
+        else {
+            unreachable!("a plan draws nothing")
+        };
+        let before = (under.callouts.len(), under.lines.len());
+        under.callouts.extend(more.callouts);
+        under.lines.extend(more.lines);
+        planning = (under.callouts.len(), under.lines.len()) != before;
+    }
+    match layout_pass(doc, theme, opts, geometry, &under, &shared, true) {
+        Pass::Drawn(l) => l,
+        Pass::Planned(_) => unreachable!("a drawing pass returns its layout"),
+    }
+}
+
+/// What every run of one layout shares (see [`layout_with`]).
+struct Shared {
+    /// The cursor and selection the moves left at the step.
+    cursor: Option<crate::model::Anchor>,
+    selection: Option<(crate::model::Anchor, crate::model::Anchor)>,
+    /// The widest code line, in cells (at least 1).
+    code_w: usize,
+}
+
+/// What one run of [`layout_pass`] gives back.
+enum Pass {
+    /// A plan's verdict: what must go under its line.
+    Planned(Under),
+    /// The layout, drawn.
+    Drawn(Layout),
+}
+
+/// What a run of the layout moves under its line (see [`layout_with`]).
+#[derive(Default)]
+struct Under {
+    /// Margin callouts drawn as a block under their line.
+    callouts: std::collections::BTreeSet<String>,
+    /// Lines whose labels go under them because a margin block covers
+    /// their row.
+    lines: std::collections::BTreeSet<u32>,
+}
+
+/// One run of the layout of `doc` (already as the step shows it) with
+/// `under` (see [`layout_with`]): with `draw`, the layout; without it, a
+/// plan of the rows and the margin blocks that returns what must go under
+/// its line, for the next run.
+fn layout_pass(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    under: &Under,
+    shared: &Shared,
+    draw: bool,
+) -> Pass {
+    let under_callouts = &under.callouts;
+    let width = opts.width.max(20);
+    // Borrowed when the caller computed it (once per document, not per
+    // frame or per pass).
+    let owned;
+    let stable: Option<&StableGeometry> = match (opts.stable, geometry) {
+        (false, _) => None,
+        (true, Some(g)) => Some(g),
+        (true, None) => {
+            owned = stable_geometry(doc, opts);
+            Some(&owned)
+        }
     };
     // Annotations outside the code (a document whose file shrank, or a
     // hand-edited one) are reported when it opens; here they are simply not
@@ -579,13 +620,8 @@ fn layout_pass(
         0
     }
     .max(stable.as_ref().map_or(0, |g| g.num_w));
-    let code_full_w = doc
-        .code
-        .iter()
-        .map(|l| display_width(l, opts.tab_width))
-        .max()
-        .unwrap_or(0)
-        .max(1)
+    let code_full_w = shared
+        .code_w
         .max(stable.as_ref().map_or(0, |g| g.code_full_w));
     let multi_arrows: Vec<&Annotation> = vis
         .iter()
@@ -762,7 +798,38 @@ fn layout_pass(
     // Arrow labels drawn beside the code of their target line (narrow
     // mode): (line, glyph, text, colour).
     let mut beside: Vec<(u32, String, String, Rgb, String)> = Vec::new();
-    for line in doc.source.first_line..=doc.last_line() {
+    // What the rows of each line depend on, so a line looks at its own
+    // annotations only: its highlights, marks, notes, arrows on the line
+    // and arrowheads (indices in `vis`, in its order), and the callouts
+    // drawn below whose range ends on it ((first line, index in
+    // `callouts`), in their order).
+    let first_line = doc.source.first_line;
+    let line_count = (first_line..=doc.last_line()).count();
+    let mut at_line: Vec<Vec<usize>> = vec![Vec::new(); line_count];
+    let mut below_at: Vec<Vec<(u32, usize)>> = vec![Vec::new(); line_count];
+    let slot = |line: u32| line.checked_sub(first_line).map(|k| k as usize);
+    for (i, a) in vis.iter().enumerate() {
+        let line = match &a.shape {
+            Shape::Highlight { span, .. } | Shape::Mark { span, .. } => span.line,
+            Shape::Note { line, .. } => *line,
+            Shape::Arrow { from, to, .. } if from.line == to.line => from.line,
+            Shape::Arrow { to, .. } => to.line,
+            _ => continue,
+        };
+        if let Some(v) = slot(line).and_then(|k| at_line.get_mut(k)) {
+            v.push(i);
+        }
+    }
+    for (ci, c) in callouts.iter().enumerate().filter(|(_, c)| c.below) {
+        if let Shape::Callout {
+            from_line, to_line, ..
+        } = &vis[c.idx].shape
+            && let Some(v) = slot(to_line.unwrap_or(*from_line)).and_then(|k| below_at.get_mut(k))
+        {
+            v.push((*from_line, ci));
+        }
+    }
+    for (line, (own, below)) in (first_line..=doc.last_line()).zip(at_line.iter().zip(&below_at)) {
         let mut tops: Vec<usize> = (0..boxes.len())
             .filter(|&i| boxes[i].from == line)
             .collect();
@@ -771,7 +838,7 @@ fn layout_pass(
 
         row_of_line.insert(line, rows.len());
         rows.push(Row::Code(line));
-        if vis.iter().any(|a| match &a.shape {
+        if own.iter().any(|&i| match &vis[i].shape {
             Shape::Highlight { span, emphasis, .. } | Shape::Mark { span, emphasis, .. } => {
                 span.line == line && emphasis_needs_row(doc, span, *emphasis)
             }
@@ -780,7 +847,8 @@ fn layout_pass(
             rows.push(Row::Emphasis(line));
         }
 
-        for (i, a) in vis.iter().enumerate() {
+        for &i in own {
+            let a = vis[i];
             if let Shape::Arrow {
                 from, to, label, ..
             } = &a.shape
@@ -806,7 +874,7 @@ fn layout_pass(
             }
         }
         if !in_margin(line) {
-            for a in &vis {
+            for a in own.iter().map(|&i| vis[i]) {
                 let lbl = match &a.shape {
                     Shape::Note { line: l, text } if *l == line => {
                         Some((text.clone(), color_of(a), true))
@@ -890,17 +958,7 @@ fn layout_pass(
         // here follow the same rule one by one (innermost first).
         let mut bottoms: Vec<usize> = (0..boxes.len()).filter(|&i| boxes[i].to == line).collect();
         bottoms.sort_by_key(|&i| std::cmp::Reverse(boxes[i].depth));
-        let mut here: Vec<(u32, usize)> = callouts
-            .iter()
-            .enumerate()
-            .filter(|(_, c)| c.below)
-            .filter_map(|(ci, c)| match &vis[c.idx].shape {
-                Shape::Callout {
-                    from_line, to_line, ..
-                } if to_line.unwrap_or(*from_line) == line => Some((*from_line, ci)),
-                _ => None,
-            })
-            .collect();
+        let mut here = below.clone();
         // Narrowest range first: it sits inside more boxes.
         here.sort_by_key(|&(from, _)| std::cmp::Reverse(from));
         let mut emitted = 0;
@@ -972,12 +1030,184 @@ fn layout_pass(
     };
     let margin_w = width.saturating_sub(margin_x);
 
+    // ---- margin labels per row ----
+    // Gathered before anything is drawn: the rows with a margin label decide
+    // which lines a margin block covers. On a code row: the labels of its
+    // highlights and marks, then its arrowheads', then its notes.
+    let mut margin: Vec<Vec<Label>> = vec![Vec::new(); rows.len()];
+    if labels_in_margin {
+        let mut push = |y: usize, a: &Annotation, text: &str, note: bool| {
+            margin[y].push(Label {
+                id: a.id.clone(),
+                text: text.to_string(),
+                color: color_of(a),
+                note,
+                glyph: None,
+            });
+        };
+        for a in &vis {
+            let (span, text) = match &a.shape {
+                Shape::Highlight {
+                    span,
+                    label: Some(l),
+                    ..
+                } => (span, l.clone()),
+                // A dimmed mark keeps its legend only.
+                Shape::Mark {
+                    kind,
+                    span,
+                    label,
+                    style,
+                    ..
+                } => (
+                    span,
+                    mark_text(
+                        doc,
+                        kind,
+                        style,
+                        label.as_deref().filter(|_| !ann_dimmed(a)),
+                    ),
+                ),
+                _ => continue,
+            };
+            if in_margin(span.line)
+                && let Some(&y) = row_of_line.get(&span.line)
+            {
+                push(y, a, &text, false);
+            }
+        }
+        for a in &multi_arrows {
+            if let Shape::Arrow {
+                to, label: Some(l), ..
+            } = &a.shape
+                && in_margin(to.line)
+            {
+                push(row_of_line[&to.line], a, l, false);
+            }
+        }
+        for (y, row) in rows.iter().enumerate() {
+            if let Row::ArrowUnder(i) = row
+                && let Shape::Arrow {
+                    from,
+                    label: Some(l),
+                    ..
+                } = &vis[*i].shape
+                && !covered(from.line)
+            {
+                push(y, vis[*i], l, false);
+            }
+        }
+        for a in &vis {
+            if let Shape::Note { line, text } = &a.shape
+                && in_margin(*line)
+                && let Some(&y) = row_of_line.get(line)
+            {
+                push(y, a, text, true);
+            }
+        }
+    }
+
+    // ---- margin blocks ----
+    // Where each margin callout's block goes, before anything is drawn,
+    // from the first line down: (index in `callouts`, x, top row). A block
+    // starts on a row of its own line (its code row or one under it, before
+    // the next code row) and never overlaps another one: it goes beside the
+    // blocks on those rows when the margin holds it. With no room there it is
+    // drawn as a block under its line (the next run, see `layout_with`).
+    let height = rows.len();
+    let mut placed: Vec<(usize, usize, usize)> = Vec::new();
+    // (x, top row, width, height) of each block placed.
+    let mut blocks: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let overlap =
+        |blocks: &[(usize, usize, usize, usize)], x: usize, y: usize, w: usize, h: usize| {
+            blocks
+                .iter()
+                .filter(|(bx, by, bw, bh)| x < bx + bw && *bx < x + w && y < by + bh && *by < y + h)
+                .map(|(bx, _, bw, _)| bx + bw)
+                .max()
+        };
+    let mut retry = std::collections::BTreeSet::new();
+    let mut occupied = vec![false; height];
+    // Columns of the margin taken by callout blocks on each row; labels of
+    // those rows are drawn to the right of the blocks when there is room.
+    let mut shift = vec![0usize; height];
+    if labels_in_margin && margin_w > 0 {
+        let mut order: Vec<(usize, usize)> = callouts
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| !c.below)
+            .filter_map(|(ci, c)| match &vis[c.idx].shape {
+                Shape::Callout { from_line, .. } => row_of_line.get(from_line).map(|&y0| (y0, ci)),
+                _ => None,
+            })
+            .collect();
+        // Stable: the callouts of one line keep the document's order.
+        order.sort_by_key(|&(y0, _)| y0);
+        for (y0, ci) in order {
+            let c = &callouts[ci];
+            let h = c.lines.len() + 2;
+            let own_end = (y0 + 1..height)
+                .find(|&r| matches!(rows[r], Row::Code(_)))
+                .unwrap_or(height);
+            let spot = if c.width <= margin_w {
+                (y0..own_end)
+                    .take_while(|&y| y + h <= height)
+                    .find_map(|y| {
+                        let mut x = margin_x;
+                        while let Some(right) = overlap(&blocks, x, y, c.width, h) {
+                            x = right + 1;
+                        }
+                        (x + c.width <= width).then_some((x, y))
+                    })
+            } else {
+                None
+            };
+            match spot {
+                Some((x, y)) => {
+                    placed.push((ci, x, y));
+                    blocks.push((x, y, c.width, h));
+                }
+                None => {
+                    retry.insert(vis[c.idx].id.clone());
+                }
+            }
+        }
+        // Labels of a row go to the right of the blocks on it when 14 cells
+        // are left there; otherwise the row is taken.
+        for &(x, y, w, h) in &blocks {
+            for s in &mut shift[y..y + h] {
+                *s = (*s).max(x + w + 1 - margin_x);
+            }
+        }
+        for r in 0..height {
+            if shift[r] > 0 && margin_w.saturating_sub(shift[r]) < 14 {
+                shift[r] = 0;
+                occupied[r] = true;
+            }
+        }
+    }
+    if !draw {
+        // Lines with a margin label on a row a block takes: their labels go
+        // under them in the next run (see `layout_with`).
+        let mut lines = std::collections::BTreeSet::new();
+        for (y, labels) in margin.iter().enumerate() {
+            if occupied[y] && !labels.is_empty() {
+                let line = rows[..=y].iter().rev().find_map(|r| match r {
+                    Row::Code(l) => Some(*l),
+                    _ => None,
+                });
+                lines.extend(line);
+            }
+        }
+        return Pass::Planned(Under {
+            callouts: retry,
+            lines,
+        });
+    }
+
     let base = theme.base();
     let mut canvas = Canvas::new_filled(width, rows.len(), base);
     let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
-
-    // Margin labels per row.
-    let mut margin: Vec<Vec<Label>> = vec![Vec::new(); rows.len()];
 
     // ---- 1. code ----
     for (y, row) in rows.iter().enumerate() {
@@ -1022,59 +1252,37 @@ fn layout_pass(
         })
         .collect();
     for a in &vis {
-        let (span, fg, bg, label, emphasis) = match &a.shape {
-            Shape::Highlight {
-                span,
-                label,
-                emphasis,
-            } if ann_dimmed(a) => (
+        let (span, fg, bg, emphasis) = match &a.shape {
+            Shape::Highlight { span, emphasis, .. } if ann_dimmed(a) => (
                 span,
                 theme.dimmed,
                 theme.tint(theme.dimmed, 0.12),
-                label.clone(),
                 *emphasis,
             ),
-            Shape::Highlight {
-                span,
-                label,
-                emphasis,
-            } => {
+            Shape::Highlight { span, emphasis, .. } => {
                 let c = color_of(a);
                 let (fg, bg) = if a.color.is_some() {
                     (c, theme.tint(c, 0.22))
                 } else {
                     (theme.fg, theme.highlight_bg)
                 };
-                (span, fg, bg, label.clone(), *emphasis)
+                (span, fg, bg, *emphasis)
             }
+            Shape::Mark { span, emphasis, .. } if ann_dimmed(a) => (
+                span,
+                theme.dimmed,
+                theme.tint(theme.dimmed, 0.12),
+                *emphasis,
+            ),
             Shape::Mark {
                 kind,
                 span,
                 style,
                 emphasis,
                 ..
-            } if ann_dimmed(a) => (
-                span,
-                theme.dimmed,
-                theme.tint(theme.dimmed, 0.12),
-                Some(mark_text(doc, kind, style, None)),
-                *emphasis,
-            ),
-            Shape::Mark {
-                kind,
-                span,
-                label,
-                style,
-                emphasis,
             } => {
                 let st = doc.resolve_style(kind, style).unwrap_or_default();
-                (
-                    span,
-                    theme.mark_color(&st),
-                    theme.mark_bg(&st),
-                    Some(mark_text(doc, kind, style, label.as_deref())),
-                    *emphasis,
-                )
+                (span, theme.mark_color(&st), theme.mark_bg(&st), *emphasis)
             }
             _ => continue,
         };
@@ -1156,17 +1364,6 @@ fn layout_pass(
                 }
             }
         }
-        if in_margin(span.line)
-            && let Some(l) = label
-        {
-            margin[y].push(Label {
-                id: a.id.clone(),
-                text: l,
-                color: color_of(a),
-                note: false,
-                glyph: None,
-            });
-        }
     }
 
     // ---- 3. boxes ----
@@ -1238,10 +1435,7 @@ fn layout_pass(
     let mut rails: Vec<Rail> = Vec::new();
     for a in &arrows {
         let Shape::Arrow {
-            from,
-            to,
-            label,
-            line: ls,
+            from, to, line: ls, ..
         } = &a.ann.shape
         else {
             continue;
@@ -1317,17 +1511,6 @@ fn layout_pass(
             opts.tab_width,
             arrow_color,
         );
-        if in_margin(to.line)
-            && let Some(l) = label
-        {
-            margin[yt].push(Label {
-                id: a.ann.id.clone(),
-                text: l.clone(),
-                color: arrow_color,
-                note: false,
-                glyph: None,
-            });
-        }
     }
 
     // The rails, over the stubs: a rail always owns its cells in the lane
@@ -1344,10 +1527,7 @@ fn layout_pass(
     for (y, row) in rows.iter().enumerate() {
         let Row::ArrowUnder(i) = row else { continue };
         let Shape::Arrow {
-            from,
-            to,
-            label,
-            line: ls,
+            from, to, line: ls, ..
         } = &vis[*i].shape
         else {
             continue;
@@ -1405,18 +1585,6 @@ fn layout_pass(
                 arrow_style,
             );
         }
-        if labels_in_margin
-            && !covered(from.line)
-            && let Some(l) = label
-        {
-            margin[y].push(Label {
-                id: vis[*i].id.clone(),
-                text: l.clone(),
-                color: arrow_color,
-                note: false,
-                glyph: None,
-            });
-        }
         let code_row = row_of_line[&from.line];
         mark_anchor(
             &mut canvas,
@@ -1442,25 +1610,9 @@ fn layout_pass(
         );
     }
 
-    // ---- 6. notes ----
-    if labels_in_margin {
-        for a in &vis {
-            if let Shape::Note { line, text } = &a.shape
-                && in_margin(*line)
-                && let Some(&y) = row_of_line.get(line)
-            {
-                margin[y].push(Label {
-                    id: a.id.clone(),
-                    text: text.clone(),
-                    color: color_of(a),
-                    note: true,
-                    glyph: None,
-                });
-            }
-        }
-    }
+    // ---- 6. labels under the lines ----
     // (top row, bottom row, right rail x) of each box: a label under a line
-    // inside a box ends before the box's right rail.
+    // inside a box ends a cell before the box's right rail, as the code does.
     let box_rails: Vec<(usize, usize, usize)> = (0..boxes.len())
         .filter_map(|bi| {
             let top = rows.iter().position(|r| *r == Row::BoxTop(bi))?;
@@ -1471,13 +1623,15 @@ fn layout_pass(
     for (y, row) in rows.iter().enumerate() {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
-        // The innermost box around this row: its rail is never drawn over.
+        // The innermost box around this row: its rail is never drawn over,
+        // nor touched (one cell short of it), when it is on the canvas.
         let end = box_rails
             .iter()
             .filter(|(top, bottom, _)| *top < y && y < *bottom)
             .map(|(_, _, rx)| *rx)
             .min()
-            .unwrap_or(width);
+            .filter(|&rx| rx < width)
+            .map_or(width, |rx| rx - 1);
         let style = base.fg(lbl.color).italic();
         let x = match &lbl.glyph {
             Some(g) => {
@@ -1538,10 +1692,6 @@ fn layout_pass(
     }
 
     // ---- 6b. callouts ----
-    let mut occupied = vec![false; canvas.height];
-    // Columns of the margin taken by a callout block on each row; labels of
-    // those rows are drawn to the right of the block when there is room.
-    let mut shift = vec![0usize; canvas.height];
     let draw_block = |canvas: &mut Canvas, c: &CalloutPlan, x: usize, y0: usize, color: Rgb| {
         let w = c.width;
         let g = Glyphs::for_border(&c.frame);
@@ -1584,123 +1734,28 @@ fn layout_pass(
         title_clipped
     };
     // Below: their rows already exist.
-    for c in &callouts {
-        if !c.below {
-            continue;
+    let mut first_row = vec![None; callouts.len()];
+    for (y, r) in rows.iter().enumerate() {
+        if let Row::Callout(ci, 0) = r {
+            first_row[*ci] = Some(y);
         }
-        if let Some(y0) = rows.iter().position(|r| {
-            *r == Row::Callout(callouts.iter().position(|x| std::ptr::eq(x, c)).unwrap(), 0)
-        }) && draw_block(&mut canvas, c, code_x, y0, color_of(vis[c.idx]))
+    }
+    for (c, y0) in callouts.iter().zip(first_row) {
+        if let Some(y0) = y0
+            && draw_block(&mut canvas, c, code_x, y0, color_of(vis[c.idx]))
         {
             let t = c.title.as_deref().unwrap_or("");
             clip(&mut clipped, &vis[c.idx].id, t, false);
         }
     }
-    // Margin: reserve rows from the callout's first line.
-    // Callouts that fell back to a label: (id, first line, row).
-    let mut fallbacks: Vec<(&str, u32, usize)> = Vec::new();
-    // Blocks drawn in the margin: (x, top row, width, height). A block
-    // never overlaps another one: it goes beside the blocks on its rows
-    // when the margin holds it, else down to the first free rows, else it
-    // falls back to a label.
-    let mut blocks: Vec<(usize, usize, usize, usize)> = Vec::new();
-    let overlap =
-        |blocks: &[(usize, usize, usize, usize)], x: usize, y: usize, w: usize, h: usize| {
-            blocks
-                .iter()
-                .filter(|(bx, by, bw, bh)| x < bx + bw && *bx < x + w && y < by + bh && *by < y + h)
-                .map(|(bx, _, bw, _)| bx + bw)
-                .max()
-        };
-    if labels_in_margin && margin_w > 0 {
-        for c in &callouts {
-            if c.below || under_callouts.contains(&vis[c.idx].id) {
-                continue;
-            }
-            let Shape::Callout { from_line, .. } = &vis[c.idx].shape else {
-                continue;
-            };
-            let Some(&y0) = row_of_line.get(from_line) else {
-                continue;
-            };
-            let h = c.lines.len() + 2;
-            let mut spot = None;
-            if y0 + h <= canvas.height && c.width <= margin_w {
-                // Beside the blocks already on these rows…
-                let mut x = margin_x;
-                while let Some(right) = overlap(&blocks, x, y0, c.width, h) {
-                    x = right + 1;
-                }
-                spot = if x + c.width <= width {
-                    Some((x, y0))
-                } else {
-                    // …or on the first free rows below them.
-                    (y0 + 1..=canvas.height - h)
-                        .find(|&y| overlap(&blocks, margin_x, y, c.width, h).is_none())
-                        .map(|y| (margin_x, y))
-                };
-            }
-            let Some((x, y)) = spot else {
-                // Does not fit: fall back to a clipped single label.
-                let Shape::Callout { text, .. } = &vis[c.idx].shape else {
-                    continue;
-                };
-                margin[y0].push(Label {
-                    id: vis[c.idx].id.clone(),
-                    text: text.clone(),
-                    color: color_of(vis[c.idx]),
-                    note: true,
-                    glyph: None,
-                });
-                fallbacks.push((vis[c.idx].id.as_str(), *from_line, y0));
-                continue;
-            };
-            if draw_block(&mut canvas, c, x, y, color_of(vis[c.idx])) {
-                let t = c.title.as_deref().unwrap_or("");
-                clip(&mut clipped, &vis[c.idx].id, t, false);
-            }
-            blocks.push((x, y, c.width, h));
-        }
-        // Labels of a row go to the right of the blocks on it when 14 cells
-        // are left there; otherwise the row is taken.
-        for &(x, y, w, h) in &blocks {
-            for s in &mut shift[y..y + h] {
-                *s = (*s).max(x + w + 1 - margin_x);
-            }
-        }
-        for r in 0..canvas.height {
-            if shift[r] > 0 && margin_w.saturating_sub(shift[r]) < 14 {
-                shift[r] = 0;
-                occupied[r] = true;
-            }
+    // Margin: where the plan put them.
+    for &(ci, x, y) in &placed {
+        let c = &callouts[ci];
+        if draw_block(&mut canvas, c, x, y, color_of(vis[c.idx])) {
+            let t = c.title.as_deref().unwrap_or("");
+            clip(&mut clipped, &vis[c.idx].id, t, false);
         }
     }
-    // Lines with a margin label on a row a block takes: their labels go
-    // under them in the next run (see `layout_with`).
-    let mut covered_lines: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
-    for (y, labels) in margin.iter().enumerate() {
-        if occupied[y] && !labels.is_empty() {
-            let line = rows[..=y].iter().rev().find_map(|r| match r {
-                Row::Code(l) => Some(*l),
-                _ => None,
-            });
-            covered_lines.extend(line);
-        }
-    }
-    // A fallen-back callout sharing its line with another label goes under
-    // that line in the second run (see `layout_with`).
-    // So does one whose row a block takes, or whose line's labels go under.
-    let retry = fallbacks
-        .iter()
-        .filter(|(_, line, y)| {
-            label_count.get(line).copied().unwrap_or(0)
-                + fallbacks.iter().filter(|(_, l, _)| l == line).count()
-                >= 2
-                || occupied[*y]
-                || covered(*line)
-        })
-        .map(|(id, _, _)| id.to_string())
-        .collect();
 
     // ---- 7. margin ----
     // Each label takes its own margin row; if it does not fit, it is split
@@ -1780,7 +1835,7 @@ fn layout_pass(
 
     // ---- scripted selection and cursor: what `select` and
     // `cursor` moves left at this step, drawn like the TUI's own ----
-    if let Some((from, to)) = scripted_selection {
+    if let Some((from, to)) = shared.selection {
         let sel = CellStyle::new().bg(theme.tint(theme.accent, 0.35));
         for line in from.line..=to.line {
             let (Some(&y), Some(text)) = (row_of_line.get(&line), doc.line_text(line)) else {
@@ -1800,7 +1855,7 @@ fn layout_pass(
             }
         }
     }
-    if let Some(c) = scripted_cursor
+    if let Some(c) = shared.cursor
         && let (Some(&y), Some(text)) = (row_of_line.get(&c.line), doc.line_text(c.line))
     {
         let col = c.col.min(doc.line_len(c.line).saturating_sub(1));
@@ -1810,21 +1865,15 @@ fn layout_pass(
         }
     }
 
-    (
-        Layout {
-            canvas,
-            rows,
-            row_of_line,
-            code_x,
-            clipped_code: (code_full_w > code_w).then_some(code_full_w),
-            labels_in_margin,
-            clipped_labels: clipped,
-        },
-        Under {
-            callouts: retry,
-            lines: covered_lines,
-        },
-    )
+    Pass::Drawn(Layout {
+        canvas,
+        rows,
+        row_of_line,
+        code_x,
+        clipped_code: (code_full_w > code_w).then_some(code_full_w),
+        labels_in_margin,
+        clipped_labels: clipped,
+    })
 }
 
 /// Splits `text` into chunks of at most `width` cells, breaking on words
@@ -1975,7 +2024,7 @@ fn mark_text(
 }
 
 /// (and on graphemes if a single word does not fit).
-fn wrap_words(text: &str, width: usize) -> Vec<String> {
+pub(crate) fn wrap_words(text: &str, width: usize) -> Vec<String> {
     let width = width.max(1);
     let mut out = Vec::new();
     let mut line = String::new();
@@ -2526,9 +2575,9 @@ mod tests {
     }
 
     /// `callout_doc` with the callout moved to the last lines, where its
-    /// block has no room (fewer rows below than it is tall) and it falls
-    /// back to a label of its first line.
-    /// `tail`: code after `main`, so the label has free rows to wrap into.
+    /// block has no room in the margin (fewer rows below than it is tall)
+    /// and it is drawn as a block under its line.
+    /// `tail`: code after `main`.
     fn short_callout_doc(tail: &str, with_note: bool) -> Document {
         let mut d = Document::from_code(
             &format!(
@@ -2572,7 +2621,7 @@ mod tests {
     }
 
     #[test]
-    fn fallen_back_callout_alone_on_its_line_stays_in_the_margin_and_wraps() {
+    fn fallen_back_callout_alone_on_its_line_is_a_block_under_it() {
         let d = short_callout_doc("\nfn f() {}\n", false);
         let l = layout(
             &d,
@@ -2586,18 +2635,18 @@ mod tests {
         let text = l.canvas.to_plain_text();
         println!("{text}");
         assert!(l.labels_in_margin);
-        assert!(!l.rows.iter().any(|r| matches!(r, Row::Under(_))), "{text}");
-        // On the row of L3, then over the free rows of L4 and L5 (a line
-        // with one label keeps the margin path).
-        let r3 = l.canvas.row_text(l.row_of_line[&3]);
+        // No label of its words in the margin, nor under the line: the
+        // block, right under L3, before L4.
+        assert!(!text.contains('┆'), "{text}");
+        let y = l.row_of_line[&3];
+        assert!(matches!(l.rows[y + 1], Row::Callout(_, 0)), "{text}");
         assert!(
-            r3.contains("takes(s);") && r3.contains("┆ takes(s) moves"),
+            l.canvas
+                .row_text(y + 2)
+                .contains("│ takes(s) moves the String:"),
             "{text}"
         );
-        assert!(
-            l.canvas.row_text(l.row_of_line[&4]).contains("main cannot"),
-            "{text}"
-        );
+        assert!(l.row_of_line[&4] > y + 3, "{text}");
         assert!(l.clipped_labels.is_empty(), "{:?}", l.clipped_labels);
     }
 
