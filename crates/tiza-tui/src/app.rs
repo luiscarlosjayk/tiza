@@ -69,6 +69,35 @@ struct BeforeHistory {
 }
 
 /// What the last selection was, so a command typed right after can use it as its anchor.
+/// What a `:` command does with the selection a `v`/`V` left pending
+/// (t-203): `:hl` and `:mark` take it as their anchor and keep it, so ↑ +
+/// Enter runs them again on the same text; every other command lets it go
+/// once it has run (`:note`, `:box`, `:callout` opened from a selection
+/// carry its lines in their own text).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionUse {
+    Takes,
+    Ignores,
+}
+
+/// The one list of which `:` commands take the pending selection: every
+/// name and alias `run_command` knows, `None` for any other (a test walks
+/// `App::COMMANDS` so a new command cannot be left out).
+fn selection_use(name: &str) -> Option<SelectionUse> {
+    use SelectionUse::*;
+    Some(match name {
+        "hl" | "highlight" | "mark" | "m" => Takes,
+        "q" | "quit" | "q!" | "quit!" | "w" | "write" | "export" | "supervise" | "supervised"
+        | "mouse" | "review" | "wq" | "box" | "arrow" | "ar" | "style" | "kinds" | "note" | "n"
+        | "embed" | "link" | "ref" | "spot" | "spotlight" | "callout" | "co" | "set" | "follow"
+        | "until" | "clear" | "del" | "delete" | "rm" | "color" | "col" | "label" | "step"
+        | "s" | "next" | "goto" | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p"
+        | "lang" | "title" | "ls" | "list" | "help" | "h" | "?" | "undo" | "u" | "redo"
+        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
+        _ => return None,
+    })
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Selection {
     Span(tiza_core::TextSpan),
@@ -3309,6 +3338,12 @@ impl App {
         true
     }
 
+    /// Whether the `:` command `name` (or one of its aliases) takes the
+    /// pending selection as its anchor ([`SelectionUse`], t-203).
+    pub fn selection_use(name: &str) -> Option<SelectionUse> {
+        selection_use(name)
+    }
+
     /// Every `:` command name, for completion and help.
     pub const COMMANDS: &'static [&'static str] = &[
         "arrow",
@@ -4129,6 +4164,13 @@ impl App {
             }
         };
         let result = exec();
+        // A command that ran and does not take the selection lets it go
+        // (t-203): a later `:mark` must not land on it. One that takes it
+        // keeps it, so ↑ + Enter runs it again on the same text; a command
+        // that failed leaves it as it was, to fix the line and retry.
+        if result.is_ok() && selection_use(cmd) != Some(SelectionUse::Takes) {
+            self.pending_sel = None;
+        }
         match result {
             Ok(msg) if !msg.is_empty() => self.info(msg),
             Ok(_) => {}
@@ -4575,7 +4617,7 @@ impl App {
             }
         }
         let (at, label) = split_first(rest);
-        let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
+        let (span, label) = match (self.pending_sel, looks_like_anchor(at)) {
             (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
@@ -4663,7 +4705,7 @@ impl App {
             style.color = Some(c);
         }
         let inline = !known;
-        let (span, label) = match (self.pending_sel.take(), looks_like_anchor(at)) {
+        let (span, label) = match (self.pending_sel, looks_like_anchor(at)) {
             (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
