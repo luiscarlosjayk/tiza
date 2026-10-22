@@ -50,7 +50,7 @@ cargo install --git https://github.com/luiscarlosjayk/tiza tiza
 
 **Releases (maintainers).** Pushing a `vX.Y.Z` tag runs `.github/workflows/release.yml`, which builds the three archives and creates the GitHub Release. When Actions is not available, `scripts/release-local.sh vX.Y.Z` builds the same archives on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand.
 
-crates.io is published by hand, only for a tag without suffix, from a clean checkout of the tag whose version is the workspace version in `Cargo.toml`, after `cargo login` with a crates.io API token. The dry run first: it packages and builds the five crates against each other and uploads nothing (a dry run of one crate alone would resolve its siblings against the versions already on crates.io). Then one crate at a time, in dependency order:
+crates.io is published by hand, only for a tag without suffix, from a clean checkout of the tag whose version is the workspace version in `Cargo.toml`, after `cargo login` with a crates.io API token. The dry run first: it packages and builds the five crates against each other and uploads nothing (a dry run of one crate alone, or of a version already on crates.io, builds against the crates already published instead). Then one crate at a time, in dependency order:
 
 ```sh
 git checkout vX.Y.Z && git status --short     # must print nothing
