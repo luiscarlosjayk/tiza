@@ -709,7 +709,8 @@ fn ac5_changelog_names_the_card() {
     let log = std::fs::read_to_string(example("../CHANGELOG.md")).unwrap();
     let fixed = &log[log.find("### Fixed").unwrap()..];
     assert!(
-        fixed.contains("(t-166") && fixed.contains("load_scene"),
+        fixed.contains("Exporting the live instance ignored the files a `code.link` move shows")
+            && fixed.contains("load_scene"),
         "CHANGELOG.md has no Fixed entry for t-166"
     );
 }

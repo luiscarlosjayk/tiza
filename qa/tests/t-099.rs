@@ -777,7 +777,10 @@ fn ac10_schema_scene_get_and_docs_cover_steps_and_loop() {
         ("README.md", "tiza goto"),
         ("docs/agent-guide.md", "step.goto"),
         ("docs/agent-guide.md", "goto_step"),
-        ("CHANGELOG.md", "t-099"),
+        (
+            "CHANGELOG.md",
+            "- Named steps, auto-advance and loop ([ADR 0007]",
+        ),
         (
             "docs/adr/0007-moves-y-pasos-con-nombre.md",
             "Named steps shipped the `tiza next|prev|goto` CLI",

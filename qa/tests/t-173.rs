@@ -595,7 +595,7 @@ fn ac5_a_message_that_fits_is_unchanged() {
 fn ac6_changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("(t-173)"));
+    assert!(changelog.contains("- The status bar keeps where to find what a message names."));
     assert!(changelog.contains("⚠ labels"));
 }
 

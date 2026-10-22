@@ -790,5 +790,5 @@ fn review2_r3_focus_set_refuses_lines_that_are_not_line_numbers() {
 fn ac3_changelog() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("(t-167)"));
+    assert!(changelog.contains("- Errors never repeat a closed value:"));
 }

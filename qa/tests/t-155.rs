@@ -319,7 +319,9 @@ fn ac3_schema_guide_and_changelog() {
     assert!(guide.contains("## Is it on screen?"));
     assert!(guide.contains("\"visible\": false"));
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("(t-155)"));
+    assert!(changelog.contains(
+        "- `annotation.add` and `annotation.update` say whether the annotation is on screen:"
+    ));
 }
 
 // ---------- AC2: the presenter is told on the status bar ----------

@@ -722,7 +722,7 @@ fn ac6_changelog_and_agent_guide() {
     let fixed = &log[log.find("### Fixed").unwrap()..];
     let fixed = &fixed[..fixed[4..].find("\n## ").map_or(fixed.len(), |i| i + 4)];
     assert!(
-        fixed.contains("(t-210"),
+        fixed.contains("- A live `check` no longer freezes the presenter's screen."),
         "CHANGELOG.md has no Fixed entry for t-210"
     );
     let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();

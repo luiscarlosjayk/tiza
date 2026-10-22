@@ -431,5 +431,8 @@ fn ac5_guide_and_changelog() {
     );
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
     let unreleased = changelog.split("## [0.0.1]").next().unwrap();
-    assert!(unreleased.contains("t-162"), "CHANGELOG");
+    assert!(
+        unreleased.contains("- MCP discovery for clients that defer tools:"),
+        "CHANGELOG"
+    );
 }

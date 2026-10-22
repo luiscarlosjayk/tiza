@@ -206,7 +206,10 @@ fn ac4_docs_record_the_removal() {
     let changelog = std::fs::read_to_string(r.join("CHANGELOG.md")).unwrap();
     let unreleased = &changelog[..changelog.find("\n## [0").unwrap_or(changelog.len())];
     let removed = &unreleased[unreleased.find("### Removed").expect("Removed section")..];
-    assert!(removed.contains("t-134") && removed.contains("--brand-font"));
+    assert!(
+        removed.contains("- The brand serif left the binary ([ADR 0006]")
+            && removed.contains("--brand-font")
+    );
     let readme = std::fs::read_to_string(r.join("README.md")).unwrap();
     assert!(
         !readme.contains("`--brand-font` (notes"),
