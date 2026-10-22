@@ -55,7 +55,7 @@ An agent that never calls a Tiza tool fails, with its tokens recorded. `--break 
 | `tool-search` | today's server, Claude Code's default: `ENABLE_TOOL_SEARCH` unset, MCP tools deferred and loaded through `ToolSearch` |
 | `no-tool-search` | today's server with `ENABLE_TOOL_SEARCH=false`: every Tiza tool loaded upfront |
 
-Later cards add their variant to `VARIANTS` in the script (t-162: server instructions and always-load; t-163: lean schemas) and re-run the same matrix with the same model.
+Later cards re-run the same matrix with the same model. t-162 (server instructions and always-load) changed the server itself, so its run, variant C below, is the `tool-search` variant against a newer `tiza`; t-163 (lean schemas) adds its variant to `VARIANTS` in the script if it needs one.
 
 ### What each trial reports
 
@@ -140,6 +140,40 @@ Usability findings for t-162 (all three from the Sonnet check run below; Opus re
 1. Annotating at step N creates step N. Sonnet called `goto_step 2` on a one-step document, read `step 2 is beyond the last step (1)` and gave up drawing at step 2. The server instructions should say it.
 2. The `goto_step` error itself could say how: `step 2 is beyond the last step (1); annotate with step: 2 to add it`.
 3. `find_end` takes the first match after `find_start`, so `"}"` often closes an inner block (Sonnet's `tour` box came out L5-9). The agent guide warns about it; the tool descriptions do not.
+
+### Variant C (t-162): new instructions + alwaysLoad, Opus 5.5, 14 trials (2026-10-21)
+
+The server after t-162: instructions rewritten as a searchable description of Tiza, and four core tools (`status`, `get_code`, `add_box`, `render_text`) marked `anthropic/alwaysLoad`, so Claude Code loads them upfront while the rest stay deferred. Only the tool-search variant was run: with tool search off every tool is upfront anyway. `claude-opus-5-5`, Claude Code 2.1.307, `tiza` release built at 30c270c, `scripts/agent-trials/run --variants tool-search --repeats 2`, run `20261021-183901` by QA 1 with Luis's OK for the spend: 14 trials, $1.01 (estimate $1.60). Raw streams outside the repo, in `pruebas/t162/qa1/trials/` on Luis's Mac. Compared with the «tool search» rows of the Opus baseline above.
+
+Each cell shows pass 1 / pass 2 (one value when both agree), baseline → variant C.
+
+| task | ok | ToolSearch | ctx 1st request | ctx at 1st tiza call | ctx peak | turns | cost $ |
+|---|---|---|---|---|---|---|---|
+| read | 2/2 → 2/2 | 1 → 0 | 4,038 → 5,508 | 4,807 → 5,508 | 5,789 → 6,516 | 4 → 3 | 0.042 / 0.033 → 0.057 / 0.024 |
+| box | 2/2 → 2/2 | 1 → 0 | 3,998 → 5,468 | 5,394 → 5,468 | 6,622 / 6,297 → 6,368 | 5 / 4 → 3 | 0.046 / 0.040 → 0.028 / 0.026 |
+| arrow-note | 2/2 → 2/2 | 2 / 1 → 2 | 4,033 → 5,502 | 6,079 → 5,502 | 9,346 / 7,729 → 9,447 / 9,424 | 9 / 6 → 8 | 0.088 / 0.062 → 0.068 / 0.065 |
+| move | 2/2 → 2/2 | 1 → 1 | 4,031 → 5,501 | 7,230 / 7,111 → 5,501 | 10,433 / 10,397 → 11,266 / 11,062 | 11 → 10 / 9 | 0.094 → 0.086 / 0.079 |
+| export | 2/2 → 2/2 | 1 → 1 | 3,975 → 5,447 | 5,298 / 5,293 → 5,447 | 5,540 / 5,578 → 6,873 / 6,876 | 3 → 4 | 0.034 / 0.033 → 0.033 / 0.032 |
+| tour | 2/2 → 2/2 | 2 → 2 / 1 | 4,037 → 5,507 | 6,282 / 6,103 → 5,507 | 10,888 / 10,974 → 10,350 / 10,050 | 13 → 11 / 10 | 0.104 / 0.098 → 0.084 / 0.073 |
+| explain | 2/2 → 2/2 | 1 / 2 → 3 / 2 | 4,010 → 5,480 | 11,950 / 10,448 → 5,480 | 21,494 / 20,503 → 18,811 / 15,097 | 26 / 27 → 24 / 19 | 0.268 / 0.253 → 0.204 / 0.147 |
+
+| | baseline (tool search) | variant C |
+|---|---|---|
+| success | 14/14, 0 tool errors | 14/14, 0 tool errors, 0 retries, 0 other tools |
+| ToolSearch lookups before the first Tiza call | 1–2 in every trial | 0 in every trial (the first request already calls Tiza) |
+| ToolSearch lookups in all | 18 | 16 |
+| ctx of the first request | ~4,000 | ~5,500 |
+| ctx at the first Tiza call | 4,807–11,950 | 5,447–5,508 |
+| cost | $1.401 | $1.01 (−28 %) |
+| wall | 335 s | 207 s |
+
+What it says:
+
+- **The four always-loaded tools cost ~1,470 tokens upfront and remove the lookup before the first useful call in every task.** The first request grows from ~4,000 to ~5,500 tokens (their schemas and the longer instructions), and it already calls Tiza: the first call comes at ~5,500 tokens in all seven tasks, where the baseline needed 4,800–7,200 for the single-purpose tasks and up to 12,000 in `explain`.
+- **Cheaper and faster in all**: $1.01 against $1.401 (−28 %) and 207 s against 335 s of wall time, with 16 lookups instead of 18 — the ones left are for tools outside the four, in the tasks that need them (`arrow-note`, `move`, `export`, `tour`, `explain`).
+- **Peaks barely move** (within the spread of identical runs, except `explain`, 15,000–18,800 against 20,500–21,500): what an agent loads past the first call is the same.
+- **Success 14/14**, no tool errors, no retries, no tool other than Tiza's and tool search: no task got worse, so nothing to revert.
+- Caveats: Claude Code went from 2.1.303 to 2.1.307 and `tiza` from a debug build to a release build between the runs; per-cell differences of up to ~70 % between identical runs (see the baseline) make totals the figures to compare, not cells; and the cache state of pass 1 is not controlled across days.
 
 ### Harness check run: Sonnet 5.5, 16 trials, one pass (2026-10-18)
 
