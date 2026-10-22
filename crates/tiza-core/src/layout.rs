@@ -9,7 +9,8 @@
 //! - Notes and legends go in the right margin when there are ≥ 14 cells;
 //!   otherwise in a virtual row below the line. This works in a 75-column terminal.
 //!   A line with two or more labels at the step draws them all below it,
-//!   also when the margin is there.
+//!   also when the margin is there, and so does a line whose margin row a
+//!   callout's block leaves fewer than 14 cells beside.
 
 use std::collections::BTreeMap;
 
@@ -369,30 +370,48 @@ pub fn layout_with(
         }
         g => g,
     };
-    let none = std::collections::BTreeSet::new();
-    let (l, under_callouts) = layout_pass(doc, theme, opts, geometry, &none);
-    if under_callouts.is_empty() {
-        return l;
+    // Whether a margin block fits, and which rows it covers, is only known
+    // once the rows exist, so the layout runs again while a run finds
+    // something to move under its line:
+    // - a margin callout with no room for its block whose line has another
+    //   label too (or whose row another block takes) is drawn as a block
+    //   under its line, as the narrow layout does;
+    // - a line with a label whose margin row a block leaves fewer than 14
+    //   cells beside it puts its labels under itself.
+    // Both sets only grow (the extra rows only give the blocks more room),
+    // so this ends; a document with no margin callout runs once.
+    let mut under = Under::default();
+    loop {
+        let (l, more) = layout_pass(doc, theme, opts, geometry, &under);
+        let before = (under.callouts.len(), under.lines.len());
+        under.callouts.extend(more.callouts);
+        under.lines.extend(more.lines);
+        if (under.callouts.len(), under.lines.len()) == before {
+            return l;
+        }
     }
-    // A margin callout with no room for its block becomes a label of its
-    // first line; when that line has another label too, it goes under the
-    // line with them. Whether the block fits is only known once the
-    // rows exist, so the layout runs once more with those callouts as labels
-    // (the extra rows only give the other blocks more room).
-    layout_pass(doc, theme, opts, geometry, &under_callouts).0
 }
 
-/// One run of the layout. `under_callouts`: ids of margin callouts drawn
-/// as labels under their first line (see [`layout_with`]). Also returns
-/// the margin callouts that fell back to a label on a line that has
-/// another label, for the second run.
+/// What a run of the layout moves under its line (see [`layout_with`]).
+#[derive(Default)]
+struct Under {
+    /// Margin callouts drawn as a block under their line.
+    callouts: std::collections::BTreeSet<String>,
+    /// Lines whose labels go under them because a margin block covers
+    /// their row.
+    lines: std::collections::BTreeSet<u32>,
+}
+
+/// One run of the layout with `under` (see [`layout_with`]). Also returns
+/// what this run found must go under its line, for the next run.
 fn layout_pass(
     doc: &Document,
     theme: &Theme,
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
-    under_callouts: &std::collections::BTreeSet<String>,
-) -> (Layout, std::collections::BTreeSet<String>) {
+    under: &Under,
+) -> (Layout, Under) {
+    let under_callouts = &under.callouts;
     let width = opts.width.max(20);
     // Borrowed when the caller computed it (once per document, not per
     // frame or per pass).
@@ -419,6 +438,16 @@ fn layout_pass(
         scripted_selection = v.selection;
         projected = v.doc;
         &projected
+    };
+    // An empty label is no label: no lone `·`, no `warning:` with nothing
+    // after it, no gap in a border, and it is not a second label of its line.
+    let filled;
+    let doc = match without_blank_labels(doc) {
+        Some(d) => {
+            filled = d;
+            &filled
+        }
+        None => doc,
     };
     // Annotations outside the code (a document whose file shrank, or a
     // hand-edited one) are reported when it opens; here they are simply not
@@ -636,7 +665,9 @@ fn layout_pass(
         .filter(|&(_, n)| *n >= 2)
         .map(|(line, _)| *line)
         .collect();
-    let in_margin = |line: u32| labels_in_margin && !under_lines.contains(&line);
+    // Lines whose margin row a callout block covers (see `layout_with`).
+    let covered = |line: u32| under.lines.contains(&line);
+    let in_margin = |line: u32| labels_in_margin && !under_lines.contains(&line) && !covered(line);
 
     // ---- callouts: decide placement and pre-wrap their text ----
     struct CalloutPlan {
@@ -661,15 +692,16 @@ fn layout_pass(
         else {
             continue;
         };
-        let below = match placement {
-            crate::model::Placement::Below => true,
-            crate::model::Placement::Margin => !labels_in_margin || margin_est < 12,
-            // Auto: the margin must hold the block *and* leave room for
-            // the labels of the lines it covers, beside it.
-            crate::model::Placement::Auto => {
-                !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
-            }
-        };
+        let below = under_callouts.contains(&a.id)
+            || match placement {
+                crate::model::Placement::Below => true,
+                crate::model::Placement::Margin => !labels_in_margin || margin_est < 12,
+                // Auto: the margin must hold the block *and* leave room for
+                // the labels of the lines it covers, beside it.
+                crate::model::Placement::Auto => {
+                    !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
+                }
+            };
         let text_w = if below {
             // Stays inside the code column, so a Box around the range can
             // still draw its right rail.
@@ -756,7 +788,9 @@ fn layout_pass(
                 && from.line == line
             {
                 rows.push(Row::ArrowUnder(i));
-                if !labels_in_margin && let Some(l) = label {
+                if (!labels_in_margin || covered(line))
+                    && let Some(l) = label
+                {
                     unders.push((
                         Label {
                             id: a.id.clone(),
@@ -777,15 +811,6 @@ fn layout_pass(
                     Shape::Note { line: l, text } if *l == line => {
                         Some((text.clone(), color_of(a), true))
                     }
-                    // A margin callout drawn as a label: its words,
-                    // as the margin would wrap them.
-                    Shape::Callout {
-                        from_line, text, ..
-                    } if *from_line == line && under_callouts.contains(&a.id) => Some((
-                        text.split_whitespace().collect::<Vec<_>>().join(" "),
-                        color_of(a),
-                        true,
-                    )),
                     Shape::Mark {
                         kind,
                         span,
@@ -1380,7 +1405,10 @@ fn layout_pass(
                 arrow_style,
             );
         }
-        if labels_in_margin && let Some(l) = label {
+        if labels_in_margin
+            && !covered(from.line)
+            && let Some(l) = label
+        {
             margin[y].push(Label {
                 id: vis[*i].id.clone(),
                 text: l.clone(),
@@ -1431,9 +1459,25 @@ fn layout_pass(
             }
         }
     }
+    // (top row, bottom row, right rail x) of each box: a label under a line
+    // inside a box ends before the box's right rail.
+    let box_rails: Vec<(usize, usize, usize)> = (0..boxes.len())
+        .filter_map(|bi| {
+            let top = rows.iter().position(|r| *r == Row::BoxTop(bi))?;
+            let bottom = rows.iter().position(|r| *r == Row::BoxBottom(bi))?;
+            Some((top, bottom, rbox_x0 + (box_depth - 1 - boxes[bi].depth)))
+        })
+        .collect();
     for (y, row) in rows.iter().enumerate() {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
+        // The innermost box around this row: its rail is never drawn over.
+        let end = box_rails
+            .iter()
+            .filter(|(top, bottom, _)| *top < y && y < *bottom)
+            .map(|(_, _, rx)| *rx)
+            .min()
+            .unwrap_or(width);
         let style = base.fg(lbl.color).italic();
         let x = match &lbl.glyph {
             Some(g) => {
@@ -1451,7 +1495,7 @@ fn layout_pass(
                 code_x + 2
             }
         };
-        let avail = width.saturating_sub(x);
+        let avail = end.saturating_sub(x);
         if display_width(&lbl.text, 4) > avail {
             clip(&mut clipped, &lbl.id, &lbl.text, avail <= 1);
         }
@@ -1553,8 +1597,21 @@ fn layout_pass(
         }
     }
     // Margin: reserve rows from the callout's first line.
-    // Callouts that fell back to a label, by first line.
-    let mut fallbacks: Vec<(&str, u32)> = Vec::new();
+    // Callouts that fell back to a label: (id, first line, row).
+    let mut fallbacks: Vec<(&str, u32, usize)> = Vec::new();
+    // Blocks drawn in the margin: (x, top row, width, height). A block
+    // never overlaps another one: it goes beside the blocks on its rows
+    // when the margin holds it, else down to the first free rows, else it
+    // falls back to a label.
+    let mut blocks: Vec<(usize, usize, usize, usize)> = Vec::new();
+    let overlap =
+        |blocks: &[(usize, usize, usize, usize)], x: usize, y: usize, w: usize, h: usize| {
+            blocks
+                .iter()
+                .filter(|(bx, by, bw, bh)| x < bx + bw && *bx < x + w && y < by + bh && *by < y + h)
+                .map(|(bx, _, bw, _)| bx + bw)
+                .max()
+        };
     if labels_in_margin && margin_w > 0 {
         for c in &callouts {
             if c.below || under_callouts.contains(&vis[c.idx].id) {
@@ -1567,7 +1624,23 @@ fn layout_pass(
                 continue;
             };
             let h = c.lines.len() + 2;
-            if y0 + h > canvas.height || c.width > margin_w {
+            let mut spot = None;
+            if y0 + h <= canvas.height && c.width <= margin_w {
+                // Beside the blocks already on these rows…
+                let mut x = margin_x;
+                while let Some(right) = overlap(&blocks, x, y0, c.width, h) {
+                    x = right + 1;
+                }
+                spot = if x + c.width <= width {
+                    Some((x, y0))
+                } else {
+                    // …or on the first free rows below them.
+                    (y0 + 1..=canvas.height - h)
+                        .find(|&y| overlap(&blocks, margin_x, y, c.width, h).is_none())
+                        .map(|y| (margin_x, y))
+                };
+            }
+            let Some((x, y)) = spot else {
                 // Does not fit: fall back to a clipped single label.
                 let Shape::Callout { text, .. } = &vis[c.idx].shape else {
                     continue;
@@ -1579,20 +1652,55 @@ fn layout_pass(
                     note: true,
                     glyph: None,
                 });
-                fallbacks.push((vis[c.idx].id.as_str(), *from_line));
+                fallbacks.push((vis[c.idx].id.as_str(), *from_line, y0));
                 continue;
-            }
-            if draw_block(&mut canvas, c, margin_x, y0, color_of(vis[c.idx])) {
+            };
+            if draw_block(&mut canvas, c, x, y, color_of(vis[c.idx])) {
                 let t = c.title.as_deref().unwrap_or("");
                 clip(&mut clipped, &vis[c.idx].id, t, false);
             }
-            if margin_w.saturating_sub(c.width + 1) >= 14 {
-                shift[y0..y0 + h].fill(c.width + 1);
-            } else {
-                occupied[y0..y0 + h].fill(true);
+            blocks.push((x, y, c.width, h));
+        }
+        // Labels of a row go to the right of the blocks on it when 14 cells
+        // are left there; otherwise the row is taken.
+        for &(x, y, w, h) in &blocks {
+            for s in &mut shift[y..y + h] {
+                *s = (*s).max(x + w + 1 - margin_x);
+            }
+        }
+        for r in 0..canvas.height {
+            if shift[r] > 0 && margin_w.saturating_sub(shift[r]) < 14 {
+                shift[r] = 0;
+                occupied[r] = true;
             }
         }
     }
+    // Lines with a margin label on a row a block takes: their labels go
+    // under them in the next run (see `layout_with`).
+    let mut covered_lines: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+    for (y, labels) in margin.iter().enumerate() {
+        if occupied[y] && !labels.is_empty() {
+            let line = rows[..=y].iter().rev().find_map(|r| match r {
+                Row::Code(l) => Some(*l),
+                _ => None,
+            });
+            covered_lines.extend(line);
+        }
+    }
+    // A fallen-back callout sharing its line with another label goes under
+    // that line in the second run (see `layout_with`).
+    // So does one whose row a block takes, or whose line's labels go under.
+    let retry = fallbacks
+        .iter()
+        .filter(|(_, line, y)| {
+            label_count.get(line).copied().unwrap_or(0)
+                + fallbacks.iter().filter(|(_, l, _)| l == line).count()
+                >= 2
+                || occupied[*y]
+                || covered(*line)
+        })
+        .map(|(id, _, _)| id.to_string())
+        .collect();
 
     // ---- 7. margin ----
     // Each label takes its own margin row; if it does not fit, it is split
@@ -1608,6 +1716,11 @@ fn layout_pass(
         let reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
         for (y, labels) in margin.iter().enumerate() {
             let mut next_row = y;
+            // A label starts on a row of its own line, never beside the
+            // next one: the rows up to the next code row.
+            let own_end = (y + 1..height)
+                .find(|&r| matches!(rows[r], Row::Code(_)))
+                .unwrap_or(height);
             let free = |r: usize, occupied: &[bool]| {
                 r < height && !occupied[r] && (!reserved[r] || r == y)
             };
@@ -1625,7 +1738,7 @@ fn layout_pass(
                         clip(clipped, &l.id, &l.text, true);
                     }
                 };
-                let Some(mut r) = (next_row..height).find(|&r| free(r, &occupied)) else {
+                let Some(mut r) = (next_row..own_end).find(|&r| free(r, &occupied)) else {
                     left_out(&mut clipped);
                     break;
                 };
@@ -1697,17 +1810,6 @@ fn layout_pass(
         }
     }
 
-    // A fallen-back callout sharing its line with another label goes under
-    // that line in the second run (see `layout_with`).
-    let retry = fallbacks
-        .iter()
-        .filter(|(_, line)| {
-            label_count.get(line).copied().unwrap_or(0)
-                + fallbacks.iter().filter(|(_, l)| l == line).count()
-                >= 2
-        })
-        .map(|(id, _)| id.to_string())
-        .collect();
     (
         Layout {
             canvas,
@@ -1718,7 +1820,10 @@ fn layout_pass(
             labels_in_margin,
             clipped_labels: clipped,
         },
-        retry,
+        Under {
+            callouts: retry,
+            lines: covered_lines,
+        },
     )
 }
 
@@ -1810,6 +1915,43 @@ fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Opti
         (Head::Open, true) => ">",
         (Head::Open, false) => "<",
     })
+}
+
+/// `doc` with every blank label, box label and callout title taken as
+/// none, and without its blank notes (`check` reports those); `None` when
+/// it has none of them, which is nearly always (no copy).
+fn without_blank_labels(doc: &Document) -> Option<Document> {
+    let blank = |l: &Option<String>| l.as_deref().is_some_and(|t| t.trim().is_empty());
+    let has_blank = |a: &Annotation| match &a.shape {
+        Shape::Highlight { label, .. }
+        | Shape::Mark { label, .. }
+        | Shape::Arrow { label, .. }
+        | Shape::Box { label, .. } => blank(label),
+        Shape::Callout { title, .. } => blank(title),
+        Shape::Note { text, .. } => text.trim().is_empty(),
+        Shape::Spotlight { .. } => false,
+    };
+    if !doc.annotations.iter().any(has_blank) {
+        return None;
+    }
+    let mut d = doc.clone();
+    d.annotations
+        .retain(|a| !matches!(&a.shape, Shape::Note { text, .. } if text.trim().is_empty()));
+    for a in &mut d.annotations {
+        match &mut a.shape {
+            Shape::Highlight { label, .. }
+            | Shape::Mark { label, .. }
+            | Shape::Arrow { label, .. }
+            | Shape::Box { label, .. }
+                if blank(label) =>
+            {
+                *label = None;
+            }
+            Shape::Callout { title, .. } if blank(title) => *title = None,
+            _ => {}
+        }
+    }
+    Some(d)
 }
 
 fn mark_text(
@@ -2460,7 +2602,7 @@ mod tests {
     }
 
     #[test]
-    fn fallen_back_callout_with_another_label_goes_under_its_line() {
+    fn fallen_back_callout_with_another_label_goes_under_its_line_as_a_block() {
         let d = short_callout_doc("", true);
         let l = layout(
             &d,
@@ -2473,16 +2615,21 @@ mod tests {
         );
         let text = l.canvas.to_plain_text();
         println!("{text}");
+        // The note under the line, then the callout as a whole block (as
+        // the narrow layout draws it), never one row cut with `…`.
         let y = l.row_of_line[&3];
         let r3 = l.canvas.row_text(y);
         assert!(r3.contains("takes(s);") && !r3.contains('┆'), "{text}");
+        assert!(l.canvas.row_text(y + 1).contains("┆ the call"), "{text}");
+        assert!(l.canvas.row_text(y + 2).contains('╭'), "{text}");
         assert!(
             l.canvas
-                .row_text(y + 1)
-                .contains("┆ takes(s) moves the String: main cannot use s after this line")
+                .row_text(y + 3)
+                .contains("│ takes(s) moves the String:"),
+            "{text}"
         );
-        assert!(l.canvas.row_text(y + 2).contains("┆ the call"), "{text}");
-        assert_eq!(l.row_of_line[&4], y + 3);
+        assert!(matches!(l.rows[y + 2], Row::Callout(_, 0)), "{text}");
+        assert_eq!(l.row_of_line[&4], y + 7, "{text}");
         assert!(l.clipped_labels.is_empty(), "{:?}", l.clipped_labels);
     }
 
