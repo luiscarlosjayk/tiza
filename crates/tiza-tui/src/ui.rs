@@ -538,15 +538,18 @@ fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
 /// (t-173), as the text for the right of the bar (with its trailing blank),
 /// giving way in this order: the optional left segments, the middle of the
 /// message, the directory of a file tail (only when no other file of the
-/// document has its name), the terminal-size badge in `left[badge]` (`⚠
-/// labels`, then `⚠`), the subject; the tail is never cut. Each step is
-/// taken only when the one before is not enough, so a wider bar never shows
-/// less of the subject, the tail, the directory or the badge. `None`:
-/// nothing fits on the right.
+/// document has its name), the `↪ file` view indicator in `left[view]`
+/// (t-209: it names the other file the message is often about), the
+/// terminal-size badge in `left[badge]` (`⚠ labels`, then `⚠`), the
+/// subject; the tail is never cut. Each step is taken only when the one
+/// before is not enough, so a wider bar never shows less of the subject,
+/// the tail, the directory, the indicator or the badge. `None`: nothing
+/// fits on the right.
 fn fit_bar_message(
     app: &App,
     left: &mut [Span<'static>],
     badge: Option<usize>,
+    view: Option<usize>,
     m: &str,
     width: usize,
     bar: Style,
@@ -560,7 +563,7 @@ fn fit_bar_message(
         if m.width() <= room(left) {
             break;
         }
-        if drop_idx < left.len() {
+        if drop_idx < left.len() && Some(drop_idx) != view {
             left[drop_idx] = Span::styled("", bar);
         }
     }
@@ -582,12 +585,23 @@ fn fit_bar_message(
         _ => &[""],
     };
     let layout_badge = badge.filter(|_| forms.len() > 1);
-    for (k, form) in forms.iter().enumerate() {
+    // The steps: the badge whole with the indicator, then (t-209) the
+    // indicator gone with the badge still whole, then the badge's shorter
+    // forms.
+    let mut steps: Vec<(&'static str, bool)> = vec![(forms[0], false)];
+    if view.is_some() {
+        steps.push((forms[0], true));
+    }
+    steps.extend(forms[1..].iter().map(|f| (*f, true)));
+    for (k, (form, no_view)) in steps.into_iter().enumerate() {
         if let Some(b) = layout_badge {
-            left[b] = Span::styled(*form, left[b].style);
+            left[b] = Span::styled(form, left[b].style);
         }
-        // The directory goes before the badge: once the badge gives way, the
-        // file is named alone.
+        if no_view && let Some(v) = view {
+            left[v] = Span::styled("", bar);
+        }
+        // The directory goes before the indicator and the badge: once they
+        // give way, the file is named alone.
         let tails: Vec<&str> = match (&short, k) {
             (Some(s), 0) => vec![tail, s],
             (Some(s), _) => vec![s],
@@ -808,6 +822,11 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 false,
             ),
         };
+    // A message with a tail keeps the `↪ file` view indicator until its
+    // middle and the directory have given way (t-209).
+    let view = (app.shown_view().is_some()
+        && message.is_some_and(|(m, _)| crate::app::step_hint_start(m).is_some()))
+    .then_some(5);
     // Make room: drop the optional left segments (theme, cursor line,
     // annotation count, file) before cutting anything that matters, then
     // truncate the right text with an ellipsis instead of hiding it.
@@ -824,7 +843,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         if lw(&left) + need <= width {
             break;
         }
-        if drop_idx < left.len() {
+        if drop_idx < left.len() && Some(drop_idx) != view {
             left[drop_idx] = Span::styled("", bar);
         }
     }
@@ -847,7 +866,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         _ => None,
     };
     let badge = (badge < left.len()).then_some(badge);
-    let tailed_text = tailed.map(|m| fit_bar_message(app, &mut left, badge, m, width, bar));
+    let tailed_text = tailed.map(|m| fit_bar_message(app, &mut left, badge, view, m, width, bar));
     // One blank cell between the left segments and the message.
     let room = width.saturating_sub(lw(&left) + 1);
     let mut right: Vec<Span> = Vec::new();

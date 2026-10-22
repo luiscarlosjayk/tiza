@@ -20,10 +20,11 @@
 //!   short name; two `mod.rs` keep their directories.
 //! - AC3 The `⚠ labels under the lines` badge gives way only when that is
 //!   needed for subject + tail to fit: first to `⚠ labels`, then to `⚠`; it
-//!   is back whole as soon as the message goes. Width is computed with the
-//!   terminal's real width of `⚠` (1 or 2 cells): the bar never overflows if
-//!   the terminal draws it 2 cells wide. A more serious badge (`code clipped
-//!   (N cols)`) never gives way.
+//!   is back whole as soon as the message goes. `⚠` (U+26A0, East Asian
+//!   Width N, not Ambiguous) is laid out as one cell, as Herdr, macOS
+//!   Terminal and Zed draw it; a terminal that draws it two cells wide can
+//!   still push the bar one cell past the edge (t-209, left for later). A
+//!   more serious badge (`code clipped (N cols)`) never gives way.
 //! - AC4 Monotonic: widening the terminal by one column never removes an
 //!   element that was shown (subject, a directory once it is back, the tail,
 //!   the whole badge). The middle may lose a few letters.
