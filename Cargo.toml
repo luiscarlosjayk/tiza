@@ -51,7 +51,7 @@ jsonschema = { version = "0.59.0", default-features = false }
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 # Character coverage of the embedded faces (t-130): the SVG embeds only the faces it draws. Already in the tree through usvg.
-skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
+skrifa = { version = "0.48.0", default-features = false, features = ["std"] }
 # Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm.
 rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio"] }
 # SIGHUP as a flag the event loop reads (t-205): the terminal went away, exit in order. Already in the tree through crossterm.
