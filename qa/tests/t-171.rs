@@ -44,9 +44,13 @@ const ENV: &str = "DATABASE_URL=postgres://app:s3cr3t-pass@db.internal:5432/app\
                    LOG_LEVEL=info\n\
                    PORT=8080\n";
 
-/// At 100 and 110 columns the callout's block on L1 takes the margin rows
-/// of L2 and L3, so a label on L2 finds no row; from 116 columns the
-/// callout falls back to a label and every label is drawn.
+/// Eight arrows from L1 to L4 take eight lanes left of the code, so a
+/// label under a line starts 23 columns in: up to 24 columns it has no room
+/// and is left out, from 25 it is cut with …, from 35 `secret token` is
+/// whole under its line, and from 97 the labels go to the margin. (Until
+/// t-201 the scenario was a callout's block on L1 that took the margin rows
+/// of L2 and L3 at 100 columns; since then those labels go under their
+/// line, so a label has no room only where the code itself leaves none.)
 fn opened(name: &str) -> (Live, std::path::PathBuf) {
     opened_with(name, base_doc())
 }
@@ -56,10 +60,12 @@ fn base_doc() -> Value {
         "schema": 1,
         "source": {"path": "demo.env", "language": "env", "first_line": 1},
         "code": {"file": "demo.env"},
-        "annotations": [{
-            "id": "c1", "step": 1, "type": "callout", "from_line": 1, "to_line": 1,
-            "text": "user, password, host, port and database in one value"
-        }],
+        "annotations": (1..=8)
+            .map(|i| json!({
+                "id": format!("r{i}"), "step": 1, "type": "arrow",
+                "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}
+            }))
+            .collect::<Vec<_>>(),
         "step": 1
     })
 }
@@ -123,7 +129,7 @@ fn check_findings(tiza: &std::path::Path, width: usize) -> Vec<(String, bool, u6
 fn ac1_ac4_a_note_with_no_room_is_not_visible() {
     // Test step 1.
     let (live, tiza) = opened("t171-no-room");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let r = add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
@@ -131,32 +137,32 @@ fn ac1_ac4_a_note_with_no_room_is_not_visible() {
     assert_eq!(r["visible"], false, "{r}");
     assert_eq!(
         r["hidden"],
-        "it is not drawn: no room for its text at 100 columns (check at width 100 lists it)"
+        "it is not drawn: no room for its text at 24 columns (check at width 24 lists it)"
     );
     assert!(r.get("clipped").is_none(), "{r}");
     // AC4: `tiza check` at that width says the same of it.
     let id = r["id"].as_str().unwrap().to_string();
     assert!(
-        check_cuts(&tiza, 100).contains(&(id.clone(), true)),
+        check_cuts(&tiza, 24).contains(&(id.clone(), true)),
         "{:?}",
-        check_cuts(&tiza, 100)
+        check_cuts(&tiza, 24)
     );
     // And the screen does not show it.
-    assert!(!live.screen(102, 30).contains("secret token"));
+    assert!(!live.screen(26, 30).contains("secret token"));
 }
 
 #[test]
 fn ac1_widened_until_drawn_the_update_says_visible() {
     // Test step 2.
     let (live, tiza) = opened("t171-widen");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let r = add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
     );
     assert_eq!(r["visible"], false, "{r}");
     let id = r["id"].as_str().unwrap().to_string();
-    terminal(&live, 122);
+    terminal(&live, 40);
     let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
     assert_eq!(r["visible"], true, "{r}");
     assert!(
@@ -164,18 +170,18 @@ fn ac1_widened_until_drawn_the_update_says_visible() {
         "{r}"
     );
     assert!(
-        check_cuts(&tiza, 120).is_empty(),
+        check_cuts(&tiza, 38).is_empty(),
         "{:?}",
-        check_cuts(&tiza, 120)
+        check_cuts(&tiza, 38)
     );
-    let s = live.screen(122, 30);
+    let s = live.screen(40, 30);
     assert!(s.contains("secret token"), "{s}");
 }
 
 #[test]
 fn ac2_a_clipped_label_stays_visible_and_says_so() {
-    // Test step 3: a long note on L3 beside the callout's block, cut with
-    // … at 120 columns.
+    // Test step 3: a long note on L3 in the margin, cut with … at 120
+    // columns.
     let (live, tiza) = opened("t171-clipped");
     terminal(&live, 122);
     let r = add(
@@ -195,7 +201,7 @@ fn ac2_a_clipped_label_stays_visible_and_says_so() {
 fn ac2_a_highlight_whose_label_has_no_room_is_still_drawn() {
     // The highlight is drawn; only its label is not.
     let (live, tiza) = opened("t171-highlight");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let r = add(
         &live,
         json!({"type": "highlight", "at": {"line": 2, "find": "tok_live"}, "label": "secret token"}),
@@ -203,22 +209,22 @@ fn ac2_a_highlight_whose_label_has_no_room_is_still_drawn() {
     assert_eq!(r["visible"], true, "{r}");
     assert_eq!(
         r["clipped"],
-        "its label is not drawn: no room at 100 columns (check at width 100 lists it)"
+        "its label is not drawn: no room at 24 columns (check at width 24 lists it)"
     );
     let id = r["id"].as_str().unwrap().to_string();
-    assert!(check_cuts(&tiza, 100).contains(&(id, true)));
+    assert!(check_cuts(&tiza, 24).contains(&(id, true)));
 }
 
 #[test]
 fn ac1_the_mcp_reply_says_it() {
     let (live, _tiza) = opened("t171-mcp");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("add_note", json!({"line": 2, "text": "secret token"}));
     assert!(!err, "{text}");
     assert!(
         text.contains("not visible now")
-            && text.contains("it is not drawn: no room for its text at 100 columns"),
+            && text.contains("it is not drawn: no room for its text at 24 columns"),
         "{text}"
     );
 }
@@ -226,7 +232,7 @@ fn ac1_the_mcp_reply_says_it() {
 #[test]
 fn ac3_the_bar_says_it() {
     let (live, _tiza) = opened("t171-bar");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let r = add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
@@ -235,7 +241,7 @@ fn ac3_the_bar_says_it() {
     assert_eq!(
         live.message(),
         Some((
-            format!("{id}: note L2 added by agent (not drawn: no room at 100 columns)"),
+            format!("{id}: note L2 added by agent (not drawn: no room at 24 columns)"),
             false
         ))
     );
@@ -264,7 +270,7 @@ fn ac1_a_note_that_fits_is_visible_as_before() {
 fn corner_presentation_mode_follows_the_same_rule() {
     let (live, _tiza) = opened("t171-present");
     live.with(|app| {
-        app.size = (102, 30);
+        app.size = (26, 30);
         app.set_present(true);
     });
     let r = add(
@@ -272,9 +278,9 @@ fn corner_presentation_mode_follows_the_same_rule() {
         json!({"type": "note", "line": 2, "text": "secret token"}),
     );
     assert_eq!(r["visible"], false, "{r}");
-    // 102 columns less the default side padding (1 each side).
+    // 26 columns less the default side padding (1 each side).
     assert!(
-        r["hidden"].as_str().unwrap().contains("at 100 columns"),
+        r["hidden"].as_str().unwrap().contains("at 24 columns"),
         "{r}"
     );
 }
@@ -284,13 +290,15 @@ fn corner_no_terminal_size_uses_the_default_width_and_names_it() {
     let (live, _tiza) = opened("t171-headless");
     live.with(|app| app.size = (0, 0));
     assert_eq!(live.with(|app| app.screen_width()), 100);
+    // At 100 the labels are in the margin; this one, on the last line,
+    // has no rows below to wrap into and is cut.
     let r = add(
         &live,
-        json!({"type": "note", "line": 2, "text": "secret token"}),
+        json!({"type": "note", "line": 4, "text": "the secret token the API calls carry"}),
     );
-    assert_eq!(r["visible"], false, "{r}");
+    assert_eq!(r["visible"], true, "{r}");
     assert!(
-        r["hidden"].as_str().unwrap().contains("at 100 columns"),
+        r["clipped"].as_str().unwrap().contains("at 100 columns"),
         "{r}"
     );
 }
@@ -300,14 +308,14 @@ fn corner_the_reply_is_about_the_size_at_that_moment() {
     // A resize after the reply changes the screen, not the reply: the next
     // reply is about the new size.
     let (live, _tiza) = opened("t171-resize");
-    terminal(&live, 102);
+    terminal(&live, 26);
     let r = add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
     );
     assert_eq!(r["visible"], false, "{r}");
-    terminal(&live, 122);
-    assert!(live.screen(122, 30).contains("secret token"));
+    terminal(&live, 40);
+    assert!(live.screen(40, 30).contains("secret token"));
     let id = r["id"].as_str().unwrap();
     let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
     assert_eq!(r["visible"], true, "{r}");
@@ -337,9 +345,9 @@ fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
     // too, where the authoring screen does not: the reply follows the take.
     let mut doc = base_doc();
     doc["annotations"].as_array_mut().unwrap().extend([
-        json!({"id": "r1", "step": 2, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}}),
-        json!({"id": "r2", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0}, "to": {"line": 4, "col": 0}}),
-        json!({"id": "r3", "step": 2, "type": "arrow", "from": {"line": 3, "col": 0}, "to": {"line": 1, "col": 0}}),
+        json!({"id": "s1", "step": 2, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}}),
+        json!({"id": "s2", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0}, "to": {"line": 4, "col": 0}}),
+        json!({"id": "s3", "step": 2, "type": "arrow", "from": {"line": 3, "col": 0}, "to": {"line": 1, "col": 0}}),
     ]);
     let (live, tiza) = opened_with("t171-arrows", doc);
     terminal(&live, 102);
@@ -349,7 +357,7 @@ fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
     );
     let id = r["id"].as_str().unwrap().to_string();
     let mut seen = std::collections::BTreeSet::new();
-    for cols in 100..=130u16 {
+    for cols in 22..=60u16 {
         terminal(&live, cols);
         let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
         let (v, named) = verdict(&r);
@@ -380,7 +388,7 @@ fn rev_a_note_added_while_its_step_is_typed() {
         "content": "PORT=9090", "typing": "char", "speed_ms": 1000
     }]);
     let (live, tiza) = opened_with("t171-typing", doc);
-    terminal(&live, 102);
+    terminal(&live, 26);
     live.api_ok("step.next", json!({}));
     assert!(live.with(|app| app.typing.is_some()), "the step is typing");
     let r = add(
@@ -390,7 +398,7 @@ fn rev_a_note_added_while_its_step_is_typed() {
     assert!(live.with(|app| app.typing.is_some()), "still typing");
     assert_eq!(r["visible"], false, "{r}");
     let id = r["id"].as_str().unwrap().to_string();
-    assert!(check_cuts(&tiza, 100).contains(&(id, true)));
+    assert!(check_cuts(&tiza, 24).contains(&(id, true)));
 }
 
 #[test]
@@ -415,7 +423,7 @@ fn rev_a_terminal_narrower_than_check_takes_names_a_width_it_takes() {
 fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
     // `press n` would never show the note that has no room.
     let (live, _tiza) = opened("t171-group");
-    terminal(&live, 102);
+    terminal(&live, 26);
     add(
         &live,
         json!({"type": "note", "line": 2, "text": "secret token"}),
@@ -430,29 +438,32 @@ fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
 }
 
 #[test]
-fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
-    // The callout comes at step 2: the long note on L2 is cut with … at
-    // step 1 and left out at step 2, where the callout's block takes its row.
+fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_whole_at_another() {
+    // The box comes at step 2: at 88 columns the long note under L2 is
+    // whole at step 1 and cut with … at the box's rail at step 2. (Until
+    // t-201 the note crossed the rail; this test had a callout's block
+    // leave it out at step 2, which no longer happens.)
     let mut doc = base_doc();
-    doc["annotations"][0]["step"] = json!(2);
-    doc["annotations"].as_array_mut().unwrap().push(json!({
-        "id": "n1", "step": 1, "type": "note", "line": 2,
-        "text": "the token every call to the API carries in its Authorization header, rotated each month by the platform team"
-    }));
+    doc["annotations"].as_array_mut().unwrap().extend([
+        json!({"id": "b1", "step": 2, "type": "box", "from_line": 1, "to_line": 3}),
+        json!({
+            "id": "n1", "step": 1, "type": "note", "line": 2,
+            "text": "the token that every call to the API carries, rotated each month"
+        }),
+    ]);
     doc["step"] = json!(2);
     let (live, tiza) = opened_with("t171-steps", doc);
-    terminal(&live, 102);
-    let mut findings: Vec<(bool, u64)> = check_findings(&tiza, 100)
+    terminal(&live, 90);
+    let findings: Vec<(bool, u64)> = check_findings(&tiza, 88)
         .into_iter()
         .filter(|(i, _, _)| i == "n1")
         .map(|(_, no_room, step)| (no_room, step))
         .collect();
-    findings.sort();
-    assert_eq!(findings, vec![(false, 1), (true, 2)]);
+    assert_eq!(findings, vec![(false, 2)]);
     // The reply says what each step draws.
     let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "green"}));
-    assert_eq!(verdict(&r).0, Some(true), "{r}");
+    assert_eq!(verdict(&r).0, Some(false), "{r}");
     live.api_ok("step.set", json!({"step": 1}));
     let r = live.api_ok("annotation.update", json!({"id": "n1", "color": "blue"}));
-    assert_eq!(verdict(&r).0, Some(false), "{r}");
+    assert_eq!(verdict(&r).0, None, "{r}");
 }

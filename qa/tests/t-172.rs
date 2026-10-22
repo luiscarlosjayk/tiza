@@ -498,8 +498,8 @@ fn ac5_every_export_draws_the_same_rows() {
 #[test]
 fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
     // QA's callout-short: the callout has no room for its block on L3 and
-    // falls back to a label; with the note it goes under L3 (it sat beside
-    // L4 before).
+    // falls back; with the note it goes under L3 (it sat beside L4 before),
+    // as a whole block since t-201 (it was one row cut with `…`).
     let t = render("callout-short.tiza", 100, &["--step", "1"]);
     assert_eq!(
         t,
@@ -507,7 +507,9 @@ fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() 
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info
      ┆ how chatty the logs are
-     ┆ set to debug locally
+     ╭──────────────────────╮
+     │ set to debug locally │
+     ╰──────────────────────╯
  4   PORT=8080
 ",
         "{t}"
@@ -521,7 +523,9 @@ fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() 
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info
      ┆ how chatty the logs are
-     ┆ set to debug locally
+     ╭──────────────────────╮
+     │ set to debug locally │
+     ╰──────────────────────╯
  4   PORT=8080                                  ┆ the port
 ",
         "{t}"
