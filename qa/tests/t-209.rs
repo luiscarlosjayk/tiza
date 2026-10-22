@@ -281,7 +281,10 @@ fn ac5_at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
 }
 
 /// AC4 over the bar with the badge: from 30 to 170 columns, one column more
-/// never takes away the subject, the tail or a form of the badge.
+/// never takes away the subject, the tail or the badge, and while the
+/// message keeps its tail the badge never goes to a shorter form. The badge
+/// may go only where the terminal no longer warns at all (`status` has no
+/// `warnings` at that size: big enough, as t-064 says).
 #[test]
 fn ac4_sweep_with_the_badge_is_monotonic() {
     let live = wide_with_a_message("t209-sweep-badge");
@@ -292,8 +295,11 @@ fn ac4_sweep_with_the_badge_is_monotonic() {
         _ => 0,
     };
     let mut prev: Option<(u16, String, String)> = None;
+    let mut went = 0;
     for cols in 30..=170u16 {
         let (b, badge) = bar_and_badge(&live, cols, 30);
+        let warnings = live.api_ok("status", json!({}))["warnings"].clone();
+        let warned = warnings.as_array().is_some_and(|w| !w.is_empty());
         if let Some((pc, pb, pbadge)) = &prev {
             let was = format!("{pc} → {cols}:\n{pb}\n{b}");
             assert!(
@@ -304,16 +310,20 @@ fn ac4_sweep_with_the_badge_is_monotonic() {
                 !(pb.ends_with(STEP_HINT) && pb.contains("a1")) || b.contains("a1"),
                 "the subject went: {was}"
             );
-            // While the message keeps its tail, the badge's form never
-            // shrinks; it goes for good only when the terminal is big
-            // enough (t-064). Without the tail the bar is a narrow one,
-            // another card's.
+            if !pbadge.is_empty() && badge.is_empty() {
+                assert!(!warned, "the badge went with {warnings} still on: {was}");
+                went += 1;
+            }
+            // Its form: below the tail's widths the edge cuts the bar, a
+            // narrow bar that is another card's.
             if pb.ends_with(STEP_HINT) && !pbadge.is_empty() && !badge.is_empty() {
                 assert!(rank(&badge) >= rank(pbadge), "the badge shrank: {was}");
             }
         }
         prev = Some((cols, b, badge));
     }
+    // It goes once, at the width where the warnings end, and stays gone.
+    assert_eq!(went, 1, "the badge went {went} times");
 }
 
 const STEP_HINT: &str = "(step 1, press n)";
