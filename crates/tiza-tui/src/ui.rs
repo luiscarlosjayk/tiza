@@ -430,9 +430,16 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
 }
 
 /// `m` cut to `room` cells with an ellipsis, keeping the beginning — the
-/// useful part of a message. A step hint at the end (`(step 1, press n)`,
-/// t-132) survives the cut when it fits with at least one cell of the rest:
-/// `a17: box 3-… (step 1, press n)`.
+/// useful part of a message. A message that ends saying where to find what
+/// it names — a step hint (`(step 1, press n)`, t-132) or a file tail
+/// (`(src/queue.rs, not shown at step 2)`, t-155) — keeps that tail whole
+/// and cuts the middle instead (t-173): first a file tail names the file
+/// alone (`(queue.rs, not shown at step 2)`); then as much of the beginning
+/// as fits, as long as it keeps the message's subject
+/// ([`message_subject`]): `a17: box… (step 1, press n)`, down to
+/// `a17 … (step 1, press n)`; then the tail alone, `(step 1, press n)`; and
+/// with no room for the tail either, the beginning without it. A tail is
+/// never cut.
 pub fn fit_message(m: &str, room: usize) -> String {
     if m.width() <= room {
         return m.to_string();
@@ -440,26 +447,86 @@ pub fn fit_message(m: &str, room: usize) -> String {
     if room == 0 {
         return String::new();
     }
-    let cut = |s: &str, max: usize| {
-        let mut out = String::new();
-        let mut w = 0;
-        for g in s.graphemes(true) {
-            if w + g.width() > max {
-                break;
-            }
-            out.push_str(g);
-            w += g.width();
-        }
-        out
+    let Some(i) = crate::app::step_hint_start(m) else {
+        return format!("{}…", cut_to_width(m, room - 1));
     };
-    if let Some(i) = crate::app::step_hint_start(m) {
-        let (head, tail) = m.split_at(i);
-        let tw = tail.width();
-        if tw + 2 <= room {
-            return format!("{}…{tail}", cut(head, room - tw - 1).trim_end());
+    let (head, tail) = m.split_at(i);
+    let tail = short_file_tail(tail).unwrap_or_else(|| tail.to_string());
+    let tw = tail.width();
+    if head.width() + tw <= room {
+        return format!("{head}{tail}");
+    }
+    let subject = &head[..message_subject(head)];
+    if room > tw + 1 {
+        let kept = cut_to_width(head, room - tw - 1);
+        let kept = kept.trim_end();
+        // The whole subject and more (than its colon): the beginning as it is.
+        let more = kept
+            .strip_prefix(subject)
+            .is_some_and(|rest| !rest.trim_start_matches([':', ',']).trim().is_empty());
+        if more {
+            return format!("{kept}…{tail}");
+        }
+        if !subject.is_empty() && subject.width() + 2 + tw <= room {
+            return format!("{subject} …{tail}");
         }
     }
-    format!("{}…", cut(m, room - 1))
+    let alone = tail.trim_start();
+    if alone.width() <= room {
+        return alone.to_string();
+    }
+    format!("{}…", cut_to_width(head, room - 1))
+}
+
+/// The cells [`fit_message`] needs to keep the tail of `m` whole, if it
+/// has one (t-173): the status bar makes that room before cutting.
+pub fn message_tail_width(m: &str) -> Option<usize> {
+    let tail = &m[crate::app::step_hint_start(m)?..];
+    let short = short_file_tail(tail);
+    Some(short.as_deref().unwrap_or(tail).trim_start().width())
+}
+
+/// The beginning of `s` that fits in `max` cells, by whole graphemes.
+fn cut_to_width(s: &str, max: usize) -> String {
+    let mut out = String::new();
+    let mut w = 0;
+    for g in s.graphemes(true) {
+        if w + g.width() > max {
+            break;
+        }
+        out.push_str(g);
+        w += g.width();
+    }
+    out
+}
+
+/// What a cut message with a tail keeps of its beginning at the least
+/// (t-173), as a byte length of `head`: the ids before the first `: `
+/// (`a17` of `a17: box 3-5`, `a3, a4`, or `accepted p1` of a supervised
+/// acceptance); else, for a count, the count and the word after it (`3
+/// agent` of `3 agent annotations not shown`: `3 …` alone says nothing);
+/// else the first word (`a3` of `a3 now appears at step 4`).
+fn message_subject(head: &str) -> usize {
+    if let Some(c) = head.find(": ") {
+        return c;
+    }
+    let word_end = |from: usize| head[from..].find(' ').map_or(head.len(), |k| from + k);
+    let first = word_end(0);
+    let is_count = first > 0 && head[..first].bytes().all(|b| b.is_ascii_digit());
+    if is_count && first < head.len() {
+        return word_end(first + 1);
+    }
+    first
+}
+
+/// ` (src/queue.rs, not shown at step 2)` → ` (queue.rs, not shown at step
+/// 2)`: the file tail of t-155 with the file's name alone; `None` for any
+/// other tail, or when the file has no directory to drop.
+fn short_file_tail(tail: &str) -> Option<String> {
+    let inner = tail.strip_prefix(" (")?.strip_suffix(')')?;
+    let (file, step) = inner.rsplit_once(", not shown at step ")?;
+    let (_, name) = file.rsplit_once('/')?;
+    (!name.is_empty()).then(|| format!(" ({name}, not shown at step {step})"))
 }
 
 /// The result of the command just run, on the last row in presentation
@@ -613,6 +680,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         left.push(Span::styled(text, accent));
     }
     let warnings = app.viewport_warnings_for(layout);
+    let badge = left.len();
     if let Some(w) = warnings.first() {
         // Short form on the bar; the full text is in `status.warnings`.
         let short = if w.starts_with("code clipped") {
@@ -691,6 +759,17 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             }
             left[drop_idx] = Span::styled("", bar);
         }
+    }
+    // A message's tail says where to find what it names and is never cut
+    // (t-173): when the room left cannot hold it, the badge keeps only its
+    // sign (the full warning stays in `status.warnings` and comes back with
+    // the bar's next message).
+    let tail = message.and_then(|(m, _)| message_tail_width(m));
+    if let Some(tw) = tail
+        && badge < left.len()
+        && width.saturating_sub(lw(&left) + 1) < tw + 1
+    {
+        left[badge] = Span::styled("  ⚠", left[badge].style);
     }
     // One blank cell between the left segments and the message.
     let room = width.saturating_sub(lw(&left) + 1);
@@ -852,4 +931,198 @@ fn help_lines() -> Vec<String> {
     .into_iter()
     .map(String::from)
     .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AGENT_BOX: &str = "a1: box 3-5 added by agent (step 1, press n)";
+    const FILE_TAIL: &str = "a9: note L17 added by agent (src/queue.rs, not shown at step 2)";
+    const GROUPED: &str = "3 agent annotations not shown (step 1, press n)";
+
+    /// Every message shape that reaches the bar with a tail (t-132, t-155),
+    /// with wide characters near the cut, and two without one.
+    const SHAPES: &[&str] = &[
+        AGENT_BOX,
+        FILE_TAIL,
+        GROUPED,
+        "3 agent annotations not shown (src/queue.rs, not shown at step 2)",
+        "a17: box 3-5 (step 3, :step 3 shows it)",
+        "a4: note L13 updated by agent (step 3, :step 3 shows it)",
+        "a3 now appears at step 4 (:step 4 shows it)",
+        "a2: spotlight at step 1 (press n)",
+        "accepted p1: add box L3-5 (step 1, press n)",
+        "a3, a4: box 3-5 (step 2, press n)",
+        "注釈1: box 3-5 added by agent (step 1, press n)",
+        "a1: 日本語のラベルがここで切れる (step 1, press n)",
+        "a2: 🦀🦀🦀 crab note at L4 (step 2, press n)",
+        "a1: box 3-5 (hello)",
+        "a long message with no tail at all that goes on and on",
+    ];
+
+    fn tail_of(m: &str) -> Option<(String, String)> {
+        let i = crate::app::step_hint_start(m)?;
+        let tail = &m[i..];
+        let short = short_file_tail(tail).unwrap_or_else(|| tail.to_string());
+        Some((tail.to_string(), short))
+    }
+
+    #[test]
+    fn fit_message_keeps_the_tail_whole_at_every_width() {
+        for m in SHAPES {
+            let mut last_width = 0;
+            for room in 0..=120 {
+                let r = fit_message(m, room);
+                let w = r.width();
+                assert!(w <= room, "{m:?} at {room}: {r:?} is {w} cells");
+                // A wider room never shows less.
+                assert!(w >= last_width, "{m:?} at {room}: {r:?} shrank");
+                last_width = w;
+                if m.width() <= room {
+                    // AC3: what fits is untouched, byte for byte.
+                    assert_eq!(r, *m, "at {room}");
+                    continue;
+                }
+                let Some((tail, short)) = tail_of(m) else {
+                    if room > 0 {
+                        let kept = r.strip_suffix('…').expect("an ellipsis");
+                        assert!(m.starts_with(kept), "{m:?} at {room}: {r:?}");
+                    }
+                    continue;
+                };
+                // A file tail is shortened before anything else is cut.
+                assert!(
+                    !r.ends_with(&tail) || tail == short,
+                    "{m:?} at {room}: {r:?}"
+                );
+                let head = &m[..m.len() - tail.len()];
+                let alone = short.trim_start();
+                if r.ends_with(alone) {
+                    // The tail whole, after the subject or alone.
+                    let before = &r[..r.len() - alone.len()];
+                    let subject = &head[..message_subject(head)];
+                    assert!(
+                        before.is_empty() || before.starts_with(subject),
+                        "{m:?} at {room}: {r:?} lost {subject:?}"
+                    );
+                } else {
+                    // AC1: never a cut tail — with no room for it, the
+                    // beginning alone.
+                    assert!(alone.width() > room, "{m:?} at {room}: {r:?}");
+                    if room > 0 {
+                        let kept = r.strip_suffix('…').expect("an ellipsis");
+                        assert!(head.starts_with(kept), "{m:?} at {room}: {r:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fit_message_cuts_the_middle_then_keeps_the_tail() {
+        // AC3: fits, unchanged.
+        assert_eq!(fit_message(AGENT_BOX, 120), AGENT_BOX);
+        assert_eq!(fit_message(AGENT_BOX, 44), AGENT_BOX);
+        // AC1: the middle goes first …
+        assert_eq!(
+            fit_message(AGENT_BOX, 43),
+            "a1: box 3-5 added by age… (step 1, press n)"
+        );
+        assert_eq!(fit_message(AGENT_BOX, 27), "a1: box… (step 1, press n)");
+        // … down to the id and the tail …
+        assert_eq!(fit_message(AGENT_BOX, 22), "a1 … (step 1, press n)");
+        assert_eq!(fit_message(AGENT_BOX, 23), "a1 … (step 1, press n)");
+        // … then the tail wins over the id …
+        assert_eq!(fit_message(AGENT_BOX, 21), "(step 1, press n)");
+        assert_eq!(fit_message(AGENT_BOX, 17), "(step 1, press n)");
+        // … and a tail that does not fit is not shown cut.
+        assert_eq!(fit_message(AGENT_BOX, 16), "a1: box 3-5 add…");
+        assert_eq!(fit_message(AGENT_BOX, 1), "…");
+        assert_eq!(fit_message(AGENT_BOX, 0), "");
+        // t-132's cases keep their output.
+        let m = "a17: box 3-5 a long label (step 1, press n)";
+        assert_eq!(fit_message(m, 27), "a17: box… (step 1, press n)");
+        assert_eq!(fit_message(m, 10), "a17: box …");
+        assert_eq!(fit_message("abcdefghij", 5), "abcd…");
+    }
+
+    #[test]
+    fn fit_message_shortens_the_file_first() {
+        // AC2: the file's name alone before the message is cut.
+        assert_eq!(fit_message(FILE_TAIL, 63), FILE_TAIL);
+        assert_eq!(
+            fit_message(FILE_TAIL, 62),
+            "a9: note L17 added by agent (queue.rs, not shown at step 2)"
+        );
+        assert_eq!(
+            fit_message(FILE_TAIL, 40),
+            "a9: not… (queue.rs, not shown at step 2)"
+        );
+        assert_eq!(
+            fit_message(FILE_TAIL, 36),
+            "a9 … (queue.rs, not shown at step 2)"
+        );
+        assert_eq!(
+            fit_message(FILE_TAIL, 31),
+            "(queue.rs, not shown at step 2)"
+        );
+        assert_eq!(fit_message(FILE_TAIL, 30), "a9: note L17 added by agent…");
+        // A file with no directory has nothing to drop.
+        let m = "a9: note L17 added by agent (queue.rs, not shown at step 2)";
+        assert_eq!(fit_message(m, 36), "a9 … (queue.rs, not shown at step 2)");
+        assert_eq!(message_tail_width(FILE_TAIL), Some(31));
+        assert_eq!(message_tail_width(AGENT_BOX), Some(17));
+        assert_eq!(message_tail_width("a1: box 3-5"), None);
+    }
+
+    #[test]
+    fn fit_message_grouped_notice_keeps_what_it_counts() {
+        assert_eq!(fit_message(GROUPED, 47), GROUPED);
+        assert_eq!(
+            fit_message(GROUPED, 41),
+            "3 agent annotations no… (step 1, press n)"
+        );
+        assert_eq!(fit_message(GROUPED, 30), "3 agent ann… (step 1, press n)");
+        assert_eq!(fit_message(GROUPED, 27), "3 agent … (step 1, press n)");
+        // «3 …» alone says nothing: the tail.
+        assert_eq!(fit_message(GROUPED, 26), "(step 1, press n)");
+        let m = "3 agent annotations not shown (src/queue.rs, not shown at step 2)";
+        assert_eq!(
+            fit_message(m, 61),
+            "3 agent annotations not shown (queue.rs, not shown at step 2)"
+        );
+        assert_eq!(
+            fit_message(m, 41),
+            "3 agent … (queue.rs, not shown at step 2)"
+        );
+        assert_eq!(fit_message(m, 40), "(queue.rs, not shown at step 2)");
+    }
+
+    #[test]
+    fn fit_message_wide_characters_near_the_cut() {
+        let m = "注釈1: box 3-5 added by agent (step 1, press n)";
+        assert_eq!(fit_message(m, 25), "注釈1 … (step 1, press n)");
+        assert_eq!(fit_message(m, 24), "(step 1, press n)");
+        assert_eq!(fit_message(m, 4), "注…");
+        // A wide character that would straddle the cut is left out whole.
+        let m = "a1: 日本語のラベルがここで切れる (step 1, press n)";
+        assert_eq!(fit_message(m, 28), "a1: 日本… (step 1, press n)");
+        assert_eq!(fit_message(m, 29), "a1: 日本語… (step 1, press n)");
+        assert_eq!(fit_message(m, 30), "a1: 日本語… (step 1, press n)");
+        let m = "a2: 🦀🦀🦀 crab note at L4 (step 2, press n)";
+        assert_eq!(fit_message(m, 26), "a2: 🦀… (step 2, press n)");
+    }
+
+    #[test]
+    fn message_subject_for_each_shape() {
+        let s = |h: &str| h[..message_subject(h)].to_string();
+        assert_eq!(s("a17: box 3-5"), "a17");
+        assert_eq!(s("a3, a4: box 3-5"), "a3, a4");
+        assert_eq!(s("accepted p1: add box L3-5"), "accepted p1");
+        assert_eq!(s("3 agent annotations not shown"), "3 agent");
+        assert_eq!(s("3"), "3");
+        assert_eq!(s("a3 now appears at step 4"), "a3");
+        assert_eq!(s("a1: hl 3:takes"), "a1");
+    }
 }
