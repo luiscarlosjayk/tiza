@@ -452,10 +452,12 @@ pub struct App {
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
     /// The followed file reference that embedded code on screen replaced
-    /// (a paste, or an undo past a reload): what `:follow on` reloads. It
-    /// counts only while the code is embedded ([`App::paused`]); `:follow
-    /// off` keeps it, `:embed` and another document drop it. Why follow is
-    /// off is worked out from the screen each time ([`App::off_reason`]).
+    /// (a paste, or an undo past a reload): what `:follow on` reloads. A
+    /// paste with follow off sets it too once one is known (follow was on
+    /// before). It counts only while the code is embedded ([`App::paused`]);
+    /// `:follow off` keeps it, `:embed` and another document drop it. Why
+    /// follow is off is worked out from the screen each time
+    /// ([`App::off_reason`]).
     follow_file: Option<tiza_core::model::CodeSource>,
     /// The followed file changed while moves were applied (t-206): its
     /// reload waits for step 0, and the code on screen is embedded meanwhile.
@@ -2249,9 +2251,10 @@ impl App {
         self.touch();
         self.info(said);
         self.follow_after_history(before, replaced);
-        if !self.doc.is_embedded() {
-            self.follow_file = Some(self.doc.code_src.clone());
-            self.follow_the_reference();
+        if !self.doc.is_embedded()
+            && let Some(Err(e)) = self.follow_the_reference()
+        {
+            self.error(format!("follow off: {e}"));
         }
     }
 
@@ -2378,13 +2381,12 @@ impl App {
             .flatten();
         // Code pasted while following is the author's on purpose: a save in
         // the editor must not throw it away, so follow goes off and says so.
-        // A paste of exactly what the file holds has nothing to protect: it
-        // stays a reference to the file (numbered as its lines are) and
-        // follow stays on; with follow off, what the file holds is read.
+        // A paste of exactly what the file holds now has nothing to protect:
+        // it stays a reference to the file, numbered as its lines are, and
+        // follow stays on (the file is read: what follow loaded last may be
+        // another range's, or older).
         let same = if self.doc.is_embedded() {
             None
-        } else if let Some(f) = &self.follow {
-            (f.last_content == d.code).then(|| self.doc.base_first())
         } else {
             let base = self.save_path.parent().map(Path::to_path_buf);
             fs::reread_reference(&self.doc, base.as_deref())
@@ -2406,6 +2408,15 @@ impl App {
             if self.pasted_codes.len() > PASTES_KEPT {
                 self.pasted_codes.remove(0);
             }
+        }
+        // With follow off, a paste over a file reference still says which
+        // file `:follow on` reloads, once one is known (follow was on).
+        if self.follow.is_none()
+            && self.follow_file.is_some()
+            && self.doc.is_embedded()
+            && matches!(followed, tiza_core::model::CodeSource::File { .. })
+        {
+            self.follow_file = Some(followed.clone());
         }
         let paused = self.pause_follow(Some(followed), NotTheFile::Paste("the code is pasted"));
         if let Some(det) = detected {
@@ -2565,6 +2576,8 @@ impl App {
             && self.follow.is_none()
             && self.paused().is_none()
         {
+            // The file on screen now (a redo past `:ref` names another).
+            let name = self.reference_name(&self.doc.code_src).unwrap_or(name);
             let (said, _) = self.message.take().unwrap_or_default();
             self.info(format!("{said}; follow is off: :follow on reloads {name}"));
         }
@@ -2933,29 +2946,42 @@ impl App {
         })
     }
 
-    /// Follow on while the document reads another file now (`:ref`, or an
-    /// undo or a redo past one): the watch moves to that file, its counts
-    /// kept. Returns the file's name when it moved.
-    fn follow_the_reference(&mut self) -> Option<String> {
+    /// Follow on while the document references a file (after `:ref`, or
+    /// an undo or a redo past one): the watch moves to that file, its
+    /// counts kept, and what it holds now is read, so a save made meanwhile
+    /// is not missed. The same file (another range of it, or another path
+    /// to it) keeps the watch, with the code on screen as what was loaded.
+    /// `Some(Ok(name))` when the watch moved, `Some(Err(why))` when it could
+    /// not and follow went off.
+    fn follow_the_reference(&mut self) -> Option<Result<String, String>> {
         let path = self.source_file()?;
+        let base = self.doc.base().to_vec();
         let old = self.follow.as_mut()?;
-        if old.path == path {
+        let same = |a: &Path, b: &Path| {
+            a == b
+                || matches!(
+                    (std::fs::canonicalize(a), std::fs::canonicalize(b)),
+                    (Ok(x), Ok(y)) if x == y
+                )
+        };
+        if same(&old.path, &path) {
+            old.last_content = base;
             return None;
         }
         old.stop();
         let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
         self.reload_waits = false;
-        match crate::follow::Follow::start(path, self.doc.base().to_vec()) {
+        match crate::follow::Follow::start(path, base) {
             Ok(mut f) => {
                 (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
                 let name = f.file_name();
                 self.follow = Some(f);
-                Some(name)
+                let _ = self.reload_from_disk(false);
+                Some(Ok(name))
             }
             Err(e) => {
                 self.follow = None;
-                self.error(format!("follow off: {e}"));
-                None
+                Some(Err(e))
             }
         }
     }
@@ -3809,6 +3835,14 @@ impl App {
                     self.cmd_link_move(rest)
                 }
                 "link" | "ref" => {
+                    // Already a reference: there is nothing to link again.
+                    if rest.is_empty()
+                        && let tiza_core::model::CodeSource::File { file, lines } =
+                            &self.doc.code_src
+                    {
+                        let range = lines.as_ref().map(|l| format!(":{l}")).unwrap_or_default();
+                        return Ok(format!("the .tiza already references {file}{range}"));
+                    }
                     let (file, range) = if rest.is_empty() {
                         let Some(f) = self.doc.source.path.clone() else {
                             return Err(Error::Invalid(
@@ -3833,9 +3867,34 @@ impl App {
                     // file's): the screen shows the file's code, as the saved
                     // document will, through the usual reload (one undo
                     // step), which needs step 0 like a paste.
+                    let base = self.save_path.parent().map(Path::to_path_buf);
+                    // A file a `code.link` shows has annotations of its own
+                    // view: as the main code they would be another file's.
+                    let links = self.doc.link_files();
+                    let mut known = links.clone();
+                    known.extend(self.doc.view_code.keys().cloned());
+                    let name = fs::canonical_link(&self.doc, &file, base.as_deref(), &known);
+                    if links.contains(&name) {
+                        let step = self
+                            .doc
+                            .moves
+                            .iter()
+                            .find_map(|m| match &m.action {
+                                moves::MoveAction::CodeLink(l)
+                                    if self.doc.view_key(&l.file).as_deref()
+                                        == Some(name.as_str()) =>
+                                {
+                                    Some(m.at_step)
+                                }
+                                _ => None,
+                            })
+                            .unwrap_or_default();
+                        return Err(Error::Invalid(format!(
+                            "{file} is shown by a code.link at step {step}, with annotations of its own: delete that link first to reference it"
+                        )));
+                    }
                     let mut probe = self.doc.clone();
                     probe.reference_file(file.clone(), range);
-                    let base = self.save_path.parent().map(Path::to_path_buf);
                     let (code, first) = fs::reread_reference(&probe, base.as_deref())?;
                     let mut said = if code.as_slice() != self.doc.base()
                         || first != self.doc.base_first()
@@ -3871,13 +3930,20 @@ impl App {
                         self.touch();
                         format!("the .tiza now references {file}")
                     };
-                    // What `:follow on` reloads, and what follow watches, is
-                    // the file the document references now.
-                    self.follow_file = Some(self.doc.code_src.clone());
-                    if let Some(name) = self.follow_the_reference()
-                        && !said.is_empty()
-                    {
-                        said.push_str(&format!("; following {name}"));
+                    // Follow watches the file the document references now.
+                    match self.follow_the_reference() {
+                        Some(Ok(name)) if !said.is_empty() => {
+                            said.push_str(&format!("; following {name}"));
+                        }
+                        Some(Err(e)) => {
+                            let what = if said.is_empty() {
+                                self.message.take().map(|m| m.0).unwrap_or_default()
+                            } else {
+                                std::mem::take(&mut said)
+                            };
+                            self.error(format!("{what}; follow off: {e}"));
+                        }
+                        _ => {}
                     }
                     Ok(said)
                 }

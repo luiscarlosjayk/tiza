@@ -250,10 +250,10 @@ fn ac1_ref_to_the_same_code_keeps_everything() {
     let (live, dir, tiza) = opened("t213-same-code");
     std::fs::write(dir.join("other.rs"), MAIN).unwrap();
     live.command("follow on");
-    let revision = live.with(|app| app.doc.annotations.len());
+    let annotations = live.with(|app| app.doc.annotations.len());
     live.command("ref other.rs");
     assert_eq!(base(&live), lines(MAIN));
-    assert_eq!(live.with(|app| app.doc.annotations.len()), revision);
+    assert_eq!(live.with(|app| app.doc.annotations.len()), annotations);
     assert_eq!(saved_code(&tiza), json!({"file": "other.rs"}));
     save(&dir.join("other.rs"), OTHER2);
     wait_for("other.rs reloaded", || base(&live) == lines(OTHER2));
@@ -265,8 +265,34 @@ fn ac1_ref_to_the_same_code_keeps_everything() {
 #[test]
 fn ac2_a_put_of_another_document_turns_follow_off() {
     // Test step 2.
-    let (live, _dir, _tiza) = opened("t213-put");
+    let (live, dir, _tiza) = opened("t213-put");
     live.command("follow on");
+    let other = json!({
+        "schema": 1,
+        "source": {"path": "elsewhere.rs", "language": "rs", "first_line": 1},
+        "code": ["fn elsewhere() {}"],
+        "annotations": [],
+        "step": 0
+    });
+    live.api_ok("scene.put", json!({"document": other.clone()}));
+    assert_eq!(status(&live)["enabled"], false);
+    let msg = message(&live);
+    assert!(
+        msg.starts_with("follow off: the code on screen is not main.rs"),
+        "{msg}"
+    );
+    assert!(!bar(&live).contains("⟳ following"), "{}", bar(&live));
+    // A save of main.rs no longer reaches the screen.
+    save(&dir.join("main.rs"), MAIN2);
+    std::thread::sleep(SETTLE);
+    assert_eq!(base(&live), vec!["fn elsewhere() {}".to_string()]);
+}
+
+#[test]
+fn ac2_with_autosave_already_off_the_put_says_follow_off() {
+    let (live, _dir, _tiza) = opened("t213-put-nosave");
+    live.command("follow on");
+    live.command("autosave off");
     let other = json!({
         "schema": 1,
         "source": {"path": "elsewhere.rs", "language": "rs", "first_line": 1},
@@ -276,9 +302,10 @@ fn ac2_a_put_of_another_document_turns_follow_off() {
     });
     live.api_ok("scene.put", json!({"document": other}));
     assert_eq!(status(&live)["enabled"], false);
-    let msg = message(&live);
-    assert!(msg.contains("follow off"), "{msg}");
-    assert!(!bar(&live).contains("⟳ following"), "{}", bar(&live));
+    assert_eq!(
+        message(&live),
+        "another document loaded; follow off: the code on screen is not main.rs"
+    );
 }
 
 #[test]
@@ -359,4 +386,136 @@ fn corner_ref_to_other_code_with_moves_applied_is_refused() {
     assert!(loud && msg.contains("go back to step 0 first"), "{msg}");
     assert_eq!(saved_code(&tiza), json!({"file": "main.rs"}));
     same_as_fresh(&live, &tiza, ":ref refused at step 1");
+}
+
+// ---------- review ----------
+
+#[test]
+fn rev_ref_to_another_range_of_the_same_file_then_a_paste() {
+    // The watch stays on main.rs; what it loaded last is the range now on
+    // screen, so a paste of the whole file is not «what the file holds».
+    let (live, _dir, tiza) = opened("t213-range");
+    live.command("follow on");
+    live.command("step 0");
+    live.command("ref main.rs:2-3");
+    assert_eq!(base(&live), lines("    let a = 1;\n}\n"));
+    assert_eq!(live.with(|app| app.doc.base_first()), 2);
+    same_as_fresh(&live, &tiza, ":ref main.rs:2-3");
+    live.with(|app| app.replace_code(MAIN)).unwrap();
+    live.command("step 1");
+    live.command("note 3 closing brace");
+    same_as_fresh(&live, &tiza, "the whole file pasted over the range");
+}
+
+#[test]
+fn rev_ref_to_the_whole_file_from_a_range_then_a_paste() {
+    let dir = scratch("t213-range-whole");
+    std::fs::write(dir.join("main.rs"), MAIN).unwrap();
+    let opened = tiza_core::fs::open(&format!("{}:2-3", dir.join("main.rs").display())).unwrap();
+    let tiza = opened.save_path.clone();
+    let live = Live::open(opened.document, tiza.clone(), dir.join("live.sock"));
+    live.command("follow on");
+    live.command("ref main.rs");
+    assert_eq!(base(&live), lines(MAIN));
+    same_as_fresh(&live, &tiza, ":ref main.rs");
+    live.with(|app| app.replace_code("    let a = 1;\n}\n"))
+        .unwrap();
+    same_as_fresh(&live, &tiza, "the old range pasted over the whole file");
+}
+
+#[test]
+fn rev_ref_to_a_file_a_code_link_shows_is_refused() {
+    let (live, _dir, tiza) = opened("t213-linked");
+    live.command("step 1");
+    live.command("link other.rs");
+    live.command("note 2 on other");
+    live.command("step 0");
+    live.command("ref other.rs");
+    let (msg, loud) = live.message().unwrap();
+    assert!(
+        loud && msg.contains("other.rs is shown by a code.link at step 1"),
+        "{msg}"
+    );
+    assert_eq!(saved_code(&tiza), json!({"file": "main.rs"}));
+    same_as_fresh(&live, &tiza, ":ref to a linked file refused");
+}
+
+#[test]
+fn rev_with_follow_never_on_a_paste_has_nothing_to_follow() {
+    // As before: an unrelated undo does not make `:follow on` reload a file.
+    let (live, _dir, _tiza) = opened("t213-never");
+    live.command("note 2 x");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.command("step 0");
+    live.with(|app| app.replace_code("fn pasted() {}\n"))
+        .unwrap();
+    let st = status(&live);
+    assert_eq!(st["enabled"], false, "{st}");
+    assert!(st["path"].is_null(), "{st}");
+    live.command("follow on");
+    let (msg, loud) = live.message().unwrap();
+    assert!(loud && msg.starts_with("nothing to follow"), "{msg}");
+}
+
+#[test]
+fn rev_u_of_a_ref_over_a_paste_follows_the_first_file_again() {
+    // The paste was over main.rs; `:ref other.rs` and its `u` leave it so.
+    let (live, _dir, tiza) = opened("t213-paste-ref-u");
+    live.command("follow on");
+    live.command("step 0");
+    live.with(|app| app.replace_code("fn pasted() {}\n"))
+        .unwrap();
+    live.command("ref other.rs");
+    assert_eq!(base(&live), lines(OTHER));
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(base(&live), lines("fn pasted() {}\n"));
+    live.command("follow on");
+    assert_eq!(base(&live), lines(MAIN), "{}", message(&live));
+    let st = status(&live);
+    assert!(st["path"].as_str().unwrap().ends_with("main.rs"), "{st}");
+    same_as_fresh(&live, &tiza, ":follow on after the u");
+}
+
+#[test]
+fn rev_a_redo_of_the_ref_names_the_file_on_screen() {
+    let (live, dir, _tiza) = opened("t213-redo-words");
+    live.command("follow on");
+    live.command("step 0");
+    live.command("ref other.rs");
+    save(&dir.join("main.rs"), MAIN2);
+    std::thread::sleep(SETTLE);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    live.keys(&[crossterm::event::KeyCode::Char('U')]);
+    let msg = message(&live);
+    assert!(msg.ends_with(":follow on reloads other.rs"), "{msg}");
+}
+
+#[test]
+fn rev_a_symlink_to_the_followed_file_keeps_reloading() {
+    let (live, dir, tiza) = opened("t213-symlink");
+    std::os::unix::fs::symlink(dir.join("main.rs"), dir.join("link.rs")).unwrap();
+    live.command("follow on");
+    live.command("ref link.rs");
+    assert_eq!(saved_code(&tiza), json!({"file": "link.rs"}));
+    save(&dir.join("main.rs"), MAIN2);
+    wait_for("the reload through the link", || {
+        base(&live) == lines(MAIN2)
+    });
+    same_as_fresh(&live, &tiza, "reloaded through the link");
+}
+
+#[test]
+fn rev_link_without_a_path_on_a_reference_keeps_it() {
+    let dir = scratch("t213-link-noarg");
+    std::fs::write(dir.join("main.rs"), MAIN).unwrap();
+    let opened = tiza_core::fs::open(&format!("{}:1-2", dir.join("main.rs").display())).unwrap();
+    let tiza = opened.save_path.clone();
+    let live = Live::open(opened.document, tiza.clone(), dir.join("live.sock"));
+    live.command("note 1 x");
+    live.command("step 0");
+    let before = saved_code(&tiza);
+    live.command("link");
+    assert_eq!(message(&live), "the .tiza already references main.rs:1-2");
+    assert_eq!(saved_code(&tiza), before);
+    assert_eq!(base(&live).len(), 2);
 }
