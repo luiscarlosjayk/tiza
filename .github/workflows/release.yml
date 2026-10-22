@@ -135,7 +135,10 @@ jobs:
           exclude=()
           left=0
           for crate in $crates; do
-            if curl -fsS "https://index.crates.io/$(index_path "$crate")" 2>/dev/null | grep -q "\"vers\":\"$version\""; then
+            # Into a variable, not a pipe: with pipefail, `grep -q` quitting
+            # early could fail curl with SIGPIPE and hide a match.
+            index=$(curl -fsS "https://index.crates.io/$(index_path "$crate")" 2>/dev/null || true)
+            if grep -qF "\"vers\":\"$version\"" <<<"$index"; then
               echo "$crate $version is already on crates.io: skipped"
               exclude+=(--exclude "$crate")
             else
