@@ -26,8 +26,7 @@
 //!   svg). Any visual change re-runs `scripts/readme-images.sh` and the herdr
 //!   captures in the same commit.
 //! - AC7 This file with the repro documents of QA 1 (`qa/fixtures/t-201/`,
-//!   p1–p6 and their variants; `four.env` with demo values of the same
-//!   length) and a width sweep, `visible`/`clipped` in the `annotation.add`
+//!   p1–p6 and their variants, as Luis decided on them) and a width sweep, `visible`/`clipped` in the `annotation.add`
 //!   reply agreeing with `check` at every width; CHANGELOG (Fixed).
 
 use serde_json::{Value, json};
@@ -393,21 +392,30 @@ fn ac6_cases_outside_the_card_draw_as_before() {
  4   PORT=8080                                    and every request the server answers, with timin…
 "
     );
+    // p6's first two code lines are the fixture's (`four.env`), not
+    // repeated here.
+    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let code: Vec<&str> = env.lines().collect();
+    let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
     assert_eq!(
         render("p6.tiza", 90),
-        " 1   DATABASE_URL=postgres://app:demo-passwd@db.internal:5432/app  ┆ user, password, hos…
- 2   API_TOKEN=tok_demo_0000000000000000000a                       ┆ the API token
+        fill(
+            " 1   {L1}  ┆ user, password, hos…
+ 2   {L2}                       ┆ the API token
  3   LOG_LEVEL=info
  4   PORT=8080
 "
+        )
     );
     assert_eq!(
         render("p6.tiza", 118),
-        " 1   DATABASE_URL=postgres://app:demo-passwd@db.internal:5432/app  ╭────────────────────────────────╮
- 2   API_TOKEN=tok_demo_0000000000000000000a                       │ user, password, host, port and │ ┆ the API token
+        fill(
+            " 1   {L1}  ╭────────────────────────────────╮
+ 2   {L2}                       │ user, password, host, port and │ ┆ the API token
  3   LOG_LEVEL=info                                                │ database in one value          │
  4   PORT=8080                                                     ╰────────────────────────────────╯
 "
+        )
     );
 }
 
