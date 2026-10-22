@@ -3,7 +3,8 @@
 //! is none of them is answered with the valid names only, never with what
 //! was sent — the MCP tools, the socket methods, the `:` bar and supervised
 //! mode (R1); serde's list of valid names stays whole (R2); MCP arguments
-//! that do not deserialize repeat no value; a move that matches nothing
+//! that do not deserialize repeat no value, except a value of the wrong
+//! type, which t-189 names again (cut at 40 characters); a move that matches nothing
 //! reads like `tiza check` (R3); `focus.set` checks its lines.
 //!
 //! What an agent sent as a free text (a `find`, a step id) is quoted as it
@@ -173,12 +174,14 @@ fn supervised_summaries_quote_the_target() {
 // ---------- Review of 812ff18 (adversarial reviewer) ----------
 
 #[test]
-fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
+fn review2_mcp_parameters_of_the_wrong_type_name_the_value() {
     // Since t-189 an `invalid type` names the value sent (it is not a
     // closed value): `invalid type: string "…", expected u32`. Any other
     // message that does not deserialize still quotes nothing.
     let live = live("t167-r2");
     let mut mcp = McpClient::start(&live.socket);
+    // A string where an object or a line number goes is a wrong type:
+    // named since t-189 (closed values stay hidden: `review*` above).
     for (tool, args) in [
         ("highlight", json!({"at": "Q7valueXyz789"})),
         ("add_box", json!({"from_line": "Q7valueXyz789"})),
@@ -186,15 +189,12 @@ fn review2_mcp_parameters_that_do_not_deserialize_quote_no_value() {
     ] {
         let (is_err, text, _) = mcp.call(tool, args.clone());
         assert!(is_err, "{tool} {args}: {text}");
-        assert!(text.contains("failed to deserialize"), "{text}");
-        if text.contains("invalid type: ") {
-            assert!(
-                text.contains("string \"Q7valueXyz789\""),
-                "MCP {tool} {args}: {text}"
-            );
-        } else {
-            assert_clean(&format!("MCP {tool} {args}"), &text);
-        }
+        assert!(
+            text.contains(
+                "failed to deserialize parameters: invalid type: string \"Q7valueXyz789\""
+            ),
+            "MCP {tool} {args}: {text}"
+        );
     }
 }
 

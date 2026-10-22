@@ -57,9 +57,10 @@ pub enum Error {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     /// serde's message, an `invalid type` value cut to [`QUOTED_MAX`]
-    /// characters (t-189).
+    /// characters (t-189). Not a `source`: a chain printed with `{:#}`
+    /// would repeat serde's message whole after the cut one.
     #[error("{}", shorten_quoted_value(&.0.to_string()))]
-    Json(#[from] serde_json::Error),
+    Json(serde_json::Error),
 }
 
 impl Error {
@@ -91,6 +92,12 @@ pub const ELIDED: &str = "«…»";
 /// rest is serde's message, through [`serde_text`].
 pub const INVALID_PARAMETERS: &str = "invalid parameters: ";
 
+impl From<serde_json::Error> for Error {
+    fn from(e: serde_json::Error) -> Self {
+        Error::Json(e)
+    }
+}
+
 /// The values serde quotes in its messages: how each opens and closes.
 const QUOTED: [(&str, char); 5] = [
     ("unknown variant `", '`'),
@@ -100,67 +107,103 @@ const QUOTED: [(&str, char); 5] = [
     ("character `", '`'),
 ];
 
-/// Longest value an `invalid type` message quotes, in characters (t-189).
+/// Longest string an `invalid type` message quotes, in characters (t-189).
 pub const QUOTED_MAX: usize = 40;
 
-/// Where the value serde quotes in `head` is: the range from its opening
-/// delimiter to its closing one, both included.
-fn quoted_range(head: &str, open: &str, close: char) -> Option<std::ops::Range<usize>> {
-    let k = head.find(open)?;
-    let from = k + open.len() - 1;
-    let to = head[from + 1..]
-        .rfind(close)
-        .map_or(head.len(), |e| from + 1 + e + 1);
-    Some(from..to)
-}
+/// What may come before serde's own text in a message that reaches
+/// [`serde_text`]: rmcp's wording for MCP arguments.
+const SERDE_PREFIXES: [&str; 2] = ["", "failed to deserialize parameters: "];
 
 /// serde's message for a value it could not read (t-167 R1, R2; t-189):
 /// a closed value (a color, a type, an op…: `unknown variant`) is answered
 /// with the valid names only, never with what was sent, and so is an
 /// `invalid value`; an `invalid type` names what was sent (`invalid type:
-/// string "three", expected u32`), cut by [`shorten_quoted_value`]. serde's
-/// list of what it expected (after the last `, expected `) is Tiza's own
-/// names and stays whole. A field name stays: `unknown field `x`` names
-/// it, as `missing field` and `duplicate field` do.
+/// string "three", expected u32`), cut by [`shorten_quoted_value`]. Which
+/// one it is comes from how serde's text starts, never from what it quotes
+/// (a variant sent as `invalid type: …` stays hidden). serde's list of what
+/// it expected (after the last `, expected `) is Tiza's own names and stays
+/// whole. A field name stays: `unknown field `x`` names it, as `missing
+/// field` and `duplicate field` do.
 pub fn serde_text(msg: &str) -> String {
-    if msg.contains("invalid type: ") {
+    if invalid_type_at(msg).is_some() {
         return shorten_quoted_value(msg);
     }
     let (head, tail) = msg.split_at(msg.rfind(", expected ").unwrap_or(msg.len()));
     let mut head = head.to_string();
     for (open, close) in QUOTED {
-        if let Some(r) = quoted_range(&head, open, close) {
-            head.replace_range(r, ELIDED);
+        if let Some(k) = head.find(open) {
+            let from = k + open.len() - 1;
+            let to = head[from + 1..]
+                .rfind(close)
+                .map_or(head.len(), |e| from + 1 + e + 1);
+            head.replace_range(from..to, ELIDED);
         }
     }
     head + tail
 }
 
-/// An `invalid type` message with the value it quotes cut to
+/// Where serde's `invalid type: ` starts in `msg`: at its start, or after
+/// a known prefix ([`SERDE_PREFIXES`]); `None` for any other message.
+fn invalid_type_at(msg: &str) -> Option<usize> {
+    SERDE_PREFIXES
+        .iter()
+        .find(|p| {
+            msg.strip_prefix(**p)
+                .is_some_and(|r| r.starts_with("invalid type: "))
+        })
+        .map(|p| p.len())
+}
+
+/// An `invalid type` message with the string it quotes cut to
 /// [`QUOTED_MAX`] characters and `…` (t-189): `invalid type: string
 /// "xxxx…", expected u32`. serde writes a string as Rust's `{:?}` does, so
-/// a newline or an escape is already `\n` or `\u{1b}`, never raw. What comes
-/// before `invalid type: ` (a caller's prefix, as rmcp's `failed to
-/// deserialize parameters: `) stays; any other message is returned as it
-/// is.
+/// a newline or an escape is already `\n` or `\u{1b}`, never raw; the cut
+/// never splits one. Numbers and other kinds are short and stay; any
+/// other message is returned as it is.
 pub fn shorten_quoted_value(msg: &str) -> String {
-    let Some(at) = msg.find("invalid type: ") else {
+    const OPEN: &str = "invalid type: string \"";
+    let Some(at) = invalid_type_at(msg) else {
         return msg.to_string();
     };
-    let (prefix, msg) = msg.split_at(at);
-    let (head, tail) = msg.split_at(msg.rfind(", expected ").unwrap_or(msg.len()));
-    let mut head = head.to_string();
-    for (open, close) in QUOTED {
-        if let Some(r) = quoted_range(&head, open, close) {
-            let inner = &head[r.start + 1..r.end.saturating_sub(1).max(r.start + 1)];
-            if inner.chars().count() > QUOTED_MAX {
-                let cut: String = inner.chars().take(QUOTED_MAX).collect();
-                head.replace_range(r.start + 1..r.end - 1, &format!("{cut}…"));
+    let Some(value) = msg[at..].strip_prefix(OPEN) else {
+        return msg.to_string();
+    };
+    let start = msg.len() - value.len();
+    // The string's pieces up to its closing quote: one character, or one
+    // whole escape (`\"`, `\n`, `\u{1b}`).
+    let mut pieces: Vec<&str> = Vec::new();
+    let mut rest = value;
+    let closed = loop {
+        let Some(c) = rest.chars().next() else {
+            break false;
+        };
+        if c == '"' {
+            break true;
+        }
+        let len = if c == '\\' {
+            match rest[1..].chars().next() {
+                Some('u') => rest.find('}').map_or(rest.len(), |e| e + 1),
+                Some(n) => 1 + n.len_utf8(),
+                None => 1,
             }
+        } else {
+            c.len_utf8()
+        };
+        pieces.push(&rest[..len]);
+        rest = &rest[len..];
+    };
+    let shown: usize = pieces.iter().map(|p| p.chars().count()).sum();
+    if !closed || shown <= QUOTED_MAX {
+        return msg.to_string();
+    }
+    let mut cut = String::new();
+    for p in pieces {
+        if cut.chars().count() + p.chars().count() > QUOTED_MAX {
             break;
         }
+        cut.push_str(p);
     }
-    format!("{prefix}{head}{tail}")
+    format!("{}{cut}…{rest}", &msg[..start])
 }
 
 #[cfg(test)]
@@ -222,8 +265,49 @@ mod tests {
         );
         let short = "invalid type: string \"three\", expected u32 at line 2 column 7";
         assert_eq!(shorten_quoted_value(short), short);
-        let variant =
-            "unknown variant `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`, expected `a`";
-        assert_eq!(shorten_quoted_value(variant), variant);
+        // An escape is never cut in half: `\u{7}` goes whole or not at all.
+        let esc = format!(
+            "invalid type: string \"{}\\u{{7}}yyy\", expected u32",
+            "x".repeat(38)
+        );
+        assert_eq!(
+            shorten_quoted_value(&esc),
+            format!("invalid type: string \"{}…\", expected u32", "x".repeat(38))
+        );
+        // A value that says `", expected ` or `unknown variant` itself.
+        let tricky = format!(
+            "invalid type: string \"{}\\\", expected unknown variant `x\", expected u32",
+            "a".repeat(50)
+        );
+        assert_eq!(
+            shorten_quoted_value(&tricky),
+            format!("invalid type: string \"{}…\", expected u32", "a".repeat(40))
+        );
+        // No closing quote, multibyte text: as it is, never a panic.
+        let open = "invalid type: string \"é";
+        assert_eq!(shorten_quoted_value(open), open);
+        // rmcp's prefix stays.
+        let mcp = format!(
+            "failed to deserialize parameters: invalid type: string \"{}\", expected u32",
+            "z".repeat(45)
+        );
+        assert!(
+            shorten_quoted_value(&mcp).ends_with(&format!("{}…\", expected u32", "z".repeat(40)))
+        );
+    }
+
+    #[test]
+    fn a_closed_value_that_says_invalid_type_stays_hidden() {
+        for msg in [
+            "unknown variant `invalid type: SECRET1`, expected one of `box`, `note`",
+            "failed to deserialize parameters: unknown variant `invalid type: SECRET4`, expected `insert`",
+            "invalid value: string \"invalid type: SECRET\", expected u8",
+        ] {
+            assert!(
+                !serde_text(msg).contains("SECRET"),
+                "{msg}: {}",
+                serde_text(msg)
+            );
+        }
     }
 }
