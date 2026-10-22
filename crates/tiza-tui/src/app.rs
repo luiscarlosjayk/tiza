@@ -1227,7 +1227,7 @@ impl App {
         }
         let (from, to) = (fs::document_dir(&self.save_path), fs::document_dir(path));
         if from != to {
-            d.map_files(&|f| fs::rebase_path(f, &from, &to));
+            d.map_files(&fs::rebase_fn(&self.doc, &from, &to));
         }
         d
     }
@@ -1239,6 +1239,12 @@ impl App {
     }
 
     fn refuse_existing(path: &Path, force: bool) -> Result<(), Error> {
+        if path.is_dir() || path.as_os_str().to_string_lossy().ends_with('/') {
+            return Err(Error::Invalid(format!(
+                "{} is a folder: name the file (…/copy.tiza)",
+                path.display()
+            )));
+        }
         if path.exists() && !force {
             return Err(Error::Invalid(format!(
                 "{} exists (add ! to overwrite)",
@@ -1284,7 +1290,7 @@ impl App {
         fs::save_document(&self.rebased_copy(&path), &path)?;
         let (from, to) = (fs::document_dir(&self.save_path), fs::document_dir(&path));
         if from != to {
-            let f = |s: &str| fs::rebase_path(s, &from, &to);
+            let f = fs::rebase_fn(&self.doc, &from, &to);
             self.doc.map_files(&f);
             self.history.map_files(&f);
             if let Some(tiza_core::model::CodeSource::File { file, .. }) = &mut self.reference {
@@ -1294,13 +1300,21 @@ impl App {
             self.revision += 1;
         }
         self.save_path = path;
+        crate::note_save_path(&self.save_path);
         // The same text again, through the one door: `dirty`, what quitting
         // compares with, and a read-only state left behind.
         self.save()?;
-        Ok(format!(
-            "saved as {}: changes are saved there from now on",
-            self.save_path.display()
-        ))
+        Ok(if self.autosave {
+            format!(
+                "saved as {}: changes are saved there from now on",
+                self.save_path.display()
+            )
+        } else {
+            format!(
+                "saved as {}: :w saves there from now on (autosave off)",
+                self.save_path.display()
+            )
+        })
     }
 
     /// The sidecar as a save would write it now (the theme as `save` sets
@@ -4026,20 +4040,27 @@ impl App {
                     }
                 }
                 "wq" | "wq!" if !rest.is_empty() => {
-                    // The copy holds the changes: quit as if they were saved.
-                    self.write_copy(Path::new(rest), cmd == "wq!")?;
-                    let dirty = std::mem::replace(&mut self.dirty, false);
-                    self.request_quit(false);
-                    if !self.quit {
+                    let force = cmd == "wq!";
+                    // What would refuse the quit (stale moves) refuses before
+                    // the copy is written, so the same command can be run
+                    // again; `!` quits over them, as `:q!`.
+                    if !force && tiza_core::stale::on_close(&self.doc).is_some() {
+                        let dirty = std::mem::replace(&mut self.dirty, false);
+                        self.request_quit(false);
                         self.dirty = dirty;
+                        return Ok(String::new());
                     }
+                    // The copy holds the changes: quit as if they were saved.
+                    self.write_copy(Path::new(rest), force)?;
+                    self.quit = true;
                     Ok(String::new())
                 }
                 "wq" | "wq!" => {
                     // Quit only when the write succeeded (`:q!` leaves anyway),
-                    // and not over stale moves without a word.
+                    // and not over stale moves without a word (`:wq!` quits
+                    // over them, as `:q!`).
                     self.save()?;
-                    self.request_quit(false);
+                    self.request_quit(cmd == "wq!");
                     Ok(String::new())
                 }
                 "box" => self.cmd_box(rest),

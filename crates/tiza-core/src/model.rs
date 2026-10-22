@@ -930,11 +930,16 @@ impl Document {
     }
 
     /// Applies `f` to every path the document names relative to its folder:
-    /// the code's file, `follows`, and each `code.link` file with the
-    /// annotations and `views` that name it (by the same string).
+    /// the code's file, `source.path` (read from the document's folder as
+    /// the name of the main file: a link back to it, `:link` alone),
+    /// `follows`, and each `code.link` file with the annotations and `views`
+    /// that name it (by the same string).
     pub fn map_files(&mut self, f: &dyn Fn(&str) -> String) {
         if let CodeSource::File { file, .. } = &mut self.code_src {
             *file = f(file);
+        }
+        if let Some(p) = &mut self.source.path {
+            *p = f(p);
         }
         if let Some(r) = &mut self.follows {
             r.file = f(&r.file);

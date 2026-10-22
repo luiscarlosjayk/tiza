@@ -5,7 +5,8 @@
 //! - AC2 A failed save stays visible on the status line (in the error color)
 //!   even after later info messages, until a save succeeds.
 //! - AC3 `q` refuses to quit while changes could not be saved; `:q!` quits;
-//!   `:w other/path` then `q` works.
+//!   `:saveas other/path` then `q` works (`:w other/path` only writes a
+//!   copy since t-221, as in Vim).
 
 use crossterm::event::KeyCode;
 use tiza_qa::{Live, scratch};
@@ -48,7 +49,7 @@ fn ac2_ac3_failed_save_is_sticky_and_blocks_q() {
     assert!(bar.contains(":q!"), "the way out comes first: {bar}");
     // Saving elsewhere clears the error and q works again.
     let other = dir.join("other.tiza");
-    live.command(&format!("w {}", other.display()));
+    live.command(&format!("saveas {}", other.display()));
     assert!(other.exists());
     assert!(live.with(|app| app.save_error.is_none()));
     live.keys(&[KeyCode::Char('q')]);

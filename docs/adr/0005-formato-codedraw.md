@@ -15,7 +15,7 @@
 - Unknown fields are ignored on load and **not preserved** on save: the TUI owns the document and rewrites it whole, so tooling that wants to keep extra data should keep it in a separate file keyed by annotation id. Labels, notes and titles are single-line: control characters are replaced by spaces on load. A document whose `step` is beyond its last annotation opens at the last step; duplicate annotation ids are an error.
 - Annotations with `id`, `step` and the flattened shape with `type` (`highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `spotlight`). An `arrow` optionally carries `stroke`, `route` and `heads: {start, end}` (omitted when default); a `box` or `callout` optionally carries `border`, `corners` and `fill` (same rule). A `callout` carries `from_line`, optional `to_line`, `text` (newlines are paragraph breaks), optional `title`, `placement` (`margin` default, `below`, `auto`; omitted when default) and optional `width` (max text columns).
 - **Sidecar**: opening `src/main.rs` saves to `src/main.rs.codedraw`; with a range, `src/main.rs.12-48.codedraw`. If the sidecar exists, it is the one opened (it keeps the annotations).
-- **Automatic, atomic** saving (tmp + rename) after every change; `:w [path]` to pick another destination.
+- **Automatic, atomic** saving (tmp + rename) after every change; `:saveas PATH` to move to another destination (`:w PATH` writes a copy, as in Vim; an existing file needs `!`). Paths the document names relative to its folder are rewritten for the new one.
 
 ## Consequences
 

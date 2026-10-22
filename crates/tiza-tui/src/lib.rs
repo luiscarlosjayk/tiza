@@ -314,6 +314,15 @@ fn hung_up_or(hangup: &HangUp, e: io::Error) -> io::Result<End> {
 /// What the crash hook needs to say where the work is.
 static CRASH_INFO: std::sync::OnceLock<std::sync::Mutex<PathBuf>> = std::sync::OnceLock::new();
 
+/// The document moved (`:saveas`): a crash names the file it is saved to now.
+pub(crate) fn note_save_path(save_path: &std::path::Path) {
+    if let Some(cell) = CRASH_INFO.get()
+        && let Ok(mut g) = cell.lock()
+    {
+        *g = save_path.to_path_buf();
+    }
+}
+
 /// A panic anywhere in the TUI (a command, the draw loop, a worker) must
 /// never leave the terminal in the alternate screen with raw mode on: the
 /// hook restores it first, then prints one line that says what happened,

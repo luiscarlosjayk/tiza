@@ -143,7 +143,7 @@ proptest! {
 /// Commands that touch the file system or the process, excluded from the
 /// random walk (they are covered by their own tickets).
 const EXCLUDED: &[&str] = &[
-    "w", "write", "wq", "q", "quit", "export", "link", "embed", "follow",
+    "w", "write", "wq", "q", "quit", "export", "link", "embed", "follow", "saveas",
 ];
 
 fn command_strategy() -> impl Strategy<Value = String> {

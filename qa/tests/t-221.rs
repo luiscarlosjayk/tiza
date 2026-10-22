@@ -79,21 +79,31 @@ fn message(live: &Live) -> (String, bool) {
     live.message().unwrap_or_default()
 }
 
-/// `tiza check FILE` run from `cwd`: exit code and output.
-fn check_from(file: &Path, cwd: &Path) -> (i32, String) {
+/// `tiza check --json FILE` run from `cwd`: exit code, errors, warnings
+/// and the output.
+fn check_from(file: &Path, cwd: &Path) -> (i32, u64, u64, String) {
     let out = std::process::Command::new(bin())
-        .arg("check")
+        .args(["check", "--json"])
         .arg(file)
         .current_dir(cwd)
         .output()
         .unwrap();
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap_or(Value::Null);
+    let n = |x: &Value| {
+        x.as_u64()
+            .or(x.as_array().map(|a| a.len() as u64))
+            .unwrap_or(u64::MAX)
+    };
     (
         out.status.code().unwrap_or(-1),
-        format!(
-            "{}{}",
-            String::from_utf8_lossy(&out.stdout),
-            String::from_utf8_lossy(&out.stderr)
-        ),
+        n(&v["errors"]),
+        n(&v["warnings"]),
+        text,
     )
 }
 
@@ -105,8 +115,12 @@ fn assert_opens(copy: &Path) {
     // (The step-0 code of the main file: it may open at a linked file.)
     assert_eq!(doc.base().join("\n") + "\n", MAIN, "{}", copy.display());
     assert_eq!(doc.view_code.len(), 2, "{}", copy.display());
-    let (rc, out) = check_from(copy, Path::new("/"));
-    assert_eq!(rc, 0, "check {}: {out}", copy.display());
+    let (rc, errors, warnings, out) = check_from(copy, Path::new("/"));
+    assert!(
+        rc == 0 && errors == 0 && warnings == 0,
+        "check {}: {out}",
+        copy.display()
+    );
 }
 
 #[test]
@@ -167,18 +181,29 @@ fn ac2_a_folder_that_shares_only_the_root_gets_absolute_paths() {
     let live = open(&tiza);
     // The scratch folders live under /var (/private/var); the build
     // folder under /Users.
-    let far = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../target")
-        .join(format!("t221-abs-{}", std::process::id()));
+    struct Gone(PathBuf);
+    impl Drop for Gone {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let target = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../target"));
+    let far = target.join(format!("t221-abs-{}", std::process::id()));
     std::fs::create_dir_all(&far).unwrap();
-    let far = far.canonicalize().unwrap();
-    let copy = far.join("far.tiza");
+    let far = Gone(far.canonicalize().unwrap());
+    if !far.0.starts_with("/Users") {
+        // Only the root in common with the scratch folders is what this
+        // checks; elsewhere there is nothing to check.
+        return;
+    }
+    let copy = far.0.join("far.tiza");
     live.command(&format!("w {}", copy.display()));
     let file = saved(&copy)["code"]["file"].as_str().unwrap().to_string();
     assert!(Path::new(&file).is_absolute(), "{file}");
     assert!(file.ends_with("/proj/main.rs"), "{file}");
     assert_opens(&copy);
-    let _ = std::fs::remove_dir_all(&far);
 }
 
 #[test]
@@ -327,4 +352,183 @@ fn ac5_changelog_readme_and_guide() {
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("CHANGELOG.md").contains(":saveas"), "CHANGELOG");
     assert!(read("README.md").contains(":saveas PATH"), "README");
+}
+
+// ---------- Review ----------
+
+#[test]
+fn rev_a_copy_into_a_folder_that_does_not_exist_yet_opens() {
+    let (root, tiza) = project("t221-newdir");
+    let live = open(&tiza);
+    // `:w ../newdir/copy.tiza` typed in `proj`.
+    let copy = root.join("proj/../newdir/copy.tiza");
+    live.command(&format!("w {}", copy.display()));
+    assert!(!message(&live).1, "{:?}", message(&live));
+    assert_eq!(saved(&copy)["code"]["file"], "../proj/main.rs");
+    assert_opens(&copy);
+    let copy = root.join("proj/new/deeper/c.tiza");
+    live.command(&format!("wq {}", copy.display()));
+    assert_eq!(saved(&copy)["code"]["file"], "../../main.rs");
+    assert_opens(&copy);
+}
+
+#[test]
+fn rev_a_link_back_to_the_main_file_stays_the_main_file() {
+    let root = scratch("t221-back");
+    let proj = root.join("proj");
+    std::fs::create_dir_all(&proj).unwrap();
+    std::fs::write(proj.join("main.rs"), MAIN).unwrap();
+    let tiza = proj.join("main.rs.tiza");
+    // Pasted code over main.rs, and a link back to it at step 2.
+    std::fs::write(
+        &tiza,
+        json!({
+            "schema": 1, "source": {"path": "main.rs", "language": "rs", "first_line": 1},
+            "code": ["fn pasted() {}", "fn more() {}"], "follows": {"file": "main.rs"}, "step": 1,
+            "moves": [{"at_step": 1, "action": "code.link", "file": "main.rs"}],
+            "annotations": [{"id": "a2", "step": 1, "type": "box", "from_line": 1, "to_line": 2, "file": "main.rs", "label": "back"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let live = open(&tiza);
+    let copy = root.join("else/c.tiza");
+    std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
+    live.command(&format!("w {}", copy.display()));
+    let doc = tiza_core::fs::load_document(&copy).unwrap();
+    assert_eq!(doc.code, vec!["fn pasted() {}", "fn more() {}"]);
+    let (rc, errors, warnings, out) = check_from(&copy, Path::new("/"));
+    assert!(rc == 0 && errors == 0 && warnings == 0, "{out}");
+    // The same after `:saveas`, live.
+    live.command(&format!("saveas {}", root.join("else/s.tiza").display()));
+    assert_eq!(
+        live.with(|a| a.doc.code.clone()),
+        vec!["fn pasted() {}", "fn more() {}"]
+    );
+    let r = live.api_ok("check", json!({}));
+    assert_eq!(
+        (r["errors"].clone(), r["warnings"].clone()),
+        (json!(0), json!(0)),
+        "{r}"
+    );
+}
+
+#[test]
+fn rev_a_linked_file_with_the_main_files_name_stays_a_view() {
+    let root = scratch("t221-twins");
+    for (f, text) in [("server/main.rs", MAIN), ("client/main.rs", OTHER)] {
+        let p = root.join(f);
+        std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+        std::fs::write(p, text).unwrap();
+    }
+    let tiza = root.join("server/main.rs.tiza");
+    std::fs::write(
+        &tiza,
+        json!({
+            "schema": 1, "source": {"path": "main.rs", "language": "rs", "first_line": 1},
+            "code": {"file": "main.rs"}, "step": 1,
+            "moves": [{"at_step": 1, "action": "code.link", "file": "../client/main.rs"}],
+            "annotations": [{"id": "c", "step": 1, "type": "box", "from_line": 1, "to_line": 2, "file": "../client/main.rs", "label": "client"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let live = open(&tiza);
+    let copy = root.join("client/copy.tiza");
+    live.command(&format!("w {}", copy.display()));
+    let v = saved(&copy);
+    // `main.rs` would name the main file (a bare name does): the link is
+    // written absolute instead, and so are the annotations naming it.
+    let link = v["moves"][0]["file"].as_str().unwrap();
+    assert!(
+        link.starts_with('/') && link.ends_with("/client/main.rs"),
+        "{v}"
+    );
+    assert_eq!(v["annotations"][0]["file"].as_str(), Some(link), "{v}");
+    assert_eq!(v["source"]["path"], "../server/main.rs", "{v}");
+    let doc = tiza_core::fs::load_document(&copy).unwrap();
+    assert_eq!(
+        doc.code[0], "fn other() -> u32 {",
+        "step 1 shows the client"
+    );
+    let (rc, errors, warnings, out) = check_from(&copy, Path::new("/"));
+    assert!(rc == 0 && errors == 0 && warnings == 0, "{out}");
+}
+
+#[test]
+fn rev_link_alone_after_saveas_links_the_same_file() {
+    let (root, tiza) = project("t221-link");
+    let live = open(&tiza);
+    live.command("step 0");
+    live.command("embed");
+    let target = root.join("else/s.tiza");
+    std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+    // A file of the same name next to the new place must not be taken.
+    std::fs::write(root.join("else/main.rs"), "fn unrelated() {}\n").unwrap();
+    live.command(&format!("saveas {}", target.display()));
+    live.command("link");
+    assert!(!message(&live).1, "{:?}", message(&live));
+    assert_eq!(
+        live.with(|a| a.doc.base().to_vec()),
+        MAIN.lines().map(str::to_string).collect::<Vec<_>>()
+    );
+    assert_eq!(saved(&target)["code"]["file"], "../proj/main.rs");
+}
+
+const INI: &str = "[server]\nhost = localhost\nport = 8080\n[db]\nuser = admin\n";
+
+#[test]
+fn rev_wq_path_over_stale_moves_refuses_before_writing() {
+    let root = scratch("t221-stale");
+    std::fs::write(root.join("config.ini"), INI).unwrap();
+    let tiza = root.join("config.ini.tiza");
+    std::fs::write(
+        &tiza,
+        json!({
+            "schema": 1, "source": {"language": "ini"}, "code": {"file": "config.ini"}, "step": 0,
+            "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = a"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let live = open(&tiza);
+    live.with(|a| a.replace_code(&INI.replace("localhost", "h")).unwrap());
+    let copy = root.join("c.tiza");
+    live.command(&format!("wq {}", copy.display()));
+    let (msg, err) = message(&live);
+    assert!(err && msg.contains("stale move"), "{msg}");
+    assert!(!live.with(|a| a.quit));
+    assert!(!copy.exists(), "no copy before the quit is possible");
+    live.command(&format!("wq! {}", copy.display()));
+    assert!(live.with(|a| a.quit), "{:?}", message(&live));
+    assert!(copy.exists());
+}
+
+#[test]
+fn rev_saveas_with_autosave_off_says_what_saves() {
+    let (root, tiza) = project("t221-off");
+    let live = open(&tiza);
+    live.command("autosave off");
+    let target = root.join("s.tiza");
+    live.command(&format!("saveas {}", target.display()));
+    let (msg, err) = message(&live);
+    assert!(!err && msg.contains(":w saves there"), "{msg}");
+    live.command("note 1 later");
+    assert!(!std::fs::read_to_string(&target).unwrap().contains("later"));
+}
+
+#[test]
+fn rev_a_folder_is_not_a_file_name() {
+    let (root, tiza) = project("t221-dir");
+    let live = open(&tiza);
+    let dir = root.join("d");
+    std::fs::create_dir_all(&dir).unwrap();
+    for target in [dir.display().to_string(), format!("{}/", dir.display())] {
+        for cmd in ["w", "w!", "saveas!"] {
+            live.command(&format!("{cmd} {target}"));
+            let (msg, err) = message(&live);
+            assert!(err && msg.contains("is a folder"), "{cmd} {target}: {msg}");
+        }
+    }
+    assert_eq!(live.with(|a| a.save_path.clone()), tiza);
 }

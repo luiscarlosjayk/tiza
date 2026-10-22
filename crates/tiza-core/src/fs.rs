@@ -586,16 +586,32 @@ pub(crate) fn parse_range(spec: &str, field: &str) -> Result<(u32, u32), Error> 
 }
 
 /// The folder of a `.tiza` saved at `path`, absolute, symlinks resolved
-/// (as the system resolves a `..` from it); the path itself when it cannot
-/// be resolved.
+/// (as the system resolves a `..` from it). A folder that does not exist
+/// yet (a save creates it) is its nearest existing ancestor, resolved, and
+/// the rest of the path, whose `..` can only mean the folder above.
 pub fn document_dir(path: &Path) -> PathBuf {
     let dir = path
         .parent()
         .filter(|d| !d.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    dir.canonicalize()
-        .or_else(|_| std::path::absolute(dir))
-        .unwrap_or_else(|_| dir.to_path_buf())
+    let abs = std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf());
+    for base in abs.ancestors() {
+        let Ok(mut out) = base.canonicalize() else {
+            continue;
+        };
+        let rest = abs.strip_prefix(base).unwrap_or(Path::new(""));
+        for c in rest.components() {
+            match c {
+                std::path::Component::ParentDir => {
+                    out.pop();
+                }
+                std::path::Component::CurDir => {}
+                c => out.push(c.as_os_str()),
+            }
+        }
+        return out;
+    }
+    abs
 }
 
 /// `.` and `..` of an absolute path resolved by the text alone.
@@ -636,6 +652,40 @@ pub fn rebase_path(file: &str, from: &Path, to: &Path) -> String {
         rel.push(c.as_os_str());
     }
     rel.to_string_lossy().into_owned()
+}
+
+/// The one rewriting of `doc`'s paths for a `.tiza` moving from the folder
+/// `from` to `to` ([`rebase_path`]), to apply to the document and its undo
+/// history alike. Which link is the main file is decided by names, loosely
+/// (a bare `main.rs` names the main file): a link whose new form would
+/// cross that line, either way (`../client/main.rs` becoming `main.rs` next
+/// to a main file also called `main.rs`), is written absolute instead.
+pub fn rebase_fn(doc: &Document, from: &Path, to: &Path) -> impl Fn(&str) -> String + use<> {
+    let (from, to) = (from.to_path_buf(), to.to_path_buf());
+    let mut moved = doc.clone();
+    moved.map_files(&|s| rebase_path(s, &from, &to));
+    let links = |d: &Document| -> Vec<String> {
+        d.moves
+            .iter()
+            .filter_map(|m| match &m.action {
+                crate::moves::MoveAction::CodeLink(l) => Some(l.file.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    let absolute: std::collections::BTreeSet<String> = links(doc)
+        .into_iter()
+        .zip(links(&moved))
+        .filter(|(old, new)| doc.view_key(old).is_none() != moved.view_key(new).is_none())
+        .map(|(old, _)| old)
+        .collect();
+    move |s: &str| {
+        if absolute.contains(s) && !Path::new(s).is_absolute() {
+            normalize(&from.join(s)).to_string_lossy().into_owned()
+        } else {
+            rebase_path(s, &from, &to)
+        }
+    }
 }
 
 /// The text [`save_document`] writes for `doc`.
