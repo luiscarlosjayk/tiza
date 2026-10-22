@@ -5,9 +5,25 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # Direct only because they were already in the tree (ADR 0004): one copy,
+    # the version the crate that pulls them uses. Bumped alone they add a
+    # second copy (PR #1: skrifa 0.48 while usvg stays on 0.44 added a second
+    # skrifa and read-fonts and six crates), so they move by hand in the
+    # commit that bumps resvg (skrifa, read-fonts) or crossterm (rustix,
+    # signal-hook). deny.toml and qa/tests/t-211.rs fail on a second version.
+    ignore:
+      - dependency-name: skrifa
+      - dependency-name: read-fonts
+      - dependency-name: rustix
+        update-types: ["version-update:semver-major"]
+      - dependency-name: signal-hook
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
     groups:
-      patch-and-minor:
-        update-types: [minor, patch]
+      # Patch bumps only: for a 0.x crate (ratatui, crossterm, resvg, …) a
+      # minor bump is a breaking one, so each minor comes as its own PR to
+      # read on its own, never inside a grouped one (t-211).
+      patch:
+        update-types: [patch]
   - package-ecosystem: github-actions
     directory: /
     schedule:
