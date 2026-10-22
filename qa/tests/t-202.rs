@@ -171,6 +171,8 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     for r in [&mut live_report, &mut disk_report] {
         r.as_object_mut().unwrap().remove("narrower");
     }
+    // The live reply also names the revision it checked (t-210).
+    live_report.as_object_mut().unwrap().remove("revision");
     assert_eq!(live_report, disk_report, "{what}: live check vs fresh load");
     let dir = tiza.parent().unwrap();
     let sock = live.socket.to_str().unwrap().to_string();

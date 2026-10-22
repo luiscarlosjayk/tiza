@@ -200,7 +200,7 @@ pub fn api_schema() -> ApiSchema {
                 "pointer.clear" => (schema::<NoParams>(), schema::<crate::protocol::PointerReply>()),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
                 "render.text" => (schema::<RenderParams>(), text()),
-                "check" => (schema::<CheckParams>(), schema::<crate::check::Report>()),
+                "check" => (schema::<CheckParams>(), schema::<crate::protocol::LiveCheck>()),
                 "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),
                 "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),
                 "supervise.set" => (schema::<SuperviseParams>(), schema::<SuperviseStatus>()),

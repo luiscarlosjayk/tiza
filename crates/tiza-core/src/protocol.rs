@@ -968,6 +968,19 @@ pub struct Mutated {
     pub revision: u64,
 }
 
+/// Result of the live `check` (t-210): the report of `tiza check --json`,
+/// field for field, plus the revision of the document it checked. The
+/// check runs off the TUI thread on a copy of the document taken when it
+/// was asked, so a change made while it runs is not in it: compare
+/// `revision` with the one `status` or a mutation gave, and check again.
+#[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
+pub struct LiveCheck {
+    #[serde(flatten)]
+    pub report: crate::check::Report,
+    /// The document revision the report is about.
+    pub revision: u64,
+}
+
 /// Result of `annotation.add` / `annotation.update` (t-155): the id and
 /// revision of [`Mutated`], plus where the annotation stands against the
 /// view at the moment the change is applied. In supervised mode that is
@@ -1133,7 +1146,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ("render.text", "Returns the current canvas as plain text"),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100)",
+        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document taken when asked: `revision` says which one it checked (t-210)",
     ),
     (
         "follow.set",

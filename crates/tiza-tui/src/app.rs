@@ -308,6 +308,30 @@ pub fn answering_request() -> bool {
     ANSWERING.with(|a| a.get())
 }
 
+/// Runs `f` as a socket request is answered, on any thread (t-210: the
+/// live `check` runs on one of its own): a panic in it is caught, the crash
+/// hook leaves the terminal alone ([`answering_request`]), and its place
+/// and message go to `panics.log`, whose path is the error when written.
+pub(crate) fn catch_request_panic<R>(
+    what: &str,
+    f: impl FnOnce() -> R,
+) -> Result<R, Option<PathBuf>> {
+    let was = ANSWERING.with(|a| a.replace(true));
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    ANSWERING.with(|a| a.set(was));
+    r.map_err(|_| log_last_request_panic(what))
+}
+
+/// Appends one line about the last request panic caught on this thread to
+/// `panics.log` (the time, the version, the request, where it panicked and
+/// its message). Returns the log's path when it was written.
+fn log_last_request_panic(what: &str) -> Option<PathBuf> {
+    let (at, message) = LAST_PANIC
+        .with(|p| p.borrow_mut().take())
+        .unwrap_or_else(|| ("unknown place".into(), String::new()));
+    crate::log_line(&format!("{what} panicked at {at}: {message}"))
+}
+
 /// Methods that never change the document or the view: they bypass supervision.
 pub const READ_ONLY_METHODS: &[&str] = &[
     "ping",
@@ -421,6 +445,8 @@ pub struct App {
     next_proposal: u64,
     /// Decisions taken (accepted, rejected) since the app started, for `status`.
     pub decided: (u64, u64),
+    /// The live `check` requests, answered off this thread (t-210).
+    checks: crate::checks::Checks,
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
@@ -536,6 +562,7 @@ impl App {
             proposals: Vec::new(),
             next_proposal: 1,
             decided: (0, 0),
+            checks: Default::default(),
             overlay_scroll: 0,
             follow: None,
             follow_file: None,
@@ -5017,10 +5044,7 @@ impl App {
     /// version, the request, where it panicked and its message. Returns the
     /// log's path when it was written.
     fn log_request_panic(&self, what: &str) -> Option<PathBuf> {
-        let (at, message) = LAST_PANIC
-            .with(|p| p.borrow_mut().take())
-            .unwrap_or_else(|| ("unknown place".into(), String::new()));
-        crate::log_line(&format!("{what} panicked at {at}: {message}"))
+        log_last_request_panic(what)
     }
 
     fn answer(&mut self, req: Request) -> Response {
@@ -5055,6 +5079,10 @@ impl App {
         reply: std::sync::mpsc::Sender<Response>,
         now: std::time::Instant,
     ) {
+        if req.method == "check" {
+            self.ask_check(req, reply);
+            return;
+        }
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
             && !req.method.starts_with("supervise.");
@@ -5089,6 +5117,24 @@ impl App {
             self.proposals.len(),
             if self.proposals.len() == 1 { "" } else { "s" }
         ));
+    }
+
+    /// `check` (t-210): answered from a thread of its own on a copy of the
+    /// document as it is now, so the screen, the keys and the other
+    /// requests do not wait for it ([`crate::checks`]). Its parameters are
+    /// read here: a bad width is answered at once.
+    fn ask_check(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
+        let width = match check_width(req.params) {
+            Ok(w) => w,
+            Err(e) => {
+                let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
+                return;
+            }
+        };
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        let doc = &self.doc;
+        self.checks
+            .ask(req.id, reply, width, self.revision, || doc.clone(), base);
     }
 
     /// An agent's `annotation.add` / `annotation.update` (socket or MCP,
@@ -5355,20 +5401,6 @@ impl App {
     }
 
     fn dispatch(&mut self, method: &str, params: Value) -> Result<Value, Error> {
-        // Parameters that do not deserialize: serde quotes the value it
-        // could not read (`unknown variant `x``, `invalid type: string
-        // "x"`); that value is taken out, like the MCP's own
-        // deserialization errors, and serde's list of valid names stays
-        // (t-167 rework).
-        fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
-            T::deserialize(&v).map_err(|e| {
-                Error::Invalid(format!(
-                    "{}{}",
-                    tiza_core::error::INVALID_PARAMETERS,
-                    tiza_core::error::serde_text(&e.to_string())
-                ))
-            })
-        }
         Ok(match method {
             // Plain "pong": `status` already carries `protocol`.
             "ping" => json!("pong"),
@@ -5576,14 +5608,18 @@ impl App {
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "check" => {
-                let p: tiza_core::schema::CheckParams = parse(params)?;
-                let width = p.width.map(tiza_core::layout::check_width).transpose()?;
+                // The event loop sends `check` to [`App::ask_check`]; this
+                // answers it in place, for a caller of `handle_request`.
+                let width = check_width(params)?;
                 let base = self.save_path.parent().map(Path::to_path_buf);
-                serde_json::to_value(tiza_core::check::check_document(
-                    &self.doc,
-                    base.as_deref(),
-                    &tiza_core::check::CheckOptions { width },
-                ))?
+                serde_json::to_value(tiza_core::protocol::LiveCheck {
+                    report: tiza_core::check::check_document(
+                        &self.doc,
+                        base.as_deref(),
+                        &tiza_core::check::CheckOptions { width },
+                    ),
+                    revision: self.revision,
+                })?
             }
             "render.text" => {
                 let width = match params.get("width").and_then(|w| w.as_u64()) {
@@ -6400,6 +6436,27 @@ fn edit_distance(a: &str, b: &str) -> usize {
         prev = cur;
     }
     prev[b.len()]
+}
+
+/// Parameters of a socket request. Ones that do not deserialize: serde
+/// quotes the value it could not read (`unknown variant `x``, `invalid
+/// type: string "x"`); that value is taken out, like the MCP's own
+/// deserialization errors, and serde's list of valid names stays (t-167
+/// rework).
+fn parse<T: serde::de::DeserializeOwned>(v: Value) -> Result<T, Error> {
+    T::deserialize(&v).map_err(|e| {
+        Error::Invalid(format!(
+            "{}{}",
+            tiza_core::error::INVALID_PARAMETERS,
+            tiza_core::error::serde_text(&e.to_string())
+        ))
+    })
+}
+
+/// The width a `check` request asks for (`None`: the default).
+fn check_width(params: Value) -> Result<Option<usize>, Error> {
+    let p: tiza_core::schema::CheckParams = parse(params)?;
+    p.width.map(tiza_core::layout::check_width).transpose()
 }
 
 /// Every `key=value` must have both halves: `=`, `=red` or `glyph=` are

@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod appearance;
+pub mod checks;
 pub mod follow;
 pub mod ipc;
 pub mod reanchor;

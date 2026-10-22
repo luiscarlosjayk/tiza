@@ -591,7 +591,11 @@ fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
     let mut mcp = McpClient::start(&live.socket);
     let (err, out, _) = mcp.call("check", args);
     assert!(!err, "{out}");
-    serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+    let mut v: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+    // The live reply also names the revision it checked (t-210).
+    let revision = v.as_object_mut().unwrap().remove("revision");
+    assert!(revision.is_some_and(|r| r.is_u64()), "{out}");
+    v
 }
 
 #[test]
