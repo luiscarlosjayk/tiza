@@ -1,3 +1,7 @@
+//! Internal crate of [Tiza](https://github.com/luiscarlosjayk/tiza),
+//! published only so that `cargo install tiza` works: it has no stable
+//! API. Use the `tiza` binary.
+//!
 //! `tiza-tui`: the Tiza terminal interface and its local API server.
 
 pub mod app;

@@ -1,12 +1,13 @@
 [package]
 name = "tiza-mcp"
-description = "MCP server (stdio) that lets agents draw on the code in a live Tiza instance"
+description = "Internal crate of Tiza (MCP server), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme = "README.md"
 
 [features]
 # Test-only hooks (t-166): environment variables that make a request

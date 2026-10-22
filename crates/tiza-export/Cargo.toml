@@ -1,12 +1,13 @@
 [package]
 name = "tiza-export"
-description = "SVG and PNG export of Tiza canvases with embedded fonts"
+description = "Internal crate of Tiza (SVG, PNG and GIF export), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme = "README.md"
 
 [dependencies]
 unicode-width.workspace = true

@@ -1,12 +1,13 @@
 [package]
 name = "tiza-tui"
-description = "Tiza terminal interface (ratatui + crossterm) and local API server"
+description = "Internal crate of Tiza (terminal interface), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme = "README.md"
 
 [features]
 # Test-only hooks (t-166): environment variables that make a request

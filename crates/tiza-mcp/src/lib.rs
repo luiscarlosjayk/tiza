@@ -1,3 +1,7 @@
+//! Internal crate of [Tiza](https://github.com/luiscarlosjayk/tiza),
+//! published only so that `cargo install tiza` works: it has no stable
+//! API. Use the `tiza` binary.
+//!
 //! MCP → local API bridge. Each tool is exactly one socket method; that way
 //! an agent and the presenter do the same thing and the TUI is the only one
 //! that touches the document.

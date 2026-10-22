@@ -1,12 +1,13 @@
 [package]
 name = "tiza-core"
-description = "Tiza document model, anchors, layout and rendering (no terminal dependencies)"
+description = "Internal crate of Tiza (document model and layout), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
+readme = "README.md"
 
 [dependencies]
 serde.workspace = true

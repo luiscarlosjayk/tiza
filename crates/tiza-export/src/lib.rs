@@ -1,3 +1,7 @@
+//! Internal crate of [Tiza](https://github.com/luiscarlosjayk/tiza),
+//! published only so that `cargo install tiza` works: it has no stable
+//! API. Use the `tiza` binary.
+//!
 //! Export of a rendered [`Canvas`] to SVG and PNG.
 //!
 //! The SVG is a grid of monospace text runs with the theme's colors, so it
