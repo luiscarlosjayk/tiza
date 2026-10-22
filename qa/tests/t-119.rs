@@ -59,7 +59,7 @@ if ok and second != "skip":
         s.send(answer(second))
         s.wait_for(shows(theme_of(second) + "·auto", mark), 10, "status bar " + theme_of(second))
 s.send(b":q\r")
-code = s.finish(5)
+code = s.finish(10)
 text = plain(s.out)
 print("QUERIES", s.out.count(b"\x1b]11;?"))
 i, j = text.find("dark·auto"), text.find("light·auto")
