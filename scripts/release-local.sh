@@ -86,7 +86,9 @@ for target in "${targets[@]}"; do
   mkdir -p "$stage"
   cp "target/$target/release/tiza" "$stage/"
   cp README.md LICENSE-MIT LICENSE-APACHE "$stage/"
-  cp -r examples "$stage/"
+  # Only what the tag has: release.yml packs a fresh checkout, and a local
+  # tree may hold build output or scratch files under examples/.
+  git archive HEAD examples | tar -x -C "$stage"
   tar -C "$out" -czf "$out/$name.tar.gz" "$name"
   (cd "$out" && sha256 "$name.tar.gz" > "$name.tar.gz.sha256")
   rm -rf "$stage"
