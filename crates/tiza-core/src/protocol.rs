@@ -1002,9 +1002,18 @@ pub struct AnnotationMutated {
     /// anchor kept and its lines inside the window.
     pub visible: bool,
     /// Why it is not visible, in words (`it appears at step 1`, `its file
-    /// lib.rs is not shown at step 2 (main.rs is)`…); absent when visible.
+    /// lib.rs is not shown at step 2 (main.rs is)`, `it is not drawn: no
+    /// room for its text at 98 columns (check at width 98 lists it)` for a
+    /// note or a callout the screen's layout leaves out); absent when
+    /// visible.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hidden: Option<String>,
+    /// While visible, a label the screen draws cut with `…` or not at all,
+    /// at the width of the screen at that moment, in words (`its label is
+    /// cut with … at 98 columns (check at width 98 lists it)`); absent when
+    /// it is drawn whole.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clipped: Option<String>,
 }
 
 impl AnnotationMutated {
@@ -1016,6 +1025,7 @@ impl AnnotationMutated {
             shown_step: doc.step,
             visible: hidden.is_none(),
             hidden,
+            clipped: None,
             step,
             id,
             revision,
@@ -1031,8 +1041,13 @@ impl AnnotationMutated {
         };
         match &self.hidden {
             None => format!(
-                "{} {verb} at {at}; visible now (the view is at step {}).",
-                self.id, self.shown_step
+                "{} {verb} at {at}; visible now (the view is at step {}){}.",
+                self.id,
+                self.shown_step,
+                self.clipped
+                    .as_ref()
+                    .map(|c| format!("; {c}"))
+                    .unwrap_or_default()
             ),
             Some(why) => {
                 let how = if self.step == self.shown_step + 1 && why.starts_with("it appears") {

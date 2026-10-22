@@ -2136,8 +2136,15 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `annotation.add` / `annotation.update`: the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
+          "clipped": {
+            "description": "While visible, a label the screen draws cut with `…` or not at all,\nat the width of the screen at that moment, in words (`its label is\ncut with … at 98 columns (check at width 98 lists it)`); absent when\nit is drawn whole.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "hidden": {
-            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`…); absent when visible.",
+            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`, `it is not drawn: no\nroom for its text at 98 columns (check at width 98 lists it)` for a\nnote or a callout the screen's layout leaves out); absent when\nvisible.",
             "type": [
               "string",
               "null"
@@ -2900,8 +2907,15 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Result of `annotation.add` / `annotation.update`: the id and\nrevision of [`Mutated`], plus where the annotation stands against the\nview at the moment the change is applied. In supervised mode that is\nwhen the presenter accepts the proposal, so `shown_step` may differ from\nthe step the agent saw when it asked; the view can move again right\nafter, so read it as a snapshot, not as a promise.",
         "properties": {
+          "clipped": {
+            "description": "While visible, a label the screen draws cut with `…` or not at all,\nat the width of the screen at that moment, in words (`its label is\ncut with … at 98 columns (check at width 98 lists it)`); absent when\nit is drawn whole.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "hidden": {
-            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`…); absent when visible.",
+            "description": "Why it is not visible, in words (`it appears at step 1`, `its file\nlib.rs is not shown at step 2 (main.rs is)`, `it is not drawn: no\nroom for its text at 98 columns (check at width 98 lists it)` for a\nnote or a callout the screen's layout leaves out); absent when\nvisible.",
             "type": [
               "string",
               "null"

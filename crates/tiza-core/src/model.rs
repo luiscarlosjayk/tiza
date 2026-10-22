@@ -764,6 +764,11 @@ pub enum Hidden {
     Unanchored(u32),
     /// Its lines fall outside the window shown at `step`.
     Outside { step: u32, first: u32, last: u32 },
+    /// A note or a callout (its text is all it draws) that the screen's
+    /// layout has no room for at `width` columns, as `check` reports it at
+    /// that width. Only the live instance knows its width, so
+    /// [`Document::hidden_reason`] never gives it.
+    NoRoom { width: usize },
 }
 
 impl std::fmt::Display for Hidden {
@@ -790,6 +795,10 @@ impl std::fmt::Display for Hidden {
             Hidden::Outside { step, first, last } => write!(
                 f,
                 "its lines are outside the code shown at step {step} ({first}-{last})"
+            ),
+            Hidden::NoRoom { width } => write!(
+                f,
+                "it is not drawn: no room for its text at {width} columns (check at width {width} lists it)"
             ),
         }
     }

@@ -764,6 +764,72 @@ impl App {
         layout(&self.doc, &self.theme, &self.layout_options(width))
     }
 
+    /// The width the screen lays the code out at: the terminal of the last
+    /// frame less its side padding, as `ui::draw` does; `check`'s default
+    /// width while no terminal size is known.
+    pub fn screen_width(&self) -> usize {
+        let (cols, rows) = self.size;
+        if cols == 0 || rows == 0 {
+            return tiza_core::check::DEFAULT_WIDTH;
+        }
+        let (_, pad_h) =
+            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
+        usize::from(cols.saturating_sub(2 * pad_h)).max(1)
+    }
+
+    /// The labels the screen draws cut with `…` or leaves out at
+    /// [`App::screen_width`], with that width: what `check` reports at it.
+    fn screen_cuts(&self) -> (usize, Vec<tiza_core::layout::ClippedLabel>) {
+        let width = self.screen_width();
+        (width, self.layout(width).clipped_labels)
+    }
+
+    /// Why annotation `id` is not on the screen now: the document's reasons
+    /// at the current step, or a note or a callout (its text is all it
+    /// draws) that the layout leaves out (`cuts`, [`App::screen_cuts`]).
+    fn not_shown(
+        &self,
+        id: &str,
+        cuts: &(usize, Vec<tiza_core::layout::ClippedLabel>),
+    ) -> Option<tiza_core::model::Hidden> {
+        if let Some(why) = self.doc.hidden_reason(id, self.doc.step) {
+            return Some(why);
+        }
+        let a = self.doc.find_annotation(id)?;
+        let text_only = matches!(a.shape, Shape::Note { .. } | Shape::Callout { .. });
+        (text_only && cuts.1.iter().any(|c| c.id == id && c.dropped))
+            .then_some(tiza_core::model::Hidden::NoRoom { width: cuts.0 })
+    }
+
+    /// The reply to `annotation.add` and `annotation.update`: where the
+    /// annotation stands against the view, and against the screen's layout
+    /// at its width at this moment (a note left out is not visible; a label
+    /// cut or left out is said in `clipped`).
+    fn mutated(&self, id: String) -> AnnotationMutated {
+        let mut m = AnnotationMutated::of(&self.doc, id, self.revision);
+        if !m.visible {
+            return m;
+        }
+        let cuts = self.screen_cuts();
+        if let Some(why) = self.not_shown(&m.id, &cuts) {
+            m.visible = false;
+            m.hidden = Some(why.to_string());
+            return m;
+        }
+        let width = cuts.0;
+        let mine = || cuts.1.iter().filter(|c| c.id == m.id);
+        m.clipped = match (mine().any(|c| c.dropped), mine().next()) {
+            (true, _) => Some(format!(
+                "its label is not drawn: no room at {width} columns (check at width {width} lists it)"
+            )),
+            (false, Some(_)) => Some(format!(
+                "its label is cut with … at {width} columns (check at width {width} lists it)"
+            )),
+            (false, None) => None,
+        };
+        m
+    }
+
     /// [`App::layout`] with the live pointer (t-030). Only the presenter's
     /// frame (`ui::draw`) calls it; `layout` (`render.text`, screen
     /// captures) and every export never draw the pointer.
@@ -5269,12 +5335,12 @@ impl App {
     /// The bar's text for agent changes (t-155), as the view stands now:
     /// those it shows meanwhile are left out; `None` when it shows them all.
     fn agent_notice_text(&self, items: &[(String, &'static str)]) -> Option<String> {
-        let step = self.doc.step;
+        let cuts = self.screen_cuts();
         let hidden: Vec<_> = items
             .iter()
             .filter_map(|(id, verb)| {
                 let a = self.doc.find_annotation(id)?;
-                let why = self.doc.hidden_reason(id, step)?;
+                let why = self.not_shown(id, &cuts)?;
                 Some((a, *verb, why))
             })
             .collect();
@@ -5322,6 +5388,7 @@ impl App {
         match why {
             Hidden::Later(s) => step_hint(msg, *s, self.doc.step),
             Hidden::OtherFile { file, step, .. } => format!(" ({file}, not shown at step {step})"),
+            Hidden::NoRoom { width } => format!(" (not drawn: no room at {width} columns)"),
             other => format!(" (not shown: {other})"),
         }
     }
@@ -5338,7 +5405,7 @@ impl App {
         // Accepted but not on screen: the acceptance says where (t-155).
         let tail = match (&resp.result, mutates_annotation) {
             (Some(r), true) => mutated_id(r)
-                .and_then(|id| self.doc.hidden_reason(&id, self.doc.step))
+                .and_then(|id| self.not_shown(&id, &self.screen_cuts()))
                 .map(|why| self.hidden_tail(&why, &p.summary))
                 .unwrap_or_default(),
             _ => String::new(),
@@ -5588,12 +5655,12 @@ impl App {
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
                 // Where it stands against the view right now (t-155).
-                serde_json::to_value(AnnotationMutated::of(&self.doc, id, self.revision))?
+                serde_json::to_value(self.mutated(id))?
             }
             "annotation.update" => {
                 let p: UpdateParams = parse(params)?;
                 self.update_annotation(&p)?;
-                serde_json::to_value(AnnotationMutated::of(&self.doc, p.id, self.revision))?
+                serde_json::to_value(self.mutated(p.id))?
             }
             "style.set" => {
                 let name = params
