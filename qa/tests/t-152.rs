@@ -1,7 +1,8 @@
 //! t-152 (part A) — Before the repository goes public: the workflows build
-//! with the pinned toolchain, a release publishes to crates.io, the crates.io
-//! pages say what each crate is, and a crate unpacked from crates.io does not
-//! take the commit of a git repository it happens to sit in.
+//! with the pinned toolchain, the README says how to publish to crates.io by
+//! hand, the crates.io pages say what each crate is, and a crate unpacked
+//! from crates.io does not take the commit of a git repository it happens to
+//! sit in.
 //!
 //! Acceptance criteria (part A of the card, plus its notes):
 //! - Toolchain (note of 2026-10-19): every job of `ci.yml` and `release.yml`
@@ -9,11 +10,10 @@
 //!   (1.99.1, the only place its version is written) before the first cargo
 //!   command, and the release build adds its target to that toolchain, not
 //!   to `stable`.
-//! - Publication: `release.yml` has a `publish` job that runs after the
-//!   GitHub Release, only for a tag without suffix, publishes the workspace
-//!   with `cargo publish --workspace` and the `CARGO_REGISTRY_TOKEN` secret,
-//!   checks the tag against the workspace version, and skips what is already
-//!   on crates.io (a re-run); the README says which secret to create.
+//! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
+//!   crates.io and no secret is needed; the README gives the maintainers the
+//!   manual steps (workspace dry run, then one crate at a time in dependency
+//!   order, checking the index before the next).
 //! - AC2 crates.io page of `tiza`: a readme packaged in the crate with no
 //!   relative links or images, `homepage`, `documentation` on GitHub (not
 //!   docs.rs), at most five keywords and valid categories.
@@ -27,8 +27,7 @@
 //!   keeps its commit; `TIZA_GIT_SHA_OVERRIDE` still wins.
 //!
 //! The workflows cannot run here (Actions is off while the repository is
-//! private): their structure is read as text, and the publish step's script
-//! is run as written with `cargo publish` and `curl` replaced by fakes.
+//! private): their structure is read as text (and parsed as YAML).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -198,129 +197,87 @@ fn toolchain_workflows_parse_as_yaml() {
     }
 }
 
-// --- Publication ---------------------------------------------------------
+// --- Publication (by hand) ---------------------------------------------
 
-/// The `run: |` script of the step named `step` in job `job_name`, dedented.
-fn step_script(yml: &str, job_name: &str, step: &str) -> String {
-    let jobs = jobs(yml);
-    let body = job(&jobs, job_name);
-    let start = position(body, &format!("name: {step}"))
-        .unwrap_or_else(|| panic!("no step `{step}` in `{job_name}`"));
-    let run = body[start..]
-        .iter()
-        .position(|l| l.trim() == "run: |")
-        .map(|i| start + i)
-        .expect("the step has a `run: |` script");
-    let key_indent = body[run].len() - body[run].trim_start().len();
-    let mut lines = Vec::new();
-    for l in &body[run + 1..] {
-        if !l.trim().is_empty() && l.len() - l.trim_start().len() <= key_indent {
-            break;
-        }
-        lines.push(l.as_str());
-    }
-    let indent = lines
-        .iter()
-        .filter(|l| !l.trim().is_empty())
-        .map(|l| l.len() - l.trim_start().len())
-        .min()
-        .unwrap();
-    lines
-        .iter()
-        .map(|l| l.get(indent..).unwrap_or(""))
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
+/// Luis's decision (2026-10-22): the first publication on crates.io is made
+/// by hand from his Mac, so no workflow publishes and none reads a secret.
 #[test]
-fn publish_job_runs_after_the_release_for_final_tags() {
-    let yml = read(".github/workflows/release.yml");
-    let jobs = jobs(&yml);
-    let publish = job(&jobs, "publish").join("\n");
-    assert!(publish.contains("needs: release"), "after the release");
-    assert!(
-        publish.contains("if: ${{ !contains(github.ref_name, '-') }}"),
-        "not for -rc / -alpha tags"
-    );
-    assert!(publish.contains("CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}"));
-    assert!(publish.contains("cargo publish --workspace --locked"));
-    // The prerelease flag of the release and the publish condition agree.
-    assert!(yml.contains("prerelease: ${{ contains(github.ref_name, '-') }}"));
-    // tiza-qa never goes to crates.io; `cargo publish --workspace` skips it.
-    assert!(read("qa/Cargo.toml").contains("publish = false"));
+fn publish_no_workflow_publishes_to_crates_io() {
+    for wf in [".github/workflows/ci.yml", ".github/workflows/release.yml"] {
+        let yml = read(wf);
+        let code: Vec<&str> = yml
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .collect();
+        for gone in ["cargo publish", "secrets."] {
+            assert!(
+                !code.iter().any(|l| l.contains(gone)),
+                "{wf} still has `{gone}`"
+            );
+        }
+        assert!(
+            jobs(&yml).iter().all(|(name, _)| name != "publish"),
+            "{wf} has a `publish` job"
+        );
+    }
+}
+
+/// The README gives the maintainers the manual steps: the workspace dry run
+/// first, then one crate at a time in dependency order, and how to check
+/// the index before the next one.
+#[test]
+fn publish_readme_has_the_manual_steps_in_order() {
     let readme = read("README.md");
-    assert!(
-        readme.contains("`CARGO_REGISTRY_TOKEN`"),
-        "the README names the secret to create"
-    );
-}
-
-/// Runs the publish step's script as written, in the repository, with fakes
-/// first on PATH: `cargo publish` only records its arguments (every other
-/// cargo command is the real one) and `curl` answers the crates.io index
-/// with `published` already there.
-fn run_publish(name: &str, tag: &str, token: &str, published: &[&str]) -> (Output, Vec<String>) {
-    let script = step_script(
-        &read(".github/workflows/release.yml"),
-        "publish",
-        "cargo publish",
-    );
-    let dir = scratch(name);
-    let fake = dir.join("bin");
-    std::fs::create_dir_all(&fake).unwrap();
-    let log = dir.join("publish.log");
-    let write_exe = |name: &str, body: String| {
-        let p = fake.join(name);
-        std::fs::write(&p, body).unwrap();
-        let mut perm = std::fs::metadata(&p).unwrap().permissions();
-        std::os::unix::fs::PermissionsExt::set_mode(&mut perm, 0o755);
-        std::fs::set_permissions(&p, perm).unwrap();
+    let at = |needle: &str| {
+        readme
+            .find(needle)
+            .unwrap_or_else(|| panic!("the README lacks `{needle}`"))
     };
-    write_exe(
-        "cargo",
-        format!(
-            "#!/bin/sh\nif [ \"$1\" = publish ]; then echo \"$*\" >> '{}'; exit 0; fi\nexec '{}' \"$@\"\n",
-            log.display(),
-            env!("CARGO")
-        ),
+    let steps = [
+        "cargo publish --workspace --dry-run --locked\n",
+        "cargo publish --locked -p tiza-core\n",
+        "cargo publish --locked -p tiza-export\n",
+        "cargo publish --locked -p tiza-tui\n",
+        "cargo publish --locked -p tiza-mcp\n",
+        "cargo publish --locked -p tiza\n",
+    ];
+    let positions: Vec<usize> = steps.iter().map(|s| at(s)).collect();
+    assert!(
+        positions.windows(2).all(|w| w[0] < w[1]),
+        "dry run, then core → export, tui → mcp → tiza: {positions:?}"
     );
-    // The last path segment of the index URL is the crate's name.
-    write_exe(
-        "curl",
-        "#!/bin/sh\nfor a; do url=$a; done\nname=${url##*/}\nfor p in $FAKE_PUBLISHED; do\n  if [ \"$p\" = \"$name\" ]; then printf '{\"name\":\"%s\",\"vers\":\"0.0.0-old\"}\\n{\"name\":\"%s\",\"vers\":\"%s\"}\\n' \"$name\" \"$name\" \"$FAKE_VERSION\"; exit 0; fi\ndone\necho 'curl: (22) The requested URL returned error: 404' >&2\nexit 22\n".to_string(),
-    );
-    let path = format!(
-        "{}:{}",
-        fake.display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-    let out = Command::new("bash")
-        .args(["-c", &script])
-        .current_dir(root())
-        .env("PATH", path)
-        .env("GITHUB_REF_NAME", tag)
-        .env("CARGO_REGISTRY_TOKEN", token)
-        .env("FAKE_PUBLISHED", published.join(" "))
-        .env("FAKE_VERSION", workspace_version())
-        .output()
-        .unwrap();
-    let calls = std::fs::read_to_string(&log)
-        .unwrap_or_default()
-        .lines()
-        .map(str::to_string)
-        .collect();
-    (out, calls)
-}
-
-fn workspace_version() -> String {
-    let toml = read("Cargo.toml");
-    let section = toml.split("[workspace.package]").nth(1).unwrap();
-    section
-        .lines()
-        .find_map(|l| l.strip_prefix("version = "))
+    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[5]);
+    // The order is the dependency order of the manifests.
+    let meta = metadata();
+    let deps = |name: &str| -> Vec<String> {
+        package(&meta, name)["dependencies"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| d["name"].as_str().unwrap().to_string())
+            .filter(|d| d.starts_with("tiza"))
+            .collect()
+    };
+    let order = ["tiza-core", "tiza-export", "tiza-tui", "tiza-mcp", "tiza"];
+    for (i, name) in order.iter().enumerate() {
+        for dep in deps(name) {
+            let j = order.iter().position(|o| *o == dep).unwrap();
+            assert!(j < i, "{name} depends on {dep}, published after it");
+        }
+    }
+    // Every crate of the order exists and nothing publishable is left out.
+    let publishable: Vec<String> = meta["packages"]
+        .as_array()
         .unwrap()
-        .trim_matches('"')
-        .to_string()
+        .iter()
+        .filter(|p| p["publish"] != serde_json::json!([]))
+        .map(|p| p["name"].as_str().unwrap().to_string())
+        .collect();
+    let mut sorted = publishable.clone();
+    sorted.sort();
+    let mut expected: Vec<String> = order.iter().map(|s| s.to_string()).collect();
+    expected.sort();
+    assert_eq!(sorted, expected);
 }
 
 fn text(o: &Output) -> String {
@@ -329,63 +286,6 @@ fn text(o: &Output) -> String {
         String::from_utf8_lossy(&o.stdout),
         String::from_utf8_lossy(&o.stderr)
     )
-}
-
-#[test]
-fn publish_first_run_publishes_the_whole_workspace() {
-    let tag = format!("v{}", workspace_version());
-    let (out, calls) = run_publish("t152-first", &tag, "token", &[]);
-    assert!(out.status.success(), "{}", text(&out));
-    assert_eq!(calls, vec!["publish --workspace --locked".to_string()]);
-}
-
-#[test]
-fn publish_rerun_skips_what_is_already_on_crates_io() {
-    let tag = format!("v{}", workspace_version());
-    let (out, calls) = run_publish("t152-rerun", &tag, "token", &["tiza-core", "tiza-tui"]);
-    assert!(out.status.success(), "{}", text(&out));
-    assert_eq!(calls.len(), 1, "{calls:?}");
-    let args = &calls[0];
-    assert!(args.starts_with("publish --workspace --locked"), "{args}");
-    assert!(args.contains("--exclude tiza-core") && args.contains("--exclude tiza-tui"));
-    for other in ["tiza-mcp", "tiza-export", "tiza ", "tiza-qa"] {
-        assert!(!args.contains(&format!("--exclude {other}")), "{args}");
-    }
-    assert!(
-        text(&out).contains("already on crates.io"),
-        "{}",
-        text(&out)
-    );
-}
-
-#[test]
-fn publish_rerun_with_everything_published_does_nothing() {
-    let tag = format!("v{}", workspace_version());
-    let all = ["tiza-core", "tiza-tui", "tiza-mcp", "tiza-export", "tiza"];
-    let (out, calls) = run_publish("t152-all", &tag, "token", &all);
-    assert!(out.status.success(), "{}", text(&out));
-    assert!(calls.is_empty(), "{calls:?}");
-}
-
-#[test]
-fn publish_refuses_a_tag_that_is_not_the_workspace_version() {
-    let (out, calls) = run_publish("t152-tag", "v9.9.9", "token", &[]);
-    assert!(!out.status.success());
-    assert!(text(&out).contains("does not match"), "{}", text(&out));
-    assert!(calls.is_empty());
-}
-
-#[test]
-fn publish_refuses_without_the_secret() {
-    let tag = format!("v{}", workspace_version());
-    let (out, calls) = run_publish("t152-secret", &tag, "", &[]);
-    assert!(!out.status.success());
-    assert!(
-        text(&out).contains("CARGO_REGISTRY_TOKEN"),
-        "{}",
-        text(&out)
-    );
-    assert!(calls.is_empty());
 }
 
 // --- crates.io pages -----------------------------------------------------
