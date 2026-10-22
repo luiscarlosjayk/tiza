@@ -970,9 +970,10 @@ pub struct Mutated {
 
 /// Result of the live `check` (t-210): the report of `tiza check --json`,
 /// field for field, plus the revision of the document it checked. The
-/// check runs off the TUI thread on a copy of the document taken when it
-/// was asked, so a change made while it runs is not in it: compare
-/// `revision` with the one `status` or a mutation gave, and check again.
+/// check runs off the TUI thread on a copy of the document, so a change
+/// made while it runs is not in it, and one that waited for another check
+/// may be about a revision later than the call: compare `revision` with
+/// the one `status` or a mutation gave, and check again.
 #[derive(Debug, Clone, Serialize, schemars::JsonSchema)]
 pub struct LiveCheck {
     #[serde(flatten)]
@@ -1146,7 +1147,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ("render.text", "Returns the current canvas as plain text"),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document taken when asked: `revision` says which one it checked (t-210)",
+        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy` (t-210)",
     ),
     (
         "follow.set",

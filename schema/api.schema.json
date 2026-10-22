@@ -5996,7 +5996,7 @@
       }
     },
     {
-      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document taken when asked: `revision` says which one it checked (t-210)",
+      "description": "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy` (t-210)",
       "method": "check",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6127,7 +6127,7 @@
           }
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
-        "description": "Result of the live `check` (t-210): the report of `tiza check --json`,\nfield for field, plus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document taken when it\nwas asked, so a change made while it runs is not in it: compare\n`revision` with the one `status` or a mutation gave, and check again.",
+        "description": "Result of the live `check` (t-210): the report of `tiza check --json`,\nfield for field, plus the revision of the document it checked. The\ncheck runs off the TUI thread on a copy of the document, so a change\nmade while it runs is not in it, and one that waited for another check\nmay be about a revision later than the call: compare `revision` with\nthe one `status` or a mutation gave, and check again.",
         "properties": {
           "errors": {
             "format": "uint",
