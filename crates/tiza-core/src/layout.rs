@@ -1209,6 +1209,9 @@ fn layout_pass(
     let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
 
     // ---- 1. code ----
+    // The invisible characters' marks, given their colour back at the end
+    // (a highlight over them must not hide them).
+    let mut marks: Vec<(usize, usize)> = Vec::new();
     for (y, row) in rows.iter().enumerate() {
         let Row::Code(line) = row else { continue };
         let text = doc.line_text(*line).unwrap_or("");
@@ -1227,7 +1230,7 @@ fn layout_pass(
             .checked_sub(doc.source.first_line)
             .and_then(|i| segments.get(i as usize))
             .map_or(&[][..], Vec::as_slice);
-        paint_code(
+        let drawn = paint_code(
             &mut canvas,
             code_x,
             y,
@@ -1239,6 +1242,7 @@ fn layout_pass(
             theme,
             in_focus,
         );
+        marks.extend(drawn.into_iter().map(|x| (x, y)));
     }
 
     // ---- 2. highlights and marks ----
@@ -1861,6 +1865,22 @@ fn layout_pass(
             }
         }
     }
+    for &(x, y) in &marks {
+        if let Some(cell) = canvas.get(x, y)
+            && cell.sym.as_str() == crate::printable::INVISIBLE_MARK
+        {
+            let style = cell.style;
+            canvas.restyle(
+                x,
+                y,
+                1,
+                CellStyle {
+                    fg: Some(theme.error),
+                    ..style
+                },
+            );
+        }
+    }
     if let Some(c) = shared.cursor
         && let (Some(&y), Some(text)) = (row_of_line.get(&c.line), doc.line_text(c.line))
     {
@@ -2116,6 +2136,11 @@ pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     w
 }
 
+/// Draws a code line from its highlighted segments; returns the cells of
+/// the invisible characters' marks. The line is cut into graphemes whole,
+/// as [`col_to_x`] measures it (a grammar may split a cluster, a ZWNJ
+/// from its letter or an emoji from its ZWJ), and each grapheme takes the
+/// style of the segment it starts in.
 #[allow(clippy::too_many_arguments)]
 fn paint_code(
     canvas: &mut Canvas,
@@ -2128,13 +2153,14 @@ fn paint_code(
     base: CellStyle,
     theme: &Theme,
     in_focus: bool,
-) {
+) -> Vec<usize> {
+    let mut marked = Vec::new();
+    let line: String = segs.iter().map(|s| s.text.as_str()).collect();
     let full_w = code_width(text, tab_width);
     let clip = full_w > max_w;
     let limit = if clip { max_w.saturating_sub(1) } else { max_w };
-    let mut x = 0usize;
-    'outer: for seg in segs {
-        let style = if in_focus {
+    let style_of = |seg: &Segment| {
+        if in_focus {
             let mut s = base;
             if let Some(fg) = seg.fg {
                 s = s.fg(theme.legible(fg));
@@ -2148,43 +2174,59 @@ fn paint_code(
             s
         } else {
             base.fg(theme.dimmed)
-        };
-        for g in seg.text.graphemes(true) {
-            let (shown, marks) = crate::printable::code_glyph(g);
-            let shown_w = unicode_width::UnicodeWidthStr::width(&*shown);
-            let w = if g == "\t" {
-                tab_width - (x % tab_width)
-            } else {
-                shown_w + marks
-            };
-            if x + w > limit {
-                break 'outer;
-            }
-            if g == "\t" {
-                for k in 0..w {
-                    canvas.put(x0 + x + k, y, " ", style);
-                }
-            } else {
-                if !shown.is_empty() {
-                    canvas.put(x0 + x, y, &shown, style);
-                }
-                // An invisible character takes a cell of its own, marked in
-                // the error colour, focus or not: it must be seen.
-                for k in 0..marks {
-                    canvas.put(
-                        x0 + x + shown_w + k,
-                        y,
-                        crate::printable::INVISIBLE_MARK,
-                        base.fg(theme.error),
-                    );
-                }
-            }
-            x += w;
         }
+    };
+    // Where each segment ends, in bytes of `line`.
+    let mut ends = Vec::with_capacity(segs.len());
+    let mut at = 0;
+    for seg in segs {
+        at += seg.text.len();
+        ends.push(at);
+    }
+    let mut k = 0;
+    let mut x = 0usize;
+    for (i, g) in line.grapheme_indices(true) {
+        while k + 1 < segs.len() && i >= ends[k] {
+            k += 1;
+        }
+        let style = style_of(&segs[k]);
+        let (shown, marks) = crate::printable::code_glyph(g);
+        let shown_w = unicode_width::UnicodeWidthStr::width(&*shown);
+        let w = if g == "\t" {
+            tab_width - (x % tab_width)
+        } else {
+            shown_w + marks
+        };
+        if x + w > limit {
+            break;
+        }
+        if g == "\t" {
+            for t in 0..w {
+                canvas.put(x0 + x + t, y, " ", style);
+            }
+        } else {
+            if !shown.is_empty() {
+                canvas.put(x0 + x, y, &shown, style);
+            }
+            // An invisible character takes a cell of its own, marked in
+            // the error colour, focus or not: it must be seen.
+            for m in 0..marks {
+                let mx = x0 + x + shown_w + m;
+                canvas.put(
+                    mx,
+                    y,
+                    crate::printable::INVISIBLE_MARK,
+                    base.fg(theme.error),
+                );
+                marked.push(mx);
+            }
+        }
+        x += w;
     }
     if clip {
         canvas.put(x0 + limit, y, "…", base.fg(theme.muted));
     }
+    marked
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -708,7 +708,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                     "  step {}/{} · {}",
                     app.doc.step,
                     app.doc.max_step(),
-                    fit_message(&t, 32)
+                    fit_message(&tiza_core::printable::printable_line(&t), 32)
                 ),
                 None => format!("  step {}/{}", app.doc.step, app.doc.max_step()),
             },

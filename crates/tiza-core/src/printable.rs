@@ -12,7 +12,7 @@
 //! | DEL U+007F | `␡` |
 //! | C1 U+0080–U+009F | `�` |
 //! | bidi controls (U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069) | in the code, [`INVISIBLE_MARK`]; elsewhere in a drawing nothing (no cell); `�` in a message |
-//! | zero-width characters (U+200B, U+2060, U+FEFF, a stray U+200C/U+200D) | in the code, [`INVISIBLE_MARK`]; elsewhere in a drawing nothing (no cell) |
+//! | other invisible characters (`Default_Ignorable_Code_Point`: U+200B, U+2060, U+FEFF, a stray U+200C/U+200D, U+00AD, variation selectors after a letter, tags…) | in the code, [`INVISIBLE_MARK`] (unless it does a job: [`code_glyph`]); elsewhere in a drawing nothing (no cell) |
 //!
 //! Every placeholder is one cell wide, as wide as the character it stands
 //! for, so the layout's columns do not move; in the code an invisible
@@ -53,63 +53,117 @@ pub fn is_bidi_control(c: char) -> bool {
 /// `ad⬚min` is not `admin`, and whoever explains the code sees it.
 pub const INVISIBLE_MARK: &str = "\u{2B1A}";
 
-/// Zero-width characters that can hide a difference in the code: the
-/// zero-width space, the word joiner and the zero-width no-break space
-/// (a byte order mark; the one that starts a file is dropped on reading).
-fn is_zero_width_space(c: char) -> bool {
-    matches!(c, '\u{200B}' | '\u{2060}' | '\u{FEFF}')
-}
-
-/// A letter of a script that uses ZWJ (U+200D) and ZWNJ (U+200C) to shape
-/// its words: Arabic and Persian, Syriac, Thaana, N'Ko, Mandaic, the
-/// Indic scripts, Sinhala, Tibetan, Myanmar, Khmer and Mongolian.
-fn uses_joiners(c: char) -> bool {
+/// A `Default_Ignorable_Code_Point` of Unicode: a character with nothing
+/// to show (zero-width spaces and joiners, bidi controls, variation
+/// selectors, invisible operators, fillers, tags…), so it can hide a
+/// difference in the code. (The byte order mark that starts a file is
+/// dropped on reading.)
+fn is_default_ignorable(c: char) -> bool {
     matches!(
         c,
-        '\u{0600}'..='\u{08FF}'
-            | '\u{0900}'..='\u{0DFF}'
-            | '\u{0F00}'..='\u{109F}'
-            | '\u{1780}'..='\u{18AF}'
-            | '\u{A8E0}'..='\u{A8FF}'
-            | '\u{A9E0}'..='\u{AA7F}'
-            | '\u{FB50}'..='\u{FDFF}'
-            | '\u{FE70}'..='\u{FEFC}'
+        '\u{00AD}'
+            | '\u{034F}'
+            | '\u{061C}'
+            | '\u{115F}'..='\u{1160}'
+            | '\u{17B4}'..='\u{17B5}'
+            | '\u{180B}'..='\u{180F}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{3164}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FEFF}'
+            | '\u{FFA0}'
+            | '\u{1BCA0}'..='\u{1BCA3}'
+            | '\u{1D173}'..='\u{1D17A}'
+            | '\u{E0000}'..='\u{E0FFF}'
     )
+}
+
+/// A letter or sign of a script that uses ZWJ (U+200D) and ZWNJ (U+200C)
+/// to shape its words: Arabic and Persian, Syriac, Thaana, N'Ko, Mandaic,
+/// the Indic and Brahmic scripts (Devanagari to Sinhala, Tibetan, Myanmar,
+/// Khmer, Mongolian, Javanese, Balinese, Sundanese, Kaithi…).
+fn uses_joiners(c: char) -> bool {
+    !is_default_ignorable(c)
+        && matches!(
+            c,
+            '\u{0600}'..='\u{08FF}'
+                | '\u{0900}'..='\u{0DFF}'
+                | '\u{0F00}'..='\u{109F}'
+                | '\u{1700}'..='\u{18AF}'
+                | '\u{1900}'..='\u{1AAF}'
+                | '\u{1B00}'..='\u{1C4F}'
+                | '\u{A800}'..='\u{A8FF}'
+                | '\u{A900}'..='\u{AAFF}'
+                | '\u{ABC0}'..='\u{ABFF}'
+                | '\u{FB50}'..='\u{FDFF}'
+                | '\u{FE70}'..='\u{FEFC}'
+                | '\u{10800}'..='\u{10FFF}'
+                | '\u{11000}'..='\u{11FFF}'
+        )
+}
+
+/// A Han ideograph, which takes an ideographic variation selector.
+fn is_ideograph(c: char) -> bool {
+    matches!(
+        c,
+        '\u{3400}'..='\u{9FFF}' | '\u{F900}'..='\u{FAFF}' | '\u{20000}'..='\u{3FFFF}'
+    )
+}
+
+/// Whether the default-ignorable character `chars[i]` does a job here, so
+/// it is left as it is. A ZWJ or ZWNJ joins within the grapheme
+/// (something visible follows it in the cluster: an emoji ZWJ sequence
+/// such as man ZWJ woman ZWJ girl, an Indic conjunct such as KA VIRAMA ZWJ
+/// SSA) or follows a letter of a script that uses joiners (the ZWNJ of a
+/// Persian word); a variation selector follows a symbol or an ideograph
+/// (the VS16 of an emoji, the keycap `1` VS16 U+20E3, a Han variant), not a
+/// Latin letter; a Mongolian variation selector or vowel separator
+/// follows a Mongolian letter; tags spell a subdivision flag (U+1F3F4 …
+/// U+E007F). Every other one is marked: a stray joiner, one between Latin
+/// letters (`ad` ZWJ `min`, which segmentation keeps in the cluster of the
+/// `d`), a zero-width space, a bidi control, an invisible operator, a
+/// filler, tags that smuggle text.
+fn does_a_job(chars: &[char], i: usize, last_visible: Option<usize>) -> bool {
+    let c = chars[i];
+    let prev = i.checked_sub(1).map(|k| chars[k]);
+    match c {
+        '\u{200C}' | '\u{200D}' => {
+            last_visible.is_some_and(|v| i < v) || prev.is_some_and(uses_joiners)
+        }
+        '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}' => prev.is_some_and(|p| {
+            if matches!(p, '0'..='9' | '#' | '*') {
+                return chars.get(i + 1) == Some(&'\u{20E3}');
+            }
+            !p.is_ascii()
+                && !is_default_ignorable(p)
+                && (!p.is_alphabetic() || is_ideograph(p) || uses_joiners(p))
+        }),
+        '\u{180B}'..='\u{180F}' => prev.is_some_and(|p| ('\u{1820}'..='\u{18AF}').contains(&p)),
+        '\u{E0020}'..='\u{E007F}' => {
+            chars.first() == Some(&'\u{1F3F4}') && chars.last() == Some(&'\u{E007F}')
+        }
+        _ => false,
+    }
 }
 
 /// The grapheme `g` of the code as it is drawn: what is shown of it and the
 /// number of [`INVISIBLE_MARK`]s that follow, one per invisible character
-/// in it. Marked: every bidi control, U+200B, U+2060 and U+FEFF (each a
-/// grapheme of its own), and a ZWJ or ZWNJ that joins nothing. A joiner
-/// is left as it is when it joins within the grapheme (an emoji ZWJ
-/// sequence such as man ZWJ woman ZWJ girl, an Indic conjunct such as KA
-/// VIRAMA ZWJ SSA: something visible follows it in the cluster) or follows
-/// a letter of a script that uses joiners ([`uses_joiners`]: the ZWNJ of a
-/// Persian word). Any other joiner, a stray one or one between Latin
-/// letters (`ad` ZWJ `min`, which segmentation keeps inside the cluster of
-/// the `d`), is marked: drawn `d⬚`. Everything else is `g` unchanged, with
-/// no mark.
+/// in it that does no job there ([`does_a_job`] says which ones are left
+/// as they are). Everything else is `g` unchanged, with no mark. Linear in
+/// the length of `g`, however many joiners it holds.
 pub fn code_glyph(g: &str) -> (Cow<'_, str>, usize) {
-    let maybe = |c: char| {
-        is_bidi_control(c) || is_zero_width_space(c) || matches!(c, '\u{200C}' | '\u{200D}')
-    };
-    if g.is_ascii() || !g.chars().any(maybe) {
+    if g.is_ascii() || !g.chars().any(is_default_ignorable) {
         return (Cow::Borrowed(g), 0);
     }
     let chars: Vec<char> = g.chars().collect();
     let visible = |c: &char| unicode_width::UnicodeWidthChar::width(*c).unwrap_or(0) > 0;
+    let last_visible = chars.iter().rposition(visible);
     let mut shown = String::new();
     let mut marks = 0;
     for (i, &c) in chars.iter().enumerate() {
-        let invisible = match c {
-            '\u{200C}' | '\u{200D}' => {
-                let joins_within = chars[i + 1..].iter().any(visible);
-                let after_joining_letter = i > 0 && uses_joiners(chars[i - 1]);
-                !(joins_within || after_joining_letter)
-            }
-            c => is_bidi_control(c) || is_zero_width_space(c),
-        };
-        if invisible {
+        if is_default_ignorable(c) && !does_a_job(&chars, i, last_visible) {
             marks += 1;
         } else {
             shown.push(c);

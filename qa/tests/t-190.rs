@@ -1,6 +1,6 @@
 //! Invisible characters. An annotation text showed a control character as
 //! a silent space; the code dropped its bidi controls and zero-width
-//! characters from the drawing, so `ad​min` (with U+200B) read as `admin`;
+//! characters from the drawing, so `ad` U+200B `min` read as `admin`;
 //! and a label with zero-width spaces was cut at the canvas edge with no
 //! `…` while `tiza check` called it clean (each one took a cell the layout
 //! did not count).
@@ -724,4 +724,189 @@ fn ac6_changelog_and_readme() {
     assert!(changelog.contains("U+2B1A"), "CHANGELOG");
     let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
     assert!(readme.contains("⬚"), "README");
+}
+
+// ---------- Review ----------
+
+fn doc_in(lang: &str, code: &[&str], annotations: Value) -> Document {
+    doc_of(&json!({
+        "schema": 1, "source": {"language": lang, "first_line": 1},
+        "code": code, "annotations": annotations
+    }))
+}
+
+#[test]
+fn rev_a_grammar_that_splits_a_cluster_draws_what_it_measures() {
+    // TypeScript's grammar splits the ZWNJ from its letter and TOML an
+    // emoji from its ZWJ: the drawing goes by whole graphemes, as the
+    // columns are measured.
+    for lang in [
+        "ts", "toml", "js", "rs", "py", "go", "c", "md", "yaml", "json",
+    ] {
+        for (code, want) in [
+            (
+                "const \u{645}\u{6cc}\u{200C}\u{62e}\u{648}\u{627}\u{647}\u{645} = 1;",
+                None,
+            ),
+            ("\u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467} = 1;", None),
+            (
+                "let ad\u{200B}min = 1;",
+                Some(format!("let ad{MARK}min = 1;")),
+            ),
+        ] {
+            let doc = doc_in(lang, &[code], json!([]));
+            let l = lay(&doc, 100, 1);
+            let want = want.unwrap_or_else(|| code.to_string());
+            assert_eq!(code_text(&l, 1), want, "{lang}: {code:?}");
+            assert_eq!(
+                code_width(code, 4),
+                tiza_core::canvas::display_width(&want, 4),
+                "{lang}: {code:?}"
+            );
+        }
+        // A highlight after the split cluster lands on its text.
+        let code = "const \u{645}\u{6cc}\u{200C}\u{62e} = 42;";
+        let doc = doc_in(
+            lang,
+            &[code],
+            json!([{"id": "h", "step": 1, "type": "highlight", "span": {"line": 1, "start": 12, "end": 14}}]),
+        );
+        let l = lay(&doc, 100, 1);
+        let (x0, x1) = (
+            l.code_x + col_to_x(code, 12, 4),
+            l.code_x + col_to_x(code, 14, 4),
+        );
+        assert_eq!(cells_text(&l, 1, x0, x1), "42", "{lang}");
+        let y = l.row_of_line[&1];
+        assert!(
+            (x0..x1).all(|x| l.canvas.get(x, y).unwrap().style.bg.is_some()),
+            "{lang}: the highlight is on 42"
+        );
+    }
+}
+
+#[test]
+fn rev_many_joiners_in_one_grapheme_lay_out_in_linear_time() {
+    // `a` and 100,000 ZWJs are one grapheme: deciding each joiner by
+    // looking at all the ones after it took minutes.
+    let code = format!("a{}", "\u{200D}".repeat(100_000));
+    let doc = doc_of(&code_doc(&[&code], json!([])));
+    let start = std::time::Instant::now();
+    let l = lay(&doc, 120, 1);
+    assert!(
+        start.elapsed() < std::time::Duration::from_secs(10),
+        "{:?}",
+        start.elapsed()
+    );
+    assert_eq!(code_width(&code, 4), 100_001);
+    assert!(code_text(&l, 1).ends_with('…'));
+}
+
+#[test]
+fn rev_every_default_ignorable_character_is_marked_unless_it_does_a_job() {
+    for c in [
+        '\u{00AD}',
+        '\u{034F}',
+        '\u{115F}',
+        '\u{1160}',
+        '\u{17B4}',
+        '\u{17B5}',
+        '\u{180B}',
+        '\u{180E}',
+        '\u{2061}',
+        '\u{2062}',
+        '\u{2063}',
+        '\u{2064}',
+        '\u{206A}',
+        '\u{3164}',
+        '\u{FE00}',
+        '\u{FE0F}',
+        '\u{FFA0}',
+        '\u{E0001}',
+        '\u{E0061}',
+        '\u{E0062}',
+        '\u{1BCA0}',
+        '\u{1D173}',
+    ] {
+        let code = format!("ad{c}min");
+        let doc = doc_of(&code_doc(&[&code], json!([])));
+        let l = lay(&doc, 80, 1);
+        assert_eq!(
+            code_text(&l, 1),
+            format!("ad{MARK}min"),
+            "U+{:04X}",
+            c as u32
+        );
+        assert_eq!(code_width(&code, 4), 6, "U+{:04X}", c as u32);
+    }
+    // A Mongolian variation selector cannot carry a joiner past the rule.
+    let doc = doc_of(&code_doc(&["ad\u{180B}\u{200D}min"], json!([])));
+    assert_eq!(
+        code_text(&lay(&doc, 80, 1), 1),
+        format!("ad{MARK}{MARK}min")
+    );
+    // Left alone where they do a job.
+    for code in [
+        "\u{2764}\u{FE0F}",
+        "1\u{FE0F}\u{20E3}",
+        "\u{1F3F4}\u{E0067}\u{E0062}\u{E0073}\u{E0063}\u{E0074}\u{E007F}",
+        "\u{1820}\u{180B}\u{1821}",
+        "\u{845B}\u{E0100}",
+        "\u{1F469}\u{1F3FD}\u{200D}\u{1F4BB}",
+        "\u{1F441}\u{200D}\u{1F5E8}",
+        "\u{1F3C3}\u{200D}\u{2640}\u{FE0F}",
+    ] {
+        let doc = doc_of(&code_doc(&[code], json!([])));
+        assert_eq!(code_text(&lay(&doc, 80, 1), 1), code, "{code:?}");
+    }
+}
+
+#[test]
+fn rev_joiners_of_more_scripts_are_left_alone() {
+    for code in [
+        "\u{A9B2}\u{A9C0}\u{200C}\u{A9B1}",    // Javanese
+        "\u{1B13}\u{1B44}\u{200C}\u{1B31}",    // Balinese
+        "\u{1108D}\u{110B9}\u{200D}\u{1108E}", // Kaithi
+        "\u{D9A}\u{DCA}\u{200D}\u{DBB}",       // Sinhala
+    ] {
+        let doc = doc_of(&code_doc(&[code], json!([])));
+        assert_eq!(code_text(&lay(&doc, 80, 1), 1), code, "{code:?}");
+    }
+}
+
+#[test]
+fn rev_a_mark_keeps_its_colour_under_a_highlight() {
+    let doc = doc_of(&code_doc(
+        &["let ad\u{200B}min = 1;"],
+        json!([{"id": "h", "step": 1, "type": "highlight", "span": {"line": 1, "start": 4, "end": 10}}]),
+    ));
+    let error = tiza_core::Theme::dark().error;
+    for step in [0, 1] {
+        let l = lay(&doc, 80, step);
+        let marks: Vec<_> = code_cells(&l, 1)
+            .into_iter()
+            .filter(|(s, _)| s == MARK)
+            .collect();
+        assert_eq!(marks.len(), 1);
+        assert_eq!(marks[0].1.fg, Some(error), "step {step}");
+    }
+}
+
+#[test]
+fn rev_a_step_title_shows_its_control_pictures_on_the_bar() {
+    let f = write(
+        "t190-title",
+        "t.tiza",
+        &json!({
+            "schema": 1, "source": {"language": "rs", "first_line": 1}, "step": 1,
+            "code": ["let a = 1;"],
+            "steps": [{"step": 1, "title": "Intro\u{1b}[2J bell\u{7}"}],
+            "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "x"}]
+        })
+        .to_string(),
+    );
+    let doc = tiza_core::fs::load_document(&f).unwrap();
+    let live = Live::open(doc, f.clone(), f.with_file_name("live.sock"));
+    let screen = live.screen(120, 12);
+    assert!(screen.contains("Intro␛[2J bell␇"), "{screen}");
 }
