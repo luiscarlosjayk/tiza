@@ -8,8 +8,8 @@
 //! edit alone does not rerun this script), or `unknown` outside git or
 //! without a working `git`.
 //!
-//! Only a repository that tracks this package names its commit (t-152): a
-//! crate unpacked from crates.io under a directory that happens to be a git
+//! Only a repository that tracks this package names its commit: a crate
+//! unpacked from crates.io under a directory that happens to be a git
 //! repository (a home kept in git, say) or verified by `cargo package` in
 //! the ignored `target/package/` is stamped `unknown`, not with a commit
 //! that did not build it. Its version already says what it is.

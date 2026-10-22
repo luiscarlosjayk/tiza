@@ -7,7 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-# crates.io page (t-152): a README of its own with absolute links (the
+# crates.io page: a README of its own with absolute links (the
 # repository's README links relative paths, which crates.io cannot follow),
 # and the documentation on GitHub (the binary has no Rust API for docs.rs).
 readme = "README.md"
