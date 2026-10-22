@@ -20,8 +20,10 @@
 //! each name to this checkout's or the common dir): HEAD and its reflog
 //! (a detached HEAD moves there), the index, the ref HEAD points to, its
 //! reflog (still there, and only touched by this branch, while the ref
-//! itself sits in `packed-refs`), `packed-refs`, and `reftable/` in a
-//! reftable repository.
+//! itself sits in `packed-refs`), `packed-refs`, `reftable/` in a reftable
+//! repository, and `refs/heads/`. They are watched also when the
+//! repository does not track this package yet, so the commit that starts
+//! tracking it stamps it.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -63,6 +65,9 @@ fn watched() -> Vec<PathBuf> {
         "index".to_string(),
         "packed-refs".to_string(),
         "reftable".to_string(),
+        // The directory: the first commit of a new repository creates its
+        // branch there, when HEAD itself does not change.
+        "refs/heads".to_string(),
     ];
     // `refs/heads/NAME` on a branch, `HEAD` when detached.
     if let Some(r) =
@@ -95,13 +100,18 @@ fn main() {
     println!("cargo:rerun-if-env-changed=TIZA_GIT_SHA_OVERRIDE");
     let sha = match std::env::var("TIZA_GIT_SHA_OVERRIDE") {
         Ok(v) if !v.trim().is_empty() => v.trim().to_string(),
-        _ if tracked_here() => {
+        _ => {
+            // Watched also while the repository does not track this
+            // package, so the commit that starts tracking it reruns this.
             for p in watched() {
                 println!("cargo:rerun-if-changed={}", p.display());
             }
-            stamp()
+            if tracked_here() {
+                stamp()
+            } else {
+                "unknown".into()
+            }
         }
-        _ => "unknown".into(),
     };
     println!("cargo:rustc-env=TIZA_GIT_SHA={sha}");
 }
