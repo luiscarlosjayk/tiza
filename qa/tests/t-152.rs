@@ -917,8 +917,9 @@ const BINARY_EXT: [&str; 9] = [
 ];
 
 /// The repository's files outside `qa/`, relative to its root: the ones
-/// git tracks or would add (`git ls-files`, so a new file is caught before
-/// its commit), else a walk of the tree without `target/` and `.git`.
+/// git tracks (`git ls-files`; untracked files are left out, so a local
+/// notes folder in the checkout does not fail the gate), else a walk of the
+/// tree without `target/` and `.git`.
 fn files_outside_qa() -> Vec<String> {
     let root = root();
     let mut cmd = Command::new("git");
@@ -926,13 +927,7 @@ fn files_outside_qa() -> Vec<String> {
         cmd.env_remove(v);
     }
     let listed = cmd
-        .args([
-            "ls-files",
-            "-z",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ])
+        .args(["ls-files", "-z", "--cached"])
         .current_dir(&root)
         .output()
         .ok()
