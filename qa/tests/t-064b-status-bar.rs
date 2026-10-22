@@ -51,7 +51,7 @@ fn ac2_badge_and_message_coexist() {
     );
     live.command("mark warn 3:zzz");
     let b = bar(&live, 80);
-    assert!(b.contains('⚠'), "{b}");
+    assert!(b.contains("  ! "), "{b}");
     assert!(
         b.contains("zzz") || b.contains("not found") || b.contains("…"),
         "{b}"

@@ -25,6 +25,9 @@
 //!   Terminal and Zed draw it; a terminal that draws it two cells wide can
 //!   still push the bar one cell past the edge (t-209, left for later). A
 //!   more serious badge (`code clipped (N cols)`) never gives way.
+//!   Since t-209 AC2 the bar writes the ASCII `!` instead of `⚠` in every
+//!   form (`! labels under the lines` → `! labels` → `!`); the checks
+//!   below read that sign.
 //! - AC4 Monotonic: widening the terminal by one column never removes an
 //!   element that was shown (subject, a directory once it is back, the tail,
 //!   the whole badge). The middle may lose a few letters.
@@ -48,19 +51,19 @@ use serde_json::{Value, json};
 use tiza_qa::{Live, example, fixture, scratch};
 
 const STEP_HINT: &str = "(step 1, press n)";
-const WHOLE_BADGE: &str = "⚠ labels under the lines";
+const WHOLE_BADGE: &str = "! labels under the lines";
 
 // ---------- reading the bar by its elements ----------
 
-/// The forms of the terminal-size badge (`⚠ labels under the lines`, or
-/// `⚠ small terminal` when the labels keep their margin), from the least
+/// The forms of the terminal-size badge (`! labels under the lines`, or
+/// `! small terminal` when the labels keep their margin), from the least
 /// to the whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Badge {
     /// `code clipped`, which never gives way, or no badge.
     Other,
     Sign,
-    /// `⚠ labels` or `⚠ small`.
+    /// `! labels` or `! small`.
     Labels,
     Whole,
 }
@@ -100,16 +103,16 @@ const AGENT_BOX: Msg = Msg {
 fn elements(bar: &str, msg: &Msg) -> Elements {
     let (badge, at) = if let Some(i) = bar.find(WHOLE_BADGE) {
         (Badge::Whole, i + WHOLE_BADGE.len())
-    } else if let Some(i) = bar.find("⚠ small terminal") {
-        (Badge::Whole, i + "⚠ small terminal".len())
-    } else if let Some(i) = bar.find("⚠ labels") {
-        (Badge::Labels, i + "⚠ labels".len())
-    } else if let Some(i) = bar.find("⚠ small") {
-        (Badge::Labels, i + "⚠ small".len())
-    } else if let Some(i) = bar.find("⚠ code clipped") {
+    } else if let Some(i) = bar.find("! small terminal") {
+        (Badge::Whole, i + "! small terminal".len())
+    } else if let Some(i) = bar.find("! labels") {
+        (Badge::Labels, i + "! labels".len())
+    } else if let Some(i) = bar.find("! small") {
+        (Badge::Labels, i + "! small".len())
+    } else if let Some(i) = bar.find("! code clipped") {
         (Badge::Other, i)
-    } else if let Some(i) = bar.find('⚠') {
-        (Badge::Sign, i + '⚠'.len_utf8())
+    } else if let Some(i) = bar.find("  ! ") {
+        (Badge::Sign, i + "  !".len())
     } else {
         (Badge::Other, 0)
     };
@@ -140,15 +143,16 @@ fn assert_no_cut_tail(bar: &str, tail: &str) {
     }
 }
 
-/// AC3: with `⚠` drawn two cells wide, the bar still fits: `Live::screen`
-/// gives one symbol per cell (a wide character's second cell is a blank).
+/// AC3: the bar fits, and its sign is the ASCII `!` (one cell in every
+/// terminal; `Live::screen` gives one symbol per cell). A `⚠` the bar wrote
+/// would take two cells where the terminal draws it wide.
 fn assert_fits_with_a_wide_sign(bar: &str, cols: u16) {
     let cells = bar.chars().count() + bar.matches('⚠').count();
     assert!(cells <= cols as usize, "{cols}: {cells} cells: {bar}");
 }
 
 /// Every check of the card for one message on the bar, from `from` to `to`
-/// columns: no cut tail, no overflow with a wide `⚠`, and AC4 — one column
+/// columns: no cut tail, no overflow even with a wide `⚠`, and AC4 — one column
 /// more never takes away the subject, the tail, the directory or a form of
 /// the badge. Returns the bars, for more checks.
 fn sweep(live: &Live, msg: &Msg, from: u16, to: u16) -> Vec<(u16, String)> {
@@ -187,10 +191,10 @@ fn sweep(live: &Live, msg: &Msg, from: u16, to: u16) -> Vec<(u16, String)> {
     bars
 }
 
-/// AC3: a badge that gave way (`⚠ labels`, `⚠`) did it because its next
+/// AC3: a badge that gave way (`! labels`, `!`) did it because its next
 /// larger form would not leave room for the subject, `…` and the tail.
 fn assert_badge_gave_way_only_if_needed(bar: &str, e: &Elements, msg: &Msg) {
-    let small = bar.contains("⚠ small");
+    let small = bar.contains("! small");
     let grow = match (e.badge, small) {
         (Badge::Sign, false) => " labels".chars().count(),
         (Badge::Labels, false) => " under the lines".chars().count(),
@@ -512,7 +516,7 @@ fn ac2_grouped_notice_keeps_what_it_counts() {
             );
         }
     }
-    // 60 columns with `⚠ labels under the lines` (wide.rs is clipped there).
+    // 60 columns with `! labels under the lines` (wide.rs is clipped there).
     let live = open("narrow.rs", "t173-ac2-group-60", true);
     let t0 = Instant::now();
     for (i, line) in [2, 3, 4].into_iter().enumerate() {
@@ -564,7 +568,10 @@ fn ac3_code_clipped_never_gives_way() {
         if b.contains("code clipped") || cols < 70 {
             seen |= b.contains("code clipped");
             // Whatever the message keeps, the clipped warning keeps its words.
-            assert!(!b.contains("⚠ a1") && !b.contains("⚠ (step"), "{cols}: {b}");
+            assert!(
+                !b.contains("  ! a1") && !b.contains("  ! (step"),
+                "{cols}: {b}"
+            );
         }
         assert_no_cut_tail(&b, STEP_HINT);
     }
@@ -585,7 +592,7 @@ fn ac5_a_message_that_fits_is_unchanged() {
             b.ends_with("  a1: box 3-5 added by agent (step 1, press n)"),
             "{b}"
         );
-        assert!(!b.contains('⚠') && !b.contains('…'), "{b}");
+        assert!(!b.contains("  ! ") && !b.contains('…'), "{b}");
     }
 }
 
@@ -596,7 +603,7 @@ fn ac6_changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert!(changelog.contains("- The status bar keeps where to find what a message names."));
-    assert!(changelog.contains("⚠ labels"));
+    assert!(changelog.contains("! labels"));
 }
 
 // ---------- Corner cases ----------

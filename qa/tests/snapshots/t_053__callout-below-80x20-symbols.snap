@@ -21,4 +21,4 @@ expression: symbols
   4        println!("{s}");                ┆ does not compile
   5    }
   6
- ╭▶ NORMAL  step 3/3  dark·auto  doc.tiza  L1  5 ann.  ⚠ small terminal   ?help
+ ╭▶ NORMAL  step 3/3  dark·auto  doc.tiza  L1  5 ann.  ! small terminal   ?help

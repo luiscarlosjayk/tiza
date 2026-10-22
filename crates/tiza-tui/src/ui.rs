@@ -539,7 +539,7 @@ fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
 /// message, the directory of a file tail (only when no other file of the
 /// document has its name), the `↪ file` view indicator in `left[view]`
 /// (it names the other file the message is often about), the
-/// terminal-size badge in `left[badge]` (`⚠ labels`, then `⚠`), the
+/// terminal-size badge in `left[badge]` (`! labels`, then `!`), the
 /// subject; the tail is never cut. Each step is taken only when the one
 /// before is not enough, so a wider bar never shows less of the subject,
 /// the tail, the directory, the indicator or the badge. `None`: nothing
@@ -555,8 +555,7 @@ fn fit_bar_message(
 ) -> Option<String> {
     let lw = |left: &[Span]| left.iter().map(|s| s.content.width()).sum::<usize>();
     // The room after a blank cell on the left and the message's own
-    // trailing blank, which is also the cell a ⚠ drawn two cells wide
-    // takes: nothing on the bar is pushed off the edge.
+    // trailing blank.
     let room = |left: &[Span]| width.saturating_sub(lw(left) + 2);
     for drop_idx in [4usize, 6, 7, 5, 3] {
         if m.width() <= room(left) {
@@ -577,10 +576,8 @@ fn fit_bar_message(
     // The terminal-size notice gives way (its short forms, then its sign);
     // `code clipped` never does.
     let forms: &[&'static str] = match badge.map(|b| left[b].content.as_ref()) {
-        Some("  ⚠ labels under the lines") => {
-            &["  ⚠ labels under the lines", "  ⚠ labels", "  ⚠"]
-        }
-        Some("  ⚠ small terminal") => &["  ⚠ small terminal", "  ⚠ small", "  ⚠"],
+        Some("  ! labels under the lines") => &["  ! labels under the lines", "  ! labels", "  !"],
+        Some("  ! small terminal") => &["  ! small terminal", "  ! small", "  !"],
         _ => &[""],
     };
     let layout_badge = badge.filter(|_| forms.len() > 1);
@@ -774,6 +771,8 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     let badge = left.len();
     if let Some(w) = warnings.first() {
         // Short form on the bar; the full text is in `status.warnings`.
+        // The sign is ASCII `!`, one cell in every terminal: U+26A0 is drawn
+        // two cells wide by some, which pushed the bar past the edge.
         let short = if w.starts_with("code clipped") {
             w.clone()
         } else if w.contains("under the lines") {
@@ -782,7 +781,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             "small terminal".to_string()
         };
         left.push(Span::styled(
-            format!("  ⚠ {short}"),
+            format!("  ! {short}"),
             Style::default()
                 .fg(rgb(th.error))
                 .bg(rgb(th.status_bg))

@@ -30,11 +30,11 @@ fn ac1_small_terminal_badge_and_label_placement() {
     let s = live.screen(80, 24);
     let bar = status_line(&s);
     assert!(bar.contains("80×24"), "{bar}");
-    assert!(bar.contains("⚠ labels under the lines"), "{bar}");
+    assert!(bar.contains("! labels under the lines"), "{bar}");
     assert!(s.contains("┆ a note"), "note drawn under the line:\n{s}");
     // Wide but short: labels fit in the margin, the badge only mentions the size.
     let bar = status_line(&live.screen(120, 20));
-    assert!(bar.contains("⚠ small terminal"), "{bar}");
+    assert!(bar.contains("! small terminal"), "{bar}");
     assert!(!bar.contains("labels under"), "{bar}");
     let w = live.api_ok("status", json!({}))["warnings"][0]
         .as_str()
@@ -51,7 +51,7 @@ fn ac2_clipped_code_is_reported_with_its_width() {
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
     let live = Live::from_code(&long, "rs", "t064-clip");
     let bar = status_line(&live.screen(120, 40));
-    assert!(bar.contains("⚠ code clipped (175 cols)"), "{bar}");
+    assert!(bar.contains("! code clipped (175 cols)"), "{bar}");
     // Both at once: clipping first, size second (status lists both).
     live.screen(80, 24);
     let w = live.api_ok("status", json!({}))["warnings"].clone();
@@ -66,17 +66,17 @@ fn ac2_clipped_code_is_reported_with_its_width() {
 #[test]
 fn ac3_badge_goes_away_when_the_terminal_grows_and_in_presentation_mode() {
     let live = Live::from_code("fn main() {}\n", "rs", "t064-grow");
-    assert!(status_line(&live.screen(80, 24)).contains('⚠'));
+    assert!(status_line(&live.screen(80, 24)).contains("  ! "));
     let big = live.screen(120, 40);
-    assert!(!big.contains('⚠'), "{big}");
+    assert!(!big.contains("  ! "), "{big}");
     live.keys(&[KeyCode::Char('P')]);
     let present = live.screen(80, 24);
     assert!(
-        !present.contains('⚠') && !present.contains("NORMAL"),
+        !present.contains("  ! ") && !present.contains("NORMAL"),
         "{present}"
     );
     live.keys(&[KeyCode::Char('P')]);
-    assert!(status_line(&live.screen(80, 24)).contains('⚠'));
+    assert!(status_line(&live.screen(80, 24)).contains("  ! "));
 }
 
 #[test]
