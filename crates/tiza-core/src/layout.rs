@@ -394,11 +394,17 @@ fn layout_pass(
     under_callouts: &std::collections::BTreeSet<String>,
 ) -> (Layout, std::collections::BTreeSet<String>) {
     let width = opts.width.max(20);
-    let stable = opts.stable.then(|| {
-        geometry
-            .cloned()
-            .unwrap_or_else(|| stable_geometry(doc, opts))
-    });
+    // Borrowed when the caller computed it (once per document, not per
+    // frame or per pass).
+    let owned;
+    let stable: Option<&StableGeometry> = match (opts.stable, geometry) {
+        (false, _) => None,
+        (true, Some(g)) => Some(g),
+        (true, None) => {
+            owned = stable_geometry(doc, opts);
+            Some(&owned)
+        }
+    };
     // With moves (ADR 0007) the document is drawn as it looks at `opts.step`:
     // the code at that step and the annotations shifted through the patches
     // of later steps; those without an anchor are left out.

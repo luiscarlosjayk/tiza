@@ -6,7 +6,7 @@
 
 use crate::Document;
 use crate::canvas::Canvas;
-use crate::layout::{LayoutOptions, layout};
+use crate::layout::{LayoutOptions, StableGeometry, layout_with, stable_geometry};
 use crate::theme::Theme;
 
 /// What a take is made of.
@@ -77,23 +77,22 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
     // caller that forgets cannot overflow (t-166).
     let max = crate::model::MAX_HOLD_MS;
     let hold = ((opts.interval.max(0.0) * 1000.0).round() as u64).min(max);
-    let lay = |d: &Document, step: u32, typing: bool| {
-        layout(
-            d,
-            theme,
-            &LayoutOptions {
-                width: opts.width,
-                step,
-                focus: None,
-                pointer: None,
-                line_numbers: opts.line_numbers,
-                tab_width: 4,
-                typing,
-                stable: true,
-                margin_cap: d.margin.map(usize::from),
-            },
-        )
-        .canvas
+    let options = |d: &Document, step: u32, typing: bool| LayoutOptions {
+        width: opts.width,
+        step,
+        focus: None,
+        pointer: None,
+        line_numbers: opts.line_numbers,
+        tab_width: 4,
+        typing,
+        stable: true,
+        margin_cap: d.margin.map(usize::from),
+    };
+    // The take's geometry, once for every step's own frame. A typed frame
+    // shows other code at its step, so it sizes its own.
+    let geometry = stable_geometry(doc, &options(doc, first, false));
+    let lay = |d: &Document, step: u32, typing: bool, g: Option<&StableGeometry>| {
+        layout_with(d, theme, &options(d, step, typing), g).canvas
     };
     let mut out: Vec<Frame> = Vec::new();
     for step in first..=last {
@@ -117,7 +116,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                 d.code = code;
                 out.push(Frame {
                     step,
-                    canvas: lay(&d, step, true),
+                    canvas: lay(&d, step, true, None),
                     delay_ms: delay.min(max),
                     typing: true,
                 });
@@ -133,7 +132,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
         };
         out.push(Frame {
             step,
-            canvas: lay(doc, step, false),
+            canvas: lay(doc, step, false, Some(&geometry)),
             delay_ms: delay,
             typing: false,
         });

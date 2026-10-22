@@ -32,6 +32,11 @@
         "t054_frame_median": {
           "median_ms": 3.12,
           "runs": 21
+        },
+        "present_moves_frame": {
+          "median_ms": 4.78,
+          "runs": 21,
+          "note": "added with the scenario on 2026-10-22 (main 448bfb7 plus the cached geometry); 46.02 ms on 448bfb7 itself"
         }
       },
       "cargo_install_cold_s": 64.7,

@@ -7,7 +7,7 @@
 use std::fmt::Write as _;
 
 use crate::Document;
-use crate::layout::{LayoutOptions, layout};
+use crate::layout::{LayoutOptions, layout_with, stable_geometry};
 use crate::printable::printable_line;
 use crate::theme::Theme;
 
@@ -47,22 +47,21 @@ fn frames(doc: &Document, theme: &Theme, opts: &CastOptions) -> (Vec<(u32, Strin
     let last = doc.max_step().max(first);
     let mut out = Vec::new();
     let mut rows = 0;
+    let options = |step: u32| LayoutOptions {
+        width: opts.width,
+        step,
+        focus: None,
+        pointer: None,
+        line_numbers: opts.line_numbers,
+        tab_width: 4,
+        typing: false,
+        stable: true,
+        margin_cap: doc.margin.map(usize::from),
+    };
+    // The take's geometry, once for every step.
+    let geometry = stable_geometry(doc, &options(first));
     for step in first..=last {
-        let l = layout(
-            doc,
-            theme,
-            &LayoutOptions {
-                width: opts.width,
-                step,
-                focus: None,
-                pointer: None,
-                line_numbers: opts.line_numbers,
-                tab_width: 4,
-                typing: false,
-                stable: true,
-                margin_cap: doc.margin.map(usize::from),
-            },
-        );
+        let l = layout_with(doc, theme, &options(step), Some(&geometry));
         rows = rows.max(l.canvas.height);
         // No newline after the last row: it would scroll the frame up by one.
         let ansi = l.canvas.to_ansi();

@@ -298,8 +298,9 @@ pub fn highlight(code: &[String], language: &str, theme: EmbeddedThemeName) -> V
 /// this, spawning threads costs more than it saves.
 pub const MIN_CHUNK_LINES: usize = 400;
 
-/// Most threads one highlight uses.
-pub const MAX_THREADS: usize = 8;
+/// Most threads one highlight uses: each keeps a regex cache for the whole
+/// session (8 threads held ~56 MB more than 4 on a 3,000-line file).
+pub const MAX_THREADS: usize = 4;
 
 /// Chunks per thread in [`highlight_chunked`] (balances the threads).
 const CHUNKS_PER_THREAD: usize = 4;

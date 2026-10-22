@@ -381,8 +381,13 @@ fn event_loop(
         }
         if let Some(server) = ipc {
             while let Ok(r) = server.rx.try_recv() {
+                let method = r.req.method.clone();
+                let before = (app.revision, app.message.clone());
                 app.handle_ipc(r.req, r.reply);
-                needs_draw = true;
+                let changed = (app.revision, app.message.clone()) != before;
+                if request_redraws(&method, changed) {
+                    needs_draw = true;
+                }
             }
         }
         if app.follow_tick() {
@@ -462,6 +467,15 @@ fn event_loop(
             return Ok(End::Quit);
         }
     }
+}
+
+/// Whether the screen is drawn again after a socket request: always after
+/// one that may change the document or the view, and after a read-only one
+/// (`status`, `render.text`, `code.get`…) only when it changed something
+/// anyway (`changed`: the revision or the bar's message). A frame of a long
+/// file is a full layout, and agents poll `status`.
+pub fn request_redraws(method: &str, changed: bool) -> bool {
+    changed || !app::READ_ONLY_METHODS.contains(&method)
 }
 
 /// Handles one key press exactly as the event loop does (public so QA tests

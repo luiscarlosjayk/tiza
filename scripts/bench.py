@@ -11,8 +11,10 @@ Scenarios: `--version`; `render` of step 7 of examples/ownership.rs.tiza to
 .txt and .png; a generated 2,000-line Rust file and a generated large
 TypeScript file to .txt; the native GIF of the example; the TUI's first frame
 on a pseudo-terminal (qa/src/pty.py: non-blocking reads, a deadline, the
-child killed at the end); and the t-054 frame median (2,000 lines + 200
-annotations, laid out and drawn into 120x40, from `cargo test --release`).
+child killed at the end); the t-054 frame median (2,000 lines + 200
+annotations, laid out and drawn into 120x40, from `cargo test --release`);
+and the same in presentation mode with 10 moves over 20 steps
+(`present_moves_frame`, from qa/tests/t-191.rs).
 
 `--install` also times a cold `cargo install --path crates/tiza-cli --root
 <tmp>` (fresh target dir, so every crate compiles) and records it as
@@ -146,15 +148,16 @@ def time_tui(binary, runs, tmp):
     return samples
 
 
-def frame_median():
-    """t-054's own measurement: median of 21 frames, release build of the qa crate."""
+def frame_median(test="t-054", name="ac1_frame_under_budget", label="median frame"):
+    """A qa test's own measurement: median of 21 frames, release build of the
+    qa crate (qa/tests/t-054.rs authoring, qa/tests/t-191.rs presentation)."""
     r = subprocess.run(
-        ["cargo", "test", "--release", "--locked", "-p", "tiza-qa", "--test", "t-054", "--",
-         "ac1_frame_under_budget", "--nocapture"],
+        ["cargo", "test", "--release", "--locked", "-p", "tiza-qa", "--test", test, "--",
+         name, "--nocapture"],
         cwd=ROOT, env=cargo_env(), capture_output=True, text=True, timeout=3600)
-    m = re.search(r"median frame: ([\d.]+)(ns|µs|us|ms|s)\b", r.stderr + r.stdout)
+    m = re.search(label + r": ([\d.]+)(ns|µs|us|ms|s)\b", r.stderr + r.stdout)
     if r.returncode != 0 or not m:
-        raise RuntimeError(f"t-054 failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
+        raise RuntimeError(f"{test} failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
     scale = {"ns": 1e-6, "µs": 1e-3, "us": 1e-3, "ms": 1.0, "s": 1000.0}[m.group(2)]
     return float(m.group(1)) * scale
 
@@ -184,7 +187,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--runs", type=int, default=7, help="timed runs per scenario after one warm-up (default 7)")
     ap.add_argument("--no-build", action="store_true", help="use target/release/tiza as it is")
-    ap.add_argument("--skip-frame", action="store_true", help="skip the t-054 frame median (needs a release build of the qa crate)")
+    ap.add_argument("--skip-frame", action="store_true", help="skip the frame medians (they need a release build of the qa crate)")
     ap.add_argument("--install", action="store_true", help="also time a cold `cargo install --path crates/tiza-cli`")
     ap.add_argument("--update-baseline", action="store_true", help="store this run as the target's baseline")
     ap.add_argument("--note", default="", help="one line: why the baseline moves (required with --update-baseline)")
@@ -237,6 +240,13 @@ def main():
         ms = frame_median()
         results["t054_frame_median"] = {"median_ms": round(ms, 2), "runs": 21}
         print(f"{'t054_frame_median':<34} {ms:>9.2f} ms", flush=True)
+    # Presentation mode on a 2,000-line document with 10 moves over 20 steps:
+    # the take's geometry is computed once, not once per frame.
+    if not a.skip_frame and wants("present_moves_frame"):
+        ms = frame_median("t-191", "ac6_presentation_with_moves_frame_under_budget",
+                          "median presentation frame")
+        results["present_moves_frame"] = {"median_ms": round(ms, 2), "runs": 21}
+        print(f"{'present_moves_frame':<34} {ms:>9.2f} ms", flush=True)
 
     latest = {
         "target": target,

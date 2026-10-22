@@ -333,6 +333,45 @@ fn log_last_request_panic(what: &str) -> Option<PathBuf> {
 }
 
 /// Methods that never change the document or the view: they bypass supervision.
+/// What the take's geometry was computed for: the document's revision,
+/// and, as a check on it, a few of its sizes and the layout options it
+/// reads. A typing tick changes the code shown, not the take, and keeps it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct GeometryKey {
+    revision: u64,
+    moves: usize,
+    annotations: usize,
+    lines: usize,
+    line_numbers: bool,
+    tab_width: usize,
+}
+
+/// What a layout depends on, for the viewport facts of [`App::viewport`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ViewportKey {
+    revision: u64,
+    step: u32,
+    width: usize,
+    stable: bool,
+    typing: bool,
+}
+
+/// The layout's answers `status` needs for its warnings.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct ViewportFacts {
+    clipped_code: Option<usize>,
+    labels_in_margin: bool,
+}
+
+impl ViewportFacts {
+    fn of(l: &Layout) -> Self {
+        ViewportFacts {
+            clipped_code: l.clipped_code,
+            labels_in_margin: l.labels_in_margin,
+        }
+    }
+}
+
 pub const READ_ONLY_METHODS: &[&str] = &[
     "ping",
     "status",
@@ -403,6 +442,18 @@ pub struct App {
     /// the command just run — is drawn on the last row. `None`: hidden.
     pub present_message_until: Option<std::time::Instant>,
     pub revision: u64,
+    /// The take's geometry (arrow lanes, box band, code column), computed
+    /// from the whole document once per change instead of once per frame:
+    /// presentation mode, `:layout stable` and the exports use it.
+    geometry: std::cell::RefCell<Option<(GeometryKey, tiza_core::layout::StableGeometry)>>,
+    /// What the last frame's layout said about the viewport, for `status`
+    /// (its warnings), so a poll does not lay the document out again.
+    viewport: std::cell::RefCell<Option<(ViewportKey, ViewportFacts)>>,
+    /// How many layouts this instance has made (every frame is one), and
+    /// how many times it computed the take's geometry: what the tests count
+    /// to see that a poll lays nothing out and a frame reuses the geometry.
+    pub layouts: std::cell::Cell<u64>,
+    pub geometries: std::cell::Cell<u64>,
     pub dirty: bool,
     pub quit: bool,
     pub size: (u16, u16),
@@ -545,6 +596,10 @@ impl App {
             stale_message: None,
             present_message_until: None,
             revision: 1,
+            geometry: Default::default(),
+            viewport: Default::default(),
+            layouts: Default::default(),
+            geometries: Default::default(),
             dirty: false,
             quit: false,
             size: (80, 24),
@@ -763,7 +818,46 @@ impl App {
     /// The layout every reader gets (render.text, screen captures) and the
     /// author's own screen.
     pub fn layout(&self, width: usize) -> Layout {
-        layout(&self.doc, &self.theme, &self.layout_options(width))
+        self.lay_out(&self.doc, &self.theme, &self.layout_options(width))
+    }
+
+    /// The take's geometry computed at revision `from` still holds now.
+    fn keep_geometry(&mut self, from: u64) {
+        if let Some((k, _)) = self.geometry.get_mut()
+            && k.revision == from
+        {
+            k.revision = self.revision;
+        }
+    }
+
+    /// Lays `doc` (the open document, maybe with other options or a theme
+    /// of its own) out, with the take's geometry computed once per change
+    /// ([`App::geometry`]) when `opts` asks for a stable layout.
+    fn lay_out(&self, doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
+        self.layouts.set(self.layouts.get() + 1);
+        if !opts.stable {
+            return layout(doc, theme, opts);
+        }
+        let key = GeometryKey {
+            revision: self.revision,
+            moves: doc.moves.len(),
+            annotations: doc.annotations.len(),
+            lines: doc.base().len(),
+            line_numbers: opts.line_numbers,
+            tab_width: opts.tab_width,
+        };
+        let fresh = self
+            .geometry
+            .borrow()
+            .as_ref()
+            .is_some_and(|(k, _)| *k == key);
+        if !fresh {
+            self.geometries.set(self.geometries.get() + 1);
+            let g = tiza_core::layout::stable_geometry(doc, opts);
+            *self.geometry.borrow_mut() = Some((key, g));
+        }
+        let cache = self.geometry.borrow();
+        tiza_core::layout::layout_with(doc, theme, opts, cache.as_ref().map(|(_, g)| g))
     }
 
     /// The width the screen lays the code out at: the terminal of the last
@@ -791,7 +885,10 @@ impl App {
         let mut opts = self.layout_options(width);
         opts.stable = true;
         opts.typing = false;
-        (width, layout(&self.doc, &self.theme, &opts).clipped_labels)
+        (
+            width,
+            self.lay_out(&self.doc, &self.theme, &opts).clipped_labels,
+        )
     }
 
     /// Why annotation `id` is not on the screen now: the document's reasons
@@ -852,7 +949,10 @@ impl App {
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
         let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
-        layout(&self.doc, &self.theme, &opts)
+        let l = self.lay_out(&self.doc, &self.theme, &opts);
+        // `status` reads the viewport from here instead of laying out again.
+        *self.viewport.borrow_mut() = Some((self.viewport_key(width), ViewportFacts::of(&l)));
+        l
     }
 
     fn layout_options(&self, width: usize) -> LayoutOptions {
@@ -1957,6 +2057,12 @@ impl App {
             // not a motion of the presenter's for the pointer to follow.
             self.pointer_seen = self.pointer_snapshot();
             self.revision += 1;
+            // The take's geometry comes from every step's code, the one on
+            // screen as shown: synced to the new step it is the same, so it
+            // is kept. A step that starts typing shows other code there.
+            if !loud && self.typing.is_none() {
+                self.keep_geometry(self.revision - 1);
+            }
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
             // Its notice stays on the bar over the step's label.
@@ -4772,7 +4878,7 @@ impl App {
         // the export uses the dark/light theme and the message says so.
         let (theme, theme_notice) = theme.for_export();
         let title = self.doc.title.clone();
-        let l = layout(
+        let l = self.lay_out(
             &self.doc,
             &theme,
             &LayoutOptions {
@@ -6070,14 +6176,40 @@ impl App {
             return Vec::new();
         }
         let (_, pad_h) = self.effective_padding();
-        let width = (cols as usize).saturating_sub(2 * pad_h as usize);
-        let l = self.layout(width.max(1));
-        self.viewport_warnings_for(&l)
+        let width = (cols as usize).saturating_sub(2 * pad_h as usize).max(1);
+        // What the last frame laid out at this width, when nothing it
+        // depends on changed since; else laid out once and kept.
+        let key = self.viewport_key(width);
+        let known = self
+            .viewport
+            .borrow()
+            .and_then(|(k, facts)| (k == key).then_some(facts));
+        let facts = known.unwrap_or_else(|| {
+            let facts = ViewportFacts::of(&self.layout(width));
+            *self.viewport.borrow_mut() = Some((key, facts));
+            facts
+        });
+        self.viewport_warnings_from(facts)
+    }
+
+    /// What the viewport facts depend on at `width`.
+    fn viewport_key(&self, width: usize) -> ViewportKey {
+        ViewportKey {
+            revision: self.revision,
+            step: self.doc.step,
+            width,
+            stable: self.present || self.layout_stable,
+            typing: self.typing.is_some(),
+        }
     }
 
     /// `viewport_warnings` for a layout already computed this frame (the
     /// status bar must not lay the document out a second time).
     pub fn viewport_warnings_for(&self, l: &Layout) -> Vec<String> {
+        self.viewport_warnings_from(ViewportFacts::of(l))
+    }
+
+    fn viewport_warnings_from(&self, l: ViewportFacts) -> Vec<String> {
         let (cols, rows) = self.size;
         if cols == 0 || rows == 0 {
             return Vec::new();
