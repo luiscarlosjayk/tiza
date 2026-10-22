@@ -2354,6 +2354,17 @@ impl App {
         before: BeforeHistory,
         replaced: Option<tiza_core::model::CodeSource>,
     ) {
+        // A change on disk waits for step 0 (t-206) and the undo left the
+        // step-0 code as it was (a note, a move): follow stays on, the code
+        // embedded, and step 0 still reloads.
+        if self.reload_waits
+            && self.follow.is_some()
+            && self.doc.is_embedded()
+            && self.doc.base() == before.code.0.as_slice()
+            && self.doc.base_first() == before.code.1
+        {
+            return;
+        }
         // Embedded code the file holds (a reference undone back to the
         // embedded code it was made from).
         let fallback = NotTheFile::Paste("the code is embedded again");
@@ -2650,8 +2661,8 @@ impl App {
     /// Enables or disables follow mode. Enabling needs a file reference
     /// (`:link` first when the code is embedded).
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
-        self.reload_waits = false;
         if !enabled {
+            self.reload_waits = false;
             if let Some(f) = &mut self.follow {
                 f.stop();
             }
@@ -2676,6 +2687,7 @@ impl App {
             crate::follow::Follow::start(path, self.doc.code.clone()).map_err(Error::Invalid)?;
         let name = f.file_name();
         self.follow = Some(f);
+        self.reload_waits = false;
         // Pick up anything that changed before we started watching. Code
         // pasted over the file is replaced on purpose: always one undo step,
         // so `u` gives the paste back.
@@ -2728,23 +2740,36 @@ impl App {
         if self.reload_from_disk(true) {
             return true;
         }
-        let Some(src) = self.paused().cloned() else {
-            return false;
-        };
-        let mut probe = self.doc.clone();
-        probe.code_src = src.clone();
-        let base = self.save_path.parent().map(Path::to_path_buf);
-        if fs::reread_reference(&probe, base.as_deref())
-            .is_ok_and(|(code, first)| code == self.doc.base() && first == self.doc.base_first())
-        {
-            self.doc.code_src = src;
-            self.touch();
+        if self.back_to_reference() {
             if let Some(f) = &self.follow {
                 self.info(format!("following {}", f.file_name()));
             }
             return true;
         }
         false
+    }
+
+    /// Following, with no move applied, over embedded code that the file
+    /// holds again (saved back as the screen has it): the document
+    /// references the file again. `true` when it did.
+    fn back_to_reference(&mut self) -> bool {
+        if self.follow.is_none() || self.doc.moves_applied() {
+            return false;
+        }
+        let Some(src) = self.paused().cloned() else {
+            return false;
+        };
+        let mut probe = self.doc.clone();
+        probe.code_src = src.clone();
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        if !fs::reread_reference(&probe, base.as_deref())
+            .is_ok_and(|(code, first)| code == self.doc.base() && first == self.doc.base_first())
+        {
+            return false;
+        }
+        self.doc.code_src = src;
+        self.touch();
+        true
     }
 
     /// Re-reads the followed file and applies it; `always` records the
@@ -2796,7 +2821,10 @@ impl App {
             return false;
         }
         if new == f.last_content && !was_missing {
-            return false;
+            // Nothing new to load; embedded code the file holds again (a
+            // change that waited for step 0, then saved back) is the
+            // file's once more.
+            return self.back_to_reference();
         }
         if self.doc.moves_applied() {
             // ADR 0007 §7: follow is paused while moves are applied (t-106

@@ -292,11 +292,9 @@ fn corner_saved_back_as_it_was_is_no_reload() {
     let (live, src, tiza) = followed("t206-saved-back", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
+    assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
+    // Whether the watcher saw it yet or not, step 0 reads the file as it is.
     save(&src, OLD);
-    wait_for("the file read back", || {
-        live.with(|app| app.source_file().is_some())
-            && std::fs::read_to_string(&src).unwrap() == OLD
-    });
     live.command("step 0");
     assert_eq!(base(&live), lines(OLD));
     assert_eq!(reloads(&live), 0);
@@ -323,8 +321,9 @@ fn corner_the_file_removed_at_step_2_and_back_with_other_code() {
 
 #[test]
 fn corner_a_paste_at_step_2_is_refused() {
-    let (live, _src, tiza) = followed("t206-paste", true);
+    let (live, src, tiza) = followed("t206-paste", true);
     live.command("step 2");
+    save_at_step_2(&live, &src, NEW);
     let err = live
         .with(|app| app.replace_code("fn g() {}\n"))
         .unwrap_err()
@@ -345,4 +344,65 @@ fn corner_no_save_writes_nothing_and_the_live_rule_holds() {
     assert_eq!(base(&live), lines(NEW));
     assert_eq!(reloads(&live), 1);
     assert_eq!(std::fs::read(&tiza).unwrap(), before);
+}
+
+#[test]
+fn rev_follow_on_while_a_change_waits_keeps_the_wait() {
+    // `:follow on` (or an agent's `set_follow true`) while following says
+    // so and changes nothing: step 0 still reloads.
+    let (live, src, tiza) = followed("t206-follow-on", true);
+    live.command("step 2");
+    save_at_step_2(&live, &src, NEW);
+    live.command("follow on");
+    assert_eq!(message(&live), "already following main.rs");
+    live.api_ok("follow.set", json!({"enabled": true}));
+    live.command("step 0");
+    assert_eq!(base(&live), lines(NEW));
+    assert_eq!(reloads(&live), 1);
+    same_as_fresh(&live, &tiza, "follow on, then step 0");
+}
+
+#[test]
+fn rev_an_undo_that_leaves_the_code_keeps_follow_and_the_wait() {
+    // `u` of a note while a change waits: the step-0 code is the same, so
+    // follow stays on, the code embedded, and step 0 still reloads.
+    let (live, src, tiza) = followed("t206-undo-note", true);
+    live.command("step 2");
+    save_at_step_2(&live, &src, NEW);
+    live.command("note 1 hello");
+    assert_eq!(live.with(|app| app.doc.annotations.len()), 2);
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(live.with(|app| app.doc.annotations.len()), 1);
+    assert_eq!(status(&live)["enabled"], true, "{}", message(&live));
+    assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
+    same_as_fresh(&live, &tiza, "u of a note while waiting");
+    live.command("step 0");
+    assert_eq!(base(&live), lines(NEW));
+    assert_eq!(reloads(&live), 1);
+    same_as_fresh(&live, &tiza, "step 0 after the u");
+}
+
+#[test]
+fn rev_an_unreadable_file_then_saved_back_is_a_reference_again() {
+    // The change that waited became unreadable (not UTF-8): step 0 cannot
+    // reload it and keeps the code embedded; the file saved back as the
+    // screen has it makes the document reference it again.
+    let (live, src, tiza) = followed("t206-unreadable", true);
+    live.command("step 2");
+    save_at_step_2(&live, &src, NEW);
+    live.with(|app| app.message = None);
+    let tmp = src.with_extension("rs.tmp");
+    std::fs::write(&tmp, b"fn f() {\n    \xff\xfe\n}\n").unwrap();
+    std::fs::rename(&tmp, &src).unwrap();
+    wait_for("the unreadable file", || {
+        message(&live).contains("not valid UTF-8")
+    });
+    live.command("step 0");
+    assert_eq!(base(&live), lines(OLD));
+    assert!(saved_code(&tiza).is_array());
+    save(&src, OLD);
+    wait_for("the reference back", || saved_code(&tiza).is_object());
+    assert_eq!(saved_code(&tiza), json!({"file": "main.rs"}));
+    assert_eq!(status(&live)["enabled"], true);
+    same_as_fresh(&live, &tiza, "saved back after the unreadable file");
 }
