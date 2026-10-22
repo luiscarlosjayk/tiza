@@ -549,6 +549,9 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     if let Mode::Command(input) = &mut app.mode {
         match code {
             KeyCode::Esc => close_command_line(app),
+            // Enter on an empty line runs nothing: it closes it as Esc does,
+            // selection included (t-203).
+            KeyCode::Enter if input.trim().is_empty() => close_command_line(app),
             KeyCode::Enter => {
                 let cmd = input.clone();
                 app.mode = Mode::Normal;
@@ -592,6 +595,16 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     }
     app.message = None;
     let ctrl = mods.contains(KeyModifiers::CONTROL);
+    // The selection a `:` command left (t-203) is for the command typed
+    // right after (`:` ↑ Enter runs `:hl`/`:mark` again on it), also after
+    // an undo or a redo; any other key lets it go, so a later `:mark` with
+    // no anchor never lands on old text. An action key in selection mode
+    // (`m`, `n`, …) sets it again from the selection on screen.
+    let undo_or_redo =
+        matches!(code, KeyCode::Char('u' | 'U')) || (ctrl && code == KeyCode::Char('r'));
+    if code != KeyCode::Char(':') && !undo_or_redo {
+        app.pending_sel = None;
+    }
     // ---- selection mode: motions extend, action keys consume ----
     if matches!(app.mode, Mode::Select { .. }) {
         match code {

@@ -68,15 +68,17 @@ struct BeforeHistory {
     reason: Option<String>,
 }
 
-/// What the last selection was, so a command typed right after can use it as its anchor.
 /// What a `:` command does with the selection a `v`/`V` left pending
-/// (t-203): `:hl` and `:mark` take it as their anchor and keep it, so ↑ +
-/// Enter runs them again on the same text; every other command lets it go
-/// once it has run (`:note`, `:box`, `:callout` opened from a selection
-/// carry its lines in their own text).
+/// (t-203): `:hl` and `:mark` take it as their anchor and keep it when they
+/// used it, so ↑ + Enter runs them again on the same text; the commands
+/// that only look (`:help`, `:ls`, `:kinds`, `:style`) and `:undo`/`:redo`
+/// leave it as it is; every other command lets it go once it has run
+/// (`:note`, `:box`, `:callout` opened from a selection carry its lines in
+/// their own text).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SelectionUse {
     Takes,
+    Neutral,
     Ignores,
 }
 
@@ -87,17 +89,18 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
     use SelectionUse::*;
     Some(match name {
         "hl" | "highlight" | "mark" | "m" => Takes,
+        "help" | "h" | "?" | "ls" | "list" | "style" | "kinds" | "undo" | "u" | "redo" => Neutral,
         "q" | "quit" | "q!" | "quit!" | "w" | "write" | "export" | "supervise" | "supervised"
-        | "mouse" | "review" | "wq" | "box" | "arrow" | "ar" | "style" | "kinds" | "note" | "n"
-        | "embed" | "link" | "ref" | "spot" | "spotlight" | "callout" | "co" | "set" | "follow"
-        | "until" | "clear" | "del" | "delete" | "rm" | "color" | "col" | "label" | "step"
-        | "s" | "next" | "goto" | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p"
-        | "lang" | "title" | "ls" | "list" | "help" | "h" | "?" | "undo" | "u" | "redo"
+        | "mouse" | "review" | "wq" | "box" | "arrow" | "ar" | "note" | "n" | "embed" | "link"
+        | "ref" | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until"
+        | "clear" | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next"
+        | "goto" | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
         | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
         _ => return None,
     })
 }
 
+/// What the last selection was, so a command typed right after can use it as its anchor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Selection {
     Span(tiza_core::TextSpan),
@@ -357,6 +360,8 @@ pub struct App {
     pub cursor_col: u32,
     /// Selection captured when a `v`/`V` action opened the command line; commands may use it.
     pub pending_sel: Option<Selection>,
+    /// The `:` command running now anchored itself on `pending_sel` (t-203).
+    selection_used: bool,
     /// Command-line history (most recent last) and the index while browsing it.
     pub history_cmds: Vec<String>,
     pub history_pos: Option<usize>,
@@ -502,6 +507,7 @@ impl App {
             cursor_line,
             cursor_col: 0,
             pending_sel: None,
+            selection_used: false,
             history_cmds: Vec::new(),
             history_pos: None,
             arrow_from: None,
@@ -3495,6 +3501,7 @@ impl App {
         };
         let before = self.annotation_steps();
         let prev_message = self.message.clone();
+        self.selection_used = false;
         let mut exec = || -> Result<String, Error> {
             match cmd {
                 "q" | "quit" => {
@@ -4164,11 +4171,17 @@ impl App {
             }
         };
         let result = exec();
-        // A command that ran and does not take the selection lets it go
-        // (t-203): a later `:mark` must not land on it. One that takes it
-        // keeps it, so ↑ + Enter runs it again on the same text; a command
-        // that failed leaves it as it was, to fix the line and retry.
-        if result.is_ok() && selection_use(cmd) != Some(SelectionUse::Takes) {
+        // A command that ran lets the selection go (t-203): a later `:mark`
+        // must not land on it. One that anchored itself on it keeps it, so
+        // ↑ + Enter runs it again on the same text, and one that only looks
+        // (or undoes) leaves it; a command that failed leaves it as it was,
+        // to fix the line and retry.
+        let keep = match selection_use(cmd) {
+            Some(SelectionUse::Takes) => self.selection_used,
+            Some(SelectionUse::Neutral) => true,
+            _ => false,
+        };
+        if result.is_ok() && !keep {
             self.pending_sel = None;
         }
         match result {
@@ -4618,7 +4631,10 @@ impl App {
         }
         let (at, label) = split_first(rest);
         let (span, label) = match (self.pending_sel, looks_like_anchor(at)) {
-            (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
+            (Some(Selection::Span(sp)), false) => {
+                self.selection_used = true;
+                (sp, rest.trim())
+            }
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(
@@ -4706,7 +4722,10 @@ impl App {
         }
         let inline = !known;
         let (span, label) = match (self.pending_sel, looks_like_anchor(at)) {
-            (Some(Selection::Span(sp)), false) => (sp, rest.trim()),
+            (Some(Selection::Span(sp)), false) => {
+                self.selection_used = true;
+                (sp, rest.trim())
+            }
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(format!(
@@ -5949,6 +5968,9 @@ impl App {
                 if let Mode::Command(_) = self.mode {
                     return MouseOutcome::Ignored;
                 }
+                // A new place on the code: the selection a `:` command could
+                // still take is not the one meant any more (t-203).
+                self.pending_sel = None;
                 self.mode = Mode::Normal;
                 self.cursor_line = line;
                 self.cursor_col = col;

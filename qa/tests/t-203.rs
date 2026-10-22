@@ -39,6 +39,8 @@ fn ac5_every_command_name_is_classified() {
     assert_eq!(App::selection_use("mark"), Some(SelectionUse::Takes));
     assert_eq!(App::selection_use("m"), Some(SelectionUse::Takes));
     assert_eq!(App::selection_use("note"), Some(SelectionUse::Ignores));
+    assert_eq!(App::selection_use("kinds"), Some(SelectionUse::Neutral));
+    assert_eq!(App::selection_use("u"), Some(SelectionUse::Neutral));
     assert_eq!(App::selection_use("nonsense"), None);
 }
 
@@ -191,7 +193,7 @@ fn ac3_a_failed_command_leaves_the_selection() {
             select_let(),
             vec![
                 json!(["k", "m", ":mark"]),
-                json!(["k", "nonsense-kind\r", "nonsense"]),
+                json!(["k", "nonsense-kind\r", "unknown mark kind"]),
                 json!(["k", ":"]),
                 json!(["k", "mark drop\r"]),
                 json!(["anns", 1]),
@@ -200,6 +202,7 @@ fn ac3_a_failed_command_leaves_the_selection() {
         ]),
     );
     let d = &dumps(&out)[0];
+    assert_eq!(d.len(), 1, "{out}");
     assert_eq!(d[0]["type"], "mark", "{out}");
     assert_eq!(d[0]["span"]["line"], 2, "on the selection: {out}");
 }
@@ -215,7 +218,7 @@ fn ac4_esc_and_ctrl_c_still_drop_it() {
                 select_let(),
                 vec![
                     json!(["k", "m", ":mark"]),
-                    json!(["k", close]),
+                    json!(["k", close, "NORMAL"]),
                     json!(["k", ":mark drop\r", "usage: :mark"]),
                     json!(["dump"]),
                 ],
@@ -255,4 +258,115 @@ fn corner_no_selection_is_unchanged() {
         ]),
     );
     assert_eq!(dumps(&out)[0][0]["type"], "mark", "{out}");
+}
+
+#[test]
+fn ac3_a_failed_command_that_does_not_take_it_leaves_it_too() {
+    // `v … n` → Enter on `:note 2 ` with no text: an error; the selection is
+    // still there for the `:mark` that follows.
+    let (out, _) = run(
+        "t203-ac3-note",
+        steps(vec![
+            select_let(),
+            vec![
+                json!(["k", "n", ":note 2"]),
+                json!(["k", "\r", "the note is empty"]),
+                json!(["k", ":mark drop\r"]),
+                json!(["anns", 1]),
+                json!(["dump"]),
+            ],
+        ]),
+    );
+    let d = &dumps(&out)[0];
+    assert_eq!(d[0]["span"]["line"], 2, "on the selection: {out}");
+}
+
+#[test]
+fn rev_a_kept_selection_goes_with_the_next_key() {
+    // `:mark drop` kept the selection for ↑; a motion lets it go, so a
+    // later `:mark read` with no anchor does not land on the old text.
+    let (out, _) = run(
+        "t203-rev-motion",
+        steps(vec![
+            select_let(),
+            vec![
+                json!(["k", "m", ":mark"]),
+                json!(["k", "drop\r"]),
+                json!(["anns", 1]),
+                json!(["k", "j"]),
+                json!(["k", ":mark read\r", "usage: :mark"]),
+                json!(["dump"]),
+            ],
+        ]),
+    );
+    assert_eq!(dumps(&out)[0].len(), 1, "{out}");
+}
+
+#[test]
+fn rev_a_mark_with_its_own_anchor_lets_the_selection_go() {
+    // `:mark` with a typed anchor did not use the selection: it is not kept.
+    let (out, _) = run(
+        "t203-rev-anchor",
+        steps(vec![
+            select_let(),
+            vec![
+                json!(["k", "m", ":mark"]),
+                json!(["k", "\x15mark drop 7:len\r"]),
+                json!(["anns", 1]),
+                json!(["k", ":mark read\r", "usage: :mark"]),
+                json!(["dump"]),
+            ],
+        ]),
+    );
+    let d = &dumps(&out)[0];
+    assert_eq!(d.len(), 1, "{out}");
+    assert_eq!(d[0]["span"]["line"], 7, "{out}");
+}
+
+#[test]
+fn rev_enter_on_an_empty_line_closes_it_as_esc() {
+    let (out, _) = run(
+        "t203-rev-empty",
+        steps(vec![
+            select_let(),
+            vec![
+                json!(["k", "n", ":note 2"]),
+                json!(["k", "\x15\r", "NORMAL"]),
+                json!(["k", ":mark drop\r", "usage: :mark"]),
+                json!(["dump"]),
+            ],
+        ]),
+    );
+    assert!(dumps(&out)[0].is_empty(), "{out}");
+}
+
+#[test]
+fn rev_undo_keeps_it_for_the_correction() {
+    // `:mark drop`, undone with `:u` or `u`, then `:` ↑ … Enter: the same
+    // command on the same selection.
+    for (name, undo, ups) in [
+        ("t203-rev-undo-cmd", ":u\r", "\x1b[A\x1b[A"),
+        ("t203-rev-undo-key", "u", "\x1b[A"),
+    ] {
+        let (out, _) = run(
+            name,
+            steps(vec![
+                select_let(),
+                vec![
+                    json!(["k", "m", ":mark"]),
+                    json!(["k", "drop\r"]),
+                    json!(["anns", 1]),
+                    json!(["k", undo]),
+                    json!(["anns", 0]),
+                    json!(["k", ":"]),
+                    json!(["k", ups]),
+                    json!(["k", "\r"]),
+                    json!(["anns", 1]),
+                    json!(["dump"]),
+                ],
+            ]),
+        );
+        let d = &dumps(&out)[0];
+        assert_eq!(d[0]["span"]["line"], 2, "{name}: {out}");
+    }
 }
