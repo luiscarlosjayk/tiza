@@ -925,6 +925,12 @@ pub fn overlay_rows(lines: &[String], inner_w: usize) -> usize {
 }
 
 fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
+    // A label's control characters show as their pictures, as on the
+    // canvas (the terminal library would drop them without a trace).
+    let lines: Vec<String> = lines
+        .into_iter()
+        .map(|l| tiza_core::printable::printable_line(&l).into_owned())
+        .collect();
     let th = &app.theme;
     let area = frame.area();
     if area.width < 8 || area.height < 4 {

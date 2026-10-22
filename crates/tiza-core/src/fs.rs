@@ -535,6 +535,9 @@ fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(),
                     full.display()
                 ))
             })?;
+            // A byte order mark that starts the file is not code, as when
+            // the file was first opened ([`Document::from_code`]).
+            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
             let mut all: Vec<String> = text.lines().map(|l| l.to_string()).collect();
             let mut first = 1;
             if let Some(spec) = lines {

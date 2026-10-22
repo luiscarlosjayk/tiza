@@ -747,10 +747,18 @@ pub struct RangeMarkers {
     pub end: String,
 }
 
-/// Control characters (tabs, newlines, escapes) become spaces: labels are one line.
+/// Labels are one line: a tab or a line break becomes a space. Any other
+/// control character is kept and drawn as its picture (`␛`, `␇`…, see
+/// [`crate::printable`]), never raw and never as a silent space.
 pub fn single_line(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_control() { ' ' } else { c })
+        .map(|c| {
+            if matches!(c, '\t' | '\n' | '\r') {
+                ' '
+            } else {
+                c
+            }
+        })
         .collect()
 }
 
@@ -773,7 +781,8 @@ pub fn map_link_files(
     }
 }
 
-/// Applies [`single_line`] to the texts of a shape (callout bodies keep newlines).
+/// Applies [`single_line`] to the texts of a shape (callout bodies keep
+/// their newlines).
 pub fn sanitize_texts(shape: &mut Shape) {
     match shape {
         Shape::Highlight { label, .. }
@@ -791,7 +800,7 @@ pub fn sanitize_texts(shape: &mut Shape) {
             }
             *text = text
                 .chars()
-                .map(|c| if c.is_control() && c != '\n' { ' ' } else { c })
+                .map(|c| if matches!(c, '\t' | '\r') { ' ' } else { c })
                 .collect();
         }
         Shape::Spotlight { .. } => {}

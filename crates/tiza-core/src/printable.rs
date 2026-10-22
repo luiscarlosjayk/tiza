@@ -11,11 +11,13 @@
 //! | `\r\n` as one grapheme | `␤` |
 //! | DEL U+007F | `␡` |
 //! | C1 U+0080–U+009F | `�` |
-//! | bidi controls (U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069) | nothing in a drawing (they take no cell); `�` in a message |
+//! | bidi controls (U+061C, U+200E/F, U+202A–U+202E, U+2066–U+2069) | in the code, [`INVISIBLE_MARK`]; elsewhere in a drawing nothing (no cell); `�` in a message |
+//! | zero-width characters (U+200B, U+2060, U+FEFF, a stray U+200C/U+200D) | in the code, [`INVISIBLE_MARK`]; elsewhere in a drawing nothing (no cell) |
 //!
 //! Every placeholder is one cell wide, as wide as the character it stands
-//! for, so the layout's columns do not move. The tab keeps its handling:
-//! the code expands it to spaces, a message keeps it.
+//! for, so the layout's columns do not move; in the code an invisible
+//! character takes the cell of its mark ([`code_glyph`]). The tab keeps
+//! its handling: the code expands it to spaces, a message keeps it.
 //!
 //! [`cell_symbol`] is what [`crate::canvas::Canvas::put`] stores, so every
 //! drawing (TUI, txt, md, ansi, svg, png, gif, video, cast, `render.text`)
@@ -44,6 +46,76 @@ pub fn is_bidi_control(c: char) -> bool {
         c,
         '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
     )
+}
+
+/// The cell that stands for an invisible character in the code (a bidi
+/// control, a zero-width space…), drawn in the theme's error colour:
+/// `ad⬚min` is not `admin`, and whoever explains the code sees it.
+pub const INVISIBLE_MARK: &str = "\u{2B1A}";
+
+/// Zero-width characters that can hide a difference in the code: the
+/// zero-width space, the word joiner and the zero-width no-break space
+/// (a byte order mark; the one that starts a file is dropped on reading).
+fn is_zero_width_space(c: char) -> bool {
+    matches!(c, '\u{200B}' | '\u{2060}' | '\u{FEFF}')
+}
+
+/// A letter of a script that uses ZWJ (U+200D) and ZWNJ (U+200C) to shape
+/// its words: Arabic and Persian, Syriac, Thaana, N'Ko, Mandaic, the
+/// Indic scripts, Sinhala, Tibetan, Myanmar, Khmer and Mongolian.
+fn uses_joiners(c: char) -> bool {
+    matches!(
+        c,
+        '\u{0600}'..='\u{08FF}'
+            | '\u{0900}'..='\u{0DFF}'
+            | '\u{0F00}'..='\u{109F}'
+            | '\u{1780}'..='\u{18AF}'
+            | '\u{A8E0}'..='\u{A8FF}'
+            | '\u{A9E0}'..='\u{AA7F}'
+            | '\u{FB50}'..='\u{FDFF}'
+            | '\u{FE70}'..='\u{FEFC}'
+    )
+}
+
+/// The grapheme `g` of the code as it is drawn: what is shown of it and the
+/// number of [`INVISIBLE_MARK`]s that follow, one per invisible character
+/// in it. Marked: every bidi control, U+200B, U+2060 and U+FEFF (each a
+/// grapheme of its own), and a ZWJ or ZWNJ that joins nothing. A joiner
+/// is left as it is when it joins within the grapheme (an emoji ZWJ
+/// sequence such as man ZWJ woman ZWJ girl, an Indic conjunct such as KA
+/// VIRAMA ZWJ SSA: something visible follows it in the cluster) or follows
+/// a letter of a script that uses joiners ([`uses_joiners`]: the ZWNJ of a
+/// Persian word). Any other joiner, a stray one or one between Latin
+/// letters (`ad` ZWJ `min`, which segmentation keeps inside the cluster of
+/// the `d`), is marked: drawn `d⬚`. Everything else is `g` unchanged, with
+/// no mark.
+pub fn code_glyph(g: &str) -> (Cow<'_, str>, usize) {
+    let maybe = |c: char| {
+        is_bidi_control(c) || is_zero_width_space(c) || matches!(c, '\u{200C}' | '\u{200D}')
+    };
+    if g.is_ascii() || !g.chars().any(maybe) {
+        return (Cow::Borrowed(g), 0);
+    }
+    let chars: Vec<char> = g.chars().collect();
+    let visible = |c: &char| unicode_width::UnicodeWidthChar::width(*c).unwrap_or(0) > 0;
+    let mut shown = String::new();
+    let mut marks = 0;
+    for (i, &c) in chars.iter().enumerate() {
+        let invisible = match c {
+            '\u{200C}' | '\u{200D}' => {
+                let joins_within = chars[i + 1..].iter().any(visible);
+                let after_joining_letter = i > 0 && uses_joiners(chars[i - 1]);
+                !(joins_within || after_joining_letter)
+            }
+            c => is_bidi_control(c) || is_zero_width_space(c),
+        };
+        if invisible {
+            marks += 1;
+        } else {
+            shown.push(c);
+        }
+    }
+    (Cow::Owned(shown), marks)
 }
 
 fn unsafe_char(c: char) -> bool {

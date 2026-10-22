@@ -232,15 +232,25 @@ impl Canvas {
     /// as its one-cell picture (`␛`, `␀`, `␡`, `�`…) and a bidi control as
     /// nothing (it takes no cell, so nothing is written and the width is
     /// 0), so no drawing or export ever holds a raw control byte. See
-    /// [`crate::printable`].
+    /// [`crate::printable`]. A grapheme of width 0 (a zero-width space, a
+    /// lone combining mark) takes no cell either, as [`display_width`]
+    /// measures it: what the layout counts is what is drawn. (The code
+    /// shows its invisible characters with a mark of its own, before
+    /// reaching here.)
     pub fn put(&mut self, x: usize, y: usize, sym: &str, style: CellStyle) -> usize {
         // (An empty `sym` is the second half of a wide cell being copied.)
+        if sym.is_empty() {
+            return self.put_cell(x, y, sym, 1, style);
+        }
         let shown = crate::printable::cell_symbol(sym);
-        if shown.is_empty() && !sym.is_empty() {
+        let w = UnicodeWidthStr::width(&*shown);
+        if w == 0 {
             return 0;
         }
-        let sym = &*shown;
-        let w = UnicodeWidthStr::width(sym).max(1);
+        self.put_cell(x, y, &shown, w, style)
+    }
+
+    fn put_cell(&mut self, x: usize, y: usize, sym: &str, w: usize, style: CellStyle) -> usize {
         let Some(i) = self.idx(x, y) else { return w };
         if w == 2 && x + 1 >= self.width {
             // Does not fit whole: leave a space.
@@ -322,7 +332,7 @@ impl Canvas {
         }
         let mut cx = x;
         for g in s.graphemes(true) {
-            let w = UnicodeWidthStr::width(g).max(1);
+            let w = drawn_width(g);
             if cx - x + w > max_w.saturating_sub(1) {
                 break;
             }
@@ -434,22 +444,44 @@ pub fn display_width(s: &str, tab_width: usize) -> usize {
     w
 }
 
-/// Columns `s` takes once drawn with [`Canvas::put_str`]: every grapheme
-/// takes at least one cell (a zero-width space or a lone combining mark
-/// too), except one with nothing to show (a bidi control). A tab is one
-/// cell there, as it is (labels have none; a style's glyph may). Wider
-/// than [`display_width`] for text with zero-width graphemes.
+/// Columns `s` takes once drawn with [`Canvas::put_str`]: a grapheme with
+/// nothing to show (a bidi control, a zero-width space, a lone combining
+/// mark) takes none, a control character the one cell of its picture. A
+/// tab is one cell there, as it is (labels have none; a style's glyph
+/// may); otherwise the same as [`display_width`].
 pub fn drawn_width(s: &str) -> usize {
     s.graphemes(true)
-        .map(|g| {
-            let shown = crate::printable::cell_symbol(g);
-            if shown.is_empty() {
-                0
-            } else {
-                UnicodeWidthStr::width(&*shown).max(1)
-            }
-        })
+        .map(|g| UnicodeWidthStr::width(&*crate::printable::cell_symbol(g)))
         .sum()
+}
+
+/// Width in cells of one grapheme of the code as it is drawn: what it shows
+/// and one cell for each invisible character it holds
+/// ([`crate::printable::code_glyph`]). Not for a tab, which depends on
+/// the column.
+pub fn code_grapheme_width(g: &str) -> usize {
+    if g.is_ascii() {
+        return UnicodeWidthStr::width(g);
+    }
+    let (shown, marks) = crate::printable::code_glyph(g);
+    UnicodeWidthStr::width(&*shown) + marks
+}
+
+/// Width in cells of a line of code as it is drawn: [`display_width`], plus
+/// a cell for each invisible character's mark.
+pub fn code_width(s: &str, tab_width: usize) -> usize {
+    if s.is_ascii() {
+        return display_width(s, tab_width);
+    }
+    let mut w = 0;
+    for g in s.graphemes(true) {
+        if g == "\t" {
+            w += tab_width - (w % tab_width);
+        } else {
+            w += code_grapheme_width(g);
+        }
+    }
+    w
 }
 
 /// Weight of a line glyph: light, thick or double; `None` for anything else.

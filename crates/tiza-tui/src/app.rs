@@ -6563,15 +6563,15 @@ impl App {
         let line = (0..=r).rev().find_map(|i| self.hit.rows[i])?;
         let x = column.saturating_sub(self.hit.code_x) as usize;
         use unicode_segmentation::UnicodeSegmentation;
-        use unicode_width::UnicodeWidthStr;
         let text = self.doc.line_text(line).unwrap_or("");
         let mut w = 0usize;
         let mut col = 0u32;
         for g in text.graphemes(true) {
+            // As the line is drawn: an invisible character has its mark.
             let gw = if g == "\t" {
                 self.hit.tab_width - (w % self.hit.tab_width)
             } else {
-                UnicodeWidthStr::width(g).max(1)
+                tiza_core::canvas::code_grapheme_width(g).max(1)
             };
             if x < w + gw {
                 return Some((line, col));

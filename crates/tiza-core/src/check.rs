@@ -1698,7 +1698,8 @@ fn take_saturation(take: &Take) -> usize {
     use crate::canvas::{display_width, drawn_width};
     let doc = take.doc;
     let g = &take.geometry;
-    // A label as it is drawn: a zero-width space takes a cell there.
+    // A label as it is drawn (the two measures agree now that a
+    // zero-width character takes no cell; the larger one stays as a guard).
     let w = |t: &str| display_width(t, 4).max(drawn_width(t));
     let arrows = doc
         .annotations

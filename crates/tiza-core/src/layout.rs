@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::canvas::{Canvas, CellStyle, Rgb, display_width};
+use crate::canvas::{Canvas, CellStyle, Rgb, code_grapheme_width, code_width, display_width};
 use crate::highlight::{Segment, highlight_cached};
 use crate::model::{Annotation, Document, Emphasis, Shape, TextSpan};
 use crate::theme::Theme;
@@ -242,7 +242,7 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
         g.code_full_w = g.code_full_w.max(
             d.code
                 .iter()
-                .map(|l| display_width(l, opts.tab_width))
+                .map(|l| code_width(l, opts.tab_width))
                 .max()
                 .unwrap_or(0),
         );
@@ -399,7 +399,7 @@ pub fn layout_with(
         code_w: doc
             .code
             .iter()
-            .map(|l| display_width(l, opts.tab_width))
+            .map(|l| code_width(l, opts.tab_width))
             .max()
             .unwrap_or(0)
             .max(1),
@@ -911,8 +911,7 @@ fn layout_pass(
                             g.h,
                             head_glyph(ls.heads.end, true, g.h).unwrap_or(g.h)
                         );
-                        let text_w =
-                            display_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
+                        let text_w = code_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
                         let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
                         // A wide layout's line with several labels keeps
                         // every one of them under it.
@@ -1673,7 +1672,7 @@ fn layout_pass(
             let Some(&y) = row_of_line.get(line) else {
                 continue;
             };
-            let text_w = display_width(doc.line_text(*line).unwrap_or(""), opts.tab_width);
+            let text_w = code_width(doc.line_text(*line).unwrap_or(""), opts.tab_width);
             let x0 = code_x + text_w + 2 + used.get(line).copied().unwrap_or(0);
             let end = code_x + code_w;
             if x0 >= end {
@@ -2100,6 +2099,8 @@ fn emphasis_needs_row(doc: &Document, span: &TextSpan, e: Emphasis) -> bool {
     }
 }
 
+/// The cell where the grapheme `col` of a code line starts, as the line is
+/// drawn (an invisible character takes the cell of its mark).
 pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     let mut w = 0;
     for (i, g) in text.graphemes(true).enumerate() {
@@ -2109,7 +2110,7 @@ pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
         if g == "\t" {
             w += tab_width - (w % tab_width);
         } else {
-            w += unicode_width::UnicodeWidthStr::width(g);
+            w += code_grapheme_width(g);
         }
     }
     w
@@ -2128,7 +2129,7 @@ fn paint_code(
     theme: &Theme,
     in_focus: bool,
 ) {
-    let full_w = display_width(text, tab_width);
+    let full_w = code_width(text, tab_width);
     let clip = full_w > max_w;
     let limit = if clip { max_w.saturating_sub(1) } else { max_w };
     let mut x = 0usize;
@@ -2149,10 +2150,12 @@ fn paint_code(
             base.fg(theme.dimmed)
         };
         for g in seg.text.graphemes(true) {
+            let (shown, marks) = crate::printable::code_glyph(g);
+            let shown_w = unicode_width::UnicodeWidthStr::width(&*shown);
             let w = if g == "\t" {
                 tab_width - (x % tab_width)
             } else {
-                unicode_width::UnicodeWidthStr::width(g)
+                shown_w + marks
             };
             if x + w > limit {
                 break 'outer;
@@ -2162,7 +2165,19 @@ fn paint_code(
                     canvas.put(x0 + x + k, y, " ", style);
                 }
             } else {
-                canvas.put(x0 + x, y, g, style);
+                if !shown.is_empty() {
+                    canvas.put(x0 + x, y, &shown, style);
+                }
+                // An invisible character takes a cell of its own, marked in
+                // the error colour, focus or not: it must be seen.
+                for k in 0..marks {
+                    canvas.put(
+                        x0 + x + shown_w + k,
+                        y,
+                        crate::printable::INVISIBLE_MARK,
+                        base.fg(theme.error),
+                    );
+                }
             }
             x += w;
         }

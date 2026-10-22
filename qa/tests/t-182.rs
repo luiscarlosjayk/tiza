@@ -5,10 +5,10 @@
 //! - AC1 Every export (svg, png, gif, txt, md, ansi, cast, tape,
 //!   `render.text`, MCP `export_image` and resources) and the TUI draw the
 //!   control characters of the code as visible one-cell placeholders (C0 →
-//!   `␀`…`␟`, DEL → `␡`, C1 → `�`), never as raw bytes; bidi controls take
-//!   no cell and never reorder the line; the SVG is valid XML; PNG/GIF are
-//!   written. Annotation text is never drawn raw either (the loader already
-//!   turns its controls into spaces).
+//!   `␀`…`␟`, DEL → `␡`, C1 → `�`), never as raw bytes; bidi controls never
+//!   reorder the line (since t-190 each shows as a one-cell ⬚ in the code);
+//!   the SVG is valid XML; PNG/GIF are written. Annotation text is never
+//!   drawn raw either (since t-190 its controls show as their pictures).
 //! - AC2 Errors never quote a control character raw (the CLI, `tiza check`,
 //!   the MCP), after the t-167 filter.
 //! - AC3 `.ansi` and `.cast` hold only the escape sequences Tiza writes
@@ -94,7 +94,7 @@ fn assert_placeholders(what: &str, s: &str) {
         "\"␛[2J␛[H\"",
         "\"␀␡\"",
         "\"�31m�\"",
-        "abc = 1",
+        "⬚abc⬚ = 1",
     ] {
         assert!(s.contains(want), "{what}: no `{want}` in\n{s}");
     }
@@ -168,7 +168,7 @@ fn ac1_test_step_2_svg_is_valid_xml_and_png_gif_are_written() {
 }
 
 #[test]
-fn ac1_a_bidi_override_takes_no_cell_and_does_not_reorder_the_line() {
+fn ac1_a_bidi_override_shows_a_mark_and_does_not_reorder_the_line() {
     let dir = scratch("t182-bidi");
     // The last one ends its line: nothing comes to cover its cell.
     let f = write(
@@ -178,10 +178,10 @@ fn ac1_a_bidi_override_takes_no_cell_and_does_not_reorder_the_line() {
     );
     let txt = tiza_ok(&["render", f.to_str().unwrap(), "--format", "txt"]);
     assert_clean("txt", &txt);
-    // Logical order, no gap where the controls were.
-    assert!(txt.contains("abc = 1"), "{txt}");
-    assert!(txt.contains("xyz"), "{txt}");
-    assert!(txt.contains("end\n") || txt.ends_with("end"), "{txt}");
+    // Logical order, a mark where each control is (t-190).
+    assert!(txt.contains("⬚abc⬚ = 1"), "{txt}");
+    assert!(txt.contains("x⬚y⬚z"), "{txt}");
+    assert!(txt.contains("end⬚\n") || txt.ends_with("end⬚"), "{txt}");
 }
 
 #[test]

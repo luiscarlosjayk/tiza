@@ -1,0 +1,41 @@
+{
+ "schema": 1,
+ "title": "zwsp-note",
+ "source": {
+  "language": "rust",
+  "first_line": 1
+ },
+ "code": [
+  "use std::collections::HashMap;",
+  "",
+  "fn count_words(text: &str) -> HashMap<String, usize> {",
+  "    let mut counts = HashMap::new();",
+  "    for word in text.split_whitespace() {",
+  "        *counts.entry(word.to_lowercase()).or_insert(0) += 1;",
+  "    }",
+  "    counts",
+  "}",
+  "",
+  "fn main() {",
+  "    let text = String::from(\"the cat and the hat\");",
+  "    let counts = count_words(&text);",
+  "    println!(\"{counts:?}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "n1",
+   "step": 1,
+   "type": "note",
+   "line": 3,
+   "text": "word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​word​"
+  }
+ ],
+ "styles": {
+  "zz": {
+   "glyph": "👨‍👩‍👧‍👦🏳️‍🌈",
+   "legend": "legend 👨‍👩‍👧‍👦",
+   "color": "yellow"
+  }
+ }
+}
