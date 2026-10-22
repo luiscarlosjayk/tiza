@@ -1651,14 +1651,16 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
 /// - without one, the margin is past every decision once it holds a margin
 ///   callout (its block is at most `max(width or 34, 8, title + 4, its
 ///   widest character) + 4` wide, `auto` moves into the margin at `width +
-///   19`, and the labels beside it get the rows once the block plus 15
-///   fits) and, beside it, the longest label on one row (its `┆ ` and the
-///   gap after it), and the rows under the lines hold that label whole too;
-///   a label is measured as the canvas draws it (a zero-width space takes a
-///   cell there);
+///   19`, two blocks on one line go side by side once both fit, and the
+///   labels beside the blocks get their rows once every block, each with
+///   its gap, plus 14 fits) and, beside them, the longest label on one row
+///   (its `┆ ` and the gap after it), and the rows under the lines hold
+///   that label whole too; a label is measured as the canvas draws it (a
+///   zero-width space takes a cell there);
 /// - a callout with no rows for its block below its line is drawn as a
-///   label of its words, which wrap in the margin or are cut under the
-///   line: past the bound that leaves them out, the take changes only if
+///   label of its words, which wrap in the margin (sharing its line with
+///   another label, it is a block under the line, as wide as the code):
+///   past the bound that leaves them out, the take changes only if
 ///   one of those labels does, and then the wrap or the cut differs at
 ///   [`MAX_WIDTH`] (a greedy wrap that is the same at two widths is the
 ///   same at every width between them).
@@ -1724,7 +1726,10 @@ fn take_saturation(take: &Take) -> [usize; 2] {
     // The widest label; the widest margin callout's text column (`width`,
     // 34 by default, at least 8, and its title with the `─ ` before and
     // ` ─` after); the widest callout's words as a label.
-    let (mut longest, mut callout, mut fallback) = (0, 0, 0);
+    // `blocks`: every margin callout's block side by side, each with the
+    // gap after it (two blocks on one line go beside each other when the
+    // margin holds both).
+    let (mut longest, mut callout, mut fallback, mut blocks) = (0, 0, 0, 0);
     for a in &doc.annotations {
         let text = match &a.shape {
             Shape::Note { text, .. } => w(text),
@@ -1741,7 +1746,11 @@ fn take_saturation(take: &Take) -> [usize; 2] {
                     + label.as_deref().map_or(0, |l| 2 + w(l))
             }
             Shape::Callout {
-                text, title, width, ..
+                text,
+                title,
+                width,
+                placement,
+                ..
             } => {
                 // A character wider than the text column is a line of its
                 // own, and the block grows to hold it.
@@ -1756,6 +1765,9 @@ fn take_saturation(take: &Take) -> [usize; 2] {
                     .max(title.as_deref().map_or(0, |t| w(t) + 4))
                     .max(widest);
                 callout = callout.max(inner);
+                if *placement != crate::model::Placement::Below {
+                    blocks += inner + 4 + 1;
+                }
                 // A callout with no room for its block (no rows left below
                 // it) is drawn as a label of its words.
                 fallback = fallback.max(w(&text.split_whitespace().collect::<Vec<_>>().join(" ")));
@@ -1773,7 +1785,10 @@ fn take_saturation(take: &Take) -> [usize; 2] {
         // beside a callout's block (`block + 1` further right).
         let mut room = 14usize.max(3 + longest);
         if callout > 0 {
-            room = room.max(callout + 19).max(callout + 4 + 1 + 3 + longest);
+            room = room
+                .max(callout + 19)
+                .max(blocks + 14)
+                .max(blocks + 3 + longest);
         }
         let open = margin_x + room + 2;
         let capped = doc
