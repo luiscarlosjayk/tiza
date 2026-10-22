@@ -42,7 +42,7 @@ anyhow = "1"
 clap = { version = "4.6.7", features = ["derive"] }
 
 base64 = "0.23.1"
-# File watching for follow mode (t-011): notify 8.x stable (9 is still rc).
+# File watching for follow mode: notify 8.x stable (9 is still rc).
 notify = "8.2.0"
 proptest = "1.12.0"
 insta = "1.49.0"
@@ -50,23 +50,23 @@ jsonschema = { version = "0.59.0", default-features = false }
 # SVG → PNG: resvg (usvg + tiny-skia + fontdb). Fonts are embedded, so no system fonts are needed;
 # `system-fonts` only adds the optional fallback for emoji/CJK.
 resvg = { version = "0.48.1", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
-# Character coverage of the embedded faces (t-130): the SVG embeds only the faces it draws. Already in the tree through usvg:
-# version tied to usvg's (resvg); never bumped alone — it moves in the commit that bumps resvg, `cargo tree -d` showing one skrifa (t-211).
+# Character coverage of the embedded faces: the SVG embeds only the faces it draws. Already in the tree through usvg:
+# version tied to usvg's (resvg); never bumped alone — it moves in the commit that bumps resvg, `cargo tree -d` showing one skrifa.
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
-# Host appearance query (t-119): raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm:
-# version tied to crossterm's; never bumped alone (t-211).
+# Host appearance query: raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm:
+# version tied to crossterm's; never bumped alone.
 rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio"] }
-# SIGHUP as a flag the event loop reads (t-205): the terminal went away, exit in order. Already in the tree through crossterm:
-# version tied to crossterm's; never bumped alone (t-211).
+# SIGHUP as a flag the event loop reads: the terminal went away, exit in order. Already in the tree through crossterm:
+# version tied to crossterm's; never bumped alone.
 signal-hook = "0.3.18"
-# Theme override files (t-119): `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
+# Theme override files: `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
-# Animated GIF (t-120): encoder only, LZW through weezl; our own palette, no color_quant.
+# Animated GIF: encoder only, LZW through weezl; our own palette, no color_quant.
 gif = { version = "0.14", default-features = false, features = ["std"] }
 
 
 [profile.release]
-# Fat LTO (t-133): -0.9 MB on macOS arm64 at the same speed. Keep the default
+# Fat LTO: -0.9 MB on macOS arm64 at the same speed. Keep the default
 # panic = "unwind": a panic in a socket or MCP thread must fail that request
 # only, never close the presenter's TUI (panic = "abort" was discarded).
 # No opt-level = "s"/"z": measured 25 % to 2x slower.

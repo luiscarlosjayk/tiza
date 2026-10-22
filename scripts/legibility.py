@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Legibility at 1080p after YouTube-like compression (t-072).
+"""Legibility at 1080p after YouTube-like compression.
 
 Pipeline: `tiza render` → PNG → scale to 1920×1080 (letterboxed) → H.264
 at a YouTube-like bitrate (ffmpeg) → decode the frame → for every text color

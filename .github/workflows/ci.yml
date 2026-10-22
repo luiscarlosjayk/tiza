@@ -93,7 +93,7 @@ jobs:
           command: check
 
   legibility:
-    name: legibility at 1080p after YouTube-like compression (t-072)
+    name: legibility at 1080p after YouTube-like compression
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

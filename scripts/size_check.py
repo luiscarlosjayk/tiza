@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Size budget of the release binary and its download (t-133).
+"""Size budget of the release binary and its download.
 
 Builds `tiza` with `cargo build --release --locked -p tiza`, packs it exactly as
 `.github/workflows/release.yml` does (binary + README + licenses + examples/ in

@@ -39,10 +39,10 @@ deny = [
   # Direct only because they were already in the tree (ADR 0004): one copy,
   # the one the crate that pulls them uses. A second version (a bump of ours
   # alone, e.g. Dependabot's PR #1 for skrifa) fails here, not in silence.
-  { crate = "skrifa", deny-multiple-versions = true, reason = "tied to usvg's version (resvg): never bumped alone (t-211)" },
-  { crate = "read-fonts", deny-multiple-versions = true, reason = "tied to usvg's version via skrifa and harfrust: never bumped alone (t-211)" },
-  { crate = "rustix", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone (t-211)" },
-  { crate = "signal-hook", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone (t-211)" },
+  { crate = "skrifa", deny-multiple-versions = true, reason = "tied to usvg's version (resvg): never bumped alone" },
+  { crate = "read-fonts", deny-multiple-versions = true, reason = "tied to usvg's version via skrifa and harfrust: never bumped alone" },
+  { crate = "rustix", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone" },
+  { crate = "signal-hook", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone" },
   { crate = "reqwest", reason = "network: ADR 0009 — only in tiza-net" },
   { crate = "hyper", reason = "network: ADR 0009 — only in tiza-net" },
   { crate = "hyper-util", reason = "network: ADR 0009 — only in tiza-net" },

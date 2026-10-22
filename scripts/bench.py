@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Speed baseline of the release binary (t-133).
+"""Speed baseline of the release binary.
 
 Times fixed scenarios with `target/release/tiza` — one warm-up run, then the
 median of N runs — writes `qa/bench/latest.json` and compares it with this
@@ -11,10 +11,10 @@ Scenarios: `--version`; `render` of step 7 of examples/ownership.rs.tiza to
 .txt and .png; a generated 2,000-line Rust file and a generated large
 TypeScript file to .txt; the native GIF of the example; the TUI's first frame
 on a pseudo-terminal (qa/src/pty.py: non-blocking reads, a deadline, the
-child killed at the end); the t-054 frame median (2,000 lines + 200
+child killed at the end); the qa crate's frame median (2,000 lines + 200
 annotations, laid out and drawn into 120x40, from `cargo test --release`);
 and the same in presentation mode with 10 moves over 20 steps
-(`present_moves_frame`, from qa/tests/t-191.rs).
+(`present_moves_frame`, from the qa crate's presentation frame test).
 
 `--install` also times a cold `cargo install --path crates/tiza-cli --root
 <tmp>` (fresh target dir, so every crate compiles) and records it as
@@ -150,7 +150,7 @@ def time_tui(binary, runs, tmp):
 
 def frame_median(test="t-054", name="ac1_frame_under_budget", label="median frame"):
     """A qa test's own measurement: median of 21 frames, release build of the
-    qa crate (qa/tests/t-054.rs authoring, qa/tests/t-191.rs presentation)."""
+    qa crate (the authoring and the presentation frame tests)."""
     r = subprocess.run(
         ["cargo", "test", "--release", "--locked", "-p", "tiza-qa", "--test", test, "--",
          name, "--nocapture"],
@@ -225,7 +225,7 @@ def main():
             ("render_txt_rust_2000_lines", [binary, "render", big_rs, "--width", "100", "--out", out("txt")]),
             ("render_txt_typescript_3000_lines", [binary, "render", big_ts, "--width", "100", "--out", out("txt")]),
             # `--scale 1`: the baselines were measured before the GIF default
-            # became 2 (t-121); scale 2 rasterises 4× the pixels.
+            # became 2; scale 2 rasterises 4× the pixels.
             ("render_gif_example", [binary, "render", EXAMPLE, "--width", "100", "--scale", "1", "--out", out("gif")]),
         ]
         for name, argv in scenarios:

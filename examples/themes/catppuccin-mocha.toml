@@ -1,4 +1,4 @@
-# Catppuccin Mocha for Tiza — the worked example of a theme file (t-119).
+# Catppuccin Mocha for Tiza — the worked example of a theme file.
 #
 # A theme file maps Tiza's roles (and the named annotation palette) to
 # colours: hex, rgb(r, g, b), an ANSI name (red, bright-blue…) or `reset`
@@ -14,7 +14,7 @@
 # so every document gets them (a document's own `theme_overrides` win).
 #
 # Every text token must keep 4.5:1 against the background at 1080p after
-# video compression (scripts/legibility.py, the t-072 gate). Tiza checks the
+# video compression (scripts/legibility.py, the legibility gate). Tiza checks the
 # roles below when it loads the file and pushes a faint one toward the text
 # colour, saying so; the syntax colours of the base theme (One Half Dark)
 # are lifted the same way at render time (the comment grey #5c6370 reads at

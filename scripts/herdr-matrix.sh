@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Terminal size matrix with Herdr panes (t-071): the same frame at several
+# Terminal size matrix with Herdr panes: the same frame at several
 # real terminal sizes, captured from a real terminal emulator (Herdr renders
 # through libghostty-vt) and compared with committed snapshots. A QA-round
 # step on a machine with Herdr (Luis's Mac), never part of `cargo test`.
@@ -38,7 +38,7 @@
 # It waits for a stable first frame and saves `herdr pane read --source
 # visible --format text` as <snapshots>/<case>-<cols>x<rows>.txt, with the
 # size Tiza sees (Herdr's rect is printed next to it), and `--format ansi`
-# next to it as <case>-<cols>x<rows>.ansi (t-158), the colours and
+# next to it as <case>-<cols>x<rows>.ansi, the colours and
 # attributes the text capture loses.
 #
 # --check compares the .txt byte for byte and the .ansi by meaning: both
@@ -55,7 +55,7 @@
 # split/resize/run/read/close. Everything that talks to Herdr goes through
 # `herdr()` below; with TIZA_HERDR_FAKE=<state dir> it is simulated (panes
 # are Python ptys, `pane read` is the live instance's `tiza render`), so
-# qa/tests/t-071.rs can drive the rest of this script without Herdr.
+# A QA test can drive the rest of this script without Herdr.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -102,7 +102,7 @@ command -v python3 >/dev/null || die "python3 is needed (Herdr's and Tiza's JSON
 # The matrix: case, target cols, target rows of the terminal Tiza sees ("max"
 # = as large as the base pane allows), mode. 75x50 is Zed split in half; the
 # two normal-mode cases show the status bar, and the narrow one its
-# small-terminal badge (t-064).
+# small-terminal badge.
 MATRIX="vt100 80 24 present
 wide 120 40 present
 zed-half 75 50 present

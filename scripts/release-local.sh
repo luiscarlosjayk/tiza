@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds and packages a Tiza release on this machine, the same way
-# .github/workflows/release.yml does, for when GitHub Actions is off (t-058).
+# .github/workflows/release.yml does, for when GitHub Actions is off.
 #
 #   scripts/release-local.sh v0.1.0                 # targets this machine can build
 #   scripts/release-local.sh v0.1.0 --target x86_64-unknown-linux-gnu

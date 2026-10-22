@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Regenerates every image the README and the docs show (t-121), with Tiza
+# Regenerates every image the README and the docs show, with Tiza
 # itself: no vhs, ttyd, agg or ffmpeg. Run it in the same commit as any
 # visual change to the renderer (AGENTS.md), so the README never lags.
 #
@@ -8,7 +8,7 @@
 #   CHROME=path/to/chrome scripts/readme-images.sh
 #
 # Writes (all from examples/ownership.rs.tiza, dark theme, embedded fonts):
-#   docs/img/ownership.gif         native GIF, every step (scale 2, t-120/t-121)
+#   docs/img/ownership.gif         native GIF, every step (scale 2)
 #   docs/img/ownership-step7.png   step 7
 #   docs/img/src/step{1,4,7}.png   the real frames the hero is built from
 #   docs/img/hero.png              1200×630 at device scale 2, from
@@ -24,7 +24,7 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
 # 108 columns: at the default 100 the margin is too narrow for two of the
-# example's arrow labels, which end in «…» (see t-121's note).
+# example's arrow labels, which end in «…» there.
 WIDTH=108
 EXAMPLE=examples/ownership.rs.tiza
 

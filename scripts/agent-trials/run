@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""MCP context trials (t-161): guinea-pig agents, one task and one settings
+"""MCP context trials: guinea-pig agents, one task and one settings
 variant each, connected to `tiza mcp` on a live Tiza of their own; the harness
 measures the context they consume and checks their work through `tiza api`.
 
@@ -66,7 +66,7 @@ SELF_REPORT = (
 
 # Settings variants. Each is the environment of the claude process on top of
 # the isolation below; `expects_tool_search` is checked against the session's
-# init message. Later cards (t-162, t-163) add theirs here and re-run the matrix.
+# init message. Later cards add theirs here and re-run the matrix.
 VARIANTS = {
     "tool-search": {
         "desc": "today's server, tool search on (Claude Code's default: MCP tools deferred)",
