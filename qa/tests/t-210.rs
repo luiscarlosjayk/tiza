@@ -697,7 +697,8 @@ fn ac6_changelog_and_agent_guide() {
     );
     let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
     assert!(
-        guide.contains("t-210") && guide.contains("`revision`"),
+        guide.contains("so the screen, the keys and your other calls are answered while it works")
+            && guide.contains("trust `revision`, not the time you called"),
         "the agent guide does not say what check's `revision` is"
     );
 }

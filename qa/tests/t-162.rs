@@ -425,7 +425,10 @@ fn ac_t194_add_move_and_check_name_the_warnings_the_instance_gives() {
 fn ac5_guide_and_changelog() {
     let guide = std::fs::read_to_string(repo_root().join("docs/agent-guide.md")).unwrap();
     assert!(guide.contains("anthropic/alwaysLoad"), "agent guide");
-    assert!(guide.contains("t-162"), "agent guide");
+    assert!(
+        guide.contains("the instructions are written to be searched by"),
+        "agent guide"
+    );
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
     let unreleased = changelog.split("## [0.0.1]").next().unwrap();
     assert!(unreleased.contains("t-162"), "CHANGELOG");
