@@ -139,7 +139,7 @@ pub enum ShapeSpec {
         from_line: Option<u32>,
         #[serde(default)]
         to_line: Option<u32>,
-        /// Text markers instead of line numbers (t-097): the box runs from
+        /// Text markers instead of line numbers: the box runs from
         /// the line of `find_start` to the line of `find_end`.
         #[serde(default)]
         find_start: Option<String>,
@@ -389,7 +389,7 @@ pub struct AddParams {
     #[serde(default)]
     pub color: Option<String>,
     /// The file (view) the annotation belongs to, as a `code.link` names
-    /// it (t-105). Default: the file shown at its step.
+    /// it. Default: the file shown at its step.
     #[serde(default)]
     pub file: Option<String>,
     #[serde(flatten)]
@@ -593,7 +593,7 @@ pub struct StepParams {
     pub step: u32,
 }
 
-/// Parameters of `step.goto` (t-099).
+/// Parameters of `step.goto`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct StepGotoParams {
     /// The `id` of a named step (`"borrow"`), or a step number (`3` or
@@ -607,7 +607,7 @@ pub struct StepGotoParams {
 /// a step number (`0..=u32::MAX`) nor a string lands in [`StepRef::Other`],
 /// so the instance can answer `` `id` must be a step id or a step number
 /// from 0 to N `` with the document's real N instead of serde's
-/// "did not match any variant" (t-099 rework). Its schema is inline and
+/// "did not match any variant". Its schema is inline and
 /// flat (`{"type": ["integer", "string"]}`), with no `$ref`/`anyOf`, so
 /// MCP clients that do not resolve references read it like any other field.
 #[derive(Debug, Clone, Serialize)]
@@ -675,7 +675,7 @@ pub struct StepReply {
     pub step: u32,
     pub max_step: u32,
     pub revision: u64,
-    /// The `id` of the step reached, when `steps` names it (t-099).
+    /// The `id` of the step reached, when `steps` names it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
     /// Its title, when it has one.
@@ -764,10 +764,10 @@ pub struct PatchParams {
         skip_serializing_if = "Option::is_none"
     )]
     pub title: Option<Option<String>>,
-    /// Line-number gutter on or off (t-112; saved in the document).
+    /// Line-number gutter on or off (saved in the document).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub numbers: Option<bool>,
-    /// Right-margin cap in cells (t-113; saved in the document); `null`
+    /// Right-margin cap in cells (saved in the document); `null`
     /// restores the dynamic margin.
     #[serde(
         default,
@@ -782,10 +782,10 @@ pub struct PatchParams {
     /// `{"id": "a1", "deleted": true}` removes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Value>>,
-    /// Named steps (t-099): the whole list, replaced (`[]` clears it).
+    /// Named steps: the whole list, replaced (`[]` clears it).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steps: Option<Vec<crate::steps::NamedStep>>,
-    /// `loop` on or off (t-099).
+    /// `loop` on or off.
     #[serde(default, rename = "loop", skip_serializing_if = "Option::is_none")]
     pub looping: Option<bool>,
 }
@@ -828,7 +828,7 @@ pub struct Status {
     pub protocol: u32,
     pub revision: u64,
     /// The file shown: the source file, or the one a `code.link` move
-    /// left up at the current step (t-105).
+    /// left up at the current step.
     pub file: Option<String>,
     pub lines: usize,
     /// First and last line of the shown code (the window of a `code.link`
@@ -844,9 +844,8 @@ pub struct Status {
     pub annotations: usize,
     pub step: u32,
     pub max_step: u32,
-    /// The `id` and `title` of the current step, when `steps` names it
-    /// (t-099); `step_label` is what the status line shows
-    /// (`step 3/7 · Shared borrow`).
+    /// The `id` and `title` of the current step, when `steps` names it;
+    /// `step_label` is what the status line shows (`step 3/7 · Shared borrow`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -877,8 +876,7 @@ pub struct Status {
     #[serde(default = "yes")]
     pub autosave: bool,
     /// The `.tiza` this instance saves to (absolute), when it exists on disk; absent
-    /// before the first save. What a `.tape` of the live instance opens
-    /// (t-166).
+    /// before the first save. What a `.tape` of the live instance opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<String>,
     /// Whether the line-number gutter is shown (`:numbers`, document field).
@@ -887,7 +885,7 @@ pub struct Status {
     /// Right-margin cap in cells (`:margin N`, document field); absent = dynamic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin: Option<u16>,
-    /// The live pointer (t-030): the lines the presenter (`f`) or an agent
+    /// The live pointer: the lines the presenter (`f`) or an agent
     /// (`pointer.set`) is pointing at on the screen right now, or `null`.
     /// Never saved nor exported. Always present.
     #[serde(default)]
@@ -898,7 +896,7 @@ pub struct Status {
     pub stale_moves: usize,
 }
 
-/// Where the live pointer is (t-030).
+/// Where the live pointer is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PointerAt {
     /// First pointed line.
@@ -910,7 +908,7 @@ pub struct PointerAt {
     pub by: PointerBy,
 }
 
-/// Who moved the live pointer last (t-030).
+/// Who moved the live pointer last.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum PointerBy {
@@ -918,7 +916,7 @@ pub enum PointerBy {
     Agent,
 }
 
-/// Parameters of `pointer.set` (t-030): `{line}`, `{line, find}`,
+/// Parameters of `pointer.set`: `{line}`, `{line, find}`,
 /// `{find}` (the text must appear once in the shown code) or
 /// `{from, to}`.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, schemars::JsonSchema)]
@@ -939,7 +937,7 @@ pub struct PointerParams {
     pub to: Option<u32>,
 }
 
-/// Result of `pointer.set` and `pointer.clear` (t-030).
+/// Result of `pointer.set` and `pointer.clear`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct PointerReply {
     /// Where the pointer is now; `null` after `pointer.clear`.
@@ -968,7 +966,7 @@ pub struct Mutated {
     pub revision: u64,
 }
 
-/// Result of the live `check` (t-210): the report of `tiza check --json`,
+/// Result of the live `check`: the report of `tiza check --json`,
 /// field for field, plus the revision of the document it checked. The
 /// check runs off the TUI thread on a copy of the document, so a change
 /// made while it runs is not in it, and one that waited for another check
@@ -982,7 +980,7 @@ pub struct LiveCheck {
     pub revision: u64,
 }
 
-/// Result of `annotation.add` / `annotation.update` (t-155): the id and
+/// Result of `annotation.add` / `annotation.update`: the id and
 /// revision of [`Mutated`], plus where the annotation stands against the
 /// view at the moment the change is applied. In supervised mode that is
 /// when the presenter accepts the proposal, so `shown_step` may differ from
@@ -994,13 +992,13 @@ pub struct AnnotationMutated {
     pub revision: u64,
     /// The annotation's step (where it appears; a new one at step 0 goes to 1).
     pub step: u32,
-    /// Title (or id) of that step when it is a named step (t-099).
+    /// Title (or id) of that step when it is a named step.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub step_title: Option<String>,
     /// The step the view was showing when the change was applied.
     pub shown_step: u32,
     /// Whether the annotation is drawn at `shown_step`: its step reached,
-    /// its file shown (a `code.link` may show another one, t-105), its
+    /// its file shown (a `code.link` may show another one), its
     /// anchor kept and its lines inside the window.
     pub visible: bool,
     /// Why it is not visible, in words (`it appears at step 1`, `its file
@@ -1134,7 +1132,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "pointer.set",
-        "Points at a line on the live screen (t-030): `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
+        "Points at a line on the live screen: `{line}`, `{line, find}`, `{find}` or `{from, to}`; that line is drawn normally and the rest of the code dimmed, never saved nor exported. The presenter's `f` and this are the same pointer (the last one wins)",
     ),
     (
         "pointer.clear",
@@ -1147,7 +1145,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ("render.text", "Returns the current canvas as plain text"),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json` (t-101): run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy` (t-210)",
+        "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
     ),
     (
         "follow.set",
@@ -1312,7 +1310,7 @@ pub fn describe(a: &Annotation) -> String {
         Some(m) => format!("{base} @{}..@{}", quote(&m.start), quote(&m.end)),
         None => base,
     };
-    // The file it belongs to, when it is not the main one (t-105).
+    // The file it belongs to, when it is not the main one.
     match &a.file {
         Some(f) => format!("{base} ({f})"),
         None => base,

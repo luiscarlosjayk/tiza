@@ -296,7 +296,7 @@
           ]
         },
         "file": {
-          "description": "The file (view) the annotation belongs to, as a `code.link` names it\n(t-105). Absent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
+          "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
           "type": [
             "string",
             "null"
@@ -315,7 +315,7 @@
               "type": "null"
             }
           ],
-          "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`, t-097): kept so the range can be\nre-resolved after the code changes (t-098). Lines stay the truth."
+          "description": "Range shapes (box, callout, spotlight) created from two text markers\n(`find_start` / `find_end`): kept so the range can be\nre-resolved after the code changes. Lines stay the truth."
         },
         "step": {
           "default": 1,
@@ -383,7 +383,7 @@
       "type": "object"
     },
     "Emphasis": {
-      "description": "How a highlighted or marked span is drawn (t-096).",
+      "description": "How a highlighted or marked span is drawn.",
       "oneOf": [
         {
           "const": "fill",
@@ -906,7 +906,7 @@
         },
         {
           "const": "terminal",
-          "description": "The host terminal's own palette (t-119): default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+          "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
           "type": "string"
         }
       ]
@@ -1006,7 +1006,7 @@
       "type": "boolean"
     },
     "margin": {
-      "description": "Cap on the right margin, in cells (t-113): long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
+      "description": "Cap on the right margin, in cells: long notes wrap at it\ninstead of spreading across a wide terminal. `None`: dynamic.",
       "format": "uint16",
       "maximum": 65535,
       "minimum": 0,
@@ -1023,7 +1023,7 @@
       "type": "array"
     },
     "numbers": {
-      "description": "Line-number gutter (t-112). Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+      "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
       "type": "boolean"
     },
     "padding": {
@@ -1065,7 +1065,7 @@
       "type": "integer"
     },
     "steps": {
-      "description": "Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+      "description": "Named steps (ADR 0007 §4): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
       "items": {
         "$ref": "#/$defs/NamedStep"
       },
@@ -1097,7 +1097,7 @@
           "type": "null"
         }
       ],
-      "description": "Per-token theme overrides (t-119), the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
+      "description": "Per-token theme overrides, the same keys as the `[theme]`\ntable of `~/.config/tiza/config.toml`; they apply on top of the\nconfig file's and under `:theme`."
     },
     "title": {
       "type": [

@@ -15,25 +15,25 @@ use crate::moves::{self, Move, MoveAction, ViewKey, ViewRef};
 /// Schema version of the `.tiza` file.
 pub const SCHEMA_VERSION: u32 = 1;
 
-/// The last step a document can have (t-166): annotations, moves and
+/// The last step a document can have: annotations, moves and
 /// `steps` entries name steps 0 to this. A take is laid out over every
 /// step (the stable geometry, `check`, a GIF), so an
 /// unbounded step number made one export cost seconds per million empty
 /// steps; real takes have tens.
 pub const MAX_STEP: u32 = 999;
 
-/// The longest hold a document or an export asks for, in milliseconds
-/// (t-166): a `wait` move, a step's `auto_advance_ms`, a `code.patch`'s
+/// The longest hold a document or an export asks for, in milliseconds:
+/// a `wait` move, a step's `auto_advance_ms`, a `code.patch`'s
 /// typing time per unit, the `--interval` of a recording. One hour; a
 /// longer one is a typo (or an attack on the encoder) and is refused.
 pub const MAX_HOLD_MS: u64 = 3_600_000;
 
-/// The largest `source.first_line` (t-166): line numbers are `u32`, and a
+/// The largest `source.first_line`: line numbers are `u32`, and a
 /// first line near its end overflowed as soon as a line was counted after
 /// it.
 pub const MAX_FIRST_LINE: u32 = 1_000_000_000;
 
-/// `step` of `what` within 0..=[`MAX_STEP`] (t-166).
+/// `step` of `what` within 0..=[`MAX_STEP`].
 pub fn check_step(step: u32, what: &str) -> Result<(), Error> {
     if step > MAX_STEP {
         return Err(Error::Invalid(format!(
@@ -44,7 +44,7 @@ pub fn check_step(step: u32, what: &str) -> Result<(), Error> {
 }
 
 /// How a bounds error names an annotation: by its id, or `annotation`
-/// alone for one that has none yet (t-166: not `annotation : step …`).
+/// alone for one that has none yet (never `annotation : step …`).
 fn annotation_what(id: &str) -> String {
     if id.trim().is_empty() {
         "annotation".into()
@@ -53,7 +53,7 @@ fn annotation_what(id: &str) -> String {
     }
 }
 
-/// A hold of `ms` milliseconds for `what` within [`MAX_HOLD_MS`] (t-166).
+/// A hold of `ms` milliseconds for `what` within [`MAX_HOLD_MS`].
 pub fn check_hold_ms(ms: u64, what: &str) -> Result<(), Error> {
     if ms > MAX_HOLD_MS {
         return Err(Error::Invalid(format!(
@@ -114,22 +114,22 @@ pub struct Document {
     /// keyed by the file as the move names it. Never serialized directly.
     #[serde(skip)]
     pub view_code: BTreeMap<String, Vec<String>>,
-    /// Line-number gutter (t-112). Off, the code starts at the left edge
+    /// Line-number gutter. Off, the code starts at the left edge
     /// (lanes and boxes move with it); the TUI, `render` and the agents'
     /// renders all follow it. `render --no-numbers` / `--numbers` override
     /// it for one export.
     #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
     pub numbers: bool,
-    /// Cap on the right margin, in cells (t-113): long notes wrap at it
+    /// Cap on the right margin, in cells: long notes wrap at it
     /// instead of spreading across a wide terminal. `None`: dynamic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub margin: Option<u16>,
-    /// Per-token theme overrides (t-119), the same keys as the `[theme]`
+    /// Per-token theme overrides, the same keys as the `[theme]`
     /// table of `~/.config/tiza/config.toml`; they apply on top of the
     /// config file's and under `:theme`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme_overrides: Option<crate::theme::ThemeOverrides>,
-    /// Named steps (ADR 0007 §4, t-099): a title, an id for `step.goto` and
+    /// Named steps (ADR 0007 §4): a title, an id for `step.goto` and
     /// an optional `auto_advance_ms`, bound to a step by its explicit
     /// `step` number (never by the position in the list, so moving an
     /// annotation to another step shifts nothing). Sparse; saved sorted by
@@ -188,7 +188,7 @@ pub struct Source {
 pub enum ThemeName {
     Dark,
     Light,
-    /// The host terminal's own palette (t-119): default background and
+    /// The host terminal's own palette: default background and
     /// foreground, roles on the 16 ANSI colours, syntax on the terminal's
     /// colours. Only meaningful in the TUI; exports fall back to dark/light.
     Terminal,
@@ -468,7 +468,7 @@ pub fn builtin_style(name: &str) -> Option<MarkStyle> {
         .map(|(_, g, l, c)| MarkStyle::new(g, l, c))
 }
 
-/// How a highlighted or marked span is drawn (t-096).
+/// How a highlighted or marked span is drawn.
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default, schemars::JsonSchema,
 )]
@@ -670,12 +670,12 @@ pub struct Annotation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
     /// Range shapes (box, callout, spotlight) created from two text markers
-    /// (`find_start` / `find_end`, t-097): kept so the range can be
-    /// re-resolved after the code changes (t-098). Lines stay the truth.
+    /// (`find_start` / `find_end`): kept so the range can be
+    /// re-resolved after the code changes. Lines stay the truth.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub markers: Option<RangeMarkers>,
-    /// The file (view) the annotation belongs to, as a `code.link` names it
-    /// (t-105). Absent: the document's main file. Filled in from the view
+    /// The file (view) the annotation belongs to, as a `code.link` names it.
+    /// Absent: the document's main file. Filled in from the view
     /// shown at the annotation's step when it is added without one. Lines
     /// are always real file line numbers; the annotation is drawn only
     /// while its file is shown and its lines fall inside the window.
@@ -739,13 +739,13 @@ pub struct View {
     pub unanchored: Vec<String>,
     /// Which file and window is shown.
     pub view: ViewRef,
-    /// Cursor and selection the moves left at this step (t-105).
+    /// Cursor and selection the moves left at this step.
     pub cursor: Option<Anchor>,
     pub selection: Option<(Anchor, Anchor)>,
 }
 
-/// Why an annotation is not drawn at a step ([`Document::hidden_reason`],
-/// t-155). `Display` gives the words the socket reply carries in `hidden`.
+/// Why an annotation is not drawn at a step ([`Document::hidden_reason`]).
+/// `Display` gives the words the socket reply carries in `hidden`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Hidden {
     /// No annotation has that id.
@@ -754,7 +754,7 @@ pub enum Hidden {
     SpotlightPast { from: u32, end: u32 },
     /// It appears at a later step.
     Later(u32),
-    /// Its file is not the one shown at `step` (t-105).
+    /// Its file is not the one shown at `step`.
     OtherFile {
         file: String,
         shown: String,
@@ -882,7 +882,7 @@ impl Document {
         d
     }
 
-    // ---- moves (ADR 0007, t-098) and views (t-105) ----
+    // ---- moves (ADR 0007) and views ----
 
     /// The step-0 code of the main file.
     pub fn base(&self) -> &[String] {
@@ -1458,13 +1458,13 @@ impl Document {
 
     /// Why annotation `id` is not on screen at `step`, in words (`appears
     /// at step 1`, `its file lib.rs is not shown at step 2`…), or `None`
-    /// when it is drawn there (t-155): [`Document::hidden_reason`] as text.
+    /// when it is drawn there: [`Document::hidden_reason`] as text.
     pub fn why_hidden(&self, id: &str, step: u32) -> Option<String> {
         self.hidden_reason(id, step).map(|h| h.to_string())
     }
 
     /// Why annotation `id` is not on screen at `step`, or `None` when it is
-    /// drawn there (t-155). Follows the same rules as the layout: its file
+    /// drawn there. Follows the same rules as the layout: its file
     /// must be the one shown, its step reached (a spotlight also not past
     /// its `until`), its anchor kept and its
     /// lines inside the window. An unknown id is reported as such.
@@ -1581,7 +1581,7 @@ impl Document {
 
     /// Last absolute line of the document.
     pub fn last_line(&self) -> u32 {
-        // Saturating (t-166): a document never gets here with a first line
+        // Saturating: a document never gets here with a first line
         // past [`MAX_FIRST_LINE`], and this never overflows if one does.
         let len = u32::try_from(self.code.len().saturating_sub(1)).unwrap_or(u32::MAX);
         self.source.first_line.saturating_add(len)
@@ -1609,8 +1609,8 @@ impl Document {
     }
 
     /// Highest step used by any annotation or move (at least 1).
-    /// The steps, up to `last`, at which what a take draws can change
-    /// (t-166): 0, each annotation's step and the one after it (a spotlight
+    /// The steps, up to `last`, at which what a take draws can change:
+    /// 0, each annotation's step and the one after it (a spotlight
     /// shows only at its own), each move's step. Every other step draws
     /// exactly as the last of these before it, so a loop over the take that
     /// looks for a maximum, a union or the first step of something visits
@@ -1729,7 +1729,7 @@ impl Document {
         Ok(())
     }
 
-    /// The numbers a loaded or put document may hold (t-166): steps within
+    /// The numbers a loaded or put document may hold: steps within
     /// [`MAX_STEP`], holds within [`MAX_HOLD_MS`], a first line within
     /// [`MAX_FIRST_LINE`]. Ids and numbers only, never document text.
     pub fn check_bounds(&self) -> Result<(), Error> {
@@ -1955,7 +1955,7 @@ impl Document {
 
     /// Searches `text` in the code and returns the span of the `occurrence`-th
     /// match (1-based). If `near_line` is given, that line is searched first.
-    /// Resolves a line range from two markers (t-097): `start` is the first
+    /// Resolves a line range from two markers: `start` is the first
     /// occurrence in the document, `end` the first occurrence at or after it
     /// (same line allowed when it comes after the start text). Errors name
     /// the missing marker; an `end` that only appears before the start is

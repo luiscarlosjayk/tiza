@@ -600,7 +600,7 @@ fn exe_mtime() -> Option<std::time::SystemTime> {
 }
 
 /// A tool's text reply, with its control characters shown as pictures
-/// (`␛`, `␀`…) and never sent raw to the client (t-182).
+/// (`␛`, `␀`…) and never sent raw to the client.
 fn text(v: impl ToString) -> CallToolResult {
     let v = v.to_string();
     CallToolResult::success(vec![ContentBlock::text(
@@ -609,8 +609,8 @@ fn text(v: impl ToString) -> CallToolResult {
 }
 
 /// The reply of `annotation.add` / `annotation.update` with a first line
-/// that says in words whether the annotation shows at the current step
-/// (t-155), then the JSON.
+/// that says in words whether the annotation shows at the current step,
+/// then the JSON.
 fn annotation_reply(v: &Value, verb: &str) -> CallToolResult {
     match serde_json::from_value::<tiza_core::protocol::AnnotationMutated>(v.clone()) {
         Ok(m) => text(format!("{}\n{}", m.sentence(verb), pretty(v))),
@@ -618,14 +618,14 @@ fn annotation_reply(v: &Value, verb: &str) -> CallToolResult {
     }
 }
 
-/// Pretty JSON; DEL, C1 and bidi controls as `\uXXXX` (the same value,
-/// t-182: serde_json escapes only C0).
+/// Pretty JSON; DEL, C1 and bidi controls as `\uXXXX` (the same value;
+/// serde_json escapes only C0).
 fn pretty(v: &Value) -> String {
     let text = serde_json::to_string_pretty(v).unwrap_or_default();
     tiza_core::printable::escape_json_controls(&text).into_owned()
 }
 
-/// The `_meta` of the core tools (t-162): `anthropic/alwaysLoad` asks a
+/// The `_meta` of the core tools: `anthropic/alwaysLoad` asks a
 /// client that defers tools (Claude Code's tool search) to load them
 /// upfront (<https://code.claude.com/docs/en/mcp>, «Mark a tool to load
 /// upfront or stay deferred»). A client that does not know the key ignores it.
@@ -741,7 +741,7 @@ impl TizaServer {
             .transpose()
             .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
         // The instance checks the document it holds, linked files and all,
-        // and sends back only the report (t-101).
+        // and sends back only the report.
         let report = self.call("check", json!({ "width": width })).await?;
         Ok(text(pretty(&report)))
     }
@@ -1224,7 +1224,7 @@ impl TizaServer {
                 ));
             }
         };
-        // Every number is checked before anything is drawn (t-166).
+        // Every number is checked before anything is drawn.
         let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
         let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
         let font_size =
@@ -1250,7 +1250,7 @@ impl TizaServer {
         let mut scene: tiza_core::protocol::Scene =
             serde_json::from_value(self.call("scene.get", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
-        // Its linked files too, as the instance shows them (t-166): an
+        // Its linked files too, as the instance shows them: an
         // export never draws another file than the TUI, in silence.
         // What the screen skips and hides, the export does too.
         tiza_core::stale::apply_marks(&mut scene.document, &scene.stale, &scene.held);
@@ -1273,7 +1273,7 @@ impl TizaServer {
             doc: scene.document,
             phase: Default::default(),
         };
-        // Drawn and encoded on a blocking thread with a deadline (t-166):
+        // Drawn and encoded on a blocking thread with a deadline:
         // the server keeps answering `status` and `tools/list` meanwhile,
         // and the call always answers.
         let phase = job.phase.clone();
@@ -1307,14 +1307,14 @@ impl TizaServer {
         match joined {
             Ok(r) => r,
             // A panic in the render: never its text (it may quote the
-            // document, t-167).
+            // document).
             Err(e) if e.is_panic() => Err(panicked("tool export_image", e.into_panic())),
             Err(_) => Err(McpError::internal_error("export_image was cancelled", None)),
         }
     }
 }
 
-/// Where an `export_image` render stands (t-166): the deadline and the
+/// Where an `export_image` render stands: the deadline and the
 /// rename of the finished file take the same lock, so the reply never says
 /// «nothing was written» about a file that was.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -1325,7 +1325,7 @@ enum ExportPhase {
     Written,
 }
 
-/// How long one `export_image` may take (t-166): 120 s, fixed. A build
+/// How long one `export_image` may take: 120 s, fixed. A build
 /// with the `test-hooks` feature (the tests' binary, never a release)
 /// reads `TIZA_MCP_EXPORT_TIMEOUT_MS`. Past it the call answers an error
 /// and nothing is written.
@@ -1340,7 +1340,7 @@ fn export_deadline() -> std::time::Duration {
     std::time::Duration::from_secs(120)
 }
 
-/// Test hooks (t-166), only in a build with the `test-hooks` feature:
+/// Test hooks, only in a build with the `test-hooks` feature:
 /// `TIZA_MCP_TEST_HOOK` names a place — `tool:<name>` panics in the call
 /// itself, `export:render` in the export's blocking render, and
 /// `export:slow-write` holds the finished export 800 ms before it is
@@ -1382,7 +1382,7 @@ impl ExportJob {
         let is_png = format == "png";
         let is_gif = format == "gif";
         let last = doc.max_step();
-        // A step past the last one: the last, said in the reply (t-166),
+        // A step past the last one: the last, said in the reply,
         // as `tiza render` says it on stderr.
         let step = self.asked_step.min(last);
         let warning = (!is_gif && self.asked_step > last).then(|| {
@@ -1395,7 +1395,7 @@ impl ExportJob {
             .theme_name
             .unwrap_or(doc.theme.unwrap_or(tiza_core::ThemeName::Dark));
         // The document's overrides apply; a terminal theme or `reset`
-        // tokens have no palette in a file and fall back (t-119).
+        // tokens have no palette in a file and fall back.
         let (theme, _) =
             tiza_core::Theme::resolve(theme_name, true, None, doc.theme_overrides.as_ref());
         let (theme, _notice) = theme.for_export();
@@ -1431,7 +1431,7 @@ impl ExportJob {
             "md" => layout.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
             "gif" => {
                 // Every step, the typed moves between them, one geometry
-                // for the take (t-120).
+                // for the take.
                 let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
                     doc,
                     &theme,
@@ -1480,7 +1480,7 @@ impl ExportJob {
         };
         test_hook("export:slow-write");
         // Written next to the target and renamed under the lock the
-        // deadline takes (t-166): past the deadline nothing appears, and
+        // deadline takes: past the deadline nothing appears, and
         // the reply never says «nothing was written» about a file that was.
         let target = std::path::Path::new(&self.path);
         let tmp = target.with_file_name(format!(
@@ -1530,7 +1530,7 @@ impl ExportJob {
     }
 }
 
-/// The resources the live instance exposes (t-044): a client that supports
+/// The resources the live instance exposes: a client that supports
 /// resources can read the scene, the code or the rendered frame without a
 /// tool call (and attach them as context).
 const RESOURCES: &[(&str, &str, &str, &str)] = &[
@@ -1586,7 +1586,7 @@ impl TizaServer {
                 });
                 let mut out = String::new();
                 if let Some(t) = title {
-                    // One line, as `render --format md` (t-182).
+                    // One line, as `render --format md`.
                     let t = tiza_core::printable::printable_line(&t);
                     out.push_str(&format!("**{t}** (step {})\n\n", status["step"]));
                 }
@@ -1608,7 +1608,7 @@ impl TizaServer {
 
 #[tool_handler]
 impl ServerHandler for TizaServer {
-    /// The tool router's call, with one change (t-167): arguments that do
+    /// The tool router's call, with one change: arguments that do
     /// not deserialize come back as `failed to deserialize parameters:
     /// invalid type: string "…"`, raised here before the instance is asked:
     /// the value serde could not read is taken out of that message
@@ -1621,7 +1621,7 @@ impl ServerHandler for TizaServer {
     ) -> Result<rmcp::model::CallToolResponse, McpError> {
         let tool = request.name.to_string();
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        // Every call answers (t-166): a panic while it runs (a bug) is an
+        // Every call answers: a panic while it runs (a bug) is an
         // error reply, never a call left waiting forever.
         let mut resp = answer_always(async {
             test_hook(&format!("tool:{tool}"));
@@ -1631,7 +1631,7 @@ impl ServerHandler for TizaServer {
         .map_err(|p| panicked(&format!("tool {tool}"), p))?
         .map_err(|mut e| {
             // An error can quote a path or a text the agent sent (an
-            // export's `could not write …`): shown, never raw (t-182).
+            // export's `could not write …`): shown, never raw.
             if let std::borrow::Cow::Owned(m) = tiza_core::printable::printable_text(&e.message) {
                 e.message = m.into();
             }
@@ -1645,7 +1645,7 @@ impl ServerHandler for TizaServer {
                     if t.text.starts_with("failed to deserialize parameters") {
                         t.text = tiza_core::error::serde_text(&t.text);
                     }
-                    // A field name serde quotes is shown, not sent raw (t-182).
+                    // A field name serde quotes is shown, not sent raw.
                     t.text = tiza_core::printable::printable_text(&t.text).into_owned();
                 }
             }
@@ -1683,8 +1683,8 @@ impl ServerHandler for TizaServer {
             .find(|r| r.0 == request.uri)
             .map(|r| r.3)
             .unwrap_or("text/plain");
-        // The code and the render with their control characters shown
-        // (t-182); the scene's JSON has them escaped already.
+        // The code and the render with their control characters shown;
+        // the scene's JSON has them escaped already.
         let text = tiza_core::printable::printable_text(&text).into_owned();
         Ok(
             ReadResourceResult::new(vec![ResourceContents::TextResourceContents {
@@ -1722,7 +1722,7 @@ impl ServerHandler for TizaServer {
     }
 }
 
-/// A future whose panic is caught and returned (t-166): the tool router
+/// A future whose panic is caught and returned: the tool router
 /// runs each call in a task of its own, and a panic there drops the task
 /// without a reply, so the client waits forever while the server still
 /// answers other calls. With this, a panic becomes an error reply.
@@ -1751,7 +1751,7 @@ fn answer_always<'a, T>(
 }
 
 /// The error reply for a call that panicked: what failed, never the
-/// panic's own text (it may quote document text, t-167); the panic itself
+/// panic's own text (it may quote document text); the panic itself
 /// is on the server's stderr.
 fn panicked(what: &str, _payload: Box<dyn std::any::Any + Send>) -> McpError {
     McpError::internal_error(
@@ -1773,7 +1773,7 @@ pub async fn serve(socket: PathBuf) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
-    /// t-166 (QA 2): a call that panics answers with an error instead of
+    /// A call that panics answers with an error instead of
     /// leaving the client waiting; one that does not keeps its result.
     #[tokio::test]
     async fn answer_always_turns_a_panic_into_an_error_reply() {
