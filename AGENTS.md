@@ -9,6 +9,7 @@
 - New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry. A dependency with network access (HTTP, TLS, sockets beyond the local Unix one) goes only in the crate `docs/adr/0009-politica-de-red.md` names (`tiza-net`), with an amendment to that ADR; `deny.toml` bans it everywhere else and CI fails.
 - Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Commits in Spanish, imperative mood, with the board card's id when applicable: `t-` and its three digits, in parentheses at the end of the subject.
+- No ticket ids (`t-` and three digits) in code, comments, docs, schemas, the CHANGELOG or user-facing strings: the board is private. They live only in commit messages and in the names of `qa/tests/` and `qa/fixtures/` files (and inside `qa/`); `scripts/bench.py` may quote the name of a `qa/tests/` target it runs. A QA test fails on any other, with its file and line.
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `tiza api status --socket /tmp/x.sock`.
 
 ## Working the board
