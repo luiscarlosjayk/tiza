@@ -771,6 +771,17 @@
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
               },
+              "follows": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FileRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload when the document is opened again. Written only\nwith embedded code; `:embed`, `:link` and a reload back to the file\nclear it."
+              },
               "loop": {
                 "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
                 "type": "boolean"
@@ -917,6 +928,24 @@
                 "type": "string"
               }
             ]
+          },
+          "FileRef": {
+            "description": "A file as `code` references it: `file` absolute or relative to the\n`.tiza` directory, `lines` an optional range `\"12-48\"` or `\"7\"`.",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "lines": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "file"
+            ],
+            "type": "object"
           },
           "Head": {
             "description": "What is drawn at an end of a line.",
@@ -3507,6 +3536,17 @@
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
               },
+              "follows": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/FileRef"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "The file the embedded code replaced while follow mode watched it (a\npaste over it, or an undo past a reload): what `:follow on` and\n`--follow` reload when the document is opened again. Written only\nwith embedded code; `:embed`, `:link` and a reload back to the file\nclear it."
+              },
               "loop": {
                 "description": "`n` (and an `auto_advance_ms`) past the last step goes back to step 0.",
                 "type": "boolean"
@@ -3653,6 +3693,24 @@
                 "type": "string"
               }
             ]
+          },
+          "FileRef": {
+            "description": "A file as `code` references it: `file` absolute or relative to the\n`.tiza` directory, `lines` an optional range `\"12-48\"` or `\"7\"`.",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "lines": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "file"
+            ],
+            "type": "object"
           },
           "Head": {
             "description": "What is drawn at an end of a line.",

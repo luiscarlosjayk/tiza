@@ -1173,7 +1173,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Turns follow mode on or off: with it on, saving the source file in the editor reloads the code in the TUI and the annotations follow their text. Fails when the code is embedded (no file to follow). At a step with moves applied it turns on and waits: a save loads when the presenter is back at a step with no moves applied (`reason` says which). Returns the follow status (enabled, path, reloads, last_reload, reason)."
+        description = "Turns follow mode on or off: with it on, saving the source file in the editor reloads the code in the TUI and the annotations follow their text. Fails when the code is embedded and no followed file is known (read from stdin, or frozen with `:embed`); over code a paste or an undo put on a followed file, even in a reopened document, it loads that file. At a step with moves applied it turns on and waits: a save loads when the presenter is back at a step with no moves applied (`reason` says which). Returns the follow status (enabled, path, reloads, last_reload, reason)."
     )]
     async fn set_follow(
         &self,

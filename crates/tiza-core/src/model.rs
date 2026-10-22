@@ -73,6 +73,13 @@ pub struct Document {
     /// reference to a file (`{"file": "src/main.rs", "lines": "12-48"}`).
     #[serde(rename = "code")]
     pub code_src: CodeSource,
+    /// The file the embedded code replaced while follow mode watched it (a
+    /// paste over it, or an undo past a reload): what `:follow on` and
+    /// `--follow` reload when the document is opened again. Written only
+    /// with embedded code; `:embed`, `:link` and a reload back to the file
+    /// clear it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follows: Option<FileRef>,
     /// Code lines in memory, without the trailing newline. Filled in on load
     /// (see `fs::load_document`) and never serialized directly.
     #[serde(skip)]
@@ -167,6 +174,37 @@ pub enum CodeSource {
 impl Default for CodeSource {
     fn default() -> Self {
         CodeSource::Embedded(Vec::new())
+    }
+}
+
+/// A file as `code` references it: `file` absolute or relative to the
+/// `.tiza` directory, `lines` an optional range `"12-48"` or `"7"`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, schemars::JsonSchema)]
+pub struct FileRef {
+    pub file: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lines: Option<String>,
+}
+
+impl From<FileRef> for CodeSource {
+    fn from(r: FileRef) -> Self {
+        CodeSource::File {
+            file: r.file,
+            lines: r.lines,
+        }
+    }
+}
+
+impl CodeSource {
+    /// The file referenced; `None` for embedded code.
+    pub fn file_ref(&self) -> Option<FileRef> {
+        match self {
+            CodeSource::File { file, lines } => Some(FileRef {
+                file: file.clone(),
+                lines: lines.clone(),
+            }),
+            CodeSource::Embedded(_) => None,
+        }
     }
 }
 
@@ -822,6 +860,7 @@ impl Document {
                 first_line: 1,
             },
             code_src: CodeSource::Embedded(lines.clone()),
+            follows: None,
             code: lines,
             styles: BTreeMap::new(),
             annotations: Vec::new(),
