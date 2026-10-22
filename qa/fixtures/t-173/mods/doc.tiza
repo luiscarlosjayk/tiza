@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "title": "Two files with the same name (t-173)",
+  "source": { "language": "rs", "first_line": 1 },
+  "code": { "file": "src/a/mod.rs" },
+  "step": 0,
+  "moves": [
+    { "at_step": 2, "action": "code.link", "file": "src/b/mod.rs" }
+  ],
+  "annotations": [
+    { "id": "a1", "step": 1, "type": "box", "from_line": 3, "to_line": 5, "label": "the items" }
+  ]
+}

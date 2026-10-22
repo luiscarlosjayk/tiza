@@ -420,10 +420,12 @@ fn ac2_a_linked_file_not_shown_names_the_file() {
         tiza_tui::app::step_hint_start(&want),
         Some(want.find(" (src/").unwrap())
     );
-    // Cut, it names the file alone first (t-173).
     let narrow = live.screen(84, 20);
     let last = narrow.lines().last().unwrap();
-    assert!(last.ends_with("(queue.rs, not shown at step 4)"), "{last}");
+    assert!(
+        last.contains("(src/queue.rs, not shown at step 4)"),
+        "{last}"
+    );
 
     // The main file hidden by a link is named as `code.file` names it.
     // (More than 1 s later, or it would join the note's message.)
