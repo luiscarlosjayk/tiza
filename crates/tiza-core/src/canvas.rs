@@ -437,8 +437,8 @@ pub fn display_width(s: &str, tab_width: usize) -> usize {
 /// Columns `s` takes once drawn with [`Canvas::put_str`]: every grapheme
 /// takes at least one cell (a zero-width space or a lone combining mark
 /// too), except one with nothing to show (a bidi control). A tab is one
-/// cell there (its control picture). Wider than [`display_width`] for text
-/// with zero-width graphemes.
+/// cell there, as it is (labels have none; a style's glyph may). Wider
+/// than [`display_width`] for text with zero-width graphemes.
 pub fn drawn_width(s: &str) -> usize {
     s.graphemes(true)
         .map(|g| {

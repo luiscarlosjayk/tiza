@@ -384,13 +384,27 @@ impl Gen {
     fn below(&mut self, n: u64) -> u64 {
         self.next() % n.max(1)
     }
+    /// Words of a label: plain ones, and some with a zero-width space, a
+    /// ZWJ sequence, a combining mark or a no-break space, which take more
+    /// (or other) cells once drawn than their display width says.
     fn words(&mut self, max: u64) -> String {
-        const W: [&str; 8] = [
-            "the", "borrow", "checker", "moves", "a", "value", "here", "once",
+        const W: [&str; 12] = [
+            "the",
+            "borrow",
+            "checker",
+            "moves",
+            "a",
+            "value",
+            "here",
+            "once",
+            "zero\u{200b}width",
+            "👩\u{200d}💻",
+            "cafe\u{301}",
+            "no\u{a0}break",
         ];
         let n = 1 + self.below(max);
         (0..n)
-            .map(|_| W[self.below(8) as usize])
+            .map(|_| W[self.below(W.len() as u64) as usize])
             .collect::<Vec<_>>()
             .join(" ")
     }

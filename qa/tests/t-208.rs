@@ -72,7 +72,9 @@ fn doc_of(v: &Value) -> tiza_core::Document {
 
 #[test]
 fn ac1_ac2_the_zwsp_note_checks_without_a_panic_and_says_83() {
-    // Test step 1, with the debug build the tests run.
+    // Test step 1, with the debug build the tests run. (83 is what release
+    // announced before; that the note is cut at the canvas edge from 172 to
+    // 192 columns without a `…` is the layout's, for another card.)
     let out = std::process::Command::new(bin())
         .arg("check")
         .arg(fixture("t-208/zwsp-note.tiza"))
@@ -228,4 +230,30 @@ fn ac3_random_documents_with_zero_width_and_combining_text() {
         checked >= 150 && slow >= 15,
         "{checked} checked, {slow} the slow way"
     );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn rev_a_callout_with_a_character_wider_than_its_width() {
+    // One grapheme 14 columns wide in a callout 8 wide: the block grows to
+    // hold it, and the note beside it moves; the bound counts it.
+    for text in [
+        "\u{1100}".repeat(7),
+        format!("\u{915}{}", "\u{93e}".repeat(13)),
+    ] {
+        let doc = doc_of(&json!({
+            "schema": 1, "source": {"language": "rs", "first_line": 1},
+            "code": ["fn main() {", "    let a = 1;", "    let b = 2;", "    let c = 3;", "    a + b + c", "}"],
+            "annotations": [
+                {"id": "c1", "step": 1, "type": "callout", "from_line": 2, "to_line": 2, "text": text, "width": 8},
+                {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the borrow checker moves a value"}
+            ]
+        }));
+        bounded(&doc).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+        assert_eq!(
+            min_clean_width(&doc, &tiza_core::Theme::dark()),
+            clean_the_slow_way(&doc),
+            "{text:?}"
+        );
+    }
 }

@@ -1649,11 +1649,13 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
 /// - with a cap (`:margin N`) the frame and the margin stop growing one
 ///   column past `margin_x + N`;
 /// - without one, the margin is past every decision once it holds a margin
-///   callout (its block is at most `max(width or 34, 8, title + 4) + 4`
-///   wide, `auto` moves into the margin at `width + 19`, and the labels
-///   beside it get the rows once the block plus 15 fits) and, beside it,
-///   the longest label on one row (its `┆ ` and the gap after it), and the
-///   rows under the lines hold that label whole too;
+///   callout (its block is at most `max(width or 34, 8, title + 4, its
+///   widest character) + 4` wide, `auto` moves into the margin at `width +
+///   19`, and the labels beside it get the rows once the block plus 15
+///   fits) and, beside it, the longest label on one row (its `┆ ` and the
+///   gap after it), and the rows under the lines hold that label whole too;
+///   a label is measured as the canvas draws it (a zero-width space takes a
+///   cell there);
 /// - a callout with no rows for its block below its line is drawn as a
 ///   label of its words, which wrap in the margin or are cut under the
 ///   line: past the bound that leaves them out, the take changes only if
@@ -1741,10 +1743,18 @@ fn take_saturation(take: &Take) -> [usize; 2] {
             Shape::Callout {
                 text, title, width, ..
             } => {
+                // A character wider than the text column is a line of its
+                // own, and the block grows to hold it.
+                let widest =
+                    unicode_segmentation::UnicodeSegmentation::graphemes(text.as_str(), true)
+                        .map(&w)
+                        .max()
+                        .unwrap_or(0);
                 let inner = width
                     .unwrap_or(34)
                     .max(8)
-                    .max(title.as_deref().map_or(0, |t| w(t) + 4));
+                    .max(title.as_deref().map_or(0, |t| w(t) + 4))
+                    .max(widest);
                 callout = callout.max(inner);
                 // A callout with no room for its block (no rows left below
                 // it) is drawn as a label of its words.
