@@ -157,7 +157,7 @@ def frame_median(test="t-054", name="ac1_frame_under_budget", label="median fram
         cwd=ROOT, env=cargo_env(), capture_output=True, text=True, timeout=3600)
     m = re.search(label + r": ([\d.]+)(ns|µs|us|ms|s)\b", r.stderr + r.stdout)
     if r.returncode != 0 or not m:
-        raise RuntimeError(f"{test} failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
+        raise RuntimeError(f"qa/tests/{test}.rs failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
     scale = {"ns": 1e-6, "µs": 1e-3, "us": 1e-3, "ms": 1.0, "s": 1000.0}[m.group(2)]
     return float(m.group(1)) * scale
 

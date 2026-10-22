@@ -992,7 +992,9 @@ fn render_all_steps(
     }
     std::fs::create_dir_all(dir).with_context(|| format!("could not create {out}"))?;
     // The take's geometry, once for every step.
-    let geometry = tiza_core::layout::stable_geometry(doc, opts);
+    let geometry = opts
+        .stable
+        .then(|| tiza_core::layout::stable_geometry(doc, opts));
     let mut canvases: Vec<tiza_core::canvas::Canvas> = (0..=last)
         .map(|step| {
             tiza_core::layout::layout_with(
@@ -1002,7 +1004,7 @@ fn render_all_steps(
                     step,
                     ..opts.clone()
                 },
-                opts.stable.then_some(&geometry),
+                geometry.as_ref(),
             )
             .canvas
         })

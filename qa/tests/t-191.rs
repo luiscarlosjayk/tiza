@@ -161,13 +161,13 @@ fn ac1_every_change_computes_the_geometry_again() {
         app.autosave = false;
     });
     let same = |what: &str| {
-        let what = what.to_string();
-        live.with(move |app| {
-            app.finish_typing();
-            for width in [80, 120] {
-                assert_eq!(kept(app, width), fresh(app, width), "{what} at {width}");
-            }
-        });
+        for width in [80, 120] {
+            let (k, f) = live.with(move |app| {
+                app.finish_typing();
+                (kept(app, width), fresh(app, width))
+            });
+            assert_eq!(k, f, "{what} at {width}");
+        }
     };
     same("opened");
     // A move added at step 1: the geometry is the new take's.
@@ -227,10 +227,9 @@ fn corner_a_follow_reload_computes_the_geometry_again() {
         assert!(start.elapsed() < Duration::from_secs(10), "no reload");
         std::thread::sleep(Duration::from_millis(20));
     }
-    live.with(move |app| {
-        assert_eq!(kept(app, 100), fresh(app, 100));
-        assert_eq!(app.geometries.get(), geometries + 1);
-    });
+    let (k, f, now) = live.with(|app| (kept(app, 100), fresh(app, 100), app.geometries.get()));
+    assert_eq!(k, f);
+    assert_eq!(now, geometries + 1);
 }
 
 #[test]
@@ -334,10 +333,22 @@ fn ac4_status_before_the_first_frame() {
     );
     live.with(|app| app.size = (60, 30));
     let st = live.api_ok("status", json!({}));
+    // The oracle lays out without the instance's caches.
     let expected = live.with(|app| {
         let (_, pad) = app.effective_padding();
-        let l = app.layout(60 - 2 * usize::from(pad));
-        app.viewport_warnings_for(&l)
+        let width = 60 - 2 * usize::from(pad);
+        let opts = LayoutOptions {
+            width,
+            step: app.doc.step,
+            focus: app.focus,
+            pointer: None,
+            line_numbers: app.doc.numbers,
+            tab_width: 4,
+            typing: app.typing.is_some(),
+            stable: app.present || app.layout_stable,
+            margin_cap: app.doc.margin.map(usize::from),
+        };
+        app.viewport_warnings_for(&layout(&app.doc, &app.theme, &opts))
     });
     assert_eq!(st["warnings"], json!(expected));
 }
@@ -393,11 +404,128 @@ fn ac6_presentation_with_moves_frame_under_budget() {
         .collect();
     samples.sort();
     let median = samples[samples.len() / 2];
+    // Debug: ~38 ms on Luis's Mac, ~200 ms before the geometry was kept.
     let budget = if cfg!(debug_assertions) {
-        Duration::from_millis(250)
+        Duration::from_millis(100)
     } else {
         Duration::from_millis(16)
     };
     eprintln!("median presentation frame: {median:?} (budget {budget:?})");
     assert!(median < budget, "median frame {median:?} over {budget:?}");
+}
+
+// ---------- review: a typing ended by a request, a step patched ----------
+
+/// Four lines, a note at step 1, and a move at step 2 that types a line
+/// wider than every other, one line every 5 s: the take's geometry at step
+/// 2 is sized from what is typed so far.
+fn typed_wide_line() -> Document {
+    let doc = json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1},
+        "code": ["fn main() {", "    let a = 1;", "    a", "}"],
+        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the binding a"}],
+        "moves": [{
+            "at_step": 2, "action": "code.patch", "op": "insert", "after": "let a = 1;",
+            "content": format!("    // {}", "x".repeat(70)), "typing": "line", "speed_ms": 5000
+        }],
+        "step": 1
+    });
+    tiza_core::fs::parse_document(&doc.to_string(), None).unwrap()
+}
+
+/// Presenting `typed_wide_line`, `n` starts the typing and a frame is
+/// drawn halfway; then `end` ends it some other way than a key.
+fn typed_then(name: &str, end: impl FnOnce(&Live)) {
+    let dir = scratch(name);
+    let live = Live::open(
+        typed_wide_line(),
+        dir.join("doc.tiza"),
+        dir.join("live.sock"),
+    );
+    live.with(|app| {
+        app.present = true;
+        app.autosave = false;
+    });
+    live.keys(&[crossterm::event::KeyCode::Char('n')]);
+    assert!(live.with(|app| app.is_typing()), "typing");
+    let _ = live.screen(140, 20);
+    end(&live);
+    let (step, kept, fresh) = live.with(|app| {
+        app.finish_typing();
+        (app.doc.step, kept(app, 138), fresh(app, 138))
+    });
+    assert_eq!(kept, fresh, "step {step}");
+}
+
+/// The instance's layout at `width` and a fresh one, from the app thread.
+fn both(live: &Live, width: usize) -> (String, String) {
+    live.with(move |app| (kept(app, width), fresh(app, width)))
+}
+
+#[test]
+fn rev_a_typing_ended_by_step_prev_over_the_socket() {
+    typed_then("t191-typed-prev", |live| {
+        live.api_ok("step.prev", json!({}));
+    });
+}
+
+#[test]
+fn rev_a_typing_ended_by_step_next_at_the_last_step_then_p() {
+    typed_then("t191-typed-next", |live| {
+        live.api_ok("step.next", json!({}));
+        live.keys(&[crossterm::event::KeyCode::Char('p')]);
+    });
+}
+
+#[test]
+fn rev_a_typing_ended_by_a_refused_move_delete_then_p() {
+    typed_then("t191-typed-refused", |live| {
+        assert!(
+            live.api("move.delete", json!({"index": 99}))
+                .error
+                .is_some()
+        );
+        live.keys(&[crossterm::event::KeyCode::Char('p')]);
+    });
+}
+
+#[test]
+fn rev_a_typing_ended_by_a_step_set_in_the_app() {
+    typed_then("t191-typed-set", |live| {
+        live.with(|app| app.set_step(1));
+    });
+}
+
+#[test]
+fn rev_scene_patch_to_a_step_shows_that_steps_code() {
+    // A line wider than the rest exists only at step 3.
+    let doc = json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1},
+        "code": ["fn main() {", "    let a = 1;", "    a", "}"],
+        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the binding a"}],
+        "moves": [
+            {"at_step": 3, "action": "code.patch", "op": "insert", "after": "let a = 1;",
+             "content": format!("    // {}", "y".repeat(70))},
+            {"at_step": 4, "action": "code.patch", "op": "delete", "find": "// yyy"}
+        ],
+        "step": 1
+    });
+    let dir = scratch("t191-patch-step");
+    let live = Live::open(
+        tiza_core::fs::parse_document(&doc.to_string(), None).unwrap(),
+        dir.join("doc.tiza"),
+        dir.join("live.sock"),
+    );
+    live.with(|app| {
+        app.present = true;
+        app.autosave = false;
+    });
+    live.api_ok("scene.patch", json!({"step": 3}));
+    let code = live.api_ok("code.get", json!({}));
+    assert!(code.to_string().contains("yyyy"), "{code}");
+    let (k, f) = both(&live, 138);
+    assert_eq!(k, f, "step 3");
+    live.api_ok("step.set", json!({"step": 2}));
+    let (k, f) = both(&live, 138);
+    assert_eq!(k, f, "step 2");
 }

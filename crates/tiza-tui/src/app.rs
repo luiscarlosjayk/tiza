@@ -332,10 +332,11 @@ fn log_last_request_panic(what: &str) -> Option<PathBuf> {
     crate::log_line(&format!("{what} panicked at {at}: {message}"))
 }
 
-/// Methods that never change the document or the view: they bypass supervision.
 /// What the take's geometry was computed for: the document's revision,
 /// and, as a check on it, a few of its sizes and the layout options it
-/// reads. A typing tick changes the code shown, not the take, and keeps it.
+/// reads. The code typed so far at the step on screen counts too (the
+/// take reads the code shown there): every typing tick is a revision, and
+/// a geometry computed while typing is never kept past it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GeometryKey {
     revision: u64,
@@ -344,6 +345,7 @@ struct GeometryKey {
     lines: usize,
     line_numbers: bool,
     tab_width: usize,
+    typing: bool,
 }
 
 /// What a layout depends on, for the viewport facts of [`App::viewport`].
@@ -372,6 +374,7 @@ impl ViewportFacts {
     }
 }
 
+/// Methods that never change the document or the view: they bypass supervision.
 pub const READ_ONLY_METHODS: &[&str] = &[
     "ping",
     "status",
@@ -821,10 +824,12 @@ impl App {
         self.lay_out(&self.doc, &self.theme, &self.layout_options(width))
     }
 
-    /// The take's geometry computed at revision `from` still holds now.
+    /// The take's geometry computed at revision `from` still holds now
+    /// (not one sized from code typed halfway).
     fn keep_geometry(&mut self, from: u64) {
         if let Some((k, _)) = self.geometry.get_mut()
             && k.revision == from
+            && !k.typing
         {
             k.revision = self.revision;
         }
@@ -845,6 +850,7 @@ impl App {
             lines: doc.base().len(),
             line_numbers: opts.line_numbers,
             tab_width: opts.tab_width,
+            typing: self.typing.is_some(),
         };
         let fresh = self
             .geometry
@@ -1920,7 +1926,16 @@ impl App {
         if d.steps != self.doc.steps && self.typing.is_none() {
             self.step_ready_at = Some(std::time::Instant::now());
         }
+        let stepped = d.step != self.doc.step;
         self.doc = d;
+        // Another step: its code, as a step change shows it (a typing in
+        // progress ends; the code shown is the new step's).
+        if stepped {
+            self.finish_typing();
+            if let Some(e) = self.doc.sync_code_to_step() {
+                self.error(format!("moves: {e}"));
+            }
+        }
         match self.doc.theme {
             Some(t) => self.set_theme_name(t, true),
             None => self.rebuild_theme(),
@@ -2132,6 +2147,8 @@ impl App {
     pub fn finish_typing(&mut self) {
         if let Some(t) = self.typing.take() {
             self.doc.code = t.plan.full;
+            // The take was sized from the code typed so far.
+            *self.geometry.get_mut() = None;
             // The step is ready: its auto-advance countdown starts (t-099).
             self.step_ready_at = Some(std::time::Instant::now());
         }
