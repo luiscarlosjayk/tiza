@@ -2044,6 +2044,16 @@ impl Document {
         }
         check_step(ann.step, &annotation_what(&ann.id))?;
         self.resolve_file(&mut ann)?;
+        self.add_settled(ann)
+    }
+
+    /// Adds an annotation with the step and the file it has, without the
+    /// defaults of [`Document::add`]: an annotation the document already
+    /// had, put back after a rebuild (a follow reload, a paste, `:ref`).
+    /// A step-0 annotation stays at step 0, and one of the main file
+    /// stays in it, whatever file its step shows.
+    pub fn add_settled(&mut self, mut ann: Annotation) -> Result<String, Error> {
+        check_step(ann.step, &annotation_what(&ann.id))?;
         self.validate_annotation(&ann)?;
         sanitize_texts(&mut ann.shape);
         if ann.id.trim().is_empty() {

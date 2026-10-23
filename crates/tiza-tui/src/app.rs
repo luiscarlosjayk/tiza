@@ -3048,9 +3048,10 @@ impl App {
                 continue;
             }
             match shape {
-                // `add` validates against the code at the annotation's step.
+                // Validated against the code at the annotation's step; its
+                // step and file stay as they are.
                 Some(shape) if !held.contains(&a.id) => {
-                    let _ = d.add(Annotation { shape, ..a.clone() });
+                    let _ = d.add_settled(Annotation { shape, ..a.clone() });
                 }
                 Some(shape) => d.annotations.push(Annotation { shape, ..a.clone() }),
                 None => {}

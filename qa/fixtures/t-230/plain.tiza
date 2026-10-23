@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "title": "No code.link",
+  "source": {"language": "rs", "first_line": 1},
+  "code": {"file": "main.rs"},
+  "step": 0,
+  "annotations": [
+    {"id": "n0", "step": 0, "type": "note", "line": 9, "text": "prints it"},
+    {"id": "n2", "step": 2, "type": "note", "line": 3, "text": "moved"}
+  ]
+}
