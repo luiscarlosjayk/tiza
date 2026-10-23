@@ -40,6 +40,16 @@
 //!   `consecutive-lines.tiza` at 130).
 //! - The «…» of a label cut inside a box sits one cell before the rail, as
 //!   the code does (`servi… │`).
+//!
+//! Decided by Luis for the second rework (2026-10-23), after t-216 found a
+//! note under its line cut by a margin block with no «…» and no warning:
+//! - A row under a line (a note, a label, an arrow's label) that passes a
+//!   margin block ends before that block, with «…» one cell before its
+//!   border, by the same rule as the box rail; `check` counts it as clipped
+//!   and the reply's `visible`/`clipped` say the same
+//!   (`under-beside-block.tiza`, `arrow-beside-block.tiza`). A callout
+//!   block under its line stays inside the code column, so it never reaches
+//!   a margin block.
 
 use serde_json::{Value, json};
 use tiza_core::check::{CheckOptions, check_document};
@@ -721,6 +731,107 @@ fn ac7_reply_agrees_with_check_p5c_p6() {
 #[test]
 fn ac7_reply_agrees_with_check_three_and_consecutive() {
     for name in ["three-on-one-line.tiza", "consecutive-lines.tiza"] {
+        reply_agrees_with_check(name);
+    }
+}
+
+// ---------- Second rework: rows under a line beside a margin block ----------
+
+/// No text runs into a callout block: in every row the block covers, the
+/// cell left of its border is blank (a «…» stops one cell before it).
+fn assert_clear_of_blocks(at: &str, text: &str) {
+    let rows: Vec<Vec<char>> = text.lines().map(|r| r.chars().collect()).collect();
+    for (top, row) in rows.iter().enumerate() {
+        for x in 1..row.len() {
+            if row[x] != '╭' || row.get(x + 1) != Some(&'─') {
+                continue;
+            }
+            let Some(bottom) = (top + 1..rows.len()).find(|&r| rows[r].get(x) == Some(&'╰'))
+            else {
+                continue;
+            };
+            for (y, r) in rows.iter().enumerate().take(bottom + 1).skip(top) {
+                assert_eq!(
+                    r.get(x - 1),
+                    Some(&' '),
+                    "{at}: row {y} touches the block at column {x}\n{text}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn r2_a_note_under_its_line_stops_one_cell_before_the_margin_block() {
+    // The note of L2 goes under its line (the block leaves fewer than 14
+    // columns beside it) and the block covers that row: before, the row ran
+    // under the block, cut with no «…» and no warning.
+    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let code: Vec<&str> = env.lines().collect();
+    let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
+    assert_eq!(
+        render("under-beside-block.tiza", 99),
+        fill(
+            " 1   {L1}  ╭────────────────────────────╮
+ 2   {L2}                       │ user, password, host, port │
+     ┆ the live token: rotate it right after the demo, never comm… │ and database in one value  │
+ 3   LOG_LEVEL=info                                                ╰────────────────────────────╯
+ 4   PORT=8080
+"
+        )
+    );
+    assert_eq!(
+        check_cuts("under-beside-block.tiza", 99),
+        vec![("n2".to_string(), false)]
+    );
+}
+
+#[test]
+fn r2_arrow_labels_under_their_line_stop_before_the_margin_block() {
+    // The label of an arrow that ends on L2 and the label of an arrow along
+    // L2, both under L2 beside the block of L1.
+    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let code: Vec<&str> = env.lines().collect();
+    let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
+    assert_eq!(
+        render("arrow-beside-block.tiza", 99),
+        fill(
+            " 1     {L1}  ╭──────────────────────────╮
+ 2 ╭─▶ {L2}                       │ user, password, host,    │
+   │   ╰─────────▶                                                   │ port and database in one │
+   │   · the name and the value of the token are split at the equal… │ value                    │
+   │   ─▶ the port and the token go to the same service, so keep th… ╰──────────────────────────╯
+ 3 │   LOG_LEVEL=info
+ 4 ╰── PORT=8080
+"
+        )
+    );
+    let mut cuts = check_cuts("arrow-beside-block.tiza", 99);
+    cuts.sort();
+    assert_eq!(
+        cuts,
+        vec![("a2".to_string(), false), ("a3".to_string(), false)]
+    );
+}
+
+#[test]
+fn r2_rows_under_a_line_never_run_into_a_margin_block_from_60_to_140() {
+    // (p3, p3b and p6 are swept for their labels' place above.)
+    for name in [
+        "under-beside-block.tiza",
+        "arrow-beside-block.tiza",
+        "p6.tiza",
+    ] {
+        for w in 60..=140 {
+            assert_clear_of_blocks(&format!("{name} at {w}"), &render(name, w));
+            assert_in_place(name, w);
+        }
+    }
+}
+
+#[test]
+fn r2_reply_agrees_with_check_under_and_arrow_beside_block() {
+    for name in ["under-beside-block.tiza", "arrow-beside-block.tiza"] {
         reply_agrees_with_check(name);
     }
 }

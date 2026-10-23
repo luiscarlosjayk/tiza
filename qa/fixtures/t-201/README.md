@@ -10,3 +10,8 @@ From the first QA round (QA's own documents, as they were):
 - `p1b.tiza` at 62–100 and `p6.tiza` at 81–97: a margin callout alone on its line with no room for its block was a `┆` label in the margin, cut with «…».
 - `three-on-one-line.tiza`: three margin callouts on L2 (two side by side at 140, three at 180). `consecutive-lines.tiza`: callouts on L2, L3 and L4; at 130 the one of L4 was drawn beside L6–L8. `later-steps.tiza`: callouts and notes that arrive at later steps (at step 3, 100 columns, the second callout of L2 sat beside L5–L7).
 - `blank-spaces.tiza` and `blank-null.tiza`: the same document with `"  "` and with no label on a highlight, a mark, an arrow, a box and two callout titles.
+
+From the second rework (a row under a line beside a margin block, found by t-216):
+
+- `under-beside-block.tiza`: the callout of `four.env` on L1 and t-216's long note on L2. At 99 columns the note goes under L2 and the block covers that row; it ran under the block, cut with no «…» and no warning.
+- `arrow-beside-block.tiza`: the same callout, with the labels of an arrow that ends on L2 and of an arrow along L2, both under L2 beside the block.
