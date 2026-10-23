@@ -42,6 +42,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `ping` on the socket answers the plain string `"pong"`, not a `{type, protocol}` object. `status` gives `protocol`.
 
 ### Fixed
+- `annotation.update` refuses a key that it does not know, names the key and lists the keys that it accepts. Before, `{"text": …}` on a note answered OK and changed nothing: to change the text of a note or a callout, send `label`.
 - A paste turns follow mode off and tells you, so a later save does not reload over the paste. The `.tiza` keeps the followed file in an optional `follows` field, so `:follow on` can reload that file in a later session.
 - With moves applied (step 1 or later), follow mode waits and loads the change at step 0. A save in that state no longer leaves a `.tiza` that does not open.
 - Tiza no longer freezes when follow starts or stops its file watcher while macOS is slow to report file changes, for example during a build. If the file watcher cannot start, follow turns off and the status bar shows why.

@@ -208,7 +208,11 @@ fn corner_linked_file_not_shown_and_outside_the_window() {
 
     // Step 5 shows queue.rs:17-23: the note a4 (line 13) is outside the window.
     live.api_ok("step.set", json!({"step": 5}));
-    let r = live.api_ok("annotation.update", json!({"id": "a4", "text": "VecDeque"}));
+    // (A note's text is its `label`: `text` is refused since t-235.)
+    let r = live.api_ok(
+        "annotation.update",
+        json!({"id": "a4", "label": "VecDeque"}),
+    );
     assert_eq!(r["visible"], json!(false), "{r}");
     assert_eq!(
         r["hidden"],

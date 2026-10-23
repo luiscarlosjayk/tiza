@@ -188,8 +188,9 @@ fn rev_during_a_typing_animation_the_step_as_it_is_once_typed() {
             .unwrap()
             .to_string();
         assert!(text.contains("PORT=9090"), "{cols}: typed whole\n{text}");
-        // The reply about a note added now says the same of it.
-        let r = live.api_ok("annotation.update", json!({"id": "n1", "text": NOTE}));
+        // The reply about a note added now says the same of it (a note's
+        // text is its `label`: `text` is refused since t-235).
+        let r = live.api_ok("annotation.update", json!({"id": "n1", "label": NOTE}));
         assert_eq!(whole(&text), says_whole(&r), "{cols}: {r}\n{text}");
     }
 }
@@ -211,7 +212,7 @@ fn rev_while_authoring_the_take_not_the_screens_own_layout() {
     let mut differ = 0;
     for cols in 80..=150u16 {
         let live = opened_doc(&format!("t216-lanes-{cols}"), doc.clone(), cols);
-        let r = live.api_ok("annotation.update", json!({"id": "n1", "text": NOTE}));
+        let r = live.api_ok("annotation.update", json!({"id": "n1", "label": NOTE}));
         let render = live.api_ok("render.text", json!({}));
         let text = render["text"].as_str().unwrap();
         assert_eq!(whole(text), says_whole(&r), "{cols}: {r}\n{text}");

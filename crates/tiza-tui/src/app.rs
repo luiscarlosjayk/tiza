@@ -6210,7 +6210,7 @@ impl App {
                 serde_json::to_value(self.mutated(id))?
             }
             "annotation.update" => {
-                let p: UpdateParams = parse(params)?;
+                let p: UpdateParams = parse(params).map_err(update_key_hint)?;
                 self.update_annotation(&p)?;
                 serde_json::to_value(self.mutated(p.id))?
             }
@@ -7155,6 +7155,41 @@ fn nearest_commands(typed: &str) -> Vec<&'static str> {
         scored.retain(|(d, _)| *d == best);
     }
     scored.into_iter().take(3).map(|(_, c)| c).collect()
+}
+
+/// An unknown key of `annotation.update`, with what to send instead: `text`
+/// is the `label` of a note or a callout (no alias: on a callout it could
+/// mean the title too); a key one or two letters from an accepted one
+/// (`colour`) names that one. serde's message already names the key and
+/// lists the accepted ones.
+fn update_key_hint(e: Error) -> Error {
+    let Error::Invalid(msg) = &e else {
+        return e;
+    };
+    let Some(key) = msg
+        .split("unknown field `")
+        .nth(1)
+        .and_then(|rest| rest.split('`').next())
+    else {
+        return e;
+    };
+    let hint = if key == "text" {
+        "Use `label` to change the text of a note or a callout.".to_string()
+    } else {
+        let accepted = msg.split("expected one of ").nth(1).unwrap_or("");
+        let near = accepted
+            .split(", ")
+            .map(|n| n.trim_matches(|c: char| c == '`' || c.is_whitespace()))
+            .filter(|n| !n.is_empty())
+            .map(|n| (edit_distance(key, n), n))
+            .filter(|(d, _)| *d <= 2)
+            .min();
+        match near {
+            Some((_, n)) => format!("Did you mean `{n}`?"),
+            None => return e,
+        }
+    };
+    Error::Invalid(format!("{msg}. {hint}"))
 }
 
 fn edit_distance(a: &str, b: &str) -> usize {
