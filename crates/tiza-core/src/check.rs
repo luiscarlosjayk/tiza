@@ -1652,8 +1652,7 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
 ///   order the layout places them;
 /// - a margin callout with no room for its block is a block under its
 ///   line, as wide as its text: inside the code column when a box holds
-///   its rows, else with 8 cells of text at least (it never reaches the
-///   margin).
+///   its rows, else up to 8 cells of text, one cell short of the margin.
 ///
 /// Each step is laid out at the bound and at [`MAX_WIDTH`]: when the two
 /// takes are the same the bound is that step's; otherwise the step is

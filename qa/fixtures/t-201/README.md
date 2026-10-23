@@ -20,4 +20,6 @@ From the third rework (QA 1's final QA of the margin callouts):
 
 - `narrow-block.tiza`: a margin callout on L2 of three short lines (`A=1`), with no rows for its block in the margin, so it is a block under its line. The code column is 10 cells: the text wrapped at 8 and the block held 6, so each row lost its end, with no «…» and no warning, at every width. `narrow-block-boxed.tiza`: the same inside a box (its block must stay inside the box rail).
 - `under-rows.tiza`: a long note on L1 continued beside L2, whose two notes are under it, and wrote over the first of them at 70 columns, with no warning. `under-rows-long.tiza`: the same with a longer first note on L2.
-- `block-before-box.tiza`: callouts on L1 and L3 and a box on L4-L6. At 60 columns the block of L3 started on the box's top row, inside the box, beside L4 and L5.
+- `block-before-box.tiza`: callouts on L1 and L3 and a box on L4-L6. At 60 columns the block of L3 started on the box's top row, beside L4 and L5.
+- `own-under.tiza` (from the review of this rework): L1 draws its two notes under itself, and the label of an arrow along L1 is in the margin. That label continues on the rows of its own line, where the notes leave the margin blank.
+- `block-gap.tiza`, `block-gap-label.tiza`: a callout block under its line beside code of 10 columns, next to a margin block (40 columns) or the continuation of a highlight label (36 columns). The block keeps one cell from the margin.

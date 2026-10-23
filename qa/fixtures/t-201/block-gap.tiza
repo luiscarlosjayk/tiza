@@ -1,0 +1,6 @@
+{"schema":1,"source":{"language":"sh","first_line":1},
+"code":["A=1","B=2","C=3","D=4","E=5","F=6","G=7","H=8","I=9"],
+"annotations":[
+{"id":"c1","step":1,"type":"callout","from_line":2,"to_line":2,"text":"abcdefgh ijklmnop qrstuvwx","placement":"below"},
+{"id":"c2","step":1,"type":"callout","from_line":2,"to_line":2,"text":"margin block text here","placement":"margin","width":12}
+]}

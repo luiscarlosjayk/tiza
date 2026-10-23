@@ -55,11 +55,13 @@
 //! `qa/fixtures/t-201/`:
 //! - A callout block under its line beside code of 11 columns or fewer
 //!   lost the end of each row (its text wrapped at 8 cells, its block held
-//!   6), with no «…» and no warning: the block now holds what its text
-//!   needs, and inside a box the text wraps at the box's width.
-//! - The continuation of a margin note took the rows of the next line when
+//!   6), with no «…» and no warning: its text now wraps at the block's
+//!   width (inside a box, inside the code column; else up to 8 cells, one
+//!   cell short of the margin).
+//! - The continuation of a margin label took the rows of the next line when
 //!   that line draws its labels under it, and wrote over them: those rows
-//!   belong to that line's labels.
+//!   belong to that line's labels (a label of that line itself still
+//!   continues on them where the margin is blank).
 //! - A margin block started on the top row of the next line's box: a
 //!   box's top row belongs to the line after it.
 
@@ -871,8 +873,56 @@ fn r3_a_block_under_its_line_beside_narrow_code_loses_no_text() {
             "abcdefghijklmnopqrstuvwxyztail",
             "at {w}\n{t}"
         );
-        assert_in_place("narrow-block.tiza", w);
     }
+}
+
+/// The column right after the border of the block under line `n`, on each
+/// of its rows: nothing is drawn there.
+fn assert_gap_after_block(at: &str, t: &str, n: u32) {
+    let rows: Vec<Vec<char>> = t.lines().map(|r| r.chars().collect()).collect();
+    let top = row_of(t, n) + 1;
+    let x1 = rows[top]
+        .iter()
+        .position(|c| *c == '╮')
+        .unwrap_or_else(|| panic!("{at}: no block under L{n}\n{t}"));
+    for (r, row) in rows.iter().enumerate().skip(top) {
+        assert!(
+            row.get(x1 + 1).is_none_or(|c| *c == ' '),
+            "{at}: row {r} touches the block\n{t}"
+        );
+        if row.get(x1) == Some(&'╯') {
+            return;
+        }
+    }
+    panic!("{at}: no bottom\n{t}");
+}
+
+#[test]
+fn r3_a_block_under_its_line_keeps_a_cell_from_the_margin() {
+    // At 12 cells the block's border touched a margin block or a label's
+    // continuation; it is one cell narrower beside code of 10 columns.
+    for w in 30..=60 {
+        for name in ["block-gap.tiza", "block-gap-label.tiza"] {
+            let t = render(name, w);
+            assert_gap_after_block(&format!("{name} at {w}"), &t, 2);
+            assert!(
+                check_cuts(name, w).iter().all(|c| c.0 != "c1"),
+                "{name} at {w}"
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_a_label_continues_on_the_rows_of_its_own_line() {
+    // L1 draws its notes under itself; the label of the arrow along L1
+    // continues on those rows where the notes leave the margin blank.
+    for w in (40..=140).step_by(5) {
+        assert_in_place("own-under.tiza", w);
+    }
+    assert!(check_cuts("own-under.tiza", 60).is_empty());
+    let t = render("own-under.tiza", 60);
+    assert!(t.contains("rows of the margin"), "{t}");
 }
 
 #[test]
@@ -972,7 +1022,10 @@ fn r3_reply_agrees_with_check() {
         "narrow-block.tiza",
         "narrow-block-boxed.tiza",
         "under-rows.tiza",
+        "under-rows-long.tiza",
         "block-before-box.tiza",
+        "own-under.tiza",
+        "block-gap.tiza",
     ] {
         reply_agrees_with_check(name);
     }

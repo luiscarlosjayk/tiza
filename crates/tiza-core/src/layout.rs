@@ -742,16 +742,22 @@ fn layout_pass(
         // Below the code, the widest text of the block. Inside a box (its
         // rows are, see the rows below) the block stays inside the code
         // column, so the box can still draw its right rail. Out of a box it
-        // holds 8 cells of text at least, beside code of 11 columns or fewer
-        // too. The text wraps at that width, so the block is as wide as its
-        // text and no row loses its end.
+        // can pass the code column, beside code of 11 columns or fewer, up
+        // to 8 cells of text and one cell short of the margin. The text
+        // wraps at that width, so the block is as wide as its text and no
+        // row loses its end.
         let below_cap = {
             let (from, to) = (*from_line, to_line.unwrap_or(*from_line));
             let in_box = boxes
                 .iter()
                 .any(|b| b.from <= to && to <= b.to && (to < b.to || b.from <= from));
             let room = code_w.saturating_sub(4);
-            if in_box { room.max(4) } else { room.max(8) }
+            if in_box {
+                room.max(4)
+            } else {
+                // Up to 8, and one cell short of the margin.
+                room.max((code_w + box_depth).saturating_sub(3).min(8))
+            }
         };
         let text_w = if below {
             want.unwrap_or(below_cap).clamp(below_cap.min(8), below_cap)
@@ -1786,30 +1792,48 @@ fn layout_pass(
         let height = canvas.height;
         // The rows that belong to a line's labels: its margin row, and the
         // rows under a line that draws its labels there (step 6 wrote them
-        // across the margin), with that line's code row. A continuation never
-        // takes them, so it does not write over them or sit beside a line
-        // that has labels of its own.
+        // across the margin), with that line's code row (`owner`: the code
+        // row of that line). A continuation of another line never takes
+        // them, so it does not write over them or sit beside a line that has
+        // labels of its own. A label of that same line continues on its rows
+        // under it where step 6 left the margin blank.
         let mut reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
+        let mut owner: Vec<Option<usize>> = vec![None; height];
+        // The code row of the line each row is on.
+        let mut line_row: Vec<Option<usize>> = vec![None; height];
         let mut code_row = None;
         for (r, row) in rows.iter().enumerate() {
             match row {
                 Row::Code(_) => code_row = Some(r),
                 Row::Under(_) => {
                     reserved[r] = true;
+                    owner[r] = code_row;
                     if let Some(c) = code_row {
                         reserved[c] = true;
+                        owner[c] = Some(c);
                     }
                 }
                 _ => {}
             }
+            line_row[r] = code_row;
         }
+        let margin_blank: Vec<bool> = (0..height)
+            .map(|r| {
+                (margin_x.saturating_sub(1)..width)
+                    .all(|x| canvas.get(x, r).is_none_or(|c| c.sym == " "))
+            })
+            .collect();
         for (y, labels) in margin.iter().enumerate() {
             let mut next_row = y;
             // A label starts on a row of its own line, never beside the
             // next one.
             let own_end = own_rows_end(&rows, y);
             let free = |r: usize, occupied: &[bool]| {
-                r < height && !occupied[r] && (!reserved[r] || r == y)
+                r < height
+                    && !occupied[r]
+                    && (!reserved[r]
+                        || r == y
+                        || (owner[r].is_some() && owner[r] == line_row[y] && margin_blank[r]))
             };
             for (k, l) in labels.iter().enumerate() {
                 let prefix = if l.note { "┆ " } else { "" };

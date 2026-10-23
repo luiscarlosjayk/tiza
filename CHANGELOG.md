@@ -61,9 +61,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
   - Two margin callouts on one line do not overlap. A block starts only on the rows of its own line, beside the blocks there when the margin has room. If the margin has no room, the block goes under its line.
   - A margin block can leave fewer than 14 columns beside it. Then the labels of the lines that it covers go under their own line. Before, Tiza did not draw these labels, or drew them beside another line.
   - A label under a line stops one cell before the right rail of its box, with `…`. It also stops one cell before a margin block on its row. `tiza check` counts the label as clipped. Before, the label crossed the rail into the margin, or the block hid its end with no warning.
-  - A callout block under its line holds at least 8 cells of text, also beside short code. Inside a box, its text wraps at the width of the box. Before, each row lost its end beside code of 11 columns or less, with no warning.
-  - A note in the margin continues only on rows that no other line uses. Before, it could continue beside a line whose labels are under it, and write over those labels.
-  - A margin block does not start on the top row of the box of the next line. Before, it could start there, inside the box.
+  - A callout block under its line no longer cuts its text beside short code. Its text wraps at the width of the block, also inside a box. Before, each row lost its end beside code of 11 columns or less, with no warning.
+  - A label in the margin does not continue beside a line that draws its labels under it. Before, it continued there and could write over those labels.
+  - A margin block does not start on the top row of the box of the next line. Before, it could start there, beside the lines of that box.
   - An empty label (`""`, only spaces or only zero-width characters) is the same as no label. It does not make a lone `·` row, an empty `warning:`, a gap in a box border or an empty callout title. It does not move the other labels of its line under the line.
 - Smaller fixes:
   - A box that starts on the cursor line keeps its title row on screen.
