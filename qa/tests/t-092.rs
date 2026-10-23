@@ -98,7 +98,14 @@ fn ac3_below_block_wider_than_the_box_goes_after_its_border() {
 
 #[test]
 fn ac4_auto_follows_the_available_margin() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "t092-auto");
+    // Enough lines below for the block in the margin at 140 columns (with
+    // three, it had no rows there and, since t-201, falls under its line at
+    // every width as a block, as at 50).
+    let live = Live::from_code(
+        "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\nfn f() {}\n",
+        "rs",
+        "t092-auto",
+    );
     live.api_ok(
         "annotation.add",
         json!({"type": "callout", "from_line": 1, "to_line": 2, "text": "auto placed paragraph with enough words to wrap twice over", "placement": "auto"}),
