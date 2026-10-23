@@ -1161,7 +1161,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "render.text",
-        "Returns the canvas as plain text: without `width`, the take at the width of the screen's code area (the reply's `width` names it)",
+        "Returns the take as plain text, as `tiza render --format txt` writes it: without `width`, at the width of the screen's code area (the reply's `width` names it)",
     ),
     (
         "check",

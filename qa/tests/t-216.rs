@@ -12,7 +12,8 @@
 //!   and out of it; at the code area's width it agreed everywhere.
 //! - AC2 Without `width`, `render.text` (socket, MCP `render_text`, the
 //!   `tiza://render` resources) is the take at the width `visible` and
-//!   `check` use, so they always agree; with `width` nothing changes.
+//!   `check` use, so they always agree; with `width` nothing changes (until
+//!   t-224, which makes it the take at that width too).
 //! - AC3 The reply says the width it used (`width`); the agent guide, the
 //!   MCP description and the API schema say so.
 //! - AC4 This file; CHANGELOG.
@@ -98,7 +99,9 @@ fn step1_step2_ac1_ac2_render_text_agrees_with_visible_and_check_at_every_width(
 }
 
 #[test]
-fn ac2_with_a_width_nothing_changes() {
+fn ac2_with_a_width_the_reply_names_it() {
+    // (With a width it is the take at that width since t-224, which
+    // compares it with `tiza render`.)
     let live = opened("t216-width", 117, false);
     live.api_ok(
         "annotation.add",
@@ -106,8 +109,7 @@ fn ac2_with_a_width_nothing_changes() {
     );
     for w in [60, 117, 140] {
         let r = live.api_ok("render.text", json!({"width": w}));
-        let want = live.with(move |a| a.layout(w).canvas.to_plain_text());
-        assert_eq!(r["text"].as_str().unwrap(), want, "{w}");
+        assert!(!r["text"].as_str().unwrap().is_empty(), "{w}");
         assert_eq!(r["width"], json!(w));
     }
 }
@@ -147,7 +149,10 @@ fn ac3_docs_schema_and_changelog() {
         .find("\"render.text\"")
         .expect("render.text in the schema");
     assert!(text[at..].contains("\"width\""), "the reply's width");
-    assert!(read("docs/agent-guide.md").contains("`render_text` without a `width`"));
+    assert!(
+        read("docs/agent-guide.md")
+            .contains("without a `width`, at the width of the screen's code area")
+    );
     assert!(read("CHANGELOG.md").contains("`render.text` without a width"));
 }
 
@@ -236,7 +241,8 @@ fn rev_the_mcp_tool_names_the_width_on_a_second_line() {
             && second.contains(&format!("`width: {width}`")),
         "{v}"
     );
+    // (The take at that width too since t-224.)
     let (_, _, v) = mcp.call("render_text", json!({"width": 90}));
     let second = v["result"]["content"][1]["text"].as_str().unwrap_or("");
-    assert!(second.contains("presenter's layout at 90 columns"), "{v}");
+    assert!(second.contains("take at 90 columns"), "{v}");
 }

@@ -60,10 +60,10 @@ pub struct ClearParams {
 /// Parameters of `render.text`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RenderParams {
-    /// Columns. Without it, the take (the layout of presentation mode) at the
-    /// width of the screen's code area, as `visible` judges it (`check` at
-    /// the same width agrees); the reply's `width` says which. With it, the
-    /// presenter's layout at that width.
+    /// Columns of the take (the layout of presentation mode, as `tiza render`
+    /// writes it). Without it, the width of the screen's code area, as
+    /// `visible` judges it (`check` at the same width agrees); the reply's
+    /// `width` says which.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
 }

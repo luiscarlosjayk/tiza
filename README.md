@@ -204,7 +204,7 @@ The same API is available as a Unix socket with line-delimited JSON (design borr
 ```sh
 tiza scene status                 # is there an instance? what is it showing?
 tiza scene list                   # annotations
-tiza scene text                   # the take on screen, as text (`--width N`: the screen's layout at N)
+tiza scene text                   # the take on screen, as text (`--width N`: the take at N)
 tiza api annotation.add '{"type":"note","line":4,"text":"hello"}'
 tiza scene put other.tiza      # replace the live document (u undoes, step included); also takes a `scene get` envelope; a plain file only with --as-code
 tiza scene patch '{"step":2,"theme":"light","annotations":[{"id":"a1","deleted":true}]}'   # partial change, merged by id

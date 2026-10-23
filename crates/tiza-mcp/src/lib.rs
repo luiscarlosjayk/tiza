@@ -573,7 +573,7 @@ pub struct FollowParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct RenderParams {
     #[schemars(
-        description = "Width in columns. Without it, the take at the width of the screen's code area (the terminal minus its padding), as `visible` judges it. With it, the presenter's layout at that width."
+        description = "Width in columns of the take. Without it, the width of the screen's code area (the terminal minus its padding), as `visible` judges it."
     )]
     pub width: Option<u32>,
 }
@@ -1190,7 +1190,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the audience sees it (without the live pointer). Without `width` it is the take (the layout of presentation mode) at the width of the screen's code area: it agrees with the `visible` of your add calls, and `check` at that width gives the same verdict. A second line of the result names the width. With `width` it is the presenter's layout at that width (while authoring, the room the steps so far need). Use it to check the result of what you drew."
+        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the audience sees it (without the live pointer). It is the take (the layout of presentation mode), the same text `tiza render --format txt` writes for this step at the width the second line names. Without `width` it is at the width of the screen's code area: it agrees with the `visible` of your add calls, and `check` at that width gives the same verdict. A second line of the result names the width. Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
@@ -1204,7 +1204,9 @@ impl TizaServer {
                 None => format!(
                     "This is the take at {w} columns, the width that `visible` uses. Give `check` the same width (`width: {w}`) to check this take."
                 ),
-                Some(_) => format!("This is the presenter's layout at {w} columns."),
+                Some(_) => format!(
+                    "This is the take at {w} columns. Give `check` the same width (`width: {w}`) to check this take."
+                ),
             };
             result.content.push(ContentBlock::text(said));
         }

@@ -815,8 +815,8 @@ impl App {
         }
     }
 
-    /// The layout every reader gets (render.text, screen captures) and the
-    /// author's own screen.
+    /// The author's own screen at `width` (and the `status` warnings about
+    /// it). Readers get the take instead ([`App::take_at`]).
     pub fn layout(&self, width: usize) -> Layout {
         self.lay_out(&self.doc, &self.theme, &self.layout_options(width))
     }
@@ -889,23 +889,28 @@ impl App {
 
     /// The take at the screen's width (within the widths `check` takes):
     /// what `visible` and `clipped` go by, and `render.text` without a width.
-    /// During a typing animation, the step as it is once typed: the code on
-    /// screen is half typed, and the step's annotations wait for its end.
     fn take_at_screen(&self) -> (usize, Layout) {
         use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
         let width = self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH);
+        (width, self.take_at(width))
+    }
+
+    /// The take at `width`: the layout of presentation mode, the exports and
+    /// `check` (one geometry for every step), what `render.text` returns.
+    /// During a typing animation, the step as it is once typed: the code on
+    /// screen is half typed, and the step's annotations wait for its end.
+    fn take_at(&self, width: usize) -> Layout {
         let mut opts = self.layout_options(width);
         opts.stable = true;
         opts.typing = false;
-        let layout = match &self.typing {
+        match &self.typing {
             Some(t) => {
                 let mut typed = self.doc.clone();
                 typed.code = t.plan.full.clone();
                 self.lay_out(&typed, &self.theme, &opts)
             }
             None => self.lay_out(&self.doc, &self.theme, &opts),
-        };
-        (width, layout)
+        }
     }
 
     /// Why annotation `id` is not on the screen now: the document's reasons
@@ -961,8 +966,8 @@ impl App {
     }
 
     /// [`App::layout`] with the live pointer. Only the presenter's
-    /// frame (`ui::draw`) calls it; `layout` (`render.text`, screen
-    /// captures) and every export never draw the pointer.
+    /// frame (`ui::draw`) calls it; `layout`, the take `render.text` returns
+    /// and every export never draw the pointer.
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
         let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
@@ -6192,13 +6197,14 @@ impl App {
                 })?
             }
             "render.text" => {
-                // Without a width, the take the screen shows: what the reply
-                // of `annotation.add` (`visible`, `clipped`) and `check` say.
+                // The take, as `tiza render --format txt` writes it: without a
+                // width, at the screen's, which the reply of `annotation.add`
+                // (`visible`, `clipped`) and `check` at that width judge.
                 let (width, layout) = match params.get("width").and_then(|w| w.as_u64()) {
                     Some(w) => {
                         let w =
                             tiza_core::layout::check_width(w.min(u64::from(u32::MAX)) as usize)?;
-                        (w, self.layout(w))
+                        (w, self.take_at(w))
                     }
                     None => self.take_at_screen(),
                 };

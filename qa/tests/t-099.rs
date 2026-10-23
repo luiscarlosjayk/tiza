@@ -183,7 +183,9 @@ fn ac2_ac9_the_title_is_on_the_bar_in_status_and_in_list_annotations() {
         !err && text.contains("\"label\": \"step 1/5 · Ownership moves\""),
         "{text}"
     );
-    let (_, render, _) = mcp.call("render_text", json!({"width": 100}));
+    // (The take since t-224: lanes for every step, so 140 columns for the
+    // whole label.)
+    let (_, render, _) = mcp.call("render_text", json!({"width": 140}));
     assert!(render.contains("move: s moves into"), "{render}");
     assert!(
         !render.contains("a shared borrow"),
