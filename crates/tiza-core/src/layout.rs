@@ -718,12 +718,13 @@ fn layout_pass(
     let mut callouts: Vec<CalloutPlan> = Vec::new();
     for (i, a) in vis.iter().enumerate() {
         let Shape::Callout {
+            from_line,
+            to_line,
             text,
             title,
             placement,
             width: want,
             frame,
-            ..
         } = &a.shape
         else {
             continue;
@@ -738,11 +739,22 @@ fn layout_pass(
                     !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
                 }
             };
+        // Below the code, the widest text of the block. Inside a box (its
+        // rows are, see the rows below) the block stays inside the code
+        // column, so the box can still draw its right rail. Out of a box it
+        // holds 8 cells of text at least, beside code of 11 columns or fewer
+        // too. The text wraps at that width, so the block is as wide as its
+        // text and no row loses its end.
+        let below_cap = {
+            let (from, to) = (*from_line, to_line.unwrap_or(*from_line));
+            let in_box = boxes
+                .iter()
+                .any(|b| b.from <= to && to <= b.to && (to < b.to || b.from <= from));
+            let room = code_w.saturating_sub(4);
+            if in_box { room.max(4) } else { room.max(8) }
+        };
         let text_w = if below {
-            // Stays inside the code column, so a Box around the range can
-            // still draw its right rail.
-            let max_text = code_w.saturating_sub(4).max(8);
-            want.unwrap_or(max_text).clamp(8, max_text)
+            want.unwrap_or(below_cap).clamp(below_cap.min(8), below_cap)
         } else {
             want.unwrap_or(34)
                 .clamp(8, margin_est.saturating_sub(5).max(8))
@@ -762,13 +774,9 @@ fn layout_pass(
             .unwrap_or(0)
             .max(title.as_ref().map(|t| display_width(t, 4) + 4).unwrap_or(0))
             .max(4);
-        // Below the code the block never grows past the code column (a long
-        // title is clipped in the border instead of breaking a box's rail).
-        let inner = if below {
-            inner.min(code_w.saturating_sub(4).max(4))
-        } else {
-            inner
-        };
+        // Below the code the block is no wider than its text (a long title
+        // is clipped in the border instead of breaking a box's rail).
+        let inner = if below { inner.min(below_cap) } else { inner };
         callouts.push(CalloutPlan {
             idx: i,
             below,
@@ -1145,9 +1153,7 @@ fn layout_pass(
         for (y0, ci) in order {
             let c = &callouts[ci];
             let h = c.lines.len() + 2;
-            let own_end = (y0 + 1..height)
-                .find(|&r| matches!(rows[r], Row::Code(_)))
-                .unwrap_or(height);
+            let own_end = own_rows_end(&rows, y0);
             let spot = if c.width <= margin_w {
                 (y0..own_end)
                     .take_while(|&y| y + h <= height)
@@ -1778,14 +1784,30 @@ fn layout_pass(
     // start on the free rows after the previous one.
     if labels_in_margin && margin_w > 0 {
         let height = canvas.height;
-        let reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
+        // The rows that belong to a line's labels: its margin row, and the
+        // rows under a line that draws its labels there (step 6 wrote them
+        // across the margin), with that line's code row. A continuation never
+        // takes them, so it does not write over them or sit beside a line
+        // that has labels of its own.
+        let mut reserved: Vec<bool> = margin.iter().map(|l| !l.is_empty()).collect();
+        let mut code_row = None;
+        for (r, row) in rows.iter().enumerate() {
+            match row {
+                Row::Code(_) => code_row = Some(r),
+                Row::Under(_) => {
+                    reserved[r] = true;
+                    if let Some(c) = code_row {
+                        reserved[c] = true;
+                    }
+                }
+                _ => {}
+            }
+        }
         for (y, labels) in margin.iter().enumerate() {
             let mut next_row = y;
             // A label starts on a row of its own line, never beside the
-            // next one: the rows up to the next code row.
-            let own_end = (y + 1..height)
-                .find(|&r| matches!(rows[r], Row::Code(_)))
-                .unwrap_or(height);
+            // next one.
+            let own_end = own_rows_end(&rows, y);
             let free = |r: usize, occupied: &[bool]| {
                 r < height && !occupied[r] && (!reserved[r] || r == y)
             };
@@ -1990,6 +2012,15 @@ fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Opti
         (Head::Open, true) => ">",
         (Head::Open, false) => "<",
     })
+}
+
+/// The end (exclusive) of the rows of the line on row `y`: up to the next
+/// code row, or the top row of a box before it, which belongs to the line
+/// after it.
+fn own_rows_end(rows: &[Row], y: usize) -> usize {
+    (y + 1..rows.len())
+        .find(|&r| matches!(rows[r], Row::Code(_) | Row::BoxTop(_)))
+        .unwrap_or(rows.len())
 }
 
 /// `doc` with every blank label, box label and callout title taken as

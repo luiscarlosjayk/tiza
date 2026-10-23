@@ -1,0 +1,1 @@
+{"schema": 1, "title": "narrow-block-boxed", "source": {"language": "sh", "first_line": 1}, "code": ["A=1", "B=2", "C=3"], "annotations": [{"id": "c1", "step": 1, "type": "callout", "from_line": 2, "to_line": 2, "text": "abcdefgh ijklmnop qrstuvwx yz012345 tail", "placement": "margin"}, {"id": "b1", "step": 1, "type": "box", "from_line": 1, "to_line": 3, "label": "env"}]}

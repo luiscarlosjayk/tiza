@@ -1,0 +1,5 @@
+{"schema":1,"title":"c1","source":{"language":"sh","first_line":1},
+"code":["A=1","B=2","C=3"],
+"annotations":[
+{"id":"c1","step":1,"type":"callout","from_line":2,"to_line":2,"text":"abcdefgh ijklmnop qrstuvwx yz012345 tail","placement":"margin"}
+]}

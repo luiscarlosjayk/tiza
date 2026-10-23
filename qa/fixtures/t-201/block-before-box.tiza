@@ -1,0 +1,7 @@
+{"schema":1,"title":"bt","source":{"language":"sh","first_line":1},
+"code":["A=1","B=2","C=3","D=4","E=5","F=6","G=7","H=8","I=9","J=10"],
+"annotations":[
+{"id":"c0","step":1,"type":"callout","from_line":1,"to_line":1,"text":"aaaa bbbb cccc dddd eeee ffff gggg","placement":"margin","width":34},
+{"id":"c1","step":1,"type":"callout","from_line":3,"to_line":3,"text":"hhhh iiii jjjj kkkk llll mmmm nnnn","placement":"margin","width":34},
+{"id":"b1","step":1,"type":"box","from_line":4,"to_line":6,"label":"box"}
+]}

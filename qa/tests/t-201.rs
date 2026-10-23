@@ -48,8 +48,20 @@
 //!   border, by the same rule as the box rail; `check` counts it as clipped
 //!   and the reply's `visible`/`clipped` say the same
 //!   (`under-beside-block.tiza`, `arrow-beside-block.tiza`). A callout
-//!   block under its line stays inside the code column, so it never reaches
-//!   a margin block.
+//!   block under its line never reaches a margin block (inside a box it
+//!   stays inside the code column).
+//!
+//! Third rework (QA 1's final QA, 2026-10-23), each with a repro in
+//! `qa/fixtures/t-201/`:
+//! - A callout block under its line beside code of 11 columns or fewer
+//!   lost the end of each row (its text wrapped at 8 cells, its block held
+//!   6), with no «…» and no warning: the block now holds what its text
+//!   needs, and inside a box the text wraps at the box's width.
+//! - The continuation of a margin note took the rows of the next line when
+//!   that line draws its labels under it, and wrote over them: those rows
+//!   belong to that line's labels.
+//! - A margin block started on the top row of the next line's box: a
+//!   box's top row belongs to the line after it.
 
 use serde_json::{Value, json};
 use tiza_core::check::{CheckOptions, check_document};
@@ -832,6 +844,136 @@ fn r2_rows_under_a_line_never_run_into_a_margin_block_from_60_to_140() {
 #[test]
 fn r2_reply_agrees_with_check_under_and_arrow_beside_block() {
     for name in ["under-beside-block.tiza", "arrow-beside-block.tiza"] {
+        reply_agrees_with_check(name);
+    }
+}
+
+// ---------- Third rework ----------
+
+/// The small letters drawn on the rows after line `n`, in order.
+fn letters_after(text: &str, n: u32) -> String {
+    text.lines()
+        .skip(row_of(text, n) + 1)
+        .flat_map(|r| r.chars())
+        .filter(char::is_ascii_lowercase)
+        .collect()
+}
+
+#[test]
+fn r3_a_block_under_its_line_beside_narrow_code_loses_no_text() {
+    // Code of 3 columns: the code column is 10 cells. The text wrapped at
+    // 8 and the block held 6, at every width.
+    for w in [20, 30, 40, 61, 80, 100, 140, 200] {
+        let t = render("narrow-block.tiza", w);
+        assert!(check_cuts("narrow-block.tiza", w).is_empty(), "at {w}");
+        assert_eq!(
+            letters_after(&t, 2),
+            "abcdefghijklmnopqrstuvwxyztail",
+            "at {w}\n{t}"
+        );
+        assert_in_place("narrow-block.tiza", w);
+    }
+}
+
+#[test]
+fn r3_inside_a_box_the_block_wraps_its_text_at_the_box_rail() {
+    // The block must not cross the box's right rail: its text wraps at the
+    // code column's width, splitting long words, and loses nothing.
+    for w in [20, 30, 40, 61, 80, 100, 140, 200] {
+        let t = render("narrow-block-boxed.tiza", w);
+        assert!(
+            check_cuts("narrow-block-boxed.tiza", w).is_empty(),
+            "at {w}"
+        );
+        assert_eq!(
+            letters_after(&t, 2),
+            "abcdefghijklmnopqrstuvwxyztail",
+            "at {w}\n{t}"
+        );
+        // Every row of the box, from its top border to its bottom border,
+        // ends on the rail's column.
+        let rows: Vec<Vec<char>> = t.lines().map(|r| r.chars().collect()).collect();
+        let top = rows
+            .iter()
+            .position(|r| r.iter().collect::<String>().contains("╭─ env"))
+            .unwrap();
+        let rail = rows[top].len() - 1;
+        assert_eq!(rows[top][rail], '╮', "at {w}\n{t}");
+        let bottom = (top + 1..rows.len())
+            .find(|&r| rows[r].get(rail) == Some(&'╯'))
+            .unwrap_or_else(|| panic!("at {w}: no bottom on the rail\n{t}"));
+        for (r, row) in rows.iter().enumerate().take(bottom).skip(top + 1) {
+            assert_eq!(row.get(rail), Some(&'│'), "at {w}, row {r}\n{t}");
+            assert!(
+                row.len() == rail + 1,
+                "at {w}, row {r}: something past the rail\n{t}"
+            );
+        }
+    }
+}
+
+#[test]
+fn r3_a_note_continues_only_on_rows_no_other_line_owns() {
+    // L2 draws its two notes under itself: the rows of L2 belong to them,
+    // and the note of L1 never writes over them nor sits beside L2.
+    for name in ["under-rows.tiza", "under-rows-long.tiza"] {
+        for w in (40..=140).step_by(5) {
+            let t = render(name, w);
+            assert_in_place(name, w);
+            let rows: Vec<&str> = t.lines().collect();
+            let l2 = row_of(&t, 2);
+            if rows[l2 + 1].trim_start().starts_with("┆ second") {
+                assert!(
+                    rows[l2].trim_end().ends_with("B=2"),
+                    "{name} at {w}: text beside L2\n{t}"
+                );
+            }
+        }
+    }
+    let t = render("under-rows.tiza", 70);
+    assert!(
+        t.contains("┆ second line first note, fits the row whole"),
+        "{t}"
+    );
+    assert_eq!(
+        check_cuts("under-rows.tiza", 70),
+        vec![("n1".to_string(), false)],
+        "{t}"
+    );
+}
+
+#[test]
+fn r3_a_block_never_starts_on_the_top_row_of_the_next_lines_box() {
+    for w in (40..=140).step_by(2) {
+        let t = render("block-before-box.tiza", w);
+        let rows: Vec<&str> = t.lines().collect();
+        let box_top = rows.iter().position(|r| r.contains("╭─ box")).unwrap();
+        let Some(text) = rows.iter().position(|r| r.contains("hhhh")) else {
+            assert!(
+                check_cuts("block-before-box.tiza", w)
+                    .iter()
+                    .any(|c| c.0 == "c1"),
+                "at {w}: c1 not drawn, check says nothing\n{t}"
+            );
+            continue;
+        };
+        assert!(
+            text - 1 < box_top,
+            "at {w}: the block of L3 starts on row {}, the box's top row is {box_top}\n{t}",
+            text - 1
+        );
+        assert_in_place("block-before-box.tiza", w);
+    }
+}
+
+#[test]
+fn r3_reply_agrees_with_check() {
+    for name in [
+        "narrow-block.tiza",
+        "narrow-block-boxed.tiza",
+        "under-rows.tiza",
+        "block-before-box.tiza",
+    ] {
         reply_agrees_with_check(name);
     }
 }

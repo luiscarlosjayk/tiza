@@ -15,3 +15,9 @@ From the second rework (a row under a line beside a margin block, found by t-216
 
 - `under-beside-block.tiza`: the callout of `four.env` on L1 and t-216's long note on L2. At 99 columns the note goes under L2 and the block covers that row; it ran under the block, cut with no «…» and no warning.
 - `arrow-beside-block.tiza`: the same callout, with the labels of an arrow that ends on L2 and of an arrow along L2, both under L2 beside the block.
+
+From the third rework (QA 1's final QA of the margin callouts):
+
+- `narrow-block.tiza`: a margin callout on L2 of three short lines (`A=1`), with no rows for its block in the margin, so it is a block under its line. The code column is 10 cells: the text wrapped at 8 and the block held 6, so each row lost its end, with no «…» and no warning, at every width. `narrow-block-boxed.tiza`: the same inside a box (its block must stay inside the box rail).
+- `under-rows.tiza`: a long note on L1 continued beside L2, whose two notes are under it, and wrote over the first of them at 70 columns, with no warning. `under-rows-long.tiza`: the same with a longer first note on L2.
+- `block-before-box.tiza`: callouts on L1 and L3 and a box on L4-L6. At 60 columns the block of L3 started on the box's top row, inside the box, beside L4 and L5.
