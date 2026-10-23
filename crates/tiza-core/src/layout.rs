@@ -1623,12 +1623,19 @@ fn layout_pass(
     for (y, row) in rows.iter().enumerate() {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
-        // The innermost box around this row: its rail is never drawn over,
-        // nor touched (one cell short of it), when it is on the canvas.
+        // The innermost box around this row and the first margin block on
+        // it: neither is drawn over, nor touched (one cell short of it), when
+        // it is on the canvas.
         let end = box_rails
             .iter()
             .filter(|(top, bottom, _)| *top < y && y < *bottom)
             .map(|(_, _, rx)| *rx)
+            .chain(
+                blocks
+                    .iter()
+                    .filter(|(_, by, _, bh)| *by <= y && y < by + bh)
+                    .map(|(bx, ..)| *bx),
+            )
             .min()
             .filter(|&rx| rx < width)
             .map_or(width, |rx| rx - 1);
