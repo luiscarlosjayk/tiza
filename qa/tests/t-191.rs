@@ -382,8 +382,13 @@ fn ac7_a_read_only_request_does_not_redraw() {
 // ---------- AC6 ----------
 
 #[test]
-fn ac6_presentation_with_moves_frame_under_budget() {
-    // The bench's «presentation + moves» scenario reads the median below.
+fn ac6_presentation_with_moves_reuses_the_geometry_every_frame() {
+    // What made a presentation frame slow is counted, not timed: every
+    // frame lays the document out, none computes the take's geometry again
+    // (that was ~200 ms of a debug frame, ~38 ms without it). A time budget
+    // here failed on a loaded machine; the time is the bench's to judge.
+    // `scripts/bench.sh` («presentation + moves») reads the median printed
+    // below and compares it with `qa/bench/baseline.json`.
     let dir = scratch("t191-bench");
     let live = Live::open(
         big_with_moves(),
@@ -395,6 +400,12 @@ fn ac6_presentation_with_moves_frame_under_budget() {
         app.autosave = false;
     });
     let _ = live.screen(120, 40);
+    let counts = || live.with(|app| (app.layouts.get(), app.geometries.get()));
+    let (layouts, geometries) = counts();
+    assert_eq!(
+        geometries, 1,
+        "the first frame computes the take's geometry"
+    );
     let mut samples: Vec<Duration> = (0..21)
         .map(|_| {
             let t = Instant::now();
@@ -402,16 +413,20 @@ fn ac6_presentation_with_moves_frame_under_budget() {
             t.elapsed()
         })
         .collect();
+    let (layouts_after, geometries_after) = counts();
     samples.sort();
-    let median = samples[samples.len() / 2];
-    // Debug: ~38 ms on Luis's Mac, ~200 ms before the geometry was kept.
-    let budget = if cfg!(debug_assertions) {
-        Duration::from_millis(100)
-    } else {
-        Duration::from_millis(16)
-    };
-    eprintln!("median presentation frame: {median:?} (budget {budget:?})");
-    assert!(median < budget, "median frame {median:?} over {budget:?}");
+    eprintln!(
+        "median presentation frame: {:?}",
+        samples[samples.len() / 2]
+    );
+    assert!(
+        layouts_after >= layouts + 21,
+        "every frame lays out: {layouts} → {layouts_after}"
+    );
+    assert_eq!(
+        geometries_after, geometries,
+        "a frame computed the take's geometry again"
+    );
 }
 
 // ---------- review: a typing ended by a request, a step patched ----------

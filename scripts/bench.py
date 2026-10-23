@@ -243,7 +243,7 @@ def main():
     # Presentation mode on a 2,000-line document with 10 moves over 20 steps:
     # the take's geometry is computed once, not once per frame.
     if not a.skip_frame and wants("present_moves_frame"):
-        ms = frame_median("t-191", "ac6_presentation_with_moves_frame_under_budget",
+        ms = frame_median("t-191", "ac6_presentation_with_moves_reuses_the_geometry_every_frame",
                           "median presentation frame")
         results["present_moves_frame"] = {"median_ms": round(ms, 2), "runs": 21}
         print(f"{'present_moves_frame':<34} {ms:>9.2f} ms", flush=True)
