@@ -1159,7 +1159,10 @@ pub const METHODS: &[(&str, &str)] = &[
         "theme.set",
         "Switches the theme: `dark`, `light`, `terminal`, `auto` or `toggle`",
     ),
-    ("render.text", "Returns the current canvas as plain text"),
+    (
+        "render.text",
+        "Returns the canvas as plain text: without `width`, the take at the width of the screen's code area (the reply's `width` names it)",
+    ),
     (
         "check",
         "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",

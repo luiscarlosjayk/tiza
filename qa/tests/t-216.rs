@@ -150,3 +150,93 @@ fn ac3_docs_schema_and_changelog() {
     assert!(read("docs/agent-guide.md").contains("`render_text` without a `width`"));
     assert!(read("CHANGELOG.md").contains("`render.text` without a width"));
 }
+
+// ---------- Review ----------
+
+fn opened_doc(name: &str, doc: Value, cols: u16) -> Live {
+    let dir = scratch(name);
+    std::fs::copy(fixture("t-216/four.env"), dir.join("four.env")).unwrap();
+    let path = dir.join("four.env.tiza");
+    std::fs::write(&path, doc.to_string()).unwrap();
+    let doc = tiza_core::fs::load_document(&path).unwrap();
+    let live = Live::open(doc, path, dir.join("live.sock"));
+    live.with(move |a| a.size = (cols, 30));
+    live
+}
+
+#[test]
+fn rev_during_a_typing_animation_the_step_as_it_is_once_typed() {
+    let doc = json!({
+        "schema": 1, "source": {"path": "four.env", "language": "env", "first_line": 1},
+        "code": {"file": "four.env"}, "step": 0,
+        "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
+                   "content": "PORT=9090", "typing": "char", "speed_ms": 1000}],
+        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": NOTE}]
+    });
+    for cols in [100u16, 117, 140] {
+        let live = opened_doc(&format!("t216-typing-{cols}"), doc.clone(), cols);
+        live.api_ok("step.next", json!({}));
+        assert!(live.with(|a| a.typing.is_some()), "the step is typing");
+        let text = live.api_ok("render.text", json!({}))["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(text.contains("PORT=9090"), "{cols}: typed whole\n{text}");
+        // The reply about a note added now says the same of it.
+        let r = live.api_ok("annotation.update", json!({"id": "n1", "text": NOTE}));
+        assert_eq!(whole(&text), says_whole(&r), "{cols}: {r}\n{text}");
+    }
+}
+
+#[test]
+fn rev_while_authoring_the_take_not_the_screens_own_layout() {
+    // Arrows at step 2 take lanes on the left of the take; at step 1 the
+    // authoring screen has none, so its margin is wider.
+    let doc = json!({
+        "schema": 1, "source": {"path": "four.env", "language": "env", "first_line": 1},
+        "code": {"file": "four.env"}, "step": 1,
+        "annotations": [
+            {"id": "n1", "step": 1, "type": "note", "line": 2, "text": NOTE},
+            {"id": "r1", "step": 2, "type": "arrow", "from": {"line": 1, "col": 0}, "to": {"line": 4, "col": 0}},
+            {"id": "r2", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0}, "to": {"line": 4, "col": 1}},
+            {"id": "r3", "step": 2, "type": "arrow", "from": {"line": 3, "col": 0}, "to": {"line": 1, "col": 1}}
+        ]
+    });
+    let mut differ = 0;
+    for cols in 80..=150u16 {
+        let live = opened_doc(&format!("t216-lanes-{cols}"), doc.clone(), cols);
+        let r = live.api_ok("annotation.update", json!({"id": "n1", "text": NOTE}));
+        let render = live.api_ok("render.text", json!({}));
+        let text = render["text"].as_str().unwrap();
+        assert_eq!(whole(text), says_whole(&r), "{cols}: {r}\n{text}");
+        let w = render["width"].as_u64().unwrap() as usize;
+        let own = live.with(move |a| a.layout(w).canvas.to_plain_text());
+        if whole(&own) != whole(text) {
+            differ += 1;
+        }
+    }
+    assert!(
+        differ > 0,
+        "the screen's own layout never differs here: no test"
+    );
+}
+
+#[test]
+fn rev_the_mcp_tool_names_the_width_on_a_second_line() {
+    let live = opened("t216-mcp", 117, false);
+    let mut mcp = tiza_qa::McpClient::start(&live.socket);
+    let width = live.api_ok("render.text", json!({}))["width"]
+        .as_u64()
+        .unwrap();
+    let (err, _, v) = mcp.call("render_text", json!({}));
+    assert!(!err, "{v}");
+    let second = v["result"]["content"][1]["text"].as_str().unwrap_or("");
+    assert!(
+        second.contains(&format!("take at {width} columns"))
+            && second.contains(&format!("`width: {width}`")),
+        "{v}"
+    );
+    let (_, _, v) = mcp.call("render_text", json!({"width": 90}));
+    let second = v["result"]["content"][1]["text"].as_str().unwrap_or("");
+    assert!(second.contains("presenter's layout at 90 columns"), "{v}");
+}

@@ -889,13 +889,23 @@ impl App {
 
     /// The take at the screen's width (within the widths `check` takes):
     /// what `visible` and `clipped` go by, and `render.text` without a width.
+    /// During a typing animation, the step as it is once typed: the code on
+    /// screen is half typed, and the step's annotations wait for its end.
     fn take_at_screen(&self) -> (usize, Layout) {
         use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
         let width = self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH);
         let mut opts = self.layout_options(width);
         opts.stable = true;
         opts.typing = false;
-        (width, self.lay_out(&self.doc, &self.theme, &opts))
+        let layout = match &self.typing {
+            Some(t) => {
+                let mut typed = self.doc.clone();
+                typed.code = t.plan.full.clone();
+                self.lay_out(&typed, &self.theme, &opts)
+            }
+            None => self.lay_out(&self.doc, &self.theme, &opts),
+        };
+        (width, layout)
     }
 
     /// Why annotation `id` is not on the screen now: the document's reasons

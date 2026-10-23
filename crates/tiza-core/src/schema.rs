@@ -61,8 +61,9 @@ pub struct ClearParams {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RenderParams {
     /// Columns. Without it, the take (the layout of presentation mode) at the
-    /// width of the screen's code area, which `visible` and `check` use; the
-    /// reply's `width` says which.
+    /// width of the screen's code area, as `visible` judges it (`check` at
+    /// the same width agrees); the reply's `width` says which. With it, the
+    /// presenter's layout at that width.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
 }

@@ -573,7 +573,7 @@ pub struct FollowParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct RenderParams {
     #[schemars(
-        description = "Width in columns; defaults to the screen's code area (the terminal minus its padding), the width `visible` and `check` use"
+        description = "Width in columns. Without it, the take at the width of the screen's code area (the terminal minus its padding), as `visible` judges it. With it, the presenter's layout at that width."
     )]
     pub width: Option<u32>,
 }
@@ -1190,19 +1190,25 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the audience sees it (without the live pointer). Without `width` it is the take (the layout of presentation mode) at the width of the screen's code area, so it agrees with the `visible` of your add calls and with `check`; with `width` it is the presenter's layout at that width (while authoring, the room the steps so far need). Use it to check the result of what you drew."
+        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the audience sees it (without the live pointer). Without `width` it is the take (the layout of presentation mode) at the width of the screen's code area: it agrees with the `visible` of your add calls, and `check` at that width gives the same verdict. A second line of the result names the width. With `width` it is the presenter's layout at that width (while authoring, the room the steps so far need). Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
         Parameters(p): Parameters<RenderParams>,
     ) -> Result<CallToolResult, McpError> {
         let v = self.call("render.text", json!({"width": p.width})).await?;
-        Ok(text(
-            v.get("text")
-                .and_then(|t| t.as_str())
-                .unwrap_or("")
-                .to_string(),
-        ))
+        let mut result = text(v.get("text").and_then(|t| t.as_str()).unwrap_or(""));
+        // The width, after the drawing: what to give `check` for the same take.
+        if let Some(w) = v.get("width").and_then(|w| w.as_u64()) {
+            let said = match p.width {
+                None => format!(
+                    "This is the take at {w} columns, the width that `visible` uses. Give `check` the same width (`width: {w}`) to check this take."
+                ),
+                Some(_) => format!("This is the presenter's layout at {w} columns."),
+            };
+            result.content.push(ContentBlock::text(said));
+        }
+        Ok(result)
     }
 
     #[tool(

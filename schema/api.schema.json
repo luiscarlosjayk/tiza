@@ -6039,14 +6039,14 @@
       }
     },
     {
-      "description": "Returns the current canvas as plain text",
+      "description": "Returns the canvas as plain text: without `width`, the take at the width of the screen's code area (the reply's `width` names it)",
       "method": "render.text",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "description": "Parameters of `render.text`.",
         "properties": {
           "width": {
-            "description": "Columns. Without it, the take (the layout of presentation mode) at the\nwidth of the screen's code area, which `visible` and `check` use; the\nreply's `width` says which.",
+            "description": "Columns. Without it, the take (the layout of presentation mode) at the\nwidth of the screen's code area, as `visible` judges it (`check` at\nthe same width agrees); the reply's `width` says which. With it, the\npresenter's layout at that width.",
             "format": "uint",
             "minimum": 0,
             "type": [

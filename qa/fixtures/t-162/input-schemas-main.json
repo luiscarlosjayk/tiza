@@ -1056,7 +1056,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "width": {
-        "description": "Width in columns; defaults to that of the terminal running the TUI",
+        "description": "Width in columns. Without it, the take at the width of the screen's code area (the terminal minus its padding), as `visible` judges it. With it, the presenter's layout at that width.",
         "format": "uint32",
         "minimum": 0,
         "type": [
