@@ -406,6 +406,14 @@ pub struct UpdateParams {
     pub color: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
+    /// The file (view) the annotation goes to, as a `code.link` names it.
+    /// `null` is the main file. Absent: the annotation keeps its file.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub file: Option<Option<String>>,
     /// If present, replaces the whole shape.
     #[serde(default)]
     pub shape: Option<ShapeSpec>,
@@ -779,7 +787,10 @@ pub struct PatchParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub styles: Option<std::collections::BTreeMap<String, MarkStyle>>,
     /// Full annotations merged by id: same id replaces, new id adds,
-    /// `{"id": "a1", "deleted": true}` removes.
+    /// `{"id": "a1", "deleted": true}` removes. A replaced annotation keeps
+    /// the `step` it is sent with and, without a `file` key, its file
+    /// (`null` is the main file). A new id gets the defaults of
+    /// `annotation.add`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Value>>,
     /// Named steps: the whole list, replaced (`[]` clears it).
@@ -1098,7 +1109,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.update",
-        "Changes the step, color, label, shape, arrow style (stroke, route, heads) of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style",
+        "Changes the step, file (`null`: the main file), color, label, shape, arrow style (stroke, route, heads) of an annotation, or moves it (`move`: at, from, to, from_line, to_line) keeping its type and style. Without `step` or `file`, it keeps them",
     ),
     ("annotation.delete", "Deletes an annotation by id"),
     (
@@ -1119,7 +1130,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.patch",
-        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected",
+        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with and, without `file`, its file",
     ),
     (
         "move.add",

@@ -2017,22 +2017,30 @@ impl Document {
     /// (normalized; it must be the main file or a linked one), else the
     /// view shown at its step (ADR 0007 §3d/§3f).
     fn resolve_file(&self, ann: &mut Annotation) -> Result<(), Error> {
-        match &ann.file {
-            Some(f) => {
-                let key = self.view_key(f);
-                if key.is_some() && !self.view_code.contains_key(key.as_deref().unwrap_or("")) {
-                    return Err(Error::ViewNotFound(format!(
-                        "file «{f}» is not a view of this document (link it with a code.link move first)"
-                    )));
-                }
-                ann.file = key;
+        if ann.file.is_none() {
+            if !self.moves.is_empty() {
+                ann.file = self.shown_view_at(ann.step).file;
             }
-            None => {
-                if !self.moves.is_empty() {
-                    ann.file = self.shown_view_at(ann.step).file;
-                }
-            }
+            return Ok(());
         }
+        self.settle_file(ann)
+    }
+
+    /// Normalizes the file an annotation names: a linked view by its key,
+    /// the main file as `None`. A file that is not a view of the document
+    /// is an error. An annotation without a file stays in the main file:
+    /// unlike [`Document::add`], the view shown at its step does not count.
+    pub fn settle_file(&self, ann: &mut Annotation) -> Result<(), Error> {
+        let Some(f) = &ann.file else {
+            return Ok(());
+        };
+        let key = self.view_key(f);
+        if key.is_some() && !self.view_code.contains_key(key.as_deref().unwrap_or("")) {
+            return Err(Error::ViewNotFound(format!(
+                "file «{f}» is not a view of this document (link it with a code.link move first)"
+            )));
+        }
+        ann.file = key;
         Ok(())
     }
 
@@ -2073,9 +2081,12 @@ impl Document {
         self.validate_shape_in(&a.shape, &a.file, a.step)
     }
 
+    /// Replaces the annotation with the same id. Its step and its file
+    /// stay as given, without the defaults of [`Document::add`]: a step-0
+    /// annotation stays at step 0, and `file: None` is the main file.
     pub fn update(&mut self, mut ann: Annotation) -> Result<(), Error> {
         check_step(ann.step, &annotation_what(&ann.id))?;
-        self.resolve_file(&mut ann)?;
+        self.settle_file(&mut ann)?;
         self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
         sanitize_texts(&mut ann.shape);
         let slot = self

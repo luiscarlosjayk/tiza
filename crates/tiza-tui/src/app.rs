@@ -1544,6 +1544,17 @@ impl App {
         removed
     }
 
+    /// A file an annotation names, as a request gives it: an alias of a
+    /// linked file is that file, as on load.
+    fn canonical_file(&self, f: &str) -> String {
+        let base = self.save_path.parent().map(Path::to_path_buf);
+        let mut known = self.doc.link_files();
+        known.extend(self.doc.view_code.keys().cloned());
+        fs::canonical_link(&self.doc, f, base.as_deref(), &known)
+    }
+
+    /// Changes what the request gives and keeps the rest. Without `file`
+    /// the annotation keeps its file, and without `step` its step.
     pub fn update_annotation(&mut self, p: &UpdateParams) -> Result<(), Error> {
         let mut ann = self
             .doc
@@ -1552,6 +1563,9 @@ impl App {
             .ok_or_else(|| Error::NotFound(p.id.clone()))?;
         if let Some(s) = p.step {
             ann.step = s.max(1);
+        }
+        if let Some(f) = &p.file {
+            ann.file = f.as_deref().map(|f| self.canonical_file(f));
         }
         if let Some(c) = &p.color {
             if c.trim().is_empty() {
@@ -2003,14 +2017,26 @@ impl App {
                     deleted.push(id);
                     continue;
                 }
-                let ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
+                let mut ann = <Annotation as serde::Deserialize>::deserialize(&v).map_err(|e| {
                     Error::Invalid(format!(
                         "annotation {id}: {}",
                         tiza_core::error::serde_text(&e.to_string())
                     ))
                 })?;
+                let old_file = d.find_annotation(&id).map(|a| a.file.clone());
                 d.annotations.retain(|a| a.id != id);
-                d.add(ann)?;
+                // An id the document has keeps the step it is sent with
+                // and, without a `file` key, its file (`null` is the main
+                // one). Only a new id gets the defaults of a new annotation.
+                if let Some(old_file) = old_file {
+                    if v.get("file").is_none() {
+                        ann.file = old_file;
+                    }
+                    d.settle_file(&mut ann)?;
+                    d.add_settled(ann)?;
+                } else {
+                    d.add(ann)?;
+                }
                 if existed {
                     replaced.push(id);
                 } else {
@@ -3896,6 +3922,7 @@ impl App {
                     step: Some(step),
                     color: None,
                     label: None,
+                    file: None,
                     shape: None,
                     mv: None,
                     stroke: None,
@@ -4384,6 +4411,7 @@ impl App {
                         step: None,
                         color: Some(c.into()),
                         label: None,
+                        file: None,
                         shape: None,
                         mv: None,
                         stroke: None,
@@ -4405,6 +4433,7 @@ impl App {
                         step: None,
                         color: None,
                         label: Some(text.trim().into()),
+                        file: None,
                         shape: None,
                         mv: None,
                         stroke: None,
@@ -4464,6 +4493,7 @@ impl App {
                                 step: Some(n),
                                 color: None,
                                 label: None,
+                                file: None,
                                 shape: None,
                                 mv: None,
                                 stroke: None,
@@ -5201,6 +5231,7 @@ impl App {
             step: None,
             color: None,
             label: None,
+            file: None,
             shape: None,
             mv: None,
             stroke: None,
@@ -6144,12 +6175,8 @@ impl App {
             "move.list" => serde_json::to_value(self.move_list())?,
             "annotation.add" => {
                 let mut p: AddParams = parse(params)?;
-                // An alias of a linked file is that file, as on load.
                 if let Some(f) = &p.file {
-                    let base = self.save_path.parent().map(Path::to_path_buf);
-                    let mut known = self.doc.link_files();
-                    known.extend(self.doc.view_code.keys().cloned());
-                    p.file = Some(fs::canonical_link(&self.doc, f, base.as_deref(), &known));
+                    p.file = Some(self.canonical_file(f));
                 }
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
                 let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
