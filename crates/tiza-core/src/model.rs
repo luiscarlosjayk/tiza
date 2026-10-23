@@ -1597,7 +1597,10 @@ impl Document {
     /// drawn there. Follows the same rules as the layout: its file
     /// must be the one shown, its step reached (a spotlight also not past
     /// its `until`), its anchor kept and its
-    /// lines inside the window. An unknown id is reported as such.
+    /// lines inside the window. An unknown id is reported as such. One
+    /// that its own step does not draw either (another file is shown
+    /// there) gets the reason at its step, not [`Hidden::Later`]: going to
+    /// that step does not show it.
     pub fn hidden_reason(&self, id: &str, step: u32) -> Option<Hidden> {
         let Some(a) = self.find_annotation(id) else {
             return Some(Hidden::NoSuch(id.to_string()));
@@ -1609,7 +1612,12 @@ impl Document {
                     return Some(Hidden::SpotlightPast { from: a.step, end });
                 }
             }
-            _ if a.step > step => return Some(Hidden::Later(a.step)),
+            _ if a.step > step => {
+                return Some(
+                    self.hidden_reason(id, a.step)
+                        .unwrap_or(Hidden::Later(a.step)),
+                );
+            }
             _ => {}
         }
         let shown = self.shown_view_at(step);

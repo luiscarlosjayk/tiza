@@ -389,7 +389,7 @@ pub struct AddParams {
     #[serde(default)]
     pub color: Option<String>,
     /// The file (view) the annotation belongs to, as a `code.link` names
-    /// it. Default: the file shown at its step.
+    /// it. Default (absent or `null`): the file shown at its step.
     #[serde(default)]
     pub file: Option<String>,
     #[serde(flatten)]
@@ -788,9 +788,10 @@ pub struct PatchParams {
     pub styles: Option<std::collections::BTreeMap<String, MarkStyle>>,
     /// Full annotations merged by id: same id replaces, new id adds,
     /// `{"id": "a1", "deleted": true}` removes. A replaced annotation keeps
-    /// the `step` it is sent with and, without a `file` key, its file
-    /// (`null` is the main file). A new id gets the defaults of
-    /// `annotation.add`.
+    /// the `step` it is sent with and, without a `step` or a `file` key, its
+    /// step or its file (`file: null` is the main file). A new id gets the
+    /// defaults of `annotation.add` (`file: null` is the file shown at its
+    /// step).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub annotations: Option<Vec<Value>>,
     /// Named steps: the whole list, replaced (`[]` clears it).
@@ -1105,7 +1106,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "annotation.add",
-        "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
+        "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads. Without `file`, or with `file: null`, it goes to the file shown at its step",
     ),
     (
         "annotation.update",
@@ -1130,7 +1131,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.patch",
-        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with and, without `file`, its file",
+        "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
     ),
     (
         "move.add",

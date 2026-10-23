@@ -1626,7 +1626,7 @@
       }
     },
     {
-      "description": "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads",
+      "description": "Adds an annotation (highlight, mark, box, arrow, note, callout, spotlight); arrows take stroke, route and heads. Without `file`, or with `file: null`, it goes to the file shown at its step",
       "method": "annotation.add",
       "params": {
         "$defs": {
@@ -2135,7 +2135,7 @@
           },
           "file": {
             "default": null,
-            "description": "The file (view) the annotation belongs to, as a `code.link` names\nit. Default: the file shown at its step.",
+            "description": "The file (view) the annotation belongs to, as a `code.link` names\nit. Default (absent or `null`): the file shown at its step.",
             "type": [
               "string",
               "null"
@@ -4373,7 +4373,7 @@
       }
     },
     {
-      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with and, without `file`, its file",
+      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
       "method": "scene.patch",
       "params": {
         "$defs": {
@@ -4464,7 +4464,7 @@
         "description": "Params of `scene.patch`. Every field optional; anything else is an error.",
         "properties": {
           "annotations": {
-            "description": "Full annotations merged by id: same id replaces, new id adds,\n`{\"id\": \"a1\", \"deleted\": true}` removes. A replaced annotation keeps\nthe `step` it is sent with and, without a `file` key, its file\n(`null` is the main file). A new id gets the defaults of\n`annotation.add`.",
+            "description": "Full annotations merged by id: same id replaces, new id adds,\n`{\"id\": \"a1\", \"deleted\": true}` removes. A replaced annotation keeps\nthe `step` it is sent with and, without a `step` or a `file` key, its\nstep or its file (`file: null` is the main file). A new id gets the\ndefaults of `annotation.add` (`file: null` is the file shown at its\nstep).",
             "items": true,
             "type": [
               "array",

@@ -27,6 +27,18 @@
 //! file has is validated against the annotation's own file; `file: null` in
 //! an update is the main file.
 //!
+//! Round 1 (the owner's review):
+//! - H1 An annotation taken to a step that does not show its file: the
+//!   bar, the socket's `hidden`, the MCP sentence and the message of `:step`,
+//!   `+` and `-` say `(main.rs, not shown at step 3)`, never `press n`.
+//!   The same for an annotation of a linked file.
+//! - H2 A `scene.patch` of an id that exists without `step` keeps its step,
+//!   as it keeps its file without `file`. A new id keeps today's defaults.
+//! - H4 `scene.patch` takes the same aliases of `file` as
+//!   `annotation.update` and `annotation.add`.
+//! - H5 `file: null` is the main file in an update or a patch of an id that
+//!   exists, and the file shown at its step in an add or a patch of a new id.
+//!
 //! The fixture: `n0` at step 0 on main.rs L9, `q3` at step 3 on
 //! src/queue.rs L2, `m5` (a note) and `s5` (a spotlight) at step 5 on
 //! main.rs L3 while step 5 shows src/queue.rs (step 6 shows main.rs again).
@@ -35,6 +47,7 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crossterm::event::KeyCode;
 use serde_json::{Value, json};
 use tiza_qa::{Live, McpClient, fixture, scratch};
 
@@ -495,4 +508,324 @@ fn corner_file_null_in_an_update_is_the_main_file() {
         &with(place("q3", 3, Some(QUEUE), 12)),
         "q3 stays",
     );
+}
+
+// ---------- H1: a step that does not show the annotation's file ----------
+
+/// The status bar now, which must be an info message.
+fn info(live: &Live) -> String {
+    let (said, error) = live.message().expect("a message");
+    assert!(!error, "{said}");
+    said
+}
+
+/// Selects `id` with Tab, as the presenter does.
+fn tab_to(live: &Live, id: &str) {
+    live.with(|app| app.selected = None);
+    for _ in 0..8 {
+        live.keys(&[KeyCode::Tab]);
+        if live.with(|app| app.selected.clone()).as_deref() == Some(id) {
+            return;
+        }
+    }
+    panic!("Tab never selects {id}");
+}
+
+/// Not drawn at `step` (another file is shown there), drawn at `drawn`.
+fn assert_drawn_only_at(live: &Live, label: &str, step: u64, drawn: u64) {
+    let s = screen_at(live, step);
+    assert!(row_of(&s, label).is_none(), "{label} at step {step}:\n{s}");
+    let s = screen_at(live, drawn);
+    assert!(row_of(&s, label).is_some(), "{label} at step {drawn}:\n{s}");
+}
+
+#[test]
+fn ac1_keys_plus_and_minus_name_the_file_not_shown() {
+    let (live, tiza) = open("h1-keys");
+    // The main file: n0 at step 2, `+` takes it to step 3 (src/queue.rs).
+    live.api_ok("annotation.update", json!({"id": "n0", "step": 2}));
+    goto(&live, 2);
+    tab_to(&live, "n0");
+    live.keys(&[KeyCode::Char('+')]);
+    assert_eq!(info(&live), "n0 → step 3 (main.rs, not shown at step 3)");
+    assert_places(&live, &tiza, &with(place("n0", 3, None, 9)), "+ on n0");
+    assert_drawn_only_at(&live, "prints it", 3, 4);
+    // A linked file: q3 at step 3, `+` takes it to step 4 (main.rs).
+    goto(&live, 3);
+    tab_to(&live, "q3");
+    live.keys(&[KeyCode::Char('+')]);
+    assert_eq!(
+        info(&live),
+        "q3 → step 4 (src/queue.rs, not shown at step 4)"
+    );
+    // `-` back to step 3, which shows src/queue.rs: no tail.
+    live.keys(&[KeyCode::Char('-')]);
+    assert_eq!(info(&live), "q3 → step 3");
+    // `-` again, to step 2 (main.rs).
+    live.keys(&[KeyCode::Char('-')]);
+    assert_eq!(
+        info(&live),
+        "q3 → step 2 (src/queue.rs, not shown at step 2)"
+    );
+    let mut expected = with(place("n0", 3, None, 9));
+    expected.retain(|a| a.0 != "q3");
+    expected.push(place("q3", 2, Some(QUEUE), 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, "- on q3");
+    let s = screen_at(&live, 2);
+    assert!(row_of(&s, "the items").is_none(), "q3 at step 2:\n{s}");
+    let s = screen_at(&live, 3);
+    assert!(row_of(&s, "the items").is_some(), "q3 at step 3:\n{s}");
+    // A step that shows its file keeps the step hint.
+    live.api_ok("annotation.update", json!({"id": "n0", "step": 1}));
+    goto(&live, 1);
+    tab_to(&live, "n0");
+    live.keys(&[KeyCode::Char('+')]);
+    assert_eq!(info(&live), "n0 → step 2 (press n)");
+}
+
+#[test]
+fn ac1_step_command_names_the_file_not_shown() {
+    let (live, tiza) = open("h1-step");
+    live.command("step n0 3");
+    assert_eq!(info(&live), "n0 → step 3 (main.rs, not shown at step 3)");
+    live.command("step q3 4");
+    assert_eq!(
+        info(&live),
+        "q3 → step 4 (src/queue.rs, not shown at step 4)"
+    );
+    let mut expected = with(place("n0", 3, None, 9));
+    expected.retain(|a| a.0 != "q3");
+    expected.push(place("q3", 4, Some(QUEUE), 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, ":step");
+    assert_drawn_only_at(&live, "prints it", 3, 4);
+    let s = screen_at(&live, 4);
+    assert!(row_of(&s, "the items").is_none(), "q3 at step 4:\n{s}");
+    // A step that shows its file: as before.
+    goto(&live, 2);
+    live.command("step n0 4");
+    assert_eq!(info(&live), "n0 now appears at step 4 (:step 4 shows it)");
+}
+
+#[test]
+fn ac1_socket_update_of_the_step_names_the_file_not_shown() {
+    let (live, tiza) = open("h1-socket");
+    goto(&live, 2);
+    let r = live.api_ok("annotation.update", json!({"id": "n0", "step": 3}));
+    assert_eq!(r["visible"], false, "{r}");
+    assert_eq!(
+        r["hidden"], "its file main.rs is not shown at step 3 (src/queue.rs is)",
+        "{r}"
+    );
+    assert_eq!(
+        info(&live),
+        "n0: note L9 updated by agent (main.rs, not shown at step 3)"
+    );
+    let r = live.api_ok("annotation.update", json!({"id": "q3", "step": 4}));
+    assert_eq!(
+        r["hidden"], "its file src/queue.rs is not shown at step 4 (main.rs is)",
+        "{r}"
+    );
+    let mut expected = with(place("n0", 3, None, 9));
+    expected.retain(|a| a.0 != "q3");
+    expected.push(place("q3", 4, Some(QUEUE), 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, "socket step");
+    assert_drawn_only_at(&live, "prints it", 3, 4);
+    let s = screen_at(&live, 4);
+    assert!(row_of(&s, "the items").is_none(), "q3 at step 4:\n{s}");
+}
+
+#[test]
+fn ac1_mcp_update_of_the_step_names_the_file_not_shown() {
+    let (live, tiza) = open("h1-mcp");
+    goto(&live, 2);
+    let mut mcp = McpClient::start(&live.socket);
+    let (err, text, _) = mcp.call("update_annotation", json!({"id": "n0", "step": 3}));
+    assert!(!err, "{text}");
+    assert!(
+        text.starts_with(
+            "n0 updated at step 3; not visible now: the view is at step 2 and its file main.rs is not shown at step 3 (src/queue.rs is)."
+        ),
+        "{text}"
+    );
+    assert!(!text.contains("next_step"), "{text}");
+    let (err, text, _) = mcp.call("update_annotation", json!({"id": "q3", "step": 4}));
+    assert!(!err, "{text}");
+    assert!(
+        text.contains("its file src/queue.rs is not shown at step 4 (main.rs is)."),
+        "{text}"
+    );
+    assert!(!text.contains("set_step"), "{text}");
+    let mut expected = with(place("n0", 3, None, 9));
+    expected.retain(|a| a.0 != "q3");
+    expected.push(place("q3", 4, Some(QUEUE), 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, "MCP step");
+    assert_drawn_only_at(&live, "prints it", 3, 4);
+}
+
+// ---------- H2: a patch without `step` ----------
+
+#[test]
+fn ac2_patch_of_an_existing_id_without_step_keeps_its_step() {
+    let (live, tiza) = open("h2");
+    live.api_ok(
+        "scene.patch",
+        json!({"annotations": [
+            {"id": "q3", "type": "note", "line": 2, "text": "the items"},
+            {"id": "n0", "type": "note", "line": 9, "text": "prints it"},
+            {"id": "m5", "type": "note", "line": 3, "text": "moved"}
+        ]}),
+    );
+    assert_places(&live, &tiza, &authored(), "patch without step");
+    let s = screen_at(&live, 3);
+    assert!(row_of(&s, "the items").is_some(), "q3 at step 3:\n{s}");
+    assert_n0_at_step_0(&live, "prints it");
+    assert_m5_on_main(&live, "moved");
+    // A new id without `step` keeps today's defaults: step 1, the file
+    // shown there.
+    live.api_ok(
+        "scene.patch",
+        json!({"annotations": [{"id": "p1", "type": "note", "line": 2, "text": "new"}]}),
+    );
+    let mut expected = authored();
+    expected.push(place("p1", 1, None, 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, "new id without step");
+}
+
+#[test]
+fn ac2_patch_puts_a_replaced_annotation_last() {
+    let (live, tiza) = open("h2-order");
+    let n0 = scene_annotation(&live, "n0");
+    live.api_ok("scene.patch", json!({"annotations": [n0]}));
+    let ids = |anns: &Value| -> Vec<String> {
+        anns.as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    let order = ["q3", "m5", "s5", "n0"];
+    let got = ids(&live.api_ok("scene.get", json!({}))["document"]["annotations"]);
+    assert_eq!(got, order, "scene.get");
+    let v: Value = serde_json::from_str(&std::fs::read_to_string(&tiza).unwrap()).unwrap();
+    assert_eq!(ids(&v["annotations"]), order, "the saved .tiza");
+}
+
+// ---------- H4: aliases of `file` ----------
+
+/// The aliases of src/queue.rs that a request can give, and files that are
+/// no view of the document (src/other.rs is on disk, not linked).
+fn aliases(tiza: &Path) -> (Vec<String>, Vec<String>) {
+    let dir = tiza.parent().unwrap();
+    std::fs::write(dir.join("src/other.rs"), "fn other() {}\n").unwrap();
+    let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+    let good = vec![
+        "./src/queue.rs".to_string(),
+        "src/../src/queue.rs".to_string(),
+        dir.join(QUEUE).to_string_lossy().into_owned(),
+        format!("../{name}/src/queue.rs"),
+    ];
+    let bad = vec!["src/other.rs".to_string(), "src/nope.rs".to_string()];
+    (good, bad)
+}
+
+#[test]
+fn ac4_update_takes_the_aliases_of_file() {
+    let (live, tiza) = open("h4-update");
+    let (good, bad) = aliases(&tiza);
+    for f in &good {
+        live.api_ok("annotation.update", json!({"id": "m5", "file": f}));
+        assert_places(
+            &live,
+            &tiza,
+            &with(place("m5", 5, Some(QUEUE), 3)),
+            &format!("file {f}"),
+        );
+        live.api_ok("annotation.update", json!({"id": "m5", "file": null}));
+    }
+    for f in &bad {
+        let e = refused(&live, "annotation.update", json!({"id": "m5", "file": f}));
+        assert!(e.contains("not a view"), "{f}: {e}");
+        assert_places(&live, &tiza, &authored(), &format!("refused {f}"));
+    }
+}
+
+#[test]
+fn ac4_patch_takes_the_aliases_of_file() {
+    let (live, tiza) = open("h4-patch");
+    let (good, bad) = aliases(&tiza);
+    for (i, f) in good.iter().enumerate() {
+        let mut m5 = scene_annotation(&live, "m5");
+        m5["file"] = json!(f);
+        let id = format!("z{i}");
+        let new = json!({"id": id, "step": 4, "file": f, "type": "note", "line": 2, "text": "z"});
+        live.api_ok("scene.patch", json!({"annotations": [m5, new]}));
+        let mut expected = with(place("m5", 5, Some(QUEUE), 3));
+        expected.push(place(&id, 4, Some(QUEUE), 2));
+        expected.sort();
+        assert_places(&live, &tiza, &expected, &format!("patch with {f}"));
+        live.api_ok(
+            "scene.patch",
+            json!({"annotations": [{"id": id, "deleted": true}]}),
+        );
+        live.api_ok("annotation.update", json!({"id": "m5", "file": null}));
+    }
+    for f in &bad {
+        let mut m5 = scene_annotation(&live, "m5");
+        m5["file"] = json!(f);
+        let e = refused(&live, "scene.patch", json!({"annotations": [m5]}));
+        assert!(e.contains("not a view"), "{f}: {e}");
+        assert_places(&live, &tiza, &authored(), &format!("refused {f}"));
+    }
+}
+
+// ---------- H5: the two meanings of `file: null` ----------
+
+#[test]
+fn corner_file_null_in_a_patch_is_checked_on_the_main_file() {
+    let (live, tiza) = open("h5-patch-null");
+    // q3 on L12, a line only src/queue.rs has.
+    live.api_ok(
+        "annotation.update",
+        json!({"id": "q3", "move": {"from_line": 12}}),
+    );
+    let mut q3 = scene_annotation(&live, "q3");
+    q3["file"] = Value::Null;
+    let e = refused(&live, "scene.patch", json!({"annotations": [q3]}));
+    assert!(
+        e.contains("line 12 does not exist") && e.contains("1 to 10"),
+        "{e}"
+    );
+    assert_places(
+        &live,
+        &tiza,
+        &with(place("q3", 3, Some(QUEUE), 12)),
+        "q3 stays",
+    );
+}
+
+#[test]
+fn corner_file_null_in_an_add_or_a_new_id_is_the_file_shown_at_its_step() {
+    let (live, tiza) = open("h5-new-null");
+    live.api_ok(
+        "annotation.add",
+        json!({"id": "a5", "step": 5, "file": null, "type": "note", "line": 2, "text": "a"}),
+    );
+    live.api_ok(
+        "scene.patch",
+        json!({"annotations": [{"id": "p5", "step": 5, "file": null, "type": "note", "line": 2, "text": "p"}]}),
+    );
+    // An id that exists: `null` is the main file.
+    let mut q3 = scene_annotation(&live, "q3");
+    q3["file"] = Value::Null;
+    live.api_ok("scene.patch", json!({"annotations": [q3]}));
+    let mut expected = with(place("q3", 3, None, 2));
+    expected.push(place("a5", 5, Some(QUEUE), 2));
+    expected.push(place("p5", 5, Some(QUEUE), 2));
+    expected.sort();
+    assert_places(&live, &tiza, &expected, "file null");
 }

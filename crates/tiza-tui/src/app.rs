@@ -796,30 +796,40 @@ impl App {
     /// past the view — ends its confirmation saying where they went and how
     /// to get there: `a17: box 3-5 (step 1, press n)`. Only a new
     /// info message gets it; errors, an unchanged message and a message that
-    /// already carries the hint are left alone.
+    /// already carries the hint are left alone. One that its own step does
+    /// not draw (a link shows another file there) gets that reason instead,
+    /// as an agent's change does: `m2 → step 3 (main.rs, not shown at step
+    /// 3)`.
     fn add_step_hint(
         &mut self,
         before: &HashMap<String, u32>,
         prev_message: Option<&(String, bool)>,
     ) {
         let shown = self.doc.step;
-        let Some(target) = self
-            .doc
-            .annotations
-            .iter()
-            .filter(|a| before.get(&a.id) != Some(&a.step) && a.step > shown)
-            .map(|a| a.step)
-            .min()
-        else {
-            return;
+        let changed = || {
+            self.doc
+                .annotations
+                .iter()
+                .filter(|a| before.get(&a.id) != Some(&a.step))
         };
+        let not_drawn = changed()
+            .filter_map(|a| self.doc.hidden_reason(&a.id, a.step).map(|w| (a.step, w)))
+            .min_by_key(|(s, _)| *s);
+        let target = changed().filter(|a| a.step > shown).map(|a| a.step).min();
+        if not_drawn.is_none() && target.is_none() {
+            return;
+        }
         let Some((msg, false)) = &self.message else {
             return;
         };
         if prev_message.is_some_and(|p| p.0 == *msg) || step_hint_start(msg).is_some() {
             return;
         }
-        let hint = step_hint(msg, target, shown);
+        let hint = match (not_drawn, target) {
+            (Some((_, why)), _) => self.hidden_tail(&why, msg),
+            (None, Some(target)) => step_hint(msg, target, shown),
+            (None, None) => return,
+        };
         if let Some((m, _)) = &mut self.message {
             m.push_str(&hint);
         }
@@ -2023,12 +2033,21 @@ impl App {
                         tiza_core::error::serde_text(&e.to_string())
                     ))
                 })?;
-                let old_file = d.find_annotation(&id).map(|a| a.file.clone());
+                // An alias of a linked file is that file, as in
+                // `annotation.add` and `annotation.update`.
+                if let Some(f) = &ann.file {
+                    ann.file = Some(self.canonical_file(f));
+                }
+                let old = d.find_annotation(&id).map(|a| (a.step, a.file.clone()));
                 d.annotations.retain(|a| a.id != id);
                 // An id the document has keeps the step it is sent with
-                // and, without a `file` key, its file (`null` is the main
-                // one). Only a new id gets the defaults of a new annotation.
-                if let Some(old_file) = old_file {
+                // and, without a `step` or a `file` key, its step or its file
+                // (`file: null` is the main one). Only a new id gets the
+                // defaults of a new annotation.
+                if let Some((old_step, old_file)) = old {
+                    if v.get("step").is_none() {
+                        ann.step = old_step;
+                    }
                     if v.get("file").is_none() {
                         ann.file = old_file;
                     }
@@ -4504,7 +4523,14 @@ impl App {
                                 fill: None,
                                 emphasis: None,
                             })
-                            .map(|_| format!("{id} now appears at step {n}"))
+                            .map(|_| {
+                                // Not drawn at that step: the hint says why.
+                                if self.doc.hidden_reason(id, n).is_some() {
+                                    format!("{id} → step {n}")
+                                } else {
+                                    format!("{id} now appears at step {n}")
+                                }
+                            })
                         }
                         _ => Err(Error::Invalid("usage: :step N  |  :step ID N".into())),
                     }
