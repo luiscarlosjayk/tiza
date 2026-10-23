@@ -8,15 +8,17 @@
 #   five move together);
 # - Cargo.lock: `cargo update --workspace`;
 # - CHANGELOG.md: the `## [Unreleased]` entries become `## [X.Y.Z] - date`
-#   (today), under a new empty `## [Unreleased]`.
+#   (today), under a new empty `## [Unreleased]`;
+# - README.md: the version in the `> Status:` line.
 #
-# It changes those three files and nothing else; then commit, dry-run and
-# tag as the README says ("Releases (maintainers)"). A final X.Y.Z only.
+# It changes those four files and nothing else; then write the release
+# notes, commit, dry-run and tag as the README says ("Releases
+# (maintainers)"). A final X.Y.Z only.
 
 set -euo pipefail
 
 usage() {
-  sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -36,6 +38,7 @@ old="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.t
 [ -n "$old" ] || { echo "no version in [workspace.package] of Cargo.toml" >&2; exit 1; }
 [ "$new" != "$old" ] || { echo "the workspace is already at $old" >&2; exit 1; }
 grep -qx '## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no '## [Unreleased]' heading" >&2; exit 1; }
+[ "$(grep -c "^> Status: \*\*v$old\*\*" README.md)" = 1 ] || { echo "README.md has no '> Status: **v$old**' line" >&2; exit 1; }
 if grep -q "^## \[$new\]" CHANGELOG.md; then
   echo "CHANGELOG.md already has a $new section" >&2
   exit 1
@@ -66,5 +69,11 @@ awk -v heading="## [$new] - $(date +%Y-%m-%d)" '
 ' CHANGELOG.md > "$tmp"
 cat "$tmp" > CHANGELOG.md
 
+awk -v old="> Status: **v$old**" -v new="> Status: **v$new**" '
+  index($0, old) == 1 { $0 = new substr($0, length(old) + 1) }
+  { print }
+' README.md > "$tmp"
+cat "$tmp" > README.md
+
 cargo metadata --locked --no-deps --format-version 1 > /dev/null
-echo "version $old -> $new: Cargo.toml, Cargo.lock and CHANGELOG.md updated"
+echo "version $old -> $new: Cargo.toml, Cargo.lock, CHANGELOG.md and README.md updated"

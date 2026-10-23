@@ -10,7 +10,7 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ![Tiza explaining Rust ownership step by step](docs/img/ownership.gif)
 
-> Status: **v0.0.1, first working demo**. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev), [tuios](https://github.com/Gaurav-Gosain/tuios) and [Demo Time](https://demotime.show).
+> Status: **v0.0.1**, early: the document format and the API may still change before 1.0. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev), [tuios](https://github.com/Gaurav-Gosain/tuios) and [Demo Time](https://demotime.show).
 
 <!-- readme-images:ownership-txt -->
 ```
@@ -39,7 +39,11 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ## Installation
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Or from source (Rust ≥ 1.88), from crates.io or from the repository's `main`:
+Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Each release's description is its notes (`docs/release-notes/vX.Y.Z.md`): what is new, which archive is for which platform (the Linux one needs glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 or later).
+
+**macOS:** the binaries are not signed with an Apple Developer ID. A tar.gz downloaded with a browser is quarantined, and the first run of `tiza` is refused (*"tiza" Not Opened*); clear the flag once with `xattr -d com.apple.quarantine /path/to/tiza`. A download with `curl` is not quarantined.
+
+Or from source (Rust ≥ 1.88), from crates.io or from the repository's `main`:
 
 ```sh
 cargo install tiza
@@ -274,7 +278,8 @@ A release is a version commit on `main`, a `vX.Y.Z` tag on it and then crates.io
 ```sh
 git switch main && git pull && git status --short   # must print nothing
 gitleaks git --gitleaks-ignore-path qa/.gitleaksignore   # no secret in the history (the fake ones in tests and demos are listed there)
-scripts/bump-version.sh X.Y.Z                       # Cargo.toml, Cargo.lock, CHANGELOG.md
+scripts/bump-version.sh X.Y.Z                       # Cargo.toml, Cargo.lock, CHANGELOG.md, the README status
+$EDITOR docs/release-notes/vX.Y.Z.md                # the release's description: short, English, no card ids
 git diff                                            # check the five versions and the CHANGELOG heading
 git commit -am "vX.Y.Z"
 cargo publish --workspace --dry-run --locked        # before the tag: pushing the tag starts the release
@@ -292,7 +297,7 @@ cargo publish --locked -p tiza
 
 The crates go to crates.io once the GitHub Release is out, one at a time, in dependency order. Each `cargo publish` returns only once the crate is in the crates.io index (`Waiting for … to be available at registry crates-io`), so the next one finds it. If one stops waiting with `timed out waiting for … to be available`, check that the version is in the index before running the next — `curl -s https://index.crates.io/ti/za/tiza-core | grep '"vers":"X.Y.Z"'` (same path for every `tiza*` crate) — and go on when it prints a line. A crate that is already published fails with `already exists on crates.io index`: skip it and go on with the next. A tag with a suffix (`vX.Y.Z-rc.N`) is a prerelease on GitHub and never goes to crates.io.
 
-When Actions is not available, `scripts/release-local.sh vX.Y.Z` builds the same archives on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md` with the commits since the previous tag, to attach to a release created by hand.
+When Actions is not available, `scripts/release-local.sh vX.Y.Z` builds the same archives on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md`, the release notes of `docs/release-notes/` (`scripts/release-notes.sh`, as `release.yml` writes them: a `vX.Y.Z` tag without its notes stops before building; a `-rc.N` tag takes the notes of `X.Y.Z`, or two lines pointing at the CHANGELOG), to attach to a release created by hand.
 
 ## License
 

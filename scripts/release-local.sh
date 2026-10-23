@@ -7,8 +7,9 @@
 #   scripts/release-local.sh v0.1.0-rc.1 --allow-untagged   # rehearse before tagging
 #
 # Output in dist/<tag>/: one tiza-<tag>-<target>.tar.gz (binary, README,
-# licences, examples) and its .sha256 per target, plus notes.md with the
-# commits since the previous tag. Then create the release by hand on
+# licences, examples) and its .sha256 per target, plus notes.md, the release
+# notes of docs/release-notes/ (scripts/release-notes.sh: a vX.Y.Z tag
+# without them stops here, before building). Then create the release by hand on
 # GitHub (Releases → Draft a new release) and attach those files.
 #
 # Default targets: on macOS, aarch64-apple-darwin and x86_64-apple-darwin
@@ -47,6 +48,12 @@ case "$out_root" in ""|/*) ;; *) out_root="$PWD/$out_root" ;; esac
 
 cd "$(git rev-parse --show-toplevel)"
 [ -n "$out_root" ] || out_root="dist"
+
+repo="$(git config --get remote.origin.url || true)"
+repo="$(printf '%s' "$repo" | sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' | sed 's#\.git$##')"
+[ -n "$repo" ] || repo="luiscarlosjayk/tiza"
+# The notes first: a release without them is not built.
+notes="$(scripts/release-notes.sh "$tag" "$repo")"
 
 # The release must be exactly what the tag names: a clean tree at the tag.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
@@ -128,18 +135,7 @@ for target in "${targets[@]}"; do
   fi
 done
 
-prev="$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)"
-repo="$(git config --get remote.origin.url || true)"
-repo="$(printf '%s' "$repo" | sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' | sed 's#\.git$##')"
-[ -n "$repo" ] || repo="luiscarlosjayk/tiza"
-{
-  echo "## Tiza $tag"
-  echo
-  echo "Installation: download the tar.gz for your platform, verify the .sha256 and copy \`tiza\` into your PATH, or \`cargo install --git https://github.com/$repo tiza --tag $tag\`."
-  echo
-  echo "### Changes"
-  if [ -n "$prev" ]; then git log --no-merges --pretty='- %s (%h)' "$prev..HEAD"; else git log --no-merges --pretty='- %s (%h)'; fi
-} > "$out/notes.md"
+printf '%s\n' "$notes" > "$out/notes.md"
 
 echo
 echo "Done: $out"

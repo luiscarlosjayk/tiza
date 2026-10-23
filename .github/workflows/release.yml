@@ -1,7 +1,8 @@
 name: Release
 
 # Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
-# and Linux (x86_64), checksums and notes generated from the commits.
+# and Linux (x86_64), checksums and the release notes of docs/release-notes/
+# (scripts/release-notes.sh; a vX.Y.Z tag without its notes fails).
 # Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
 # crates.io is published by hand: README.md#releases-maintainers.
 # scripts/release-local.sh builds the same archives when Actions is off.
@@ -28,7 +29,10 @@ jobs:
           # GitHub retired the Intel macos-13 image: the x86_64 build is
           # cross-compiled on the arm64 runner (same toolchain, extra target).
           - { os: macos-latest, target: x86_64-apple-darwin }
-          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          # Ubuntu 22.04, not the newest image: the binary links the glibc of
+          # the build machine, and 2.35 keeps Ubuntu 22.04, Debian 12 and
+          # Fedora 36 or newer running it (the release notes say so).
+          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
     steps:
       - uses: actions/checkout@v7
       # The toolchain rust-toolchain.toml pins (the only place its version is
@@ -71,18 +75,10 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      # Written by hand, in English, per version: never the commit log.
       - name: release notes
         id: notes
-        run: |
-          prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
-          {
-            echo "## Tiza ${GITHUB_REF_NAME}"
-            echo
-            echo "Installation: download the tar.gz for your platform, verify the .sha256 and copy \`tiza\` into your PATH, or \`cargo install --git https://github.com/${GITHUB_REPOSITORY} tiza --tag ${GITHUB_REF_NAME}\`."
-            echo
-            echo "### Changes"
-            if [ -n "$prev" ]; then git log --no-merges --pretty='- %s (%h)' "$prev..${GITHUB_REF_NAME}"; else git log --no-merges --pretty='- %s (%h)'; fi
-          } > notes.md
+        run: scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" > notes.md
       - uses: softprops/action-gh-release@v3
         with:
           body_path: notes.md

@@ -293,6 +293,7 @@ fn publish_readme_has_the_manual_steps_in_order() {
     let steps = [
         "git status --short",
         "scripts/bump-version.sh X.Y.Z",
+        "docs/release-notes/vX.Y.Z.md",
         "git commit -am \"vX.Y.Z\"",
         "cargo publish --workspace --dry-run --locked",
         "git push origin main",
@@ -308,7 +309,7 @@ fn publish_readme_has_the_manual_steps_in_order() {
     for (w, pair) in positions.windows(2).zip(steps.windows(2)) {
         assert!(w[0] < w[1], "`{}` comes after `{}`", pair[0], pair[1]);
     }
-    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[11]);
+    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[12]);
     assert!(read("scripts/bump-version.sh").starts_with("#!/usr/bin/env bash\n"));
     // The order is the dependency order of the manifests.
     let meta = metadata();
@@ -364,6 +365,7 @@ fn workspace_copy(name: &str) -> PathBuf {
         "Cargo.toml",
         "Cargo.lock",
         "CHANGELOG.md",
+        "README.md",
         "rust-toolchain.toml",
     ] {
         std::fs::create_dir_all(&dir).unwrap();
@@ -456,8 +458,14 @@ fn publish_bump_version_moves_versions_lock_and_changelog() {
     );
     assert_eq!(after_heading.1, rest, "the entries move under the version");
 
+    // The README's status line moves with the version.
+    let readme = std::fs::read_to_string(dir.join("README.md")).unwrap();
+    assert!(
+        readme.contains("\n> Status: **v9.8.7**"),
+        "the README status"
+    );
     let snapshot = |d: &Path| {
-        ["Cargo.toml", "Cargo.lock", "CHANGELOG.md"]
+        ["Cargo.toml", "Cargo.lock", "CHANGELOG.md", "README.md"]
             .map(|f| std::fs::read_to_string(d.join(f)).unwrap())
     };
     let done = snapshot(&dir);
