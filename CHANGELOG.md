@@ -52,6 +52,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - Input that is too large or not valid, for example `:export x.png width=99999`, no longer crashes Tiza or leaves the terminal broken. A bug in a socket or MCP request gives the error `internal`, and the document and the TUI stay as they were.
 - After Enter, Tiza clears a selection that the `:` command did not use, so a later `:mark` cannot go on old text. When you cancel a command line that a selection opened, Tiza also clears that selection.
 - Without a width, `render.text` (MCP `render_text`, `tiza scene text`, `tiza://render`) gives the take at the width of the screen's code area. The text now agrees with `visible`, `clipped` and `check` at that width, which the new `width` field of the reply names.
+- Margin callouts and long labels. Documents with none of these cases render as before.
+  - A margin callout with no room for its block in the margin is a whole block under its line, as in the narrow layout. Before, it was a `┆` label that Tiza cut with `…` up to 103 columns, or that wrapped over the next lines.
+  - Two margin callouts on one line do not overlap. A block starts only on the rows of its own line, beside the blocks there when the margin has room. If the margin has no room, the block goes under its line.
+  - A margin block can leave fewer than 14 columns beside it. Then the labels of the lines that it covers go under their own line. Before, Tiza did not draw these labels, or drew them beside another line.
+  - A label under a line stops one cell before the right rail of its box, with `…`. It also stops one cell before a margin block on its row. `tiza check` counts the label as clipped. Before, the label crossed the rail into the margin, or the block hid its end with no warning.
+  - An empty label (`""` or only spaces) is the same as no label. It does not make a lone `·` row, an empty `warning:`, a gap in a box border or an empty callout title. It does not move the other labels of its line under the line.
 - Smaller fixes:
   - A box that starts on the cursor line keeps its title row on screen.
   - In presentation mode, a proposal in supervised mode shows the `⏸ N to review` chip.
