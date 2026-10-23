@@ -148,7 +148,7 @@ def time_tui(binary, runs, tmp):
     return samples
 
 
-def frame_median(test="t-054", name="ac1_frame_under_budget", label="median frame"):
+def frame_median(test="t-054", name="ac1_a_frame_lays_out_once_and_does_not_highlight", label="median frame"):
     """A qa test's own measurement: median of 21 frames, release build of the
     qa crate (the authoring and the presentation frame tests)."""
     r = subprocess.run(

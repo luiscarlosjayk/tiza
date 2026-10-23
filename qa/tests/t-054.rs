@@ -4,8 +4,9 @@
 //! Acceptance criteria:
 //! - AC1 With 2,000 lines of Rust and 200 annotations of every kind, the
 //!   median frame (layout + draw into a 120×40 buffer) takes < 16 ms in
-//!   release (< 250 ms in debug, where the test only guards against
-//!   regressions of an order of magnitude).
+//!   release (`scripts/bench.sh` times it). The test checks what made it
+//!   slow, not the time: one layout per frame, the highlighted code kept,
+//!   a frame far below highlighting the code.
 //! - AC2 Syntax highlighting is memoized: laying out the same code twice
 //!   returns the same highlighted segments without running syntect again
 //!   (`highlight_cached` returns the same `Arc`); editing the code or changing
@@ -76,36 +77,75 @@ fn big_live(name: &str) -> Live {
     live
 }
 
+/// One frame of `live` and how long it took.
+fn frame(live: &Live) -> Duration {
+    let t = Instant::now();
+    let _ = live.screen(120, 40);
+    t.elapsed()
+}
+
+fn median(mut v: Vec<Duration>) -> Duration {
+    v.sort();
+    v[v.len() / 2]
+}
+
 #[test]
-fn ac1_frame_under_budget() {
+fn ac1_a_frame_lays_out_once_and_does_not_highlight() {
+    // What made a frame slow is checked, not a time budget, which failed on
+    // a loaded machine (the time is the bench's to judge: `scripts/bench.sh`
+    // reads the median printed below). A frame lays the document out once
+    // (the status bar reuses that layout), keeps the highlighted code, and
+    // takes far less than highlighting the code: both are timed here, in
+    // turns, so a load slows both alike.
     let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
     let live = big_live("t054-budget");
     let _ = live.screen(120, 40); // warm the caches (syntect grammars, highlight)
-    let mut samples: Vec<Duration> = (0..21)
-        .map(|_| {
-            let t = Instant::now();
-            let _ = live.screen(120, 40);
-            t.elapsed()
-        })
-        .collect();
-    samples.sort();
-    let median = samples[samples.len() / 2];
-    let budget = if cfg!(debug_assertions) {
-        Duration::from_millis(250)
-    } else {
-        Duration::from_millis(16)
-    };
-    eprintln!("median frame: {median:?} (budget {budget:?})");
-    assert!(
-        median < budget,
-        "median frame {median:?} over the budget {budget:?}"
+    let (code, language, theme) = live.with(|a| {
+        (
+            a.doc.code.clone(),
+            a.doc.source.language.clone(),
+            a.theme.syntax,
+        )
+    });
+    let kept = highlight_cached(&code, &language, theme);
+    let layouts = || live.with(|a| a.layouts.get());
+    let before = layouts();
+    let frames: Vec<Duration> = (0..21).map(|_| frame(&live)).collect();
+    assert_eq!(
+        layouts() - before,
+        21,
+        "one layout per frame (the status bar reuses it)"
     );
-    // Scrolling to the end and moving the cursor keep the same cost.
+    assert!(
+        Arc::ptr_eq(&kept, &highlight_cached(&code, &language, theme)),
+        "a frame highlighted the code again"
+    );
+    let median_frame = median(frames);
+    eprintln!("median frame: {median_frame:?}");
+    let mut frames = Vec::new();
+    let mut highlights = Vec::new();
+    for _ in 0..5 {
+        frames.push(frame(&live));
+        let t = Instant::now();
+        let _ = tiza_core::highlight::highlight(&code, &language, theme);
+        highlights.push(t.elapsed());
+    }
+    let (f, h) = (median(frames), median(highlights));
+    assert!(
+        f * 2 < h,
+        "a frame ({f:?}) is not far below highlighting the code ({h:?})"
+    );
+    // Scrolling to the end and moving the cursor: still one layout, and the
+    // same highlighted code.
     live.command("step 1");
     live.with(|a| a.cursor_line = 1990);
-    let t = Instant::now();
-    let _ = live.screen(120, 40);
-    assert!(t.elapsed() < budget * 2, "{:?}", t.elapsed());
+    let before = layouts();
+    let _ = frame(&live);
+    assert_eq!(layouts() - before, 1);
+    assert!(Arc::ptr_eq(
+        &kept,
+        &highlight_cached(&code, &language, theme)
+    ));
 }
 
 #[test]
@@ -116,8 +156,10 @@ fn ac2_highlight_is_memoized_and_invalidated() {
     let t = Instant::now();
     let b = highlight_cached(&code, "rs", EmbeddedThemeName::OneHalfDark);
     let hit = t.elapsed();
+    // The same Arc is the hit; its time is only reported (a loaded machine
+    // can stop any thread for milliseconds).
+    eprintln!("cache hit: {hit:?}");
     assert!(Arc::ptr_eq(&a, &b), "second call returns the cached Arc");
-    assert!(hit < Duration::from_millis(5), "cache hit took {hit:?}");
     // Another language, theme or code: a different result.
     let c = highlight_cached(&code, "py", EmbeddedThemeName::OneHalfDark);
     assert!(!Arc::ptr_eq(&a, &c));
@@ -144,27 +186,21 @@ fn ac3_status_bar_reuses_the_layout() {
         (a.viewport_warnings_for(&l), a.viewport_warnings())
     });
     assert_eq!(from_layout, standalone);
-    // Drawing with the status bar costs about the same as presentation mode
-    // (which has no status bar): no second layout hides in the bar.
-    let time = |present: bool| {
+    // No second layout hides in the bar: a frame with the status bar lays
+    // out once, as one in presentation mode (which has no status bar).
+    for present in [false, true] {
         live.with(move |a| a.present = present);
         let _ = live.screen(120, 40);
-        let mut s: Vec<Duration> = (0..11)
-            .map(|_| {
-                let t = Instant::now();
-                let _ = live.screen(120, 40);
-                t.elapsed()
-            })
-            .collect();
-        s.sort();
-        s[5]
-    };
-    let with_bar = time(false);
-    let without = time(true);
-    assert!(
-        with_bar < without * 2 + Duration::from_millis(2),
-        "status bar {with_bar:?} vs presentation {without:?}"
-    );
+        let before = live.with(|a| a.layouts.get());
+        for _ in 0..11 {
+            let _ = live.screen(120, 40);
+        }
+        assert_eq!(
+            live.with(|a| a.layouts.get()) - before,
+            11,
+            "present {present}: one layout per frame"
+        );
+    }
 }
 
 #[test]
