@@ -116,7 +116,26 @@ The presenter may turn on `:supervise`: then every mutating call (add, update, d
 
 If your client supports MCP resources, `tiza://scene`, `tiza://code`, `tiza://render` and `tiza://render.md` are always readable (no caching: every read reflects the live instance). They are the same views as `get_code` / `render_text` / `scene.get`; use whichever your client makes cheaper to attach as context.
 
-**Control characters.** Code can hold bytes a terminal acts on (ESC, NUL, BEL…). Tiza never shows or returns them raw: `get_code`, `render_text`, every export and the `tiza://` resources show a C0 control as its picture (`␛` for ESC, `␀`, `␇`; the tab is expanded as before), DEL as `␡` and a C1 control as `�`; a bidi control (U+202A–U+202E, U+2066–U+2069, U+200E/F, U+061C) is `�` in a text reply. **Invisible characters in the code** — a bidi control, a zero-width space (U+200B), a word joiner (U+2060), a byte order mark (U+FEFF) past the start of the file, a ZWJ/ZWNJ that joins nothing (`ad` U+200D `min`), and every other default-ignorable character (a soft hyphen, invisible operators, a variation selector after a letter, tag characters) — take one cell each in `render_text` and every export, drawn as `⬚` (U+2B1A) in the theme's error colour, so `ad⬚min` never reads as `admin`; anchors and `find` still count the real characters (the grapheme columns do not change). One that does a job is drawn as it is: a joiner inside an emoji sequence or an Indic conjunct, or after a letter of a script that uses joiners (the ZWNJ of a Persian word), an emoji's or a keycap's variation selector, the tags of a subdivision flag. In annotation texts a control character shows as its picture too (a tab or a line break in a one-line label is a space), and a zero-width character takes no cell, so `clipped` and `check` count what is drawn. JSON replies (`tiza://scene`, `pretty` results) keep the real characters as `\uXXXX` escapes. A `find` must use the real character (`\u001b` in JSON), not its picture. An error that quotes your `find` shows such a character in Rust escapes (`text "a\u{1b}b" not found in the code`); other errors show its picture.
+**Control characters.** Code can hold bytes that a terminal acts on, for example ESC, NUL and BEL. Tiza never shows or returns them raw. `get_code`, `render_text`, every export and the `tiza://` resources show a C0 control as its picture, for example `␛` for ESC, `␀` and `␇`. They show DEL as `␡` and a C1 control as `�`, and they expand a tab as before. In a text reply, a bidi control (U+202A–U+202E, U+2066–U+2069, U+200E/F, U+061C) is `�`.
+
+**Invisible characters in the code.** Each of these characters takes one cell in `render_text` and every export. Tiza draws it as `⬚` (U+2B1A) in the error color of the theme, so `ad⬚min` does not look like `admin`:
+
+- a bidi control;
+- a zero-width space (U+200B) or a word joiner (U+2060);
+- a byte order mark (U+FEFF) after the start of the file;
+- a ZWJ or ZWNJ that joins nothing, for example `ad` U+200D `min`;
+- every other default-ignorable character, for example a soft hyphen, an invisible operator, a variation selector after a letter or a tag character.
+
+Anchors and `find` count the real characters, so the grapheme columns do not change. Tiza draws an invisible character that does a job as it is:
+
+- a joiner inside an emoji sequence or an Indic conjunct;
+- a joiner after a letter of a script that uses joiners, for example the ZWNJ of a Persian word;
+- the variation selector of an emoji or a keycap;
+- the tags of a subdivision flag.
+
+**Control and invisible characters in annotation texts.** A control character in an annotation text shows as its picture too. In a label of one line, a tab or a line break is a space. A zero-width character takes no cell, so `clipped` and `check` count what Tiza draws. A label of only zero-width characters is the same as no label.
+
+JSON replies (`tiza://scene`, `pretty` results) keep the real characters as `\uXXXX` escapes. A `find` must use the real character (`\u001b` in JSON), not its picture. An error that quotes your `find` shows such a character in Rust escapes (`text "a\u{1b}b" not found in the code`). Other errors show its picture.
 
 ## Idempotency
 

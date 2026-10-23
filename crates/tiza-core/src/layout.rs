@@ -1993,17 +1993,19 @@ fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Opti
 }
 
 /// `doc` with every blank label, box label and callout title taken as
-/// none, and without its blank notes (`check` reports those); `None` when
-/// it has none of them, which is nearly always (no copy).
+/// none, and without its blank notes; `None` when it has none of them,
+/// which is nearly always (no copy). Blank is what draws no visible cell
+/// ([`crate::canvas::is_blank`]: white space, zero-width characters);
+/// `check` reports a note of white space only.
 fn without_blank_labels(doc: &Document) -> Option<Document> {
-    let blank = |l: &Option<String>| l.as_deref().is_some_and(|t| t.trim().is_empty());
+    let blank = |l: &Option<String>| l.as_deref().is_some_and(crate::canvas::is_blank);
     let has_blank = |a: &Annotation| match &a.shape {
         Shape::Highlight { label, .. }
         | Shape::Mark { label, .. }
         | Shape::Arrow { label, .. }
         | Shape::Box { label, .. } => blank(label),
         Shape::Callout { title, .. } => blank(title),
-        Shape::Note { text, .. } => text.trim().is_empty(),
+        Shape::Note { text, .. } => crate::canvas::is_blank(text),
         Shape::Spotlight { .. } => false,
     };
     if !doc.annotations.iter().any(has_blank) {
@@ -2011,7 +2013,7 @@ fn without_blank_labels(doc: &Document) -> Option<Document> {
     }
     let mut d = doc.clone();
     d.annotations
-        .retain(|a| !matches!(&a.shape, Shape::Note { text, .. } if text.trim().is_empty()));
+        .retain(|a| !matches!(&a.shape, Shape::Note { text, .. } if crate::canvas::is_blank(text)));
     for a in &mut d.annotations {
         match &mut a.shape {
             Shape::Highlight { label, .. }

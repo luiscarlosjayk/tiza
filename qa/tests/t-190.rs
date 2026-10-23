@@ -20,7 +20,8 @@
 //!   invisible column 0 of line 1).
 //! - AC4 Zero-width characters in annotation texts take no cell: what the
 //!   layout measures is what is drawn, and `check`, `clipped` and
-//!   `visible` agree with it; the stored text is not changed.
+//!   `visible` agree with it; a callout with them stays in its border; the
+//!   stored text is not changed.
 //! - AC5 Every output agrees; a file without these characters is laid out
 //!   as before.
 //! - AC6 This file (TUI pty, txt, md, ansi, svg; a PNG is drawn from the
@@ -30,7 +31,8 @@
 //! Corner cases: several invisible characters in a row and one at the end
 //! of a line; a find target holding a zero-width character; a BOM at the
 //! start of a file and one in the middle; ZWNJ in a Persian word; a label
-//! made only of zero-width characters.
+//! made only of zero-width characters (the same as no label, as one of
+//! only spaces).
 
 use serde_json::{Value, json};
 use tiza_core::Document;
@@ -132,7 +134,9 @@ fn strip_sgr(s: &str) -> String {
 fn controls_doc() -> Value {
     json!({
         "schema": 1, "source": {"language": "rs", "first_line": 1},
-        "code": ["let a = 1;", "let b = 2;", "let c = 3;"],
+        // Lines after the callout's, for its block to stand beside them in
+        // the margin.
+        "code": ["let a = 1;", "let b = 2;", "let c = 3;", "", "", "", ""],
         "steps": [{"step": 1, "title": "t\u{7}itle"}],
         "annotations": [
             {"id": "n1", "step": 1, "type": "note", "line": 1,
@@ -909,4 +913,73 @@ fn rev_a_step_title_shows_its_control_pictures_on_the_bar() {
     let live = Live::open(doc, f.clone(), f.with_file_name("live.sock"));
     let screen = live.screen(120, 12);
     assert!(screen.contains("Intro␛[2J bell␇"), "{screen}");
+}
+
+// ---------- On the margin callouts of t-201 ----------
+
+/// The cell's text at `(x, y)`, or nothing outside the canvas.
+fn sym(l: &Layout, x: usize, y: usize) -> String {
+    l.canvas
+        .get(x, y)
+        .map_or(String::new(), |c| c.sym.to_string())
+}
+
+#[test]
+fn rev2_a_callout_with_zero_width_spaces_stays_in_its_border() {
+    // On main the zero-width spaces each took a cell the block did not
+    // count: the text crossed the right border (61 and 100 columns).
+    let doc = tiza_core::fs::load_document(&fixture("t-190/zwsp-callout.tiza")).unwrap();
+    let (mut beside, mut under) = (0, 0);
+    for width in 40..=200 {
+        let l = lay(&doc, width, 1);
+        let corner = (0..l.canvas.height).find_map(|y| {
+            (0..l.canvas.width)
+                .find(|&x| sym(&l, x, y) == "╭")
+                .map(|x| (x, y))
+        });
+        let (x0, top) = corner.unwrap_or_else(|| panic!("{width}: no block"));
+        let x1 = (x0..l.canvas.width)
+            .find(|&x| sym(&l, x, top) == "╮")
+            .unwrap_or_else(|| panic!("{width}: no right corner"));
+        if matches!(l.rows[top], Row::Code(_)) {
+            beside += 1;
+        } else {
+            under += 1;
+        }
+        let mut inside = String::new();
+        let mut y = top + 1;
+        while sym(&l, x0, y) != "╰" {
+            assert_eq!(sym(&l, x0, y), "│", "{width}: row {y}");
+            assert_eq!(sym(&l, x1, y), "│", "{width}: row {y} crosses its border");
+            for x in x1 + 1..l.canvas.width {
+                assert!(sym(&l, x, y).trim().is_empty(), "{width}: row {y} at {x}");
+            }
+            inside.extend((x0 + 1..x1).map(|x| sym(&l, x, y)));
+            y += 1;
+            assert!(y < l.canvas.height, "{width}: no bottom");
+        }
+        assert_eq!(sym(&l, x1, y), "╯", "{width}: bottom row");
+        assert!(
+            letters(&inside) == "zerowidthspacesinacallouttext" || inside.contains('…'),
+            "{width}: {inside:?}"
+        );
+    }
+    assert!(beside > 0 && under > 0, "beside {beside}, under {under}");
+}
+
+#[test]
+fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
+    // blank-null (a copy of t-201's) has no labels; zero-width-labels has
+    // U+200B U+2060 U+200D as the label of a highlight, a mark, an arrow
+    // and a box, as the title of two callouts, and a note of two U+200B.
+    let a = fixture("t-190/zero-width-labels.tiza");
+    let b = fixture("t-190/blank-null.tiza");
+    for w in [61, 80, 100, 140] {
+        let w = w.to_string();
+        for format in ["txt", "svg"] {
+            let extra = ["--width", w.as_str(), "--step", "1"];
+            let (ra, rb) = (render(&a, format, &extra), render(&b, format, &extra));
+            assert_eq!(ra, rb, "{format} at {w}\n{ra}");
+        }
+    }
 }

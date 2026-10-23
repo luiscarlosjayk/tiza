@@ -49,6 +49,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `:q!` and `Ctrl-C` no longer write the sidecar when they quit. They show on stderr the changes that Tiza did not save.
 - If you close the terminal without `:q`, Tiza ends the session as with `Ctrl-C`. It no longer stays at 100 % of a CPU, aborts or leaves its socket.
 - Tiza draws control characters in the code as one-cell Control Pictures, for example `␛` and `␀`. A file can no longer send escape sequences to the terminal, break the SVG or make the PNG fail.
+- Tiza shows each bidi control and each zero-width character in the code as `⬚` (U+2B1A), one cell in the error color of the theme. A joiner inside an emoji sequence, or inside a word of a script that uses joiners, shows as before.
+- In annotation texts, a control character shows as its picture, for example `␛`, and a zero-width character takes no cell. Thus a label or a callout with zero-width spaces stays in its place, as `tiza check` and `clipped` tell.
+- Tiza removes a byte order mark at the start of a file each time it reads the file. Before, a referenced file that Tiza read again kept it as an invisible first column.
 - Input that is too large or not valid, for example `:export x.png width=99999`, no longer crashes Tiza or leaves the terminal broken. A bug in a socket or MCP request gives the error `internal`, and the document and the TUI stay as they were.
 - After Enter, Tiza clears a selection that the `:` command did not use, so a later `:mark` cannot go on old text. When you cancel a command line that a selection opened, Tiza also clears that selection.
 - Without a width, `render.text` (MCP `render_text`, `tiza scene text`, `tiza://render`) gives the take at the width of the screen's code area. The text now agrees with `visible`, `clipped` and `check` at that width, which the new `width` field of the reply names.
@@ -57,7 +60,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
   - Two margin callouts on one line do not overlap. A block starts only on the rows of its own line, beside the blocks there when the margin has room. If the margin has no room, the block goes under its line.
   - A margin block can leave fewer than 14 columns beside it. Then the labels of the lines that it covers go under their own line. Before, Tiza did not draw these labels, or drew them beside another line.
   - A label under a line stops one cell before the right rail of its box, with `…`. It also stops one cell before a margin block on its row. `tiza check` counts the label as clipped. Before, the label crossed the rail into the margin, or the block hid its end with no warning.
-  - An empty label (`""` or only spaces) is the same as no label. It does not make a lone `·` row, an empty `warning:`, a gap in a box border or an empty callout title. It does not move the other labels of its line under the line.
+  - An empty label (`""`, only spaces or only zero-width characters) is the same as no label. It does not make a lone `·` row, an empty `warning:`, a gap in a box border or an empty callout title. It does not move the other labels of its line under the line.
 - Smaller fixes:
   - A box that starts on the cursor line keeps its title row on screen.
   - In presentation mode, a proposal in supervised mode shows the `⏸ N to review` chip.

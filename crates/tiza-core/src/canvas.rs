@@ -455,6 +455,13 @@ pub fn drawn_width(s: &str) -> usize {
         .sum()
 }
 
+/// Whether `s` draws nothing but blank cells: only white space and
+/// graphemes that take no cell (a zero-width space, a lone combining mark).
+pub fn is_blank(s: &str) -> bool {
+    s.graphemes(true)
+        .all(|g| g.trim().is_empty() || drawn_width(g) == 0)
+}
+
 /// Width in cells of one grapheme of the code as it is drawn: what it shows
 /// and one cell for each invisible character it holds
 /// ([`crate::printable::code_glyph`]). Not for a tab, which depends on
