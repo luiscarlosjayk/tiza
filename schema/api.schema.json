@@ -6046,7 +6046,7 @@
         "description": "Parameters of `render.text`.",
         "properties": {
           "width": {
-            "description": "Columns; defaults to the terminal's width.",
+            "description": "Columns. Without it, the take (the layout of presentation mode) at the\nwidth of the screen's code area, which `visible` and `check` use; the\nreply's `width` says which.",
             "format": "uint",
             "minimum": 0,
             "type": [
@@ -6062,6 +6062,10 @@
         "properties": {
           "text": {
             "type": "string"
+          },
+          "width": {
+            "description": "The width it was laid out at",
+            "type": "integer"
           }
         },
         "type": "object"

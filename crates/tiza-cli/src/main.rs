@@ -301,6 +301,8 @@ enum SceneCmd {
     List,
     /// Show what is on screen as text
     Text {
+        /// Columns. Without it, the take at the width of the screen's code
+        /// area, as the agents' `visible` and `check` see it.
         #[arg(long)]
         width: Option<u32>,
     },

@@ -883,15 +883,19 @@ impl App {
     /// steps so far only, so before the last step it may place a label
     /// otherwise; what the audience sees is the take.
     fn screen_cuts(&self) -> (usize, Vec<tiza_core::layout::ClippedLabel>) {
+        let (width, layout) = self.take_at_screen();
+        (width, layout.clipped_labels)
+    }
+
+    /// The take at the screen's width (within the widths `check` takes):
+    /// what `visible` and `clipped` go by, and `render.text` without a width.
+    fn take_at_screen(&self) -> (usize, Layout) {
         use tiza_core::layout::{MAX_WIDTH, MIN_WIDTH};
         let width = self.screen_width().clamp(MIN_WIDTH, MAX_WIDTH);
         let mut opts = self.layout_options(width);
         opts.stable = true;
         opts.typing = false;
-        (
-            width,
-            self.lay_out(&self.doc, &self.theme, &opts).clipped_labels,
-        )
+        (width, self.lay_out(&self.doc, &self.theme, &opts))
     }
 
     /// Why annotation `id` is not on the screen now: the document's reasons
@@ -6178,11 +6182,17 @@ impl App {
                 })?
             }
             "render.text" => {
-                let width = match params.get("width").and_then(|w| w.as_u64()) {
-                    Some(w) => tiza_core::layout::check_width(w.min(u64::from(u32::MAX)) as usize)?,
-                    None => self.size.0 as usize,
+                // Without a width, the take the screen shows: what the reply
+                // of `annotation.add` (`visible`, `clipped`) and `check` say.
+                let (width, layout) = match params.get("width").and_then(|w| w.as_u64()) {
+                    Some(w) => {
+                        let w =
+                            tiza_core::layout::check_width(w.min(u64::from(u32::MAX)) as usize)?;
+                        (w, self.layout(w))
+                    }
+                    None => self.take_at_screen(),
                 };
-                json!({"text": self.layout(width).canvas.to_plain_text()})
+                json!({"text": layout.canvas.to_plain_text(), "width": width})
             }
             "focus.set" => {
                 // A line given is a line number (a negative one is an error,

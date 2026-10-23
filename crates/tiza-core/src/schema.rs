@@ -60,7 +60,9 @@ pub struct ClearParams {
 /// Parameters of `render.text`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct RenderParams {
-    /// Columns; defaults to the terminal's width.
+    /// Columns. Without it, the take (the layout of presentation mode) at the
+    /// width of the screen's code area, which `visible` and `check` use; the
+    /// reply's `width` says which.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
 }
@@ -169,7 +171,6 @@ pub fn document_schema() -> Value {
 /// JSON Schema of the local API: request/response envelopes and each method.
 pub fn api_schema() -> ApiSchema {
     let string = || serde_json::json!({"type": "string"});
-    let text = || serde_json::json!({"type": "object", "properties": {"text": {"type": "string"}}});
     let step_result = schema::<StepReply>;
     let methods = METHODS
         .iter()
@@ -200,7 +201,10 @@ pub fn api_schema() -> ApiSchema {
                 "pointer.set" => (schema::<crate::protocol::PointerParams>(), schema::<crate::protocol::PointerReply>()),
                 "pointer.clear" => (schema::<NoParams>(), schema::<crate::protocol::PointerReply>()),
                 "theme.set" => (schema::<ThemeParams>(), serde_json::json!({"type": "object", "properties": {"theme": string(), "revision": {"type": "integer"}}})),
-                "render.text" => (schema::<RenderParams>(), text()),
+                "render.text" => (
+                    schema::<RenderParams>(),
+                    serde_json::json!({"type": "object", "properties": {"text": {"type": "string"}, "width": {"type": "integer", "description": "The width it was laid out at"}}}),
+                ),
                 "check" => (schema::<CheckParams>(), schema::<crate::protocol::LiveCheck>()),
                 "follow.set" => (schema::<FollowParams>(), schema::<FollowStatus>()),
                 "follow.status" => (schema::<NoParams>(), schema::<FollowStatus>()),

@@ -572,7 +572,9 @@ pub struct FollowParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct RenderParams {
-    #[schemars(description = "Width in columns; defaults to that of the terminal running the TUI")]
+    #[schemars(
+        description = "Width in columns; defaults to the screen's code area (the terminal minus its padding), the width `visible` and `check` use"
+    )]
     pub width: Option<u32>,
 }
 
@@ -1188,7 +1190,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the presenter sees it now (without the live pointer). In presentation mode (or `:layout stable`) it is what `export_image` writes for that step at the same width; while authoring, the layout takes only the room the steps so far need, so before the last step an export can be laid out wider (the code a few columns further right, for the arrow rails of later steps). Use it to check the result of what you drew."
+        description = "Returns the Tiza screen as plain text: the code with its box, arrow, highlight and note annotations at the current step, as the audience sees it (without the live pointer). Without `width` it is the take (the layout of presentation mode) at the width of the screen's code area, so it agrees with the `visible` of your add calls and with `check`; with `width` it is the presenter's layout at that width (while authoring, the room the steps so far need). Use it to check the result of what you drew."
     )]
     async fn render_text(
         &self,
