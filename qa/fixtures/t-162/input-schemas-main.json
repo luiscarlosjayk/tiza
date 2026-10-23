@@ -1220,6 +1220,14 @@
           "null"
         ]
       },
+      "file": {
+        "default": null,
+        "description": "The file the annotation goes to, as a `code.link` names it. `null` is the main file. Leave it out to keep the file of the annotation.",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
       "fill": {
         "description": "Boxes/callouts: tint the inside (true/false)",
         "type": [

@@ -807,8 +807,8 @@ pub struct PatchParams {
 }
 
 /// Distinguishes an absent field (`None`) from an explicit `null`
-/// (`Some(None)`) in a patch.
-fn present<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
+/// (`Some(None)`) in a patch (the MCP tools use it too).
+pub fn present<'de, T, D>(d: D) -> Result<Option<Option<T>>, D::Error>
 where
     T: Deserialize<'de>,
     D: serde::Deserializer<'de>,

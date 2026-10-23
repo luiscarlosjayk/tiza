@@ -326,6 +326,19 @@ pub struct UpdateParams {
         description = "Highlights/marks: how the span is drawn (fill, underline, brackets, strike)"
     )]
     pub emphasis: Option<String>,
+    /// Absent keeps the file, `null` is the main file (`present`), as in
+    /// the socket's `annotation.update`.
+    #[serde(default, deserialize_with = "tiza_core::protocol::present")]
+    #[schemars(
+        with = "Option<String>",
+        description = "The file the annotation goes to, as a `code.link` names it. `null` is the main file. Leave it out to keep the file of the annotation."
+    )]
+    pub file: Option<Option<String>>,
+    /// Not a parameter (not in the schema): sent on to `annotation.update`
+    /// as it came, so its refusal says to use `label`, as the socket says.
+    #[serde(default)]
+    #[schemars(skip)]
+    pub text: Option<Value>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -889,7 +902,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Changes the step, color, label, arrow style (stroke, route, head_start, head_end), box/callout border (border, corners, fill) or highlight/mark emphasis (fill, underline, brackets, strike) of an existing annotation, or moves it (`at` for highlights/marks/notes, `from`/`to` for arrows, `from_line`/`to_line` for boxes, callouts, spotlights and notes) keeping its type, kind and style. Fields that do not apply to the annotation's type fail with invalid_argument; unknown fields are rejected."
+        description = "Changes an annotation that exists and keeps its id. It can change the step, the color or the label (the text of a note, the title of a callout). For an arrow, it can change the line style: stroke, route, head_start and head_end. For a box or a callout, it can change the border: border, corners and fill. For a highlight or a mark, it can change the emphasis: fill, underline, brackets or strike. To move the annotation and keep its type, kind and style, give its new place. Use `at` for highlights, marks and notes, `from` and `to` for arrows, and `from_line` and `to_line` for boxes, callouts, spotlights and notes. `file` puts it on another file of the document: a linked file as a `code.link` names it, or `null` for the main file. A field that does not apply to the type of the annotation fails with invalid_argument. Tiza refuses a field that it does not know."
     )]
     async fn update_annotation(
         &self,
@@ -911,6 +924,12 @@ impl TizaServer {
         }
         if let Some(e) = emphasis_json(&p.emphasis)? {
             params["emphasis"] = e;
+        }
+        if let Some(file) = &p.file {
+            params["file"] = json!(file);
+        }
+        if let Some(text) = p.text {
+            params["text"] = text;
         }
         let v = self.call("annotation.update", params).await?;
         Ok(annotation_reply(&v, "updated"))
