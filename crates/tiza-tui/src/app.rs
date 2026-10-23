@@ -2088,7 +2088,13 @@ impl App {
         if self.step_to(step) {
             return String::new();
         }
-        self.doc.step_label(self.doc.step)
+        self.step_label_line()
+    }
+
+    /// The step label for a message: the title's control characters as
+    /// their pictures, as the status bar draws them.
+    fn step_label_line(&self) -> String {
+        tiza_core::printable::printable_line(&self.doc.step_label(self.doc.step)).into_owned()
     }
 
     pub fn set_step(&mut self, step: u32) {
@@ -4421,7 +4427,7 @@ impl App {
                     if self.next_step() {
                         Ok(String::new())
                     } else {
-                        Ok(self.doc.step_label(self.doc.step))
+                        Ok(self.step_label_line())
                     }
                 }
                 "goto" => {
@@ -4432,7 +4438,7 @@ impl App {
                         ));
                     }
                     self.goto_step(id)?;
-                    Ok(self.doc.step_label(self.doc.step))
+                    Ok(self.step_label_line())
                 }
                 "prev" => Ok(self.step_message(self.doc.step.saturating_sub(1))),
                 "focus" | "f" => {

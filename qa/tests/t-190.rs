@@ -983,3 +983,178 @@ fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
         }
     }
 }
+
+// ---------- Review 2 ----------
+
+#[test]
+fn rev2_a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
+    // Refused like a text of only spaces; before, it was added and drew
+    // nothing, and `check` said nothing.
+    let live = Live::from_code("a = 1\nb = 2\n", "sh", "t190-empty-text");
+    let r = live.api(
+        "annotation.add",
+        json!({"type": "note", "line": 1, "text": "\u{200B}\u{2060}", "step": 1}),
+    );
+    let e = r.error.expect("refused");
+    assert!(e.message.contains("the note is empty"), "{}", e.message);
+    let r = live.api(
+        "annotation.add",
+        json!({"type": "callout", "from_line": 2, "text": "\u{200B}\n\u{200B}", "step": 1}),
+    );
+    let e = r.error.expect("refused");
+    assert!(
+        e.message.contains("the callout text is empty"),
+        "{}",
+        e.message
+    );
+    // `tiza check` names a stored one.
+    let doc = code_doc(
+        &["let a = 1;"],
+        json!([{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "\u{200B}\u{200B}"}]),
+    );
+    let f = write("t190-empty-check", "e.tiza", &doc.to_string());
+    let out = tiza_qa::tiza(&["check", f.to_str().unwrap()]);
+    assert!(!out.status.success(), "check passes");
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("n1") && text.contains("the note is empty"),
+        "{text}"
+    );
+}
+
+#[test]
+fn rev2_white_space_controls_in_a_label_are_spaces_everywhere() {
+    // A vertical tab, a form feed or NEL in a label is a space, as a tab
+    // is: a wrapped label (a note, a margin label) took it as one, while a
+    // box label drew `␋`. A label of only these is no label.
+    let doc = doc_of(&code_doc(
+        &["let a = 1;", "let b = 2;", "let c = 3;"],
+        json!([
+            {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 3}, "label": "v\u{b}t"},
+            {"id": "b1", "step": 1, "type": "box", "from_line": 2, "to_line": 2, "label": "f\u{c}f n\u{85}l"},
+            {"id": "h3", "step": 1, "type": "highlight", "span": {"line": 3, "start": 0, "end": 3}, "label": "\u{b}\u{85}"}
+        ]),
+    ));
+    let text = lay(&doc, 80, 1).canvas.to_plain_text();
+    assert!(text.contains("v t") && text.contains("f f n l"), "{text}");
+    for c in [
+        '\u{240B}', '\u{240C}', '\u{FFFD}', '\u{b}', '\u{c}', '\u{85}',
+    ] {
+        assert!(!text.contains(c), "U+{:04X} in\n{text}", c as u32);
+    }
+    let mut none = doc.clone();
+    none.annotations.retain(|a| a.id != "h3");
+    assert_eq!(text, lay(&none, 80, 1).canvas.to_plain_text());
+}
+
+#[test]
+fn rev2_a_label_cut_in_a_box_border_is_measured_as_drawn() {
+    // Each lam-alef pair is two graphemes, two cells, but the whole string
+    // measured one cell each: the label ran over the box's corner.
+    let doc = doc_of(&json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1},
+        "code": ["let a = 1;", "let b = 2;"],
+        "annotations": [{"id": "b1", "step": 1, "type": "box", "from_line": 1, "to_line": 2,
+                         "label": "\u{644}\u{627}".repeat(6)}]
+    }));
+    for width in 20..=40 {
+        let l = lay(&doc, width, 1);
+        let top = (0..l.canvas.height)
+            .find(|&y| (0..l.canvas.width).any(|x| sym(&l, x, y) == "╭"))
+            .expect("a box");
+        let row: String = (0..l.canvas.width).map(|x| sym(&l, x, top)).collect();
+        assert!(row.contains('╮'), "{width}: {row}");
+        let cut = !l.clipped_labels.is_empty();
+        assert_eq!(row.contains('…'), cut, "{width}: {row}");
+    }
+}
+
+#[test]
+fn rev2_a_struck_mark_keeps_the_error_colour() {
+    let doc = doc_of(&code_doc(
+        &["x\u{2060}y = 1;"],
+        json!([{"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 4}, "emphasis": "strike"}]),
+    ));
+    let l = lay(&doc, 80, 1);
+    let error = tiza_core::Theme::dark().error;
+    let cells = code_cells(&l, 1);
+    let mark = cells
+        .iter()
+        .find(|(s, _)| s.starts_with(MARK))
+        .unwrap_or_else(|| panic!("no mark: {cells:?}"));
+    assert!(mark.0.ends_with('\u{336}'), "struck: {:?}", mark.0);
+    assert_eq!(mark.1.fg, Some(error), "{mark:?}");
+}
+
+#[test]
+fn rev2_a_long_word_with_zero_width_spaces_wraps_at_the_full_width() {
+    // Each zero-width space counted one cell where a long word is split:
+    // the rows of a 20-column callout held 10 letters.
+    let doc = doc_of(&code_doc(
+        &["x;", "", "", "", "", "", ""],
+        json!([{"id": "c1", "step": 1, "type": "callout", "from_line": 1,
+                "text": "a\u{200B}".repeat(40), "width": 20, "placement": "margin"}]),
+    ));
+    let l = lay(&doc, 120, 1);
+    let rows: Vec<String> = (0..l.canvas.height)
+        .map(|y| {
+            (0..l.canvas.width)
+                .map(|x| sym(&l, x, y))
+                .collect::<String>()
+        })
+        .filter(|r| r.contains("│ a"))
+        .collect();
+    let counts: Vec<usize> = rows.iter().map(|r| r.matches('a').count()).collect();
+    assert_eq!(counts, vec![20, 20], "{rows:#?}");
+}
+
+#[test]
+fn rev2_tags_in_a_flag_are_marked_unless_they_name_a_subdivision() {
+    let flag = |tags: &str| -> String {
+        let t: String = tags
+            .chars()
+            .map(|c| char::from_u32(0xE0000 + c as u32).unwrap())
+            .collect();
+        format!("\u{1F3F4}{t}\u{E007F}")
+    };
+    for (tags, marked) in [
+        ("gbsct", false),
+        ("gbeng", false),
+        ("rm -rf", true),
+        ("rmrfall", true),
+        ("G", true),
+    ] {
+        let code = format!("f = \"{}\";", flag(tags));
+        let doc = doc_of(&code_doc(&[&code], json!([])));
+        let text = code_text(&lay(&doc, 80, 1), 1);
+        assert_eq!(text.contains(MARK), marked, "{tags}: {text}");
+    }
+}
+
+#[test]
+fn rev2_a_step_message_shows_the_titles_control_pictures() {
+    // `:goto`, and `:next`/`:prev` when they cannot move, name the step
+    // with its title: its BEL as `␇`, as the status bar draws it.
+    let mut doc = code_doc(
+        &["let a = 1;"],
+        json!([{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "one"}]),
+    );
+    doc["steps"] = json!([{"step": 0, "title": "s\u{7}tart"}, {"step": 1, "title": "t\u{7}itle"}]);
+    let f = write("t190-step-msg", "c.tiza", &doc.to_string());
+    let live = Live::open(
+        tiza_core::fs::load_document(&f).unwrap(),
+        f.clone(),
+        f.with_extension("sock"),
+    );
+    for (cmd, want) in [
+        ("goto 1", "t\u{2407}itle"),
+        ("next", "t\u{2407}itle"),
+        ("prev", ""),
+        ("prev", "s\u{2407}tart"),
+    ] {
+        live.command(cmd);
+        let m = live.message().unwrap_or_default().0;
+        assert!(m.contains(want), "{cmd}: {m:?}");
+        assert!(!m.contains('\u{7}'), "{cmd}: {m:?}");
+    }
+}

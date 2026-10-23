@@ -326,7 +326,7 @@ impl Canvas {
         if max_w == 0 {
             return 0;
         }
-        let full = UnicodeWidthStr::width(s);
+        let full = drawn_width(s);
         if full <= max_w {
             return self.put_str(x, y, s, style);
         }
@@ -455,8 +455,10 @@ pub fn drawn_width(s: &str) -> usize {
         .sum()
 }
 
-/// Whether `s` draws nothing but blank cells: only white space and
-/// graphemes that take no cell (a zero-width space, a lone combining mark).
+/// Whether an annotation text draws nothing but blank cells: only white
+/// space (a vertical tab or NEL included, which a label takes as a space,
+/// see [`crate::model::single_line`]) and graphemes that take no cell (a
+/// zero-width space, a lone combining mark).
 pub fn is_blank(s: &str) -> bool {
     s.graphemes(true)
         .all(|g| g.trim().is_empty() || drawn_width(g) == 0)

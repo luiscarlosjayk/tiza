@@ -1645,7 +1645,7 @@ pub fn min_clean_width(doc: &Document, theme: &Theme) -> Option<usize> {
 ///   blocks, each with its gap, plus 14 fit) and, beside them, the longest
 ///   label on one row (its `┆ ` and the gap after it), and the rows under
 ///   the lines hold that label whole too; a label is measured as the canvas
-///   draws it (a zero-width space takes a cell there). Blocks only share
+///   draws it (a zero-width space takes no cell there). Blocks only share
 ///   rows with the blocks they can reach: a block of `h` rows from line `L`
 ///   covers at most lines `L` to `L + h - 1`, so the blocks side by side
 ///   are bounded by the widest chain of blocks whose lines meet, in the

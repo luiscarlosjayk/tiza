@@ -49,8 +49,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `:q!` and `Ctrl-C` no longer write the sidecar when they quit. They show on stderr the changes that Tiza did not save.
 - If you close the terminal without `:q`, Tiza ends the session as with `Ctrl-C`. It no longer stays at 100 % of a CPU, aborts or leaves its socket.
 - Tiza draws control characters in the code as one-cell Control Pictures, for example `␛` and `␀`. A file can no longer send escape sequences to the terminal, break the SVG or make the PNG fail.
-- Tiza shows each bidi control and each zero-width character in the code as `⬚` (U+2B1A), one cell in the error color of the theme. A joiner inside an emoji sequence, or inside a word of a script that uses joiners, shows as before.
-- In annotation texts, a control character shows as its picture, for example `␛`, and a zero-width character takes no cell. Thus a label or a callout with zero-width spaces stays in its place, as `tiza check` and `clipped` tell.
+- Tiza shows each invisible character in the code, such as a bidi control or a zero-width space, as `⬚` (U+2B1A) in the theme's error color. Tiza draws a joiner inside an emoji sequence, or inside a word of a script that uses joiners, as it is.
+- In annotation texts, a control character such as ESC shows as its picture, `␛`. A zero-width character takes no cell, so `tiza check` and `clipped` measure a label as Tiza draws it.
+- Tiza refuses a note or a callout text of only zero-width characters, as it refuses one of only spaces.
 - Tiza removes a byte order mark at the start of a file each time it reads the file. Before, a referenced file that Tiza read again kept it as an invisible first column.
 - Input that is too large or not valid, for example `:export x.png width=99999`, no longer crashes Tiza or leaves the terminal broken. A bug in a socket or MCP request gives the error `internal`, and the document and the TUI stay as they were.
 - After Enter, Tiza clears a selection that the `:` command did not use, so a later `:mark` cannot go on old text. When you cancel a command line that a selection opened, Tiza also clears that selection.

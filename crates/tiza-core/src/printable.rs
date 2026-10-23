@@ -141,8 +141,17 @@ fn does_a_job(chars: &[char], i: usize, last_visible: Option<usize>) -> bool {
                 && (!p.is_alphabetic() || is_ideograph(p) || uses_joiners(p))
         }),
         '\u{180B}'..='\u{180F}' => prev.is_some_and(|p| ('\u{1820}'..='\u{18AF}').contains(&p)),
+        // The tags of a subdivision flag: the black flag, 2 to 6 tag
+        // digits or small letters (`gbsct`), the cancel tag. Any other
+        // tag text stays marked, so no words hide in a flag.
         '\u{E0020}'..='\u{E007F}' => {
-            chars.first() == Some(&'\u{1F3F4}') && chars.last() == Some(&'\u{E007F}')
+            let n = chars.len();
+            (4..=8).contains(&n)
+                && chars[0] == '\u{1F3F4}'
+                && chars[n - 1] == '\u{E007F}'
+                && chars[1..n - 1]
+                    .iter()
+                    .all(|c| matches!(c, '\u{E0030}'..='\u{E0039}' | '\u{E0061}'..='\u{E007A}'))
         }
         _ => false,
     }

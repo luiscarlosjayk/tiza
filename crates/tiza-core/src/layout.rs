@@ -1867,7 +1867,7 @@ fn layout_pass(
     }
     for &(x, y) in &marks {
         if let Some(cell) = canvas.get(x, y)
-            && cell.sym.as_str() == crate::printable::INVISIBLE_MARK
+            && cell.sym.starts_with(crate::printable::INVISIBLE_MARK)
         {
             let style = cell.style;
             canvas.restyle(
@@ -2067,8 +2067,8 @@ pub(crate) fn wrap_words(text: &str, width: usize) -> Vec<String> {
             let mut chunk = String::new();
             let mut cw = 0;
             for g in word.graphemes(true) {
-                let gw = unicode_width::UnicodeWidthStr::width(g).max(1);
-                if cw + gw > width {
+                let gw = crate::canvas::drawn_width(g);
+                if cw + gw > width && !chunk.is_empty() {
                     out.push(std::mem::take(&mut chunk));
                     cw = 0;
                 }

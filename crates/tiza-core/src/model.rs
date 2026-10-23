@@ -747,19 +747,21 @@ pub struct RangeMarkers {
     pub end: String,
 }
 
-/// Labels are one line: a tab or a line break becomes a space. Any other
-/// control character is kept and drawn as its picture (`␛`, `␇`…, see
-/// [`crate::printable`]), never raw and never as a silent space.
+/// Labels are one line: a control character that is white space (a tab,
+/// a line break, a vertical tab, a form feed, NEL) becomes a space, as
+/// a wrapped text takes it. Any other control character is kept and drawn
+/// as its picture (`␛`, `␇`…, see [`crate::printable`]), never raw and
+/// never as a silent space.
 pub fn single_line(s: &str) -> String {
     s.chars()
-        .map(|c| {
-            if matches!(c, '\t' | '\n' | '\r') {
-                ' '
-            } else {
-                c
-            }
-        })
+        .map(|c| if is_space_control(c) { ' ' } else { c })
         .collect()
+}
+
+/// A control character that is white space: a tab, a line break, a
+/// vertical tab, a form feed or NEL.
+fn is_space_control(c: char) -> bool {
+    c.is_control() && c.is_whitespace()
 }
 
 /// [`Document::map_files`] for the `code.link` files of `moves` and the
@@ -800,7 +802,13 @@ pub fn sanitize_texts(shape: &mut Shape) {
             }
             *text = text
                 .chars()
-                .map(|c| if matches!(c, '\t' | '\r') { ' ' } else { c })
+                .map(|c| {
+                    if c != '\n' && is_space_control(c) {
+                        ' '
+                    } else {
+                        c
+                    }
+                })
                 .collect();
         }
         Shape::Spotlight { .. } => {}
@@ -1950,7 +1958,7 @@ impl Document {
             }
             Shape::Note { line, text } => {
                 check_line(*line)?;
-                if text.trim().is_empty() {
+                if crate::canvas::is_blank(text) {
                     return Err(Error::Invalid("the note is empty".into()));
                 }
                 Ok(())
@@ -1969,7 +1977,7 @@ impl Document {
                         "the callout starts at {from_line} and ends before, at {b}"
                     )));
                 }
-                if text.trim().is_empty() {
+                if crate::canvas::is_blank(text) {
                     return Err(Error::Invalid("the callout text is empty".into()));
                 }
                 Ok(())
