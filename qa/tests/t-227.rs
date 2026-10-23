@@ -11,7 +11,9 @@
 //! - AC2 This file; CHANGELOG (Fixed).
 //!
 //! Corner cases: `--all-steps` (never past the last); a huge `--step`
-//! (99999, 4294967295).
+//! (99999, 4294967295); the live instance; `:export` with no `step=` on the
+//! new empty step after the last one (the step on screen, no warning); a
+//! recording (`.cast`, `.gif`…) shows every step and gives no warning.
 
 use serde_json::json;
 use tiza_qa::{Live, McpClient, fixture, scratch};
@@ -66,10 +68,82 @@ fn step1_ac1_render_past_the_last_step_is_the_last_step() {
             );
         }
     }
-    // The case of the card: the spotlight of step 2 is on.
-    let (txt, _) = rendered(&dir, 3, "ansi");
-    let (zero, _) = rendered(&dir, 0, "ansi");
-    assert_ne!(txt, zero);
+    // The fixture tells the two takes apart: without `--step` a file shows
+    // every step's annotations with the spotlight of step 2 off.
+    let all = tiza_qa::tiza(&[
+        "render",
+        &doc_path(),
+        "--width",
+        "80",
+        "--format",
+        "ansi",
+        "--out",
+        "-",
+    ]);
+    let (last, _) = rendered(&dir, LAST, "ansi");
+    assert_ne!(all.stdout, last, "the spotlight changes nothing here");
+}
+
+#[test]
+fn ac1_render_of_the_live_instance_past_the_last_step() {
+    let dir = scratch("t227-live");
+    let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    let sock = live.socket.to_str().unwrap().to_string();
+    let at = |step: u32| {
+        tiza_qa::tiza(&[
+            "--socket",
+            &sock,
+            "render",
+            "--step",
+            &step.to_string(),
+            "--width",
+            "80",
+            "--format",
+            "ansi",
+            "--out",
+            "-",
+        ])
+    };
+    let last = at(LAST);
+    for step in [3, u32::MAX] {
+        let r = at(step);
+        assert!(r.stdout == last.stdout, "step {step}");
+        assert!(
+            String::from_utf8_lossy(&r.stderr).contains("showing step 2"),
+            "{r:?}"
+        );
+    }
+}
+
+#[test]
+fn corner_export_without_a_step_is_the_step_on_screen() {
+    // `:step 3` opens a new empty step after the last one: `:export` with
+    // no `step=` writes what the screen shows, with no warning.
+    let dir = scratch("t227-new-step");
+    let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    live.command("step 3");
+    assert_eq!(live.with(|a| a.doc.step), 3);
+    live.command(&format!("export {}", dir.join("new.txt").display()));
+    let m = live.message().unwrap_or_default().0;
+    assert!(m.starts_with("exported step 3 to"), "{m}");
+}
+
+#[test]
+fn corner_a_recording_takes_no_step_and_gives_no_warning() {
+    let dir = scratch("t227-cast");
+    let r = tiza_qa::tiza(&[
+        "render",
+        &doc_path(),
+        "--step",
+        "99",
+        "--out",
+        dir.join("all.cast").to_str().unwrap(),
+    ]);
+    assert!(r.status.success(), "{r:?}");
+    let said = String::from_utf8_lossy(&r.stderr);
+    assert!(!said.contains("does not exist"), "{said}");
 }
 
 #[test]

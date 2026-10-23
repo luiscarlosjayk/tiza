@@ -4984,15 +4984,18 @@ impl App {
     /// next to the document.
     fn export_command(&mut self, rest: &str) -> Result<String, Error> {
         let (path, kv) = split_trailing_kv(rest);
-        let mut step = self.doc.step;
+        // `step=`, when given; else the step on screen (a new empty step
+        // after the last one too, see `:step`).
+        let mut asked = None;
         let mut width = (self.size.0 as usize).saturating_sub(2).max(40);
         let mut theme = self.theme.clone();
         for (k, v) in kv {
             match k.as_str() {
                 "step" => {
-                    step = v
-                        .parse()
-                        .map_err(|_| Error::Invalid("step= must be a number".into()))?;
+                    asked = Some(
+                        v.parse::<u32>()
+                            .map_err(|_| Error::Invalid("step= must be a number".into()))?,
+                    );
                 }
                 "width" => {
                     width = tiza_core::layout::check_width(v.parse::<usize>().map_err(|_| {
@@ -5022,12 +5025,13 @@ impl App {
                 }
             }
         }
-        // A step past the last one: the last, said in the message, as
+        // A `step=` past the last one: the last, said in the message, as
         // `tiza render` and `export_image` say it.
         let last = self.doc.max_step();
-        let past = (step > last)
-            .then(|| format!("step {step} does not exist (the document has steps 0 to {last}); "));
-        let step = step.min(last);
+        let past = asked
+            .filter(|&s| s > last)
+            .map(|s| format!("step {s} does not exist (the document has steps 0 to {last}); "));
+        let step = asked.map_or(self.doc.step, |s| s.min(last));
         let path = if path.is_empty() {
             let stem = self
                 .save_path

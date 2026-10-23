@@ -150,7 +150,12 @@ fn ac4_export_command_formats_defaults_and_errors() {
         wide.display()
     ));
     let (msg, err) = live.message().unwrap();
-    assert!(!err && msg.contains("exported step 9"), "{msg}");
+    // (A step past the last one exports the last, and says so, since t-227.)
+    assert!(
+        !err && msg
+            .contains("step 9 does not exist (the document has steps 0 to 2); exported step 2"),
+        "{msg}"
+    );
     let wide_txt = std::fs::read_to_string(&wide).unwrap();
     let narrow = dir.join("narrow.txt");
     live.command(&format!("export {} step=9 width=60", narrow.display()));

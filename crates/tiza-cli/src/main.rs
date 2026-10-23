@@ -488,9 +488,15 @@ fn real_main() -> anyhow::Result<()> {
             // An explicit step past the last one is probably a typo in a
             // script: say so (on stderr, so `--out -` stays clean) and show
             // the last step, the same take as `--step L`. (Without
-            // `--step`, a file shows every step's annotations.)
+            // `--step`, a file shows every step's annotations; a recording
+            // shows every step and takes no `--step`.)
+            let recording = matches!(
+                format,
+                Format::Gif | Format::Mp4 | Format::Webm | Format::Cast | Format::Tape
+            );
             if let Some(asked) = asked_step
                 && asked > doc.max_step()
+                && !recording
             {
                 eprintln!(
                     "tiza: step {asked} does not exist (the document has steps 0 to {}); showing step {}",
