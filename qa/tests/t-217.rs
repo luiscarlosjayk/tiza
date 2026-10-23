@@ -8,9 +8,11 @@
 //! Acceptance criteria:
 //! - AC1 One notes file per version, by hand, in English, no board ids;
 //!   v0.1.0's from QA 1's draft, its facts checked against the code.
-//! - AC2 Both release paths use that file; a plain tag without it is
-//!   refused naming the path; a suffixed tag takes the notes of X.Y.Z, or
-//!   two lines (prerelease, link to the CHANGELOG).
+//! - AC2 Both release paths use that file, checked before anything is
+//!   built; a plain tag without it is refused naming the path; a suffixed
+//!   tag takes its own notes (`vX.Y.Z-rc.1.md`), or two lines (prerelease,
+//!   link to the CHANGELOG), never the notes of X.Y.Z, whose archive names
+//!   and links are not its own (the self-review's finding).
 //! - AC3 README: the status line names the current version (and the
 //!   version script keeps it so); the macOS Gatekeeper note.
 //! - AC4 The condensed CHANGELOG of 0.1.0 is a proposal for Luis, outside
@@ -109,22 +111,27 @@ fn step2_ac2_a_plain_tag_without_notes_is_refused_naming_the_path() {
 }
 
 #[test]
-fn step1_ac2_a_suffixed_tag_takes_its_versions_notes_or_two_lines() {
+fn step1_ac2_a_prerelease_takes_its_own_notes_or_two_lines() {
     let fx = the_fixture();
-    let dir = workspace("t217-rc", &[("v9.9.9.md", &fx)]);
-    for tag in ["v9.9.9-rc.1", "v9.9.9-alpha.2"] {
-        let o = notes(&dir, tag);
-        assert!(o.status.success(), "{tag}: {}", err(&o));
-        assert_eq!(out(&o).as_bytes(), fx.as_slice(), "{tag}");
-    }
-    let o = notes(&dir, "v9.9.8-rc.1");
+    let own = b"# Tiza v9.9.9-rc.2\n\nA prerelease with notes of its own.\n";
+    let dir = workspace("t217-rc", &[("v9.9.9.md", &fx), ("v9.9.9-rc.2.md", own)]);
+    // Never the notes of 9.9.9: their archive names are not the rc's.
+    let o = notes(&dir, "v9.9.9-rc.1");
     assert!(o.status.success(), "{}", err(&o));
     assert_eq!(
         out(&o),
-        "Prerelease of Tiza 9.9.8, to try before the release.\n\
-         What changed: [CHANGELOG](https://github.com/owner/repo/blob/v9.9.8-rc.1/CHANGELOG.md).\n"
+        "Prerelease of Tiza 9.9.9, to try before the release.\n\
+         What changed: [CHANGELOG](https://github.com/owner/repo/blob/v9.9.9-rc.1/CHANGELOG.md).\n"
     );
-    for bad in ["9.9.9", "v9.9", "vX.Y.Z", "v9.9.9-"] {
+    let o = notes(&dir, "v9.9.9-rc.2");
+    assert_eq!(out(&o).as_bytes(), own.as_slice(), "{}", err(&o));
+    // Semantic-version suffixes the `v*` trigger lets through.
+    for tag in ["v9.9.9-beta-2", "v9.9.9-rc.1+build.5"] {
+        let o = notes(&dir, tag);
+        assert!(o.status.success(), "{tag}: {}", err(&o));
+        assert!(out(&o).starts_with("Prerelease of Tiza 9.9.9"), "{tag}");
+    }
+    for bad in ["9.9.9", "v9.9", "vX.Y.Z", "v9.9.9-", "v9.9.9 rc"] {
         assert_eq!(notes(&dir, bad).status.code(), Some(2), "{bad}");
     }
 }
@@ -206,9 +213,9 @@ fn ac1_the_v0_1_0_notes_match_what_the_release_builds() {
         );
         assert!(yml.contains(&format!("target: {target}")), "{target}");
     }
-    // glibc 2.35: the Linux archive is built on Ubuntu 22.04.
+    // glibc 2.35: the Linux archive is built in an Ubuntu 22.04 container.
     assert!(n.contains("glibc 2.35"));
-    assert!(yml.contains("{ os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }"));
+    assert!(yml.contains(r#"container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu"#));
     // Rust 1.88: the workspace's minimum.
     assert!(n.contains("Rust 1.88"));
     assert!(read("Cargo.toml").contains("rust-version = \"1.88\""));
@@ -244,4 +251,166 @@ fn ac3_the_readme_status_and_the_gatekeeper_note() {
 #[test]
 fn ac5_changelog() {
     assert!(read("CHANGELOG.md").contains("docs/release-notes/"));
+}
+
+// ---------- Review ----------
+
+fn git(dir: &Path, args: &[&str]) {
+    let o = Command::new("git")
+        .args([
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "init.defaultBranch=main",
+        ])
+        .args(args)
+        .current_dir(dir)
+        .output()
+        .unwrap();
+    assert!(o.status.success(), "git {args:?}: {}", err(&o));
+}
+
+#[test]
+fn rev_notes_not_committed_are_refused() {
+    let fx = the_fixture();
+    let dir = workspace("t217-git", &[("v9.9.9.md", &fx)]);
+    git(&dir, &["init", "-q"]);
+    git(&dir, &["add", "scripts"]);
+    git(&dir, &["commit", "-qm", "script"]);
+    let o = notes(&dir, "v9.9.9");
+    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    assert!(err(&o).contains("is not committed"), "{}", err(&o));
+    git(&dir, &["add", "docs"]);
+    let o = notes(&dir, "v9.9.9");
+    assert!(o.status.success(), "{}", err(&o));
+}
+
+#[test]
+fn rev_empty_notes_are_refused() {
+    for (name, bytes) in [
+        ("empty", &b""[..]),
+        ("bom", &b"\xEF\xBB\xBF\r\n\r\n"[..]),
+        ("blank", &b"  \n\t\n"[..]),
+    ] {
+        let dir = workspace(&format!("t217-empty-{name}"), &[("v9.9.9.md", bytes)]);
+        let o = notes(&dir, "v9.9.9");
+        assert_eq!(o.status.code(), Some(1), "{name}: {}", out(&o));
+        assert!(err(&o).contains("has no text"), "{name}: {}", err(&o));
+    }
+}
+
+#[test]
+fn rev_the_byte_order_mark_goes_whatever_perl_unicode_says() {
+    let fx = the_fixture();
+    let mut bom = b"\xEF\xBB\xBF".to_vec();
+    bom.extend(&fx);
+    let dir = workspace("t217-perl", &[("v9.9.9.md", &bom)]);
+    for value in ["SD", "SDA", ""] {
+        let o = Command::new("bash")
+            .arg(dir.join("scripts/release-notes.sh"))
+            .args(["v9.9.9", "owner/repo"])
+            .env("PERL_UNICODE", value)
+            .env("LC_ALL", "en_US.UTF-8")
+            .output()
+            .unwrap();
+        assert_eq!(out(&o).as_bytes(), fx.as_slice(), "PERL_UNICODE={value:?}");
+    }
+}
+
+#[test]
+fn rev_through_a_symlink_from_elsewhere() {
+    let fx = the_fixture();
+    let dir = workspace("t217-link", &[("v9.9.9.md", &fx)]);
+    let other = scratch("t217-link-other");
+    std::os::unix::fs::symlink(dir.join("scripts/release-notes.sh"), other.join("notes.sh"))
+        .unwrap();
+    let o = Command::new("bash")
+        .arg(other.join("notes.sh"))
+        .arg("v9.9.9")
+        .current_dir(&other)
+        .output()
+        .unwrap();
+    assert_eq!(out(&o).as_bytes(), fx.as_slice(), "{}", err(&o));
+}
+
+#[test]
+fn rev_a_card_written_with_another_hyphen_is_refused() {
+    for text in ["(t\u{2011}173)", "t\u{2010}173", "t\u{2212}173"] {
+        let body = format!("# Tiza v9.9.9\n\nFixed {text}.\n");
+        let dir = workspace("t217-hyphen", &[("v9.9.9.md", body.as_bytes())]);
+        let o = notes(&dir, "v9.9.9");
+        assert_eq!(o.status.code(), Some(1), "{text}: {}", out(&o));
+    }
+}
+
+#[test]
+fn rev_the_workflow_checks_the_notes_before_building_in_a_22_04_container() {
+    let yml = read(".github/workflows/release.yml");
+    let notes_job = yml.find("\n  notes:\n").expect("a notes job");
+    let build_job = yml.find("\n  build:\n").unwrap();
+    assert!(notes_job < build_job);
+    assert!(yml[build_job..].contains("needs: notes"));
+    assert!(yml[notes_job..build_job].contains("scripts/release-notes.sh"));
+    assert!(yml.contains(r#"container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu"#));
+    assert!(yml.contains("container: ${{ matrix.container }}"));
+    assert!(
+        !yml.contains("os: ubuntu-22.04"),
+        "the retiring runner image"
+    );
+    assert!(!yml.contains("fetch-depth"), "no history needed any more");
+    // In the container, git before the checkout and rustup before the
+    // toolchain step.
+    let image = yml.find("build image (container only)").unwrap();
+    assert!(image < yml[build_job..].find("actions/checkout").unwrap() + build_job);
+    assert!(image < yml.find("rustup toolchain install").unwrap());
+}
+
+#[test]
+fn rev_a_local_linux_archive_needs_glibc_2_35_at_most() {
+    let local = read("scripts/release-local.sh");
+    let check = local.find("glibc 2.35 at most").expect("the check");
+    assert!(
+        check < local.find("cargo build").unwrap(),
+        "before building"
+    );
+    assert!(local.contains("ubuntu:22.04 container"));
+}
+
+#[test]
+fn rev_bump_version_refuses_a_status_line_twice_and_writes_nothing() {
+    let dir = scratch("t217-bump");
+    std::fs::create_dir_all(dir.join("scripts")).unwrap();
+    for f in ["Cargo.toml", "CHANGELOG.md", "scripts/bump-version.sh"] {
+        std::fs::copy(root().join(f), dir.join(f)).unwrap();
+    }
+    let readme = read("README.md");
+    let line = readme
+        .lines()
+        .find(|l| l.starts_with("> Status: **v"))
+        .unwrap();
+    let twice = format!("{readme}\n{line}\n");
+    std::fs::write(dir.join("README.md"), &twice).unwrap();
+    let before = std::fs::read(dir.join("Cargo.toml")).unwrap();
+    let o = Command::new("bash")
+        .arg(dir.join("scripts/bump-version.sh"))
+        .arg("9.8.7")
+        .current_dir(&dir)
+        .output()
+        .unwrap();
+    assert_eq!(o.status.code(), Some(1), "{}", out(&o));
+    assert!(err(&o).contains("2 times"), "{}", err(&o));
+    assert_eq!(std::fs::read(dir.join("Cargo.toml")).unwrap(), before);
+    assert_eq!(
+        std::fs::read_to_string(dir.join("README.md")).unwrap(),
+        twice
+    );
+}
+
+#[test]
+fn rev_the_install_steps_make_the_folder_first() {
+    let n = read("docs/release-notes/v0.1.0.md");
+    let mk = n.find("mkdir -p ~/.local/bin").expect("mkdir");
+    assert!(mk < n.find("cp tiza-v0.1.0-<target>/tiza").unwrap());
 }

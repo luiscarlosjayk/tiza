@@ -2,7 +2,8 @@ name: Release
 
 # Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
 # and Linux (x86_64), checksums and the release notes of docs/release-notes/
-# (scripts/release-notes.sh; a vX.Y.Z tag without its notes fails).
+# (scripts/release-notes.sh: a vX.Y.Z tag without its notes stops in the first
+# job, before anything is built).
 # Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
 # crates.io is published by hand: README.md#releases-maintainers.
 # scripts/release-local.sh builds the same archives when Actions is off.
@@ -18,9 +19,20 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # The notes first: written by hand per version, never the commit log, and
+  # a tag without them must not cost three builds.
+  notes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" > /dev/null
+
   build:
+    needs: notes
     name: build ${{ matrix.target }}
     runs-on: ${{ matrix.os }}
+    # Empty for the macOS builds: they run on the runner itself.
+    container: ${{ matrix.container }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,11 +41,23 @@ jobs:
           # GitHub retired the Intel macos-13 image: the x86_64 build is
           # cross-compiled on the arm64 runner (same toolchain, extra target).
           - { os: macos-latest, target: x86_64-apple-darwin }
-          # Ubuntu 22.04, not the newest image: the binary links the glibc of
-          # the build machine, and 2.35 keeps Ubuntu 22.04, Debian 12 and
-          # Fedora 36 or newer running it (the release notes say so).
-          - { os: ubuntu-22.04, target: x86_64-unknown-linux-gnu }
+          # In an Ubuntu 22.04 container: the binary links the glibc of the
+          # build machine, and 2.35 keeps Ubuntu 22.04, Debian 12 and Fedora
+          # 36 or newer running it (the release notes say so). Not the
+          # ubuntu-22.04 runner image, which GitHub is retiring.
+          - { os: ubuntu-latest, container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu }
     steps:
+      # The container has what the runner image would: git before the
+      # checkout (a real clone, for the build stamp), a C toolchain for the
+      # linker, perl for shasum, and rustup for the step after.
+      - name: build image (container only)
+        if: matrix.container
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            ca-certificates curl git build-essential perl
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
       # The toolchain rust-toolchain.toml pins (the only place its version is
       # written; rustup >= 1.28 installs it with a bare `toolchain install`),
@@ -69,8 +93,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: dist

@@ -92,6 +92,18 @@ if [ ${#targets[@]} -eq 0 ]; then
   esac
 fi
 
+# The release notes promise glibc 2.35 or newer for the Linux archive: it
+# is built with glibc 2.35 at most (Ubuntu 22.04, as release.yml does).
+for target in "${targets[@]}"; do
+  if [[ $target == *-linux-gnu ]] && [ "$(uname -s)" = Linux ]; then
+    glibc="$(ldd --version 2>&1 | sed -n '1s/.* \([0-9][0-9]*\.[0-9][0-9]*\)$/\1/p')"
+    if [ -z "$glibc" ] || [ "$(printf '%s\n2.35\n' "$glibc" | sort -V | tail -1)" != "2.35" ]; then
+      echo "the Linux archive is built with glibc 2.35 at most, so it runs where the release notes say; this machine has ${glibc:-an unknown glibc}: build it in an ubuntu:22.04 container" >&2
+      exit 1
+    fi
+  fi
+done
+
 sha256() {
   if command -v shasum >/dev/null 2>&1; then shasum -a 256 "$1"; else sha256sum "$1"; fi
 }

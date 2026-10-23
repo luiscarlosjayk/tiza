@@ -293,7 +293,8 @@ fn publish_readme_has_the_manual_steps_in_order() {
     let steps = [
         "git status --short",
         "scripts/bump-version.sh X.Y.Z",
-        "docs/release-notes/vX.Y.Z.md",
+        "$EDITOR docs/release-notes/vX.Y.Z.md",
+        "git add docs/release-notes/vX.Y.Z.md",
         "git commit -am \"vX.Y.Z\"",
         "cargo publish --workspace --dry-run --locked",
         "git push origin main",
@@ -309,7 +310,7 @@ fn publish_readme_has_the_manual_steps_in_order() {
     for (w, pair) in positions.windows(2).zip(steps.windows(2)) {
         assert!(w[0] < w[1], "`{}` comes after `{}`", pair[0], pair[1]);
     }
-    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[12]);
+    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[13]);
     assert!(read("scripts/bump-version.sh").starts_with("#!/usr/bin/env bash\n"));
     // The order is the dependency order of the manifests.
     let meta = metadata();

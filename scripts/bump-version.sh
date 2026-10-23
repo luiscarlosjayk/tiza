@@ -38,7 +38,9 @@ old="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\(.*\)"/\1/p' Cargo.t
 [ -n "$old" ] || { echo "no version in [workspace.package] of Cargo.toml" >&2; exit 1; }
 [ "$new" != "$old" ] || { echo "the workspace is already at $old" >&2; exit 1; }
 grep -qx '## \[Unreleased\]' CHANGELOG.md || { echo "CHANGELOG.md has no '## [Unreleased]' heading" >&2; exit 1; }
-[ "$(grep -c "^> Status: \*\*v$old\*\*" README.md)" = 1 ] || { echo "README.md has no '> Status: **v$old**' line" >&2; exit 1; }
+status="$(grep -c "^> Status: \*\*v$old\*\*" README.md || true)"
+[ "$status" != 0 ] || { echo "README.md has no '> Status: **v$old**' line" >&2; exit 1; }
+[ "$status" = 1 ] || { echo "README.md has the '> Status: **v$old**' line $status times: keep one" >&2; exit 1; }
 if grep -q "^## \[$new\]" CHANGELOG.md; then
   echo "CHANGELOG.md already has a $new section" >&2
   exit 1
