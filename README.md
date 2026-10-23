@@ -43,6 +43,8 @@ Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://git
 
 **macOS:** the binaries are not signed with an Apple Developer ID. A tar.gz downloaded with a browser is quarantined, and the first run of `tiza` is refused (*"tiza" Not Opened*); clear the flag once with `xattr -d com.apple.quarantine /path/to/tiza`. A download with `curl` is not quarantined.
 
+To get a notice of new versions, watch the repository on GitHub (**Watch** → **Custom** → **Releases**). Tiza itself does not check for updates.
+
 Or from source (Rust ≥ 1.88), from crates.io or from the repository's `main`:
 
 ```sh
