@@ -282,6 +282,7 @@ git switch main && git pull && git status --short   # must print nothing
 gitleaks git --gitleaks-ignore-path qa/.gitleaksignore   # no secret in the history (the fake ones in tests and demos are listed there)
 scripts/bump-version.sh X.Y.Z                       # Cargo.toml, Cargo.lock, CHANGELOG.md, the README status
 $EDITOR docs/release-notes/vX.Y.Z.md                # the release's description: short, English, no card ids
+                                                    # (keep `cargo install tiza` only if X.Y.Z reaches crates.io the same day)
 git add docs/release-notes/vX.Y.Z.md                # new: `commit -a` would leave it out, and the tag would have none
 git diff                                            # check the five versions and the CHANGELOG heading
 git commit -am "vX.Y.Z"

@@ -206,9 +206,11 @@ fn ac4_docs_record_the_removal() {
     let changelog = std::fs::read_to_string(r.join("CHANGELOG.md")).unwrap();
     let unreleased = &changelog[..changelog.find("\n## [0").unwrap_or(changelog.len())];
     let removed = &unreleased[unreleased.find("### Removed").expect("Removed section")..];
+    // (The CHANGELOG of 0.1.0 was condensed in t-217; `--brand-font` came
+    // and went after 0.0.1, so only `--mono-labels` is a removal.)
     assert!(
-        removed.contains("- The brand serif left the binary ([ADR 0006]")
-            && removed.contains("--brand-font")
+        removed.contains("The binary no longer contains the brand serif")
+            && removed.contains("--mono-labels")
     );
     let readme = std::fs::read_to_string(r.join("README.md")).unwrap();
     assert!(

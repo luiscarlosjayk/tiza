@@ -334,6 +334,7 @@ fn ac5_changelog_names_the_sign() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert!(
-        changelog.contains("- The status bar's warning badge uses an ASCII `!` instead of `⚠`")
+        // (The CHANGELOG of 0.1.0 was condensed in t-217.)
+        changelog.contains("The warning badge of the status bar is an ASCII `!`, not `⚠`")
     );
 }

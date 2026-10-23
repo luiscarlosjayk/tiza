@@ -432,7 +432,8 @@ fn ac5_guide_and_changelog() {
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
     let unreleased = changelog.split("## [0.0.1]").next().unwrap();
     assert!(
-        unreleased.contains("- MCP discovery for clients that defer tools:"),
+        // (The CHANGELOG of 0.1.0 was condensed in t-217.)
+        unreleased.contains("For MCP clients that load tools on demand"),
         "CHANGELOG"
     );
 }

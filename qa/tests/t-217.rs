@@ -250,7 +250,8 @@ fn ac3_the_readme_status_and_the_gatekeeper_note() {
 
 #[test]
 fn ac5_changelog() {
-    assert!(read("CHANGELOG.md").contains("docs/release-notes/"));
+    // (Condensed with the rest of the CHANGELOG of 0.1.0, AC4.)
+    assert!(read("CHANGELOG.md").contains("notes written by hand for that version"));
 }
 
 // ---------- Review ----------

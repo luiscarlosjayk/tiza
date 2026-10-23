@@ -602,8 +602,10 @@ fn ac5_a_message_that_fits_is_unchanged() {
 fn ac6_changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("- The status bar keeps where to find what a message names."));
-    assert!(changelog.contains("! labels"));
+    // (The CHANGELOG of 0.1.0 was condensed in t-217.)
+    assert!(
+        changelog.contains("A message about an annotation on a later step tells how to see it")
+    );
 }
 
 // ---------- Corner cases ----------

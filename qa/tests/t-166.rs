@@ -706,12 +706,12 @@ fn corner_a_live_document_with_no_tiza_and_a_move_add_code_link() {
 
 #[test]
 fn ac5_changelog_names_the_card() {
+    // The CHANGELOG of 0.1.0 was condensed in t-217: `code.link` is new in
+    // it, described in its final state, so this fix has no entry of its own.
     let log = std::fs::read_to_string(example("../CHANGELOG.md")).unwrap();
-    let fixed = &log[log.find("### Fixed").unwrap()..];
     assert!(
-        fixed.contains("Exporting the live instance ignored the files a `code.link` move shows")
-            && fixed.contains("load_scene"),
-        "CHANGELOG.md has no Fixed entry for t-166"
+        log.contains("A `code.link` move shows another file"),
+        "CHANGELOG"
     );
 }
 

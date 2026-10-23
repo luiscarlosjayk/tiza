@@ -153,7 +153,8 @@ fn ac3_docs_schema_and_changelog() {
         read("docs/agent-guide.md")
             .contains("without a `width`, at the width of the screen's code area")
     );
-    assert!(read("CHANGELOG.md").contains("`render.text` without a width"));
+    // (The CHANGELOG of 0.1.0 was condensed in t-217.)
+    assert!(read("CHANGELOG.md").contains("Without a width, `render.text`"));
 }
 
 // ---------- Review ----------

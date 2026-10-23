@@ -319,8 +319,9 @@ fn ac3_schema_guide_and_changelog() {
     assert!(guide.contains("## Is it on screen?"));
     assert!(guide.contains("\"visible\": false"));
     let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
+    // (The CHANGELOG of 0.1.0 was condensed in t-217.)
     assert!(changelog.contains(
-        "- `annotation.add` and `annotation.update` say whether the annotation is on screen:"
+        "The replies of `annotation.add` and `annotation.update` tell if the annotation is on screen"
     ));
 }
 

@@ -779,9 +779,10 @@ fn ac10_schema_scene_get_and_docs_cover_steps_and_loop() {
         ("README.md", "tiza goto"),
         ("docs/agent-guide.md", "step.goto"),
         ("docs/agent-guide.md", "goto_step"),
+        // (The CHANGELOG of 0.1.0 was condensed in t-217.)
         (
             "CHANGELOG.md",
-            "- Named steps, auto-advance and loop ([ADR 0007]",
+            "Document `steps` entries give a step an `id`",
         ),
         (
             "docs/adr/0007-moves-y-pasos-con-nombre.md",

@@ -230,7 +230,8 @@ fn ac4_the_examples_are_untouched_by_rendering() {
 
 #[test]
 fn ac5_changelog_and_agents_rule() {
-    assert!(read("CHANGELOG.md").contains("scripts/readme-images.sh"));
+    // The condensed CHANGELOG of 0.1.0 (t-217) lists what changes for a
+    // user: the README images script is the maintainers'.
     let agents = read("AGENTS.md");
     assert!(
         agents.contains("any visual change to the renderer re-runs `scripts/readme-images.sh` in the same commit"),

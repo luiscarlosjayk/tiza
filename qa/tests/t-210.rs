@@ -718,12 +718,12 @@ print("SMOKE", s.finish(10), flush=True)
 #[test]
 fn ac6_changelog_and_agent_guide() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    // The CHANGELOG of 0.1.0 was condensed in t-217: the live `check` is new
+    // in it, described in its final state, so this fix has no entry of its own.
     let log = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    let fixed = &log[log.find("### Fixed").unwrap()..];
-    let fixed = &fixed[..fixed[4..].find("\n## ").map_or(fixed.len(), |i| i + 4)];
     assert!(
-        fixed.contains("- A live `check` no longer freezes the presenter's screen."),
-        "CHANGELOG.md has no Fixed entry for t-210"
+        log.contains("give the same report on the live document"),
+        "CHANGELOG"
     );
     let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
     assert!(
