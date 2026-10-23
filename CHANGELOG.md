@@ -68,7 +68,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - Smaller fixes:
   - A box that starts on the cursor line keeps its title row on screen.
   - In presentation mode, a proposal in supervised mode shows the `⏸ N to review` chip.
-  - `render --step N` with N after the last step gives a warning.
+  - `render --step N` and `:export step=N` with N after the last step give a warning and show the last step. Before, they could show a different picture, for example with a spotlight off.
   - A `.tape` file puts `Output` in quotes, so paths with spaces work in VHS 0.12.
   - Tiza refuses to write a `.tape` when a path has a control character, a newline or a `"`.
   - `tiza --version` no longer shows an old commit in a git worktree, or the commit of an unrelated repository for a crate from crates.io.

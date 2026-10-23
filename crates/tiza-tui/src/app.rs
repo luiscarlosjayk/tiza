@@ -5022,6 +5022,12 @@ impl App {
                 }
             }
         }
+        // A step past the last one: the last, said in the message, as
+        // `tiza render` and `export_image` say it.
+        let last = self.doc.max_step();
+        let past = (step > last)
+            .then(|| format!("step {step} does not exist (the document has steps 0 to {last}); "));
+        let step = step.min(last);
         let path = if path.is_empty() {
             let stem = self
                 .save_path
@@ -5093,7 +5099,8 @@ impl App {
         std::fs::write(&path, &bytes)
             .map_err(|e| Error::Invalid(format!("could not write {}: {e}", path.display())))?;
         Ok(format!(
-            "exported step {step} to {} ({} bytes){}",
+            "{}exported step {step} to {} ({} bytes){}",
+            past.unwrap_or_default(),
             path.display(),
             bytes.len(),
             theme_notice.map(|n| format!(" — {n}")).unwrap_or_default()

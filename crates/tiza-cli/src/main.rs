@@ -391,7 +391,8 @@ fn real_main() -> anyhow::Result<()> {
             // The live instance's `.tiza` and whether it autosaves: what a
             // `.tape` of it opens.
             let mut live_document: Option<(Option<String>, bool)> = None;
-            let (doc, step, width) = match &file {
+            let asked_step = step;
+            let (doc, mut step, width) = match &file {
                 Some(f) => {
                     let mut opened = if f == "-" {
                         let mut text = String::new();
@@ -486,13 +487,17 @@ fn real_main() -> anyhow::Result<()> {
             }
             // An explicit step past the last one is probably a typo in a
             // script: say so (on stderr, so `--out -` stays clean) and show
-            // the last step.
-            if step != u32::MAX && step > doc.max_step() {
+            // the last step, the same take as `--step L`. (Without
+            // `--step`, a file shows every step's annotations.)
+            if let Some(asked) = asked_step
+                && asked > doc.max_step()
+            {
                 eprintln!(
-                    "tiza: step {step} does not exist (the document has steps 0 to {}); showing step {}",
+                    "tiza: step {asked} does not exist (the document has steps 0 to {}); showing step {}",
                     doc.max_step(),
                     doc.max_step()
                 );
+                step = doc.max_step();
             }
             // A `steps` entry past the last step is kept, never dropped in
             // silence.
