@@ -3,6 +3,7 @@
 //! a debounce, keeping the annotations by re-anchoring them to their text.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
@@ -18,7 +19,7 @@ pub struct Follow {
     /// reports `/private/var/…` for a watch on `/var/…` (`$TMPDIR`), so event
     /// paths are compared against this, never against `path.parent()`.
     dir_canon: PathBuf,
-    watcher: Option<notify::RecommendedWatcher>,
+    watch: Watch,
     rx: mpsc::Receiver<notify::Result<notify::Event>>,
     /// Time of the last relevant event, while a reload is pending.
     pending_since: Option<Instant>,
@@ -33,8 +34,60 @@ pub struct Follow {
     pub missing: bool,
 }
 
+/// The file watcher. It starts and stops on threads of its own: with
+/// fseventsd busy (a build running beside Tiza) starting the event stream
+/// and dropping it each took seconds, and the TUI froze meanwhile.
+enum Watch {
+    /// Starting on its own thread, which sends it here (or why it failed).
+    Starting(mpsc::Receiver<Result<Counted, String>>),
+    Running(Counted),
+    Stopped,
+}
+
+/// What [`Follow::poll`] found.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Poll {
+    /// Nothing to do now.
+    Idle,
+    /// The file changed and the debounce elapsed: reload now.
+    Reload,
+    /// The watcher has just started: the file may have changed while it
+    /// started (see [`Follow::touch`]).
+    Started,
+    /// The watcher could not start: follow is off, for this reason.
+    Failed(String),
+}
+
+/// Watchers in this process, from the start of the thread that makes one
+/// until its drop has ended (the tests wait on it, see `follow.status`).
+static LIVE: AtomicUsize = AtomicUsize::new(0);
+
+pub fn live_watchers() -> usize {
+    LIVE.load(Ordering::SeqCst)
+}
+
+/// A watcher counted in [`LIVE`]: from [`Counted::begin`], before it
+/// exists, until it has been dropped.
+struct Counted(Option<notify::RecommendedWatcher>);
+
+impl Counted {
+    fn begin() -> Counted {
+        LIVE.fetch_add(1, Ordering::SeqCst);
+        Counted(None)
+    }
+}
+
+impl Drop for Counted {
+    fn drop(&mut self) {
+        drop(self.0.take());
+        LIVE.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 impl Follow {
-    /// Watches the parent directory of `path`.
+    /// Watches the parent directory of `path`. The watcher starts on a
+    /// thread of its own and [`Follow::poll`] takes it when it is ready;
+    /// a start that fails says so there.
     pub fn start(path: PathBuf, current: Vec<String>) -> Result<Follow, String> {
         let dir = path
             .parent()
@@ -42,18 +95,36 @@ impl Follow {
             .map(Path::to_path_buf)
             .unwrap_or_else(|| PathBuf::from("."));
         let (tx, rx) = mpsc::channel();
-        let mut watcher = notify::recommended_watcher(move |res| {
-            let _ = tx.send(res);
-        })
-        .map_err(|e| format!("cannot watch {}: {e}", dir.display()))?;
-        watcher
-            .watch(&dir, RecursiveMode::NonRecursive)
+        let (started_tx, started_rx) = mpsc::channel();
+        let d = dir.clone();
+        std::thread::Builder::new()
+            .name("tiza follow start".into())
+            .spawn(move || {
+                let mut counted = Counted::begin();
+                hook_slow();
+                let cannot =
+                    |e: &dyn std::fmt::Display| format!("cannot watch {}: {e}", d.display());
+                let started = match notify::recommended_watcher(move |res| {
+                    let _ = tx.send(res);
+                }) {
+                    Err(e) => Err(cannot(&e)),
+                    Ok(_) if hook("follow:fail") => Err(cannot(&"test hook")),
+                    Ok(w) => counted
+                        .0
+                        .insert(w)
+                        .watch(&d, RecursiveMode::NonRecursive)
+                        .map_err(|e| cannot(&e)),
+                };
+                // Stopped meanwhile: nobody takes it, and it is dropped
+                // here, on this thread (so is a watcher that failed).
+                let _ = started_tx.send(started.map(|()| counted));
+            })
             .map_err(|e| format!("cannot watch {}: {e}", dir.display()))?;
         let dir_canon = canonical_dir(&dir);
         Ok(Follow {
             path,
             dir_canon,
-            watcher: Some(watcher),
+            watch: Watch::Starting(started_rx),
             rx,
             pending_since: None,
             deferred_empty: false,
@@ -65,6 +136,22 @@ impl Follow {
         })
     }
 
+    /// Waits for the watcher that is starting, as the start did before it
+    /// moved to a thread of its own: the in-process tests, which save the
+    /// file right after `follow on` (see `App::follow_start_waits`).
+    pub fn wait_started(&mut self) -> Result<(), String> {
+        if let Watch::Starting(started) = &self.watch {
+            let got = started.recv();
+            self.watch = Watch::Stopped;
+            match got {
+                Ok(Ok(w)) => self.watch = Watch::Running(w),
+                Ok(Err(why)) => return Err(why),
+                Err(_) => return Err(self.did_not_start()),
+            }
+        }
+        Ok(())
+    }
+
     pub fn file_name(&self) -> String {
         self.path
             .file_name()
@@ -72,10 +159,28 @@ impl Follow {
             .unwrap_or_else(|| self.path.display().to_string())
     }
 
-    /// Drains the watcher's events. Returns true when a reload should be
-    /// attempted now (an event touched the file and the debounce elapsed).
-    pub fn poll(&mut self) -> bool {
+    /// Takes the watcher once it has started ([`Poll::Started`]) and
+    /// drains its events: a reload when an event touched the file and the
+    /// debounce elapsed.
+    pub fn poll(&mut self) -> Poll {
         let mut touched = false;
+        if let Watch::Starting(started) = &self.watch {
+            match started.try_recv() {
+                Ok(Ok(w)) => {
+                    self.watch = Watch::Running(w);
+                    return Poll::Started;
+                }
+                Ok(Err(why)) => {
+                    self.watch = Watch::Stopped;
+                    return Poll::Failed(why);
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.watch = Watch::Stopped;
+                    return Poll::Failed(self.did_not_start());
+                }
+            }
+        }
         while let Ok(ev) = self.rx.try_recv() {
             match ev {
                 Ok(ev) => {
@@ -92,10 +197,22 @@ impl Follow {
         match self.pending_since {
             Some(t) if t.elapsed() >= DEBOUNCE => {
                 self.pending_since = None;
-                true
+                Poll::Reload
             }
-            _ => false,
+            _ => Poll::Idle,
         }
+    }
+
+    /// The watcher's thread ended without sending it (it panicked).
+    fn did_not_start(&self) -> String {
+        let dir = self.path.parent().unwrap_or(Path::new("."));
+        format!("cannot watch {}: the watcher did not start", dir.display())
+    }
+
+    /// Reads the file again after the debounce, as for a save: what changed
+    /// while the watcher started.
+    pub fn touch(&mut self) {
+        self.pending_since = Some(Instant::now());
     }
 
     /// A pending reload was deferred (empty read): try again after the debounce.
@@ -135,9 +252,43 @@ impl Follow {
         })
     }
 
-    /// Stops watching (dropping the watcher).
+    /// Stops watching. A running watcher is dropped on a thread of its own
+    /// (dropping it waits for its event thread); one still starting is
+    /// dropped by the thread that starts it.
     pub fn stop(&mut self) {
-        self.watcher = None;
+        if let Watch::Running(w) = std::mem::replace(&mut self.watch, Watch::Stopped) {
+            // If the thread cannot start, the watcher is dropped here.
+            let _ = std::thread::Builder::new()
+                .name("tiza follow stop".into())
+                .spawn(move || {
+                    hook_slow();
+                    drop(w);
+                });
+        }
+    }
+}
+
+impl Drop for Follow {
+    fn drop(&mut self) {
+        self.stop();
+    }
+}
+
+/// Test hooks, only with the `test-hooks` feature: `TIZA_TEST_HOOK`
+/// names one. `follow:slow` holds the start and the stop of the watcher
+/// 3 s each, as a busy fseventsd does; `follow:fail` makes the start fail.
+#[allow(unused_variables)]
+fn hook(place: &str) -> bool {
+    #[cfg(feature = "test-hooks")]
+    if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == place) {
+        return true;
+    }
+    false
+}
+
+fn hook_slow() {
+    if hook("follow:slow") {
+        std::thread::sleep(Duration::from_secs(3));
     }
 }
 

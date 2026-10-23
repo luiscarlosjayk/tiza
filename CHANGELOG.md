@@ -44,6 +44,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Fixed
 - A paste turns follow mode off and tells you, so a later save does not reload over the paste. The `.tiza` keeps the followed file in an optional `follows` field, so `:follow on` can reload that file in a later session.
 - With moves applied (step 1 or later), follow mode waits and loads the change at step 0. A save in that state no longer leaves a `.tiza` that does not open.
+- Tiza no longer freezes when follow starts or stops its file watcher while macOS is slow to report file changes, for example during a build. If the file watcher cannot start, follow turns off and the status bar shows why.
 - A follow reload or a paste that shifts the lines under a move no longer makes that move change another line. Tiza marks such a move as `stale`, skips it and warns before you quit.
 - A follow reload, a paste or `:ref` keeps the step and the file of each annotation. Before, an annotation at step 0 went to step 1. An annotation of the main file at a step that shows another file went to that file. The autosave wrote these changes to the `.tiza`.
 - A new `code.patch` move shifts the annotations and later moves that it affects, so an agent's `scene.get` and `scene.put` no longer fail. That round trip keeps file references and writes nothing when nothing changed.

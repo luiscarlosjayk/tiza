@@ -117,8 +117,10 @@ pub struct FollowStatus {
     pub missing: Option<bool>,
     /// Why follow is off, when something other than `follow.set` turned it
     /// off: a paste (`the code is pasted, not main.rs; :follow on reloads
-    /// main.rs`). With follow on, why a save does not load now: moves are
-    /// applied (`waiting: moves applied at step 1; loads at step 0`).
+    /// main.rs`), or a file watcher that could not start (`cannot watch
+    /// /home/me/demo: …`). With follow on, why a save does not load now:
+    /// moves are applied (`waiting: moves applied at step 1; loads at step
+    /// 0`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// What `follow.set` did, in words.

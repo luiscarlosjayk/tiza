@@ -506,6 +506,14 @@ pub struct App {
     pub overlay_scroll: usize,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
+    /// Why follow went off by itself: the watcher of that file could not
+    /// start. Said while that file is still the one to follow and nothing
+    /// else explains the code on screen, until follow is turned on or off.
+    follow_failed: Option<(PathBuf, String)>,
+    /// Wait for the follow watcher to start, on this thread, as before it
+    /// started on a thread of its own. Only the in-process tests set it:
+    /// they save the file right after `follow on`.
+    pub follow_start_waits: bool,
     /// The followed file changed while moves were applied: its
     /// reload waits for step 0, and the code on screen is embedded meanwhile.
     reload_waits: bool,
@@ -623,6 +631,8 @@ impl App {
             checks: Default::default(),
             overlay_scroll: 0,
             follow: None,
+            follow_failed: None,
+            follow_start_waits: false,
             reload_waits: false,
             pasted_codes: Vec::new(),
             screen_via_history: false,
@@ -2754,6 +2764,15 @@ impl App {
         Some(what.why(&name))
     }
 
+    /// Why follow is off: the code on screen ([`App::off_reason`]), else a
+    /// watcher that could not start for the file still to follow.
+    fn follow_off_why(&self) -> Option<String> {
+        self.off_reason().or_else(|| {
+            let (path, why) = self.follow_failed.as_ref()?;
+            (self.source_file().as_ref() == Some(path)).then(|| why.clone())
+        })
+    }
+
     /// The file name of a file reference, as follow names it.
     fn reference_name(&self, src: &tiza_core::model::CodeSource) -> Option<String> {
         let path = fs::code_source_file(src, self.save_path.parent())?;
@@ -3143,6 +3162,7 @@ impl App {
     /// off, loads when a step with no moves is reached.
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
         if !enabled {
+            self.follow_failed = None;
             self.reload_waits = false;
             if let Some(f) = &mut self.follow {
                 f.stop();
@@ -3166,8 +3186,12 @@ impl App {
             )
         })?;
         // The step-0 code: with moves applied, `doc.code` is what they made.
-        let f =
+        self.follow_failed = None;
+        let mut f =
             crate::follow::Follow::start(path, self.doc.base().to_vec()).map_err(Error::Invalid)?;
+        if self.follow_start_waits {
+            f.wait_started().map_err(Error::Invalid)?;
+        }
         let name = f.file_name();
         self.follow = Some(f);
         self.reload_waits = false;
@@ -3234,7 +3258,13 @@ impl App {
         old.stop();
         let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
         self.reload_waits = false;
-        match crate::follow::Follow::start(path, base) {
+        let started = crate::follow::Follow::start(path, base).and_then(|mut f| {
+            if self.follow_start_waits {
+                f.wait_started()?;
+            }
+            Ok(f)
+        });
+        match started {
             Ok(mut f) => {
                 (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
                 let name = f.file_name();
@@ -3255,12 +3285,28 @@ impl App {
         let Some(f) = &mut self.follow else {
             return false;
         };
-        if !f.poll() {
+        match f.poll() {
+            crate::follow::Poll::Reload => self.reload_from_disk(false),
             // A step change that is not `step_to` (a step cleared away)
             // can end the wait too.
-            return self.reload_waiting();
+            crate::follow::Poll::Idle => self.reload_waiting(),
+            // A save made while the watcher started is read as any save;
+            // one that already waits for step 0 is read there.
+            crate::follow::Poll::Started => {
+                if !self.reload_waits {
+                    f.touch();
+                }
+                false
+            }
+            crate::follow::Poll::Failed(why) => {
+                let path = f.path.clone();
+                self.follow = None;
+                self.reload_waits = false;
+                self.error(format!("follow off: {why}"));
+                self.follow_failed = Some((path, why));
+                true
+            }
         }
-        self.reload_from_disk(false)
     }
 
     /// Back where no move is applied with a change on disk that waited for
@@ -3435,7 +3481,8 @@ impl App {
 
     /// `follow.status` payload.
     pub fn follow_status(&self) -> Value {
-        match &self.follow {
+        #[allow(unused_mut)]
+        let mut st = match &self.follow {
             Some(f) => {
                 let mut st = json!({
                     "enabled": true,
@@ -3451,12 +3498,20 @@ impl App {
             }
             None => {
                 let mut st = json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())});
-                if let Some(why) = self.off_reason() {
+                if let Some(why) = self.follow_off_why() {
                     st["reason"] = json!(why);
                 }
                 st
             }
+        };
+        // Only in the tests' build: the watchers in this process and the
+        // message on the bar.
+        #[cfg(feature = "test-hooks")]
+        {
+            st["watchers"] = json!(crate::follow::live_watchers());
+            st["bar"] = json!(self.message.as_ref().map(|m| m.0.clone()));
         }
+        st
     }
 
     // ---------- navigation ----------
@@ -4249,7 +4304,7 @@ impl App {
                                 .map(|w| format!("; {w}"))
                                 .unwrap_or_default()
                         ),
-                        None => match self.off_reason() {
+                        None => match self.follow_off_why() {
                             Some(why) => format!("follow off: {why}"),
                             None => {
                                 "follow off (:follow on to reload when the file is saved)".into()

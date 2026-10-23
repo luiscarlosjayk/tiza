@@ -96,6 +96,10 @@ impl Live {
         let (ready_tx, ready_rx) = mpsc::channel();
         let join = std::thread::spawn(move || {
             let mut app = App::new(doc, save_path);
+            // The tests save a file right after `follow on`: its watcher
+            // starts before the command returns, as in the TUI before it
+            // started on a thread of its own (the binary's tests see that).
+            app.follow_start_waits = true;
             let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
             ready_tx.send(()).unwrap();
