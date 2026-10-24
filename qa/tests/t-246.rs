@@ -16,6 +16,8 @@
 //! Corner cases: presentation mode shows no bar; labels under the lines
 //! are a fact in `status.warnings`, with no badge.
 
+use std::time::{Duration, Instant};
+
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
 use tiza_qa::{Live, scratch};
@@ -151,4 +153,56 @@ fn ac2_the_readme_the_guide_and_the_changelog_say_it() {
     }
     assert!(!read("README.md").contains("! small terminal"));
     assert!(read("docs/agent-guide.md").contains("code needs N columns at C columns"));
+}
+
+/// `fn main` with a line of `n` characters in a string: 16 more columns of
+/// code.
+fn wide(n: usize) -> String {
+    format!("fn main() {{\n    let s = \"{}\";\n}}\n", "x".repeat(n))
+}
+
+#[test]
+fn corner_after_a_follow_reload_the_time_gives_way_and_the_badge_is_whole_or_its_sign() {
+    // As in Zed's terminal docked on the right (68 columns): code that needs
+    // more columns, followed, after one reload.
+    let dir = scratch("t246-follow");
+    let src = std::path::absolute(dir.join("lib.rs")).unwrap();
+    std::fs::write(&src, wide(70)).unwrap();
+    let mut doc = tiza_core::Document::from_code(&wide(70), "rs", Some(src.display().to_string()));
+    doc.reference_file(src.display().to_string(), None);
+    let live = Live::open(doc, dir.join("lib.rs.tiza"), dir.join("live.sock"));
+    live.command("follow on");
+    let tmp = src.with_extension("rs.tmp");
+    std::fs::write(&tmp, wide(71)).unwrap();
+    std::fs::rename(&tmp, &src).unwrap();
+    let start = Instant::now();
+    while live.api_ok("follow.status", json!({}))["reloads"].as_u64() < Some(1) {
+        assert!(start.elapsed() < Duration::from_secs(10), "no reload");
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    live.with(|a| a.message = None);
+    let needs = live.with(|a| a.doc.code.iter().map(|l| l.chars().count()).max().unwrap());
+    assert!(needs > 80, "{needs}");
+    let whole = |b: &str| {
+        let at = b.find("  ! code needs ")?;
+        b[at..].contains(" cols").then_some(())
+    };
+    for cols in [72u16, 68, 64, 60, 50, 40] {
+        let b = bar(&live, cols, 30);
+        assert!(b.contains("⟳ following"), "{cols}: {b}");
+        // The badge is whole, or its sign alone: never cut in a word.
+        let sign = !b.contains("! code") && b.trim_end().ends_with("  !") || b.contains("  !  ");
+        assert!(whole(&b).is_some() || sign, "{cols}: {b}");
+        // `· last HH:MM:SSZ` goes before the badge does.
+        if b.contains("· last ") {
+            assert!(whole(&b).is_some(), "{cols}: {b}");
+        }
+    }
+    // Wide enough, the time of the reload shows; narrower, it gives way
+    // and the badge stays whole; narrower still, the badge keeps its sign.
+    assert!(bar(&live, 72, 30).contains("⟳ following · last "));
+    let b68 = bar(&live, 68, 30);
+    assert!(!b68.contains("· last") && whole(&b68).is_some(), "{b68}");
+    let b40 = bar(&live, 40, 30);
+    assert!(whole(&b40).is_none() && b40.contains("  !"), "{b40}");
 }

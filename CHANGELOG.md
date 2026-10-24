@@ -74,6 +74,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - After Enter, Tiza clears a selection that the `:` command did not use, so a later `:mark` cannot go on old text. When you cancel a command line that a selection opened, Tiza also clears that selection.
 - Without a width, `render.text` (MCP `render_text`, `tiza scene text`, `tiza://render`) gives the take at the width of the screen's code area. The text now agrees with `visible`, `clipped` and `check` at that width, which the new `width` field of the reply names.
 - Margin callouts and long labels. Documents with none of these cases render as before.
+- On a narrow status bar, `· last HH:MM:SSZ` of follow mode gives way first, and `⟳ following` stays. A warning that does not fit whole shows only `!`. Before, the bar cut `! code needs 89 cols` in the middle of a word after a reload.
 - A message with a count of one uses the singular: `1 line pasted (1 annotation kept)`, `the file has 1 line` and `1 frame`. Before, it said `1 lines` and `1 annotations`.
   - A margin callout with no room for its block in the margin is a whole block under its line, as in the narrow layout. Before, it was a `┆` label that Tiza cut with `…` up to 103 columns, or that wrapped over the next lines.
   - Two margin callouts on one line do not overlap. A block starts only on the rows of its own line, beside the blocks there when the margin has room. If the margin has no room, the block goes under its line.

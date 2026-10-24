@@ -594,9 +594,20 @@ fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
     files.iter().filter(|f| name(f) == wanted).count() <= 1
 }
 
+/// Makes `left[i]` give way: an optional segment empties, and the follow
+/// indicator keeps `⟳ following` without the time of the last reload.
+fn give_way(left: &mut [Span<'static>], i: usize, follow_time: Option<usize>, bar: Style) {
+    left[i] = if Some(i) == follow_time {
+        Span::styled("  ⟳ following", left[i].style)
+    } else {
+        Span::styled("", bar)
+    };
+}
+
 /// The status bar's message `m` when it ends in a tail and does not fit,
 /// as the text for the right of the bar (with its trailing blank),
-/// giving way in this order: the optional left segments, the middle of the
+/// giving way in this order: the optional left segments (`optional`, the
+/// time of the last reload in `left[follow_time]` among them), the middle of the
 /// message, the directory of a file tail (only when no other file of the
 /// document has its name), the `↪ file` view indicator in `left[view]`
 /// (it names the other file the message is often about), the
@@ -605,9 +616,12 @@ fn short_name_is_unique(doc: &tiza_core::model::Document, file: &str) -> bool {
 /// before is not enough, so a wider bar never shows less of the subject,
 /// the tail, the directory, the indicator or the badge. `None`: nothing
 /// fits on the right.
+#[allow(clippy::too_many_arguments)]
 fn fit_bar_message(
     app: &App,
     left: &mut [Span<'static>],
+    optional: &[usize],
+    follow_time: Option<usize>,
     badge: Option<usize>,
     view: Option<usize>,
     m: &str,
@@ -618,12 +632,12 @@ fn fit_bar_message(
     // The room after a blank cell on the left and the message's own
     // trailing blank.
     let room = |left: &[Span]| width.saturating_sub(lw(left) + 2);
-    for drop_idx in [4usize, 6, 7, 5, 3] {
+    for &drop_idx in optional {
         if m.width() <= room(left) {
             break;
         }
         if drop_idx < left.len() && Some(drop_idx) != view {
-            left[drop_idx] = Span::styled("", bar);
+            give_way(left, drop_idx, follow_time, bar);
         }
     }
     if m.width() <= room(left) {
@@ -819,7 +833,6 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // `read-only` stay.
     let save_chip =
         (!app.dirty && app.save_error.is_none() && !app.autosave).then(|| left.len() - 1);
-    let optional = [4usize, 6, 7, 5, 3].into_iter().chain(save_chip);
     if app.supervised {
         let text = if app.proposals.is_empty() {
             "  ⏸ supervised".to_string()
@@ -831,14 +844,25 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // A notice about stale moves names every one of them: it takes the room
     // of the optional segments, the time of the last reload included.
     let stale = app.stale_message_shown();
+    let mut follow_time = None;
     if let Some(f) = &app.follow {
         let text = match (&f.missing, &f.last_reload_clock) {
             (true, _) => "  ⟳ following (file removed; waiting)".to_string(),
-            (false, Some(at)) if !stale => format!("  ⟳ following · last {at}"),
+            (false, Some(at)) if !stale => {
+                follow_time = Some(left.len());
+                format!("  ⟳ following · last {at}")
+            }
             (false, _) => "  ⟳ following".to_string(),
         };
         left.push(Span::styled(text, accent));
     }
+    // The optional segments, in the order they give way: `· last …` of
+    // follow after them, and a save chip with no changes last.
+    let optional: Vec<usize> = [4usize, 6, 7, 5, 3]
+        .into_iter()
+        .chain(follow_time)
+        .chain(save_chip)
+        .collect();
     let warnings = app.viewport_warnings_for(layout);
     let badge = left.len();
     // Only what the step on screen loses has a badge: clipped code, or
@@ -915,12 +939,12 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     } else {
         0
     };
-    for drop_idx in optional.clone() {
+    for &drop_idx in &optional {
         if lw(&left) + need <= width {
             break;
         }
         if drop_idx < left.len() && Some(drop_idx) != view {
-            left[drop_idx] = Span::styled("", bar);
+            give_way(&mut left, drop_idx, follow_time, bar);
         }
     }
     // `--no-save` with changes: the short form, with both ways out still
@@ -939,11 +963,11 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         && crate::app::step_hint_start(m).is_none()
     {
         let fits = |left: &Vec<Span>| lw(left) + 1 + right_text.width() <= width;
-        for i in optional {
+        for &i in &optional {
             if fits(&left) {
                 break;
             }
-            left[i] = Span::styled("", bar);
+            give_way(&mut left, i, follow_time, bar);
         }
         if !fits(&left) && badge < left.len() {
             left[badge] = Span::styled("  !", err_style);
@@ -955,6 +979,11 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // The keys of a selection are worth more than the text of a warning the
     // author already saw in normal mode: it keeps only its sign.
     if key_hint && badge < left.len() && lw(&left) + 1 + right_text.width() > width {
+        left[badge] = Span::styled("  !", err_style);
+    }
+    // A badge is never cut in the middle of a word: when the left side
+    // does not fit whole, it keeps only its sign.
+    if badge < left.len() && lw(&left) > width {
         left[badge] = Span::styled("  !", err_style);
     }
     // Hints are optional, but `? help` should find room when giving up only
@@ -976,7 +1005,19 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         _ => None,
     };
     let badge = (badge < left.len()).then_some(badge);
-    let tailed_text = tailed.map(|m| fit_bar_message(app, &mut left, badge, view, m, width, bar));
+    let tailed_text = tailed.map(|m| {
+        fit_bar_message(
+            app,
+            &mut left,
+            &optional,
+            follow_time,
+            badge,
+            view,
+            m,
+            width,
+            bar,
+        )
+    });
     // One blank cell between the left segments and the message.
     let room = width.saturating_sub(lw(&left) + 1);
     let mut right: Vec<Span> = Vec::new();

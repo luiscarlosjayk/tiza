@@ -588,17 +588,26 @@ fn ac3_code_clipped_never_gives_way() {
     live.command("step 0");
     live.command("autosave off");
     agent_box(&live);
+    let whole = |b: &str| b.contains("  ! code needs ") && b.contains(" cols");
     let mut seen = false;
     for cols in 55..=79 {
         let b = bar(&live, cols);
-        if b.contains("code needs") || cols < 70 {
-            seen |= b.contains("code needs");
+        // The bar without the message: the room the badge has.
+        let said = live.with(|a| a.message.take());
+        let quiet = bar(&live, cols);
+        live.with(|a| a.message = said);
+        if whole(&quiet) {
+            seen = true;
             // Whatever the message keeps, the clipped warning keeps its words.
+            assert!(whole(&b), "{cols}: {b}");
             assert!(
                 !b.contains("  ! a1") && !b.contains("  ! (step"),
                 "{cols}: {b}"
             );
         }
+        // Where the bar cannot hold it whole, the badge keeps its sign: it
+        // is never cut in a word.
+        assert!(!b.contains("! code") || whole(&b), "{cols}: {b}");
         assert_no_cut_tail(&b, STEP_HINT);
     }
     assert!(seen, "no `code needs N cols` badge in 55-79");
