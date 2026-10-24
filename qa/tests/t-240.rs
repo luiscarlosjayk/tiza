@@ -48,7 +48,7 @@ fn step1_ac1_a_text_nowhere_says_which_code_was_searched() {
     assert_eq!(
         error(&live, "hl 22:signature"),
         "«signature» is not in the code shown (src/queue.rs:10-36). \
-         L:text looks in the code, not in notes or labels."
+         L:text skips notes and labels."
     );
 }
 
@@ -95,7 +95,7 @@ fn corner_a_text_outside_the_window() {
 fn corner_arrow_and_mark_give_the_same_messages() {
     let live = at_step("t240-arrow-mark", 3);
     let nowhere = "«signature» is not in the code shown (src/queue.rs:10-36). \
-                   L:text looks in the code, not in notes or labels.";
+                   L:text skips notes and labels.";
     assert_eq!(error(&live, "arrow 18:push_back 22:signature x"), nowhere);
     assert_eq!(error(&live, "mark warn 22:signature"), nowhere);
     assert_eq!(
@@ -108,5 +108,8 @@ fn corner_arrow_and_mark_give_the_same_messages() {
 fn ac4_changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("L:text looks in the code"), "CHANGELOG");
+    assert!(
+        changelog.contains("L:text skips notes and labels"),
+        "CHANGELOG"
+    );
 }

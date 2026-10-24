@@ -5273,7 +5273,7 @@ impl App {
             }
         });
         Error::Invalid(format!(
-            "«{text}» is not in the code shown ({searched}). L:text looks in the code, not in notes or labels."
+            "«{text}» is not in the code shown ({searched}). L:text skips notes and labels."
         ))
     }
 

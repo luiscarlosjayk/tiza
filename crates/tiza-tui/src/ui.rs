@@ -408,11 +408,109 @@ pub fn fit_message(m: &str, room: usize) -> String {
     if room == 0 {
         return String::new();
     }
+    // A long path gives up its middle folders first (`/Users/…/nuevo/x.tiza`):
+    // the file name is what the message is about.
+    let at = crate::app::step_hint_start(m).unwrap_or(m.len());
+    let (head, tail) = m.split_at(at);
+    let shorter = format!(
+        "{}{tail}",
+        shorten_paths(head, room.saturating_sub(tail.width()))
+    );
+    let m = shorter.as_str();
+    if m.width() <= room {
+        return m.to_string();
+    }
     let Some(i) = crate::app::step_hint_start(m) else {
-        return format!("{}…", cut_to_width(m, room - 1));
+        return cut_keeping_file_name(m, room);
     };
     let (head, tail) = m.split_at(i);
     keep_subject_and_tail(head, tail, room).unwrap_or_else(|| tail_or_beginning(head, tail, room))
+}
+
+/// The byte ranges of the words of `m` that are paths with folders
+/// (`/a/b/c.tiza`, `src/x/y.rs`), without the punctuation around them.
+fn path_spans(m: &str) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    for word in m.split(' ') {
+        let end = start + word.len();
+        let lead = word.len() - word.trim_start_matches(['(', '«']).len();
+        let trail = word.len() - word.trim_end_matches([')', ':', ',', ';', '»', '.']).len();
+        if lead + trail < word.len() {
+            let path = &word[lead..word.len() - trail];
+            if path.matches('/').count() >= 2 {
+                out.push((start + lead, end - trail));
+            }
+        }
+        start = end + 1;
+    }
+    out
+}
+
+/// `path` with its middle folders as `…`: the first one, the last folder
+/// and the file name stay (`/Users/…/nuevo/x.tiza`); `None` when that is
+/// not shorter.
+fn shorten_path(path: &str) -> Option<String> {
+    let parts: Vec<&str> = path.split('/').collect();
+    let (first, from) = match parts.first() {
+        Some(&"") => (format!("/{}", parts.get(1)?), 2),
+        Some(p) => (p.to_string(), 1),
+        None => return None,
+    };
+    let n = parts.len();
+    if n < from + 3 || parts[from..n - 2] == ["…"] {
+        return None;
+    }
+    let short = format!("{first}/…/{}/{}", parts[n - 2], parts[n - 1]);
+    (short.width() < path.width()).then_some(short)
+}
+
+/// `m` with its longest paths shortened ([`shorten_path`]) until it fits in
+/// `room` cells or no path can give more.
+fn shorten_paths(m: &str, room: usize) -> String {
+    let mut m = m.to_string();
+    while m.width() > room {
+        let longest = path_spans(&m)
+            .into_iter()
+            .filter_map(|(a, b)| shorten_path(&m[a..b]).map(|s| (a, b, s)))
+            .max_by_key(|(a, b, _)| b - a);
+        let Some((a, b, short)) = longest else {
+            break;
+        };
+        m.replace_range(a..b, &short);
+    }
+    m
+}
+
+/// `m` cut at its end with `…`. When that cut would fall in the first
+/// path, the end of the path stays instead, so the file name and its
+/// extension show: `wrote a copy to …long-name.tiza`.
+fn cut_keeping_file_name(m: &str, room: usize) -> String {
+    if let Some((a, b)) = path_spans(m).first().copied() {
+        let before = m[..a].width();
+        if before + m[a..b].width() > room.saturating_sub(1) && room > before + 8 {
+            let keep = room - before - 1;
+            let tail: String = {
+                let mut w = 0;
+                let mut kept: Vec<&str> = Vec::new();
+                for g in m[a..b].graphemes(true).rev() {
+                    if w + g.width() > keep {
+                        break;
+                    }
+                    w += g.width();
+                    kept.push(g);
+                }
+                kept.into_iter().rev().collect()
+            };
+            // A shortened path already starts its end with `…`.
+            return if tail.starts_with('…') {
+                format!("{}{tail}", &m[..a])
+            } else {
+                format!("{}…{tail}", &m[..a])
+            };
+        }
+    }
+    format!("{}…", cut_to_width(m, room - 1))
 }
 
 /// `head` + `tail` in `room` cells with the subject of `head` and the whole
