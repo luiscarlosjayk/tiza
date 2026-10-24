@@ -20,12 +20,13 @@ use crossterm::event::KeyCode;
 use serde_json::{Value, json};
 use tiza_qa::{Live, scratch};
 
-/// `examples/ownership.rs.tiza` with its code, in a folder of its own.
+/// A copy of `examples/ownership.rs.tiza` as it was when Luis chose the
+/// words (labels cut at 100 columns, code of 64 columns), with its code, in
+/// a folder of its own: the example itself may change.
 fn ownership(name: &str) -> Live {
     let dir = scratch(name);
-    let examples = tiza_qa::example("");
     for f in ["ownership.rs.tiza", "ownership.rs"] {
-        std::fs::copy(examples.join(f), dir.join(f)).unwrap();
+        std::fs::copy(tiza_qa::fixture("t-246").join(f), dir.join(f)).unwrap();
     }
     let doc = tiza_core::fs::load_document(&dir.join("ownership.rs.tiza")).unwrap();
     let live = Live::open(doc, dir.join("ownership.rs.tiza"), dir.join("s.sock"));
