@@ -792,8 +792,8 @@ impl App {
     }
 
     /// Why the terminal is too small for the panel `which`, if it is (a
-    /// size of 0, not known yet, fits). The size comes first in the
-    /// message: a narrow bar cuts the end.
+    /// size of 0, not known yet, fits). A bar narrower than 60 cells has
+    /// room for the size only.
     fn panel_too_small(&self, which: Overlay) -> Option<String> {
         let (w, h) = self.size;
         let (mw, mh) = crate::panel::MIN_SIZE;
@@ -802,8 +802,13 @@ impl App {
             Overlay::List => "the list",
             _ => return None,
         };
-        (w > 0 && h > 0 && (w < mw || h < mh))
-            .then(|| format!("use {mw}×{mh} or more to show {what}"))
+        (w > 0 && h > 0 && (w < mw || h < mh)).then(|| {
+            if w < 60 {
+                format!("needs {mw}×{mh}")
+            } else {
+                format!("{what} needs {mw}×{mh} or more")
+            }
+        })
     }
 
     /// Opens the panel `which`, its filter and scroll empty. A terminal

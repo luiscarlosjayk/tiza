@@ -431,10 +431,19 @@ fn ac5_below_40x12_the_help_does_not_open_and_says_why() {
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
     let (msg, err) = live.message().unwrap();
     assert!(err, "{msg}");
-    assert_eq!(msg, "use 40×12 or more to show the help");
+    assert_eq!(msg, "needs 40×12");
     // A bar of 39 cells still shows the size: the other segments give way.
     let bar = live.screen(39, 11).lines().last().unwrap().to_string();
-    assert!(bar.contains("NORMAL  no-save  ! use 40×12 "), "{bar}");
+    assert!(
+        bar.contains("NORMAL  no-save  ! ") && bar.ends_with("needs 40×12"),
+        "{bar}"
+    );
+    // A wider bar says what needs the room.
+    live.with(|a| a.size = (100, 10));
+    live.keys(&[KeyCode::Char('?')]);
+    assert_eq!(live.message().unwrap().0, "the help needs 40×12 or more");
+    let bar = live.screen(100, 10).lines().last().unwrap().to_string();
+    assert!(bar.ends_with("the help needs 40×12 or more"), "{bar}");
 }
 
 #[test]
@@ -445,7 +454,7 @@ fn ac5_a_resize_below_40x12_closes_the_help_and_says_why() {
     help_screen(&live, 80, 24, &keys);
     let bar = live.screen(39, 11).lines().last().unwrap().to_string();
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
-    assert!(bar.contains("use 40×12 "), "{bar}");
+    assert!(bar.contains("needs 40×12"), "{bar}");
     // The next keys are not lost in a help that cannot be seen.
     live.keys(&[KeyCode::Char('j')]);
     assert_eq!(live.with(|a| a.cursor_line), 3);
@@ -464,6 +473,30 @@ fn corner_the_help_opens_in_presentation_mode_and_arrows_do_not_move_it() {
         (step, Overlay::Help)
     );
     assert!(live.with(|a| matches!(a.mode, Mode::Normal)));
+}
+
+#[test]
+fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
+    let live = Live::from_code(CODE, "rs", "t238-select-bar");
+    live.with(|a| a.autosave = false);
+    live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
+    let bar = |cols: u16| live.screen(cols, 40).lines().last().unwrap().to_string();
+    let wide = bar(120);
+    assert!(
+        wide.ends_with("h highlight · m mark · n note · C callout · b box · a arrow · s spotlight"),
+        "{wide}"
+    );
+    let b100 = bar(100);
+    assert!(b100.contains("SELECT  step 1/1"), "{b100}");
+    assert!(
+        b100.ends_with("h highlight · m mark · n note · b box · a arrow"),
+        "{b100}"
+    );
+    // Below 100 columns the bar warns of a small terminal: the warning
+    // stays, and the hint keeps its keys.
+    let b80 = bar(80);
+    assert!(b80.contains("! small terminal"), "{b80}");
+    assert!(b80.ends_with("h m n C b a s"), "{b80}");
 }
 
 #[test]

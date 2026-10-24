@@ -811,17 +811,18 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 accent,
                 true,
             ),
+            // With a selection, its keys are what the author needs next:
+            // they take the room of the optional segments, as a message does.
+            (_, None) if matches!(app.mode, Mode::Select { .. }) => {
+                (SELECT_HINTS[0].to_string(), muted, true)
+            }
             (_, None) => (
-                if matches!(app.mode, Mode::Select { .. }) {
-                    "h highlight · m mark · n note · C callout · b box · a arrow · s spotlight "
-                } else {
-                    "v select · : command · ? help · L list · q quit "
-                }
-                .to_string(),
+                "v select · : command · ? help · L list · q quit ".to_string(),
                 muted,
                 false,
             ),
         };
+    let select_hint = message.is_none() && matches!(app.mode, Mode::Select { .. });
     // A message with a tail keeps the `↪ file` view indicator until its
     // middle and the directory have given way.
     let view = (app.shown_view().is_some()
@@ -832,7 +833,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // truncate the right text with an ellipsis instead of hiding it.
     let width = area.width as usize;
     let lw = |left: &Vec<Span>| left.iter().map(|s| s.content.width()).sum::<usize>();
-    let need = if stale {
+    let need = if stale || select_hint {
         right_text.width()
     } else if essential {
         right_text.width().min(width / 2)
@@ -903,6 +904,11 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             // The Tab hint keeps its keys: the label gives way first.
             let hint = tab_hint(&app.selected_text().unwrap_or_default(), room);
             right.push(Span::styled(hint, right_style));
+        } else if select_hint {
+            // Shorter forms, the keys kept to the last.
+            if let Some(t) = SELECT_HINTS.iter().find(|t| t.width() <= room) {
+                right.push(Span::styled(*t, right_style));
+            }
         } else if room >= 4 {
             // Keep the beginning: that is where the useful part of a message is.
             let cut = fit_message(right_text.trim_end_matches(' '), room - 1);
@@ -913,21 +919,12 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     } else {
         // Shorter hint tiers before giving up on all but `? help`, which
         // gives up its right margin before it goes.
-        let tiers: &[&str] = if matches!(app.mode, Mode::Select { .. }) {
-            &[
-                "h highlight · m mark · n note · b box · a arrow ",
-                "h m n C b a s ",
-                "? help ",
-                "? help",
-            ]
-        } else {
-            &[
-                ": command · ? help · q quit ",
-                "? help · q quit ",
-                "? help ",
-                "? help",
-            ]
-        };
+        let tiers: &[&str] = &[
+            ": command · ? help · q quit ",
+            "? help · q quit ",
+            "? help ",
+            "? help",
+        ];
         if let Some(t) = tiers.iter().find(|t| t.width() <= room) {
             right.push(Span::styled(*t, muted));
         }
@@ -939,6 +936,13 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     spans.extend(right);
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
+
+/// The hint of a `v`/`V` selection, from the full form to the keys alone.
+const SELECT_HINTS: [&str; 3] = [
+    "h highlight · m mark · n note · C callout · b box · a arrow · s spotlight ",
+    "h highlight · m mark · n note · b box · a arrow ",
+    "h m n C b a s ",
+];
 
 /// The hint of an annotation selected with Tab, in `room` cells: `▸`, what
 /// it is, its label, then its keys (`enter label · e set …`). The keys come

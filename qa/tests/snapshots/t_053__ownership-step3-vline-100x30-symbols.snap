@@ -31,4 +31,4 @@ expression: symbols
    23      fn push(s: &mut String) {
    24          s.push('!');
 
- ╭▶ V-LINE  step 3/7  100×30  dark  ownership.rs  L17  16 ann.                        h m n C b a s
+ ╭▶ V-LINE  step 3/7      h highlight · m mark · n note · C callout · b box · a arrow · s spotlight
