@@ -20,6 +20,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The new README section «Terminal support» tells what Tiza needs from a terminal, with known problems in Terminal.app, tmux and Zed. The new section «What Tiza reads and writes» tells that the binary never opens a network connection.
 
 ### Changed
+- When the text of an `L:text` anchor is not in the code shown, the message names that code, or the step that shows the text. It also says that L:text looks in the code, not in notes or labels. The hint for a text on another line starts with the command (`use 18:push_back`), so a narrow status bar does not cut it.
 - Outside presentation mode, `←` and `→` move the cursor column, as `h` and `l` do. `n`, `p`, PageDown and PageUp change the step in every mode. To present with a clicker, use presentation mode (`P`), where `←` and `→` change the step, or a clicker that sends PageUp and PageDown.
 - A document that names no theme follows the terminal's background, which Tiza asks for at start and after each resize. `t`, `:theme NAME` or `--theme` sets a fixed theme.
 - Tiza draws two or more labels of one line under that line, and in narrow terminals an arrow's label is at its arrowhead (`─▶ move`). Where an arrow stub crosses the rail of another arrow, the stub has a gap of one cell, so it looks like it goes under.

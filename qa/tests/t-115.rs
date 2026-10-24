@@ -76,13 +76,13 @@ fn ac4_ac5_ac6_ac8_table_of_typos_is_rejected_with_a_way_forward() {
         ("hl s", "usage: :hl L:text"),
         ("mark warn s", "usage: :mark"),
         // AC5: wrong line / wrong text
-        ("hl 3:S x", "«S» not on L3; found on L2 — use 2:S"),
+        ("hl 3:S x", "use 2:S («S» is on L2, not L3)"),
         ("hl 999:x y", "line 999 does not exist"),
-        ("arrow 1:s 999:s x", "not on L1; found on L2"),
+        ("arrow 1:s 999:s x", "is on L2, not L1"),
         ("arrow 2:s 999:s x", "line 999 does not exist"),
         (
             "mark warn 1:takes",
-            "«takes» not on L1; found on L3 — use 3:takes",
+            "use 3:takes («takes» is on L3, not L1)",
         ),
         // AC4: ranges and steps
         ("focus 0", "line 0 does not exist"),

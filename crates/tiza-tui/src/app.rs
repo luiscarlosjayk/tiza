@@ -5050,16 +5050,73 @@ impl App {
                 last: self.doc.last_line(),
             });
         }
-        let span = w.resolve_span(&self.doc)?;
+        let span = match w.resolve_span(&self.doc) {
+            Err(Error::TextNotFound(text)) => return Err(self.not_in_the_code(&text)),
+            r => r?,
+        };
         if let (Some(line), Some(text)) = (w.line, &w.find)
             && span.line != line
         {
+            // The command first: a narrow bar cuts the end of the message.
             return Err(Error::Invalid(format!(
-                "«{text}» not on L{line}; found on L{} — use {}:{text}",
+                "use {}:{text} («{text}» is on L{}, not L{line})",
                 span.line, span.line
             )));
         }
         Ok(span)
+    }
+
+    /// Why the text of an `L:text` anchor matches nothing, in the code on
+    /// screen: where it is when the demo has it elsewhere (outside the
+    /// window shown, or in a file another step shows), else which code was
+    /// searched, and that notes and labels are not.
+    fn not_in_the_code(&self, text: &str) -> Error {
+        let doc = &self.doc;
+        let step = doc.step;
+        let shown = doc.shown_view_at(step);
+        let line_of = |code: &[String], first: u32| {
+            code.iter()
+                .position(|l| l.contains(text))
+                .map(|i| first + i as u32)
+        };
+        if let Some((a, b)) = shown.window
+            && let Ok((code, first)) = doc.view_code_at(&shown.file, step)
+            && let Some(n) = line_of(&code, first)
+        {
+            return Error::Invalid(format!(
+                "«{text}» is in {} at L{n}, outside the lines shown at step {step} ({a}-{b}).",
+                doc.file_label(&shown.file)
+            ));
+        }
+        // The step nearest to this one first (a later one on a tie).
+        let mut steps: Vec<u32> = (0..=doc.max_step()).filter(|&s| s != step).collect();
+        steps.sort_by_key(|&s| (s.abs_diff(step), s < step));
+        for s in steps {
+            let view = doc.shown_view_at(s);
+            if view.file == shown.file {
+                continue;
+            }
+            if let Ok((code, first)) = doc.code_at(s)
+                && let Some(n) = line_of(&code, first)
+            {
+                return Error::Invalid(format!(
+                    "«{text}» is in {} at L{n}, shown at step {s}.",
+                    doc.file_label(&view.file)
+                ));
+            }
+        }
+        let searched = shown.label().unwrap_or_else(|| {
+            let name = doc.file_label(&None);
+            match &doc.code_src {
+                tiza_core::model::CodeSource::File {
+                    lines: Some(lines), ..
+                } => format!("{name}:{lines}"),
+                _ => name,
+            }
+        });
+        Error::Invalid(format!(
+            "«{text}» is not in the code shown ({searched}). L:text looks in the code, not in notes or labels."
+        ))
     }
 
     fn cmd_arrow(&mut self, rest: &str) -> Result<String, Error> {
