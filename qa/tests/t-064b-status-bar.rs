@@ -88,12 +88,16 @@ fn ac3_selection_is_visible_in_the_gutter() {
 #[test]
 fn qa_hints_shrink_in_tiers_instead_of_vanishing() {
     let live = Live::from_code("fn main() {}\n", "rs", "t064b-tiers");
-    assert!(bar(&live, 160).contains("v select  :cmd  ?help"));
-    // 100 columns with the small-terminal badge: the middle tier.
+    let b = bar(&live, 160);
+    assert!(
+        b.contains("v select · : command · ? help · L list · q quit"),
+        "{b}"
+    );
+    // 100 columns with the small-terminal badge: a middle tier.
     let b = bar(&live, 100);
-    assert!(b.contains("?help  q quit"), "{b}");
+    assert!(b.contains("? help · q quit"), "{b}");
     let b = bar(&live, 80);
-    assert!(b.contains("?help"), "{b}");
+    assert!(b.contains("? help"), "{b}");
 }
 
 #[test]

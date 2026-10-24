@@ -31,4 +31,4 @@ expression: symbols
   10 ┆   fn d() {    ┆
      ┆╭─ inner ─────╮┆
   11 ┆│      4      │┆
- ╭▶ NORMAL  step 1/1  doc.tiza  L1  6 ann.  ! small terminal    ?help
+ ╭▶ NORMAL  step 1/1  doc.tiza  L1  6 ann.  ! small terminal   ? help

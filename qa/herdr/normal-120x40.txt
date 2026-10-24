@@ -37,4 +37,4 @@
                ╰──────────────────────────────────────────────────────────────╯
 
 
- ╭▶ NORMAL  step 7/7  120×40  dark  ownership.rs  L1  16 ann.  no-save                   :cmd  ?help  n/p steps  q quit
+ ╭▶ NORMAL  step 7/7  120×40  dark  ownership.rs  L1  16 ann.  no-save  v select · : command · ? help · L list · q quit

@@ -167,8 +167,10 @@ fn corner_the_help_keeps_scrolling_with_the_page_keys() {
     let live = three_steps("t237-help");
     live.keys(&[KeyCode::Char('?')]);
     assert_eq!(live.with(|a| a.overlay), Overlay::Help);
+    // A page is the height of the help on screen.
+    let _ = live.screen(80, 24);
     live.keys(&[KeyCode::PageDown]);
-    assert_eq!(live.with(|a| a.overlay_scroll), 10);
+    assert_eq!(live.with(|a| a.overlay_scroll), 14, "one page at 80×24");
     live.keys(&[KeyCode::PageUp]);
     assert_eq!(live.with(|a| a.overlay_scroll), 0);
     assert_eq!(step(&live), 1);

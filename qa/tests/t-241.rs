@@ -126,11 +126,16 @@ fn ac1_ac4_the_texts_say_where_a_relative_path_starts() {
         read("docs/agent-guide.md").contains(sentence),
         "agent guide"
     );
-    assert!(
-        read("crates/tiza-tui/src/ui.rs")
-            .contains("relative PATH: from the folder where Tiza started"),
-        "help"
-    );
+    let help: Vec<String> = tiza_tui::keys::HELP
+        .iter()
+        .flat_map(|(_, rows)| rows.iter().map(|r| r.key_text()))
+        .collect();
+    for note in [
+        "A relative PATH starts at the folder where you started Tiza.",
+        "Tiza creates the folders that are missing.",
+    ] {
+        assert!(help.iter().any(|t| t == note), "help: {note}");
+    }
     assert!(
         read("CHANGELOG.md").contains("shows the full path"),
         "CHANGELOG"

@@ -16,7 +16,7 @@ use crate::app::{App, Mode, Overlay, Selection};
 
 /// A canvas colour for ratatui: real colours as they are, the host-palette
 /// sentinels of the `terminal` theme as the terminal's own.
-fn rgb(c: Rgb) -> Color {
+pub(crate) fn rgb(c: Rgb) -> Color {
     match tiza_core::theme::host_color(c) {
         Some(tiza_core::theme::HostColor::Default) => Color::Reset,
         Some(tiza_core::theme::HostColor::Indexed(n)) => Color::Indexed(n),
@@ -116,6 +116,7 @@ pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, 
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let area = frame.area();
     app.size = (area.width, area.height);
+    app.close_panel_too_small();
     if area.width == 0 || area.height == 0 {
         // A terminal that has not reported its size yet (first frame in a
         // pty, a collapsed pane): nothing to draw, and no arithmetic to fail.
@@ -336,7 +337,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         draw_present_message(frame, app, last_row);
     }
     match app.overlay {
-        Overlay::Help => draw_overlay(frame, app, "╭─ Tiza ─▶  keys and commands", help_lines()),
+        Overlay::Help => {
+            draw_help(frame, app);
+            // The scroll the keys left past the end, after a resize.
+            app.overlay_scroll = app.overlay_scroll.min(app.overlay_drawn.get().max_scroll);
+        }
         Overlay::List => {
             let mut lines: Vec<String> = app.list_lines();
             if lines.is_empty() {
@@ -480,7 +485,7 @@ fn tail_or_beginning(head: &str, tail: &str, room: usize) -> String {
 }
 
 /// The beginning of `s` that fits in `max` cells, by whole graphemes.
-fn cut_to_width(s: &str, max: usize) -> String {
+pub(crate) fn cut_to_width(s: &str, max: usize) -> String {
     let mut out = String::new();
     let mut w = 0;
     for g in s.graphemes(true) {
@@ -669,7 +674,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         Mode::Select { .. } => "SELECT",
         _ => {
             if app.arrow_from.is_some() {
-                "ARROW→"
+                "ARROW"
             } else if app.pointer.is_some() {
                 "POINTER"
             } else {
@@ -802,18 +807,15 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 (format!("{m} "), if *is_err { err_style } else { bar }, true)
             }
             (_, None) if app.selected.is_some() => (
-                format!(
-                    "▸ {}   Enter label  e set  x delete  c color  +/- step  Tab next  Esc ",
-                    app.selected_text().unwrap_or_default()
-                ),
+                tab_hint(&app.selected_text().unwrap_or_default(), usize::MAX),
                 accent,
                 true,
             ),
             (_, None) => (
                 if matches!(app.mode, Mode::Select { .. }) {
-                    "h hl  m mark  n note  C callout  b box  a arrow  s spot  Esc "
+                    "h highlight · m mark · n note · C callout · b box · a arrow · s spotlight "
                 } else {
-                    "v select  :cmd  ?help  L list  n/p steps  t theme  P present  q quit "
+                    "v select · : command · ? help · L list · q quit "
                 }
                 .to_string(),
                 muted,
@@ -845,11 +847,33 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             left[drop_idx] = Span::styled("", bar);
         }
     }
-    // Hints are optional, but `?help` should find room when giving up only
+    // An error is about the key just pressed: when it does not fit, it
+    // takes the room of the optional segments and of the step, and a
+    // warning badge keeps only its sign. They come back with the next key.
+    // The mode and the state of the document (save, follow, supervised)
+    // stay. A message with a tail gives way in its own order below.
+    if let Some((m, true)) = message
+        && crate::app::step_hint_start(m).is_none()
+    {
+        let fits = |left: &Vec<Span>| lw(left) + 1 + right_text.width() <= width;
+        for i in [4usize, 6, 7, 5, 3] {
+            if fits(&left) {
+                break;
+            }
+            left[i] = Span::styled("", bar);
+        }
+        if !fits(&left) && badge < left.len() {
+            left[badge] = Span::styled("  !", err_style);
+        }
+        if !fits(&left) {
+            left[2] = Span::styled("", bar);
+        }
+    }
+    // Hints are optional, but `? help` should find room when giving up only
     // the theme and the size (cursor line and count are worth more).
     if !essential {
         for drop_idx in [3usize, 4] {
-            if lw(&left) + "?help ".len() <= width {
+            if lw(&left) + "? help ".len() <= width {
                 break;
             }
             left[drop_idx] = Span::styled("", bar);
@@ -875,6 +899,10 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     } else if essential {
         if right_text.width() <= room {
             right.push(Span::styled(right_text, right_style));
+        } else if message.is_none() && app.selected.is_some() {
+            // The Tab hint keeps its keys: the label gives way first.
+            let hint = tab_hint(&app.selected_text().unwrap_or_default(), room);
+            right.push(Span::styled(hint, right_style));
         } else if room >= 4 {
             // Keep the beginning: that is where the useful part of a message is.
             let cut = fit_message(right_text.trim_end_matches(' '), room - 1);
@@ -883,18 +911,21 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     } else if right_text.width() <= room {
         right.push(Span::styled(right_text, right_style));
     } else {
-        // Shorter hint tiers before giving up on all but `?help`.
+        // Shorter hint tiers before giving up on all but `? help`, which
+        // gives up its right margin before it goes.
         let tiers: &[&str] = if matches!(app.mode, Mode::Select { .. }) {
             &[
-                "h hl  m mark  n note  b box  a arrow  Esc ",
-                "h m n b a  Esc ",
-                "?help ",
+                "h highlight · m mark · n note · b box · a arrow ",
+                "h m n C b a s ",
+                "? help ",
+                "? help",
             ]
         } else {
             &[
-                ":cmd  ?help  n/p steps  q quit ",
-                "?help  q quit ",
-                "?help ",
+                ": command · ? help · q quit ",
+                "? help · q quit ",
+                "? help ",
+                "? help",
             ]
         };
         if let Some(t) = tiers.iter().find(|t| t.width() <= room) {
@@ -907,6 +938,42 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     spans.push(Span::styled(" ".repeat(gap), bar));
     spans.extend(right);
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
+}
+
+/// The hint of an annotation selected with Tab, in `room` cells: `▸`, what
+/// it is, its label, then its keys (`enter label · e set …`). The keys come
+/// first: when there is no room, the label gives way, then the keys from
+/// the right, so what the presenter can press stays (docs/ui-guidelines.md,
+/// section 5).
+fn tab_hint(described: &str, room: usize) -> String {
+    let (head, label) = match described.find(" «") {
+        Some(i) => (&described[..i], &described[i..]),
+        None => (described, ""),
+    };
+    let keys = ["enter label", "e set", "x delete", "c color", "+/- step"];
+    let build = |label: &str, n: usize| {
+        let mut s = format!("▸ {head}{label}");
+        for k in &keys[..n] {
+            s.push_str(" · ");
+            s.push_str(k);
+        }
+        s.push(' ');
+        s
+    };
+    let all = build(label, keys.len());
+    if all.width() <= room {
+        return all;
+    }
+    for n in (1..=keys.len()).rev() {
+        let s = build("", n);
+        if s.width() <= room {
+            return s;
+        }
+    }
+    format!(
+        "{} ",
+        cut_to_width(&format!("▸ {head}"), room.saturating_sub(1))
+    )
 }
 
 /// Number of overlay rows a set of lines takes at `inner_w` columns (wrapped).
@@ -987,56 +1054,15 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
     );
 }
 
-fn help_lines() -> Vec<String> {
-    [
-        "j/k ↑/↓ line   h/l ←/→ column   w/b/e words   0/$ line start/end   g/G   J/K page",
-        "n/p PgDn/PgUp  next/previous step (0 = code only); →/← in presentation mode",
-        "v  select text   V  select lines   i  select the word under the cursor   Esc  cancel",
-        "Tab/Shift-Tab  select an annotation: Enter edit label  x delete  c color  +/- move step  Esc",
-        "  with a selection:  h highlight   m mark (then type KIND [label])   n note   b box",
-        "                     a arrow (select source, a, select target, a)   s spotlight",
-        "u / U    undo / redo                 t      dark/light theme",
-        "P        presentation mode           L      annotation list      :  command line",
-        "f        pointer: the cursor line (or the selection) stays lit, the rest dims; j/k move it, f or Esc ends it (live only: never saved nor exported)",
-        "         (presenting, : shows the command line on the last row and its result for 2 s)",
-        "Ctrl-C   cancels, or quits: closes the command line, a selection, an arrow or this window like Esc; with nothing open it quits as :q!",
-        "",
-        "Commands (L = line number, text = fragment to find on that line):",
-        "  :mark KIND[@COLOR] L:text [label]   KIND: info warn error ok question important read write move new drop scope flow todo",
-        "        …or a :style name, or a bare glyph/emoji for a one-off mark (:mark 🔥 7:&t hot path)",
-        "  :style NAME glyph=G legend=\"text\" color=C   define a reusable style   :style  lists them",
-        "  :arrow L:text L:text [label]             :hl L:text [label] [emphasis=fill|underline|brackets|strike]",
-        "  :arrow … [label] stroke=dashed|dotted|thick|double heads=START,END route=sharp   (heads: none arrow dot bar open)",
-        "  :set ID key=value…   label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis   (selection: e)",
-        "  :box … border=double corners=sharp fill=no   box/callout borders (solid dashed dotted thick double; rounded sharp)",
-        "  :box A-B [label]                         :note L text   (L may be .)",
-        "  :spot A-B [ID…] | :spot ID…   dims everything else in this step   :until ID N",
-        "  :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   bordered paragraph (selection: C)",
-        "  :step N | :step ID N | :next | :prev     :del ID…  :clear [N|.]  :label ID text",
-        "  :goto ID   jump to a named step (`steps` in the .tiza; `tiza goto ID` from a script)",
-        "  :color ID blue|verde|#ff8800|auto   (orange blue green purple pink cyan yellow red gray)",
-        "  :focus A-B | :focus     :theme dark|light     :lang rs | :lang auto     :title text",
-        "  :pad V H | :pad 0 0 | :pad default   blank cells around the drawing (saved in the document)",
-        "  :embed  freezes the code (and every linked file) inside the .tiza   :ref [path[:A-B]]  references a file (:link at step 0 does the same)",
-        "  :link path[:A-B]   at step N ≥ 1: from this step the demo shows that file (A-B only crops it); each file keeps its own annotations",
-        "  :export [file.txt|.ansi|.md|.svg|.png] [step=N] [width=N] [theme=dark|light]   what this step shows, as a file (default <doc>-stepN.txt)",
-        "  :follow on|off   reload the code when the file is saved (annotations follow their text; u undoes a reload)",
-        "  :supervise on|off   agent changes wait for your y/n (a all, d none; :review lists them; 60 s then rejected)",
-        "  :mouse on|off   click moves the cursor, drag selects, wheel scrolls (off by default: the terminal keeps its own selection)",
-        "  :layout stable|dynamic   rehearse with the take's geometry (presentation mode and exports always use it)",
-        "  :theme dark|light|terminal|auto   :theme file PATH   fix a theme, use the terminal's palette, follow the terminal, load token overrides",
-        "  :numbers on|off   show or hide the line-number gutter (saved in the document; exports follow it)",
-        "  :margin N | :margin auto   cap the right margin so long notes wrap earlier (12-200 cells; saved in the document)",
-        "  :w   :wq   :q   :q! (quits without saving; also over stale moves)   :autosave on|off (--no-save at start)   :redo   :help",
-        "  :w PATH (writes a copy)   :saveas PATH (saves there from now on)   :wq PATH   ! overwrites an existing file",
-        "  relative PATH: from the folder where Tiza started (~ is your home folder); missing folders are created",
-        "",
-        "New annotations appear at the current step. The local API (socket) and the",
-        "MCP server (`tiza mcp`) do exactly the same thing as these commands.",
-    ]
-    .into_iter()
-    .map(String::from)
-    .collect()
+/// The help (`?`): the panel over the code, from the key table.
+fn draw_help(frame: &mut Frame, app: &App) {
+    let Some(rect) = crate::panel::rect(frame.area()) else {
+        return;
+    };
+    let content_w = (rect.width as usize).saturating_sub(4);
+    let p = crate::keys::help_panel(&app.overlay_filter, app.overlay_typing, content_w);
+    let drawn = crate::panel::draw(frame, rect, &app.theme, &p, app.overlay_scroll);
+    app.overlay_drawn.set(drawn);
 }
 
 #[cfg(test)]

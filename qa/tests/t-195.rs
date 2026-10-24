@@ -280,13 +280,14 @@ fn ac1_the_bar_and_the_help_say_q_bang_quits_without_saving() {
     assert!(msg.contains(":q! quits without saving"), "{msg}");
     assert!(!live.with(|app| app.quit));
     live.command("help");
-    // The help is longer than the screen: look at every page of it.
-    let mut pages = String::new();
-    for page in 0..6 {
-        live.with(move |app| app.overlay_scroll = page * 40);
-        pages.push_str(&live.screen(200, 50));
-    }
-    assert!(pages.contains(":q! (quits without saving"), "{pages}");
+    // The help is longer than the screen: the filter finds the row.
+    live.with(|app| app.overlay_filter = ":q!".into());
+    let s = live.screen(200, 50);
+    assert!(
+        s.lines()
+            .any(|l| l.contains(":q!") && l.contains("Quit without saving.")),
+        "{s}"
+    );
     live.with(|app| app.overlay = tiza_tui::app::Overlay::None);
     // `:wq` saves and quits, as before.
     live.command("wq");

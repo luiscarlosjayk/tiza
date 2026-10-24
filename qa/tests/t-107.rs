@@ -223,7 +223,7 @@ fn ac3_nothing_else_of_the_status_bar() {
             live.keys(&[KeyCode::Enter]);
         }
         let s = live.screen(70, 14);
-        for word in ["NORMAL", "step ", "?help", "ann.", "1/2", "dark", "L1"] {
+        for word in ["NORMAL", "step ", "? help", "ann.", "1/2", "dark", "L1"] {
             assert!(!s.contains(word), "{word} on {typed}: {s}");
         }
         live.keys(&[KeyCode::Esc]);

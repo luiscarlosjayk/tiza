@@ -10,6 +10,8 @@ pub mod checks;
 pub mod early_keys;
 pub mod follow;
 pub mod ipc;
+pub mod keys;
+pub mod panel;
 pub mod reanchor;
 pub mod ui;
 
@@ -557,8 +559,7 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     if app.overlay == Overlay::Review && code == KeyCode::Char(':') {
         // Typing a command from the list: hide it and open the command
         // line, so Enter ends the command instead of accepting a proposal.
-        app.overlay = Overlay::None;
-        app.overlay_scroll = 0;
+        app.close_overlay();
     }
     if app.overlay == Overlay::Review {
         let msg = match code {
@@ -571,8 +572,7 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 Some(format!("rejected {} proposals", app.reject_all_proposals()))
             }
             KeyCode::Esc | KeyCode::Char('q') => {
-                app.overlay = Overlay::None;
-                app.overlay_scroll = 0;
+                app.close_overlay();
                 None
             }
             KeyCode::Char('j') | KeyCode::Down => {
@@ -590,12 +590,15 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
         return;
     }
+    if app.overlay == Overlay::Help {
+        help_key(app, code, mods);
+        return;
+    }
     // Overlays: any of these keys closes them.
     if app.overlay != Overlay::None {
         match code {
             KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?' | 'L') => {
-                app.overlay = Overlay::None;
-                app.overlay_scroll = 0;
+                app.close_overlay();
             }
             KeyCode::Char('j') | KeyCode::Down => app.overlay_scroll += 1,
             KeyCode::Char('k') | KeyCode::Up => {
@@ -664,9 +667,14 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // no anchor never lands on old text. An action key in selection mode
     // (`m`, `n`, …) sets it again from the selection on screen.
     let undo_or_redo =
-        matches!(code, KeyCode::Char('u' | 'U')) || (ctrl && code == KeyCode::Char('r'));
+        (!ctrl && matches!(code, KeyCode::Char('u' | 'U'))) || (ctrl && code == KeyCode::Char('r'));
     if code != KeyCode::Char(':') && !undo_or_redo {
         app.pending_sel = None;
+    }
+    // Ctrl with a letter is not that letter (Ctrl-U is no undo, Ctrl-Q no
+    // quit): only the keys the help names act, Ctrl-C above and Ctrl-R.
+    if ctrl && matches!(code, KeyCode::Char(c) if c != 'r') {
+        return;
     }
     // ---- selection mode: motions extend, action keys consume ----
     if matches!(app.mode, Mode::Select { .. }) {
@@ -688,8 +696,8 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             }
             // The command line and the help stay reachable with a selection.
             KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
-            KeyCode::Char('?') => app.overlay = Overlay::Help,
-            KeyCode::Char('L') => app.overlay = Overlay::List,
+            KeyCode::Char('?') => open(app, Overlay::Help),
+            KeyCode::Char('L') => open(app, Overlay::List),
             KeyCode::Left => app.move_col(-1),
             KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
             KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
@@ -736,10 +744,10 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('b') => app.word_backward(),
         KeyCode::Char('0') => app.line_start(),
         KeyCode::Char('$') => app.line_end(),
-        KeyCode::Char('L') => app.overlay = Overlay::List,
+        KeyCode::Char('L') => open(app, Overlay::List),
         KeyCode::Char('q') => app.request_quit(false),
         KeyCode::Char(':') => app.mode = Mode::Command(String::new()),
-        KeyCode::Char('?') => app.overlay = Overlay::Help,
+        KeyCode::Char('?') => open(app, Overlay::Help),
         KeyCode::Char('j') | KeyCode::Down => app.move_cursor(1),
         KeyCode::Char('k') | KeyCode::Up => app.move_cursor(-1),
         KeyCode::Char('J') => app.move_cursor(app.size.1 as i64 / 2),
@@ -797,8 +805,7 @@ fn close_command_line(app: &mut App) {
 fn cancel_or_quit(app: &mut App) {
     if app.overlay != Overlay::None {
         // Like Esc on any overlay: a pending proposal stays pending.
-        app.overlay = Overlay::None;
-        app.overlay_scroll = 0;
+        app.close_overlay();
     } else if matches!(app.mode, Mode::Command(_)) {
         close_command_line(app);
     } else if matches!(app.mode, Mode::Select { .. }) {
@@ -813,5 +820,68 @@ fn cancel_or_quit(app: &mut App) {
     } else {
         app.retry_save_on_exit = true;
         app.quit = true;
+    }
+}
+
+/// Opens a panel, or says on the bar why it cannot open.
+fn open(app: &mut App, which: Overlay) {
+    if let Err(e) = app.open_overlay(which) {
+        app.error(e.to_string());
+    }
+}
+
+/// A key on the help panel (docs/ui-guidelines.md, section 1). While the
+/// filter is typed, every printable key goes to it; otherwise the panel's
+/// keys scroll it, `/` types the filter, and Esc clears the filter, then
+/// closes. `←`/`→` do nothing, so a clicker cannot move the panel.
+fn help_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    let drawn = app.overlay_drawn.get();
+    // A resize or a `G` before the next frame can leave it past the end.
+    app.overlay_scroll = app.overlay_scroll.min(drawn.max_scroll);
+    let page = drawn.page.max(1);
+    let scroll_by = |app: &mut App, by: i64| {
+        let max = app.overlay_drawn.get().max_scroll as i64;
+        app.overlay_scroll = (app.overlay_scroll as i64 + by).clamp(0, max.max(0)) as usize;
+    };
+    if app.overlay_typing {
+        match code {
+            KeyCode::Esc => {
+                app.overlay_filter.clear();
+                app.overlay_typing = false;
+                app.overlay_scroll = 0;
+            }
+            KeyCode::Enter => app.overlay_typing = false,
+            KeyCode::Backspace => {
+                app.overlay_filter.pop();
+                app.overlay_scroll = 0;
+            }
+            KeyCode::Char('u') if mods.contains(KeyModifiers::CONTROL) => {
+                app.overlay_filter.clear();
+                app.overlay_scroll = 0;
+            }
+            KeyCode::Down => scroll_by(app, 1),
+            KeyCode::Up => scroll_by(app, -1),
+            KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
+                app.overlay_filter.push(c);
+                app.overlay_scroll = 0;
+            }
+            _ => {}
+        }
+        return;
+    }
+    match code {
+        KeyCode::Esc if !app.overlay_filter.is_empty() => {
+            app.overlay_filter.clear();
+            app.overlay_scroll = 0;
+        }
+        KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?' | 'L') => app.close_overlay(),
+        KeyCode::Char('/') => app.overlay_typing = true,
+        KeyCode::Char('j') | KeyCode::Down => scroll_by(app, 1),
+        KeyCode::Char('k') | KeyCode::Up => scroll_by(app, -1),
+        KeyCode::Char(' ') | KeyCode::PageDown => scroll_by(app, page as i64),
+        KeyCode::PageUp => scroll_by(app, -(page as i64)),
+        KeyCode::Char('g') | KeyCode::Home => app.overlay_scroll = 0,
+        KeyCode::Char('G') | KeyCode::End => app.overlay_scroll = drawn.max_scroll,
+        _ => {}
     }
 }

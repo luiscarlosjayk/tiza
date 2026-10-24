@@ -504,6 +504,13 @@ pub struct App {
     checks: crate::checks::Checks,
     /// Scroll offset (wrapped rows) of the help / list overlay.
     pub overlay_scroll: usize,
+    /// The filter of the panel that is open, and whether the user types
+    /// it now (`/`).
+    pub overlay_filter: String,
+    pub overlay_typing: bool,
+    /// How the panel was drawn last: the rows of one page and the largest
+    /// scroll, for the keys that scroll it.
+    pub overlay_drawn: std::cell::Cell<crate::panel::Drawn>,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
     /// Why follow went off by itself: the watcher of that file could not
@@ -630,6 +637,9 @@ impl App {
             decided: (0, 0),
             checks: Default::default(),
             overlay_scroll: 0,
+            overlay_filter: String::new(),
+            overlay_typing: false,
+            overlay_drawn: Default::default(),
             follow: None,
             follow_failed: None,
             follow_start_waits: false,
@@ -779,6 +789,49 @@ impl App {
     pub fn error(&mut self, msg: impl Into<String>) {
         self.save_warning_pending = false;
         self.message = Some((msg.into(), true));
+    }
+
+    /// Why the terminal is too small for the panel `which`, if it is (a
+    /// size of 0, not known yet, fits). The size comes first in the
+    /// message: a narrow bar cuts the end.
+    fn panel_too_small(&self, which: Overlay) -> Option<String> {
+        let (w, h) = self.size;
+        let (mw, mh) = crate::panel::MIN_SIZE;
+        let what = match which {
+            Overlay::Help => "the help",
+            Overlay::List => "the list",
+            _ => return None,
+        };
+        (w > 0 && h > 0 && (w < mw || h < mh))
+            .then(|| format!("use {mw}×{mh} or more to show {what}"))
+    }
+
+    /// Opens the panel `which`, its filter and scroll empty. A terminal
+    /// smaller than a panel needs refuses it and says how large it must be.
+    pub fn open_overlay(&mut self, which: Overlay) -> Result<(), Error> {
+        if let Some(why) = self.panel_too_small(which) {
+            return Err(Error::Invalid(why));
+        }
+        self.close_overlay();
+        self.overlay = which;
+        Ok(())
+    }
+
+    /// A panel the terminal became too small for closes and says why, so
+    /// that it does not take keys while it cannot be seen.
+    pub fn close_panel_too_small(&mut self) {
+        if let Some(why) = self.panel_too_small(self.overlay) {
+            self.close_overlay();
+            self.error(why);
+        }
+    }
+
+    /// Closes the panel that is open, its filter and scroll with it.
+    pub fn close_overlay(&mut self) {
+        self.overlay = Overlay::None;
+        self.overlay_scroll = 0;
+        self.overlay_filter.clear();
+        self.overlay_typing = false;
     }
 
     /// Every annotation id with its step: taken before an action so
@@ -4717,11 +4770,11 @@ impl App {
                     Ok("title updated".into())
                 }
                 "ls" | "list" => {
-                    self.overlay = Overlay::List;
+                    self.open_overlay(Overlay::List)?;
                     Ok(String::new())
                 }
                 "help" | "h" | "?" => {
-                    self.overlay = Overlay::Help;
+                    self.open_overlay(Overlay::Help)?;
                     Ok(String::new())
                 }
                 "undo" | "u" => {
@@ -6107,8 +6160,7 @@ impl App {
 
     fn close_review_if_empty(&mut self) {
         if self.proposals.is_empty() && self.overlay == Overlay::Review {
-            self.overlay = Overlay::None;
-            self.overlay_scroll = 0;
+            self.close_overlay();
         }
     }
 

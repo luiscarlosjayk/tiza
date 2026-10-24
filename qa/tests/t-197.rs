@@ -400,7 +400,7 @@ fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
 #[test]
 fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
     // `v a` chooses the source; Ctrl-C forgets it, so `v a` again chooses
-    // a source (ARROW→) instead of drawing the arrow. With the target
+    // a source (ARROW) instead of drawing the arrow. With the target
     // selected (`v a j v`), one Ctrl-C leaves the selection and the arrow,
     // like Esc.
     let (dir, _) = project("t197-ac2-arrow");
@@ -411,21 +411,21 @@ fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
         "main.rs",
         json!([
             ["k", "v", [["bar", "SELECT"]]],
-            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", "a", [["bar", "ARROW "]]],
             ["k", CTRL_C, [["bar", "NORMAL"], ["has", "arrow cancelled"]]],
             ["alive"],
             ["k", "v", [["bar", "SELECT"]]],
-            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", "a", [["bar", "ARROW "]]],
             ["api", "status", {}],
             ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
             ["k", "v", [["bar", "SELECT"]]],
-            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", "a", [["bar", "ARROW "]]],
             ["k", "jv", [["bar", "SELECT"]]],
             ["k", CTRL_C, [["bar", "NORMAL"], ["lacks", "ARROW"]]],
             ["alive"],
             ["k", "v", [["bar", "SELECT"]]],
-            ["k", "a", [["bar", "ARROW→"]]],
+            ["k", "a", [["bar", "ARROW "]]],
             ["api", "status", {}],
             ["k", CTRL_C, [["bar", "NORMAL"]]],
             ["alive"],
@@ -505,7 +505,7 @@ fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
 #[test]
 fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
     // Test step 3: `?`, Ctrl-C → help closes; Ctrl-C quits. Same with `L`.
-    for (key, name) in [("?", "help"), ("L", "list")] {
+    for (key, name, open) in [("?", "help", "esc close"), ("L", "list", "Esc closes")] {
         let (dir, _) = project(&format!("t197-ac3-{name}"));
         let r = run(
             &dir,
@@ -515,8 +515,8 @@ fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
             // An overlay takes `f` for itself; without it the pointer
             // turns on.
             json!([
-                ["k", key, [["has", "Esc closes"]]],
-                ["k", CTRL_C, [["lacks", "Esc closes"]]],
+                ["k", key, [["has", open]]],
+                ["k", CTRL_C, [["lacks", open]]],
                 ["alive"],
                 ["k", "f", [["bar", "POINTER"]]],
                 ["api", "status", {}],
@@ -896,10 +896,11 @@ fn ac6_the_readme_and_the_help_say_ctrl_c_cancels_or_quits() {
     let doc = tiza_core::Document::from_code(CODE, "rs", None);
     let live = tiza_qa::Live::open(doc, dir.join("main.rs.tiza"), dir.join("s.sock"));
     live.command("help");
-    let mut pages = String::new();
-    for page in 0..6 {
-        live.with(move |app| app.overlay_scroll = page * 40);
-        pages.push_str(&live.screen(200, 50));
-    }
-    assert!(pages.contains("Ctrl-C   cancels, or quits"), "{pages}");
+    live.with(|app| app.overlay_filter = "ctrl-c".into());
+    let s = live.screen(200, 50);
+    assert!(
+        s.lines()
+            .any(|l| l.contains("Ctrl-C") && l.contains("Close what is open, as Esc does.")),
+        "{s}"
+    );
 }
