@@ -610,9 +610,10 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the GIF")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frames, {}×{} px, {:.1} s per loop, {} colours{}{timed_note}",
+                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colours{}{timed_note}",
                             bytes.len(),
                             report.frames,
+                            if report.frames == 1 { "" } else { "s" },
                             report.width,
                             report.height,
                             report.duration_ms as f64 / 1000.0,

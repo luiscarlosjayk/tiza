@@ -2854,22 +2854,25 @@ impl App {
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
         let lines = self.doc.code.len();
+        let pasted = format!("{lines} line{} pasted", if lines == 1 { "" } else { "s" });
+        let kept = format!(
+            "{} annotation{} kept",
+            out.kept,
+            if out.kept == 1 { "" } else { "s" }
+        );
         match out.stale {
             None if out.ignored.is_none() && out.dropped > 0 => self.info(format!(
-                "{lines} lines pasted; {} annotation{} dropped (their text is gone; u undoes)",
+                "{pasted}; {} annotation{} dropped (their text is gone; u undoes)",
                 out.dropped,
                 if out.dropped == 1 { "" } else { "s" }
             )),
-            None if out.ignored.is_none() => self.info(format!(
-                "{lines} lines pasted ({} annotations kept)",
-                out.kept
-            )),
+            None if out.ignored.is_none() => self.info(format!("{pasted} ({kept})")),
             n => self.stale_notice(
                 n,
                 out.dropped,
                 &out.ignored,
                 "their text is gone",
-                format!("{lines} lines pasted ({} annotations kept)", out.kept),
+                format!("{pasted} ({kept})"),
             ),
         }
         if let Some(note) = paused {

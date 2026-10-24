@@ -145,7 +145,8 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         let last = document.code.len() as u32;
         if a > last || b > last {
             notice = Some(format!(
-                "the file has {last} lines: range {a}-{b} clamped to {}-{}",
+                "the file has {last} line{}: range {a}-{b} clamped to {}-{}",
+                if last == 1 { "" } else { "s" },
                 a.min(last.max(1)),
                 b.min(last.max(1))
             ));

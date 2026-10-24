@@ -458,3 +458,115 @@ fn ac6_the_readme_and_the_changelog_name_the_chips_and_the_message() {
         assert!(!t.contains("changes now save there"));
     }
 }
+
+// A count of one says it in the singular: `1 line pasted (1 annotation
+// kept)`, not `1 lines pasted (1 annotations kept)`.
+
+fn paste(live: &Live, text: &str) -> String {
+    let text = text.to_string();
+    live.with(move |app| app.replace_code(&text)).unwrap();
+    live.message().unwrap().0
+}
+
+#[test]
+fn plural_a_paste_of_one_line_and_of_two_lines() {
+    let live = Live::from_code(CODE, "rs", "t247-paste-one");
+    live.command("note 2 hi");
+    assert_eq!(
+        paste(&live, "    let a = 1;\n"),
+        "1 line pasted (1 annotation kept)"
+    );
+    let live = Live::from_code(CODE, "rs", "t247-paste-two");
+    live.command("note 2 hi");
+    live.command("note 3 bye");
+    assert_eq!(
+        paste(&live, "    let a = 1;\n}\n"),
+        "2 lines pasted (2 annotations kept)"
+    );
+    let live = Live::from_code(CODE, "rs", "t247-paste-none");
+    assert_eq!(
+        paste(&live, "fn a() {}\nfn b() {}\n"),
+        "2 lines pasted (0 annotations kept)"
+    );
+    // One annotation dropped, as before.
+    let live = Live::from_code(CODE, "rs", "t247-paste-dropped");
+    live.command("note 2 hi");
+    assert_eq!(
+        paste(&live, "fn b() {}\n"),
+        "1 line pasted; 1 annotation dropped (their text is gone; u undoes)"
+    );
+}
+
+#[test]
+fn plural_a_range_past_a_file_of_one_line_and_of_two_lines() {
+    let dir = scratch("t247-range");
+    for (name, code, says) in [
+        (
+            "one.rs",
+            "fn main() {}\n",
+            "the file has 1 line: range 3-5 clamped to 1-1",
+        ),
+        (
+            "two.rs",
+            "fn a() {}\nfn b() {}\n",
+            "the file has 2 lines: range 3-5 clamped to 2-2",
+        ),
+    ] {
+        let path = dir.join(name);
+        std::fs::write(&path, code).unwrap();
+        let opened = tiza_core::fs::open(&format!("{}:3-5", path.display())).unwrap();
+        assert_eq!(opened.notice.as_deref(), Some(says));
+    }
+}
+
+#[test]
+fn plural_a_move_past_the_end_of_one_line_and_of_two_lines() {
+    let dir = scratch("t247-stale");
+    std::fs::write(dir.join("main.rs"), "a\nb\nc\nd\n").unwrap();
+    let doc = serde_json::json!({
+        "schema": 1,
+        "source": {"language": "rust"},
+        "code": {"file": "main.rs"},
+        "step": 0,
+        "moves": [{"at_step": 1, "action": "code.patch", "op": "delete", "position": "4"}],
+        "annotations": [],
+    });
+    let path = dir.join("main.rs.tiza");
+    std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    let d = tiza_core::fs::load_document(&path).unwrap();
+    let live = Live::open(d, path, dir.join("s.sock"));
+    live.with(|a| a.autosave = false);
+    let reason = |live: &Live| {
+        live.api_ok("move.list", serde_json::json!({}))["moves"][0]["stale_reason"].clone()
+    };
+    paste(&live, "a\n");
+    assert_eq!(reason(&live), "line 4 is past the end of the code (1 line)");
+    paste(&live, "a\nb\n");
+    assert_eq!(
+        reason(&live),
+        "line 4 is past the end of the code (2 lines)"
+    );
+}
+
+#[test]
+fn plural_a_gif_of_one_frame_and_of_two_frames() {
+    let dir = scratch("t247-gif");
+    std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
+    // Code with no steps: step 0 alone, or nothing but the hold with
+    // `--skip-zero`.
+    for (extra, says) in [(None, "2 frames, "), (Some("--skip-zero"), "1 frame, ")] {
+        let out = dir.join("demo.gif");
+        let mut cmd = std::process::Command::new(bin());
+        cmd.arg("render")
+            .arg(dir.join("main.rs"))
+            .arg("--out")
+            .arg(&out);
+        if let Some(extra) = extra {
+            cmd.arg(extra);
+        }
+        let r = cmd.output().unwrap();
+        let err = String::from_utf8_lossy(&r.stderr);
+        assert!(r.status.success(), "{err}");
+        assert!(err.contains(says), "{err}");
+    }
+}

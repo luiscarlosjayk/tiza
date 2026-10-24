@@ -132,9 +132,10 @@ impl Region {
             .position(|(was, is)| was.is_some() && is.is_none())
         {
             return Some(format!(
-                "line {} is past the end of the code ({} lines)",
+                "line {} is past the end of the code ({} line{})",
                 self.from + k as u32,
-                code.len()
+                code.len(),
+                if code.len() == 1 { "" } else { "s" }
             ));
         }
         let whitespace = pairs.filter(|(was, is)| was != is).all(|(was, is)| {
