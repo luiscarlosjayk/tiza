@@ -7,6 +7,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::{Mutex, Once, mpsc};
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -33,6 +34,57 @@ pub fn scratch(name: &str) -> PathBuf {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir
+}
+
+/// How long a test waits for a follow watcher to start. A start takes
+/// milliseconds; on macOS it takes seconds when the folder of the test
+/// binary holds many files (see [`slow_follow_start`]).
+pub const FOLLOW_START_BUDGET: Duration = Duration::from_secs(30);
+
+/// Waits while `starting` says a follow watcher is still starting, on this
+/// thread, so the app thread goes on answering requests. How long it took,
+/// or, past `budget`, the message of a slow start.
+pub fn wait_for_watcher(
+    budget: Duration,
+    mut starting: impl FnMut() -> bool,
+) -> Result<Duration, String> {
+    let start = Instant::now();
+    while starting() {
+        if start.elapsed() >= budget {
+            return Err(slow_follow_start(start.elapsed()));
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    Ok(start.elapsed())
+}
+
+/// Why a follow watcher took `waited` to start. On macOS, fseventsd reads
+/// the folder of the client's executable each time a watcher starts, and
+/// one start at a time per process: with a million old `.o` files in
+/// `target/debug/deps` that is 2 s for each start, and tests in parallel
+/// wait for each other's.
+pub fn slow_follow_start(waited: Duration) -> String {
+    let folder = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf));
+    let files = folder
+        .as_ref()
+        .and_then(|dir| std::fs::read_dir(dir).ok())
+        .map(|entries| entries.count());
+    let held = match (&folder, files) {
+        (Some(dir), Some(n)) => format!(" ({} holds {n} files)", dir.display()),
+        _ => String::new(),
+    };
+    let secs = waited.as_secs_f64();
+    if cfg!(target_os = "macos") {
+        format!(
+            "the follow watcher did not start in {secs:.1} s: FSEvents starts it slowly. \
+             fseventsd reads the folder of the test binary for each watcher{held}; \
+             run `cargo clean` to empty it"
+        )
+    } else {
+        format!("the follow watcher did not start in {secs:.1} s")
+    }
 }
 
 /// The `tiza` binary of the current profile, built on first use.
@@ -96,10 +148,6 @@ impl Live {
         let (ready_tx, ready_rx) = mpsc::channel();
         let join = std::thread::spawn(move || {
             let mut app = App::new(doc, save_path);
-            // The tests save a file right after `follow on`: its watcher
-            // starts before the command returns, as in the TUI before it
-            // started on a thread of its own (the binary's tests see that).
-            app.follow_start_waits = true;
             let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
             ready_tx.send(()).unwrap();
@@ -160,6 +208,24 @@ impl Live {
                 tiza_tui::on_key(app, k, KeyModifiers::NONE);
             }
         });
+        self.wait_follow_started();
+    }
+
+    /// Waits until a follow watcher that is starting runs, outside any
+    /// request: the tests save the file right after `follow on`, and the
+    /// TUI does not wait for the watcher (it starts on a thread of its own).
+    /// `api`, `command` and `keys` call it. Past [`FOLLOW_START_BUDGET`] the
+    /// test fails and says why.
+    pub fn wait_follow_started(&self) {
+        if let Err(why) = self.wait_follow_started_within(FOLLOW_START_BUDGET) {
+            panic!("{why}");
+        }
+    }
+
+    /// [`Live::wait_follow_started`] with its own budget: how long the start
+    /// took, or the message of a start that took longer.
+    pub fn wait_follow_started_within(&self, budget: Duration) -> Result<Duration, String> {
+        wait_for_watcher(budget, || self.with(|app| app.follow_starting()))
     }
 
     /// Types text as individual key presses (use `KeyCode::Enter` via `keys`).
@@ -172,11 +238,14 @@ impl Live {
     pub fn command(&self, cmd: &str) {
         let cmd = cmd.to_string();
         self.with(move |app| app.run_command(&cmd));
+        self.wait_follow_started();
     }
 
     /// Calls the local API over the socket, like `tiza api` does.
     pub fn api(&self, method: &str, params: serde_json::Value) -> tiza_core::protocol::Response {
-        tiza_tui::ipc::call(&self.socket, method, params).expect("socket call")
+        let reply = tiza_tui::ipc::call(&self.socket, method, params).expect("socket call");
+        self.wait_follow_started();
+        reply
     }
 
     /// Calls the API and asserts success, returning the result.

@@ -14,6 +14,8 @@ Tests that need a real terminal use `tiza_qa::pty_script(dir, name, body, args)`
 
 `bin()` builds `tiza` with the `test-hooks` feature (t-166): `TIZA_TEST_HOOK=request:<method>` makes the TUI panic after a request did its work, `TIZA_MCP_TEST_HOOK` (`tool:<name>`, `export:render`, `export:slow-write`) does the same in the MCP server, and `TIZA_MCP_EXPORT_TIMEOUT_MS` shortens the export deadline; a release build has none of them.
 
+`Live` does not wait for a follow watcher inside a request, as the TUI does not. `api`, `command` and `keys` wait after the request until a watcher that is starting runs, for 30 s at most (`FOLLOW_START_BUDGET`). On macOS a start takes milliseconds, but fseventsd reads the folder of the test binary each time a watcher starts. A `target/debug/deps` with a million old `.o` files makes each start take about 2 s, and the tests in parallel wait for each other's starts (t-243). When a test fails with «the follow watcher did not start», run `cargo clean`.
+
 `McpClient` (in `src/lib.rs`) is a real JSON-RPC client over stdio for `tiza mcp`: handshake, `tools/list`, one `tools/call` at a time with the reply read in order, so reconnection and errors can be observed (t-070). Replies are read on a thread of their own and waited for with a deadline (`request` fails the test after 120 s, `request_within` returns `None`), so a call the server never answers fails in seconds instead of hanging `cargo test` (t-166).
 
 Render snapshots (t-053) live in `qa/tests/snapshots/` (insta): one `-symbols` and one `-styles` file per case. When a render changes on purpose, run `INSTA_UPDATE=always cargo test -p tiza-qa --test t-053` (or `cargo insta review`) and commit the updated `.snap` files with the change.

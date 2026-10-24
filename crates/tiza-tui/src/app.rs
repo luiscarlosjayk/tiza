@@ -517,10 +517,6 @@ pub struct App {
     /// start. Said while that file is still the one to follow and nothing
     /// else explains the code on screen, until follow is turned on or off.
     follow_failed: Option<(PathBuf, String)>,
-    /// Wait for the follow watcher to start, on this thread, as before it
-    /// started on a thread of its own. Only the in-process tests set it:
-    /// they save the file right after `follow on`.
-    pub follow_start_waits: bool,
     /// The followed file changed while moves were applied: its
     /// reload waits for step 0, and the code on screen is embedded meanwhile.
     reload_waits: bool,
@@ -642,7 +638,6 @@ impl App {
             overlay_drawn: Default::default(),
             follow: None,
             follow_failed: None,
-            follow_start_waits: false,
             reload_waits: false,
             pasted_codes: Vec::new(),
             screen_via_history: false,
@@ -3329,11 +3324,8 @@ impl App {
         })?;
         // The step-0 code: with moves applied, `doc.code` is what they made.
         self.follow_failed = None;
-        let mut f =
+        let f =
             crate::follow::Follow::start(path, self.doc.base().to_vec()).map_err(Error::Invalid)?;
-        if self.follow_start_waits {
-            f.wait_started().map_err(Error::Invalid)?;
-        }
         let name = f.file_name();
         self.follow = Some(f);
         self.reload_waits = false;
@@ -3400,13 +3392,7 @@ impl App {
         old.stop();
         let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
         self.reload_waits = false;
-        let started = crate::follow::Follow::start(path, base).and_then(|mut f| {
-            if self.follow_start_waits {
-                f.wait_started()?;
-            }
-            Ok(f)
-        });
-        match started {
+        match crate::follow::Follow::start(path, base) {
             Ok(mut f) => {
                 (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
                 let name = f.file_name();
@@ -3619,6 +3605,12 @@ impl App {
             ),
         }
         true
+    }
+
+    /// Whether the follow watcher is still starting on its own thread (the
+    /// in-process tests wait for it, outside any request).
+    pub fn follow_starting(&self) -> bool {
+        self.follow.as_ref().is_some_and(|f| f.starting())
     }
 
     /// `follow.status` payload.

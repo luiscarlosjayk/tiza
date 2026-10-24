@@ -136,20 +136,10 @@ impl Follow {
         })
     }
 
-    /// Waits for the watcher that is starting, as the start did before it
-    /// moved to a thread of its own: the in-process tests, which save the
-    /// file right after `follow on` (see `App::follow_start_waits`).
-    pub fn wait_started(&mut self) -> Result<(), String> {
-        if let Watch::Starting(started) = &self.watch {
-            let got = started.recv();
-            self.watch = Watch::Stopped;
-            match got {
-                Ok(Ok(w)) => self.watch = Watch::Running(w),
-                Ok(Err(why)) => return Err(why),
-                Err(_) => return Err(self.did_not_start()),
-            }
-        }
-        Ok(())
+    /// Whether the watcher is still starting on its own thread: until
+    /// [`Follow::poll`] takes it.
+    pub fn starting(&self) -> bool {
+        matches!(self.watch, Watch::Starting(_))
     }
 
     pub fn file_name(&self) -> String {
