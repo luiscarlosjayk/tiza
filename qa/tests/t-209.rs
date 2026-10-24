@@ -69,8 +69,8 @@ fn mods_with_a_message(name: &str, no_save: bool) -> Live {
 const VIEW: &str = "↪ src/b/mod.rs";
 const TAIL: &str = "(src/a/mod.rs, not shown at step 2)";
 /// The badge's sign with the blanks around it, in every form of the badge
-/// (`  ! labels under the lines`, `  ! labels`, `  !` and the message's
-/// blank after it, `  ! code clipped (N cols)`).
+/// (`  ! 1 label cut`, `  !` and the message's blank after it,
+/// `  ! code needs N cols`).
 const SIGN: &str = "  ! ";
 
 fn bar(live: &Live, cols: u16) -> String {
@@ -160,22 +160,26 @@ fn bar_and_badge(live: &Live, cols: u16, rows: u16) -> (String, String) {
     })
 }
 
-/// `qa/fixtures/t-173/wide.rs` at step 0 with autosave off and the agent's
-/// box: at 80 columns the labels go under the lines and the message ends in
-/// a step hint, so the badge goes through all its forms in a sweep.
+/// A box label too long for any width: the bar warns `! 1 label cut`.
+const LONG_LABEL: &str = "a box label far too long for the border of this box at any width the sweep tries, so it is cut";
+
+/// `qa/fixtures/t-173/wide.rs` at step 1 with autosave off, a box whose
+/// label is always cut (so the bar has its badge, t-246) and the agent's
+/// box at step 2: the message ends in a step hint, so the badge goes
+/// through its forms in a sweep.
 fn wide_with_a_message(name: &str) -> Live {
     let code = std::fs::read_to_string(fixture("t-173/wide.rs")).unwrap();
     let live = Live::from_code(&code, "rs", name);
-    live.command("step 0");
     live.command("autosave off");
+    live.command(&format!("box 2-4 {LONG_LABEL}"));
     live.with(|a| a.message = None);
     live.api_ok(
         "annotation.add",
-        json!({"type": "box", "from_line": 3, "to_line": 5}),
+        json!({"type": "box", "from_line": 3, "to_line": 5, "step": 2}),
     );
     assert_eq!(
         live.message().unwrap().0,
-        "a1: box 3-5 added by agent (step 1, press n)"
+        "a2: box 3-5 added by agent (step 2, press n)"
     );
     live
 }
@@ -199,26 +203,18 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
             }
         }
     };
-    // `labels under the lines` and its short forms, with a message.
+    // `1 label cut` and its sign, with a message.
     let live = wide_with_a_message("t209-ascii-labels");
     for cols in 30..=130 {
         check(&live, cols);
     }
-    // The same without a message, `small terminal` and `code clipped`.
+    // The same without a message, and `code needs N cols`.
     live.with(|a| a.message = None);
-    check(&live, 80);
-    let small = Live::from_code("fn main() {}\n", "rs", "t209-ascii-small");
-    check(&small, 120);
+    check(&live, 120);
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
     let clipped = Live::from_code(&long, "rs", "t209-ascii-clipped");
     check(&clipped, 120);
-    for form in [
-        "  ! labels under the lines",
-        "  ! labels",
-        "  !",
-        "  ! small terminal",
-        "  ! code clipped (175 cols)",
-    ] {
+    for form in ["  ! 1 label cut", "  !", "  ! code needs 175 cols"] {
         assert!(seen.iter().any(|b| b == form), "{form:?} not in {seen:?}");
     }
 }
@@ -238,8 +234,11 @@ sock = "r.sock"
 def api(*args):
     return subprocess.run([binary, "api", *args, "--socket", sock], capture_output=True, text=True, timeout=60)
 s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 80)
-if s.wait_for(lambda out: b"labels under the lines" in out and os.path.exists(sock), 20, "first frame"):
-    print("FIRST_BADGE", b"! labels under the lines" in s.out, flush=True)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
+    # A box whose label cannot fit: the bar warns `! 1 label cut`.
+    api("annotation.add", '{"type": "box", "from_line": 2, "to_line": 4, "label": "a box label far too long for the border of this box at eighty columns"}')
+    s.wait_for(lambda out: b"label cut" in out, 20, "the badge")
+    print("FIRST_BADGE", b"! 1 label cut" in s.out, flush=True)
     api("step.set", '{"step": 0}')
     api("annotation.add", '{"type": "box", "from_line": 3, "to_line": 5}')
     if s.wait_for(lambda out: b"(step 1, press n)" in out, 20, "the message"):
@@ -262,17 +261,27 @@ s.finish(10)
 #[test]
 fn ac5_at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
     // Test step 3: the two-file document at 125 columns with the agent's
-    // long message, with `unsaved (:w)` on the bar. With 24 rows the bar
-    // carries `! small terminal` too, so the message no longer fits: `↪
-    // src/b/mod.rs` and the badge stay, and the middle of the message is
-    // cut.
+    // long message, with `unsaved (:w)` on the bar and, at step 2, a box of
+    // src/b/mod.rs whose label is cut, so the bar carries `! 1 label cut`
+    // too and the message no longer fits: `↪ src/b/mod.rs` and the badge
+    // stay, and the middle of the message is cut.
     let live = mods_with_a_message("t209-125-ascii", true);
-    let (b, badge) = bar_and_badge(&live, 125, 24);
-    assert_eq!(badge, "  ! small terminal", "{b}");
+    live.with(|a| {
+        let msg = a.message.clone();
+        a.run_command(&format!("box 2-3 {LONG_LABEL}"));
+        a.message = msg;
+    });
+    let (b, badge) = bar_and_badge(&live, 125, 30);
+    assert_eq!(badge, "  ! 1 label cut", "{b}");
     assert!(b.contains(VIEW) && b.ends_with(TAIL), "{b}");
     assert!(b.contains("a1") && b.contains('…'), "{b}");
     assert!(!b.contains('⚠'), "{b}");
-    // With 30 rows there is no badge and the message fits whole.
+    // Without that box there is no badge and the message fits whole.
+    live.with(|a| {
+        let msg = a.message.clone();
+        a.undo();
+        a.message = msg;
+    });
     let (b, badge) = bar_and_badge(&live, 125, 30);
     assert!(badge.is_empty() && b.contains(VIEW), "{b}");
     assert!(
@@ -290,9 +299,8 @@ fn ac5_at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
 fn ac4_sweep_with_the_badge_is_monotonic() {
     let live = wide_with_a_message("t209-sweep-badge");
     let rank = |badge: &str| match badge.trim() {
-        "! labels under the lines" | "! small terminal" => 3,
-        "! labels" | "! small" => 2,
         "!" => 1,
+        b if b.starts_with("! ") => 2,
         _ => 0,
     };
     let mut prev: Option<(u16, String, String)> = None;
@@ -323,11 +331,11 @@ fn ac4_sweep_with_the_badge_is_monotonic() {
         }
         prev = Some((cols, b, badge));
     }
-    // It goes once, at the width where the warnings end, and stays gone.
-    assert_eq!(went, 1, "the badge went {went} times");
+    // The box label is cut at every width: the badge never goes.
+    assert_eq!(went, 0, "the badge went {went} times");
 }
 
-const STEP_HINT: &str = "(step 1, press n)";
+const STEP_HINT: &str = "(step 2, press n)";
 
 #[test]
 fn ac5_changelog_names_the_sign() {

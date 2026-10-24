@@ -280,7 +280,7 @@ fn ac4_status_reads_the_last_frame_and_lays_nothing_out() {
     let _ = live.screen(60, 30);
     let warnings = live.with(|app| app.viewport_warnings());
     assert!(
-        warnings.iter().any(|w| w.starts_with("code clipped")),
+        warnings.iter().any(|w| w.starts_with("code needs")),
         "{warnings:?}"
     );
     let layouts = live.with(|app| app.layouts.get());
@@ -306,12 +306,12 @@ fn ac4_a_change_not_drawn_yet_is_laid_out_once() {
     live.with(|app| app.autosave = false);
     let _ = live.screen(200, 40);
     let wide = live.api_ok("status", json!({}))["warnings"].clone();
-    assert!(!wide.to_string().contains("code clipped"), "{wide}");
+    assert!(!wide.to_string().contains("code needs"), "{wide}");
     // Narrower and not drawn yet: the warnings are this size's.
     live.with(|app| app.size = (60, 30));
     let layouts = live.with(|app| app.layouts.get());
     let st = live.api_ok("status", json!({}));
-    assert!(st["warnings"].to_string().contains("code clipped"), "{st}");
+    assert!(st["warnings"].to_string().contains("code needs"), "{st}");
     assert_eq!(live.with(|app| app.layouts.get()), layouts + 1);
     let again = live.api_ok("status", json!({}));
     assert_eq!(again["warnings"], st["warnings"]);

@@ -31,4 +31,4 @@ expression: symbols
    23      fn push(s: &mut String) {
    24          s.push('!');
 
- ╭▶ NORMAL  step 3/7                     ▸ a2 · enter label · e set · x delete · c color · +/- step
+ ╭▶ NORMAL  step 3/7  !                  ▸ a2 · enter label · e set · x delete · c color · +/- step

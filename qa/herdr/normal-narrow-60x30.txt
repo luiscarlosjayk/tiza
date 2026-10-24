@@ -27,4 +27,4 @@
    17   ╎ ┃ │  }                                         │
         ╎ ┃ │  · ╳ drop: s dies here                     │
 
- ╭▶ NORMAL  step 7/7  no-save  ! code clipped (64 cols)
+ ╭▶ NORMAL  step 7/7  no-save  ! code needs 64 cols  ? help

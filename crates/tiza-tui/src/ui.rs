@@ -634,22 +634,20 @@ fn fit_bar_message(
     let short = short_file_tail(tail)
         .filter(|(file, _)| short_name_is_unique(&app.doc, file))
         .map(|(_, short)| short);
-    // The terminal-size notice gives way (its short forms, then its sign);
-    // `code clipped` never does.
-    let forms: &[&'static str] = match badge.map(|b| left[b].content.as_ref()) {
-        Some("  ! labels under the lines") => &["  ! labels under the lines", "  ! labels", "  !"],
-        Some("  ! small terminal") => &["  ! small terminal", "  ! small", "  !"],
-        _ => &[""],
+    // The labels notice gives way to its sign; `code needs N cols` never
+    // does.
+    let forms: Vec<String> = match badge.map(|b| left[b].content.to_string()) {
+        Some(f) if f.ends_with(" cut") => vec![f, "  !".into()],
+        _ => vec![String::new()],
     };
     let layout_badge = badge.filter(|_| forms.len() > 1);
     // The steps: the badge whole with the indicator, then the
-    // indicator gone with the badge still whole, then the badge's shorter
-    // forms.
-    let mut steps: Vec<(&'static str, bool)> = vec![(forms[0], false)];
+    // indicator gone with the badge still whole, then the badge's sign.
+    let mut steps: Vec<(String, bool)> = vec![(forms[0].clone(), false)];
     if view.is_some() {
-        steps.push((forms[0], true));
+        steps.push((forms[0].clone(), true));
     }
-    steps.extend(forms[1..].iter().map(|f| (*f, true)));
+    steps.extend(forms[1..].iter().map(|f| (f.clone(), true)));
     for (k, (form, no_view)) in steps.into_iter().enumerate() {
         if let Some(b) = layout_badge {
             left[b] = Span::styled(form, left[b].style);
@@ -834,17 +832,19 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     }
     let warnings = app.viewport_warnings_for(layout);
     let badge = left.len();
-    if let Some(w) = warnings.first() {
-        // Short form on the bar; the full text is in `status.warnings`.
-        // The sign is ASCII `!`, one cell in every terminal: U+26A0 is drawn
-        // two cells wide by some, which pushed the bar past the edge.
-        let short = if w.starts_with("code clipped") {
-            w.clone()
-        } else if w.contains("under the lines") {
-            "labels under the lines".to_string()
-        } else {
-            "small terminal".to_string()
-        };
+    // Only what the step on screen loses has a badge: clipped code, or
+    // labels cut (`2 labels cut`); the full text is in `status.warnings`.
+    // The sign is ASCII `!`, one cell in every terminal: U+26A0 is drawn
+    // two cells wide by some, which pushed the bar past the edge.
+    let short = layout
+        .clipped_code
+        .map(|w| format!("code needs {w} cols"))
+        .or_else(|| {
+            warnings
+                .iter()
+                .find_map(|w| w.split_once(" cut at ").map(|(n, _)| format!("{n} cut")))
+        });
+    if let Some(short) = short {
         left.push(Span::styled(
             format!("  ! {short}"),
             Style::default()

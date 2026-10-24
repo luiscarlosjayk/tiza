@@ -51,20 +51,22 @@ use serde_json::{Value, json};
 use tiza_qa::{Live, example, fixture, scratch};
 
 const STEP_HINT: &str = "(step 1, press n)";
-const WHOLE_BADGE: &str = "! labels under the lines";
+/// Since t-246 the bar warns only of what the step loses: a box label too
+/// long for its border gives the badge `! 1 label cut` at every width.
+const WHOLE_BADGE: &str = "! 1 label cut";
+const LONG_LABEL: &str =
+    "a box label far too long for the border of this box at any width the sweep tries";
+const STEP2_HINT: &str = "(step 2, press n)";
 
 // ---------- reading the bar by its elements ----------
 
-/// The forms of the terminal-size badge (`! labels under the lines`, or
-/// `! small terminal` when the labels keep their margin), from the least
-/// to the whole.
+/// The forms of the labels badge (`! 1 label cut`, then its sign), from
+/// the least to the whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum Badge {
-    /// `code clipped`, which never gives way, or no badge.
+    /// `code needs N cols`, which never gives way, or no badge.
     Other,
     Sign,
-    /// `! labels` or `! small`.
-    Labels,
     Whole,
 }
 
@@ -100,16 +102,17 @@ const AGENT_BOX: Msg = Msg {
     short: None,
 };
 
+/// The agent's box at step 2, beside the cut box of [`open_cut`].
+const AGENT_BOX2: Msg = Msg {
+    subject: "a2",
+    tail: STEP2_HINT,
+    short: None,
+};
+
 fn elements(bar: &str, msg: &Msg) -> Elements {
     let (badge, at) = if let Some(i) = bar.find(WHOLE_BADGE) {
         (Badge::Whole, i + WHOLE_BADGE.len())
-    } else if let Some(i) = bar.find("! small terminal") {
-        (Badge::Whole, i + "! small terminal".len())
-    } else if let Some(i) = bar.find("! labels") {
-        (Badge::Labels, i + "! labels".len())
-    } else if let Some(i) = bar.find("! small") {
-        (Badge::Labels, i + "! small".len())
-    } else if let Some(i) = bar.find("! code clipped") {
+    } else if let Some(i) = bar.find("! code needs") {
         (Badge::Other, i)
     } else if let Some(i) = bar.find("  ! ") {
         (Badge::Sign, i + "  !".len())
@@ -194,11 +197,8 @@ fn sweep(live: &Live, msg: &Msg, from: u16, to: u16) -> Vec<(u16, String)> {
 /// AC3: a badge that gave way (`! labels`, `!`) did it because its next
 /// larger form would not leave room for the subject, `…` and the tail.
 fn assert_badge_gave_way_only_if_needed(bar: &str, e: &Elements, msg: &Msg) {
-    let small = bar.contains("! small");
-    let grow = match (e.badge, small) {
-        (Badge::Sign, false) => " labels".chars().count(),
-        (Badge::Labels, false) => " under the lines".chars().count(),
-        (Badge::Labels, true) => " terminal".chars().count(),
+    let grow = match e.badge {
+        Badge::Sign => " 1 label cut".chars().count(),
         _ => return,
     };
     let tail = if e.tail == Tail::Short {
@@ -221,6 +221,20 @@ fn at(bars: &[(u16, String)], cols: u16) -> &str {
 }
 
 // ---------- documents ----------
+
+/// `t-173/FILE` at step 1 with a box whose label is always cut, so the bar
+/// carries `! 1 label cut` (t-246); the agent's box then goes to step 2
+/// ([`agent_box2`]). `no_save` as in [`open`].
+fn open_cut(file: &str, name: &str, no_save: bool) -> Live {
+    let code = std::fs::read_to_string(fixture(&format!("t-173/{file}"))).unwrap();
+    let live = Live::from_code(&code, "rs", name);
+    live.command(&format!("box 1-2 {LONG_LABEL}"));
+    if no_save {
+        live.command("autosave off");
+    }
+    live.with(|a| a.message = None);
+    live
+}
 
 /// `t-173/FILE` at step 0 with an empty bar. `no_save` adds what QA 2 had
 /// on the bar (`:autosave off`, then the agent's change makes it dirty).
@@ -298,6 +312,15 @@ fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
     })
 }
 
+fn agent_box2(live: &Live) {
+    let r = live.api_ok(
+        "annotation.add",
+        json!({"type": "box", "from_line": 3, "to_line": 5, "step": 2}),
+    );
+    assert_eq!(r["visible"], json!(false), "{r}");
+    assert_eq!(info(live), "a2: box 3-5 added by agent (step 2, press n)");
+}
+
 fn agent_box(live: &Live) {
     let r = live.api_ok(
         "annotation.add",
@@ -314,15 +337,15 @@ fn ac1_agent_box_at_80_and_60_keeps_subject_and_tail() {
     // Test step 1, as QA 2 saw it (16 cells left at 80) and without
     // `--no-save`.
     for no_save in [true, false] {
-        let live = open("wide.rs", "t173-ac1", no_save);
+        let live = open_cut("wide.rs", "t173-ac1", no_save);
         assert!(bar(&live, 80).contains(WHOLE_BADGE));
-        agent_box(&live);
-        let bars = sweep(&live, &AGENT_BOX, 30, 130);
-        let e = elements(at(&bars, 80), &AGENT_BOX);
+        agent_box2(&live);
+        let bars = sweep(&live, &AGENT_BOX2, 30, 130);
+        let e = elements(at(&bars, 80), &AGENT_BOX2);
         assert!(e.subject && e.tail == Tail::Whole, "{no_save}: {e:?}");
-        assert!(e.right.contains("a1: box"), "{no_save}: {e:?}");
+        assert!(e.right.contains("a2: box"), "{no_save}: {e:?}");
         // The middle is cut, not the beginning.
-        assert!(e.right.contains("… (step 1, press n)"), "{e:?}");
+        assert!(e.right.contains("… (step 2, press n)"), "{e:?}");
         if !no_save {
             // Room for subject + tail with the whole badge: it stays (AC3).
             assert_eq!(e.badge, Badge::Whole, "{e:?}");
@@ -330,11 +353,11 @@ fn ac1_agent_box_at_80_and_60_keeps_subject_and_tail() {
     }
     // 60 columns with the badge on: the tail whole.
     for no_save in [true, false] {
-        let live = open("narrow.rs", "t173-ac1-60", no_save);
+        let live = open_cut("narrow.rs", "t173-ac1-60", no_save);
         assert!(bar(&live, 60).contains(WHOLE_BADGE));
-        agent_box(&live);
-        let bars = sweep(&live, &AGENT_BOX, 30, 130);
-        let e = elements(at(&bars, 60), &AGENT_BOX);
+        agent_box2(&live);
+        let bars = sweep(&live, &AGENT_BOX2, 30, 130);
+        let e = elements(at(&bars, 60), &AGENT_BOX2);
         assert_eq!(e.tail, Tail::Whole, "{no_save}: {e:?}");
     }
 }
@@ -439,6 +462,8 @@ fn ac2_file_tail_drops_the_directory_only_when_needed() {
     for no_save in [true, false] {
         let live = open_demo("t173-ac2-file", "stack.rs", no_save);
         live.api_ok("step.set", json!({"step": 2}));
+        // A cut label on the step shown, so the bar has its badge.
+        live.command(&format!("box 12-13 {LONG_LABEL}"));
         live.api_ok("annotation.update", json!({"id": "a1", "label": "LIFO"}));
         assert_eq!(
             info(&live),
@@ -447,8 +472,9 @@ fn ac2_file_tail_drops_the_directory_only_when_needed() {
         let bars = sweep(&live, &msg, 30, 130);
         let e = elements(at(&bars, 80), &msg);
         assert!(e.subject && e.tail != Tail::None, "{no_save}: {e:?}");
-        // Wide: the directory is back (the middle is cut first).
-        for cols in [100, 120, 130] {
+        // Wide: the directory is back (the middle is cut first). With the
+        // badge on the bar that is from 120 columns.
+        for cols in [120, 130] {
             let e = elements(at(&bars, cols), &msg);
             assert_eq!(e.tail, Tail::Whole, "{no_save} {cols}: {e:?}");
         }
@@ -536,15 +562,15 @@ fn ac2_grouped_notice_keeps_what_it_counts() {
 
 #[test]
 fn ac3_the_badge_gives_way_in_steps_and_comes_back() {
-    let live = open("wide.rs", "t173-ac3", true);
-    agent_box(&live);
-    let bars = sweep(&live, &AGENT_BOX, 30, 130);
+    let live = open_cut("wide.rs", "t173-ac3", true);
+    agent_box2(&live);
+    let bars = sweep(&live, &AGENT_BOX2, 30, 130);
     let forms: Vec<Badge> = bars
         .iter()
-        .map(|(_, b)| elements(b, &AGENT_BOX).badge)
+        .map(|(_, b)| elements(b, &AGENT_BOX2).badge)
         .collect();
     // Each form shows at some width, in order (the sweep checks the order).
-    for f in [Badge::Sign, Badge::Labels, Badge::Whole] {
+    for f in [Badge::Sign, Badge::Whole] {
         assert!(forms.contains(&f), "{f:?} never shows");
     }
     // `sweep` checked that each smaller form shows only where the larger one
@@ -565,8 +591,8 @@ fn ac3_code_clipped_never_gives_way() {
     let mut seen = false;
     for cols in 55..=79 {
         let b = bar(&live, cols);
-        if b.contains("code clipped") || cols < 70 {
-            seen |= b.contains("code clipped");
+        if b.contains("code needs") || cols < 70 {
+            seen |= b.contains("code needs");
             // Whatever the message keeps, the clipped warning keeps its words.
             assert!(
                 !b.contains("  ! a1") && !b.contains("  ! (step"),
@@ -575,7 +601,7 @@ fn ac3_code_clipped_never_gives_way() {
         }
         assert_no_cut_tail(&b, STEP_HINT);
     }
-    assert!(seen, "no `code clipped` badge in 55-79");
+    assert!(seen, "no `code needs N cols` badge in 55-79");
 }
 
 // ---------- AC5 ----------

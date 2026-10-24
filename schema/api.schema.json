@@ -229,7 +229,7 @@
             ]
           },
           "warnings": {
-            "description": "Human-readable warnings about the viewport (small terminal, clipped\ncode) and the document (a `steps` entry past the last step).",
+            "description": "Human-readable warnings about the viewport (code clipped, labels cut\nor not drawn, labels under the lines) and the document (a `steps`\nentry past the last step).",
             "items": {
               "type": "string"
             },

@@ -492,8 +492,7 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         b100.ends_with("h highlight · m mark · n note · b box · a arrow"),
         "{b100}"
     );
-    // Below 100 columns the bar warns of a small terminal: the warning
-    // keeps only its sign, and the hint keeps its words as long as it can.
+    // Narrower: the hint keeps its words as long as it can, then its keys.
     for (cols, form) in [
         (90, "h highlight · m mark · n note · b box · a arrow"),
         (80, "h highlight · m mark · n note · b box · a arrow"),
@@ -501,12 +500,18 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         (50, "h m n C b a s"),
     ] {
         let b = bar(cols);
-        assert!(
-            b.contains("no-save  !") && !b.contains("small terminal"),
-            "{b}"
-        );
+        assert!(!b.contains("  ! "), "nothing is cut, no warning: {b}");
         assert!(b.ends_with(form), "{cols}: {b}");
     }
+    // A warning beside the hint keeps only its sign: a box label too long
+    // for its border is cut (t-246).
+    live.keys(&[KeyCode::Esc]);
+    live.command("box 1-2 a box label far too long for the border of this box at eighty columns");
+    live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
+    let b = bar(80);
+    // The new box left a change unsaved: `•  unsaved (:w)`, then the sign.
+    assert!(b.contains("(:w)  !") && !b.contains("label cut"), "{b}");
+    assert!(b.ends_with("h highlight · m mark · n note"), "{b}");
 }
 
 #[test]

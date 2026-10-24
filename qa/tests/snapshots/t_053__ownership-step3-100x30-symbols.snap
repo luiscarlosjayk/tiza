@@ -31,4 +31,4 @@ expression: symbols
    23      fn push(s: &mut String) {
    24          s.push('!');
 
- ╭▶ NORMAL  step 3/7  100×30  dark  ownership.rs  L1  16 ann.           : command · ? help · q quit
+ ╭▶ NORMAL  step 3/7  100×30  dark  ownership.rs  L1  16 ann.  ! 1 label cut        ? help · q quit

@@ -360,10 +360,13 @@ struct ViewportKey {
 }
 
 /// The layout's answers `status` needs for its warnings.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct ViewportFacts {
     clipped_code: Option<usize>,
     labels_in_margin: bool,
+    /// The labels and notes drawn cut with `…` or not drawn: (id, not
+    /// drawn at all).
+    clipped_labels: Vec<(String, bool)>,
 }
 
 impl ViewportFacts {
@@ -371,6 +374,11 @@ impl ViewportFacts {
         ViewportFacts {
             clipped_code: l.clipped_code,
             labels_in_margin: l.labels_in_margin,
+            clipped_labels: l
+                .clipped_labels
+                .iter()
+                .map(|c| (c.id.clone(), c.dropped))
+                .collect(),
         }
     }
 }
@@ -6714,13 +6722,9 @@ impl App {
         }
     }
 
-    /// Minimum terminal size for the recommended recording profile.
-    pub const MIN_COLS: u16 = 100;
-    pub const MIN_ROWS: u16 = 30;
-
-    /// Warnings about the current viewport: too small for the recording
-    /// profile (labels go under the lines) or code lines being clipped.
-    /// Empty when the size is unknown (0×0) or everything fits.
+    /// Warnings about the current viewport: code lines clipped, labels or
+    /// notes of the step cut or not drawn, labels under the lines for lack
+    /// of a margin. Empty when the size is unknown (0×0) or everything fits.
     pub fn viewport_warnings(&self) -> Vec<String> {
         let (cols, rows) = self.size;
         if cols == 0 || rows == 0 {
@@ -6734,10 +6738,11 @@ impl App {
         let known = self
             .viewport
             .borrow()
-            .and_then(|(k, facts)| (k == key).then_some(facts));
+            .as_ref()
+            .and_then(|(k, facts)| (*k == key).then(|| facts.clone()));
         let facts = known.unwrap_or_else(|| {
             let facts = ViewportFacts::of(&self.layout(width));
-            *self.viewport.borrow_mut() = Some((key, facts));
+            *self.viewport.borrow_mut() = Some((key, facts.clone()));
             facts
         });
         self.viewport_warnings_from(facts)
@@ -6767,18 +6772,36 @@ impl App {
         }
         let mut out = Vec::new();
         if let Some(w) = l.clipped_code {
-            out.push(format!("code clipped ({w} cols)"));
+            out.push(format!("code needs {w} columns at {cols} columns"));
         }
-        if cols < Self::MIN_COLS || rows < Self::MIN_ROWS {
-            let mut w = format!(
-                "small terminal {cols}×{rows} < {}×{}",
-                Self::MIN_COLS,
-                Self::MIN_ROWS
-            );
-            if !l.labels_in_margin {
-                w.push_str(": labels go under the lines");
+        // Only what the step on screen really loses: the size alone is no
+        // warning.
+        let n = l.clipped_labels.len();
+        if n > 0 {
+            let mut ids: Vec<String> = l
+                .clipped_labels
+                .iter()
+                .take(5)
+                .map(|(id, dropped)| {
+                    if *dropped {
+                        format!("{id} (not drawn)")
+                    } else {
+                        id.clone()
+                    }
+                })
+                .collect();
+            if n > 5 {
+                ids.push("…".into());
             }
-            out.push(w);
+            out.push(format!(
+                "{n} label{} cut at {cols} columns: {}",
+                if n == 1 { "" } else { "s" },
+                ids.join(", ")
+            ));
+        }
+        // A fact for agents (keep labels short), not a loss: no badge.
+        if !l.labels_in_margin && self.doc.annotations.iter().any(|a| a.step <= self.doc.step) {
+            out.push(format!("labels go under the lines at {cols} columns"));
         }
         out
     }

@@ -199,8 +199,9 @@ fn corner_status_bar_cut_keeps_the_hint() {
     let s = live.screen(110, 14);
     let bar = s.lines().last().unwrap();
     assert!(bar.ends_with("a1: note at L6 (step 1, press n)"), "{s}");
-    // At 60 the badge gives way to keep the id with the hint (t-173).
-    let s = live.screen(60, 14);
+    // Narrower still: the middle gives way to keep the id with the hint
+    // (t-173).
+    let s = live.screen(48, 14);
     let bar = s.lines().last().unwrap();
     assert!(bar.ends_with("… (step 1, press n)"), "{s}");
     assert!(bar.contains(" a1: "), "{s}");

@@ -49,6 +49,8 @@ fn ac2_badge_and_message_coexist() {
         "rs",
         "t064b-badge",
     );
+    // A box label too long for its border: the bar warns (t-246).
+    live.command("box 1-2 a box label far too long for the border of this box at eighty columns");
     live.command("mark warn 3:zzz");
     let b = bar(&live, 80);
     assert!(b.contains("  ! "), "{b}");
