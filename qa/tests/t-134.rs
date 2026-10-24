@@ -20,7 +20,7 @@
 //!   the JetBrains Mono files are untouched (same bytes).
 
 use serde_json::json;
-use tiza_qa::{Live, McpClient, example, fixture, scratch, tiza, tiza_ok};
+use tiza_qa::{Live, McpClient, fixture, scratch, tiza, tiza_ok};
 
 fn root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -30,7 +30,7 @@ fn root() -> std::path::PathBuf {
 }
 
 fn render(extra: &[&str], out: &str) -> std::process::Output {
-    let f = example("ownership.rs.tiza");
+    let f = fixture("t-134/ownership.rs.tiza");
     let mut args = vec![
         "render",
         f.to_str().unwrap(),
@@ -90,7 +90,7 @@ fn ac1_no_serif_in_the_default_svg_and_one_text_path() {
 #[test]
 fn ac2_t136_removed_flags_are_rejected() {
     let dir = scratch("t136-flag");
-    let f = example("ownership.rs.tiza");
+    let f = fixture("t-134/ownership.rs.tiza");
     for flag in ["--brand-font", "--mono-labels"] {
         let out = dir.join("a.png");
         let r = tiza(&[

@@ -1,7 +1,7 @@
 fn main() {
     let s = String::from("hello");
     takes(s);
-    // println!("{s}"); // error: value borrowed here after move
+    // println!("{s}"); // error: borrow of moved value
 
     let t = String::from("world");
     let n = len(&t);

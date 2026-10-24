@@ -1,40 +1,40 @@
 
     1          fn main() {
     2 ╭───────     let s = String::from("hello");
-      │                ◀───╯                                                      s is born
-    3 │            takes(s);                                                      ━▶ move: s moves into takes
-    4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it
-    5 │                                                                             here does not compile
+      │                ◀───╯                                             s is born
+    3 │            takes(s);                                             ━▶ move: into takes
+    4 │            // println!("{s}"); // error: borrow of moved value   ┆ s no longer owns it: using it here does
+    5 │                                                                    not compile
     6 │            let t = String::from("world");
-    7 │   ╭╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
-    8 │   ╎        println!("{t} has {n} letters");                               ┆ t is still valid
+    7 │   ╭╌╌╌     let n = len(&t);                                      ╌▶ read: borrowed
+    8 │   ╎        println!("{t} has {n} letters");                      ┆ t is still valid
     9 │   ╎
    10 │   ╎        let mut u = String::from("hey");
-   11 │ ┏━╎━━━     push(&mut u);                                                  ✎▶ &mut borrow
-   12 │ ┃ ╎        println!("{u}");                                               ┆ u is now "hey!"
+   11 │ ┏━╎━━━     push(&mut u);                                         ✎▶ &mut borrow
+   12 │ ┃ ╎        println!("{u}");                                      ┆ u is now "hey!"
    13 │ ┃ ╎    }
    14 │ ┃ ╎
-      │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                            │ move
-   16   ┃ ╎ │      println!("{s}");                                             │
-   17   ┃ ╎ │  }                                                                │ ╳ drop: s dies here
-        ┃ ╎ ╰───────────────────────────────────────────────────────────────────╯
+      │ ┃ ╎ ╭─ takes owns s and frees it at the end ───────────────────╮
+   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                   │ move
+   16   ┃ ╎ │      println!("{s}");                                    │
+   17   ┃ ╎ │  }                                                       │ ╳ drop: s dies here
+        ┃ ╎ ╰──────────────────────────────────────────────────────────╯
    18   ┃ ╎
-   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                             borrow &
    20   ┃          s.len()
    21   ┃      }
    22   ┃
-        ┃   ╭─ mutates without taking ownership ────────────────────────────────╮
-   23   ┗━━━┿▶ fn push(s: &mut String) {                                        │ &mut
-   24       │      s.push('!');                                                 │
-   25       │  }                                                                │
-            ╰───────────────────────────────────────────────────────────────────╯
-               ╭─ three ways to pass a value ─────────────────────────────────╮
-               │ takes(s) moves the String: main loses it. len(&s) borrows it │
-               │ read-only, so main keeps using t afterwards. push(&mut s)    │
-               │ borrows it mutably: only one such borrow may exist at a      │
-               │ time, and the caller sees the change.                        │
-               ╰──────────────────────────────────────────────────────────────╯
-
+        ┃   ╭─ mutates without taking ownership ───────────────────────╮
+   23   ┗━━━┿▶ fn push(s: &mut String) {                               │ &mut
+   24       │      s.push('!');                                        │
+   25       │  }                                                       │
+            ╰──────────────────────────────────────────────────────────╯
+               ╭─ three ways to pass a value ────────────────────────╮
+               │ takes(s) moves the String: main loses it. len(&s)   │
+               │ borrows it read-only, so main keeps using t         │
+               │ afterwards. push(&mut s) borrows it mutably: only   │
+               │ one such borrow may exist at a time, and the caller │
+               │ sees the change.                                    │
+               ╰─────────────────────────────────────────────────────╯
 
  ╭▶ NORMAL  step 7/7  120×40  dark  ownership.rs  L1  16 ann.  no-save  v select · : command · ? help · L list · q quit

@@ -16,10 +16,10 @@
 use crossterm::event::KeyCode;
 use serde_json::json;
 use tiza_core::layout::{LayoutOptions, StableGeometry, layout, stable_geometry};
-use tiza_qa::{Live, example, tiza_ok};
+use tiza_qa::{Live, fixture, tiza_ok};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(example("ownership.rs.tiza").to_str().unwrap())
+    tiza_core::fs::open(fixture("t-111/ownership.rs.tiza").to_str().unwrap())
         .unwrap()
         .document
 }
@@ -103,7 +103,7 @@ fn ac1_each_arrow_keeps_its_lane_across_the_take() {
 
 #[test]
 fn ac1_render_per_step_and_the_cast_share_the_geometry() {
-    let path = example("ownership.rs.tiza");
+    let path = fixture("t-111/ownership.rs.tiza");
     let path = path.to_str().unwrap();
     let code_col = |text: &str| {
         text.lines()

@@ -10,14 +10,15 @@
 //! - AC3 A label inside a box range stays tied to its arrow and never touches
 //!   the box border.
 //! - AC4 Wide mode is unchanged (t-053 snapshots at ≥ 100 columns).
-//! - AC5 This file, with the ownership example at 80 and 60 columns.
+//! - AC5 This file, with the ownership example at 80 and 60 columns (its
+//!   copy from then in `qa/fixtures/t-116/`: the example changed later).
 
 use serde_json::json;
 use tiza_core::layout::{LayoutOptions, layout};
-use tiza_qa::{Live, example};
+use tiza_qa::{Live, fixture};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(example("ownership.rs.tiza").to_str().unwrap())
+    tiza_core::fs::open(fixture("t-116/ownership.rs.tiza").to_str().unwrap())
         .unwrap()
         .document
 }

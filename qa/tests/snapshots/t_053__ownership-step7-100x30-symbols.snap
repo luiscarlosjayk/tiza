@@ -5,30 +5,30 @@ expression: symbols
 
     1          fn main() {
     2 ╭───────     let s = String::from("hello");
-      │                ◀───╯                                                      s is born
-    3 │            takes(s);                                                      ━▶ move: s mov…
-    4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer
-    5 │                                                                             owns it:
-    6 │            let t = String::from("world");                                   using it her…
-    7 │   ╭╌╌╌     let n = len(&t);                                               ╌▶ read: share…
-    8 │   ╎        println!("{t} has {n} letters");                               ┆ t is still
-    9 │   ╎                                                                         valid
+      │                ◀───╯                                             s is born
+    3 │            takes(s);                                             ━▶ move: into takes
+    4 │            // println!("{s}"); // error: borrow of moved value   ┆ s no longer owns it:
+    5 │                                                                    using it here does not
+    6 │            let t = String::from("world");                          compile
+    7 │   ╭╌╌╌     let n = len(&t);                                      ╌▶ read: borrowed
+    8 │   ╎        println!("{t} has {n} letters");                      ┆ t is still valid
+    9 │   ╎
    10 │   ╎        let mut u = String::from("hey");
-   11 │ ┏━╎━━━     push(&mut u);                                                  ✎▶ &mut borrow
-   12 │ ┃ ╎        println!("{u}");                                               ┆ u is now
-   13 │ ┃ ╎    }                                                                    "hey!"
+   11 │ ┏━╎━━━     push(&mut u);                                         ✎▶ &mut borrow
+   12 │ ┃ ╎        println!("{u}");                                      ┆ u is now "hey!"
+   13 │ ┃ ╎    }
    14 │ ┃ ╎
-      │ ┃ ╎ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                            │ move
-   16   ┃ ╎ │      println!("{s}");                                             │
-   17   ┃ ╎ │  }                                                                │ ╳ drop: s dies
-        ┃ ╎ ╰───────────────────────────────────────────────────────────────────╯ here
+      │ ┃ ╎ ╭─ takes owns s and frees it at the end ───────────────────╮
+   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                   │ move
+   16   ┃ ╎ │      println!("{s}");                                    │
+   17   ┃ ╎ │  }                                                       │ ╳ drop: s dies here
+        ┃ ╎ ╰──────────────────────────────────────────────────────────╯
    18   ┃ ╎
-   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                                      borrow &
+   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                             borrow &
    20   ┃          s.len()
    21   ┃      }
    22   ┃
-        ┃   ╭─ mutates without taking ownership ────────────────────────────────╮
-   23   ┗━━━┿▶ fn push(s: &mut String) {                                        │ &mut
+        ┃   ╭─ mutates without taking ownership ───────────────────────╮
+   23   ┗━━━┿▶ fn push(s: &mut String) {                               │ &mut
 
- ╭▶ NORMAL  step 7/7  100×30  dark  ownership.rs  L1  16 ann.  ! 3 labels cut       ? help · q quit
+ ╭▶ NORMAL  step 7/7  100×30  dark  ownership.rs  L1  16 ann.           : command · ? help · q quit

@@ -6,7 +6,7 @@ expression: symbols
     1   fn main() {
     2       let s = String::from("hello");
     3       takes(s);
-    4       // println!("{s}"); // error: value borrowed here after move
+    4       // println!("{s}"); // error: borrow of moved value
     5
     6       let t = String::from("world");
     7       let n = len(&t);

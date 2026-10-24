@@ -29,7 +29,7 @@
         "start": 10,
         "end": 11
       },
-      "label": "s moves into takes",
+      "label": "into takes",
       "color": "orange"
     },
     {
@@ -86,7 +86,7 @@
         "start": 16,
         "end": 18
       },
-      "label": "shared borrow",
+      "label": "borrowed",
       "color": "cyan"
     },
     {

@@ -79,6 +79,8 @@ fn ac2_modes_themes_and_states() {
     let live = open("../examples/ownership.rs.tiza", "t053-tab", 3);
     live.keys(&[KeyCode::Tab, KeyCode::Tab]);
     snap("ownership-step3-tab-selected-100x30", &live, 100, 30);
-    let live = open("../examples/ownership.rs.tiza", "t053-small", 3);
+    // The badge needs what the example no longer has at 80 columns:
+    // labels cut or code clipped. Its own copy of the example as it was.
+    let live = open("t-053/ownership.rs.tiza", "t053-small", 3);
     snap("ownership-step3-small-80x24", &live, 80, 24);
 }

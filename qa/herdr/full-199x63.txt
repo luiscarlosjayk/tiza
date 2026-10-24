@@ -1,34 +1,34 @@
 
     1          fn main() {
     2 ╭───────     let s = String::from("hello");
-      │                ◀───╯                                                      s is born
-    3 │            takes(s);                                                      ━▶ move: s moves into takes
-    4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not compile
+      │                ◀───╯                                             s is born
+    3 │            takes(s);                                             ━▶ move: into takes
+    4 │            // println!("{s}"); // error: borrow of moved value   ┆ s no longer owns it: using it here does not compile
     5 │
     6 │            let t = String::from("world");
-    7 │ ╭╌╌╌╌╌     let n = len(&t);                                               ╌▶ read: shared borrow
-    8 │ ╎          println!("{t} has {n} letters");                               ┆ t is still valid
+    7 │ ╭╌╌╌╌╌     let n = len(&t);                                      ╌▶ read: borrowed
+    8 │ ╎          println!("{t} has {n} letters");                      ┆ t is still valid
     9 │ ╎
    10 │ ╎          let mut u = String::from("hey");
-   11 │ ╎ ┏━━━     push(&mut u);                                                  ✎▶ &mut borrow
-   12 │ ╎ ┃        println!("{u}");                                               ┆ u is now "hey!"
+   11 │ ╎ ┏━━━     push(&mut u);                                         ✎▶ &mut borrow
+   12 │ ╎ ┃        println!("{u}");                                      ┆ u is now "hey!"
    13 │ ╎ ┃    }
    14 │ ╎ ┃
-      │ ╎ ┃ ╭─ takes owns s and frees it at the end ────────────────────────────╮
-   15 ╰─╎─┃─┼▶ fn takes(s: String) {                                            │ ╭─ three ways to pass a value ─────╮ move
-   16   ╎ ┃ │      println!("{s}");                                             │ │ takes(s) moves the String: main  │
-   17   ╎ ┃ │  }                                                                │ │ loses it. len(&s) borrows it     │ ╳ drop: s dies here
-        ╎ ┃ ╰───────────────────────────────────────────────────────────────────╯ │ read-only, so main keeps using t │
-   18   ╎ ┃                                                                       │ afterwards. push(&mut s) borrows │
-   19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {                                      │ it mutably: only one such borrow │ borrow &
-   20     ┃        s.len()                                                        │ may exist at a time, and the     │
-   21     ┃    }                                                                  │ caller sees the change.          │
-   22     ┃                                                                       ╰──────────────────────────────────╯
-          ┃ ╭─ mutates without taking ownership ────────────────────────────────╮
-   23     ┗━┿▶ fn push(s: &mut String) {                                        │ &mut
-   24       │      s.push('!');                                                 │
-   25       │  }                                                                │
-            ╰───────────────────────────────────────────────────────────────────╯
+      │ ╎ ┃ ╭─ takes owns s and frees it at the end ───────────────────╮
+   15 ╰─╎─┃─┼▶ fn takes(s: String) {                                   │ ╭─ three ways to pass a value ─────╮ move
+   16   ╎ ┃ │      println!("{s}");                                    │ │ takes(s) moves the String: main  │
+   17   ╎ ┃ │  }                                                       │ │ loses it. len(&s) borrows it     │ ╳ drop: s dies here
+        ╎ ┃ ╰──────────────────────────────────────────────────────────╯ │ read-only, so main keeps using t │
+   18   ╎ ┃                                                              │ afterwards. push(&mut s) borrows │
+   19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {                             │ it mutably: only one such borrow │ borrow &
+   20     ┃        s.len()                                               │ may exist at a time, and the     │
+   21     ┃    }                                                         │ caller sees the change.          │
+   22     ┃                                                              ╰──────────────────────────────────╯
+          ┃ ╭─ mutates without taking ownership ───────────────────────╮
+   23     ┗━┿▶ fn push(s: &mut String) {                               │ &mut
+   24       │      s.push('!');                                        │
+   25       │  }                                                       │
+            ╰──────────────────────────────────────────────────────────╯
 
 
 

@@ -23,8 +23,8 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-# 108 columns: at the default 100 the margin is too narrow for two of the
-# example's arrow labels, which end in «…» there.
+# The README images are 108 columns wide. Every label of the example fits
+# from 91 columns on (`tiza check` says so).
 WIDTH=108
 EXAMPLE=examples/ownership.rs.tiza
 

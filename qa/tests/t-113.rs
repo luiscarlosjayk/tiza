@@ -13,10 +13,10 @@
 
 use serde_json::json;
 use tiza_core::layout::{LayoutOptions, layout};
-use tiza_qa::{Live, example, scratch, tiza, tiza_ok};
+use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(example("ownership.rs.tiza").to_str().unwrap())
+    tiza_core::fs::open(fixture("t-113/ownership.rs.tiza").to_str().unwrap())
         .unwrap()
         .document
 }
@@ -138,10 +138,10 @@ fn ac1_ac4_tui_command_document_field_status_and_patch() {
 fn ac1_render_honours_the_field_and_margin_cols_overrides_it() {
     let dir = scratch("t113-render");
     let mut doc: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(example("ownership.rs.tiza")).unwrap())
+        serde_json::from_str(&std::fs::read_to_string(fixture("t-113/ownership.rs.tiza")).unwrap())
             .unwrap();
     doc["margin"] = json!(24);
-    doc["code"] = json!({"file": example("ownership.rs").to_str().unwrap()});
+    doc["code"] = json!({"file": fixture("t-113/ownership.rs").to_str().unwrap()});
     let path = dir.join("capped.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let p = path.to_str().unwrap();

@@ -4,13 +4,13 @@
       │                ◀───╯
       │        · s is born
     3 │            takes(s);
-      │        · ━▶ move: s moves into takes
-    4 │            // println!("{s}"); // error: value …
+      │        · ━▶ move: into takes
+    4 │            // println!("{s}"); // error: borrow…
       │        ┆ s no longer owns it: using it here does …
     5 │
     6 │            let t = String::from("world");
     7 │ ╭╌╌╌╌╌     let n = len(&t);
-      │ ╎      · ╌▶ read: shared borrow
+      │ ╎      · ╌▶ read: borrowed
     8 │ ╎          println!("{t} has {n} letters");
       │ ╎      ┆ t is still valid
     9 │ ╎
@@ -27,4 +27,4 @@
    17   ╎ ┃ │  }                                         │
         ╎ ┃ │  · ╳ drop: s dies here                     │
 
- ╭▶ NORMAL  step 7/7  no-save  ! code needs 64 cols  ? help
+ ╭▶ NORMAL  step 7/7  no-save  ! code needs 55 cols  ? help

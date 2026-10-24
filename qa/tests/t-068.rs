@@ -11,10 +11,10 @@
 //! - AC5 Fonts README and ADR 0006 record the subset, the OFL renaming
 //!   ("Libron" is a Reserved Font Name) — now in `docs/brand/fonts/`.
 
-use tiza_qa::{example, tiza, tiza_ok};
+use tiza_qa::{fixture, tiza, tiza_ok};
 
 fn svg(args: &[&str]) -> String {
-    let f = example("ownership.rs.tiza");
+    let f = fixture("t-068/ownership.rs.tiza");
     let mut full = vec![
         "render",
         f.to_str().unwrap(),
@@ -94,7 +94,7 @@ fn ac3_monospace_is_the_export_font() {
     let born = runs.iter().find(|t| t.contains(">s is born<")).unwrap();
     assert!(born.contains("textLength"), "on the grid: {born}");
     // The removed flag is rejected (t-134 made it a no-op, t-136 removed it).
-    let f = example("ownership.rs.tiza");
+    let f = fixture("t-068/ownership.rs.tiza");
     let out = tiza(&["render", f.to_str().unwrap(), "--out", "-", "--brand-font"]);
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("unexpected argument '--brand-font'"));

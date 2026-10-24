@@ -5,9 +5,9 @@ expression: symbols
 
     1     fn main() {
     2 ╭──     let s = String::from("hello");
-      │           ◀───╯                                                     s is born
-    3 │       takes(s);                                                     ━▶ move: s moves into
-    4 │       // println!("{s}"); // error: value borrowed here after move  takes
+      │           ◀───╯                                            s is born
+    3 │       takes(s);                                            ━▶ move: into takes
+    4 │       // println!("{s}"); // error: borrow of moved value
     5 │
     6 │       let t = String::from("world");
     7 │       let n = len(&t);
@@ -18,7 +18,7 @@ expression: symbols
    12 │       println!("{u}");
    13 │   }
    14 │
-   15 ╰─▶ fn takes(s: String) {                                             move
+   15 ╰─▶ fn takes(s: String) {                                    move
    16         println!("{s}");
    17     }
    18

@@ -190,7 +190,13 @@ fn ac3_step4_examples_with_one_label_per_line_render_as_before() {
     ] {
         let dir = scratch(&format!("t172-ac3-{name}-{width}"));
         let out = format!("{}/", dir.display());
-        let file = example(&format!("{name}.tiza"));
+        // The ownership example as it was then: its own copy, since the
+        // example changed later (shorter labels and code).
+        let file = if name == "ownership.rs" {
+            fixture("t-172/ownership.rs.tiza")
+        } else {
+            example(&format!("{name}.tiza"))
+        };
         let w = width.to_string();
         tiza_ok(&[
             "render",

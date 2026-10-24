@@ -20,7 +20,8 @@
 //!   `--width N`, at any step, naming the step, the id and the full label
 //!   text, and ends with the narrowest width from which nothing is clipped:
 //!   on examples/ownership.rs.tiza at 100, «move: s moves into takes» and
-//!   «read: shared borrow», and 108.
+//!   «read: shared borrow», and 108. The example has shorter labels now:
+//!   the tests read its copy from then, in `qa/fixtures/t-101/`.
 //! - AC7 Docs: README, agent guide, CHANGELOG; this file.
 //!
 //!
@@ -307,7 +308,7 @@ fn ac3_a_step_with_nothing_new_warns() {
 
 #[test]
 fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let file = file.to_str().unwrap();
     // Plain `check`: the default width (100, as `render`).
     let (code, plain, _) = check(&[file]);
@@ -338,7 +339,7 @@ fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         plain.contains("at width 100, first at step 3, then at steps 5-7"),
         "{plain}"
     );
-    let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", "100"]);
+    let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", "100"]);
     assert_eq!(v["width"], 100);
     assert_eq!(v["min_clean_width"], 108);
     let clipped = with_code(&findings(&v), "clipped_label");
@@ -398,7 +399,7 @@ fn ac4_step7_json_holds_the_same_findings_as_the_text() {
 #[test]
 fn ac4_the_mcp_check_tool_checks_the_live_document() {
     let dir = scratch("t101-mcp");
-    let doc = fs::open(example("ownership.rs.tiza").to_str().unwrap())
+    let doc = fs::open(fixture("t-101/ownership.rs.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -423,7 +424,7 @@ fn ac4_the_mcp_check_tool_checks_the_live_document() {
 fn ac5_step3_render_all_steps_writes_one_png_per_step_of_one_size() {
     let dir = scratch("t101-steps");
     let out = dir.join("steps");
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let r = tiza(&[
         "render",
         file.to_str().unwrap(),
@@ -500,7 +501,7 @@ fn corner_all_steps_of_a_document_without_annotations_and_to_stdout() {
     assert_eq!(listing(&dir.join("out")).len(), 1);
     assert!(dir.join("out/step-00.svg").exists());
     // `--out -` (the default) is refused: one file per step needs a directory.
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     for args in [
         vec!["render", file.to_str().unwrap(), "--all-steps"],
         vec![
@@ -696,7 +697,7 @@ fn rework4_all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
     for f in ["step-08.txt", "step-09.txt", "step-03.svg", "notes.txt"] {
         std::fs::write(out.join(f), "old").unwrap();
     }
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let run = |extra: &[&str]| {
         let mut args = vec![
             "render",
@@ -776,7 +777,7 @@ fn rework4_check_help_has_no_socket_or_session() {
         "{help}"
     );
     // Still accepted (and ignored), before or after the command.
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let (code, _, err) = check(&[file.to_str().unwrap(), "--socket", "/nonexistent.sock"]);
     assert_eq!(code, 0, "{err}");
     let o = tiza(&["--session", "x", "check", file.to_str().unwrap()]);
@@ -788,7 +789,7 @@ fn rework4_check_help_has_no_socket_or_session() {
 
 #[test]
 fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let file = file.to_str().unwrap();
     // 85: no label clipped (notes under the lines), below 108.
     let (code, out, _) = check(&[file, "--width", "85"]);
@@ -809,14 +810,14 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
         "{out}"
     );
     assert!(out.contains("79-93 are clean too"), "{out}");
-    let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", "85"]);
+    let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", "85"]);
     assert_eq!(
         v["narrower"],
         json!({"clean": [[79, 93]], "code_fits_from": 79, "margin_from": 94})
     );
     // At 100 labels are clipped and at 108 nothing is: no `narrower`.
     for w in ["100", "108"] {
-        let (_, v) = check_json(&example("ownership.rs.tiza"), &["--width", w]);
+        let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", w]);
         assert!(v.get("narrower").is_none(), "{w}: {v}");
     }
 }
@@ -827,10 +828,10 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
 // number of digits (the last step's, at least 2) + `.` + the format
 // being written, lowercase, a regular file.
 
-/// `tiza render examples/ownership.rs.tiza --all-steps --out <out> <extra>`:
+/// `tiza render` of the copy of the ownership example `--all-steps --out <out> <extra>`:
 /// (exit code, stderr). The example has steps 0-7.
 fn all_steps(out: &Path, extra: &[&str]) -> (i32, String) {
-    let file = example("ownership.rs.tiza");
+    let file = fixture("t-101/ownership.rs.tiza");
     let mut args = vec![
         "render",
         file.to_str().unwrap(),
