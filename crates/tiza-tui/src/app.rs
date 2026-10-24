@@ -1277,6 +1277,42 @@ impl App {
         real(path).is_some_and(|p| Some(p) == real(&self.save_path))
     }
 
+    /// A path typed in `:w`, `:saveas` or `:export`: as typed, which starts
+    /// at the folder where Tiza started when it is relative; a leading `~`
+    /// is the home folder, as in Vim.
+    fn typed_path(rest: &str) -> PathBuf {
+        let home = || std::env::var_os("HOME").map(PathBuf::from);
+        match rest.strip_prefix('~') {
+            Some("") => home().unwrap_or_else(|| PathBuf::from(rest)),
+            Some(tail) if tail.starts_with('/') => home()
+                .map(|h| h.join(&tail[1..]))
+                .unwrap_or_else(|| PathBuf::from(rest)),
+            _ => PathBuf::from(rest),
+        }
+    }
+
+    /// `path` in full, for a message that says where a file went.
+    fn full_path(path: &Path) -> String {
+        std::path::absolute(path)
+            .unwrap_or_else(|_| path.to_path_buf())
+            .display()
+            .to_string()
+    }
+
+    /// Creates the folders `path` needs, naming the one that cannot be
+    /// created.
+    fn make_parent(path: &Path) -> Result<(), Error> {
+        match path.parent() {
+            Some(dir) if !dir.as_os_str().is_empty() => std::fs::create_dir_all(dir).map_err(|e| {
+                Error::Invalid(format!(
+                    "could not create the folder {}: {e}",
+                    Self::full_path(dir)
+                ))
+            }),
+            _ => Ok(()),
+        }
+    }
+
     fn refuse_existing(path: &Path, force: bool) -> Result<(), Error> {
         if path.is_dir() || path.as_os_str().to_string_lossy().ends_with('/') {
             return Err(Error::Invalid(format!(
@@ -1302,10 +1338,11 @@ impl App {
             return Ok(format!("saved to {}", self.save_path.display()));
         }
         Self::refuse_existing(path, force)?;
+        Self::make_parent(path)?;
         fs::save_document(&self.rebased_copy(path), path)?;
         Ok(format!(
             "wrote a copy to {} ({} is still the file open)",
-            path.display(),
+            Self::full_path(path),
             self.save_path.display()
         ))
     }
@@ -1320,12 +1357,13 @@ impl App {
                     .into(),
             ));
         }
-        let path = PathBuf::from(rest);
+        let path = Self::typed_path(rest);
         if self.is_save_path(&path) {
             self.save()?;
             return Ok(format!("saved to {}", self.save_path.display()));
         }
         Self::refuse_existing(&path, force)?;
+        Self::make_parent(&path)?;
         fs::save_document(&self.rebased_copy(&path), &path)?;
         let (from, to) = (fs::document_dir(&self.save_path), fs::document_dir(&path));
         if from != to {
@@ -1346,12 +1384,12 @@ impl App {
         Ok(if self.autosave {
             format!(
                 "saved as {}: changes are saved there from now on",
-                self.save_path.display()
+                Self::full_path(&self.save_path)
             )
         } else {
             format!(
                 "saved as {}: :w saves there from now on (autosave off)",
-                self.save_path.display()
+                Self::full_path(&self.save_path)
             )
         })
     }
@@ -4135,7 +4173,7 @@ impl App {
                 // the one saved to; `:saveas PATH` moves to PATH. An existing
                 // file needs `!`.
                 "w" | "write" | "w!" | "write!" if !rest.is_empty() => {
-                    self.write_copy(Path::new(rest), cmd.ends_with('!'))
+                    self.write_copy(&Self::typed_path(rest), cmd.ends_with('!'))
                 }
                 "w" | "write" | "w!" | "write!" => self
                     .save()
@@ -4179,7 +4217,7 @@ impl App {
                         return Ok(String::new());
                     }
                     // The copy holds the changes: quit as if they were saved.
-                    self.write_copy(Path::new(rest), force)?;
+                    self.write_copy(&Self::typed_path(rest), force)?;
                     self.quit = true;
                     Ok(String::new())
                 }
@@ -5212,7 +5250,7 @@ impl App {
             self.save_path
                 .with_file_name(format!("{stem}-step{step}.txt"))
         } else {
-            PathBuf::from(path)
+            Self::typed_path(path)
         };
         let format = ExportFormat::from_path(&path).ok_or_else(|| {
             let ext = path
@@ -5270,12 +5308,13 @@ impl App {
                 exporter(&l.canvas, &theme, f, title.as_deref()).map_err(Error::Invalid)?
             }
         };
+        Self::make_parent(&path)?;
         std::fs::write(&path, &bytes)
             .map_err(|e| Error::Invalid(format!("could not write {}: {e}", path.display())))?;
         Ok(format!(
             "{}exported step {step} to {} ({} bytes){}",
             past.unwrap_or_default(),
-            path.display(),
+            Self::full_path(&path),
             bytes.len(),
             theme_notice.map(|n| format!(" — {n}")).unwrap_or_default()
         ))

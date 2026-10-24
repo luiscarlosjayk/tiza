@@ -202,10 +202,14 @@ fn ac4_export_command_formats_defaults_and_errors() {
     live.command(&format!("export {}", dir.join("a.svg").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains("tiza render"), "{msg}");
-    // Unwritable path: an error, not a panic.
+    // Unwritable path: an error, not a panic (since t-241 the missing
+    // folder is created first, and the one that cannot be is named).
     live.command("export /nonexistent-dir/x.txt");
     let (msg, err) = live.message().unwrap();
-    assert!(err && msg.contains("could not write"), "{msg}");
+    assert!(
+        err && msg.contains("could not create the folder /nonexistent-dir"),
+        "{msg}"
+    );
 }
 
 #[test]

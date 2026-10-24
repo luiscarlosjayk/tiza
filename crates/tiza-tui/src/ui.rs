@@ -1029,6 +1029,7 @@ fn help_lines() -> Vec<String> {
         "  :margin N | :margin auto   cap the right margin so long notes wrap earlier (12-200 cells; saved in the document)",
         "  :w   :wq   :q   :q! (quits without saving; also over stale moves)   :autosave on|off (--no-save at start)   :redo   :help",
         "  :w PATH (writes a copy)   :saveas PATH (saves there from now on)   :wq PATH   ! overwrites an existing file",
+        "  relative PATH: from the folder where Tiza started (~ is your home folder); missing folders are created",
         "",
         "New annotations appear at the current step. The local API (socket) and the",
         "MCP server (`tiza mcp`) do exactly the same thing as these commands.",
