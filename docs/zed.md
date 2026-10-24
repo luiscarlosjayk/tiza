@@ -4,7 +4,7 @@ Goal: share your screen with Zed, select code and send it to Tiza in the integra
 
 ## Zed tasks
 
-In `~/.config/zed/tasks.json` (or the project's `.zed/tasks.json`). These four were run in Zed 1.24 on macOS as written; copy them verbatim — Zed parses every `$ZED_…` itself, so no shell expansion (`${ZED_FILE##*.}` and the like) is allowed anywhere in a task, or the whole tasks file is rejected as «unknown variables» and no Tiza task shows:
+Put these tasks in `~/.config/zed/tasks.json`, or in the `.zed/tasks.json` of the project. These four were run in Zed 1.25.3 on macOS as written. Copy them as they are. Zed reads each `$ZED_…` variable itself. Do not use a shell expansion such as `${ZED_FILE##*.}` in a task. Zed then refuses the whole tasks file with «unknown variables», and no Tiza task shows.
 
 ```json
 [
@@ -24,20 +24,23 @@ In `~/.config/zed/tasks.json` (or the project's `.zed/tasks.json`). These four w
   },
   {
     "label": "Tiza: selected text",
-    "command": "sh",
-    "args": ["-c", "printf '%s' \"$ZED_SELECTED_TEXT\" | tiza --lang \"$ZED_FILE\""],
+    "command": "printf '%s' \"$SEL\" | tiza --lang \"$ZED_FILE\"",
+    "args": [],
+    "env": { "SEL": "$ZED_SELECTED_TEXT" },
     "use_new_terminal": true,
     "reveal": "always"
   },
   {
     "label": "Tiza: 40 lines from the cursor",
-    "command": "sh",
-    "args": ["-c", "tiza \"$ZED_FILE:$ZED_ROW-$((ZED_ROW + 39))\""],
+    "command": "tiza",
+    "args": ["$ZED_FILE:$ZED_ROW-$((ZED_ROW + 39))"],
     "use_new_terminal": true,
     "reveal": "always"
   }
 ]
 ```
+
+Zed runs each task with your shell, as `$SHELL -i -c`, on one command line made of `command` and `args`. Your shell does the pipe of «selected text» and the arithmetic of «40 lines». Do not put `"command": "sh"` with `-c` in `args`. Zed 1.25.3 then runs `sh` alone, without its script, and the task stops with `tiza: empty stdin` or `tiza: give a file …`. The selected text goes in the variable `SEL`, so the shell does not read the quotes or the `$` signs in your code.
 
 `--lang` accepts a path: Tiza takes the language from the file name (`stack.rs` → Rust, `Makefile` → make), from a shebang or modeline in the text when the name says nothing, else plain text; `:lang sh` overrides it inside the TUI. A range past the end of the file is clamped with a notice, so the 40-line window is safe near the bottom.
 
