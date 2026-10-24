@@ -1461,14 +1461,19 @@ impl App {
         }
         self.save_path = path;
         crate::note_save_path(&self.save_path);
-        // The document has a file of its own now: `:w` saves there.
-        self.no_save = false;
+        // The document has a file of its own now. With `--no-save` what
+        // stayed safe was the file opened, not this copy: every change
+        // saves here from now on.
+        if self.no_save {
+            self.no_save = false;
+            self.autosave = true;
+        }
         // The same text again, through the one door: `dirty`, what quitting
         // compares with, and a read-only state left behind.
         self.save()?;
         Ok(if self.autosave {
             format!(
-                "saved as {}: changes are saved there from now on",
+                "saved as {}; changes now save there",
                 Self::full_path(&self.save_path)
             )
         } else {

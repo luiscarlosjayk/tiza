@@ -504,8 +504,9 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Add ! to overwrite a file that exists.",
             },
             Note(
-                "With --no-save, :saveas PATH saves to another file, and :q! discards the changes.",
+                "With --no-save, :saveas PATH saves to another file, and every change saves there after it.",
             ),
+            Note("With --no-save, :q! discards the changes."),
             Note("A relative PATH starts at the folder where you started Tiza."),
             Note("Tiza creates the folders that are missing."),
         ],

@@ -90,18 +90,56 @@ fn ac3_q_refused_names_saveas_and_q_bang() {
 }
 
 #[test]
-fn corner_after_saveas_the_hint_is_w_again() {
+fn corner_after_saveas_every_change_saves_to_the_new_file() {
     let live = no_save_with_a_change("t247-saveas");
     let dir = scratch("t247-saveas-to");
     let to = dir.join("mine.tiza");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
-    assert!(!live.with(|a| a.no_save));
+    let (msg, err) = live.message().unwrap();
+    assert!(
+        !err && msg.ends_with("mine.tiza; changes now save there"),
+        "{msg}"
+    );
+    assert!(live.with(|a| a.autosave && !a.no_save));
     let b = bar(&live, 120);
-    assert!(!b.contains("unsaved"), "saved: {b}");
+    assert!(
+        !b.contains("unsaved") && !b.contains("no-save"),
+        "saved: {b}"
+    );
+    // A new note reaches the file with no `:w`.
     live.command("note 1 again");
+    let saved = std::fs::read_to_string(&to).unwrap();
+    assert!(saved.contains("again"), "{saved}");
     let b = bar(&live, 120);
-    assert!(b.contains("unsaved (:w)"), "{b}");
+    assert!(!b.contains("unsaved"), "{b}");
+}
+
+#[test]
+fn corner_w_path_writes_a_copy_and_stays_in_no_save() {
+    let live = no_save_with_a_change("t247-w-copy");
+    let to = scratch("t247-w-copy-to").join("copy.tiza");
+    live.command(&format!("w {}", to.display()));
+    assert!(to.exists(), "{:?}", live.message());
+    assert!(live.with(|a| !a.autosave && a.no_save));
+    let b = bar(&live, 120);
+    assert!(b.contains("unsaved (:saveas"), "{b}");
+}
+
+#[test]
+fn corner_autosave_off_stays_off_after_saveas() {
+    // `:autosave off` was the user's choice: `:saveas` keeps it.
+    let live = Live::from_code(CODE, "rs", "t247-own-saveas");
+    live.command("autosave off");
+    live.command("note 2 hi");
+    let to = scratch("t247-own-saveas-to").join("mine.tiza");
+    live.command(&format!("saveas {}", to.display()));
+    assert!(live.with(|a| !a.autosave));
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.ends_with(": :w saves there from now on (autosave off)"),
+        "{msg}"
+    );
 }
 
 #[test]
@@ -169,11 +207,61 @@ fn ac4_the_help_the_readme_and_the_changelog_say_it() {
         .collect();
     assert!(
         help.iter().any(|t| t
-            == "With --no-save, :saveas PATH saves to another file, and :q! discards the changes."),
+            == "With --no-save, :saveas PATH saves to another file, and every change saves there after it."),
         "{help:?}"
     );
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("README.md").contains("unsaved (:saveas PATH · :q! discards)"));
     assert!(read("CHANGELOG.md").contains("unsaved (:saveas PATH · :q! discards)"));
+}
+
+#[test]
+fn corner_read_only_then_saveas_saves_every_change_there_already() {
+    // A sidecar that cannot be written: autosave stays on, so after a
+    // `:saveas` that works every change goes to the new file.
+    let dir = scratch("t247-read-only");
+    let path = dir.join("doc.tiza");
+    let live = Live::open(
+        tiza_core::Document::from_code(CODE, "rs", None),
+        path.clone(),
+        dir.join("s.sock"),
+    );
+    live.command("note 2 first");
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+    live.command("note 1 second");
+    assert!(live.with(|a| a.save_error.is_some()));
+    let to = scratch("t247-read-only-to").join("mine.tiza");
+    live.command(&format!("saveas {}", to.display()));
+    live.command("note 3 third");
+    let saved = std::fs::read_to_string(&to).unwrap();
+    assert!(saved.contains("third"), "{saved}");
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+}
+
+#[test]
+fn corner_a_foreign_scene_put_then_saveas_keeps_autosave_off() {
+    // As the README says («`:saveas PATH` saves elsewhere and keeps saving
+    // there» with autosave off): `:w` saves to the new file; autosave
+    // stays off until `:autosave on`.
+    let dir = scratch("t247-put");
+    let path = dir.join("ownership.rs.tiza");
+    std::fs::copy(tiza_qa::example("ownership.rs.tiza"), &path).unwrap();
+    std::fs::copy(tiza_qa::example("ownership.rs"), dir.join("ownership.rs")).unwrap();
+    let doc = tiza_core::fs::open(path.to_str().unwrap())
+        .unwrap()
+        .document;
+    let live = Live::open(doc, path, dir.join("s.sock"));
+    let other = tiza_core::fs::load_document(&tiza_qa::fixture("t-050/export.tiza")).unwrap();
+    live.api_ok("scene.put", serde_json::json!({"document": other}));
+    assert!(!live.with(|a| a.autosave));
+    let to = scratch("t247-put-to").join("mine.tiza");
+    live.command(&format!("saveas {}", to.display()));
+    assert!(live.with(|a| !a.autosave));
+    let (msg, _) = live.message().unwrap();
+    assert!(
+        msg.ends_with(": :w saves there from now on (autosave off)"),
+        "{msg}"
+    );
 }
