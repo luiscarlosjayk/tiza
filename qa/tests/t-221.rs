@@ -512,7 +512,7 @@ fn rev_saveas_with_autosave_off_says_what_saves() {
     let target = root.join("s.tiza");
     live.command(&format!("saveas {}", target.display()));
     let (msg, err) = message(&live);
-    assert!(!err && msg.contains(":w saves there"), "{msg}");
+    assert!(!err && msg.ends_with("s.tiza (autosave off)"), "{msg}");
     live.command("note 1 later");
     assert!(!std::fs::read_to_string(&target).unwrap().contains("later"));
 }

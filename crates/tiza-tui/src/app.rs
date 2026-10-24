@@ -1471,17 +1471,13 @@ impl App {
         // The same text again, through the one door: `dirty`, what quitting
         // compares with, and a read-only state left behind.
         self.save()?;
-        Ok(if self.autosave {
-            format!(
-                "saved as {}; changes now save there",
-                Self::full_path(&self.save_path)
-            )
-        } else {
-            format!(
-                "saved as {}: :w saves there from now on (autosave off)",
-                Self::full_path(&self.save_path)
-            )
-        })
+        // Short, with the words of `:autosave`: at 100 columns it fits
+        // whole next to a warning badge.
+        Ok(format!(
+            "saved as {} (autosave {})",
+            Self::full_path(&self.save_path),
+            if self.autosave { "on" } else { "off" }
+        ))
     }
 
     /// The sidecar as a save would write it now (the theme as `save` sets

@@ -11,9 +11,19 @@
 //! - AC3 `:q` refused with unsaved changes in no-save mode names the same
 //!   two ways out.
 //! - AC4 The help, the README section «Saving» and the CHANGELOG say it.
+//! - AC5 With no changes, the chip on the bar says why nothing saves:
+//!   `no-save` with `--no-save` (the file opened is kept as it is),
+//!   `autosave off` after `:autosave off`, `read-only` when the file cannot
+//!   be written. It fits at 80, 100 and 120 columns next to a warning
+//!   badge.
+//! - AC6 `:saveas PATH` says `saved as PATH (autosave on)`, or
+//!   `(autosave off)`: at 100 columns, next to `! 3 labels cut`, the
+//!   message shows whole with a path such as `/Users/…/sub/mine.tiza`.
 //!
 //! Corner cases: after `:saveas PATH` the document saves there, and the
-//! hint is `(:w)` again; a narrow bar still names both commands.
+//! hint is `(:w)` again; a narrow bar still names both commands; a
+//! foreign `scene put` leaves changes (`unsaved (:w)`), and after the `:w`
+//! that writes it over the file opened the chip is `autosave off`.
 
 use tiza_qa::{Live, bin, scratch};
 
@@ -97,10 +107,7 @@ fn corner_after_saveas_every_change_saves_to_the_new_file() {
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     let (msg, err) = live.message().unwrap();
-    assert!(
-        !err && msg.ends_with("mine.tiza; changes now save there"),
-        "{msg}"
-    );
+    assert!(!err && msg.ends_with("mine.tiza (autosave on)"), "{msg}");
     assert!(live.with(|a| a.autosave && !a.no_save));
     let b = bar(&live, 120);
     assert!(
@@ -136,10 +143,8 @@ fn corner_autosave_off_stays_off_after_saveas() {
     live.command(&format!("saveas {}", to.display()));
     assert!(live.with(|a| !a.autosave));
     let (msg, _) = live.message().unwrap();
-    assert!(
-        msg.ends_with(": :w saves there from now on (autosave off)"),
-        "{msg}"
-    );
+    assert!(msg.ends_with("mine.tiza (autosave off)"), "{msg}");
+    assert!(bar(&live, 120).contains("  autosave off"));
 }
 
 #[test]
@@ -260,8 +265,196 @@ fn corner_a_foreign_scene_put_then_saveas_keeps_autosave_off() {
     live.command(&format!("saveas {}", to.display()));
     assert!(live.with(|a| !a.autosave));
     let (msg, _) = live.message().unwrap();
+    assert!(msg.ends_with("mine.tiza (autosave off)"), "{msg}");
+    live.with(|a| a.message = None);
+    let b = bar(&live, 120);
     assert!(
-        msg.ends_with(": :w saves there from now on (autosave off)"),
-        "{msg}"
+        b.contains("  autosave off") && !b.contains("no-save"),
+        "{b}"
     );
+}
+
+/// `examples/ownership.rs.tiza` with its code, in a folder of its own,
+/// with autosave on: the user's own file.
+fn ownership(name: &str) -> Live {
+    let dir = scratch(name);
+    for f in ["ownership.rs.tiza", "ownership.rs"] {
+        std::fs::copy(tiza_qa::example(f), dir.join(f)).unwrap();
+    }
+    let doc = tiza_core::fs::open(dir.join("ownership.rs.tiza").to_str().unwrap())
+        .unwrap()
+        .document;
+    Live::open(doc, dir.join("ownership.rs.tiza"), dir.join("s.sock"))
+}
+
+/// A path with a common shape once the bar shortens it,
+/// `/Users/…/sub/mine.tiza`: under the target folder, not the system's
+/// temporary folder (`/private/var/…` on macOS).
+fn usual_path(name: &str) -> std::path::PathBuf {
+    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir.join("sub").join("mine.tiza")
+}
+
+#[test]
+fn ac5_the_chip_says_why_nothing_saves() {
+    // `--no-save`: the file opened is kept as it is.
+    let live = Live::from_code(CODE, "rs", "t247-chip-no-save");
+    live.with(|a| {
+        a.autosave = false;
+        a.no_save = true;
+    });
+    let b = bar(&live, 120);
+    assert!(
+        b.contains("  no-save") && !b.contains("autosave off"),
+        "{b}"
+    );
+    // `:autosave off`: the user's choice.
+    let live = Live::from_code(CODE, "rs", "t247-chip-off");
+    live.command("autosave off");
+    live.with(|a| a.message = None);
+    let b = bar(&live, 120);
+    assert!(
+        b.contains("  autosave off") && !b.contains("no-save"),
+        "{b}"
+    );
+    // `--no-save` and then `:autosave off`: the file opened is still kept.
+    let live = Live::from_code(CODE, "rs", "t247-chip-both");
+    live.with(|a| {
+        a.autosave = false;
+        a.no_save = true;
+    });
+    live.command("autosave off");
+    live.with(|a| a.message = None);
+    assert!(bar(&live, 120).contains("  no-save"));
+    // A file that cannot be written: as before.
+    let live = Live::from_code(CODE, "rs", "t247-chip-read-only");
+    live.with(|a| a.save_error = Some("read-only".into()));
+    let b = bar(&live, 120);
+    assert!(b.contains("  read-only") && !b.contains("no-save"), "{b}");
+}
+
+#[test]
+fn corner_a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
+    let live = ownership("t247-chip-put");
+    let other = tiza_core::fs::load_document(&tiza_qa::fixture("t-050/export.tiza")).unwrap();
+    live.api_ok("scene.put", serde_json::json!({"document": other}));
+    assert!(!live.with(|a| a.autosave));
+    live.with(|a| a.message = None);
+    let b = bar(&live, 120);
+    assert!(b.contains("•  unsaved (:w)"), "{b}");
+    // `:w` writes it over the file opened, on purpose: nothing is kept as
+    // it was, and autosave stays off until `:autosave on`.
+    live.command("w");
+    live.with(|a| a.message = None);
+    let b = bar(&live, 120);
+    assert!(
+        b.contains("  autosave off") && !b.contains("no-save"),
+        "{b}"
+    );
+    live.command("autosave on");
+    let b = bar(&live, 120);
+    assert!(!b.contains("autosave off") && !b.contains("no-save"), "{b}");
+}
+
+#[test]
+fn ac5_the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
+    let live = ownership("t247-chip-widths");
+    live.command("step 7");
+    live.command("autosave off");
+    live.with(|a| a.message = None);
+    for (cols, badge) in [
+        (80, Some("  ! code needs 64 cols")),
+        (100, Some("  ! 3 labels cut")),
+        (120, None),
+    ] {
+        let b = bar(&live, cols);
+        assert!(b.chars().count() <= cols as usize, "{cols}: {b}");
+        assert!(b.contains("  autosave off"), "{cols}: {b}");
+        if let Some(badge) = badge {
+            assert!(b.contains(badge), "{cols}: {b}");
+        }
+        assert!(b.contains("? help"), "{cols}: {b}");
+    }
+}
+
+#[test]
+fn ac5_with_no_changes_the_chip_gives_way_and_unsaved_stays() {
+    use crossterm::event::KeyCode;
+    let live = Live::from_code(CODE, "rs", "t247-chip-gives-way");
+    live.command("autosave off");
+    live.with(|a| a.message = None);
+    // A selection: its keys take the room of the chip.
+    live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
+    let b = bar(&live, 80);
+    assert!(!b.contains("autosave off"), "{b}");
+    assert!(
+        b.ends_with("h highlight · m mark · n note · b box · a arrow"),
+        "{b}"
+    );
+    // The chip is back with the next key.
+    live.keys(&[KeyCode::Esc]);
+    live.with(|a| a.message = None);
+    assert!(bar(&live, 80).contains("  autosave off"));
+    // With changes, `unsaved (:w)` stays next to the keys.
+    live.command("note 2 hi");
+    live.with(|a| a.message = None);
+    live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
+    let b = bar(&live, 80);
+    assert!(b.contains("•  unsaved (:w)"), "{b}");
+}
+
+#[test]
+fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
+    // `--no-save`: after `:saveas` autosave is on.
+    let live = ownership("t247-msg-on");
+    live.with(|a| {
+        a.autosave = false;
+        a.no_save = true;
+    });
+    live.command("step 7");
+    live.command("note 2 hi");
+    let to = usual_path("t247-msg-on");
+    live.command(&format!("saveas {}", to.display()));
+    assert!(to.exists(), "{:?}", live.message());
+    let b = bar(&live, 100);
+    assert!(b.contains("  ! 3 labels cut"), "{b}");
+    assert!(
+        b.trim_end().ends_with("/sub/mine.tiza (autosave on)"),
+        "{b}"
+    );
+    assert!(b.contains(" saved as /"), "{b}");
+    // `:autosave off`, the user's: after `:saveas` it stays off, and the
+    // chip shows too.
+    let live = ownership("t247-msg-off");
+    live.command("step 7");
+    live.command("autosave off");
+    let to = usual_path("t247-msg-off");
+    live.command(&format!("saveas {}", to.display()));
+    assert!(to.exists(), "{:?}", live.message());
+    let b = bar(&live, 100);
+    assert!(b.contains("  autosave off  ! 3 labels cut"), "{b}");
+    assert!(
+        b.trim_end().ends_with("/sub/mine.tiza (autosave off)"),
+        "{b}"
+    );
+    assert!(b.contains(" saved as /"), "{b}");
+}
+
+#[test]
+fn ac6_the_readme_and_the_changelog_name_the_chips_and_the_message() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
+    let readme = read("README.md");
+    assert!(readme.contains("the bar shows `autosave off`"));
+    assert!(readme.contains("the bar shows `no-save`, then"));
+    assert!(readme.contains("`saved as PATH (autosave on)`"));
+    let changelog = read("CHANGELOG.md");
+    assert!(changelog.contains("It shows `no-save` with `--no-save`"));
+    assert!(changelog.contains("It shows `autosave off` after `:autosave off`"));
+    assert!(changelog.contains("`saved as PATH (autosave on)`, or `(autosave off)`"));
+    for t in [&readme, &changelog] {
+        assert!(!t.contains("changes now save there"));
+    }
 }

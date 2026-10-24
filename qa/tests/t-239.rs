@@ -658,11 +658,13 @@ fn bar_the_tab_hint_keeps_its_keys_and_the_id_after_enter() {
     live.keys(&[KeyCode::Char('j'), KeyCode::Enter]);
     assert_eq!(live.with(|a| a.selected.clone()), Some("a4".to_string()));
     // 80 columns: the label and what the annotation is give way, the keys
-    // stay from the left (nothing is cut at this step: no warning).
+    // stay from the left (nothing is cut at this step: no warning), and
+    // `autosave off` with no changes gives way to them.
     let b80 = live.screen(80, 24).lines().last().unwrap().to_string();
     assert!(!b80.contains("  ! "), "{b80}");
+    assert!(!b80.contains("autosave off"), "{b80}");
     assert!(
-        b80.ends_with("▸ a4 · enter label · e set · x delete · c color"),
+        b80.ends_with("▸ a4 · enter label · e set · x delete · c color · +/- step"),
         "{b80}"
     );
     // 120 columns: what it is and every key.

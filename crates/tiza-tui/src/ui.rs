@@ -785,8 +785,10 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     if app.layout_stable && !app.present {
         left.push(Span::styled("  ⊞ stable", muted));
     }
-    // One indicator for every way of not writing the sidecar: a
-    // read-only file, `--no-save`, `:autosave off`, a foreign `scene put`.
+    // One indicator for every way of not writing the sidecar, and it says
+    // why: `read-only` (the file), `no-save` (`--no-save` keeps the file
+    // opened as it is) or `autosave off` (`:autosave off`, or a foreign
+    // `scene put` after the `:w` that wrote it over the file opened).
     if app.save_error.is_some() {
         left.push(Span::styled(
             if app.dirty {
@@ -805,12 +807,19 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         let text = match (app.dirty, app.no_save) {
             (true, true) => NO_SAVE_HINTS[0],
             (true, false) => "  unsaved (:w)",
-            (false, _) => "  no-save",
+            (false, true) => "  no-save",
+            (false, false) => "  autosave off",
         };
         left.push(Span::styled(text, if app.dirty { accent } else { muted }));
     }
     let no_save_hint = (app.dirty && app.no_save && app.save_error.is_none() && !app.autosave)
         .then(|| left.len() - 1);
+    // With no changes, `no-save` and `autosave off` lose nothing if they
+    // give way: they are the last optional segment. `unsaved …` and
+    // `read-only` stay.
+    let save_chip =
+        (!app.dirty && app.save_error.is_none() && !app.autosave).then(|| left.len() - 1);
+    let optional = [4usize, 6, 7, 5, 3].into_iter().chain(save_chip);
     if app.supervised {
         let text = if app.proposals.is_empty() {
             "  ⏸ supervised".to_string()
@@ -894,8 +903,9 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         && message.is_some_and(|(m, _)| crate::app::step_hint_start(m).is_some()))
     .then_some(5);
     // Make room: drop the optional left segments (theme, cursor line,
-    // annotation count, file) before cutting anything that matters, then
-    // truncate the right text with an ellipsis instead of hiding it.
+    // annotation count, file, size, a save chip with no changes) before
+    // cutting anything that matters, then truncate the right text with an
+    // ellipsis instead of hiding it.
     let width = area.width as usize;
     let lw = |left: &Vec<Span>| left.iter().map(|s| s.content.width()).sum::<usize>();
     let need = if stale || key_hint {
@@ -905,7 +915,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     } else {
         0
     };
-    for drop_idx in [4usize, 6, 7, 5, 3] {
+    for drop_idx in optional.clone() {
         if lw(&left) + need <= width {
             break;
         }
@@ -923,13 +933,13 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // An error is about the key just pressed: when it does not fit, it
     // takes the room of the optional segments and of the step, and a
     // warning badge keeps only its sign. They come back with the next key.
-    // The mode and the state of the document (save, follow, supervised)
-    // stay. A message with a tail gives way in its own order below.
+    // The mode and the state of the document (unsaved changes, follow,
+    // supervised) stay. A message with a tail gives way in its own order below.
     if let Some((m, true)) = message
         && crate::app::step_hint_start(m).is_none()
     {
         let fits = |left: &Vec<Span>| lw(left) + 1 + right_text.width() <= width;
-        for i in [4usize, 6, 7, 5, 3] {
+        for i in optional {
             if fits(&left) {
                 break;
             }

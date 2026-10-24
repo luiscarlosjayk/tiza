@@ -432,12 +432,14 @@ fn ac5_below_40x12_the_help_does_not_open_and_says_why() {
     let (msg, err) = live.message().unwrap();
     assert!(err, "{msg}");
     assert_eq!(msg, "needs 40×12");
-    // A bar of 39 cells still shows the size: the other segments give way.
+    // A bar of 39 cells still shows the size: the other segments give way,
+    // `autosave off` with no changes too.
     let bar = live.screen(39, 11).lines().last().unwrap().to_string();
     assert!(
-        bar.contains("NORMAL  no-save  ! ") && bar.ends_with("needs 40×12"),
+        bar.contains("NORMAL  step 1/2  ! ") && bar.ends_with("needs 40×12"),
         "{bar}"
     );
+    assert!(!bar.contains("autosave off"), "{bar}");
     // A wider bar says what needs the room.
     live.with(|a| a.size = (100, 10));
     live.keys(&[KeyCode::Char('?')]);
@@ -486,10 +488,12 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         wide.ends_with("h highlight · m mark · n note · C callout · b box · a arrow · s spotlight"),
         "{wide}"
     );
+    // `autosave off` with no changes gives way to the keys.
     let b100 = bar(100);
     assert!(b100.contains("SELECT  step 1/1"), "{b100}");
+    assert!(!b100.contains("autosave off"), "{b100}");
     assert!(
-        b100.ends_with("h highlight · m mark · n note · b box · a arrow"),
+        b100.ends_with("h highlight · m mark · n note · C callout · b box · a arrow · s spotlight"),
         "{b100}"
     );
     // Narrower: the hint keeps its words as long as it can, then its keys.
@@ -497,7 +501,8 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         (90, "h highlight · m mark · n note · b box · a arrow"),
         (80, "h highlight · m mark · n note · b box · a arrow"),
         (65, "h highlight · m mark · n note"),
-        (50, "h m n C b a s"),
+        (50, "h highlight · m mark · n note"),
+        (42, "h m n C b a s"),
     ] {
         let b = bar(cols);
         assert!(!b.contains("  ! "), "nothing is cut, no warning: {b}");
