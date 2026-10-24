@@ -281,7 +281,7 @@ pub const HELP: &[(Section, &[Row])] = &[
             },
             Key {
                 keys: "L",
-                desc: "Show the annotation list.",
+                desc: "Show the annotation list. Enter on a row goes to its step.",
                 when: Normal,
             },
             Key {
@@ -626,6 +626,7 @@ pub fn help_panel(filter: &str, typing: bool, content_w: usize) -> Panel {
             "type to filter"
         },
         rows,
+        selected: None,
         footer,
         position: filtered.then(|| match matches {
             1 => "1 match".to_string(),

@@ -259,6 +259,7 @@ fn corner_supervised_reply_describes_the_moment_of_acceptance() {
     wait_pending(&live, 1);
     // … the presenter moves to step 1 before accepting.
     live.command("step 1");
+    live.command("review");
     live.keys(&[KeyCode::Char('y')]);
     let resp = h.join().unwrap();
     let r = resp.result.expect("accepted");
@@ -501,6 +502,7 @@ fn ac2_supervised_acceptance_carries_the_tail() {
         json!({"type": "box", "from_line": 3, "to_line": 5}),
     );
     wait_pending(&live, 1);
+    live.command("review");
     live.keys(&[KeyCode::Char('y')]);
     let r = h.join().unwrap().result.expect("accepted");
     assert_eq!(r["visible"], json!(false), "{r}");

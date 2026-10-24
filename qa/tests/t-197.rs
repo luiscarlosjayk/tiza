@@ -505,7 +505,8 @@ fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
 #[test]
 fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
     // Test step 3: `?`, Ctrl-C → help closes; Ctrl-C quits. Same with `L`.
-    for (key, name, open) in [("?", "help", "esc close"), ("L", "list", "Esc closes")] {
+    for (key, name) in [("?", "help"), ("L", "list")] {
+        let open = "esc close";
         let (dir, _) = project(&format!("t197-ac3-{name}"));
         let r = run(
             &dir,
@@ -540,8 +541,9 @@ fn ac3_ctrl_c_closes_the_review_and_the_proposal_stays_pending() {
         json!([
             ["k", ":supervise on\r", [["status", "supervised", true]]],
             ["bg_api", "annotation.add", {"type": "note", "line": 1, "text": "agent"}],
-            ["wait", [["has", "Esc closes"], ["has", "agent"]]],
-            ["k", CTRL_C, [["lacks", "Esc closes"]]],
+            ["wait", [["bar", "1 to review · :review"]]],
+            ["k", ":review\r", [["has", "esc hide"], ["has", "agent"]]],
+            ["k", CTRL_C, [["lacks", "esc hide"]]],
             ["alive"],
             ["k", "f", [["bar", "POINTER"]]],
             ["api", "status", {}],

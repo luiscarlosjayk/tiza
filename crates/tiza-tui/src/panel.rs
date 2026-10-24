@@ -1,7 +1,8 @@
 //! The panel: a box that opens over the code, with the title and a close
 //! chip on its top border, a filter line, rows, and the panel's keys and a
 //! position on its bottom border (docs/ui-guidelines.md, section 1). The
-//! help uses it. Colors come from the theme's roles only.
+//! help, the annotation list and the agent review use it. Colors come from
+//! the theme's roles only.
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -44,6 +45,16 @@ pub enum PanelRow {
     },
     /// A line of text (an empty state).
     Text(String),
+    /// A row of a table that can be selected: fixed columns (text, width),
+    /// then a label that takes the rest and is cut with `…`, and a mark at
+    /// the right (`! stale` in the error color, or a muted `12s`). `item`
+    /// is its place among the selectable rows.
+    Item {
+        cols: Vec<(String, usize)>,
+        label: String,
+        flag: Option<(String, bool)>,
+        item: usize,
+    },
 }
 
 /// What a panel shows.
@@ -57,6 +68,8 @@ pub struct Panel {
     /// The filter line when it is empty and not typed (after `/ `).
     pub placeholder: &'static str,
     pub rows: Vec<PanelRow>,
+    /// The selected `Item`, by its `item`: the scroll keeps it in view.
+    pub selected: Option<usize>,
     /// The panel's keys: (key, word); a key of `""` is a word alone.
     pub footer: Vec<(&'static str, &'static str)>,
     /// The right of the footer (`14 matches`); `None`: the rows shown,
@@ -140,6 +153,7 @@ struct Styles {
     muted_bold: Style,
     key: Style,
     note: Style,
+    error_bold: Style,
 }
 
 impl Styles {
@@ -154,6 +168,7 @@ impl Styles {
             muted_bold: base.fg(rgb(th.muted)).add_modifier(Modifier::BOLD),
             key: base.add_modifier(Modifier::BOLD),
             note: base.fg(rgb(th.note)),
+            error_bold: base.fg(rgb(th.error)).add_modifier(Modifier::BOLD),
         }
     }
 }
@@ -196,13 +211,114 @@ fn key_spans(key: &[(String, bool)], max: usize, st: &Styles) -> (Vec<Span<'stat
     (out, used)
 }
 
+/// `s` in `width` cells, the last two always blank: cut with `…`, or
+/// padded.
+fn column(s: &str, width: usize) -> String {
+    let shown = fit(s, width.saturating_sub(2));
+    let pad = width.saturating_sub(cells(&shown));
+    format!("{shown}{}", " ".repeat(pad))
+}
+
+/// The lines of an `Item`: the selection mark, the columns two cells
+/// apart, the label and the flag at the right. Stacked, the label takes a
+/// line of its own, six cells in.
+fn item_lines(
+    cols: &[(String, usize)],
+    label: &str,
+    flag: &Option<(String, bool)>,
+    selected: bool,
+    content_w: usize,
+    st: &Styles,
+) -> Vec<Line<'static>> {
+    let mut head = vec![if selected {
+        Span::styled("▸ ", st.accent_bold)
+    } else {
+        Span::styled("  ", st.base)
+    }];
+    let flag_w = flag.as_ref().map_or(0, |(f, _)| cells(f) + 2);
+    let flag_span = |flag: &Option<(String, bool)>| {
+        flag.as_ref().map(|(f, error)| {
+            Span::styled(f.clone(), if *error { st.error_bold } else { st.muted })
+        })
+    };
+    if content_w < STACK_BELOW {
+        // Stacked: the columns as far as they fit, then the label and the
+        // flag on a line of their own, six cells in.
+        let mut used = 2;
+        for (text, width) in cols {
+            let room = content_w.saturating_sub(used);
+            if room == 0 {
+                break;
+            }
+            let shown = column(text, (*width).min(room));
+            used += cells(&shown);
+            head.push(Span::styled(shown, st.base));
+        }
+        let mut out = vec![Line::from(head)];
+        let room = content_w.saturating_sub(6 + flag_w);
+        let mut second = vec![
+            Span::styled("      ", st.base),
+            Span::styled(fit(label, room), st.base),
+        ];
+        if let Some(f) = flag_span(flag) {
+            let gap = content_w.saturating_sub(6 + cells(&fit(label, room)) + cells(&f.content));
+            second.push(Span::styled(" ".repeat(gap), st.base));
+            second.push(f);
+        }
+        if !label.is_empty() || flag.is_some() {
+            out.push(Line::from(second));
+        }
+        return out;
+    }
+    for (text, width) in cols {
+        head.push(Span::styled(column(text, *width), st.base));
+    }
+    let used = 2 + cols.iter().map(|(_, w)| w).sum::<usize>();
+    let mut out = Vec::new();
+    let room = content_w.saturating_sub(used + flag_w);
+    let shown = fit(label, room);
+    let gap = content_w.saturating_sub(used + cells(&shown) + flag_w.saturating_sub(2));
+    head.push(Span::styled(shown, st.base));
+    if let Some(f) = flag_span(flag) {
+        head.push(Span::styled(" ".repeat(gap.max(2)), st.base));
+        head.push(f);
+    }
+    out.push(Line::from(head));
+    out
+}
+
 /// The rows laid out at `content_w` cells: one `Line` per screen row.
 pub fn lines(rows: &[PanelRow], content_w: usize, th: &Theme) -> Vec<Line<'static>> {
+    layout(rows, content_w, th, None).0
+}
+
+/// [`lines`], with the `Item` numbered `selected` marked, and the first and
+/// last line it takes.
+pub fn layout(
+    rows: &[PanelRow],
+    content_w: usize,
+    th: &Theme,
+    selected: Option<usize>,
+) -> (Vec<Line<'static>>, Option<(usize, usize)>) {
     let st = Styles::of(th);
     let stacked = content_w < STACK_BELOW;
     let mut out: Vec<Line<'static>> = Vec::new();
+    let mut span = None;
     for row in rows {
         match row {
+            PanelRow::Item {
+                cols,
+                label,
+                flag,
+                item,
+            } => {
+                let first = out.len();
+                let is_selected = selected == Some(*item);
+                out.extend(item_lines(cols, label, flag, is_selected, content_w, &st));
+                if is_selected {
+                    span = Some((first, out.len() - 1));
+                }
+            }
             PanelRow::Section(t) => {
                 out.push(Line::from(Span::styled(fit(t, content_w), st.accent_bold)))
             }
@@ -256,7 +372,7 @@ pub fn lines(rows: &[PanelRow], content_w: usize, th: &Theme) -> Vec<Line<'stati
             }
         }
     }
-    out
+    (out, span)
 }
 
 /// How the panel was drawn: what the keys that scroll it need.
@@ -266,6 +382,9 @@ pub struct Drawn {
     pub max_scroll: usize,
     /// The rows of content the panel shows at once.
     pub page: usize,
+    /// The scroll it was drawn at: the one asked for, moved to show the
+    /// selected row.
+    pub scroll: usize,
 }
 
 /// The footer's keys that fit in `room` cells, from the left.
@@ -302,11 +421,21 @@ pub fn draw(frame: &mut Frame, rect: Rect, th: &Theme, p: &Panel, scroll: usize)
     let w = rect.width as usize;
     let h = rect.height as usize;
     let content_w = w.saturating_sub(4);
-    let body = lines(&p.rows, content_w, th);
+    let (body, selected) = layout(&p.rows, content_w, th, p.selected);
     // Two rows of frame, the filter line and the blank row after it.
     let page = h.saturating_sub(4).max(1);
     let max_scroll = body.len().saturating_sub(page);
-    let scroll = scroll.min(max_scroll);
+    let mut scroll = scroll.min(max_scroll);
+    // The selected row stays in view, with its section header when the
+    // header fits above it.
+    if let Some((first, last)) = selected {
+        if first < scroll {
+            scroll = first.saturating_sub(2);
+        } else if last >= scroll + page {
+            scroll = (last + 1).saturating_sub(page);
+        }
+        scroll = scroll.min(max_scroll);
+    }
     frame.render_widget(Clear, rect);
     frame.buffer_mut().set_style(rect, st.base);
 
@@ -377,7 +506,16 @@ pub fn draw(frame: &mut Frame, rect: Rect, th: &Theme, p: &Panel, scroll: usize)
             .get(scroll + i)
             .map(|l| l.spans.clone())
             .unwrap_or_default();
-        rows.push(side(inner));
+        let mut line = side(inner);
+        if selected.is_some_and(|(a, b)| (a..=b).contains(&(scroll + i))) {
+            // The selected row: its background across the content width.
+            let hl = crate::ui::rgb(th.highlight_bg);
+            let n = line.spans.len();
+            for span in &mut line.spans[1..n - 1] {
+                span.style = span.style.bg(hl);
+            }
+        }
+        rows.push(line);
     }
     // ---- bottom border: keys and position ----
     let position = p.position.clone().unwrap_or_else(|| {
@@ -403,7 +541,11 @@ pub fn draw(frame: &mut Frame, rect: Rect, th: &Theme, p: &Panel, scroll: usize)
     bottom.push(Span::styled(" ─╯", st.accent));
     rows.push(Line::from(bottom));
     frame.render_widget(Paragraph::new(rows).style(st.base), rect);
-    Drawn { max_scroll, page }
+    Drawn {
+        max_scroll,
+        page,
+        scroll,
+    }
 }
 
 #[cfg(test)]

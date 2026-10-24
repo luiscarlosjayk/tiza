@@ -75,6 +75,7 @@ fn ac1_mutations_wait_and_reads_do_not() {
     assert!(!h.is_finished(), "the agent is still waiting");
 
     // Accept: the agent gets the normal result and the note exists.
+    live.command("review");
     live.keys(&[KeyCode::Char('y')]);
     let resp = h.join().unwrap();
     assert!(resp.error.is_none(), "{:?}", resp.error);
@@ -99,6 +100,7 @@ fn ac1_mutations_wait_and_reads_do_not() {
         let h = send_async(&live.socket, m, p);
         wait_pending(&live, 1);
         assert!(!h.is_finished(), "{m} must wait");
+        live.command("review");
         live.keys(&[KeyCode::Char('n')]);
         let r = h.join().unwrap();
         assert_eq!(
@@ -134,10 +136,16 @@ fn ac2_overlay_bar_and_keys() {
     let h3 = send_async(&live.socket, "annotation.delete", json!({"id":"nope"}));
     wait_pending(&live, 3);
 
-    assert_eq!(live.with(|a| a.overlay), Overlay::Review, "opens by itself");
+    // It waits as a chip; `:review` shows it.
+    assert_eq!(
+        live.with(|a| a.overlay),
+        Overlay::None,
+        "never opens by itself"
+    );
+    live.command("review");
     let screen = live.screen(120, 30);
-    assert!(screen.contains("Agent proposals"), "{screen}");
-    assert!(screen.contains("▶ p1  add box L1-2 «first»"), "{screen}");
+    assert!(screen.contains("Agent changes · 3 waiting"), "{screen}");
+    assert!(screen.contains("▸ p1  add box L1-2 «first»"), "{screen}");
     assert!(screen.contains("p2  add note L3 «second»"), "{screen}");
     assert!(screen.contains("p3  delete nope"), "{screen}");
     assert!(screen.contains("y accept"), "{screen}");
@@ -145,11 +153,11 @@ fn ac2_overlay_bar_and_keys() {
     live.keys(&[KeyCode::Esc]);
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
     let bar = live.screen(120, 30).lines().last().unwrap().to_string();
-    assert!(bar.contains("⏸ 3 to review (y/n)"), "{bar}");
+    assert!(bar.contains("⏸ 3 to review · :review"), "{bar}");
     live.command("review");
     assert_eq!(live.with(|a| a.overlay), Overlay::Review);
 
-    // x rejects the first; y accepts the next; the third fails on apply
+    // x rejects the selected first; Enter accepts the next; the third fails on apply
     // (unknown id) and the agent gets that error, not `rejected`.
     live.keys(&[KeyCode::Char('x')]);
     assert_eq!(h1.join().unwrap().error.unwrap().code, "rejected");
@@ -174,6 +182,7 @@ fn ac2_overlay_bar_and_keys() {
         })
         .collect();
     wait_pending(&live, 3);
+    live.command("review");
     live.keys(&[KeyCode::Char('a')]);
     for h in hs {
         assert!(h.join().unwrap().error.is_none());
@@ -183,6 +192,7 @@ fn ac2_overlay_bar_and_keys() {
         .map(|_| send_async(&live.socket, "step.next", json!({})))
         .collect();
     wait_pending(&live, 2);
+    live.command("review");
     live.keys(&[KeyCode::Char('d')]);
     for h in hs {
         assert_eq!(h.join().unwrap().error.unwrap().code, "rejected");
@@ -278,7 +288,7 @@ fn ac4_presentation_mode_and_mcp_bridge() {
 }
 
 #[test]
-fn rework_presentation_chip_pop_on_return_and_colon_from_the_overlay() {
+fn rework_presentation_chip_no_pop_on_return_and_colon_from_the_overlay() {
     let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t045-chip");
     live.command("supervise on");
     live.keys(&[KeyCode::Char('P')]);
@@ -293,15 +303,16 @@ fn rework_presentation_chip_pop_on_return_and_colon_from_the_overlay() {
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
     let screen = live.screen(100, 20);
     assert!(
-        screen.contains("⏸ 1 to review") && !screen.contains("Agent proposals"),
+        screen.contains("⏸ 1 to review · :review") && !screen.contains("Agent changes"),
         "chip without popup:\n{screen}"
     );
-    // Back to normal mode: the list pops by itself.
+    // Back to normal mode: it still waits as a chip, and `:review` shows it.
     live.keys(&[KeyCode::Char('P')]);
     assert!(!live.with(|a| a.present));
-    assert_eq!(live.with(|a| a.overlay), Overlay::Review, "pops on return");
+    assert_eq!(live.with(|a| a.overlay), Overlay::None, "no pop on return");
+    live.command("review");
     let screen = live.screen(100, 20);
-    assert!(screen.contains("Agent proposals"), "{screen}");
+    assert!(screen.contains("Agent changes · 1 waiting"), "{screen}");
     // `:` from the list hides it and opens the command line, so Enter ends
     // the command instead of accepting the proposal.
     live.keys(&[KeyCode::Char(':')]);
@@ -342,7 +353,8 @@ fn rework_presentation_chip_pop_on_return_and_colon_from_the_overlay() {
     wait_pending(&live, 1);
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
     live.command("present");
-    assert_eq!(live.with(|a| a.overlay), Overlay::Review);
+    assert_eq!(live.with(|a| a.overlay), Overlay::None);
+    live.command("review");
     live.keys(&[KeyCode::Char('n')]);
     let (err, _, _) = agent2.join().unwrap();
     assert!(err);

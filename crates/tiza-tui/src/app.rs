@@ -508,6 +508,10 @@ pub struct App {
     /// it now (`/`).
     pub overlay_filter: String,
     pub overlay_typing: bool,
+    /// The selected row of the list or the review, among the rows shown,
+    /// and the key of that row, to find it again when the rows change.
+    pub overlay_sel: usize,
+    pub overlay_pick: Option<String>,
     /// How the panel was drawn last: the rows of one page and the largest
     /// scroll, for the keys that scroll it.
     pub overlay_drawn: std::cell::Cell<crate::panel::Drawn>,
@@ -635,6 +639,8 @@ impl App {
             overlay_scroll: 0,
             overlay_filter: String::new(),
             overlay_typing: false,
+            overlay_sel: 0,
+            overlay_pick: None,
             overlay_drawn: Default::default(),
             follow: None,
             follow_failed: None,
@@ -793,15 +799,16 @@ impl App {
         let (w, h) = self.size;
         let (mw, mh) = crate::panel::MIN_SIZE;
         let what = match which {
-            Overlay::Help => "the help",
-            Overlay::List => "the list",
-            _ => return None,
+            Overlay::Help => "the help needs",
+            Overlay::List => "the list needs",
+            Overlay::Review => "the agent changes need",
+            Overlay::None => return None,
         };
         (w > 0 && h > 0 && (w < mw || h < mh)).then(|| {
             if w < 60 {
                 format!("needs {mw}×{mh}")
             } else {
-                format!("{what} needs {mw}×{mh} or more")
+                format!("{what} {mw}×{mh} or more")
             }
         })
     }
@@ -814,6 +821,14 @@ impl App {
         }
         self.close_overlay();
         self.overlay = which;
+        // The list starts at the first row of the step on screen.
+        if which == Overlay::List {
+            let items = crate::list::list(self).1;
+            if let Some(i) = items.iter().position(|it| it.step() == self.doc.step) {
+                self.overlay_sel = i;
+                self.overlay_pick = Some(items[i].key());
+            }
+        }
         Ok(())
     }
 
@@ -832,6 +847,8 @@ impl App {
         self.overlay_scroll = 0;
         self.overlay_filter.clear();
         self.overlay_typing = false;
+        self.overlay_sel = 0;
+        self.overlay_pick = None;
     }
 
     /// Every annotation id with its step: taken before an action so
@@ -2693,17 +2710,12 @@ impl App {
         Some(reference)
     }
 
-    /// Enters or leaves presentation mode. Proposals that arrived while
-    /// presenting were only a chip on screen; coming back opens the list.
-    /// Agent changes the view did not show while presenting are told on
-    /// the bar now.
+    /// Enters or leaves presentation mode. Agent changes that wait stay a
+    /// chip (`:review` shows them); the ones the view did not show while
+    /// presenting are told on the bar now.
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
-        if !on && !self.proposals.is_empty() && self.overlay == Overlay::None {
-            self.overlay = Overlay::Review;
-            self.overlay_scroll = 0;
-        }
         if !on && !self.agent_deferred.is_empty() {
             let items = std::mem::take(&mut self.agent_deferred);
             self.agent_notice = None;
@@ -3964,6 +3976,11 @@ impl App {
             (Some(i), d) => ((i as i64 + d as i64).rem_euclid(ids.len() as i64)) as usize,
         };
         let id = ids[next].clone();
+        self.focus_annotation(id);
+    }
+
+    /// Selects annotation `id` as Tab does, the cursor on its first line.
+    fn focus_annotation(&mut self, id: String) {
         if let Some(a) = self.doc.find_annotation(&id)
             && let Some((line, _)) = a.shape.line_ranges().first()
             && self.doc.has_line(*line)
@@ -3971,6 +3988,46 @@ impl App {
             self.cursor_line = *line;
         }
         self.selected = Some(id);
+    }
+
+    /// Enter on a row of the list: the step of that annotation, with it
+    /// selected as Tab does, or the step of that move.
+    pub fn go_to_list_item(&mut self, item: &crate::list::ListItem) {
+        match item {
+            // A jump, as `:goto`: no move types on the way.
+            crate::list::ListItem::Annotation { id, step } => {
+                self.step_to_with(*step, true);
+                self.focus_annotation(id.clone());
+            }
+            crate::list::ListItem::Move { step, .. } => {
+                self.step_to_with(*step, true);
+            }
+        }
+    }
+
+    /// `x` on a row of the list: deletes that annotation or move, as `:del`
+    /// and the socket's `move.delete` do; `u` gives it back.
+    pub fn delete_list_item(&mut self, item: &crate::list::ListItem) {
+        let said = match item {
+            crate::list::ListItem::Annotation { id, .. } => {
+                if self.selected.as_deref() == Some(id.as_str()) {
+                    self.selected = None;
+                }
+                self.delete_annotation(id)
+                    .map(|()| format!("{id} deleted (u to undo)"))
+            }
+            crate::list::ListItem::Move { index, .. } => {
+                self.delete_move_noting(*index)
+                    .map(|(_, warning)| match warning {
+                        Some(w) => format!("#{index} deleted (u to undo); {w}"),
+                        None => format!("#{index} deleted (u to undo)"),
+                    })
+            }
+        };
+        match said {
+            Ok(m) => self.info(m),
+            Err(e) => self.error(e.to_string()),
+        }
     }
 
     /// Describes the selected annotation for the status bar.
@@ -4248,10 +4305,9 @@ impl App {
                 },
                 "review" => {
                     if self.proposals.is_empty() {
-                        Ok("no pending proposals".into())
+                        Ok("no agent changes wait".into())
                     } else {
-                        self.overlay = Overlay::Review;
-                        self.overlay_scroll = 0;
+                        self.open_overlay(Overlay::Review)?;
                         Ok(String::new())
                     }
                 }
@@ -5942,14 +5998,17 @@ impl App {
             since: now,
             summary,
         });
-        if !self.present && self.overlay == Overlay::None {
-            self.overlay = Overlay::Review;
-            self.overlay_scroll = 0;
-        }
+        // It waits as a chip on the bar: nothing opens over the code while
+        // the presenter types (docs/ui-guidelines.md, section 11).
         self.info(format!(
-            "{} proposal{} waiting for review (y accept, n reject; :review)",
+            "{} agent change{} to review: :review shows {}",
             self.proposals.len(),
-            if self.proposals.len() == 1 { "" } else { "s" }
+            if self.proposals.len() == 1 { "" } else { "s" },
+            if self.proposals.len() == 1 {
+                "it"
+            } else {
+                "them"
+            }
         ));
     }
 
@@ -6098,10 +6157,15 @@ impl App {
 
     /// Applies the first pending proposal (`y`).
     pub fn accept_proposal(&mut self) -> Option<String> {
-        if self.proposals.is_empty() {
+        self.accept_proposal_at(0)
+    }
+
+    /// Applies the pending proposal at `i` in the queue.
+    pub fn accept_proposal_at(&mut self, i: usize) -> Option<String> {
+        if i >= self.proposals.len() {
             return None;
         }
-        let p = self.proposals.remove(0);
+        let p = self.proposals.remove(i);
         let mutates_annotation = annotation_verb(&p.req.method).is_some();
         let resp = self.handle_request(p.req);
         let ok = resp.error.is_none();
@@ -6125,10 +6189,15 @@ impl App {
 
     /// Rejects the first pending proposal (`n`): the agent gets a `rejected` error.
     pub fn reject_proposal(&mut self) -> Option<String> {
-        if self.proposals.is_empty() {
+        self.reject_proposal_at(0)
+    }
+
+    /// Rejects the pending proposal at `i` in the queue.
+    pub fn reject_proposal_at(&mut self, i: usize) -> Option<String> {
+        if i >= self.proposals.len() {
             return None;
         }
-        let p = self.proposals.remove(0);
+        let p = self.proposals.remove(i);
         let _ = p.reply.send(Response::err(
             p.req.id.clone(),
             "rejected",
@@ -6137,6 +6206,24 @@ impl App {
         self.decided.1 += 1;
         self.close_review_if_empty();
         Some(format!("rejected p{}: {}", p.id, p.summary))
+    }
+
+    /// Accepts (`accept`) or rejects the waiting proposals with these ids,
+    /// in their order in the queue; how many it decided.
+    pub fn decide_proposals(&mut self, ids: &[u64], accept: bool) -> usize {
+        let mut n = 0;
+        for id in ids {
+            let Some(i) = self.proposals.iter().position(|p| p.id == *id) else {
+                continue;
+            };
+            let done = if accept {
+                self.accept_proposal_at(i)
+            } else {
+                self.reject_proposal_at(i)
+            };
+            n += usize::from(done.is_some());
+        }
+        n
     }
 
     pub fn accept_all_proposals(&mut self) -> usize {

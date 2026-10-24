@@ -707,7 +707,7 @@ fn ac5_paste_is_refused_and_follow_waits_while_moves_are_applied() {
     live.command("list");
     let screen = live.screen(80, 20);
     assert!(
-        screen.contains("(unanchored)") && screen.contains("#2 [step 2] code.patch delete"),
+        screen.contains("! unanchored") && screen.contains("#2  step 2  code.patch  delete"),
         "{screen}"
     );
 }

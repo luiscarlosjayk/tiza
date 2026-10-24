@@ -11,6 +11,7 @@ pub mod early_keys;
 pub mod follow;
 pub mod ipc;
 pub mod keys;
+pub mod list;
 pub mod panel;
 pub mod reanchor;
 pub mod ui;
@@ -555,61 +556,23 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.revision += 1;
         return;
     }
-    // The review overlay has its own keys; the rest only scroll or close.
-    if app.overlay == Overlay::Review && code == KeyCode::Char(':') {
+    // `:` on the review (not while its filter is typed) hides it and opens
+    // the command line.
+    if app.overlay == Overlay::Review && code == KeyCode::Char(':') && !app.overlay_typing {
         // Typing a command from the list: hide it and open the command
         // line, so Enter ends the command instead of accepting a proposal.
         app.close_overlay();
     }
     if app.overlay == Overlay::Review {
-        let msg = match code {
-            KeyCode::Char('y') | KeyCode::Enter => app.accept_proposal(),
-            KeyCode::Char('n') | KeyCode::Char('x') => app.reject_proposal(),
-            KeyCode::Char('a') => {
-                Some(format!("accepted {} proposals", app.accept_all_proposals()))
-            }
-            KeyCode::Char('d') => {
-                Some(format!("rejected {} proposals", app.reject_all_proposals()))
-            }
-            KeyCode::Esc | KeyCode::Char('q') => {
-                app.close_overlay();
-                None
-            }
-            KeyCode::Char('j') | KeyCode::Down => {
-                app.overlay_scroll += 1;
-                None
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.overlay_scroll = app.overlay_scroll.saturating_sub(1);
-                None
-            }
-            _ => None,
-        };
-        if let Some(m) = msg {
-            app.info(m);
-        }
+        review_key(app, code, mods);
         return;
     }
     if app.overlay == Overlay::Help {
         help_key(app, code, mods);
         return;
     }
-    // Overlays: any of these keys closes them.
-    if app.overlay != Overlay::None {
-        match code {
-            KeyCode::Esc | KeyCode::Enter | KeyCode::Char('q' | '?' | 'L') => {
-                app.close_overlay();
-            }
-            KeyCode::Char('j') | KeyCode::Down => app.overlay_scroll += 1,
-            KeyCode::Char('k') | KeyCode::Up => {
-                app.overlay_scroll = app.overlay_scroll.saturating_sub(1)
-            }
-            KeyCode::PageDown | KeyCode::Char(' ') => app.overlay_scroll += 10,
-            KeyCode::PageUp => app.overlay_scroll = app.overlay_scroll.saturating_sub(10),
-            KeyCode::Char('g') | KeyCode::Home => app.overlay_scroll = 0,
-            KeyCode::Char('G') | KeyCode::End => app.overlay_scroll = usize::MAX / 2,
-            _ => {}
-        }
+    if app.overlay == Overlay::List {
+        list_key(app, code, mods);
         return;
     }
     if let Mode::Command(input) = &mut app.mode {
@@ -844,29 +807,7 @@ fn help_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.overlay_scroll = (app.overlay_scroll as i64 + by).clamp(0, max.max(0)) as usize;
     };
     if app.overlay_typing {
-        match code {
-            KeyCode::Esc => {
-                app.overlay_filter.clear();
-                app.overlay_typing = false;
-                app.overlay_scroll = 0;
-            }
-            KeyCode::Enter => app.overlay_typing = false,
-            KeyCode::Backspace => {
-                app.overlay_filter.pop();
-                app.overlay_scroll = 0;
-            }
-            KeyCode::Char('u') if mods.contains(KeyModifiers::CONTROL) => {
-                app.overlay_filter.clear();
-                app.overlay_scroll = 0;
-            }
-            KeyCode::Down => scroll_by(app, 1),
-            KeyCode::Up => scroll_by(app, -1),
-            KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
-                app.overlay_filter.push(c);
-                app.overlay_scroll = 0;
-            }
-            _ => {}
-        }
+        filter_key(app, code, mods, scroll_by);
         return;
     }
     match code {
@@ -883,5 +824,214 @@ fn help_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('g') | KeyCode::Home => app.overlay_scroll = 0,
         KeyCode::Char('G') | KeyCode::End => app.overlay_scroll = drawn.max_scroll,
         _ => {}
+    }
+}
+
+/// A key while the filter of a panel is typed: a printable key goes to the
+/// filter, Backspace and Ctrl-U edit it, Enter keeps it and stops the
+/// typing, Esc clears it. `↑`/`↓` call `up_down` (the help scrolls, the
+/// list and the review move their selection).
+fn filter_key(app: &mut App, code: KeyCode, mods: KeyModifiers, up_down: impl Fn(&mut App, i64)) {
+    let changed = |app: &mut App| {
+        app.overlay_scroll = 0;
+        app.overlay_sel = 0;
+        app.overlay_pick = None;
+    };
+    match code {
+        KeyCode::Esc => {
+            app.overlay_filter.clear();
+            app.overlay_typing = false;
+            changed(app);
+        }
+        KeyCode::Enter => app.overlay_typing = false,
+        KeyCode::Backspace => {
+            app.overlay_filter.pop();
+            changed(app);
+        }
+        KeyCode::Char('u') if mods.contains(KeyModifiers::CONTROL) => {
+            app.overlay_filter.clear();
+            changed(app);
+        }
+        KeyCode::Down => up_down(app, 1),
+        KeyCode::Up => up_down(app, -1),
+        KeyCode::Char(c) if !mods.contains(KeyModifiers::CONTROL) => {
+            app.overlay_filter.push(c);
+            changed(app);
+        }
+        _ => {}
+    }
+}
+
+/// Moves the selection by `by` rows among the rows shown, by their keys
+/// (`ListItem::key`, `p:N`), and keeps the key of the row it lands on.
+fn select_by(app: &mut App, by: i64, keys: &[String]) {
+    let Some(sel) = crate::list::selected(app, keys) else {
+        return;
+    };
+    let to = (sel as i64 + by).clamp(0, keys.len() as i64 - 1) as usize;
+    app.overlay_sel = to;
+    app.overlay_pick = Some(keys[to].clone());
+}
+
+/// The rows of the list and their keys.
+fn list_rows(app: &App) -> (Vec<crate::list::ListItem>, Vec<String>) {
+    let items = crate::list::list(app).1;
+    let keys = items.iter().map(crate::list::ListItem::key).collect();
+    (items, keys)
+}
+
+/// A key on the annotation list (docs/ui-guidelines.md, section 2): `j/k`
+/// select, Enter goes to the step of the selected row, `x` deletes it and
+/// `u`, `U` or Ctrl-R undo and redo with the list open. Esc clears the
+/// filter, then closes.
+fn list_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    if app.overlay_typing {
+        filter_key(app, code, mods, |app, by| {
+            let (_, keys) = list_rows(app);
+            select_by(app, by, &keys)
+        });
+        return;
+    }
+    let ctrl = mods.contains(KeyModifiers::CONTROL);
+    // Ctrl with a letter is not that letter here either: only Ctrl-R.
+    if ctrl && matches!(code, KeyCode::Char(c) if c != 'r') {
+        return;
+    }
+    let (items, keys) = list_rows(app);
+    let n = keys.len() as i64;
+    let page = app.overlay_drawn.get().page.max(1) as i64;
+    let chosen = crate::list::selected(app, &keys).map(|i| items[i].clone());
+    match code {
+        KeyCode::Esc if !app.overlay_filter.is_empty() => {
+            app.overlay_filter.clear();
+            app.overlay_sel = 0;
+            app.overlay_pick = None;
+            app.overlay_scroll = 0;
+        }
+        KeyCode::Esc | KeyCode::Char('q' | 'L') => app.close_overlay(),
+        KeyCode::Char('?') => open(app, Overlay::Help),
+        KeyCode::Char('/') => app.overlay_typing = true,
+        KeyCode::Char('j') | KeyCode::Down => select_by(app, 1, &keys),
+        KeyCode::Char('k') | KeyCode::Up => select_by(app, -1, &keys),
+        KeyCode::Char(' ') | KeyCode::PageDown => select_by(app, page, &keys),
+        KeyCode::PageUp => select_by(app, -page, &keys),
+        KeyCode::Char('g') | KeyCode::Home => select_by(app, -n, &keys),
+        KeyCode::Char('G') | KeyCode::End => select_by(app, n, &keys),
+        // With no row to go to, Enter closes, as on the help.
+        KeyCode::Enter => {
+            app.close_overlay();
+            if let Some(item) = chosen {
+                app.go_to_list_item(&item);
+            }
+        }
+        KeyCode::Char('x') => {
+            if let Some(item) = chosen {
+                app.delete_list_item(&item);
+            }
+        }
+        KeyCode::Char('u') => app.undo(),
+        KeyCode::Char('U') => app.redo(),
+        KeyCode::Char('r') if ctrl => app.redo(),
+        _ => {}
+    }
+    // A stale move says why on the bar while it is selected.
+    let (items, keys) = list_rows(app);
+    if app.overlay == Overlay::List
+        && matches!(
+            code,
+            KeyCode::Char('j' | 'k' | 'g' | 'G' | ' ')
+                | KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+        )
+        && let Some(crate::list::ListItem::Move { index, .. }) =
+            crate::list::selected(app, &keys).map(|i| &items[i])
+        && let Some(stale) = app.doc.moves.get(index - 1).and_then(|m| m.stale.as_ref())
+    {
+        let why = format!("#{index} is stale: {}. x deletes it", stale.reason);
+        app.info(why);
+    }
+}
+
+/// A key on the agent review: `y` or Enter accepts the selected change,
+/// `n` or `x` rejects it, `a` and `d` decide the changes shown, `j/k`
+/// select. Esc clears the filter, then hides the review (`:review` shows
+/// it again).
+fn review_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    let rows = |app: &App| {
+        let items = crate::list::review(app).1;
+        let keys: Vec<String> = items
+            .iter()
+            .map(|i| format!("p:{}", app.proposals[*i].id))
+            .collect();
+        (items, keys)
+    };
+    if app.overlay_typing {
+        filter_key(app, code, mods, |app, by| {
+            let (_, keys) = rows(app);
+            select_by(app, by, &keys)
+        });
+        return;
+    }
+    if mods.contains(KeyModifiers::CONTROL) && matches!(code, KeyCode::Char(_)) {
+        return;
+    }
+    let (items, keys) = rows(app);
+    let n = keys.len() as i64;
+    let chosen = crate::list::selected(app, &keys).map(|i| items[i]);
+    // The changes shown, by id: a filter keeps the others waiting.
+    let shown: Vec<u64> = items.iter().map(|i| app.proposals[*i].id).collect();
+    let msg = match code {
+        KeyCode::Enter if chosen.is_none() => {
+            app.close_overlay();
+            None
+        }
+        KeyCode::Char('y') | KeyCode::Enter => chosen.and_then(|i| app.accept_proposal_at(i)),
+        KeyCode::Char('n') | KeyCode::Char('x') => chosen.and_then(|i| app.reject_proposal_at(i)),
+        KeyCode::Char('a') => Some(format!(
+            "accepted {} agent changes",
+            app.decide_proposals(&shown, true)
+        )),
+        KeyCode::Char('d') => Some(format!(
+            "rejected {} agent changes",
+            app.decide_proposals(&shown, false)
+        )),
+        KeyCode::Esc if !app.overlay_filter.is_empty() => {
+            app.overlay_filter.clear();
+            app.overlay_sel = 0;
+            app.overlay_pick = None;
+            None
+        }
+        KeyCode::Esc | KeyCode::Char('q') => {
+            app.close_overlay();
+            None
+        }
+        KeyCode::Char('/') => {
+            app.overlay_typing = true;
+            None
+        }
+        KeyCode::Char('j') | KeyCode::Down => {
+            select_by(app, 1, &keys);
+            None
+        }
+        KeyCode::Char('k') | KeyCode::Up => {
+            select_by(app, -1, &keys);
+            None
+        }
+        KeyCode::Char('g') | KeyCode::Home => {
+            select_by(app, -n, &keys);
+            None
+        }
+        KeyCode::Char('G') | KeyCode::End => {
+            select_by(app, n, &keys);
+            None
+        }
+        _ => None,
+    };
+    if let Some(m) = msg {
+        app.info(m);
     }
 }

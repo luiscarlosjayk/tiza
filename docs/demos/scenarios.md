@@ -170,13 +170,13 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **Setup:** `examples/src/stack.rs`, bare, from a working folder: `mkdir -p /tmp/stack && cp examples/src/stack.rs /tmp/stack/`, then `tiza /tmp/stack/stack.rs` and `:supervise on`. (`examples/stack-impl.tiza` is a finished take of the same lesson.)
 
-**Script:** `Explain why push and pop take &mut self and peek takes &self: one mark per method, a note on Option<&T>.` Each call waits; you press `y` for one, `n` for another, `a` for the rest.
+**Script:** `Explain why push and pop take &mut self and peek takes &self: one mark per method, a note on Option<&T>.` Each call waits. Type `:review`, then press `y` for one change, `n` for another and `a` for the rest.
 
-**What the audience sees:** the review overlay listing each proposal (`▶ p1  add note L4 «…»`), `⏸ N to review` on the bar, the accepted ones appearing, and the agent saying what it wanted after a rejection instead of retrying.
+**What the audience sees:** `⏸ N to review · :review` on the bar, the review panel with one row for each change (`▸ p1  add note L4 «…»`), the accepted changes on the code, and the agent saying what it wanted after a rejection instead of retrying.
 
-**Features:** `:supervise`, the review overlay, `rejected`, the presentation-mode chip, `status.pending`.
+**Features:** `:supervise`, `:review` and its panel, `rejected`, the presentation-mode chip, `status.pending`.
 
-**Recording:** normal mode (the overlay is the point), 1-2 min; only what you accepted reaches `/tmp/stack/stack.rs.tiza`.
+**Recording:** normal mode (the review panel is the point), 1-2 min; only what you accepted reaches `/tmp/stack/stack.rs.tiza`.
 
 ## 9. One concept, step by step
 

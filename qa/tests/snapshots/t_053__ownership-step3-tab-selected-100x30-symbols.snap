@@ -31,4 +31,4 @@ expression: symbols
    23      fn push(s: &mut String) {
    24          s.push('!');
 
- ╭▶ NORMAL  step 3/7  100×30  ownership.rs   ▸ a2 [step 1] arrow L2:8 → L15:9 · enter label · e set
+ ╭▶ NORMAL  step 3/7                     ▸ a2 · enter label · e set · x delete · c color · +/- step

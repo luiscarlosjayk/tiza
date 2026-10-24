@@ -6,7 +6,7 @@ use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
+use ratatui::widgets::Paragraph;
 use tiza_core::canvas::{Canvas, CellStyle, Rgb};
 use tiza_core::layout::Layout;
 use unicode_segmentation::UnicodeSegmentation;
@@ -301,11 +301,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         }
         if !app.proposals.is_empty() {
             // An agent is waiting: the chip is the only sign in presentation
-            // mode (no popup), bottom-left, in the accent color.
-            let txt = format!(
-                " ⏸ {} to review (:review, or P then y/n) ",
-                app.proposals.len()
-            );
+            // mode (no popup), bottom-left, in the accent color, with the
+            // words of the bar's chip.
+            let txt = format!(" ⏸ {} to review · :review ", app.proposals.len());
             let w = txt.width() as u16;
             if area.width > w {
                 frame.buffer_mut().set_string(
@@ -337,51 +335,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         draw_present_message(frame, app, last_row);
     }
     match app.overlay {
-        Overlay::Help => {
-            draw_help(frame, app);
-            // The scroll the keys left past the end, after a resize.
-            app.overlay_scroll = app.overlay_scroll.min(app.overlay_drawn.get().max_scroll);
-        }
-        Overlay::List => {
-            let mut lines: Vec<String> = app.list_lines();
-            if lines.is_empty() {
-                lines.push("(no annotations yet; try :mark move 3:s)".into());
-            }
-            if !app.doc.moves.is_empty() {
-                lines.push(String::new());
-                lines.push("Moves (code changes between steps):".into());
-                lines.extend(
-                    app.doc
-                        .moves
-                        .iter()
-                        .enumerate()
-                        .map(|(i, m)| tiza_core::protocol::describe_move(i + 1, m)),
-                );
-            }
-            draw_overlay(frame, app, "Annotations", lines)
-        }
-        Overlay::Review => {
-            let mut lines: Vec<String> = app
-                .proposals
-                .iter()
-                .enumerate()
-                .map(|(i, p)| {
-                    format!(
-                        "{} p{}  {}  ({}s ago)",
-                        if i == 0 { "▶" } else { " " },
-                        p.id,
-                        p.summary,
-                        p.since.elapsed().as_secs()
-                    )
-                })
-                .collect();
-            lines.push(String::new());
-            lines.push(
-                "y accept · n reject · a accept all · d reject all · Esc hide (:review reopens)"
-                    .into(),
-            );
-            draw_overlay(frame, app, "Agent proposals", lines)
-        }
+        Overlay::Help => draw_panel(frame, app, |app, w| {
+            crate::keys::help_panel(&app.overlay_filter, app.overlay_typing, w)
+        }),
+        Overlay::List => draw_panel(frame, app, |app, _| crate::list::list(app).0),
+        Overlay::Review => draw_panel(frame, app, |app, _| crate::list::review(app).0),
         Overlay::None => {}
     }
 }
@@ -757,7 +715,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         let text = if app.proposals.is_empty() {
             "  ⏸ supervised".to_string()
         } else {
-            format!("  ⏸ {} to review (y/n)", app.proposals.len())
+            format!("  ⏸ {} to review · :review", app.proposals.len())
         };
         left.push(Span::styled(text, accent));
     }
@@ -822,7 +780,12 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 false,
             ),
         };
-    let select_hint = message.is_none() && matches!(app.mode, Mode::Select { .. });
+    // The keys of a `v`/`V` selection and of an annotation selected with
+    // Tab: what the author can press next.
+    let tab_hint_shown = message.is_none() && app.selected.is_some();
+    let select_hint =
+        message.is_none() && !tab_hint_shown && matches!(app.mode, Mode::Select { .. });
+    let key_hint = select_hint || tab_hint_shown;
     // A message with a tail keeps the `↪ file` view indicator until its
     // middle and the directory have given way.
     let view = (app.shown_view().is_some()
@@ -833,7 +796,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // truncate the right text with an ellipsis instead of hiding it.
     let width = area.width as usize;
     let lw = |left: &Vec<Span>| left.iter().map(|s| s.content.width()).sum::<usize>();
-    let need = if stale || select_hint {
+    let need = if stale || key_hint {
         right_text.width()
     } else if essential {
         right_text.width().min(width / 2)
@@ -872,7 +835,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     }
     // The keys of a selection are worth more than the text of a warning the
     // author already saw in normal mode: it keeps only its sign.
-    if select_hint && badge < left.len() && lw(&left) + 1 + right_text.width() > width {
+    if key_hint && badge < left.len() && lw(&left) + 1 + right_text.width() > width {
         left[badge] = Span::styled("  !", err_style);
     }
     // Hints are optional, but `? help` should find room when giving up only
@@ -956,17 +919,19 @@ const SELECT_HINTS: [&str; 4] = [
 
 /// The hint of an annotation selected with Tab, in `room` cells: `▸`, what
 /// it is, its label, then its keys (`enter label · e set …`). The keys come
-/// first: when there is no room, the label gives way, then the keys from
-/// the right, so what the presenter can press stays (docs/ui-guidelines.md,
-/// section 5).
+/// first: when there is no room, the label gives way, then what it is (the
+/// id stays), then the keys from the right, so what the presenter can press
+/// stays (docs/ui-guidelines.md, section 5).
 fn tab_hint(described: &str, room: usize) -> String {
     let (head, label) = match described.find(" «") {
         Some(i) => (&described[..i], &described[i..]),
         None => (described, ""),
     };
+    // `a4 [step 2] note L13`: the id alone is `a4`.
+    let id = head.split(' ').next().unwrap_or(head);
     let keys = ["enter label", "e set", "x delete", "c color", "+/- step"];
-    let build = |label: &str, n: usize| {
-        let mut s = format!("▸ {head}{label}");
+    let build = |what: &str, n: usize| {
+        let mut s = format!("▸ {what}");
         for k in &keys[..n] {
             s.push_str(" · ");
             s.push_str(k);
@@ -974,109 +939,43 @@ fn tab_hint(described: &str, room: usize) -> String {
         s.push(' ');
         s
     };
-    let all = build(label, keys.len());
-    if all.width() <= room {
-        return all;
-    }
-    for n in (1..=keys.len()).rev() {
-        let s = build("", n);
-        if s.width() <= room {
-            return s;
+    // The label goes first, then what the annotation is, then the keys
+    // from the right; a form gives up its right margin before a shorter
+    // one is taken.
+    let forms = [
+        build(&format!("{head}{label}"), keys.len()),
+        build(head, keys.len()),
+    ]
+    .into_iter()
+    .chain((1..=keys.len()).rev().map(|n| build(id, n)));
+    for form in forms {
+        for shown in [form.as_str(), form.trim_end()] {
+            if shown.width() <= room {
+                return shown.to_string();
+            }
         }
     }
     format!(
         "{} ",
-        cut_to_width(&format!("▸ {head}"), room.saturating_sub(1))
+        cut_to_width(&format!("▸ {id}"), room.saturating_sub(1))
     )
 }
 
-/// Number of overlay rows a set of lines takes at `inner_w` columns (wrapped).
-pub fn overlay_rows(lines: &[String], inner_w: usize) -> usize {
-    lines
-        .iter()
-        .map(|l| {
-            let w = l.width();
-            if w == 0 {
-                1
-            } else {
-                w.div_ceil(inner_w.max(1))
-            }
-        })
-        .sum()
-}
-
-fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
-    // A label's control characters show as their pictures, as on the
-    // canvas (the terminal library would drop them without a trace).
-    let lines: Vec<String> = lines
-        .into_iter()
-        .map(|l| tiza_core::printable::printable_line(&l).into_owned())
-        .collect();
-    let th = &app.theme;
-    let area = frame.area();
-    if area.width < 8 || area.height < 4 {
-        // Too small for a bordered box: nothing to draw (and no arithmetic to fail).
-        return;
-    }
-    let w = (area.width.saturating_sub(4)).clamp(4, 96);
-    let inner_w = w.saturating_sub(2) as usize;
-    let total = overlay_rows(&lines, inner_w);
-    let h = (total as u16 + 2).min(area.height.saturating_sub(2)).max(3);
-    let inner_h = h.saturating_sub(2) as usize;
-    // Scroll in wrapped rows; j/k, ↑/↓ and PgDn/PgUp move it.
-    let max_scroll = total.saturating_sub(inner_h);
-    let scroll = app.overlay_scroll.min(max_scroll);
-    let rect = Rect {
-        x: area.x + (area.width - w) / 2,
-        y: area.y + (area.height.saturating_sub(h)) / 2,
-        width: w,
-        height: h,
-    };
-    frame.render_widget(Clear, rect);
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(rgb(th.accent)))
-        .title(Span::styled(
-            format!(" {title} "),
-            Style::default()
-                .fg(rgb(th.accent))
-                .add_modifier(Modifier::BOLD),
-        ))
-        .title_bottom(
-            Line::from(Span::styled(
-                if max_scroll > 0 {
-                    format!(
-                        " j/k scroll ({}/{})  Esc closes ",
-                        scroll + inner_h.min(total),
-                        total
-                    )
-                } else {
-                    " Esc closes ".to_string()
-                },
-                Style::default().fg(rgb(th.muted)),
-            ))
-            .right_aligned(),
-        )
-        .style(Style::default().fg(rgb(th.fg)).bg(rgb(th.cmd_bg)));
-    let text: Vec<Line> = lines.into_iter().map(Line::from).collect();
-    frame.render_widget(
-        Paragraph::new(text)
-            .block(block)
-            .wrap(Wrap { trim: false })
-            .scroll((scroll as u16, 0)),
-        rect,
-    );
-}
-
-/// The help (`?`): the panel over the code, from the key table.
-fn draw_help(frame: &mut Frame, app: &App) {
+/// Draws the panel `make` builds at a content width, and keeps how it was
+/// drawn: the page and the largest scroll for the keys, and the scroll
+/// itself (moved to show the selected row, or back from past the end).
+fn draw_panel(
+    frame: &mut Frame,
+    app: &mut App,
+    make: impl FnOnce(&App, usize) -> crate::panel::Panel,
+) {
     let Some(rect) = crate::panel::rect(frame.area()) else {
         return;
     };
-    let content_w = (rect.width as usize).saturating_sub(4);
-    let p = crate::keys::help_panel(&app.overlay_filter, app.overlay_typing, content_w);
+    let p = make(app, (rect.width as usize).saturating_sub(4));
     let drawn = crate::panel::draw(frame, rect, &app.theme, &p, app.overlay_scroll);
     app.overlay_drawn.set(drawn);
+    app.overlay_scroll = drawn.scroll;
 }
 
 #[cfg(test)]

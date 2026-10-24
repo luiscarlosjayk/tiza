@@ -209,10 +209,10 @@ fn ac1_the_tui_shows_the_pictures() {
         .unwrap()
         .to_string();
     assert_pictures("render.text", &text);
-    // The annotation list too.
+    // The annotation list too, in its label column.
     live.keys(&[crossterm::event::KeyCode::Char('L')]);
     let screen = live.screen(170, 24);
-    assert!(screen.contains("«h␛l»"), "{screen}");
+    assert!(screen.contains("h␛l"), "{screen}");
 }
 
 // ---------- AC2, AC3: invisible characters in the code ----------

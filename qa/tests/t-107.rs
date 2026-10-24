@@ -303,7 +303,7 @@ fn corner_supervised_proposal_while_presenting() {
     assert_eq!(live.with(|a| a.overlay), Overlay::None, "no popup");
     let row = last_row(&live, 100, 14);
     assert!(
-        row.starts_with(":box 2-3") && row.contains("1 proposal waiting for review"),
+        row.starts_with(":box 2-3") && row.contains("1 agent change to review"),
         "{row}"
     );
     // Hidden again: the existing chip is the only sign.

@@ -246,7 +246,7 @@ Tiza's users are developers who use the keyboard. Check each new surface against
 | Status bar | `draw_status` in `ui.rs` | Hints use `key word` with ` · `. A selection hint keeps its keys and cuts the label first. |
 | Command line | `draw_command_line` | No change. Completions keep the muted color. |
 | Message line | right side of the status bar, `draw_present_message` | Errors give the fix (section 8). |
-| Help (`?`) | `keys.rs`, `panel.rs` and `draw_help` | Panel with sections, two columns and a filter. |
-| Annotation list (`L`) | `list_lines` and `draw_overlay` | Panel grouped by step, with columns and a selection. |
-| Agent review (`:review`) | `Overlay::Review` | Panel with a selection. The keys go to the footer. |
+| Help (`?`) | `keys.rs`, `panel.rs` and `draw_panel` | Panel with sections, two columns and a filter. |
+| Annotation list (`L`) | `list.rs`, `panel.rs` and `draw_panel` | Panel grouped by step, with columns and a selection. |
+| Agent review (`:review`) | `list.rs`, `panel.rs` and `draw_panel` | Panel with a selection. The keys go to the footer. |
 | Presentation chips | `⏸ N to review`, step counter | Same text as the status bar chip. |
