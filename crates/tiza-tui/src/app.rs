@@ -463,6 +463,10 @@ pub struct App {
     pub size: (u16, u16),
     pub socket_path: Option<PathBuf>,
     pub autosave: bool,
+    /// Opened with `--no-save` (an example annotated without touching it):
+    /// `:w` would write over that file, so the bar and `:q` point at
+    /// `:saveas PATH` and `:q!`. A `:saveas` or `:autosave on` ends it.
+    pub no_save: bool,
     /// The file the code was last read from (`code: {file}` when opened or
     /// at the last put): a put that sent other code leaves the document
     /// embedded in memory, and a later put of that file's code makes it a
@@ -621,6 +625,7 @@ impl App {
             size: (80, 24),
             socket_path: None,
             autosave: true,
+            no_save: false,
             reference,
             frozen_views,
             layout_stable: false,
@@ -1448,6 +1453,8 @@ impl App {
         }
         self.save_path = path;
         crate::note_save_path(&self.save_path);
+        // The document has a file of its own now: `:w` saves there.
+        self.no_save = false;
         // The same text again, through the one door: `dirty`, what quitting
         // compares with, and a read-only state left behind.
         self.save()?;
@@ -1534,6 +1541,12 @@ impl App {
                     "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — {}",
                     self.save_path.display()
                 ));
+                return;
+            }
+            if !self.autosave && self.no_save {
+                self.error(
+                    "unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them",
+                );
                 return;
             }
             if !self.autosave {
@@ -4981,6 +4994,7 @@ impl App {
                     )),
                     "on" | "yes" => {
                         self.autosave = true;
+                        self.no_save = false;
                         if self.dirty {
                             self.save()?;
                             Ok(format!(

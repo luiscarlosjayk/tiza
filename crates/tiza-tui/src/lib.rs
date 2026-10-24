@@ -99,6 +99,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.image_exporter = opts.image_exporter;
     app.mouse = opts.mouse;
     app.autosave = !opts.no_save;
+    app.no_save = opts.no_save;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }

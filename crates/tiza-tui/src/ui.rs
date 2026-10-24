@@ -704,13 +704,17 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                 .add_modifier(Modifier::BOLD),
         ));
     } else if !app.autosave {
-        let text = if app.dirty {
-            "  unsaved (:w)"
-        } else {
-            "  no-save"
+        // With `--no-save`, `:w` would write over the file opened: the
+        // ways out are `:saveas PATH` and `:q!`.
+        let text = match (app.dirty, app.no_save) {
+            (true, true) => NO_SAVE_HINTS[0],
+            (true, false) => "  unsaved (:w)",
+            (false, _) => "  no-save",
         };
         left.push(Span::styled(text, if app.dirty { accent } else { muted }));
     }
+    let no_save_hint = (app.dirty && app.no_save && app.save_error.is_none() && !app.autosave)
+        .then(|| left.len() - 1);
     if app.supervised {
         let text = if app.proposals.is_empty() {
             "  ⏸ supervised".to_string()
@@ -811,6 +815,13 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             left[drop_idx] = Span::styled("", bar);
         }
     }
+    // `--no-save` with changes: the short form, with both ways out still
+    // named, when the long one leaves the right side less than `? help`.
+    if let Some(i) = no_save_hint
+        && lw(&left) + 1 + need.max(6) > width
+    {
+        left[i] = Span::styled(NO_SAVE_HINTS[1], accent);
+    }
     // An error is about the key just pressed: when it does not fit, it
     // takes the room of the optional segments and of the step, and a
     // warning badge keeps only its sign. They come back with the next key.
@@ -908,6 +919,14 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     spans.extend(right);
     frame.render_widget(Paragraph::new(Line::from(spans)), area);
 }
+
+/// The save state with `--no-save` and changes: `:w` would write over the
+/// file opened, so it names `:saveas` and `:q!`; the short form for a
+/// narrow bar.
+const NO_SAVE_HINTS: [&str; 2] = [
+    "  unsaved (:saveas PATH · :q! discards)",
+    "  unsaved (:saveas · :q!)",
+];
 
 /// The hint of a `v`/`V` selection, from the full form to the keys alone.
 const SELECT_HINTS: [&str; 4] = [
