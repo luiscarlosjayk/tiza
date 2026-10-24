@@ -2156,7 +2156,8 @@ impl App {
         self.step_to(step);
     }
 
-    /// `n`, `→`, `:next`, `step.next` and the auto-advance: one step on, or
+    /// `n`, PageDown (`→` in presentation mode), `:next`, `step.next` and
+    /// the auto-advance: one step on, or
     /// back to step 0 past the last one when the document loops.
     pub fn next_step(&mut self) -> bool {
         match self.doc.next_step_from(self.doc.step) {

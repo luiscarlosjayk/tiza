@@ -721,13 +721,16 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         KeyCode::Char('v') => app.start_select(false),
         KeyCode::Char('V') => app.start_select(true),
         KeyCode::Char('i') => app.select_word(),
-        KeyCode::Char('h') => app.move_col(-1),
-        KeyCode::Char('l') => app.move_col(1),
-        // ←/→ advance the steps (a clicker sends them); h/l move the column.
-        KeyCode::Right => {
+        // ←/→ change the step in presentation mode (a clicker sends them);
+        // elsewhere they move the column, as h/l, so a presenter back from a
+        // selection does not move the take by mistake. PageDown/PageUp
+        // (and n/p) change the step in both.
+        KeyCode::Right if app.present => {
             app.next_step();
         }
-        KeyCode::Left => app.set_step(app.doc.step.saturating_sub(1)),
+        KeyCode::Left if app.present => app.set_step(app.doc.step.saturating_sub(1)),
+        KeyCode::Char('h') | KeyCode::Left => app.move_col(-1),
+        KeyCode::Char('l') | KeyCode::Right => app.move_col(1),
         KeyCode::Char('w') => app.word_forward(),
         KeyCode::Char('e') => app.word_end(),
         KeyCode::Char('b') => app.word_backward(),

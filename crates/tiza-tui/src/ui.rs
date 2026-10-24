@@ -989,8 +989,8 @@ fn draw_overlay(frame: &mut Frame, app: &App, title: &str, lines: Vec<String>) {
 
 fn help_lines() -> Vec<String> {
     [
-        "j/k ↑/↓ line   h/l column   w/b/e words   0/$ line start/end   g/G   J/K page",
-        "n/p →/← PgDn/PgUp  next/previous step (0 = code only)",
+        "j/k ↑/↓ line   h/l ←/→ column   w/b/e words   0/$ line start/end   g/G   J/K page",
+        "n/p PgDn/PgUp  next/previous step (0 = code only); →/← in presentation mode",
         "v  select text   V  select lines   i  select the word under the cursor   Esc  cancel",
         "Tab/Shift-Tab  select an annotation: Enter edit label  x delete  c color  +/- move step  Esc",
         "  with a selection:  h highlight   m mark (then type KIND [label])   n note   b box",
