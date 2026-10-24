@@ -870,6 +870,11 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             left[2] = Span::styled("", bar);
         }
     }
+    // The keys of a selection are worth more than the text of a warning the
+    // author already saw in normal mode: it keeps only its sign.
+    if select_hint && badge < left.len() && lw(&left) + 1 + right_text.width() > width {
+        left[badge] = Span::styled("  !", err_style);
+    }
     // Hints are optional, but `? help` should find room when giving up only
     // the theme and the size (cursor line and count are worth more).
     if !essential {
@@ -905,9 +910,13 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             let hint = tab_hint(&app.selected_text().unwrap_or_default(), room);
             right.push(Span::styled(hint, right_style));
         } else if select_hint {
-            // Shorter forms, the keys kept to the last.
-            if let Some(t) = SELECT_HINTS.iter().find(|t| t.width() <= room) {
-                right.push(Span::styled(*t, right_style));
+            // Shorter forms, the keys kept to the last; a form gives up its
+            // right margin before a shorter form is taken.
+            let form = SELECT_HINTS
+                .iter()
+                .find_map(|t| [*t, t.trim_end()].into_iter().find(|f| f.width() <= room));
+            if let Some(t) = form {
+                right.push(Span::styled(t, right_style));
             }
         } else if room >= 4 {
             // Keep the beginning: that is where the useful part of a message is.
@@ -938,9 +947,10 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
 }
 
 /// The hint of a `v`/`V` selection, from the full form to the keys alone.
-const SELECT_HINTS: [&str; 3] = [
+const SELECT_HINTS: [&str; 4] = [
     "h highlight · m mark · n note · C callout · b box · a arrow · s spotlight ",
     "h highlight · m mark · n note · b box · a arrow ",
+    "h highlight · m mark · n note ",
     "h m n C b a s ",
 ];
 

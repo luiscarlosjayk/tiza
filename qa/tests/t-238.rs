@@ -493,10 +493,20 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         "{b100}"
     );
     // Below 100 columns the bar warns of a small terminal: the warning
-    // stays, and the hint keeps its keys.
-    let b80 = bar(80);
-    assert!(b80.contains("! small terminal"), "{b80}");
-    assert!(b80.ends_with("h m n C b a s"), "{b80}");
+    // keeps only its sign, and the hint keeps its words as long as it can.
+    for (cols, form) in [
+        (90, "h highlight · m mark · n note · b box · a arrow"),
+        (80, "h highlight · m mark · n note · b box · a arrow"),
+        (65, "h highlight · m mark · n note"),
+        (50, "h m n C b a s"),
+    ] {
+        let b = bar(cols);
+        assert!(
+            b.contains("no-save  !") && !b.contains("small terminal"),
+            "{b}"
+        );
+        assert!(b.ends_with(form), "{cols}: {b}");
+    }
 }
 
 #[test]

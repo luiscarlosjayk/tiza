@@ -195,7 +195,7 @@ Messages show on the message line (the right side of the status bar) and, in pre
 - When the terminal becomes too small while a panel is open, the panel closes and the message line gives the same message.
 - The two-column layout needs a content width of 64 cells. Below that, rows stack (1.7).
 - The status bar removes optional chips first: theme, cursor line, annotation count, file, size. It keeps the mode, the step and the message.
-- In selection mode, the keys of the selection are the most useful hint. They take the room of the optional chips. When they still do not fit, the hint becomes shorter, and the keys stay to the last.
+- In selection mode, the keys of the selection are the most useful hint. They take the room of the optional chips, and a warning keeps only its sign `!`. When they still do not fit, the hint becomes shorter, and the keys stay to the last.
 - An error message is about the last key. When it does not fit, the status bar removes the optional chips and the step, and a warning shows only its sign `!`. The mode and the state of the document (save, follow, supervised) stay. The chips come back with the next key.
 
 ## 10. Presentation mode
