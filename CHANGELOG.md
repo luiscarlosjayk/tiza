@@ -4,6 +4,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Changed
+- `examples/ownership.rs.tiza` has 6 steps. A box with a label shows each way to pass a value: a move, a shared borrow and a mutable borrow. The callout at the end is gone. The README images show the new example.
+
 ### Fixed
 - `annotation.update` with `text` says what to send. Send `label` for the text of a note or the title of a callout. Send the whole callout as a new `shape` for the text of a callout. Before, it said that `label` changes the text of a callout.
 - The MCP tool `update_annotation` refuses `text` itself. It says to remove the callout and add it again, and it no longer names fields that only the socket takes.

@@ -116,7 +116,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 ## 9. One concept, step by step
 
 - **Sample:** Copy `examples/ownership.rs` alone, so that it opens with no annotations: `mkdir -p /tmp/lesson && cp examples/ownership.rs /tmp/lesson/`, then `tiza /tmp/lesson/ownership.rs`. The finished lesson is `examples/ownership.rs.tiza`.
-- **Script:** Ask the agent: `Explain move, shared borrow and &mut on this file in seven steps, one color per value: arrows solid for a move, dashed for a shared borrow, thick for &mut; a callout that sums up at the end. Use a style borrow_mut with define_style.`
+- **Script:** Ask the agent: `Explain move, shared borrow and &mut on this file in six steps, one color per value: arrows solid for a move, dashed for a shared borrow, thick for &mut; a box with a label on each function. Use a style borrow_mut with define_style.`
 - **The audience sees:** The ownership lesson of the README: `s` moves, `t` is borrowed, `u` is borrowed mutably and `takes` drops `s`.
 - **Recording:** A part of a tutorial of 5 to 10 minutes, in presentation mode or as the GIF of the README. See [The width line](../guides/check-before-you-record.md#the-width-line).
 

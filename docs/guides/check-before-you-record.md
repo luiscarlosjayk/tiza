@@ -114,4 +114,4 @@ A live instance gives the same report for the document that it holds. The report
 
 ## How it works
 
-Both themes use explicit RGB colors for 1080p video. `scripts/legibility.py` runs in CI on step 7 of `examples/ownership.rs.tiza`, in the dark and the light theme. It measures each text color of that frame after a compression like the one on YouTube. Each one keeps a contrast of 4.5:1 or more against the background.
+Both themes use explicit RGB colors for 1080p video. `scripts/legibility.py` runs in CI on the last step of `examples/ownership.rs.tiza`, in the dark and the light theme. It measures each text color of that frame after a compression like the one on YouTube. Each one keeps a contrast of 4.5:1 or more against the background.

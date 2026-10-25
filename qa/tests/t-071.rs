@@ -7,7 +7,8 @@
 //!   resize` (80×24, 120×40, 75×50, 60×30 and as large as the base pane
 //!   allows), and prints each one's size as Tiza sees it and Herdr's rect.
 //! - AC2 In each pane it runs `tiza examples/ownership.rs.tiza --present
-//!   --step 7 --no-save` (plus normal-mode runs with the status bar), waits
+//!   --step LAST --no-save` (LAST = the last step of the example; plus
+//!   normal-mode runs with the status bar), waits
 //!   for the first frame and saves `herdr pane read --source visible` to
 //!   `qa/herdr/<case>-<cols>x<rows>.txt`, named by the size Tiza sees.
 //! - AC3 `--check` diffs the captures against the committed snapshots and
@@ -283,6 +284,23 @@ fn changed_copy(dir: &Path, sub: &str, from: &str, to: &str) -> PathBuf {
     p
 }
 
+/// The last step of the example: the step of its last annotation or move,
+/// as the script computes it.
+fn last_step() -> String {
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(example("ownership.rs.tiza")).unwrap())
+            .unwrap();
+    let steps = |key: &str, field: &str| -> Vec<u64> {
+        doc[key]
+            .as_array()
+            .map(|v| v.iter().map(|a| a[field].as_u64().unwrap_or(0)).collect())
+            .unwrap_or_default()
+    };
+    let mut all = steps("annotations", "step");
+    all.extend(steps("moves", "at_step"));
+    all.into_iter().max().unwrap().to_string()
+}
+
 /// A copy of the example whose step-1 label is changed.
 fn changed_example(dir: &Path) -> PathBuf {
     changed_copy(dir, "doc", "s is born", "s is created")
@@ -356,7 +374,7 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     );
     let frame = std::fs::read_to_string(dir.join("snaps/vt100-80x24.txt")).unwrap();
     assert!(frame.contains("s is born"), "{frame}");
-    // The probe, then each case at step 7, presented or with the status bar.
+    // The probe, then each case at the last step, presented or with the status bar.
     let cmds = std::fs::read_to_string(fake.join("log")).unwrap();
     let cmds: Vec<&str> = cmds.lines().collect();
     assert_eq!(cmds.len(), CASES.len() + 1, "{cmds:#?}");
@@ -366,7 +384,8 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
     assert_eq!(presented, 5, "{cmds:#?}");
     for c in cmds {
         assert!(c.contains("ownership.rs.tiza"), "{c}");
-        assert!(c.contains("--step 7 --no-save --socket "), "{c}");
+        let step = format!("--step {} --no-save --socket ", last_step());
+        assert!(c.contains(&step), "{c}");
     }
     assert_tab_opened_and_closed(&fake);
     assert_cleaned(&fake);
@@ -393,8 +412,11 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
         r.stdout
     );
     assert!(!r.stdout.contains("style only"), "{}", r.stdout);
+    // The diff shows the new label on its row, whatever the rails left of it.
     assert!(
-        r.stdout.contains("+    │        · s is created"),
+        r.stdout
+            .lines()
+            .any(|l| l.starts_with('+') && l.trim_end().ends_with("· s is created")),
         "{}",
         r.stdout
     );

@@ -37,8 +37,8 @@
       "step": 1,
       "type": "arrow",
       "from": {
-        "line": 2,
-        "col": 8
+        "line": 3,
+        "col": 10
       },
       "to": {
         "line": 15,
@@ -146,7 +146,7 @@
       "type": "box",
       "from_line": 23,
       "to_line": 25,
-      "label": "mutates without taking ownership",
+      "label": "borrows mutably: the caller sees the change",
       "color": "yellow"
     },
     {
@@ -184,17 +184,6 @@
       ]
     },
     {
-      "id": "c1",
-      "step": 7,
-      "type": "callout",
-      "from_line": 15,
-      "to_line": 25,
-      "title": "three ways to pass a value",
-      "text": "takes(s) moves the String: main loses it. len(&s) borrows it read-only, so main keeps using t afterwards. push(&mut s) borrows it mutably: only one such borrow may exist at a time, and the caller sees the change.",
-      "placement": "auto",
-      "color": "cyan"
-    },
-    {
       "id": "s2",
       "step": 4,
       "type": "spotlight",
@@ -203,6 +192,23 @@
         "a7",
         "a8"
       ]
+    },
+    {
+      "id": "a14",
+      "step": 4,
+      "type": "box",
+      "from_line": 19,
+      "to_line": 21,
+      "label": "borrows read-only: main keeps using t",
+      "color": "cyan"
+    },
+    {
+      "id": "a15",
+      "step": 1,
+      "type": "note",
+      "line": 1,
+      "text": "three ways to pass a value",
+      "color": "cyan"
     }
   ]
 }

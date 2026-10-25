@@ -25,7 +25,7 @@
 
 use tiza_qa::{example, scratch, tiza_ok};
 
-const WIDTH: &str = "108";
+const WIDTH: &str = "92";
 
 fn root() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -56,6 +56,23 @@ fn gif_info(bytes: &[u8]) -> (u16, u16, usize) {
     (w, h, n)
 }
 
+/// The last step of the example: the highest step of an annotation or a
+/// move, as `scripts/readme-images.sh` computes it.
+fn last_step() -> String {
+    let doc: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(example("ownership.rs.tiza")).unwrap())
+            .unwrap();
+    let steps = |key: &str, field: &str| -> Vec<u64> {
+        doc[key]
+            .as_array()
+            .map(|v| v.iter().map(|a| a[field].as_u64().unwrap_or(0)).collect())
+            .unwrap_or_default()
+    };
+    let mut all = steps("annotations", "step");
+    all.extend(steps("moves", "at_step"));
+    all.into_iter().max().unwrap().to_string()
+}
+
 fn render(args: &[&str], out: &std::path::Path) {
     let ex = example("ownership.rs.tiza");
     let mut a = vec![
@@ -82,7 +99,7 @@ fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
     }
     for out in [
         "docs/img/ownership.gif",
-        "docs/img/ownership-step7.png",
+        "docs/img/ownership-final.png",
         "docs/img/src/step$s.png",
         "readme-images:ownership-txt",
     ] {
@@ -118,7 +135,7 @@ fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
             }
         }
     }
-    assert!(shown >= 2, "the GIF and the step-7 PNG: {shown}");
+    assert!(shown >= 2, "the GIF and the PNG of the last step: {shown}");
 }
 
 fn images(md: &str) -> Vec<(String, String)> {
@@ -142,7 +159,7 @@ fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
     let dir = scratch("t121-fresh");
     // GIF: same frames and size as a fresh render; < 1 MB.
     let gif_path = dir.join("own.gif");
-    render(&[], &gif_path);
+    render(&["--skip-zero", "--scale", "1.5"], &gif_path);
     let committed = std::fs::read(root().join("docs/img/ownership.gif")).unwrap();
     assert!(committed.len() < 1_000_000, "GIF {} bytes", committed.len());
     assert_eq!(
@@ -150,12 +167,12 @@ fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
         gif_info(&std::fs::read(&gif_path).unwrap()),
         "docs/img/ownership.gif is stale: run scripts/readme-images.sh"
     );
-    // PNGs: step 7 (< 300 KB) and the hero's three frames.
+    // PNGs: the last step (< 300 KB) and the hero's other two frames.
+    let last = last_step();
     for (rel, step) in [
-        ("docs/img/ownership-step7.png", "7"),
+        ("docs/img/ownership-final.png", last.as_str()),
         ("docs/img/src/step1.png", "1"),
-        ("docs/img/src/step4.png", "4"),
-        ("docs/img/src/step7.png", "7"),
+        ("docs/img/src/step3.png", "3"),
     ] {
         let fresh = dir.join(format!("step{step}.png"));
         render(&["--step", step], &fresh);
@@ -165,11 +182,11 @@ fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
             png_size(&std::fs::read(&fresh).unwrap()),
             "{rel} is stale: run scripts/readme-images.sh"
         );
-        if rel == "docs/img/ownership-step7.png" {
+        if rel == "docs/img/ownership-final.png" {
             assert!(c.len() < 300_000, "{rel} {} bytes", c.len());
         }
     }
-    // The text block under the GIF is the step-7 text export, rows 1..=17
+    // The text block under the GIF is the text export of the last step, rows 1..=17
     // plus the box's bottom border.
     let txt = tiza_ok(&[
         "render",
@@ -177,7 +194,7 @@ fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
         "--width",
         WIDTH,
         "--step",
-        "7",
+        &last,
         "--out",
         "-",
         "--format",

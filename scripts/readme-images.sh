@@ -8,9 +8,10 @@
 #   CHROME=path/to/chrome scripts/readme-images.sh
 #
 # Writes (all from examples/ownership.rs.tiza, dark theme, embedded fonts):
-#   docs/img/ownership.gif         native GIF, every step (scale 2)
-#   docs/img/ownership-step7.png   step 7
-#   docs/img/src/step{1,4,7}.png   the real frames the hero is built from
+#   docs/img/ownership.gif         native GIF, from step 1 to the last step
+#                                  (scale 1.5)
+#   docs/img/ownership-final.png   the last step (scale 2); the hero uses it too
+#   docs/img/src/step{1,3}.png     the other real frames of the hero
 #   docs/img/hero.png              1200×630 at device scale 2, from
 #                                  docs/img/src/hero.html (needs Chrome or
 #                                  Chromium; skipped with a message if none)
@@ -23,10 +24,14 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
-# The README images are 108 columns wide. Every label of the example fits
+# The README images are 92 columns wide. Every label of the example fits
 # from 91 columns on (`tiza check` says so).
-WIDTH=108
+WIDTH=92
 EXAMPLE=examples/ownership.rs.tiza
+# The last step of the example: the highest step of an annotation or a move.
+LAST="$(python3 -c 'import json, sys
+d = json.load(open(sys.argv[1]))
+print(max([a.get("step", 0) for a in d.get("annotations", [])] + [m["at_step"] for m in d.get("moves", [])]))' "$EXAMPLE")"
 
 if [[ -z "${TIZA:-}" ]]; then
     cargo build --release --locked -p tiza >&2
@@ -37,15 +42,17 @@ mkdir -p docs/img/src
 
 render() { "$TIZA" render "$EXAMPLE" --width "$WIDTH" "$@"; }
 
-render --out docs/img/ownership.gif
-render --step 7 --out docs/img/ownership-step7.png
-for s in 1 4 7; do
+# The GIF leaves out step 0 (the bare code) and uses scale 1.5, to keep it
+# light. The PNGs keep the default scale 2.
+render --skip-zero --scale 1.5 --out docs/img/ownership.gif
+render --step "$LAST" --out docs/img/ownership-final.png
+for s in 1 3; do
     render --step "$s" --out "docs/img/src/step$s.png"
 done
 
-# The text block in the README: step 7 as plain text, from the first row to
-# the bottom border of the first box (lines 1-17).
-txt="$(render --step 7 --out - --format txt)"
+# The text block in the README: the last step as plain text, from the first
+# row to the bottom border of the first box (lines 1-17).
+txt="$(render --step "$LAST" --out - --format txt)"
 block="$(printf '%s\n' "$txt" | awk '{ print } $1 == "17" { want = 1; next } want && /╰/ { exit }')"
 python3 - "$block" <<'EOF'
 import sys, pathlib
@@ -86,7 +93,7 @@ else
     "$chrome" "${args[@]}" "file://$root/docs/img/src/hero.html" >/dev/null 2>&1
 fi
 
-for f in docs/img/ownership.gif docs/img/ownership-step7.png docs/img/hero.png \
-         docs/img/src/step1.png docs/img/src/step4.png docs/img/src/step7.png; do
+for f in docs/img/ownership.gif docs/img/ownership-final.png docs/img/hero.png \
+         docs/img/src/step1.png docs/img/src/step3.png; do
     [[ -f "$f" ]] && printf '%9d bytes  %s\n' "$(wc -c <"$f")" "$f"
 done

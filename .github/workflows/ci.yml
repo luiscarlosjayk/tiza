@@ -107,10 +107,15 @@ jobs:
       - run: pip install pillow numpy
       - run: sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
       - run: cargo build -q
-      - name: dark theme, step 7
-        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme dark --json legibility-dark.json --keep frames-dark
-      - name: light theme, step 7
-        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme light --json legibility-light.json --keep frames-light
+      - name: last step of the example
+        run: |
+          python3 -c 'import json, sys
+          d = json.load(open(sys.argv[1]))
+          print("LAST=%d" % max([a.get("step", 0) for a in d.get("annotations", [])] + [m["at_step"] for m in d.get("moves", [])]))' examples/ownership.rs.tiza >> "$GITHUB_ENV"
+      - name: dark theme, last step
+        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step "$LAST" --theme dark --json legibility-dark.json --keep frames-dark
+      - name: light theme, last step
+        run: python3 scripts/legibility.py examples/ownership.rs.tiza --step "$LAST" --theme light --json legibility-light.json --keep frames-light
       - uses: actions/upload-artifact@v7
         if: always()
         with:

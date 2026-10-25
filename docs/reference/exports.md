@@ -22,9 +22,9 @@ tiza render --out shot.png
 - Without a document, `tiza render` exports what the live instance shows. See [The live instance](#the-live-instance).
 - Without `--step`, an export of a document shows all its annotations, as at the last step.
 
-For example, this is step 7 of `examples/ownership.rs.tiza` as a PNG at 108 columns:
+For example, this is the last step of `examples/ownership.rs.tiza` as a PNG at 92 columns:
 
-![Step 7 of the ownership example: arrows and marks for a move, a borrow and a mutable borrow, a drop mark and a callout](../img/ownership-step7.png)
+![The last step of the ownership example: arrows and marks for a move, a borrow and a mutable borrow, a drop mark and a box on each function](../img/ownership-final.png)
 
 ## Record all the steps
 

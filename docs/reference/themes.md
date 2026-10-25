@@ -272,7 +272,7 @@ The color query asks the terminal with OSC 11 for the background and with OSC 10
 
 ### Legibility
 
-The built-in themes use RGB colors that stay legible in a 1080p video. CI runs [`scripts/legibility.py`](../../scripts/legibility.py) on step 7 of `examples/ownership.rs.tiza`, in `dark` and in `light`. The script renders a PNG and scales it to 1920×1080. Then it compresses the frame as YouTube does.
+The built-in themes use RGB colors that stay legible in a 1080p video. CI runs [`scripts/legibility.py`](../../scripts/legibility.py) on the last step of `examples/ownership.rs.tiza`, in `dark` and in `light`. The script renders a PNG and scales it to 1920×1080. Then it compresses the frame as YouTube does.
 
 - The script measures the text colors of the SVG export against the background.
 - It skips a color under 1.5:1 before the compression, because such a color is a tint, not text.
@@ -282,7 +282,7 @@ The built-in themes use RGB colors that stay legible in a 1080p video. CI runs [
 To check a theme file, run the script with `--theme-file`:
 
 ```sh
-python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme-file examples/themes/catppuccin-mocha.toml
+python3 scripts/legibility.py examples/ownership.rs.tiza --step 6 --theme-file examples/themes/catppuccin-mocha.toml
 ```
 
 The script needs Python with Pillow and numpy, and ffmpeg. It runs `target/debug/tiza`, or the binary that `--bin` or `TIZA_BIN` names. Without ffmpeg, it exits with 2.

@@ -98,6 +98,11 @@ done
 [ -n "$NORMALIZE" ] || [ -f "$DOC" ] || die "document not found: $DOC"
 DOC="$(cd "$(dirname "$DOC")" && pwd)/$(basename "$DOC")"
 command -v python3 >/dev/null || die "python3 is needed (Herdr's and Tiza's JSON, the ansi captures)"
+# The last step of the document: the step of its last annotation or move.
+LAST=""
+[ -n "$NORMALIZE" ] || LAST="$(python3 -c 'import json, sys
+d = json.load(open(sys.argv[1]))
+print(max([a.get("step", 0) for a in d.get("annotations", [])] + [m["at_step"] for m in d.get("moves", [])]))' "$DOC")"
 
 # The matrix: case, target cols, target rows of the terminal Tiza sees ("max"
 # = as large as the base pane allows), mode. 75x50 is Zed split in half; the
@@ -954,8 +959,8 @@ while read -r name tc tr mode; do
     want_c=$tc want_r=$tr
     [ "$tc" = max ] && want_c=$((${size% *} - FC))
     [ "$tr" = max ] && want_r=$((${size#* } - FR))
-    flags="--present --step 7"
-    [ "$mode" = normal ] && flags="--step 7"
+    flags="--present --step $LAST"
+    [ "$mode" = normal ] && flags="--step $LAST"
     run_tiza "$pane" "$sock" "$flags"
     seen="$(tiza_size "$sock" "$want_c $want_r")"
     if [ "$seen" != "$want_c $want_r" ]; then

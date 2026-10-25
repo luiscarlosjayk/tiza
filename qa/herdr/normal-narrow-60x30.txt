@@ -1,30 +1,30 @@
 
     1          fn main() {
-    2 ╭───────     let s = String::from("hello");
-      │                ◀───╯
-      │        · s is born
-    3 │            takes(s);
-      │        · ━▶ move: into takes
-    4 │            // println!("{s}"); // error: borrow…
-      │        ┆ s no longer owns it: using it here does …
-    5 │
-    6 │            let t = String::from("world");
-    7 │ ╭╌╌╌╌╌     let n = len(&t);
-      │ ╎      · ╌▶ read: borrowed
-    8 │ ╎          println!("{t} has {n} letters");
-      │ ╎      ┆ t is still valid
-    9 │ ╎
-   10 │ ╎          let mut u = String::from("hey");
-   11 │ ╎ ┏━━━     push(&mut u);
-      │ ╎ ┃    · ✎▶ &mut borrow
-   12 │ ╎ ┃        println!("{u}");
-      │ ╎ ┃    ┆ u is now "hey!"
-   13 │ ╎ ┃    }
-   14 │ ╎ ┃
-      │ ╎ ┃ ╭─ takes owns s and frees it at the end ─────╮
-   15 ╰─╎─┃─┼▶ fn takes(s: String) {  ─▶ move            │
-   16   ╎ ┃ │      println!("{s}");                      │
-   17   ╎ ┃ │  }                                         │
-        ╎ ┃ │  · ╳ drop: s dies here                     │
+               ┆ three ways to pass a value
+    2              let s = String::from("hello");
+                       ◀───╯
+               · s is born
+    3     ╭───     takes(s);
+          │    · ━▶ move: into takes
+    4     │        // println!("{s}"); // error: borrow…
+          │    ┆ s no longer owns it: using it here does …
+    5     │
+    6     │        let t = String::from("world");
+    7   ╭╌│╌╌╌     let n = len(&t);
+        ╎ │    · ╌▶ read: borrowed
+    8   ╎ │        println!("{t} has {n} letters");
+        ╎ │    ┆ t is still valid
+    9   ╎ │
+   10   ╎ │        let mut u = String::from("hey");
+   11 ┏━╎━│━━━     push(&mut u);
+      ┃ ╎ │    · ✎▶ &mut borrow
+   12 ┃ ╎ │        println!("{u}");
+      ┃ ╎ │    ┆ u is now "hey!"
+   13 ┃ ╎ │    }
+   14 ┃ ╎ │
+      ┃ ╎ │ ╭─ takes owns s and frees it at the end ─────╮
+   15 ┃ ╎ ╰─┼▶ fn takes(s: String) {  ─▶ move            │
+   16 ┃ ╎   │      println!("{s}");                      │
+   17 ┃ ╎   │  }                                         │
 
- ╭▶ NORMAL  step 7/7  no-save  ! code needs 74 cols  ? help
+ ╭▶ NORMAL  step 6/6  no-save  ! code needs 74 cols  ? help

@@ -1,9 +1,10 @@
 
     1          fn main() {
-    2 ╭───────     let s = String::from("hello");
-      │                ◀───╯
-      │        · s is born
-    3 │            takes(s);
+               ┆ three ways to pass a value
+    2              let s = String::from("hello");
+                       ◀───╯
+               · s is born
+    3 ╭───────     takes(s);
       │        · ━▶ move: into takes
     4 │            // println!("{s}"); // error: borrow…
       │        ┆ s no longer owns it: using it here does …
@@ -26,5 +27,4 @@
    16   ╎ ┃ │      println!("{s}");                      │
    17   ╎ ┃ │  }                                         │
         ╎ ┃ │  · ╳ drop: s dies here                     │
-        ╎ ┃ ╰────────────────────────────────────────────╯
-                                                        7/7
+                                                        6/6

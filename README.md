@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/img/hero.png" alt="Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 4 and 7" width="480"></p>
+<p align="center"><img src="docs/img/hero.png" alt="Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 3 and 6" width="480"></p>
 
 **Draw on top of code in your terminal to explain, debug and teach.**
 
@@ -71,13 +71,13 @@ This GIF and this text block are real Tiza exports of [the ownership example](ex
 
 <!-- readme-images:ownership-txt -->
 ```
-  1          fn main() {
-  2 ╭───────     let s = String::from("hello");
-    │                ◀───╯                                             s is born
-  3 │            takes(s);                                             ━▶ move: into takes
-  4 │            // println!("{s}"); // error: borrow of moved value   ┆ s no longer owns it: using it here
-  5 │                                                                    does not compile
-  6 │            let t = String::from("world");
+  1          fn main() {                                               ┆ three ways to pass
+  2              let s = String::from("hello");                          a value
+                     ◀───╯                                             s is born
+  3 ╭───────     takes(s);                                             ━▶ move: into takes
+  4 │            // println!("{s}"); // error: borrow of moved value   ┆ s no longer owns
+  5 │                                                                    it: using it here
+  6 │            let t = String::from("world");                          does not compile
   7 │ ╭╌╌╌╌╌     let n = len(&t);                                      ╌▶ read: borrowed
   8 │ ╎          println!("{t} has {n} letters");                      ┆ t is still valid
   9 │ ╎

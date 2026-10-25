@@ -1,9 +1,10 @@
 
     1          fn main() {
-    2 ╭───────     let s = String::from("hello");
-      │                ◀───╯
-      │        · s is born
-    3 │            takes(s);
+               ┆ three ways to pass a value
+    2              let s = String::from("hello");
+                       ◀───╯
+               · s is born
+    3 ╭───────     takes(s);
       │        · ━▶ move: into takes
     4 │            // println!("{s}"); // error: borrow of moved value
       │        ┆ s no longer owns it: using it here does not compile
@@ -28,23 +29,22 @@
         ╎ ┃ │  · ╳ drop: s dies here                                   │
         ╎ ┃ ╰──────────────────────────────────────────────────────────╯
    18   ╎ ┃
-   19   ╰╌┃╌╌▶ fn len(s: &String) -> usize {  ╌▶ borrow &
-   20     ┃        s.len()
-   21     ┃    }
+        ╎ ┃ ╭─ borrows read-only: main keeps using t ──────────────────╮
+   19   ╰╌┃╌┼▶ fn len(s: &String) -> usize {  ╌▶ borrow &              │
+   20     ┃ │      s.len()                                             │
+   21     ┃ │  }                                                       │
+          ┃ ╰──────────────────────────────────────────────────────────╯
    22     ┃
-          ┃ ╭─ mutates without taking ownership ───────────────────────╮
+          ┃ ╭─ borrows mutably: the caller sees the change ────────────╮
    23     ┗━┿▶ fn push(s: &mut String) {  ━▶ &mut                      │
    24       │      s.push('!');                                        │
    25       │  }                                                       │
             ╰──────────────────────────────────────────────────────────╯
-               ╭─ three ways to pass a value ────────────────────────╮
-               │ takes(s) moves the String: main loses it. len(&s)   │
-               │ borrows it read-only, so main keeps using t         │
-               │ afterwards. push(&mut s) borrows it mutably: only   │
-               │ one such borrow may exist at a time, and the caller │
-               │ sees the change.                                    │
-               ╰─────────────────────────────────────────────────────╯
 
 
 
-                                                                       7/7
+
+
+
+
+                                                                       6/6

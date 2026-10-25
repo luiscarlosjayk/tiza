@@ -6,9 +6,9 @@ at a YouTube-like bitrate (ffmpeg) → decode the frame → for every text color
 the theme uses, compare the pixels that had that color before compression
 with what came back, and report the WCAG contrast against the background.
 
-    python3 scripts/legibility.py examples/ownership.rs.tiza --step 7
+    python3 scripts/legibility.py examples/ownership.rs.tiza --step 6
     python3 scripts/legibility.py doc.tiza --theme light --min 4.5 --json report.json
-    python3 scripts/legibility.py examples/ownership.rs.tiza --step 7 --theme-file examples/themes/catppuccin-mocha.toml
+    python3 scripts/legibility.py examples/ownership.rs.tiza --step 6 --theme-file examples/themes/catppuccin-mocha.toml
 
 Exit code 1 when any measured role falls under --min. Needs python3 with
 Pillow and numpy, ffmpeg on PATH, and the tiza binary (--bin or
