@@ -82,13 +82,13 @@ fn names_a_card(s: &str) -> bool {
 }
 
 fn the_fixture() -> Vec<u8> {
-    std::fs::read(fixture("t-217/v9.9.9.md")).unwrap()
+    std::fs::read(fixture("release/release_notes/v9.9.9.md")).unwrap()
 }
 
 #[test]
-fn ac2_a_plain_tag_gives_its_notes_as_written() {
+fn a_plain_tag_gives_its_notes_as_written() {
     let fx = the_fixture();
-    let dir = workspace("t217-plain", &[("v9.9.9.md", &fx)]);
+    let dir = workspace("plain", &[("v9.9.9.md", &fx)]);
     let o = notes(&dir, "v9.9.9");
     assert!(o.status.success(), "{}", err(&o));
     // As written, the `#` line of the code block included: no commit
@@ -98,8 +98,8 @@ fn ac2_a_plain_tag_gives_its_notes_as_written() {
 }
 
 #[test]
-fn step2_ac2_a_plain_tag_without_notes_is_refused_naming_the_path() {
-    let dir = workspace("t217-none", &[]);
+fn a_plain_tag_without_notes_is_refused_naming_the_path() {
+    let dir = workspace("none", &[]);
     let o = notes(&dir, "v9.9.9");
     assert_eq!(o.status.code(), Some(1), "{}", out(&o));
     assert!(out(&o).is_empty());
@@ -111,10 +111,10 @@ fn step2_ac2_a_plain_tag_without_notes_is_refused_naming_the_path() {
 }
 
 #[test]
-fn step1_ac2_a_prerelease_takes_its_own_notes_or_two_lines() {
+fn a_prerelease_takes_its_own_notes_or_two_lines() {
     let fx = the_fixture();
     let own = b"# Tiza v9.9.9-rc.2\n\nA prerelease with notes of its own.\n";
-    let dir = workspace("t217-rc", &[("v9.9.9.md", &fx), ("v9.9.9-rc.2.md", own)]);
+    let dir = workspace("rc", &[("v9.9.9.md", &fx), ("v9.9.9-rc.2.md", own)]);
     // Never the notes of 9.9.9: their archive names are not the rc's.
     let o = notes(&dir, "v9.9.9-rc.1");
     assert!(o.status.success(), "{}", err(&o));
@@ -137,7 +137,7 @@ fn step1_ac2_a_prerelease_takes_its_own_notes_or_two_lines() {
 }
 
 #[test]
-fn corner_a_byte_order_mark_and_crlf_are_removed() {
+fn a_byte_order_mark_and_crlf_are_removed() {
     let fx = the_fixture();
     let mut crlf = b"\xEF\xBB\xBF".to_vec();
     crlf.extend(
@@ -146,16 +146,16 @@ fn corner_a_byte_order_mark_and_crlf_are_removed() {
             .replace('\n', "\r\n")
             .bytes(),
     );
-    let dir = workspace("t217-crlf", &[("v9.9.9.md", &crlf)]);
+    let dir = workspace("crlf", &[("v9.9.9.md", &crlf)]);
     let o = notes(&dir, "v9.9.9");
     assert!(o.status.success(), "{}", err(&o));
     assert_eq!(out(&o).as_bytes(), fx.as_slice());
 }
 
 #[test]
-fn ac1_notes_that_name_a_card_are_refused() {
+fn notes_that_name_a_card_are_refused() {
     let dir = workspace(
-        "t217-card",
+        "card",
         &[("v9.9.9.md", b"# Tiza v9.9.9\n\n- Fixed the bar (t-173).\n")],
     );
     let o = notes(&dir, "v9.9.9");
@@ -163,7 +163,7 @@ fn ac1_notes_that_name_a_card_are_refused() {
     assert!(err(&o).contains("board card"), "{}", err(&o));
     // A word that only contains the pattern is not a card.
     let dir = workspace(
-        "t217-word",
+        "word",
         &[(
             "v9.9.9.md",
             b"# Tiza v9.9.9\n\nUTF-8 and the test-123 suite.\n",
@@ -173,7 +173,7 @@ fn ac1_notes_that_name_a_card_are_refused() {
 }
 
 #[test]
-fn ac1_the_v0_1_0_notes_match_what_the_release_builds() {
+fn the_v0_1_0_notes_match_what_the_release_builds() {
     let n = read("docs/release-notes/v0.1.0.md");
     assert!(!names_a_card(&n));
     let yml = read(".github/workflows/release.yml");
@@ -205,7 +205,7 @@ fn ac1_the_v0_1_0_notes_match_what_the_release_builds() {
 }
 
 #[test]
-fn ac3_the_readme_status_and_the_gatekeeper_note() {
+fn the_readme_status_and_the_gatekeeper_note() {
     let readme = read("README.md");
     let toml = read("Cargo.toml");
     let version = toml
@@ -241,9 +241,9 @@ fn git(dir: &Path, args: &[&str]) {
 }
 
 #[test]
-fn rev_notes_not_committed_are_refused() {
+fn notes_not_committed_are_refused() {
     let fx = the_fixture();
-    let dir = workspace("t217-git", &[("v9.9.9.md", &fx)]);
+    let dir = workspace("git", &[("v9.9.9.md", &fx)]);
     git(&dir, &["init", "-q"]);
     git(&dir, &["add", "scripts"]);
     git(&dir, &["commit", "-qm", "script"]);
@@ -256,13 +256,13 @@ fn rev_notes_not_committed_are_refused() {
 }
 
 #[test]
-fn rev_empty_notes_are_refused() {
+fn empty_notes_are_refused() {
     for (name, bytes) in [
         ("empty", &b""[..]),
         ("bom", &b"\xEF\xBB\xBF\r\n\r\n"[..]),
         ("blank", &b"  \n\t\n"[..]),
     ] {
-        let dir = workspace(&format!("t217-empty-{name}"), &[("v9.9.9.md", bytes)]);
+        let dir = workspace(&format!("empty-{name}"), &[("v9.9.9.md", bytes)]);
         let o = notes(&dir, "v9.9.9");
         assert_eq!(o.status.code(), Some(1), "{name}: {}", out(&o));
         assert!(err(&o).contains("has no text"), "{name}: {}", err(&o));
@@ -270,11 +270,11 @@ fn rev_empty_notes_are_refused() {
 }
 
 #[test]
-fn rev_the_byte_order_mark_goes_whatever_perl_unicode_says() {
+fn the_byte_order_mark_goes_whatever_perl_unicode_says() {
     let fx = the_fixture();
     let mut bom = b"\xEF\xBB\xBF".to_vec();
     bom.extend(&fx);
-    let dir = workspace("t217-perl", &[("v9.9.9.md", &bom)]);
+    let dir = workspace("perl", &[("v9.9.9.md", &bom)]);
     for value in ["SD", "SDA", ""] {
         let o = Command::new("bash")
             .arg(dir.join("scripts/release-notes.sh"))
@@ -288,10 +288,10 @@ fn rev_the_byte_order_mark_goes_whatever_perl_unicode_says() {
 }
 
 #[test]
-fn rev_through_a_symlink_from_elsewhere() {
+fn through_a_symlink_from_elsewhere() {
     let fx = the_fixture();
-    let dir = workspace("t217-link", &[("v9.9.9.md", &fx)]);
-    let other = scratch("t217-link-other");
+    let dir = workspace("link", &[("v9.9.9.md", &fx)]);
+    let other = scratch("link-other");
     std::os::unix::fs::symlink(dir.join("scripts/release-notes.sh"), other.join("notes.sh"))
         .unwrap();
     let o = Command::new("bash")
@@ -304,17 +304,17 @@ fn rev_through_a_symlink_from_elsewhere() {
 }
 
 #[test]
-fn rev_a_card_written_with_another_hyphen_is_refused() {
+fn a_card_written_with_another_hyphen_is_refused() {
     for text in ["(t\u{2011}173)", "t\u{2010}173", "t\u{2212}173"] {
         let body = format!("# Tiza v9.9.9\n\nFixed {text}.\n");
-        let dir = workspace("t217-hyphen", &[("v9.9.9.md", body.as_bytes())]);
+        let dir = workspace("hyphen", &[("v9.9.9.md", body.as_bytes())]);
         let o = notes(&dir, "v9.9.9");
         assert_eq!(o.status.code(), Some(1), "{text}: {}", out(&o));
     }
 }
 
 #[test]
-fn rev_a_local_linux_archive_needs_glibc_2_35_at_most() {
+fn a_local_linux_archive_needs_glibc_2_35_at_most() {
     let local = read("scripts/release-local.sh");
     let check = local.find("glibc 2.35 at most").expect("the check");
     assert!(
@@ -325,8 +325,8 @@ fn rev_a_local_linux_archive_needs_glibc_2_35_at_most() {
 }
 
 #[test]
-fn rev_bump_version_refuses_a_status_line_twice_and_writes_nothing() {
-    let dir = scratch("t217-bump");
+fn bump_version_refuses_a_status_line_twice_and_writes_nothing() {
+    let dir = scratch("bump");
     std::fs::create_dir_all(dir.join("scripts")).unwrap();
     for f in ["Cargo.toml", "CHANGELOG.md", "scripts/bump-version.sh"] {
         std::fs::copy(root().join(f), dir.join(f)).unwrap();

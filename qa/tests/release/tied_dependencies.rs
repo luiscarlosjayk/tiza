@@ -1,4 +1,4 @@
-//! t-211 — Dependabot's PR #1 (skrifa 0.44 → 0.48) would have put a second
+//! Dependabot's PR #1 (skrifa 0.44 → 0.48) would have put a second
 //! skrifa and read-fonts in the tree: usvg (resvg) stays on skrifa 0.44.
 //!
 //! Acceptance criteria:
@@ -53,20 +53,20 @@ fn locked_versions(lock: &str, name: &str) -> Vec<String> {
 }
 
 #[test]
-fn ac4_one_version_of_each_tied_crate_in_the_lock() {
+fn one_version_of_each_tied_crate_in_the_lock() {
     let lock = read("Cargo.lock");
     for (name, follows) in TIED {
         let versions = locked_versions(&lock, name);
         assert_eq!(
             versions.len(),
             1,
-            "{name}: {versions:?} in Cargo.lock — it follows {follows}'s version and is never bumped alone (t-211, ADR 0004)"
+            "{name}: {versions:?} in Cargo.lock — it follows {follows}'s version and is never bumped alone (ADR 0004)"
         );
     }
 }
 
 #[test]
-fn ac2_dependabot_never_bumps_them_alone_nor_groups_minor() {
+fn dependabot_never_bumps_them_alone_nor_groups_minor() {
     let cfg = read(".github/dependabot.yml");
     for name in ["skrifa", "read-fonts", "rustix", "signal-hook"] {
         assert!(

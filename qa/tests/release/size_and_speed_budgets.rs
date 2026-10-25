@@ -1,4 +1,4 @@
-//! t-133 — Size and speed budgets: binary < 16 MB, download < 8 MB,
+//! Size and speed budgets: binary < 16 MB, download < 8 MB,
 //! `cargo install` time tracked, a benchmark baseline that warns on
 //! regressions, and `lto = "fat"` in the release profile.
 //!
@@ -103,7 +103,7 @@ fn budgets(targets: Value) -> Value {
 }
 
 #[test]
-fn ac6_release_profile_is_fat_lto_without_abort() {
+fn release_profile_is_fat_lto_without_abort() {
     let toml = std::fs::read_to_string(root().join("Cargo.toml")).unwrap();
     let section: Vec<&str> = toml
         .split("[profile.release]")
@@ -131,7 +131,7 @@ fn ac6_release_profile_is_fat_lto_without_abort() {
 }
 
 #[test]
-fn ac1_ac5_committed_budgets_hold_the_limits_and_a_baseline_per_target() {
+fn committed_budgets_hold_the_limits_and_a_baseline_per_target() {
     let b = read_json("qa/budgets.json");
     assert_eq!(b["limits"]["binary_bytes"], 16 * MB);
     assert_eq!(b["limits"]["archive_bytes"], 8 * MB);
@@ -154,8 +154,8 @@ fn ac1_ac5_committed_budgets_hold_the_limits_and_a_baseline_per_target() {
 }
 
 #[test]
-fn ac1_over_the_absolute_budgets_fails_naming_the_budget() {
-    let dir = scratch("t133-abs");
+fn over_the_absolute_budgets_fails_naming_the_budget() {
+    let dir = scratch("abs");
     let b = write_json(&dir, "budgets.json", &budgets(json!({})));
     let b = b.to_str().unwrap();
 
@@ -220,8 +220,8 @@ fn ac1_over_the_absolute_budgets_fails_naming_the_budget() {
 }
 
 #[test]
-fn ac1_growth_over_ten_percent_needs_the_baseline_moved_with_a_new_reason() {
-    let dir = scratch("t133-growth");
+fn growth_over_ten_percent_needs_the_baseline_moved_with_a_new_reason() {
+    let dir = scratch("growth");
     let target = host_target();
     let base = budgets(json!({ target.clone(): {
         "binary_bytes": MB, "archive_bytes": 4 * MB, "commit": "abc1234",
@@ -329,8 +329,8 @@ fn bench_baseline(version_ms: f64) -> Value {
 }
 
 #[test]
-fn ac2_bench_warns_on_a_slower_scenario_and_never_fails() {
-    let dir = scratch("t133-bench");
+fn bench_warns_on_a_slower_scenario_and_never_fails() {
+    let dir = scratch("bench");
     let tiza = bin();
     let latest = dir.join("latest.json");
     let common = |baseline: &Path| {
@@ -404,7 +404,7 @@ fn ac2_bench_warns_on_a_slower_scenario_and_never_fails() {
 }
 
 #[test]
-fn ac2_ac3_ac5_committed_bench_baseline_covers_every_scenario() {
+fn committed_bench_baseline_covers_every_scenario() {
     let b = read_json("qa/bench/baseline.json");
     assert_eq!(b["warn_pct"], 20);
     // Same shape for every target, no fixed numbers: a baseline moves with

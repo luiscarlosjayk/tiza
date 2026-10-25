@@ -1,4 +1,4 @@
-//! t-181 — `tiza --version` shows a stale commit when built in a git
+//! `tiza --version` shows a stale commit when built in a git
 //! worktree: build.rs watched `../../.git/HEAD`, which in a worktree is a
 //! file pointing elsewhere, so cargo never reran it.
 //!
@@ -88,10 +88,10 @@ fn git(dir: &Path, args: &[&str]) -> String {
         .args(args)
         .current_dir(dir)
         .env("GIT_CEILING_DIRECTORIES", ceiling())
-        .env("GIT_AUTHOR_NAME", "t181")
-        .env("GIT_AUTHOR_EMAIL", "t181@example.com")
-        .env("GIT_COMMITTER_NAME", "t181")
-        .env("GIT_COMMITTER_EMAIL", "t181@example.com")
+        .env("GIT_AUTHOR_NAME", "version_stamp")
+        .env("GIT_AUTHOR_EMAIL", "qa@example.com")
+        .env("GIT_COMMITTER_NAME", "version_stamp")
+        .env("GIT_COMMITTER_EMAIL", "qa@example.com")
         .output()
         .expect("git");
     assert!(
@@ -157,8 +157,8 @@ fn repo_and_worktree(name: &str) -> (PathBuf, PathBuf) {
 /// Test steps 1-2 and AC2: in a worktree the stamp follows commits and
 /// resets, and says `-dirty` only while the tree is.
 #[test]
-fn ac1_ac2_worktree_follows_commit_reset_and_dirty() {
-    let (_main, wt) = repo_and_worktree("t181-wt");
+fn worktree_follows_commit_reset_and_dirty() {
+    let (_main, wt) = repo_and_worktree("wt");
     assert!(wt.join(".git").is_file(), "a worktree's .git is a file");
     let first = head(&wt);
     assert_eq!(stamp(&wt, &[]), first);
@@ -200,8 +200,8 @@ fn ac1_ac2_worktree_follows_commit_reset_and_dirty() {
 
 /// Test step 3: the same in the main checkout of the repository.
 #[test]
-fn ac1_main_checkout_follows_commits() {
-    let (main, _wt) = repo_and_worktree("t181-main");
+fn main_checkout_follows_commits() {
+    let (main, _wt) = repo_and_worktree("main");
     assert!(main.join(".git").is_dir());
     assert_eq!(stamp(&main, &[]), head(&main));
     git(&main, &["commit", "-q", "--allow-empty", "-m", "two"]);
@@ -221,8 +221,8 @@ fn ac1_main_checkout_follows_commits() {
 /// Corner case: a detached HEAD has no ref; HEAD itself moves. The second
 /// move touches only HEAD (not the index), so it is HEAD's watch that sees it.
 #[test]
-fn corner_detached_head() {
-    let (_main, wt) = repo_and_worktree("t181-detached");
+fn detached_head() {
+    let (_main, wt) = repo_and_worktree("detached");
     git(&wt, &["commit", "-q", "--allow-empty", "-m", "two"]);
     git(&wt, &["checkout", "-q", "--detach"]);
     assert_eq!(stamp(&wt, &[]), head(&wt));
@@ -255,8 +255,8 @@ fn corner_detached_head() {
 /// touching the index (update-ref, as a fetch or a `reset --soft` would) is
 /// seen through its reflog.
 #[test]
-fn corner_packed_nested_branch() {
-    let (main, _wt) = repo_and_worktree("t181-packed");
+fn packed_nested_branch() {
+    let (main, _wt) = repo_and_worktree("packed");
     let wt = main.parent().unwrap().join("packed tree");
     git(
         &main,
@@ -296,8 +296,8 @@ fn corner_packed_nested_branch() {
 /// Git 2.45+) keeps every ref in `reftable/`; a `reset --soft` moves the
 /// branch without touching the index. Skipped, saying so, on an older git.
 #[test]
-fn corner_reftable_repository() {
-    let root = scratch("t181-reftable");
+fn reftable_repository() {
+    let root = scratch("reftable");
     let repo = root.join("repo");
     write_crate(&repo.join(CRATE));
     std::fs::write(repo.join(".gitignore"), "target/\n").unwrap();
@@ -308,7 +308,7 @@ fn corner_reftable_repository() {
         .expect("git");
     if !init.status.success() {
         eprintln!(
-            "t-181: this git has no reftable support, case not run: {}",
+            "version_stamp: this git has no reftable support, case not run: {}",
             String::from_utf8_lossy(&init.stderr)
         );
         return;
@@ -325,16 +325,16 @@ fn corner_reftable_repository() {
 /// AC3: the override wins, in git or not; outside git the stamp is
 /// `unknown`; a `git` that fails is the same fallback, with no panic.
 #[test]
-fn ac3_override_outside_git_and_failing_git() {
-    let (_main, wt) = repo_and_worktree("t181-override");
-    // The override is trimmed (moved here from t-152).
+fn override_outside_git_and_failing_git() {
+    let (_main, wt) = repo_and_worktree("override");
+    // The override is trimmed (moved here from the publishing tests).
     assert_eq!(
         stamp(&wt, &[("TIZA_GIT_SHA_OVERRIDE", " v9.9.9 ")]),
         "v9.9.9"
     );
     assert_eq!(stamp(&wt, &[]), head(&wt), "back to git without it");
 
-    let loose = scratch("t181-nogit");
+    let loose = scratch("nogit");
     write_crate(&loose.join(CRATE));
     assert_eq!(stamp(&loose, &[]), "unknown");
     assert_eq!(
@@ -343,7 +343,7 @@ fn ac3_override_outside_git_and_failing_git() {
     );
 
     // A `git` first on PATH that always fails (as a missing one would).
-    let fake = scratch("t181-fakegit");
+    let fake = scratch("fakegit");
     let script = fake.join("git");
     std::fs::write(&script, "#!/bin/sh\nexit 127\n").unwrap();
     let mut perm = std::fs::metadata(&script).unwrap().permissions();
@@ -354,7 +354,7 @@ fn ac3_override_outside_git_and_failing_git() {
         fake.display(),
         std::env::var("PATH").unwrap_or_default()
     );
-    let broken = scratch("t181-brokengit");
+    let broken = scratch("brokengit");
     write_crate(&broken.join(CRATE));
     assert_eq!(stamp(&broken, &[("PATH", &path)]), "unknown");
 }

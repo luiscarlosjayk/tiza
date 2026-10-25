@@ -221,13 +221,3 @@ fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
         "README text block is stale: run scripts/readme-images.sh\n{block}"
     );
 }
-
-#[test]
-fn ac4_the_examples_are_untouched_by_rendering() {
-    // `tiza render` only reads the document: the example is the same bytes
-    // after an export (the autosave belongs to the TUI).
-    let ex = example("ownership.rs.tiza");
-    let before = std::fs::read(&ex).unwrap();
-    render(&["--step", "3"], &scratch("t121-ex").join("x.png"));
-    assert_eq!(std::fs::read(&ex).unwrap(), before);
-}

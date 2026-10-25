@@ -568,7 +568,7 @@ fn finish(mut child: Child) -> Run {
 // --- AC1 ------------------------------------------------------------------
 
 #[test]
-fn ac1_runs_with_sh_and_dash_from_a_pipe_and_from_a_file() {
+fn runs_with_sh_and_dash_from_a_pipe_and_from_a_file() {
     let mut shells = vec!["sh"];
     if has("dash") {
         shells.push("dash");
@@ -592,7 +592,7 @@ fn ac1_runs_with_sh_and_dash_from_a_pipe_and_from_a_file() {
 }
 
 #[test]
-fn ac8_nothing_reads_the_rest_of_a_piped_script() {
+fn nothing_reads_the_rest_of_a_piped_script() {
     // bash reads a script from a pipe one byte at a time, so a command that
     // reads stdin (the fake tiza does) takes the line after the script.
     if !has("bash") {
@@ -614,7 +614,7 @@ fn ac8_nothing_reads_the_rest_of_a_piped_script() {
 }
 
 #[test]
-fn ac1_shellcheck_finds_nothing() {
+fn shellcheck_finds_nothing() {
     if !has("shellcheck") {
         eprintln!("shellcheck is not in PATH: skipped");
         return;
@@ -635,7 +635,7 @@ fn ac1_shellcheck_finds_nothing() {
 // --- AC2, AC6, AC8: the whole install -------------------------------------
 
 #[test]
-fn ac2_installs_the_latest_release_for_each_target_into_home_local_bin() {
+fn installs_the_latest_release_for_each_target_into_home_local_bin() {
     for (os, arch, target) in TARGETS {
         let m = Machine::new(&format!("latest-{target}"), Platform::new(os, arch), v020);
         let run = m.pipe(&[]);
@@ -678,7 +678,7 @@ fn ac2_installs_the_latest_release_for_each_target_into_home_local_bin() {
 }
 
 #[test]
-fn ac2_ac8_apple_silicon_gets_the_arm64_binary_and_loses_a_quarantine_flag() {
+fn apple_silicon_gets_the_arm64_binary_and_loses_a_quarantine_flag() {
     // Under Rosetta 2, uname -m says x86_64.
     let rosetta = Platform {
         apple_silicon: true,
@@ -724,7 +724,7 @@ fn ac2_ac8_apple_silicon_gets_the_arm64_binary_and_loses_a_quarantine_flag() {
 // --- AC3 ------------------------------------------------------------------
 
 #[test]
-fn ac3_platforms_without_a_binary_stop_before_any_download() {
+fn platforms_without_a_binary_stop_before_any_download() {
     let linux = Platform::linux();
     let windows = [
         "Tiza does not support Windows.",
@@ -827,7 +827,7 @@ fn ac3_platforms_without_a_binary_stop_before_any_download() {
 }
 
 #[test]
-fn ac3_glibc_2_35_or_later_installs_and_an_unknown_version_only_warns() {
+fn glibc_2_35_or_later_installs_and_an_unknown_version_only_warns() {
     let linux = Platform::linux();
     let known = [
         Platform {
@@ -885,7 +885,7 @@ fn ac3_glibc_2_35_or_later_installs_and_an_unknown_version_only_warns() {
 // --- AC4 ------------------------------------------------------------------
 
 #[test]
-fn ac4_tiza_version_pins_a_release_and_does_not_ask_for_the_latest() {
+fn tiza_version_pins_a_release_and_does_not_ask_for_the_latest() {
     let m = Machine::new("pinned", Platform::linux(), |work, base| {
         let mut routes = v020(work, base);
         routes.extend(release(work, "v0.1.0"));
@@ -935,7 +935,7 @@ fn ac4_tiza_version_pins_a_release_and_does_not_ask_for_the_latest() {
 }
 
 #[test]
-fn ac4_without_a_latest_release_it_tells_how_to_pin_one() {
+fn without_a_latest_release_it_tells_how_to_pin_one() {
     /// What releases/latest answers, from the base; `None` is a 404.
     type Latest = fn(&str) -> Option<Reply>;
     // GitHub today, with no release yet: releases/latest goes to releases.
@@ -983,7 +983,7 @@ fn ac4_without_a_latest_release_it_tells_how_to_pin_one() {
 }
 
 #[test]
-fn ac4_a_curlrc_that_follows_redirects_still_finds_the_latest() {
+fn a_curlrc_that_follows_redirects_still_finds_the_latest() {
     let m = Machine::new("curlrc", Platform::linux(), v020);
     std::fs::write(m.home.join(".curlrc"), "location\n").unwrap();
     let run = m.pipe(&[]);
@@ -1025,7 +1025,7 @@ fn v020_linux_archive(work: &Path, base: &str, bytes: Vec<u8>) -> Vec<(String, R
 }
 
 #[test]
-fn ac5_a_checksum_that_does_not_match_installs_nothing() {
+fn a_checksum_that_does_not_match_installs_nothing() {
     let zeros = format!("{}  tiza-v0.2.0-{LINUX}.tar.gz\n", "0".repeat(64));
     let cases: [(&str, Vec<u8>); 4] = [
         ("other-hash", zeros.into_bytes()),
@@ -1063,7 +1063,7 @@ fn ac5_a_checksum_that_does_not_match_installs_nothing() {
 }
 
 #[test]
-fn ac5_a_missing_or_broken_download_installs_nothing() {
+fn a_missing_or_broken_download_installs_nothing() {
     let cases: [(&str, &str, Option<Vec<u8>>, &str); 3] = [
         ("no-archive", "NAME.tar.gz", None, "error: Cannot download "),
         (
@@ -1101,7 +1101,7 @@ fn ac5_a_missing_or_broken_download_installs_nothing() {
 }
 
 #[test]
-fn ac5_shasum_checks_when_there_is_no_sha256sum() {
+fn shasum_checks_when_there_is_no_sha256sum() {
     let m = Machine::new("shasum", Platform::linux(), v020);
     let no_sha256sum = path_without(&m.dir, "no-sha256sum", &["sha256sum"]);
     if no_sha256sum.join("shasum").exists() {
@@ -1131,7 +1131,7 @@ fn ac5_shasum_checks_when_there_is_no_sha256sum() {
 // --- AC6 ------------------------------------------------------------------
 
 #[test]
-fn ac6_tells_the_exact_line_when_the_folder_is_not_in_path() {
+fn tells_the_exact_line_when_the_folder_is_not_in_path() {
     let m = Machine::new("path", Platform::linux(), v020);
     let bin = m.dir.join("bin");
     let b = s(&bin);
@@ -1240,7 +1240,7 @@ fn ac6_tells_the_exact_line_when_the_folder_is_not_in_path() {
 }
 
 #[test]
-fn ac6_a_relative_install_dir_is_made_absolute() {
+fn a_relative_install_dir_is_made_absolute() {
     let m = Machine::new("relative", Platform::linux(), v020);
     let run = m.pipe(&[("TIZA_INSTALL_DIR", "tools/bin")]);
     run.ok();
@@ -1257,7 +1257,7 @@ fn ac6_a_relative_install_dir_is_made_absolute() {
 }
 
 #[test]
-fn ac6_an_install_dir_that_cannot_take_the_binary_stops_before_any_download() {
+fn an_install_dir_that_cannot_take_the_binary_stops_before_any_download() {
     let m = Machine::new("bad-dir", Platform::linux(), v020);
     let bin = m.dir.join("bin");
     std::fs::create_dir_all(bin.join("tiza")).unwrap();
@@ -1314,7 +1314,7 @@ fn ac6_an_install_dir_that_cannot_take_the_binary_stops_before_any_download() {
 }
 
 #[test]
-fn ac8_a_new_binary_that_does_not_start_leaves_the_old_one() {
+fn a_new_binary_that_does_not_start_leaves_the_old_one() {
     let m = Machine::new("broken", Platform::linux(), |work, base| {
         let tiza = "#!/bin/sh\necho 'tiza: GLIBC_2.35 not found' >&2\nexit 1\n";
         let bytes = pack(work, "v0.2.0", LINUX, tiza);
@@ -1340,7 +1340,7 @@ fn ac8_a_new_binary_that_does_not_start_leaves_the_old_one() {
 // --- AC7 ------------------------------------------------------------------
 
 #[test]
-fn ac7_the_work_folder_goes_away_after_a_signal() {
+fn the_work_folder_goes_away_after_a_signal() {
     let (arrived_tx, arrived_rx) = mpsc::channel();
     let (release_tx, release_rx) = mpsc::channel();
     let m = Machine::new("signal", Platform::linux(), |work, base| {
@@ -1380,7 +1380,7 @@ fn ac7_the_work_folder_goes_away_after_a_signal() {
 }
 
 #[test]
-fn ac7_wget_downloads_when_there_is_no_curl() {
+fn wget_downloads_when_there_is_no_curl() {
     let m = Machine::new("wget", Platform::linux(), v020);
     let bin = m.dir.join("bin");
     let no_curl = path_without(&m.dir, "no-curl", &["curl"]);
@@ -1442,7 +1442,7 @@ fn ac7_wget_downloads_when_there_is_no_curl() {
 }
 
 #[test]
-fn ac5_ac7_the_script_names_the_release_files_and_keeps_to_https() {
+fn the_script_names_the_release_files_and_keeps_to_https() {
     let script = read("install.sh");
     assert!(script.starts_with("#!/bin/sh\n"));
     assert_eq!(
@@ -1502,7 +1502,7 @@ fn ac5_ac7_the_script_names_the_release_files_and_keeps_to_https() {
 // --- AC8 ------------------------------------------------------------------
 
 #[test]
-fn ac8_help_lists_the_variables() {
+fn help_lists_the_variables() {
     let m = Machine::new("help", Platform::new("FreeBSD", "amd64"), v020);
     for (pipe, flag) in [
         (true, "--help"),
@@ -1533,7 +1533,7 @@ fn ac8_help_lists_the_variables() {
 // --- AC9 ------------------------------------------------------------------
 
 #[test]
-fn ac9_the_readme_gives_the_command_first() {
+fn the_readme_gives_the_command_first() {
     let command =
         "curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh";
     let script = read("install.sh");

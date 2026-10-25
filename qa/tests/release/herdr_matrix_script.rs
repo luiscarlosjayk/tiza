@@ -1,4 +1,4 @@
-//! t-071 — Terminal size matrix with Herdr panes (QA script): the same frame
+//! Terminal size matrix with Herdr panes (QA script): the same frame
 //! at several real terminal sizes, compared with snapshots.
 //!
 //! Acceptance criteria:
@@ -19,7 +19,7 @@
 //!   not installed or not running.
 //! - AC5 Documented in qa/README.md as a QA-round step (not `cargo test`).
 //!
-//! t-158 adds the ansi side:
+//! The ansi side:
 //! - AC1 Each case also saves `<case>-<cols>x<rows>.ansi` from `herdr pane
 //!   read --source visible --format ansi`.
 //! - AC2 `--check` diffs it too and says whether a change is text or only
@@ -329,8 +329,8 @@ fn all_cases() -> Vec<String> {
 /// `<case>-<cols>x<rows>.txt` with that size and closes the tab; `--check`
 /// right after finds no difference; a changed label lists every pane.
 #[test]
-fn ac1_ac2_ac3_update_check_and_a_changed_label() {
-    let dir = scratch("t071-steps");
+fn update_check_and_a_changed_label() {
+    let dir = scratch("steps");
     let fake = fake(&dir);
 
     let r = matrix(&dir, &fake, &["--update"], &[]);
@@ -341,7 +341,7 @@ fn ac1_ac2_ac3_update_check_and_a_changed_label() {
         snapshot_names(&dir.join("snaps"), "txt"),
         expected_names("txt")
     );
-    // t-158 AC1: the ansi capture next to each text one, CRLF as Herdr's.
+    // The ansi capture next to each text one, CRLF as Herdr's.
     assert_eq!(
         snapshot_names(&dir.join("snaps"), "ansi"),
         expected_names("ansi")
@@ -435,13 +435,13 @@ fn normalize(dir: &Path, name: &str, bytes: &str) -> String {
     r.stdout
 }
 
-/// t-158 corner case: the same styles in other SGR bytes normalise alike
+/// Corner case: the same styles in other SGR bytes normalise alike
 /// (`0m`/`m`, `;`/`:` colours, combined or separate sequences, palette
 /// colours 16-255 as RGB, CRLF); a stray SGR code and a change of colour or
 /// attribute do not; other escape sequences are dropped.
 #[test]
-fn t158_normalised_sgr() {
-    let dir = scratch("t158-normalize");
+fn normalised_sgr() {
+    let dir = scratch("normalize");
     let a = normalize(
         &dir,
         "a",
