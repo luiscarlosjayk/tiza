@@ -1234,7 +1234,7 @@
                 "type": "object"
               }
             ],
-            "description": "One value of a `[theme]` table: a colour, or the `dark` / `light`\nsubtable that applies on top when that base theme is active."
+            "description": "One value of a `[theme]` table: a color, or the `dark`, `light` or\n`terminal` subtable that applies on top when that theme is in use."
           },
           "Patch": {
             "properties": {
@@ -1491,7 +1491,7 @@
             "additionalProperties": {
               "$ref": "#/$defs/OverrideValue"
             },
-            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark` / `light`\nsubtables with the same keys.",
+            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
             "type": "object"
           },
           "Typing": {
@@ -3990,7 +3990,7 @@
                 "type": "object"
               }
             ],
-            "description": "One value of a `[theme]` table: a colour, or the `dark` / `light`\nsubtable that applies on top when that base theme is active."
+            "description": "One value of a `[theme]` table: a color, or the `dark`, `light` or\n`terminal` subtable that applies on top when that theme is in use."
           },
           "Patch": {
             "properties": {
@@ -4229,7 +4229,7 @@
             "additionalProperties": {
               "$ref": "#/$defs/OverrideValue"
             },
-            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark` / `light`\nsubtables with the same keys.",
+            "description": "The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,\nor a document's `theme_overrides`: Tiza's roles by name (`bg`, `fg`,\n`muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,\n`note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),\nthe named annotation palette (`orange`, `blue`, `green`, `purple`,\n`pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and\n`terminal` subtables with the same keys. The subtable of the theme in\nuse wins over the flat tokens.",
             "type": "object"
           },
           "Typing": {

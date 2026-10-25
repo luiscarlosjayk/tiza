@@ -151,7 +151,7 @@ accent = "#b7410e"
 ```
 
 - A subtable applies only when its theme is in use.
-- Do not set one token both in a table and in its subtable. Which value wins depends on the name of the token.
+- When a token is both in a table and in its subtable, the subtable wins while its theme is in use.
 - Tiza applies the tokens in this order, and the last one wins: the built-in theme, the config file, the document.
 - `:theme NAME` and `t` change the base theme. The tokens stay and apply on the new theme.
 - When a theme file has a `[theme]` table, Tiza ignores the keys outside it. It does not report them.

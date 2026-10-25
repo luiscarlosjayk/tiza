@@ -6,6 +6,8 @@
 //!   bytes. Without `--no-save` it writes the tokens at start, as before.
 //! - AC2 A `--theme-file` on the command line is not an edit that `u`
 //!   takes back, as for `--theme`: after `u` the tokens stay.
+//! - AC3 The `[dark]`, `[light]` or `[terminal]` subtable of the theme in
+//!   use wins over the flat tokens, whatever the names of the keys.
 //!
 //! Corner cases: `:theme file PATH` keeps its undo entry; `--theme-file`
 //! still says how many tokens it applied.
@@ -114,4 +116,32 @@ print("EXIT", s.finish(10))
         .find_map(|l| l.strip_prefix("TOKENS "))
         .unwrap_or_else(|| panic!("{out}"));
     assert!(tokens.contains("#303030"), "after u: {tokens}\n{out}");
+}
+
+#[test]
+fn ac3_the_subtable_of_the_theme_in_use_wins_over_the_flat_tokens() {
+    use tiza_core::ThemeName;
+    use tiza_core::canvas::Rgb;
+    use tiza_core::theme::{Theme, parse_theme_file};
+    // `box_bg` sorts before `dark`, `highlight_bg` between `dark` and
+    // `light`, `status_bg` after `light`. None of them is pushed for
+    // contrast.
+    let ov = parse_theme_file(
+        "box_bg = \"#010101\"\nhighlight_bg = \"#020202\"\nstatus_bg = \"#030303\"\n\
+         [dark]\nbox_bg = \"#110000\"\nhighlight_bg = \"#120000\"\nstatus_bg = \"#130000\"\n\
+         [light]\nbox_bg = \"#001100\"\nhighlight_bg = \"#001200\"\nstatus_bg = \"#001300\"\n",
+    )
+    .unwrap();
+    let tokens = |t: &Theme| (t.box_bg, t.highlight_bg, t.status_bg);
+    let (dark, notes) = Theme::resolve(ThemeName::Dark, true, None, Some(&ov));
+    assert!(notes.is_empty(), "{notes:?}");
+    assert_eq!(
+        tokens(&dark),
+        (Rgb(0x11, 0, 0), Rgb(0x12, 0, 0), Rgb(0x13, 0, 0))
+    );
+    let (light, _) = Theme::resolve(ThemeName::Light, false, None, Some(&ov));
+    assert_eq!(
+        tokens(&light),
+        (Rgb(0, 0x11, 0), Rgb(0, 0x12, 0), Rgb(0, 0x13, 0))
+    );
 }

@@ -421,8 +421,8 @@ impl Theme {
 
 // ---- per-token overrides ----
 
-/// One value of a `[theme]` table: a colour, or the `dark` / `light`
-/// subtable that applies on top when that base theme is active.
+/// One value of a `[theme]` table: a color, or the `dark`, `light` or
+/// `terminal` subtable that applies on top when that theme is in use.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum OverrideValue {
@@ -438,8 +438,9 @@ pub enum OverrideValue {
 /// `muted`, `dimmed`, `accent`, `rail`, `box_line`, `box_bg`, `arrow`,
 /// `note`, `highlight_bg`, `status_bg`, `status_fg`, `cmd_bg`, `error`),
 /// the named annotation palette (`orange`, `blue`, `green`, `purple`,
-/// `pink`, `cyan`, `yellow`, `red`, `gray`), and `dark` / `light`
-/// subtables with the same keys.
+/// `pink`, `cyan`, `yellow`, `red`, `gray`), and `dark`, `light` and
+/// `terminal` subtables with the same keys. The subtable of the theme in
+/// use wins over the flat tokens.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ThemeOverrides(pub BTreeMap<String, OverrideValue>);
 
@@ -527,6 +528,7 @@ impl Theme {
     pub fn apply(&mut self, ov: &ThemeOverrides) -> Vec<String> {
         let mut notes = Vec::new();
         let mut flat: Vec<(&str, &str)> = Vec::new();
+        let mut sub: Vec<(&str, &str)> = Vec::new();
         let mine = match self.name {
             ThemeName::Dark => "dark",
             ThemeName::Light => "light",
@@ -538,7 +540,7 @@ impl Theme {
                 OverrideValue::Table(t) => {
                     if k == mine {
                         for (k2, v2) in t {
-                            flat.push((k2, v2));
+                            sub.push((k2, v2));
                         }
                     } else if !matches!(k.as_str(), "dark" | "light" | "terminal") {
                         notes.push(format!(
@@ -548,6 +550,9 @@ impl Theme {
                 }
             }
         }
+        // After the flat tokens, whatever the key order (the map is
+        // sorted: `bg` comes before `dark`, `note` after it).
+        flat.extend(sub);
         for (k, v) in flat {
             let color = match parse_color(v) {
                 Ok(c) => c,
