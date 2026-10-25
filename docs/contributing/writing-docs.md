@@ -60,6 +60,9 @@ Write a heading as a noun phrase for a topic, for example "Messages". Write it i
 - Keep a paragraph to five sentences or fewer.
 - Keep a list item to 60 words or fewer.
 - Keep a table cell to one sentence.
+- A table has at most 4 columns. A field table is Field | Type | Default | Meaning.
+- "Required" goes in the Default cell.
+- Put 3 allowed values or fewer in the Type cell, for example `"solid"`, `"dashed"` or `"dotted"`. Put more than 3 values in a list under the table.
 - Use a table when you list more than three commands, flags, messages, states or JSON fields.
 - Name the first column of a table after what the reader sees: "Status bar", "Message", "Command", "Field".
 
@@ -120,6 +123,8 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | span | the part of a line that a highlight, a mark or an arrow end covers | range (except a line range) |
 | marker | a text that gives one edge of a range (`find_start`, `find_end`) | delimiter, placeholder |
 | label | the text that an annotation draws next to the code: a note, or the `label` of an arrow, a box or a mark | caption, tag |
+| point | one place in the code that a `select` or a `rebind` entry gives | position |
+| window | the lines of a file that a `code.link` shows | crop, range |
 | finding | one line of a `tiza check` report: an error or a warning | issue, diagnostic |
 | instance | the running TUI that agents talk to | server, app |
 | color | the color of an annotation or a theme token | colour |
