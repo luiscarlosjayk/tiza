@@ -45,8 +45,8 @@ fn bar(live: &Live, cols: u16) -> String {
 }
 
 #[test]
-fn ac1_the_bar_names_saveas_and_q_bang_at_120_and_80() {
-    let live = no_save_with_a_change("t247-bar");
+fn the_bar_names_saveas_and_q_bang_at_120_and_80() {
+    let live = no_save_with_a_change("bar");
     let b120 = bar(&live, 120);
     assert!(
         b120.contains("unsaved (:saveas PATH · :q! discards)"),
@@ -63,16 +63,16 @@ fn ac1_the_bar_names_saveas_and_q_bang_at_120_and_80() {
 }
 
 #[test]
-fn corner_a_narrow_bar_keeps_both_commands() {
-    let live = no_save_with_a_change("t247-narrow");
+fn a_narrow_bar_keeps_both_commands() {
+    let live = no_save_with_a_change("narrow");
     let b = bar(&live, 50);
     assert!(b.contains("unsaved (:saveas · :q!)"), "{b}");
     assert!(b.chars().count() <= 50, "{b}");
 }
 
 #[test]
-fn ac2_autosave_off_on_your_own_file_keeps_w_and_read_only_its_text() {
-    let live = Live::from_code(CODE, "rs", "t247-own");
+fn autosave_off_on_your_own_file_keeps_w_and_read_only_its_text() {
+    let live = Live::from_code(CODE, "rs", "own");
     live.command("autosave off");
     live.command("note 2 hi");
     let b = bar(&live, 120);
@@ -85,8 +85,8 @@ fn ac2_autosave_off_on_your_own_file_keeps_w_and_read_only_its_text() {
 }
 
 #[test]
-fn ac3_q_refused_names_saveas_and_q_bang() {
-    let live = no_save_with_a_change("t247-quit");
+fn q_refused_names_saveas_and_q_bang() {
+    let live = no_save_with_a_change("quit");
     live.command("q");
     assert!(!live.with(|a| a.quit));
     let (msg, err) = live.message().unwrap();
@@ -100,9 +100,9 @@ fn ac3_q_refused_names_saveas_and_q_bang() {
 }
 
 #[test]
-fn corner_after_saveas_every_change_saves_to_the_new_file() {
-    let live = no_save_with_a_change("t247-saveas");
-    let dir = scratch("t247-saveas-to");
+fn after_saveas_every_change_saves_to_the_new_file() {
+    let live = no_save_with_a_change("saveas");
+    let dir = scratch("saveas-to");
     let to = dir.join("mine.tiza");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
@@ -123,9 +123,9 @@ fn corner_after_saveas_every_change_saves_to_the_new_file() {
 }
 
 #[test]
-fn corner_w_path_writes_a_copy_and_stays_in_no_save() {
-    let live = no_save_with_a_change("t247-w-copy");
-    let to = scratch("t247-w-copy-to").join("copy.tiza");
+fn w_path_writes_a_copy_and_stays_in_no_save() {
+    let live = no_save_with_a_change("w-copy");
+    let to = scratch("w-copy-to").join("copy.tiza");
     live.command(&format!("w {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     assert!(live.with(|a| !a.autosave && a.no_save));
@@ -134,12 +134,12 @@ fn corner_w_path_writes_a_copy_and_stays_in_no_save() {
 }
 
 #[test]
-fn corner_autosave_off_stays_off_after_saveas() {
+fn autosave_off_stays_off_after_saveas() {
     // `:autosave off` was the user's choice: `:saveas` keeps it.
-    let live = Live::from_code(CODE, "rs", "t247-own-saveas");
+    let live = Live::from_code(CODE, "rs", "own-saveas");
     live.command("autosave off");
     live.command("note 2 hi");
-    let to = scratch("t247-own-saveas-to").join("mine.tiza");
+    let to = scratch("own-saveas-to").join("mine.tiza");
     live.command(&format!("saveas {}", to.display()));
     assert!(live.with(|a| !a.autosave));
     let (msg, _) = live.message().unwrap();
@@ -148,15 +148,15 @@ fn corner_autosave_off_stays_off_after_saveas() {
 }
 
 #[test]
-fn corner_autosave_on_ends_no_save() {
-    let live = no_save_with_a_change("t247-autosave-on");
+fn autosave_on_ends_no_save() {
+    let live = no_save_with_a_change("autosave-on");
     live.command("autosave on");
     assert!(!live.with(|a| a.no_save));
     assert!(!live.with(|a| a.dirty));
 }
 
 #[test]
-fn ac4_the_help_and_the_changelog_say_it() {
+fn the_help_and_the_changelog_say_it() {
     let help: Vec<String> = tiza_tui::keys::HELP
         .iter()
         .flat_map(|(_, rows)| rows.iter().map(|r| r.key_text()))
@@ -172,10 +172,10 @@ fn ac4_the_help_and_the_changelog_say_it() {
 }
 
 #[test]
-fn corner_read_only_then_saveas_saves_every_change_there_already() {
+fn read_only_then_saveas_saves_every_change_there_already() {
     // A sidecar that cannot be written: autosave stays on, so after a
     // `:saveas` that works every change goes to the new file.
-    let dir = scratch("t247-read-only");
+    let dir = scratch("read-only");
     let path = dir.join("doc.tiza");
     let live = Live::open(
         tiza_core::Document::from_code(CODE, "rs", None),
@@ -187,7 +187,7 @@ fn corner_read_only_then_saveas_saves_every_change_there_already() {
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
     live.command("note 1 second");
     assert!(live.with(|a| a.save_error.is_some()));
-    let to = scratch("t247-read-only-to").join("mine.tiza");
+    let to = scratch("read-only-to").join("mine.tiza");
     live.command(&format!("saveas {}", to.display()));
     live.command("note 3 third");
     let saved = std::fs::read_to_string(&to).unwrap();
@@ -220,9 +220,9 @@ fn usual_path(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn ac5_the_chip_says_why_nothing_saves() {
+fn the_chip_says_why_nothing_saves() {
     // `--no-save`: the file opened is kept as it is.
-    let live = Live::from_code(CODE, "rs", "t247-chip-no-save");
+    let live = Live::from_code(CODE, "rs", "chip-no-save");
     live.with(|a| {
         a.autosave = false;
         a.no_save = true;
@@ -233,7 +233,7 @@ fn ac5_the_chip_says_why_nothing_saves() {
         "{b}"
     );
     // `:autosave off`: the user's choice.
-    let live = Live::from_code(CODE, "rs", "t247-chip-off");
+    let live = Live::from_code(CODE, "rs", "chip-off");
     live.command("autosave off");
     live.with(|a| a.message = None);
     let b = bar(&live, 120);
@@ -242,7 +242,7 @@ fn ac5_the_chip_says_why_nothing_saves() {
         "{b}"
     );
     // `--no-save` and then `:autosave off`: the file opened is still kept.
-    let live = Live::from_code(CODE, "rs", "t247-chip-both");
+    let live = Live::from_code(CODE, "rs", "chip-both");
     live.with(|a| {
         a.autosave = false;
         a.no_save = true;
@@ -251,15 +251,15 @@ fn ac5_the_chip_says_why_nothing_saves() {
     live.with(|a| a.message = None);
     assert!(bar(&live, 120).contains("  no-save"));
     // A file that cannot be written: as before.
-    let live = Live::from_code(CODE, "rs", "t247-chip-read-only");
+    let live = Live::from_code(CODE, "rs", "chip-read-only");
     live.with(|a| a.save_error = Some("read-only".into()));
     let b = bar(&live, 120);
     assert!(b.contains("  read-only") && !b.contains("no-save"), "{b}");
 }
 
 #[test]
-fn corner_a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
-    let live = ownership("t247-chip-put");
+fn a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
+    let live = ownership("chip-put");
     let other =
         tiza_core::fs::load_document(&tiza_qa::fixture("export/svg_and_png/export.tiza")).unwrap();
     live.api_ok("scene.put", serde_json::json!({"document": other}));
@@ -282,8 +282,8 @@ fn corner_a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
 }
 
 #[test]
-fn ac5_the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
-    let live = ownership("t247-chip-widths");
+fn the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
+    let live = ownership("chip-widths");
     live.command("step 7");
     live.command("autosave off");
     live.with(|a| a.message = None);
@@ -303,9 +303,9 @@ fn ac5_the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
 }
 
 #[test]
-fn ac5_with_no_changes_the_chip_gives_way_and_unsaved_stays() {
+fn with_no_changes_the_chip_gives_way_and_unsaved_stays() {
     use crossterm::event::KeyCode;
-    let live = Live::from_code(CODE, "rs", "t247-chip-gives-way");
+    let live = Live::from_code(CODE, "rs", "chip-gives-way");
     live.command("autosave off");
     live.with(|a| a.message = None);
     // A selection: its keys take the room of the chip.
@@ -329,16 +329,16 @@ fn ac5_with_no_changes_the_chip_gives_way_and_unsaved_stays() {
 }
 
 #[test]
-fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
+fn the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
     // `--no-save`: after `:saveas` autosave is on.
-    let live = ownership("t247-msg-on");
+    let live = ownership("msg-on");
     live.with(|a| {
         a.autosave = false;
         a.no_save = true;
     });
     live.command("step 7");
     live.command("note 2 hi");
-    let to = usual_path("t247-msg-on");
+    let to = usual_path("msg-on");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     let b = bar(&live, 100);
@@ -350,10 +350,10 @@ fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
     assert!(b.contains(" saved as /"), "{b}");
     // `:autosave off`, the user's: after `:saveas` it stays off, and the
     // chip shows too.
-    let live = ownership("t247-msg-off");
+    let live = ownership("msg-off");
     live.command("step 7");
     live.command("autosave off");
-    let to = usual_path("t247-msg-off");
+    let to = usual_path("msg-off");
     live.command(&format!("saveas {}", to.display()));
     assert!(to.exists(), "{:?}", live.message());
     let b = bar(&live, 100);
@@ -366,7 +366,7 @@ fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
 }
 
 #[test]
-fn ac6_the_changelog_names_the_chips_and_the_message() {
+fn the_changelog_names_the_chips_and_the_message() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     let changelog = read("CHANGELOG.md");
@@ -387,26 +387,26 @@ fn paste(live: &Live, text: &str) -> String {
 
 #[test]
 fn plural_a_paste_of_one_line_and_of_two_lines() {
-    let live = Live::from_code(CODE, "rs", "t247-paste-one");
+    let live = Live::from_code(CODE, "rs", "paste-one");
     live.command("note 2 hi");
     assert_eq!(
         paste(&live, "    let a = 1;\n"),
         "1 line pasted (1 annotation kept)"
     );
-    let live = Live::from_code(CODE, "rs", "t247-paste-two");
+    let live = Live::from_code(CODE, "rs", "paste-two");
     live.command("note 2 hi");
     live.command("note 3 bye");
     assert_eq!(
         paste(&live, "    let a = 1;\n}\n"),
         "2 lines pasted (2 annotations kept)"
     );
-    let live = Live::from_code(CODE, "rs", "t247-paste-none");
+    let live = Live::from_code(CODE, "rs", "paste-none");
     assert_eq!(
         paste(&live, "fn a() {}\nfn b() {}\n"),
         "2 lines pasted (0 annotations kept)"
     );
     // One annotation dropped, as before.
-    let live = Live::from_code(CODE, "rs", "t247-paste-dropped");
+    let live = Live::from_code(CODE, "rs", "paste-dropped");
     live.command("note 2 hi");
     assert_eq!(
         paste(&live, "fn b() {}\n"),
@@ -416,7 +416,7 @@ fn plural_a_paste_of_one_line_and_of_two_lines() {
 
 #[test]
 fn plural_a_range_past_a_file_of_one_line_and_of_two_lines() {
-    let dir = scratch("t247-range");
+    let dir = scratch("range");
     for (name, code, says) in [
         (
             "one.rs",
@@ -438,7 +438,7 @@ fn plural_a_range_past_a_file_of_one_line_and_of_two_lines() {
 
 #[test]
 fn plural_a_move_past_the_end_of_one_line_and_of_two_lines() {
-    let dir = scratch("t247-stale");
+    let dir = scratch("stale");
     std::fs::write(dir.join("main.rs"), "a\nb\nc\nd\n").unwrap();
     let doc = serde_json::json!({
         "schema": 1,
@@ -467,7 +467,7 @@ fn plural_a_move_past_the_end_of_one_line_and_of_two_lines() {
 
 #[test]
 fn plural_a_gif_of_one_frame_and_of_two_frames() {
-    let dir = scratch("t247-gif");
+    let dir = scratch("gif");
     std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
     // Code with no steps: step 0 alone, or nothing but the hold with
     // `--skip-zero`.

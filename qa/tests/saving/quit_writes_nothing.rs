@@ -1,4 +1,4 @@
-//! t-195 — `:q!` and Ctrl-C saved unsaved changes on the way out (also
+//! `:q!` and Ctrl-C saved unsaved changes on the way out (also
 //! with `--no-save` / autosave off), although the bar said «:q! discards».
 //!
 //! Rule (Luis, 2026-10-20): no way out writes anything the chosen mode
@@ -125,8 +125,8 @@ print("TAIL", plain(tail).replace("\n", " ").strip())
 }
 
 #[test]
-fn ac2_no_save_and_ctrl_c_writes_nothing_and_says_what_was_not_saved() {
-    let (dir, tiza) = project("t195-ctrl-c");
+fn no_save_and_ctrl_c_writes_nothing_and_says_what_was_not_saved() {
+    let (dir, tiza) = project("ctrl-c");
     let before = stamp(&tiza);
     let tail = run(
         &dir,
@@ -147,11 +147,11 @@ fn ac2_no_save_and_ctrl_c_writes_nothing_and_says_what_was_not_saved() {
 }
 
 #[test]
-fn ac1_no_save_and_q_bang_writes_nothing() {
-    let (dir, tiza) = project("t195-q-bang");
+fn no_save_and_q_bang_writes_nothing() {
+    let (dir, tiza) = project("q-bang");
     let before = stamp(&tiza);
     // `:q` with changes is refused and names both ways out (moved here from
-    // t-247: the binary's `--no-save`, not a flag set in the test).
+    // the --no-save tests: the binary's `--no-save`, not a flag set in the test).
     let out = run_out(
         &dir,
         "q.py",
@@ -174,8 +174,8 @@ fn ac1_no_save_and_q_bang_writes_nothing() {
 }
 
 #[test]
-fn ac2_with_autosave_on_the_note_is_on_disk_already_and_ctrl_c_adds_nothing() {
-    let (dir, tiza) = project("t195-autosave-on");
+fn with_autosave_on_the_note_is_on_disk_already_and_ctrl_c_adds_nothing() {
+    let (dir, tiza) = project("autosave-on");
     let tail = run(
         &dir,
         "on.py",
@@ -189,9 +189,9 @@ fn ac2_with_autosave_on_the_note_is_on_disk_already_and_ctrl_c_adds_nothing() {
 }
 
 #[test]
-fn corner_a_read_only_sidecar_writes_nothing_on_the_way_out() {
+fn a_read_only_sidecar_writes_nothing_on_the_way_out() {
     use std::os::unix::fs::PermissionsExt;
-    let (dir, tiza) = project("t195-read-only");
+    let (dir, tiza) = project("read-only");
     std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
     let before = stamp(&tiza);
     let tail = run(&dir, "ro.py", &[], &[":note 1 hello\r", "\x03"], None);
@@ -203,14 +203,14 @@ fn corner_a_read_only_sidecar_writes_nothing_on_the_way_out() {
 }
 
 #[test]
-fn review_ctrl_c_retries_a_failed_autosave_once_and_q_bang_never_writes() {
+fn ctrl_c_retries_a_failed_autosave_once_and_q_bang_never_writes() {
     use std::os::unix::fs::PermissionsExt;
     // Writable again by the time of the Ctrl-C: the note gets to disk. A
     // Ctrl-C that first closes a command line does not use up that one
-    // retry (moved here from t-197): the Ctrl-C that quits still saves.
-    // That this first Ctrl-C closes the line and does not quit is t-197's
-    // ac1 (`alive`).
-    let (dir, tiza) = project("t195-retry");
+    // retry (moved here from the Ctrl-C tests): the Ctrl-C that quits still
+    // saves. That this first Ctrl-C closes the line and does not quit is
+    // checked there (`alive`).
+    let (dir, tiza) = project("retry");
     std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
     let tail = run(
         &dir,
@@ -225,7 +225,7 @@ fn review_ctrl_c_retries_a_failed_autosave_once_and_q_bang_never_writes() {
         "{tail}"
     );
     // The same with `:q!`: it quits without saving, whatever the mode.
-    let (dir, tiza) = project("t195-retry-q");
+    let (dir, tiza) = project("retry-q");
     std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
     let before = stamp(&tiza);
     let tail = run(
@@ -253,16 +253,16 @@ fn summary(live: &tiza_qa::Live) -> Option<String> {
 }
 
 #[test]
-fn review_the_summary_compares_with_the_sidecar_last_written() {
+fn the_summary_compares_with_the_sidecar_last_written() {
     // a, :w, b, u: the document is the one on disk.
-    let (live, _dir) = unsaved("t195-same");
+    let (live, _dir) = unsaved("same");
     live.command("note 1 a");
     live.command("w");
     live.command("note 2 b");
     live.command("undo");
     assert_eq!(summary(&live), None);
     // a, b, :w, u, u: both notes undone since the save, named.
-    let (live, _dir) = unsaved("t195-undone");
+    let (live, _dir) = unsaved("undone");
     live.command("note 1 a");
     live.command("note 2 b");
     live.command("w");
@@ -278,8 +278,8 @@ fn review_the_summary_compares_with_the_sidecar_last_written() {
 }
 
 #[test]
-fn review_a_reload_of_code_read_by_reference_leaves_nothing_to_save() {
-    let (live, dir) = unsaved("t195-follow");
+fn a_reload_of_code_read_by_reference_leaves_nothing_to_save() {
+    let (live, dir) = unsaved("follow");
     live.command("follow on");
     std::fs::write(dir.join("main.rs"), CODE.replace("1", "2")).unwrap();
     let start = std::time::Instant::now();
@@ -294,8 +294,8 @@ fn review_a_reload_of_code_read_by_reference_leaves_nothing_to_save() {
 }
 
 #[test]
-fn ac1_the_bar_and_the_help_say_q_bang_quits_without_saving() {
-    let dir = scratch("t195-bar");
+fn the_bar_and_the_help_say_q_bang_quits_without_saving() {
+    let dir = scratch("bar");
     let mut doc = tiza_core::Document::from_code(CODE, "rs", None);
     doc.reference_file("main.rs", None);
     let live = tiza_qa::Live::open(doc, dir.join("main.rs.tiza"), dir.join("s.sock"));

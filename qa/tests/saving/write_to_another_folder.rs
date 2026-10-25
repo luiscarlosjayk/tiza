@@ -124,8 +124,8 @@ fn assert_opens(copy: &Path) {
 }
 
 #[test]
-fn step1_ac1_ac2_w_path_writes_a_copy_that_opens_and_keeps_saving_here() {
-    let (root, tiza) = project("t221-w");
+fn w_path_writes_a_copy_that_opens_and_keeps_saving_here() {
+    let (root, tiza) = project("w");
     let live = open(&tiza);
     let copy = root.join("proj/out/copy.tiza");
     std::fs::create_dir_all(copy.parent().unwrap()).unwrap();
@@ -156,8 +156,8 @@ fn step1_ac1_ac2_w_path_writes_a_copy_that_opens_and_keeps_saving_here() {
 }
 
 #[test]
-fn ac2_copies_into_a_parent_and_a_sibling_folder_open() {
-    let (root, tiza) = project("t221-where");
+fn copies_into_a_parent_and_a_sibling_folder_open() {
+    let (root, tiza) = project("where");
     let live = open(&tiza);
     let sibling = root.join("sib/c.tiza");
     std::fs::create_dir_all(sibling.parent().unwrap()).unwrap();
@@ -176,8 +176,8 @@ fn ac2_copies_into_a_parent_and_a_sibling_folder_open() {
 }
 
 #[test]
-fn ac2_a_folder_that_shares_only_the_root_gets_absolute_paths() {
-    let (_root, tiza) = project("t221-abs");
+fn a_folder_that_shares_only_the_root_gets_absolute_paths() {
+    let (_root, tiza) = project("abs");
     let live = open(&tiza);
     // The scratch folders live under /var (/private/var); the build
     // folder under /Users.
@@ -190,7 +190,7 @@ fn ac2_a_folder_that_shares_only_the_root_gets_absolute_paths() {
     let target = std::env::var_os("CARGO_TARGET_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../target"));
-    let far = target.join(format!("t221-abs-{}", std::process::id()));
+    let far = target.join(format!("abs-{}", std::process::id()));
     std::fs::create_dir_all(&far).unwrap();
     let far = Gone(far.canonicalize().unwrap());
     if !far.0.starts_with("/Users") {
@@ -207,8 +207,8 @@ fn ac2_a_folder_that_shares_only_the_root_gets_absolute_paths() {
 }
 
 #[test]
-fn ac1_an_existing_file_needs_a_bang() {
-    let (root, tiza) = project("t221-bang");
+fn an_existing_file_needs_a_bang() {
+    let (root, tiza) = project("bang");
     let live = open(&tiza);
     let copy = root.join("c.tiza");
     std::fs::write(&copy, "keep").unwrap();
@@ -232,8 +232,8 @@ fn ac1_an_existing_file_needs_a_bang() {
 }
 
 #[test]
-fn step2_saveas_moves_the_document_and_its_paths() {
-    let (root, tiza) = project("t221-saveas");
+fn saveas_moves_the_document_and_its_paths() {
+    let (root, tiza) = project("saveas");
     let live = open(&tiza);
     live.command("note 1 before");
     let target = root.join("elsewhere/c.tiza");
@@ -265,8 +265,8 @@ fn step2_saveas_moves_the_document_and_its_paths() {
 }
 
 #[test]
-fn ac1_wq_path_writes_the_copy_and_quits() {
-    let (root, tiza) = project("t221-wq");
+fn wq_path_writes_the_copy_and_quits() {
+    let (root, tiza) = project("wq");
     let live = open(&tiza);
     live.command("autosave off");
     live.command("note 1 unsaved here");
@@ -282,8 +282,8 @@ fn ac1_wq_path_writes_the_copy_and_quits() {
 }
 
 #[test]
-fn ac2_embedded_code_and_follows() {
-    let root = scratch("t221-follows");
+fn embedded_code_and_follows() {
+    let root = scratch("follows");
     let proj = root.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::write(proj.join("main.rs"), MAIN).unwrap();
@@ -315,8 +315,8 @@ fn ac2_embedded_code_and_follows() {
 }
 
 #[test]
-fn ac3_the_read_only_message_points_at_saveas_and_it_works() {
-    let (root, tiza) = project("t221-ro");
+fn the_read_only_message_points_at_saveas_and_it_works() {
+    let (root, tiza) = project("ro");
     let live = open(&tiza);
     let mut perm = std::fs::metadata(&tiza).unwrap().permissions();
     perm.set_readonly(true);
@@ -347,7 +347,7 @@ fn ac3_the_read_only_message_points_at_saveas_and_it_works() {
 }
 
 #[test]
-fn ac5_changelog() {
+fn changelog() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("CHANGELOG.md").contains(":saveas"), "CHANGELOG");
@@ -356,8 +356,8 @@ fn ac5_changelog() {
 // ---------- Review ----------
 
 #[test]
-fn rev_a_copy_into_a_folder_that_does_not_exist_yet_opens() {
-    let (root, tiza) = project("t221-newdir");
+fn a_copy_into_a_folder_that_does_not_exist_yet_opens() {
+    let (root, tiza) = project("newdir");
     let live = open(&tiza);
     // `:w ../newdir/copy.tiza` typed in `proj`.
     let copy = root.join("proj/../newdir/copy.tiza");
@@ -372,8 +372,8 @@ fn rev_a_copy_into_a_folder_that_does_not_exist_yet_opens() {
 }
 
 #[test]
-fn rev_a_link_back_to_the_main_file_stays_the_main_file() {
-    let root = scratch("t221-back");
+fn a_link_back_to_the_main_file_stays_the_main_file() {
+    let root = scratch("back");
     let proj = root.join("proj");
     std::fs::create_dir_all(&proj).unwrap();
     std::fs::write(proj.join("main.rs"), MAIN).unwrap();
@@ -413,8 +413,8 @@ fn rev_a_link_back_to_the_main_file_stays_the_main_file() {
 }
 
 #[test]
-fn rev_a_linked_file_with_the_main_files_name_stays_a_view() {
-    let root = scratch("t221-twins");
+fn a_linked_file_with_the_main_files_name_stays_a_view() {
+    let root = scratch("twins");
     for (f, text) in [("server/main.rs", MAIN), ("client/main.rs", OTHER)] {
         let p = root.join(f);
         std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -455,8 +455,8 @@ fn rev_a_linked_file_with_the_main_files_name_stays_a_view() {
 }
 
 #[test]
-fn rev_link_alone_after_saveas_links_the_same_file() {
-    let (root, tiza) = project("t221-link");
+fn link_alone_after_saveas_links_the_same_file() {
+    let (root, tiza) = project("link");
     let live = open(&tiza);
     live.command("step 0");
     live.command("embed");
@@ -477,8 +477,8 @@ fn rev_link_alone_after_saveas_links_the_same_file() {
 const INI: &str = "[server]\nhost = localhost\nport = 8080\n[db]\nuser = admin\n";
 
 #[test]
-fn rev_wq_path_over_stale_moves_refuses_before_writing() {
-    let root = scratch("t221-stale");
+fn wq_path_over_stale_moves_refuses_before_writing() {
+    let root = scratch("stale");
     std::fs::write(root.join("config.ini"), INI).unwrap();
     let tiza = root.join("config.ini.tiza");
     std::fs::write(
@@ -504,8 +504,8 @@ fn rev_wq_path_over_stale_moves_refuses_before_writing() {
 }
 
 #[test]
-fn rev_saveas_with_autosave_off_says_what_saves() {
-    let (root, tiza) = project("t221-off");
+fn saveas_with_autosave_off_says_what_saves() {
+    let (root, tiza) = project("off");
     let live = open(&tiza);
     live.command("autosave off");
     let target = root.join("s.tiza");
@@ -517,8 +517,8 @@ fn rev_saveas_with_autosave_off_says_what_saves() {
 }
 
 #[test]
-fn rev_a_folder_is_not_a_file_name() {
-    let (root, tiza) = project("t221-dir");
+fn a_folder_is_not_a_file_name() {
+    let (root, tiza) = project("dir");
     let live = open(&tiza);
     let dir = root.join("d");
     std::fs::create_dir_all(&dir).unwrap();

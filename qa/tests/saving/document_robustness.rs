@@ -1,4 +1,4 @@
-//! t-047 — `.tiza` format robustness (QA-agent bugs: empty code, BOM).
+//! `.tiza` format robustness (QA-agent bugs: empty code, BOM).
 //!
 //! Acceptance criteria:
 //! - AC1 An empty source file, `"code": []` and an empty stdin never panic: the
@@ -15,8 +15,8 @@ use serde_json::json;
 use tiza_qa::{Live, scratch, tiza, tiza_ok};
 
 #[test]
-fn ac1_empty_code_renders_one_blank_line() {
-    let dir = scratch("t047-empty");
+fn empty_code_renders_one_blank_line() {
+    let dir = scratch("empty");
     let empty = dir.join("empty.rs");
     std::fs::write(&empty, "").unwrap();
     let out = tiza_ok(&["render", empty.to_str().unwrap(), "--out", "-"]);
@@ -42,8 +42,8 @@ fn ac1_empty_code_renders_one_blank_line() {
 }
 
 #[test]
-fn ac2_bom_is_accepted() {
-    let dir = scratch("t047-bom");
+fn bom_is_accepted() {
+    let dir = scratch("bom");
     let doc = dir.join("bom.tiza");
     std::fs::write(&doc, "\u{feff}{\"schema\":1,\"source\":{\"language\":\"rs\"},\"code\":[\"fn a() {}\"],\"annotations\":[]}").unwrap();
     let out = tiza_ok(&["render", doc.to_str().unwrap(), "--out", "-"]);
@@ -59,8 +59,8 @@ fn ac2_bom_is_accepted() {
 }
 
 #[test]
-fn ac3_newer_schema_and_unknown_type_are_errors() {
-    let dir = scratch("t047-errors");
+fn newer_schema_and_unknown_type_are_errors() {
+    let dir = scratch("errors");
     let doc = dir.join("new.tiza");
     std::fs::write(
         &doc,
@@ -78,8 +78,8 @@ fn ac3_newer_schema_and_unknown_type_are_errors() {
 }
 
 #[test]
-fn corner_an_unknown_annotation_type_does_not_load_and_prints_no_code() {
-    let dir = scratch("t047-unknown-type");
+fn an_unknown_annotation_type_does_not_load_and_prints_no_code() {
+    let dir = scratch("unknown-type");
     let src = dir.join("app.env");
     std::fs::write(&src, "TOKEN=demo-token-1\nPORT=8080\n").unwrap();
     let sidecar = dir.join("app.env.tiza");
@@ -116,7 +116,7 @@ fn corner_an_unknown_annotation_type_does_not_load_and_prints_no_code() {
         );
     }
     // Over the socket the same type is refused without repeating it.
-    let live = Live::from_code("TOKEN=demo-token-1\nPORT=8080\n", "sh", "t047-unknown-live");
+    let live = Live::from_code("TOKEN=demo-token-1\nPORT=8080\n", "sh", "unknown-live");
     let r = live.api("scene.put", json!({"document": doc}));
     let e = r.error.expect("refused");
     assert!(e.message.contains("unknown variant «…»"), "{e:?}");

@@ -18,8 +18,8 @@
 use tiza_qa::{bin, scratch};
 
 #[test]
-fn ac2_ac3_relative_paths_start_at_the_folder_where_tiza_started() {
-    let dir = scratch("t241");
+fn relative_paths_start_at_the_folder_where_tiza_started() {
+    let dir = scratch("relative_paths");
     let work = dir.join("work");
     let start = dir.join("start");
     let home = dir.join("home");

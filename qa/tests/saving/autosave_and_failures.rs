@@ -1,4 +1,4 @@
-//! t-048 — Save, autosave and failures (QA-agent bug: masked save errors).
+//! Save, autosave and failures (QA-agent bug: masked save errors).
 //!
 //! Acceptance criteria:
 //! - AC1 Autosave writes the sidecar after every change.
@@ -6,14 +6,14 @@
 //!   even after later info messages, until a save succeeds.
 //! - AC3 `q` refuses to quit while changes could not be saved; `:q!` quits;
 //!   `:saveas other/path` then `q` works (`:w other/path` only writes a
-//!   copy since t-221, as in Vim).
+//!   copy now, as in Vim).
 
 use crossterm::event::KeyCode;
 use tiza_qa::{Live, scratch};
 
 #[test]
-fn ac1_autosave_writes_the_sidecar() {
-    let dir = scratch("t048-autosave");
+fn autosave_writes_the_sidecar() {
+    let dir = scratch("autosave");
     let save = dir.join("doc.tiza");
     let live = Live::open(
         tiza_core::Document::from_code("fn main() {}\n", "rs", None),
@@ -26,8 +26,8 @@ fn ac1_autosave_writes_the_sidecar() {
 }
 
 #[test]
-fn ac2_ac3_failed_save_is_sticky_and_blocks_q() {
-    let dir = scratch("t048-fail");
+fn failed_save_is_sticky_and_blocks_q() {
+    let dir = scratch("fail");
     // A directory where the document should go: the save cannot succeed.
     let save = dir.join("doc.tiza");
     std::fs::create_dir_all(&save).unwrap();
@@ -57,8 +57,8 @@ fn ac2_ac3_failed_save_is_sticky_and_blocks_q() {
 }
 
 #[test]
-fn ac3_q_bang_quits_anyway() {
-    let dir = scratch("t048-qbang");
+fn q_bang_quits_anyway() {
+    let dir = scratch("qbang");
     let save = dir.join("doc.tiza");
     std::fs::create_dir_all(&save).unwrap();
     let live = Live::open(
@@ -72,8 +72,8 @@ fn ac3_q_bang_quits_anyway() {
 }
 
 #[test]
-fn qa_wq_does_not_quit_when_the_write_fails() {
-    let dir = scratch("t048-wq");
+fn wq_does_not_quit_when_the_write_fails() {
+    let dir = scratch("wq");
     let save = dir.join("doc.tiza");
     std::fs::create_dir_all(&save).unwrap();
     let live = Live::open(

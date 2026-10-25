@@ -1,38 +1,4 @@
-//! Two socket requests could lose the work of the presenter: a
-//! `scene.clear` whose `step` Tiza could not read cleared every
-//! annotation, and a `scene.put` with a newer `schema` was saved in a file
-//! that this version cannot open.
-//!
-//! Acceptance criteria:
-//! - AC1 `scene.clear` refuses a `step` that is not a whole number, 0 or
-//!   more (`"2"`, `-1`, `1.5`, `null`, 2^32 + 2, which `as u32` made step
-//!   2), parameters that are not an object (`null`, `[]`) and an unknown
-//!   key, with `invalid_argument`,
-//!   and changes nothing. `{}` clears every annotation and `{"step": N}`
-//!   the annotations of step N, as before. In
-//!   supervised mode the refusal comes at once: the request is not parked.
-//!   The MCP tool with no step still clears every annotation; it refuses
-//!   an unknown key and a `null` step.
-//! - AC2 `scene.put` refuses a `schema` newer than this version with
-//!   `unsupported_schema`, before the document changes or is saved. An
-//!   older `schema` is saved as the current one. A file and a `scene.put`
-//!   give the same error, with the schema as it was written.
-//! - AC3 In supervised mode, a method that does not exist is answered at
-//!   once (`invalid_argument`), not parked as a change to review.
-//!   Parking follows `METHODS`: each method there is one that the instance
-//!   knows, and a name that is not there gets `unknown method`.
-//! - AC4 A request that changes nothing (`scene.patch {}`, an
-//!   `annotation.update` with only its `id`) leaves `revision` as it is. A
-//!   request that changes something makes it grow (by 1 or more).
-//! - AC5 The result schema of `scene.clear`, `code.get`, `style.set` and
-//!   `theme.set` names every field of the reply.
-//! - AC6 The help of `tiza scene patch` and the `scene.patch` description
-//!   name every field that `scene.patch` takes.
-//! - AC7 `tiza FILE:A-B` opens `FILE.A-B.tiza` from an earlier session, found
-//!   under the clamped lines, and says so. Another range is another
-//!   document. A `FILE.A-B.tiza` that does not load is an error, and the
-//!   file stays as it is. `tiza render FILE:A-B` still shows only the
-//!   lines, without that document.
+//! A line range opens its own `.tiza` from an earlier session.
 
 use serde_json::json;
 use tiza_qa::Live;
@@ -47,9 +13,9 @@ fn state(live: &Live) -> (u64, u64) {
 }
 
 #[test]
-fn ac7_a_range_opens_its_document_from_an_earlier_session() {
+fn a_range_opens_its_document_from_an_earlier_session() {
     use tiza_core::fs;
-    let dir = tiza_qa::scratch("t258-range");
+    let dir = tiza_qa::scratch("range");
     let file = dir.join("three.txt");
     std::fs::write(&file, "one\ntwo\nthree\n").unwrap();
     let spec = |r: &str| format!("{}:{r}", file.display());

@@ -1,6 +1,6 @@
-//! t-110 — Autosave: annotating an example must not rewrite it on disk
+//! Autosave: annotating an example must not rewrite it on disk
 //! (`--no-save`, `:autosave on|off`, a read-only notice once), and one
-//! saving rule shared with `scene put` (t-039): a document from another
+//! saving rule shared with `scene put`: a document from another
 //! source is never autosaved over the file that was open.
 //!
 //! Acceptance criteria:
@@ -11,13 +11,13 @@
 //! - AC3 A sidecar that cannot be written warns once (`read-only: …`) and
 //!   the TUI keeps working; no panic, no message per autosave.
 //! - AC4 `:q` with unsaved changes while autosave is off says how to save or
-//!   discard (`:w`, `:saveas PATH` since t-221, `:q!`).
+//!   discard (`:w`, `:saveas PATH`, `:q!`).
 //! - AC5 Without the flag everything is as before (autosave on).
 //! - AC6 A copy of an example opened with `--no-save` and annotated over the
 //!   socket is byte-identical afterwards.
 //! - AC7 A `scene put` of a different document turns autosave off (the file
 //!   that was open is never overwritten); `:w` saves on purpose,
-//!   `:autosave on` resumes. (Also covered from the CLI in t-039.)
+//!   `:autosave on` resumes. (Also covered from the CLI in the scene put tests.)
 
 use serde_json::json;
 use tiza_core::fs;
@@ -42,8 +42,8 @@ fn opened(name: &str, no_save: bool) -> (Live, std::path::PathBuf) {
 }
 
 #[test]
-fn ac1_ac6_no_save_leaves_the_example_byte_identical() {
-    let (live, path) = opened("t110-nosave", true);
+fn no_save_leaves_the_example_byte_identical() {
+    let (live, path) = opened("nosave", true);
     let before = std::fs::read(&path).unwrap();
     live.api_ok(
         "annotation.add",
@@ -66,8 +66,8 @@ fn ac1_ac6_no_save_leaves_the_example_byte_identical() {
 }
 
 #[test]
-fn ac2_autosave_command_and_status() {
-    let (live, path) = opened("t110-command", false);
+fn autosave_command_and_status() {
+    let (live, path) = opened("command", false);
     let status = live.api_ok("status", json!({}));
     assert_eq!(status["autosave"], json!(true));
     live.command("autosave");
@@ -103,8 +103,8 @@ fn ac2_autosave_command_and_status() {
 }
 
 #[test]
-fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
-    let dir = scratch("t110-readonly");
+fn read_only_sidecar_warns_once_and_keeps_going() {
+    let dir = scratch("readonly");
     let path = dir.join("doc.tiza");
     std::fs::copy(fixture("export/svg_and_png/export.tiza"), &path).unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
@@ -173,8 +173,8 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
 }
 
 #[test]
-fn ac3_read_only_then_saveas_elsewhere_clears_the_state() {
-    let dir = scratch("t110-readonly-w");
+fn read_only_then_saveas_elsewhere_clears_the_state() {
+    let dir = scratch("readonly-w");
     let path = dir.join("doc.tiza");
     std::fs::copy(fixture("export/svg_and_png/export.tiza"), &path).unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
@@ -184,7 +184,7 @@ fn ac3_read_only_then_saveas_elsewhere_clears_the_state() {
     std::fs::set_permissions(&path, perms.clone()).unwrap();
     live.command("note 1 first");
     assert!(live.message().unwrap().1);
-    // (`:w PATH` only writes a copy since t-221, as in Vim.)
+    // (`:w PATH` only writes a copy, as in Vim.)
     let elsewhere = dir.join("elsewhere.tiza");
     live.command(&format!("saveas {}", elsewhere.display()));
     assert!(elsewhere.exists());
@@ -198,8 +198,8 @@ fn ac3_read_only_then_saveas_elsewhere_clears_the_state() {
 }
 
 #[test]
-fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
-    let (live, _) = opened("t110-quit", true);
+fn quit_with_autosave_off_says_how_to_save_or_discard() {
+    let (live, _) = opened("quit", true);
     live.command("q");
     assert!(live.with(|a| a.quit), "nothing changed: quits");
     live.with(|a| a.quit = false);
@@ -218,8 +218,8 @@ fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
 }
 
 #[test]
-fn ac7_put_of_another_document_stops_autosave_until_asked() {
-    let (live, path) = opened("t110-put", false);
+fn put_of_another_document_stops_autosave_until_asked() {
+    let (live, path) = opened("put", false);
     let before = std::fs::read(&path).unwrap();
     let other = fs::load_document(&fixture("export/svg_and_png/export.tiza")).unwrap();
     live.api_ok("scene.put", json!({"document": other}));

@@ -1,4 +1,4 @@
-//! t-073 — Round-trip and backward compatibility of `.tiza` (versioned fixtures).
+//! Round-trip and backward compatibility of `.tiza` (versioned fixtures).
 //!
 //! Acceptance criteria:
 //! - AC1 Every fixture under `qa/fixtures/compat/` (one per producer version,
@@ -43,12 +43,9 @@ fn fixture_schema(p: &std::path::Path) -> u32 {
 }
 
 #[test]
-fn ac1_round_trip_every_fixture() {
+fn round_trip_every_fixture() {
     for f in fixtures() {
-        let dir = scratch(&format!(
-            "t073-{}",
-            f.file_stem().unwrap().to_str().unwrap()
-        ));
+        let dir = scratch(f.file_stem().unwrap().to_str().unwrap());
         let opened =
             fs::open(f.to_str().unwrap()).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
         let doc = opened.document;
@@ -81,7 +78,7 @@ fn ac1_round_trip_every_fixture() {
 }
 
 #[test]
-fn ac2_render_matches_the_snapshot() {
+fn render_matches_the_snapshot() {
     for f in fixtures() {
         let name = f.file_stem().unwrap().to_str().unwrap().to_string();
         let out = tiza_ok(&[
@@ -99,7 +96,7 @@ fn ac2_render_matches_the_snapshot() {
 }
 
 #[test]
-fn ac3_old_kinds_resolve_and_no_new_fields_are_added() {
+fn old_kinds_resolve_and_no_new_fields_are_added() {
     let f = compat_dir().join("v1-0.0.1-rust-kinds.tiza");
     let out = tiza_ok(&[
         "render",
@@ -115,7 +112,7 @@ fn ac3_old_kinds_resolve_and_no_new_fields_are_added() {
     assert!(out.contains("═▶ write"), "borrow_mut → write:\n{out}");
     assert!(out.contains("┆ scope"), "lifetime → scope:\n{out}");
     assert!(out.contains("╳ drop"), "{out}");
-    let dir = scratch("t073-fields");
+    let dir = scratch("fields");
     let doc = fs::open(f.to_str().unwrap()).unwrap().document;
     let saved = dir.join("s.tiza");
     fs::save_document(&doc, &saved).unwrap();
@@ -142,7 +139,7 @@ fn ac3_old_kinds_resolve_and_no_new_fields_are_added() {
 }
 
 #[test]
-fn ac4_schema_bumps_need_a_fixture_and_a_migration() {
+fn schema_bumps_need_a_fixture_and_a_migration() {
     let versions: std::collections::BTreeSet<u32> =
         fixtures().iter().map(|p| fixture_schema(p)).collect();
     for v in 1..=SCHEMA_VERSION {
@@ -164,7 +161,7 @@ fn ac4_schema_bumps_need_a_fixture_and_a_migration() {
         "migrations must be contiguous"
     );
     // A newer schema than this binary knows is refused, not guessed.
-    let dir = scratch("t073-future");
+    let dir = scratch("future");
     let future = dir.join("future.tiza");
     std::fs::write(
         &future,
