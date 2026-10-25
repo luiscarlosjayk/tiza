@@ -2,7 +2,15 @@
 
 - Cargo workspace with 5 crates: `tiza-core` (model/layout, no terminal), `tiza-tui`, `tiza-mcp`, `tiza-export` (SVG/PNG, the only one linking resvg), `tiza` (the binary, in `crates/tiza-cli`).
 - Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
-- Every feature ticket ends with: acceptance criteria, manual test steps and corner cases on its board card, and `qa/tests/t-XXX.rs` (one independent crate per ticket, fixtures in `qa/fixtures/t-XXX/`; see `qa/README.md`). `examples/` holds demos only, never test data.
+- Every feature ticket ends with acceptance criteria, manual test steps and corner cases on its board card. Add automated tests only for what can break: the behavior of the binary, the API, MCP, the TUI or the render, and the regression of a bug that you fixed. Put them in `qa/tests/t-XXX.rs`, one independent crate per ticket, with fixtures in `qa/fixtures/t-XXX/` (see `qa/README.md`). `examples/` holds demos only, never test data.
+- A test must catch a bug or a broken user experience. Do not write a test that only checks that a doc, a help text, the README, the CHANGELOG or an ADR contains a sentence or a heading. A test can read a doc only in these cases:
+  - A script or a workflow reads that text. Examples: `## [Unreleased]` for `scripts/bump-version.sh`, and the anchor that `release.yml` names.
+  - The test compares the doc with the code. Examples: the keys table, the help against the real formats, and JSON that must parse.
+  - The test checks that a generated image is equal to a fresh render.
+  - The test checks that links and anchors resolve.
+  - The test enforces a repo policy, for example no ticket ids and nothing private.
+
+  Put a one-time check in the note of the card, not in a test.
 - Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
 - README images: any visual change to the renderer re-runs `scripts/readme-images.sh` in the same commit (GIF, step-7 PNG, the README text block and the hero), so the README never lags. Frames in docs or brand images are real `tiza render` exports, never retouched or mocked up.
 - Keep images out of the repo unless they are strictly necessary: screenshots, mockups and QA evidence go outside it. Tests use text renders, not PNG fixtures.
@@ -24,7 +32,7 @@ The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t
 - When the owner discards a card (`wontdo`), take it out of every candidate list that names it (ADRs, research notes) in your next commit.
 - Every card you touch gets a line in `notes`, newest last: `[AAAA-MM-DD HH:MM claude] …` with the commit hash, the state (what is done, what is missing) and anything the owner must decide or test. Add it with `str_replace` pinned to the card's `if_version` (never resend the whole document), and set `updatedAt`/`updatedBy`.
 - Nothing moves to `done` without the owner's QA APPROVE; cards the owner tests himself (TUI feel, editor integrations, taste calls) are closed by him, not by you.
-- Finishing a card means: AC, manual test steps and corner cases on the card, `qa/tests/t-XXX.rs`, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`tiza schema api > schema/api.schema.json`, `tiza schema document > schema/tiza.schema.json`, `scripts/check-schema.py`).
+- Finishing a card means: AC, manual test steps and corner cases on the card, the tests in `qa/tests/t-XXX.rs` that the behavior of the card needs, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`tiza schema api > schema/api.schema.json`, `tiza schema document > schema/tiza.schema.json`, `scripts/check-schema.py`).
 
 ## Pushing
 

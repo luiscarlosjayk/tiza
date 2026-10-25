@@ -1,6 +1,6 @@
 # QA tests, one file per board task
 
-`qa/tests/t-XXX.rs` is the automated side of the card **t-XXX** on the board: its header repeats the task's acceptance criteria and each `#[test]` is one of the card's test steps or corner cases, named `acN_…`. Cargo compiles every file here as an independent crate, so one ticket's test can be run alone:
+`qa/tests/t-XXX.rs` is the automated side of the card **t-XXX** on the board. Its header repeats the acceptance criteria of the card. Each `#[test]` covers a behavior that can break, or the regression of a bug that was fixed, and its name starts with `acN_`. A step that only checks text stays a manual step on the card. [AGENTS.md](../AGENTS.md) gives the rule. Cargo compiles each file here as an independent crate, so you can run the test of one ticket alone:
 
 ```sh
 cargo test -p tiza-qa                 # every ticket
@@ -20,7 +20,7 @@ Tests that need a real terminal use `tiza_qa::pty_script(dir, name, body, args)`
 
 Render snapshots (t-053) live in `qa/tests/snapshots/` (insta): one `-symbols` and one `-styles` file per case. When a render changes on purpose, run `INSTA_UPDATE=always cargo test -p tiza-qa --test t-053` (or `cargo insta review`) and commit the updated `.snap` files with the change.
 
-When a ticket is done, its card gets: acceptance criteria, manual test steps, corner cases and the path of this file (`qa_test`). Keep the three in sync: if a corner case is added to the card, add the test here.
+When a ticket is done, its card gets the acceptance criteria, the manual test steps, the corner cases and the path of its test file (`qa_test`). When you add a corner case to the card, add a test here only if the case can break the binary, the API, MCP, the TUI or the render.
 
 Property tests (`t-074`) keep their failing seeds in `qa/tests/t-074.proptest-regressions`; commit that file when proptest adds a seed so the case is replayed first on every run.
 
