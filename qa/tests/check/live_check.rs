@@ -20,8 +20,8 @@
 //! - AC4 Same result as today, field for field, for a document that does
 //!   not change during the check (the CLI `tiza check` and the live one
 //!   agree).
-//! - AC5 Quitting (`:q`, Ctrl-C, a closed terminal) while a check
-//!   runs exits at once; the check thread does not keep the process alive.
+//! - AC5 Quitting while a check runs exits at once: that test is in
+//!   `latency::live_check`.
 //! - AC6 This file; CHANGELOG (Fixed); agent guide line for the reply's
 //!   new `revision` field.
 //!

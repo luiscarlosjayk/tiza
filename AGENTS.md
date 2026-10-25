@@ -11,7 +11,6 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - Write every user-facing string in English. Commands, JSON fields and the Spanish color aliases stay as they are.
 - Write public text in ASD-STE100 Simplified Technical English. The targets are in `../dev/writing-docs.md`.
 - No ticket ids (`t-` and three digits) anywhere in the repository: not in code, comments, docs, schemas, the CHANGELOG, user-facing strings, the names of tests and fixtures, or commit messages. A QA test fails on an id in a file, with its file and line.
-- Until the tests of `qa/` move to their areas, `qa/` still holds old ids. Do not add a new one.
 - Do not put private data in the repository. Do not write a path of a home folder. Do not link to a session or to a private page.
 - Write commit messages in English, in the imperative mood. Keep the subject to 72 characters or fewer. Put the detail in the body.
 - Do not add a `Co-Authored-By: Claude…` or a `Claude-Session:` trailer to a commit.
@@ -51,7 +50,7 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - Add an automated test only for what can break. Test the behavior of the binary, the API, MCP, the TUI or the exports.
 - Add a test for the regression of each bug that you fix.
 - Put a test in the crate of its area in `qa/tests/<area>/` (render, tui, follow, api, steps, export, saving, check, mcp, release, policy), in the module of the behavior that it checks. Give it a name that tells the behavior.
-- Put its fixtures in `qa/fixtures/<area>/<module>/`. A test that changes the environment of its own process goes in `env`. A test that checks how fast a child process answers goes in `latency`.
+- Put its fixtures in `qa/fixtures/<area>/<module>/`, or in `qa/fixtures/shared/` when tests of several areas read them. A test that changes the environment of its own process goes in `env`. A test that checks how fast a child process answers goes in `latency`. A test that checks a cache of its whole process goes in the crate `cache`. A test that runs a TUI with follow on a pty goes in the crate `watchers`.
 - A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading. A test can read a doc only in these cases:
   - A script or a workflow reads that text, for example `## [Unreleased]` for `scripts/bump-version.sh`.
   - The test compares the doc with the code, for example the keys table.

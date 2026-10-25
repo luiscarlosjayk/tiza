@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""The documents `tiza check` is timed on (t-200), written into DIR.
+"""The documents `tiza check` is timed on (the clean width tests), written into DIR.
 
     python3 qa/bench/check-docs.py DIR
 

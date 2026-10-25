@@ -108,7 +108,7 @@ fn the_drawing_is_the_same_with_or_without_the_faces() {
         ("plain", fixture("export/svg_font_faces/plain.tiza")),
         ("box", fixture("export/svg_font_faces/box.tiza")),
         ("symbols", fixture("export/svg_font_faces/symbols.tiza")),
-        ("svg_font_faces", fixture("export/svg_and_png/export.tiza")),
+        ("svg_font_faces", fixture("shared/export/export.tiza")),
     ] {
         let with = svg(&format!("d-{name}"), &f, &[]);
         let without = svg(&format!("n-{name}"), &f, &["--no-embed-fonts"]);
@@ -120,7 +120,7 @@ fn the_drawing_is_the_same_with_or_without_the_faces() {
 fn no_embed_fonts_embeds_nothing() {
     let s = svg(
         "none",
-        &fixture("export/svg_and_png/export.tiza"),
+        &fixture("shared/export/export.tiza"),
         &["--no-embed-fonts"],
     );
     assert!(faces(&s).is_empty());

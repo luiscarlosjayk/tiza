@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "Two labels on L1 with the margin capped at 16 columns (t-200)",
+  "title": "Two labels on L1 with the margin capped at 16 columns",
   "source": {
     "language": "sh",
     "first_line": 1

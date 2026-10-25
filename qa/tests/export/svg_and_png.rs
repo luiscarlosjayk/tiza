@@ -30,7 +30,7 @@ fn png_size(bytes: &[u8]) -> (u32, u32) {
 #[test]
 fn svg_is_standalone_and_fonts_are_optional() {
     let dir = scratch("svg");
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     let svg = dir.join("a.svg");
     tiza_ok(&[
         "render",
@@ -47,7 +47,7 @@ fn svg_is_standalone_and_fonts_are_optional() {
         4,
         "regular, bold, italic + symbols: the faces this export draws (no bold italic text)"
     );
-    assert!(text.contains("<title>t-050 export"));
+    assert!(text.contains("<title>Export:"));
     assert!(text.contains("hot path"), "mark legend");
     assert!(text.contains("a note in the margin"));
     assert!(text.contains("<rect x="), "highlight backgrounds");
@@ -67,7 +67,7 @@ fn svg_is_standalone_and_fonts_are_optional() {
 #[test]
 fn png_size_follows_columns_rows_and_scale() {
     let dir = scratch("png");
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     let txt = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
@@ -120,7 +120,7 @@ fn png_size_follows_columns_rows_and_scale() {
 #[test]
 fn live_instance_is_exported_without_a_file() {
     let dir = scratch("live");
-    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("shared/export/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -163,7 +163,7 @@ fn live_instance_is_exported_without_a_file() {
 #[test]
 fn symbols_and_wide_glyphs_render_with_bundled_fonts() {
     let dir = scratch("glyphs");
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     let png = dir.join("g.png");
     tiza_ok(&[
         "render",
@@ -209,7 +209,7 @@ fn resvg_decode(bytes: &[u8]) -> (u32, u32) {
 
 #[test]
 fn png_to_stdout_only_through_a_pipe() {
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     let out = tiza(&[
         "render",
         f.to_str().unwrap(),
@@ -225,7 +225,7 @@ fn png_to_stdout_only_through_a_pipe() {
 #[test]
 fn mcp_export_image_tool() {
     let dir = scratch("mcp");
-    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("shared/export/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -277,7 +277,7 @@ fn mcp_export_image_tool() {
 #[test]
 fn both_themes_export_and_flag_overrides_document() {
     let dir = scratch("themes");
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     for theme in ["dark", "light"] {
         let svg = dir.join(format!("{theme}.svg"));
         tiza_ok(&[

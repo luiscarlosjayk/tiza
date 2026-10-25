@@ -1,4 +1,4 @@
-# Prelude of every pty test in qa/tests (t-119 retrabajo): `tiza_qa::pty_script`
+# Prelude of every pty test in qa/tests: `tiza_qa::pty_script`
 # prepends this file to the test's own Python body.
 #
 # Nothing here may block past DEADLINE: every read goes through select() with a
@@ -42,7 +42,7 @@ class Pty:
     child starts; `seed` is written to the child's input before it starts
     (a terminal answer that is already waiting when the child asks).
 
-    A background reader thread (t-157 retrabajo) drains the pty into `out`
+    A background reader thread drains the pty into `out`
     from the start, whatever the body is doing: a body that runs `tiza api`
     with `subprocess.run` between two `wait_for`s no longer leaves the child
     blocked writing a frame into a full pty buffer (small on macOS), unable to

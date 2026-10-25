@@ -1,8 +1,7 @@
-//! Helpers shared by the per-ticket QA tests in `qa/tests/`.
+//! Helpers shared by the QA tests in `qa/tests/`.
 //!
-//! Each `tests/t-XXX.rs` is compiled as its own crate and maps to one board
-//! task: its `//!` header repeats the task's acceptance criteria, and each
-//! `#[test]` is one of the manual test steps or corner cases from the card.
+//! Each `tests/<area>/main.rs` is compiled as its own crate, with one
+//! module for each behavior of that area.
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
@@ -115,7 +114,7 @@ pub fn bin() -> PathBuf {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let status = Command::new(env!("CARGO"))
-            // The test hooks (t-166) are in the binary the tests run and
+            // The test hooks are in the binary the tests run and
             // never in a release build.
             .args(["build", "-p", "tiza", "--features", "test-hooks", "--quiet"])
             .args(if profile_dir().ends_with("release") {
@@ -428,7 +427,7 @@ pub struct McpClient {
     stdin: std::process::ChildStdin,
     /// Lines of the server's stdout, read on a thread of its own, so a
     /// call the server never answers fails the test at a deadline instead
-    /// of hanging `cargo test` (t-166).
+    /// of hanging `cargo test`.
     lines: mpsc::Receiver<String>,
     /// Replies that arrived while waiting for another one.
     early: std::collections::HashMap<u64, serde_json::Value>,
@@ -508,7 +507,7 @@ impl McpClient {
     }
 
     /// [`McpClient::request`] with a deadline: `None` when the server has not
-    /// answered by then (t-166: every call must answer).
+    /// answered by then (every call must answer).
     pub fn request_within(
         &mut self,
         method: &str,
@@ -520,8 +519,8 @@ impl McpClient {
     }
 
     /// Sends one JSON-RPC request without waiting: its id, for
-    /// [`McpClient::reply_within`]. Several can be in flight at once (t-166:
-    /// a slow export must not hold up `status`).
+    /// [`McpClient::reply_within`]. Several can be in flight at once (a
+    /// slow export must not hold up `status`).
     pub fn send(&mut self, method: &str, params: serde_json::Value) -> u64 {
         use std::io::Write;
         let id = self.next_id;
@@ -745,11 +744,11 @@ pub fn pty_script_with_deadline(
     run.stdout
 }
 
-/// What `scripts/legibility.py` (t-072) needs and this machine lacks:
+/// What `scripts/legibility.py` needs and this machine lacks:
 /// `ffmpeg`, and `python3 -I -c "import PIL, numpy"` (Pillow and numpy are
 /// QA-only dependencies, never installed by the tests). Empty means the
 /// pipeline can run; otherwise each entry names one missing piece, for the
-/// skip notice of the tests that run the script (t-072, t-119).
+/// skip notice of the tests that run the script.
 pub fn legibility_tools_missing() -> Vec<&'static str> {
     let ok = |cmd: &str, args: &[&str]| {
         Command::new(cmd)

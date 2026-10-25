@@ -69,6 +69,7 @@ fn big_file(name: &str) -> PathBuf {
 /// socket, and no check's client gets a report.
 #[test]
 fn quitting_while_a_check_runs_exits_at_once() {
+    let _alone = crate::alone();
     let file = big_file("ac5");
     let dir = file.parent().unwrap().to_path_buf();
     let body = r##"

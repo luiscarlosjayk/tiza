@@ -1,4 +1,5 @@
-//! The color query after a resize goes to the terminal of the keys, and `TIZA_NO_OSC` stops it.
+//! The color query after a resize goes to the terminal of the keys, and
+//! `TIZA_NO_OSC` stops it.
 
 use std::path::Path;
 

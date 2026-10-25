@@ -40,7 +40,7 @@
         }
       },
       "cargo_install_cold_s": 64.7,
-      "note": "First Mac baseline (t-133): 452c576, lto = \"fat\", generated scenario files, Luis's Mac (macOS arm64)"
+      "note": "First Mac baseline: 452c576, lto = \"fat\", generated scenario files, Luis's Mac (macOS arm64)"
     },
     "x86_64-unknown-linux-gnu": {
       "target": "x86_64-unknown-linux-gnu",
@@ -96,7 +96,7 @@
           "runs": 21
         }
       },
-      "note": "t-138: long files highlighted in chunks on several threads (exact sequential output); TypeScript 3,000 lines 1648 -> ~1200 ms, Rust 2,000 lines 230 -> ~137 ms on the 2-CPU agent container",
+      "note": "Long files highlighted in chunks on several threads (exact sequential output); TypeScript 3,000 lines 1648 -> ~1200 ms, Rust 2,000 lines 230 -> ~137 ms on the 2-CPU agent container",
       "cargo_install_cold_s": 187.6
     }
   }

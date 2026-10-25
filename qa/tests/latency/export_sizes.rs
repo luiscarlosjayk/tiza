@@ -45,6 +45,7 @@ fn rejected(live: &Live, cmd: &str, expect: &str) {
 
 #[test]
 fn export_sizes_are_bounded_in_the_tui_and_the_cli() {
+    let _alone = crate::alone();
     let live = fresh("export");
     let dir = scratch("export-files");
     let png = dir.join("x.png");

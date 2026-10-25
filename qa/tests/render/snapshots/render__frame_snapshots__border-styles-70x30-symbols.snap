@@ -1,5 +1,5 @@
 ---
-source: qa/tests/t-053.rs
+source: qa/tests/render/frame_snapshots.rs
 expression: symbols
 ---
      ┏━ thick sharp… ┓

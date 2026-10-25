@@ -1336,7 +1336,7 @@ s.finish(5)
 /// instance goes back whole — no typing animation of the dropped request
 /// keeps drawing the move's content.
 #[test]
-fn v1_a_dropped_request_leaves_no_animation_drawing_the_value() {
+fn a_dropped_request_leaves_no_animation_drawing_the_value() {
     let dir = scratch("v1");
     let doc = typed_doc(&dir);
     let out = panic_run(
@@ -1380,7 +1380,7 @@ fn v1_a_dropped_request_leaves_no_animation_drawing_the_value() {
 /// `TIZA_MCP_EXPORT_TIMEOUT_MS`) is behind `#[cfg(feature = "test-hooks")]`,
 /// no crate turns it on by default, and the old unguarded names are gone.
 #[test]
-fn v2_the_test_hooks_are_never_in_a_release_build() {
+fn the_test_hooks_are_never_in_a_release_build() {
     fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
         for e in std::fs::read_dir(dir).unwrap() {
             let p = e.unwrap().path();
@@ -1455,7 +1455,7 @@ fn v2_the_test_hooks_are_never_in_a_release_build() {
 /// V3: the dropped request leaves no undo entry: the first `u` says there
 /// is nothing to undo.
 #[test]
-fn v3_a_dropped_request_leaves_no_undo_entry() {
+fn a_dropped_request_leaves_no_undo_entry() {
     let dir = scratch("v3");
     let doc = dir.join("doc.tiza");
     std::fs::write(&doc, serde_json::to_string_pretty(&small_doc()).unwrap()).unwrap();
@@ -1479,7 +1479,7 @@ fn v3_a_dropped_request_leaves_no_undo_entry() {
 /// runtime directory with the request and where it panicked, and the reply
 /// names the log.
 #[test]
-fn v4_a_caught_panic_is_logged() {
+fn a_caught_panic_is_logged() {
     let dir = scratch("v4");
     let doc = dir.join("doc.tiza");
     std::fs::write(&doc, serde_json::to_string_pretty(&small_doc()).unwrap()).unwrap();
@@ -1508,7 +1508,7 @@ fn v4_a_caught_panic_is_logged() {
 /// takes, so an «abandoned: nothing was written» reply means just that,
 /// and no temporary file is left.
 #[test]
-fn v5_an_export_caught_by_its_deadline_writes_nothing() {
+fn an_export_caught_by_its_deadline_writes_nothing() {
     let (path, live) = live_doc("v5", &small_doc());
     let dir = path.parent().unwrap().to_path_buf();
     let md = dir.join("late.md");
@@ -1567,7 +1567,7 @@ fn v5_an_export_caught_by_its_deadline_writes_nothing() {
 /// V6: an annotation with no id yet is named `annotation`, not
 /// `annotation ` with an empty id.
 #[test]
-fn v6_a_bounds_error_never_shows_an_empty_id() {
+fn a_bounds_error_never_shows_an_empty_id() {
     let (_, live) = live_doc("v6", &small_doc());
     let (_, msg) = api_err(
         &live,

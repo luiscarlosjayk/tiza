@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "A note on the last line longer than any width (t-200)",
+  "title": "A note on the last line longer than any width",
   "source": {
     "language": "sh",
     "first_line": 1

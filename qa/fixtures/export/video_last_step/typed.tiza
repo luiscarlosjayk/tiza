@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-170: a step typed in character by character at 25 ms",
+  "title": "A step typed in character by character at 25 ms",
   "source": {
     "language": "rs",
     "first_line": 1

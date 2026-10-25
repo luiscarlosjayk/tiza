@@ -140,6 +140,7 @@ fn assert_next_within_1s(out: &str) {
 
 #[test]
 fn a_save_while_the_watch_starts_is_reloaded() {
+    let _alone = crate::alone();
     let dir = setup("save");
     let out = run(
         &dir,
@@ -177,6 +178,7 @@ if ok:
 
 #[test]
 fn follow_off_and_quit_while_the_watch_starts() {
+    let _alone = crate::alone();
     let dir = setup("off");
     let out = run(
         &dir,
@@ -213,6 +215,7 @@ if ok:
 
 #[test]
 fn many_on_off_quickly_end_in_the_last_one_with_one_watcher() {
+    let _alone = crate::alone();
     let dir = setup("many");
     let out = run(
         &dir,
@@ -252,6 +255,7 @@ if ok:
 
 #[test]
 fn a_watch_that_fails_turns_follow_off_and_says_why() {
+    let _alone = crate::alone();
     let dir = setup("fail");
     let out = run(
         &dir,
@@ -288,6 +292,7 @@ if ok:
 
 #[test]
 fn a_start_over_a_paste_at_step_1_keeps_saying_it_waits() {
+    let _alone = crate::alone();
     // The watcher's start counted as a save: over a paste at a step with
     // moves applied, the bar said the file changed on disk, and it did not.
     let dir = scratch("paste");

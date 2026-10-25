@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-170: the last step times itself with auto_advance_ms",
+  "title": "The last step times itself with auto_advance_ms",
   "source": {
     "language": "rs",
     "first_line": 1

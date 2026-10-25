@@ -1,4 +1,4 @@
-//! No ticket id (`t-` and three digits) outside `qa/`.
+//! No ticket id (`t-` and three digits) in the repository, `qa/` too.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -14,7 +14,7 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
-// --- Build stamp ---------------------------------------------------------
+// --- The files git tracks -----------------------------------------------
 
 /// Git variables a parent process may have set: they would point these
 /// commands at another repository.
@@ -26,7 +26,7 @@ const GIT_ENV: [&str; 5] = [
     "GIT_OBJECT_DIRECTORY",
 ];
 
-// ---------- part B: no ticket ids outside qa/ ----------
+// ---------- No ticket ids ----------
 
 /// Read as binary whatever their bytes: fonts and images. Any other file
 /// that is not UTF-8 is skipped too.
@@ -34,11 +34,12 @@ const BINARY_EXT: [&str; 9] = [
     "ttf", "otf", "woff", "woff2", "png", "gif", "jpg", "jpeg", "ico",
 ];
 
-/// The repository's files outside `qa/`, relative to its root: the ones
+/// The repository's files, relative to its root, but `qa/.gitleaksignore`
+/// (its entries are paths of old commits, as gitleaks reports them): the ones
 /// git tracks (`git ls-files`; untracked files are left out, so a local
 /// notes folder in the checkout does not fail the gate), else a walk of the
 /// tree without `target/` and `.git`.
-fn files_outside_qa() -> Vec<String> {
+fn repository_files() -> Vec<String> {
     let root = root();
     let mut cmd = Command::new("git");
     for v in GIT_ENV {
@@ -62,7 +63,7 @@ fn files_outside_qa() -> Vec<String> {
             v
         }
     };
-    files.retain(|f| !f.starts_with("qa/"));
+    files.retain(|f| f != "qa/.gitleaksignore");
     files.sort();
     files.dedup();
     files
@@ -115,16 +116,16 @@ fn ticket_ids(line: &str) -> Vec<usize> {
     out
 }
 
-/// No file outside `qa/` names a ticket: each one found is listed as
-/// file:line with the rule from AGENTS.md.
+/// No file names a ticket: each one found is listed as file:line with the
+/// rule from AGENTS.md.
 #[test]
-fn ids_none_outside_qa() {
+fn ids_none_in_the_repository() {
     let rule = read("AGENTS.md")
         .lines()
         .find(|l| l.starts_with("- No ticket ids"))
         .map(str::to_string)
         .expect("AGENTS.md states the rule on ticket ids");
-    let files = files_outside_qa();
+    let files = repository_files();
     assert!(
         files.iter().any(|f| f == "README.md") && files.iter().any(|f| f.ends_with(".rs")),
         "the listing missed the README or the sources: {files:?}"
@@ -152,7 +153,7 @@ fn ids_none_outside_qa() {
     }
     assert!(
         found.is_empty(),
-        "{} line(s) outside qa/ name a ticket:\n{}\n\nThe rule, from AGENTS.md:\n{rule}",
+        "{} line(s) name a ticket:\n{}\n\nThe rule, from AGENTS.md:\n{rule}",
         found.len(),
         found.join("\n")
     );

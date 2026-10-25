@@ -1200,12 +1200,12 @@ fn an_annotation_already_outside_the_code_is_named_as_such() {
     let dir = scratch("already-outside");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::copy(
-        fixture("check/preflight/linked.tiza"),
+        fixture("shared/linked/linked.tiza"),
         dir.join("linked.tiza"),
     )
     .unwrap();
     std::fs::copy(
-        fixture("check/preflight/src/queue.rs"),
+        fixture("shared/linked/src/queue.rs"),
         dir.join("src/queue.rs"),
     )
     .unwrap();

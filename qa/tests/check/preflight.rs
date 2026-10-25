@@ -631,14 +631,14 @@ fn the_live_check_sees_unsaved_changes_and_linked_files() {
     let r = live.api("check", json!({"width": 3}));
     assert!(r.error.is_some_and(|e| e.message.contains("width=3")));
     // A linked file: the message names it.
-    let (_, cli) = check_json(&fixture("check/preflight/linked.tiza"), &[]);
+    let (_, cli) = check_json(&fixture("shared/linked/linked.tiza"), &[]);
     let got = mcp_check(
         "mcp-linked",
-        &fixture("check/preflight/linked.tiza"),
+        &fixture("shared/linked/linked.tiza"),
         json!({}),
     );
     assert_eq!(got, cli);
-    let (_, out, _) = check(&[fixture("check/preflight/linked.tiza").to_str().unwrap()]);
+    let (_, out, _) = check(&[fixture("shared/linked/linked.tiza").to_str().unwrap()]);
     assert!(
         out.contains(
             "error: q1, step 2, src/queue.rs, L9: line 9 does not exist (src/queue.rs spans 1 to 3)"
@@ -862,7 +862,7 @@ fn names_in(dir: &Path) -> Vec<String> {
 }
 
 #[test]
-fn a_names_tiza_never_writes_survive_byte_for_byte() {
+fn names_tiza_never_writes_survive_byte_for_byte() {
     let out = scratch("r2-a").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     // No two of these differ only in case (a case-insensitive APFS would
@@ -906,7 +906,7 @@ fn a_names_tiza_never_writes_survive_byte_for_byte() {
 }
 
 #[test]
-fn b_f_leftovers_of_its_format_and_width_go_and_are_named() {
+fn leftovers_of_its_format_and_width_go_and_are_named() {
     let out = scratch("r2-b").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     // B: an earlier, longer run. F: names of a 100+ / 1000+ step document
@@ -942,7 +942,7 @@ fn b_f_leftovers_of_its_format_and_width_go_and_are_named() {
 
 #[cfg(unix)]
 #[test]
-fn c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
+fn a_directory_or_symlink_named_like_a_step_is_left_and_named() {
     let dir = scratch("r2-c");
     let out = dir.join("steps");
     std::fs::create_dir_all(out.join("step-08.png")).unwrap();
@@ -968,7 +968,7 @@ fn c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
 }
 
 #[test]
-fn d_e_another_format_is_left_and_skip_zero_removes_step_00() {
+fn another_format_is_left_and_skip_zero_removes_step_00() {
     let out = scratch("r2-d").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     for s in 0..=7 {
@@ -1004,7 +1004,7 @@ fn d_e_another_format_is_left_and_skip_zero_removes_step_00() {
 /// `chflags uchg` on macOS, gives `could not remove … left as it is`.)
 #[cfg(unix)]
 #[test]
-fn g_a_directory_without_write_permission_changes_no_exit_code() {
+fn a_directory_without_write_permission_changes_no_exit_code() {
     use std::os::unix::fs::PermissionsExt;
     let dir = scratch("r2-g");
     let (with, without) = (dir.join("with"), dir.join("without"));
@@ -1031,7 +1031,7 @@ fn g_a_directory_without_write_permission_changes_no_exit_code() {
 }
 
 #[test]
-fn h_thousands_of_unrelated_files_and_a_long_list() {
+fn thousands_of_unrelated_files_and_a_long_list() {
     let (big, empty) = (scratch("r2-h").join("big"), scratch("r2-h0"));
     std::fs::create_dir_all(&big).unwrap();
     for i in 0..5000 {
@@ -1064,7 +1064,7 @@ fn h_thousands_of_unrelated_files_and_a_long_list() {
 /// root for `chattr`, a filesystem without the flag) only the run is checked.
 #[cfg(unix)]
 #[test]
-fn g_a_leftover_that_cannot_be_removed_is_a_warning() {
+fn a_leftover_that_cannot_be_removed_is_a_warning() {
     let out = scratch("r2-g2").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     let f = out.join("step-09.png");

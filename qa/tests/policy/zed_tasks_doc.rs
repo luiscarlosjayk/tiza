@@ -1,4 +1,4 @@
-//! Docs/zed.md: the step tasks (`tiza next|prev|goto`) as tested in
+//! `docs/zed.md`: the step tasks (`tiza next|prev|goto`) as tested in
 //! Zed, with `reveal_target: center` so a Tiza in the terminal dock (alone or
 //! inside Herdr) does not flicker.
 //!

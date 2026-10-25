@@ -69,8 +69,6 @@ fn saved_code(tiza: &Path) -> Value {
     v["code"].clone()
 }
 
-// ---------- review ----------
-
 // ---------- AC4: the real binary on a pty ----------
 
 /// Runs `tiza --socket s.sock doc.tiza` (the repro, no note) on a pty and

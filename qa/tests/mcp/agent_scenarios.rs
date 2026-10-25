@@ -21,10 +21,11 @@
 //!   TUI autosaves).
 //! - AC5 No marketing or channel tasks.
 //!
-//! The document is prose, so these tests pin what can drift: its shape, the
-//! paths it names, and the worked example — `tiza check` clean at the width
-//! it is recorded at, each step showing its file, and the MCP tool calls the
-//! prompt list leads to rebuilding exactly the frames of the shipped `.tiza`.
+//! The document is prose, so these tests check the worked example: `tiza
+//! check` clean at the width it is recorded at, each step showing its file,
+//! and the MCP tool calls the prompt list leads to rebuilding exactly the
+//! frames of the shipped `.tiza`. `policy::scenario_paths` checks the paths
+//! that the document names.
 
 use std::path::{Path, PathBuf};
 

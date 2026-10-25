@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "Two consecutive lines with two labels each (t-172)",
+  "title": "Two consecutive lines with two labels each",
   "source": {
     "language": "sh",
     "first_line": 1

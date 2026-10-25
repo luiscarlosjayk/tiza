@@ -657,7 +657,7 @@ fn an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
 }
 
 #[test]
-fn optional_a_v_selection_defers_the_auto_advance() {
+fn a_v_selection_defers_the_auto_advance() {
     let (live, _) = opened("visual");
     live.api_ok(
         "scene.patch",

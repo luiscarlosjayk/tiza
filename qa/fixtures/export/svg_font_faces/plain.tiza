@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-130 plain: code only, no bold, italic or symbols",
+  "title": "Plain: code only, no bold, italic or symbols",
   "source": { "language": "rs", "first_line": 1 },
   "code": [
     "fn main() {",

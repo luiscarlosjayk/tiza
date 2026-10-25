@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-170: a single annotated step",
+  "title": "A single annotated step",
   "source": {
     "language": "rs",
     "first_line": 1

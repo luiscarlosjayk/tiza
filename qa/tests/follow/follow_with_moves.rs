@@ -597,5 +597,3 @@ fn follow_set_keeps_an_error_of_its_own_on_the_bar() {
     let (msg, loud) = live.message().unwrap();
     assert!(loud && msg.contains("not valid UTF-8"), "{msg}");
 }
-
-// ---------- AC4: the real binary on a pty ----------

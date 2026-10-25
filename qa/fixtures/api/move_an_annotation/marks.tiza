@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-093 moving annotations",
+  "title": "Moving annotations",
   "source": { "language": "rs", "first_line": 1 },
   "code": [
     "fn main() {",

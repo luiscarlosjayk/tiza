@@ -7,7 +7,7 @@
 //!   (fg/bg/modifiers), because Display of the TestBackend carries no color.
 //! - AC2 Presentation mode, step 0, the light theme, a V-LINE selection, a
 //!   Tab-selected annotation and the ⚠ small-terminal badge are snapshotted too.
-//! - AC3 Snapshots live in `qa/tests/snapshots/`; a change in the render fails
+//! - AC3 Snapshots live in `qa/tests/render/snapshots/`; a change in the render fails
 //!   the test and `cargo insta review` (or INSTA_UPDATE=always) accepts it.
 //!
 //! Sizes: 100×30 (recording profile) and 60×20 (narrow, labels under lines).

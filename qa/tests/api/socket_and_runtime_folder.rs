@@ -3,7 +3,7 @@
 //!
 //! Acceptance criteria:
 //! - AC1 `:panic` is only in a build with `test-hooks`. The guard of the live export
-//!   (`v2_the_test_hooks_are_never_in_a_release_build`) now reads every
+//!   (`the_test_hooks_are_never_in_a_release_build`) now reads every
 //!   test hook of every crate.
 //! - AC2 Tiza never removes a file, a folder or a link at the socket path
 //!   (a mistyped `--socket`, a stray `TIZA_SOCKET`): it refuses the path

@@ -42,7 +42,7 @@ fn strip_ansi(s: &str) -> String {
 }
 
 fn render(args: &[&str]) -> String {
-    let f = fixture("export/svg_and_png/export.tiza");
+    let f = fixture("shared/export/export.tiza");
     let mut full = vec!["render", f.to_str().unwrap(), "--width", "100"];
     full.extend_from_slice(args);
     tiza_ok(&full)
@@ -79,7 +79,7 @@ fn markdown_is_a_fenced_block_with_the_title() {
     let txt = render(&["--out", "-", "--format", "txt", "--step", "9"]);
     assert!(
         md.starts_with(
-            "**t-050 export: symbols, emoji, wide glyphs, every annotation kind**\n\n```text\n"
+            "**Export: symbols, emoji, wide glyphs, every annotation kind**\n\n```text\n"
         ),
         "{md}"
     );
@@ -130,7 +130,7 @@ fn ansi_has_truecolor_resets_and_the_same_text() {
 #[test]
 fn export_command_formats_defaults_and_errors() {
     let dir = scratch("cmd");
-    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("shared/export/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("demo.tiza"), dir.join("live.sock"));
@@ -251,7 +251,7 @@ fn export_svg_and_png_through_the_binary() {
 #[test]
 fn mcp_export_image_writes_text_formats() {
     let dir = scratch("mcp");
-    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("shared/export/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));

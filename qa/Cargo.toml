@@ -1,6 +1,6 @@
 [package]
 name = "tiza-qa"
-description = "Per-ticket QA tests: each tests/t-XXX.rs is an independent crate that exercises one board task"
+description = "QA tests, one crate per area: each tests/<area>/ is a crate with one module for each behavior"
 publish = false
 version.workspace = true
 edition.workspace = true

@@ -261,7 +261,7 @@ fn the_chip_says_why_nothing_saves() {
 fn a_foreign_put_leaves_changes_and_after_w_the_chip_is_autosave_off() {
     let live = ownership("chip-put");
     let other =
-        tiza_core::fs::load_document(&tiza_qa::fixture("export/svg_and_png/export.tiza")).unwrap();
+        tiza_core::fs::load_document(&tiza_qa::fixture("shared/export/export.tiza")).unwrap();
     live.api_ok("scene.put", serde_json::json!({"document": other}));
     assert!(!live.with(|a| a.autosave));
     live.with(|a| a.message = None);

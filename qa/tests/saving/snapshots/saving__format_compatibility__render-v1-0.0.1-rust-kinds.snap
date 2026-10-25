@@ -1,5 +1,5 @@
 ---
-source: qa/tests/t-073.rs
+source: qa/tests/saving/format_compatibility.rs
 expression: out
 ---
  1      fn main() {

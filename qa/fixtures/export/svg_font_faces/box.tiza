@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-130 box: a box title (bold), no symbols",
+  "title": "Box: a box title (bold), no symbols",
   "source": { "language": "rs", "first_line": 1 },
   "code": [
     "fn main() {",

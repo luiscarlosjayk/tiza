@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-099: named steps over the ownership demo with moves",
+  "title": "Named steps over the ownership demo with moves",
   "source": {
     "language": "rs",
     "first_line": 1

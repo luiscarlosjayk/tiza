@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-050 export: symbols, emoji, wide glyphs, every annotation kind",
+  "title": "Export: symbols, emoji, wide glyphs, every annotation kind",
   "source": { "language": "rs", "first_line": 1 },
   "code": [
     "fn main() {",

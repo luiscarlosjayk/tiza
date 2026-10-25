@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-092 callouts: margin, below inside a box, below wider than a box",
+  "title": "Callouts: margin, below inside a box, below wider than a box",
   "source": { "language": "rs", "first_line": 1 },
   "code": [
     "fn main() {",

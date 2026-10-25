@@ -1,5 +1,5 @@
 ---
-source: qa/tests/t-053.rs
+source: qa/tests/render/frame_snapshots.rs
 expression: styles
 ---
   0: 0:#e8e6e1/#15171b 5:#f08b5b/#15171b 8:#f08b5b/#15171b+b 20:#f08b5b/#15171b 22:#e8e6e1/#15171b

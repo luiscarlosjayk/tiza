@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "t-114: a box that starts at line 1",
+  "title": "A box that starts at line 1",
   "source": { "language": "rs" },
   "code": { "file": "top.rs" },
   "step": 1,

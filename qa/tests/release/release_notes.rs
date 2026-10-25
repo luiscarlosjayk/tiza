@@ -156,7 +156,11 @@ fn a_byte_order_mark_and_crlf_are_removed() {
 fn notes_that_name_a_card_are_refused() {
     let dir = workspace(
         "card",
-        &[("v9.9.9.md", b"# Tiza v9.9.9\n\n- Fixed the bar (t-173).\n")],
+        // The id is written in two parts, so that the repository holds none.
+        &[(
+            "v9.9.9.md",
+            concat!("# Tiza v9.9.9\n\n- Fixed the bar (t", "-173).\n").as_bytes(),
+        )],
     );
     let o = notes(&dir, "v9.9.9");
     assert_eq!(o.status.code(), Some(1), "{}", out(&o));

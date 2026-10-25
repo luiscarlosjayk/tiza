@@ -2,14 +2,11 @@
 //! terminal broken, and never create something other than what was typed.
 //!
 //! Acceptance criteria:
-//! - AC1 Export sizes are bounded: `:export … width=N` and `tiza render
-//!   --width N` accept 20..=400; PNGs over 16384 px per side or 100 MP are
-//!   refused naming the limit; `--scale` and `--font-size` are checked too.
+//! - AC1 and AC3 (export sizes are bounded, and the largest export is fast)
+//!   are checked in `latency::export_sizes`.
 //! - AC2 A panic restores the terminal (alternate screen left, cursor shown,
 //!   bracketed paste and mouse off) and prints one `tiza crashed:` line
 //!   naming the document and where to report it.
-//! - AC3 No export can take more than a few seconds: the width cap is the
-//!   bound (400 columns × scale 2 renders in under 2 s).
 //! - AC4 Out-of-range numbers are errors or normalised with a notice in
 //!   `:focus`, `:box`/`:callout`/`:spot`, `:until`, `:step ID N`.
 //! - AC5 A line that does not exist, or `L:text` whose text is not on L, is

@@ -16,8 +16,8 @@
 //!   manual step in order (version with
 //!   `scripts/bump-version.sh`, commit, workspace dry run before the tag,
 //!   tag, then one crate at a time in dependency order, checking the index
-//!   before the next). Every `.crate` carries the licence texts; `tiza`
-//!   leaves out its tests (QA round 0).
+//!   before the next). That every `.crate` carries the licence texts and
+//!   `tiza` leaves out its tests is checked in `policy::package_licences`.
 //! - AC2 crates.io page of `tiza`: a readme packaged in the crate with no
 //!   relative links or images, `homepage`, `documentation` on GitHub (not
 //!   docs.rs), at most five keywords and valid categories.
@@ -30,11 +30,6 @@
 //!   stamped `unknown`, not with that repository's commit; a checkout of Tiza
 //!   keeps its commit; `TIZA_GIT_SHA_OVERRIDE` still wins; the first commit
 //!   of a repository made around the crate stamps it (QA round 0).
-//!
-//! Part B (Luis, 2026-10-22): the board is private, so no ticket id (`t-`
-//! and three digits) is left outside `qa/` and commit messages. AGENTS.md
-//! says so, and `ids_none_outside_qa` fails with file:line on any other,
-//! save a quoted qa test target in `scripts/bench.py`.
 //!
 //! The workflows cannot run here (Actions is off while the repository is
 //! private): their structure is read as text (and parsed as YAML).
@@ -819,8 +814,6 @@ fn stamp_this_checkout_keeps_its_commit() {
     let said = String::from_utf8_lossy(&version.stdout);
     assert!(said.contains(&format!("({head}")), "{said}");
 }
-
-// ---------- part B: no ticket ids outside qa/ ----------
 
 // --- How to help, and security (AC7) ----------------------------------
 

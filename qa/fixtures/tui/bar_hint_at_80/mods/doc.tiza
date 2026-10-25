@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "title": "Two files with the same name (t-173)",
+  "title": "Two files with the same name",
   "source": { "language": "rs", "first_line": 1 },
   "code": { "file": "src/a/mod.rs" },
   "step": 0,

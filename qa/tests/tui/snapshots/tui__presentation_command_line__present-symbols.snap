@@ -1,5 +1,5 @@
 ---
-source: qa/tests/t-107.rs
+source: qa/tests/tui/presentation_command_line.rs
 expression: symbols
 ---
   1    fn main() {

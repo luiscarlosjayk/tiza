@@ -4,16 +4,6 @@ use std::process::Command;
 
 use tiza_qa::bin;
 
-// --- crates.io pages -----------------------------------------------------
-
-// --- Build stamp ---------------------------------------------------------
-
-// ---------- part B: no ticket ids outside qa/ ----------
-
-// --- How to help, and security (AC7) ----------------------------------
-
-// --- Brand assets (Luis, 2026-10-24) -----------------------------------
-
 // --- The help of `tiza render` (docs review, 2026-10-24) ---------------
 
 #[test]
