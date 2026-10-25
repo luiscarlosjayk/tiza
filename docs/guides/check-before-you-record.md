@@ -104,6 +104,29 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 
 Each finding has `level`, `code` and `message`. It also has `id`, `step` and `line` when they apply.
 
+The `code` of a finding is one of these:
+
+| Code | Level | What it reports |
+|---|---|---|
+| `schema` | Error | The document does not follow the `.tiza` format. |
+| `code` | Error | Tiza cannot read the code of the document. |
+| `bounds` | Error | A number is out of range, for example a step past the limit. |
+| `link` | Error | A linked file cannot be read. |
+| `duplicate_id` | Error | Two annotations have the same id. |
+| `steps` | Error or warning | An entry of `steps` is not valid, or Tiza does not use it. |
+| `move` | Error | A move is not valid, or its target does not match at its step. |
+| `rebind` | Error | The `rebind` of a move is not valid. |
+| `stale` | Error | In a live instance, a move does not match the code after a reload or a paste. |
+| `unknown_id` | Error or warning | An annotation or a `rebind` names something that does not exist. |
+| `unknown_file` | Error | An annotation names a file that no `code.link` shows. |
+| `anchor` | Error | An anchor does not match at its step. |
+| `marker` | Error or warning | A marker does not match, or it matches more than one time. |
+| `unanchored` | Warning | A move hides an annotation. |
+| `outside_window` | Warning | An annotation is outside the `code.link` window of its step. |
+| `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
+| `empty_step` | Warning | A step changes nothing. |
+| `clipped_label` | Warning | A label is cut at the width of the check. |
+
 ## Check a live instance
 
 A live instance gives the same report for the document that it holds. The report includes the changes that are not saved. Use `tiza api check '{"width": 108}'`, or the MCP tool `check`.
