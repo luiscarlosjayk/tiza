@@ -739,15 +739,13 @@
   },
   "clear_annotations": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "additionalProperties": false,
     "properties": {
       "step": {
         "description": "If given, removes only the annotations of that step; otherwise all of them",
         "format": "uint32",
         "minimum": 0,
-        "type": [
-          "integer",
-          "null"
-        ]
+        "type": "integer"
       }
     },
     "type": "object"

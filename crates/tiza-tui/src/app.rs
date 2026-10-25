@@ -6036,6 +6036,14 @@ impl App {
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
             && !req.method.starts_with("supervise.");
+        // A `scene.clear` with parameters that it cannot read and a
+        // `scene.put` with a newer schema are refused now, not parked as a
+        // change that would not happen. Other bad parameters still fail
+        // when the presenter accepts the change.
+        if parked && let Some(e) = refused_before_review(&req) {
+            let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
+            return;
+        }
         if !parked {
             let verb = annotation_verb(&req.method);
             let before = self.message.clone();
@@ -6559,7 +6567,15 @@ impl App {
             }
             "supervise.status" => self.supervise_status(),
             "scene.put" => {
-                let p: PutParams = parse(params)?;
+                // The schema as when a file opens, before the document
+                // changes: a newer one would be saved as it is, in a file
+                // that this version cannot open; an older one is migrated.
+                let mut params = params;
+                if let Some(doc) = params.get_mut("document") {
+                    fs::migrate_document_value(doc)?;
+                }
+                let mut p: PutParams = parse(params)?;
+                p.document.schema = tiza_core::model::SCHEMA_VERSION;
                 serde_json::to_value(self.put_scene(p.document)?)?
             }
             "scene.patch" => {
@@ -6567,10 +6583,7 @@ impl App {
                 serde_json::to_value(self.patch_scene(p)?)?
             }
             "scene.clear" => {
-                let step = params
-                    .get("step")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32);
+                let step = clear_params(&params)?.step;
                 let removed = self.clear_annotations(step);
                 json!({"removed": removed, "remaining": self.doc.annotations.len(), "revision": self.revision})
             }
@@ -7514,6 +7527,42 @@ fn edit_distance(a: &str, b: &str) -> usize {
         prev = cur;
     }
     prev[b.len()]
+}
+
+/// The parameters of `scene.clear`: no `step` (every annotation) or a
+/// `step` that is a whole number, 0 or more. Anything else is refused, so
+/// that a typo never clears the whole scene.
+fn clear_params(params: &Value) -> Result<tiza_core::schema::ClearParams, Error> {
+    // serde would read an array (`[]`) as a struct with no step.
+    if !params.is_object() {
+        return Err(Error::Invalid(format!(
+            "{}send a JSON object. `{{}}` clears every annotation, and `{{\"step\": N}}` clears step N",
+            tiza_core::error::INVALID_PARAMETERS
+        )));
+    }
+    if let Some(step) = params.get("step")
+        && !step.as_u64().is_some_and(|s| s <= u32::MAX as u64)
+    {
+        return Err(Error::Invalid(format!(
+            "{}step must be a whole number, 0 or more. Leave it out to clear every annotation",
+            tiza_core::error::INVALID_PARAMETERS
+        )));
+    }
+    parse(params.clone())
+}
+
+/// What makes a request fail before it changes anything, checked before
+/// supervised mode parks it.
+fn refused_before_review(req: &Request) -> Option<Error> {
+    match req.method.as_str() {
+        "scene.clear" => clear_params(&req.params).err(),
+        "scene.put" => req
+            .params
+            .get("document")
+            .cloned()
+            .and_then(|mut d| fs::migrate_document_value(&mut d).err()),
+        _ => None,
+    }
 }
 
 /// Parameters of a socket request. Ones that do not deserialize: serde

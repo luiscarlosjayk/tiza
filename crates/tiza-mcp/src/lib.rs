@@ -432,11 +432,24 @@ pub struct SpotlightParams {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ClearParams {
     #[schemars(
-        description = "If given, removes only the annotations of that step; otherwise all of them"
+        description = "If given, removes only the annotations of that step; otherwise all of them",
+        with = "u32"
+    )]
+    #[serde(
+        default,
+        deserialize_with = "step_number",
+        skip_serializing_if = "Option::is_none"
     )]
     pub step: Option<u32>,
+}
+
+/// A `step` that is there must be a number: `null` is refused, so that it
+/// never stands for "every annotation".
+fn step_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<u32>, D::Error> {
+    <u32 as serde::Deserialize>::deserialize(d).map(Some)
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -943,7 +956,16 @@ impl TizaServer {
         Parameters(p): Parameters<ClearParams>,
     ) -> Result<CallToolResult, McpError> {
         Ok(text(pretty(
-            &self.call("scene.clear", json!({"step": p.step})).await?,
+            &self
+                .call(
+                    "scene.clear",
+                    // No step: no key at all (`"step": null` is refused).
+                    match p.step {
+                        Some(s) => json!({ "step": s }),
+                        None => json!({}),
+                    },
+                )
+                .await?,
         )))
     }
 

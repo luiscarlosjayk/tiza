@@ -45,7 +45,7 @@ pub enum Error {
     #[error("{0}")]
     StepNotFound(String),
     #[error(".tiza file with schema {found}; this version understands up to {supported}")]
-    UnsupportedSchema { found: u32, supported: u32 },
+    UnsupportedSchema { found: u64, supported: u32 },
     /// Another error, said of one thing (`annotation a2, step 1: range
     /// 9..9 does not fit…`); the API code is that of the error inside.
     #[error("{what}: {inner}")]

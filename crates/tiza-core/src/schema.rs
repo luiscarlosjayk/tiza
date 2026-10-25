@@ -51,9 +51,11 @@ pub struct StyleSetParams {
 
 /// Parameters of `scene.clear`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ClearParams {
     /// Only this step; omit to clear everything.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "u32")]
     pub step: Option<u32>,
 }
 

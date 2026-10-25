@@ -3114,20 +3114,18 @@
       }
     },
     {
-      "description": "Removes every annotation (or only those of `step`); can be undone in the TUI",
+      "description": "Removes every annotation, or only those of `step` (a whole number from 0); can be undone in the TUI. Any other `step` (a string, a negative or decimal number, `null`), parameters that are not an object and unknown keys are refused (invalid_argument)",
       "method": "scene.clear",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "description": "Parameters of `scene.clear`.",
         "properties": {
           "step": {
             "description": "Only this step; omit to clear everything.",
             "format": "uint32",
             "minimum": 0,
-            "type": [
-              "integer",
-              "null"
-            ]
+            "type": "integer"
           }
         },
         "title": "ClearParams",
@@ -3146,7 +3144,7 @@
       }
     },
     {
-      "description": "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI. Code sent equal to the file it came from keeps that file a reference; a put that changes nothing writes nothing",
+      "description": "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI. Code sent equal to the file it came from keeps that file a reference; a put that changes nothing writes nothing. A `schema` newer than this version is refused before anything changes (unsupported_schema)",
       "method": "scene.put",
       "params": {
         "$defs": {

@@ -1128,11 +1128,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "scene.clear",
-        "Removes every annotation (or only those of `step`); can be undone in the TUI",
+        "Removes every annotation, or only those of `step` (a whole number from 0); can be undone in the TUI. Any other `step` (a string, a negative or decimal number, `null`), parameters that are not an object and unknown keys are refused (invalid_argument)",
     ),
     (
         "scene.put",
-        "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI. Code sent equal to the file it came from keeps that file a reference; a put that changes nothing writes nothing",
+        "Replaces the whole live document (code embedded, annotations, step, theme, styles…) atomically; undoable in the TUI. Code sent equal to the file it came from keeps that file a reference; a put that changes nothing writes nothing. A `schema` newer than this version is refused before anything changes (unsupported_schema)",
     ),
     (
         "scene.patch",

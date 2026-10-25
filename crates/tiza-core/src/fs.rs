@@ -225,24 +225,31 @@ pub fn load_document(path: &Path) -> Result<Document, Error> {
     parse_document(&text, path.parent())
 }
 
-/// Parses a `.tiza` and resolves its code. `base_dir` is the document's
-/// directory, against which relative `code.file` paths are resolved.
-pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, Error> {
-    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
-    let mut raw: serde_json::Value = serde_json::from_str(text)?;
-    let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
-    if found > SCHEMA_VERSION {
+/// Checks the `schema` of a document as JSON, a file or a `scene.put`: a
+/// newer one is refused, and an older one is migrated step by step to the
+/// current schema, in place.
+pub fn migrate_document_value(raw: &mut serde_json::Value) -> Result<(), Error> {
+    let found = raw.get("schema").and_then(|v| v.as_u64()).unwrap_or(1);
+    if found > u64::from(SCHEMA_VERSION) {
         return Err(Error::UnsupportedSchema {
             found,
             supported: SCHEMA_VERSION,
         });
     }
-    // Older files are migrated step by step before being read as the current schema.
     for (from, migrate) in MIGRATIONS {
-        if found <= *from {
-            migrate(&mut raw);
+        if found <= u64::from(*from) {
+            migrate(raw);
         }
     }
+    Ok(())
+}
+
+/// Parses a `.tiza` and resolves its code. `base_dir` is the document's
+/// directory, against which relative `code.file` paths are resolved.
+pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, Error> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut raw: serde_json::Value = serde_json::from_str(text)?;
+    migrate_document_value(&mut raw)?;
     let mut doc: Document = serde_json::from_value(raw)?;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;

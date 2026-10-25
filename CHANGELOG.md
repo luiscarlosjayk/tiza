@@ -14,6 +14,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - An empty `HOME` counts as not set. Before, Tiza read `.config/tiza/config.toml` in the current folder.
 - Without `HOME`, or with an empty `HOME`, a path that starts with `~/` in `:w`, `:saveas`, `:wq` or `:export` gives an error. Before, Tiza wrote the file in the current folder.
 - With `--no-save`, `--theme-file` does not write the `.tiza` document at start now.
+- The socket method `scene.clear` refuses parameters that it cannot read, with `invalid_argument`: a `step` that is not a whole number from 0, parameters that are not an object, and an unknown key. Before, such a request deleted every annotation. Supervised mode refuses it at once. The MCP tool `clear_annotations` refuses an unknown key and a `null` step too.
+- The socket method `scene.put` refuses a document with a `schema` newer than this version (`unsupported_schema`), before the document changes. Before, Tiza saved that document, and then it could not open the file.
 - In a theme table, the `[dark]`, `[light]` or `[terminal]` table of the theme in use wins over the flat tokens now. Before, the result depended on the names of the keys.
 
 ### Changed
