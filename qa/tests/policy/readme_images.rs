@@ -1,27 +1,5 @@
-//! t-121 — Refresh the README images from the current renderer, with a
-//! script so they never go stale again.
-//!
-//! Acceptance criteria:
-//! - AC0 The native GIF uses `--scale 2` by default (PNG already does; MP4
-//!   stays at 1): default, `--scale` help text, README, and the size
-//!   assertion of `qa/tests/t-120.rs`.
-//! - AC1 `scripts/readme-images.sh` regenerates every image the README shows
-//!   with `tiza` alone (no vhs/ttyd/agg/ffmpeg).
-//! - AC2 The images are regenerated at the current main and the README text
-//!   around them matches what they show.
-//! - AC3 GIF under ~1 MB, PNG under ~300 KB.
-//! - AC4 examples/README.md and the example `.tiza` files only change if
-//!   the new look makes them read worse.
-//! - AC5 CHANGELOG line; AGENTS.md bullet (a visual renderer change re-runs
-//!   the script in the same commit).
-//! - AC6 and AC7 (the hero image, its title and its layout) are manual
-//!   checks since Luis's decision of 2026-10-25: no test checks the hero.
-//!   Its three frames are still compared with fresh renders below.
-//!
-//! The committed images are compared with fresh renders by size (pixels)
-//! and the README text block byte for byte, so a renderer change that skips
-//! the script fails here. PNG bytes are not compared: the rasteriser may
-//! differ in the last bit between CPUs.
+//! The README images are real exports of the current renderer, made by
+//! `scripts/readme-images.sh` alone.
 
 use tiza_qa::{example, scratch, tiza_ok};
 
@@ -88,7 +66,7 @@ fn render(args: &[&str], out: &std::path::Path) {
 }
 
 #[test]
-fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
+fn the_script_uses_tiza_alone_and_writes_every_readme_image() {
     let path = root().join("scripts/readme-images.sh");
     let s = read("scripts/readme-images.sh");
     #[cfg(unix)]
@@ -155,8 +133,8 @@ fn images(md: &str) -> Vec<(String, String)> {
 }
 
 #[test]
-fn ac2_ac3_the_committed_images_match_the_current_renderer_and_the_budget() {
-    let dir = scratch("t121-fresh");
+fn the_committed_images_match_the_current_renderer_and_the_budget() {
+    let dir = scratch("fresh");
     // GIF: same frames and size as a fresh render; < 1 MB.
     let gif_path = dir.join("own.gif");
     render(&["--skip-zero", "--scale", "1.5"], &gif_path);

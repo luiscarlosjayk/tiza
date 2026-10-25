@@ -1,4 +1,4 @@
-//! t-153 — Credits: one form of Luis's name in Cargo.toml and LICENSE-MIT,
+//! Credits: one form of Luis's name in Cargo.toml and LICENSE-MIT,
 //! and the license text of the README.
 //!
 //! Acceptance criteria:
@@ -16,7 +16,7 @@
 //! - AC6 Every font of the repository has its license next to it: the two
 //!   that the binary embeds (JetBrains Mono, OFL; the DejaVu symbols,
 //!   Bitstream Vera) and the brand serif (Libron, OFL, with its Reserved
-//!   Font Name). Moved here from t-068 and t-134, extended to the embedded
+//!   Font Name). Moved here from the SVG export tests, extended to the embedded
 //!   fonts.
 //! - AC7 The release archives (release.yml and scripts/release-local.sh)
 //!   carry the license of every font that the binary embeds.
@@ -50,7 +50,7 @@ fn license_section() -> String {
 }
 
 #[test]
-fn ac4_license_mit_copyright_line_has_the_full_name() {
+fn license_mit_copyright_line_has_the_full_name() {
     let mit = read("LICENSE-MIT");
     assert_eq!(
         mit.lines().nth(2),
@@ -59,7 +59,7 @@ fn ac4_license_mit_copyright_line_has_the_full_name() {
 }
 
 #[test]
-fn ac4b_license_section_keeps_the_dual_license_and_adds_the_clause() {
+fn license_section_keeps_the_dual_license_and_adds_the_clause() {
     let section = license_section();
     assert!(section.contains("MIT or Apache-2.0, at your option."));
     assert!(section.contains("[LICENSE-MIT](LICENSE-MIT)"));
@@ -73,7 +73,7 @@ fn ac4b_license_section_keeps_the_dual_license_and_adds_the_clause() {
 }
 
 #[test]
-fn ac5_the_name_only_appears_in_its_full_form() {
+fn the_name_only_appears_in_its_full_form() {
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         for e in std::fs::read_dir(dir).unwrap() {
             let p = e.unwrap().path();
@@ -108,7 +108,7 @@ fn ac5_the_name_only_appears_in_its_full_form() {
 /// AC6: each license file says its license, and its folder holds the fonts
 /// that it covers.
 #[test]
-fn ac6_every_font_has_its_license_next_to_it() {
+fn every_font_has_its_license_next_to_it() {
     let fonts: [(&str, &str, &[&str], &[&str]); 3] = [
         (
             "crates/tiza-export/assets/fonts",
@@ -157,7 +157,7 @@ fn ac6_every_font_has_its_license_next_to_it() {
 /// `crates/tiza-export/assets/fonts` into it, so a font added there with
 /// its license is not shipped without it.
 #[test]
-fn ac7_the_release_archives_carry_the_licenses_of_the_embedded_fonts() {
+fn the_release_archives_carry_the_licenses_of_the_embedded_fonts() {
     let dir = "crates/tiza-export/assets/fonts";
     let mut licenses: Vec<String> = std::fs::read_dir(root().join(dir))
         .unwrap()

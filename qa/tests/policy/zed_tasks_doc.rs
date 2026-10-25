@@ -1,4 +1,4 @@
-//! t-178 — docs/zed.md: the step tasks (`tiza next|prev|goto`) as tested in
+//! Docs/zed.md: the step tasks (`tiza next|prev|goto`) as tested in
 //! Zed, with `reveal_target: center` so a Tiza in the terminal dock (alone or
 //! inside Herdr) does not flicker.
 //!
@@ -70,7 +70,7 @@ fn run(socket: &Path, args: &[&str]) -> (Option<i32>, String, String) {
 /// it, and an unknown id or no instance exits 1 with the message the guide
 /// quotes (AC4; `hide: on_success` keeps it on screen).
 #[test]
-fn ac2_ac4_the_commands_do_what_the_guide_says() {
+fn the_commands_do_what_the_guide_says() {
     let md = guide();
     let goto = step_tasks(&md)
         .into_iter()
@@ -79,7 +79,7 @@ fn ac2_ac4_the_commands_do_what_the_guide_says() {
     let id = goto["args"][1].as_str().unwrap().to_owned();
     assert!(goto["label"].as_str().unwrap().contains(&id), "{goto}");
 
-    let dir = scratch("t178");
+    let dir = scratch("zed_tasks_doc");
     let tour = example("tally-tour.tiza");
     let doc = fs::open(tour.to_str().unwrap()).unwrap().document;
     // The step the `goto` task names, and the line `tiza` prints for it.
@@ -138,7 +138,7 @@ fn all_tasks(md: &str) -> Vec<Value> {
 }
 
 #[test]
-fn corner_no_task_gives_sh_its_script_in_args() {
+fn no_task_gives_sh_its_script_in_args() {
     // Zed 1.25.3 runs a task as `$SHELL -i -c` with `command` and `args`
     // on one line: `"command": "sh"` with `-c` in `args` runs `sh` alone.
     let md = guide();
@@ -158,7 +158,7 @@ fn corner_no_task_gives_sh_its_script_in_args() {
 }
 
 #[test]
-fn corner_the_selected_text_and_40_lines_tasks_run_as_zed_runs_them() {
+fn the_selected_text_and_40_lines_tasks_run_as_zed_runs_them() {
     let md = guide();
     let tasks = all_tasks(&md);
     let task = |label: &str| {
@@ -168,7 +168,7 @@ fn corner_the_selected_text_and_40_lines_tasks_run_as_zed_runs_them() {
             .unwrap_or_else(|| panic!("no task {label}"))
             .clone()
     };
-    let dir = scratch("t178-zed-shell");
+    let dir = scratch("zed-shell");
     let file = dir.join("demo.rs");
     let code: String = (1..=100).map(|n| format!("let v{n} = {n};\n")).collect();
     std::fs::write(&file, code).unwrap();
