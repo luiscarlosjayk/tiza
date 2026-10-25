@@ -78,11 +78,11 @@ A quit command does not save more than the current mode saves. With autosave on 
 | `:q` | Quits. | Refuses while changes are not saved. | Refuses while changes are not saved. |
 | `:wq` | Saves, then quits. | Saves, then quits. | Tries the save again, and quits only when it works. |
 | `:q!` | Quits. | Quits without saving and prints what it did not save. | Quits without saving and prints what it did not save. |
-| Ctrl-C | Quits. | Quits without saving and prints what it did not save. | With autosave on, tries the save one more time, then quits. |
+| `Ctrl-C` | Quits. | Quits without saving and prints what it did not save. | With autosave on, tries the save one more time, then quits. |
 
 - A move is stale when it does not match the code after a reload or a paste. While a move is stale, `:q` and `:wq` refuse in every mode.
-- When an overlay, the command line or a selection is open, Ctrl-C closes it and does not quit. Ctrl-C also cancels an arrow that you draw.
-- `:wq`, Ctrl-C and a closed terminal try a failed save again. Ctrl-C and a closed terminal do this only with autosave on. `:q!` never tries.
+- When a panel, the command line or a selection is open, `Ctrl-C` closes it and does not quit. `Ctrl-C` also cancels an arrow that you draw.
+- `:wq`, `Ctrl-C` and a closed terminal try a failed save again. `Ctrl-C` and a closed terminal do this only with autosave on. `:q!` never tries.
 - When the save fails again, Tiza prints `tiza: could not save FILE: ERROR` before the line of what it did not save.
 - When `:wq` cannot save a read-only `.tiza` file, it shows `FILE is read-only`. For other failures, such as a read-only folder, it shows the error of the system.
 
@@ -130,7 +130,7 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 
 ## When the terminal closes
 
-Tiza quits as with Ctrl-C when its terminal closes. A closed pane or tab and a lost SSH session are examples.
+Tiza quits as with `Ctrl-C` when its terminal closes. A closed pane or tab and a lost SSH session are examples.
 
 Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime folder. Each line has this form:
 

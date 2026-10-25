@@ -520,9 +520,9 @@ The goto commands go to a step exactly as `n` does from step 0. Tiza applies the
 | `:goto ID` | Goes to the named step, or to a step number. |
 | `step.goto {"id": "ID"}` | The socket method that does the same as `:goto ID`. |
 | `goto_step` | The MCP tool that does the same as `:goto ID`. |
-| `tiza goto ID` | Makes the running instance do the same as `:goto ID`. |
-| `tiza next` | Makes the running instance go to the next step. |
-| `tiza prev` | Makes the running instance go to the previous step. |
+| `tiza goto ID` | Makes the live instance do the same as `:goto ID`. |
+| `tiza next` | Makes the live instance go to the next step. |
+| `tiza prev` | Makes the live instance go to the previous step. |
 
 - `tiza next`, `tiza prev` and `tiza goto` need no JSON. They use the socket of the session, or `--socket` and `--session` as `tiza api` does.
 - They print the step that the instance reached, for example `step 3/7 · Shared borrow`.

@@ -37,7 +37,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 | `Tiza: 40 lines from the cursor` | 40 lines that start at the cursor line, with the line numbers of the file. |
 
 - Zed shows `Tiza: selected text` only while text is selected.
-- The selected text comes to Tiza through stdin. Thus its line numbers start at 1.
+- The selected text comes to Tiza through standard input. Thus its line numbers start at 1.
 - With the 40-line task, Tiza shows the real line numbers of the file. Thus "line 42" in Tiza is line 42 in Zed.
 - Near the end of the file, Tiza cuts the range at the last line and shows a message. See [Messages](#messages).
 
@@ -85,8 +85,8 @@ When a step command succeeds, it prints the step that it reached, for example `s
 |---|---|
 | `the file has N lines: range A-B clamped to C-D` | The range of the 40-line task goes past the end of the file. |
 | `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second Tiza starts in a session that already has an instance. |
-| `tiza: empty stdin` | The stdin of Tiza is empty or has only blank characters. |
-| `tiza: give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste \| tiza --lang rs)` | Tiza gets no file, and its stdin is a terminal. |
+| `tiza: empty stdin` | The standard input of Tiza is empty or has only blank characters. |
+| `tiza: give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste \| tiza --lang rs)` | Tiza gets no file, and its standard input is a terminal. |
 | `` tiza: no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | A step command finds no instance in the session. |
 | `tiza: no step is named "ID" (named steps: IDS)` | `tiza goto` gets an id that the document does not have. |
 | `tiza: no step is named "ID": the document has no named steps` | `tiza goto` gets an id, and the document names no step. |

@@ -23,7 +23,7 @@ The mouse is off by default. While mouse capture is on, a drag selects code in T
 2. Read the status bar. It shows the main keys for the selection.
 3. Press a key. See [Selection keys](#selection-keys).
 
-To cancel the selection, press Esc or Ctrl-C, or click the code. Esc and Ctrl-C also cancel an arrow that you started.
+To cancel the selection, press `Esc` or `Ctrl-C`, or click the code. `Esc` and `Ctrl-C` also cancel an arrow that you started.
 
 To draw an arrow:
 
@@ -32,10 +32,10 @@ To draw an arrow:
 
 A click without a drag does not select. The shortest drag selects two characters. An arrow end is the first character of the selection.
 
-To cancel an arrow before its second end, press Ctrl-C. When the help, the list, the review or the command line is open, the first Ctrl-C closes it. Then press Ctrl-C again.
+To cancel an arrow before its second end, press `Ctrl-C`. When the help, the list, the review or the command line is open, the first `Ctrl-C` closes it. Then press `Ctrl-C` again.
 
-- When no panel, command line, selection or arrow is open, Ctrl-C quits Tiza. It also quits in presentation mode, with the live pointer on and with an annotation selected with Tab.
-- While no selection is open, Esc does other jobs first. It turns off the live pointer, leaves presentation mode or clears an annotation selected with Tab.
+- When no panel, command line, selection or arrow is open, `Ctrl-C` quits Tiza. It also quits in presentation mode, with the live pointer on and with an annotation selected with `Tab`.
+- While no selection is open, `Esc` does other jobs first. It turns off the live pointer, leaves presentation mode or clears an annotation selected with `Tab`.
 
 ## Copy text from the terminal
 
@@ -95,10 +95,10 @@ A mark is always on one line. After `m` on two or more lines, type the kind, the
 | `ID: spotlight at step N` | `s` added a spotlight. |
 | `arrow: now select the target and press a (Esc cancels)` | `a` set the first end of an arrow. |
 | `ID: arrow (:label ID text to name it)` | `a` set the second end and added the arrow. |
-| `arrow cancelled` | Esc or Ctrl-C canceled the arrow while no selection was open. |
+| `arrow cancelled` | `Esc` or `Ctrl-C` canceled the arrow while no selection was open. |
 
 - A message about a new annotation can end with a step hint, for example `(step N, press n)`. The hint shows when the annotation goes to a later step than the step on the screen.
-- When Esc or Ctrl-C cancels a selection, Tiza also cancels the arrow. Tiza shows no message.
+- When `Esc` or `Ctrl-C` cancels a selection, Tiza also cancels the arrow. Tiza shows no message.
 
 ## Special cases
 
