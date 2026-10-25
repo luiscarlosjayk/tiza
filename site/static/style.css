@@ -214,6 +214,9 @@ img { max-width: 100%; height: auto; }
 .doc .anchor-copied { margin-left: 10px; font-size: 0.8rem; font-weight: 400; color: var(--fg-muted); }
 .doc .anchor-copied:empty { display: none; }
 .doc p, .doc ul, .doc ol { margin: 0 0 1em; }
+/* The numbers and the bullets of a list line up with the left edge of the
+   text. 1.6em leaves room for a number with two digits, such as "10.". */
+.doc ul, .doc ol { padding-left: 1.6em; }
 .doc li { margin: 0.25em 0; }
 .doc li > p { margin: 0; }
 .doc hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
