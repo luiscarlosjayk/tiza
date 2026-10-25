@@ -60,7 +60,8 @@ Write a heading as a noun phrase for a topic, for example "Messages". Write it i
 - Keep a paragraph to five sentences or fewer.
 - Keep a list item to 60 words or fewer.
 - Keep a table cell to one sentence.
-- Use a table when you list more than three commands, flags, messages or states.
+- Use a table when you list more than three commands, flags, messages, states or JSON fields.
+- Name the first column of a table after what the reader sees: "Status bar", "Message", "Command", "Field".
 
 These limits are rules for the writer. A QA test does not check them.
 
@@ -76,6 +77,7 @@ These limits are rules for the writer. A QA test does not check them.
 | A callout | a warning about lost work, at most one on a page |
 
 - Write a callout as a quote with a bold label: `> **Warning:** …`. GitHub and mdBook both show it.
+- Presentation mode hides the status bar. Do not tell the reader to look at the status bar while they present or record.
 - Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`, `N`, `ID`.
 - Do not put a literal value in a message table. When a literal value helps, put it in a code block after a line that starts with "For example".
 - A message table lists every message of the page. In the text, quote a message only where it explains its case.
@@ -112,6 +114,9 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | style | a custom kind that you define (`:style`, `define_style`) | theme |
 | anchor | the code text that an annotation follows | position, cell |
 | span | the part of a line that a highlight, a mark or an arrow end covers | range (except a line range) |
+| marker | a text that gives one edge of a range (`find_start`, `find_end`) | delimiter, placeholder |
+| label | the text that an annotation draws next to the code: a note, or the `label` of an arrow, a box or a mark | caption, tag |
+| finding | one line of a `tiza check` report: an error or a warning | issue, diagnostic |
 | instance | the running TUI that agents talk to | server, app |
 | color | the color of an annotation or a theme token | colour |
 | 24-bit color | the terminal feature that shows any RGB color | truecolor, RGB |
