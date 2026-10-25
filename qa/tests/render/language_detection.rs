@@ -1,4 +1,4 @@
-//! t-013 — Language detection by extension, file name, shebang and modeline,
+//! Language detection by extension, file name, shebang and modeline,
 //! with a manual override.
 //!
 //! Acceptance criteria:
@@ -29,32 +29,41 @@ fn lang_of(rel: &str) -> String {
 }
 
 #[test]
-fn ac1_extension_file_name_shebang_modeline_default() {
-    assert_eq!(lang_of("t-013/Makefile"), "makefile");
-    assert_eq!(lang_of("t-013/script"), "py", "shebang, no extension");
+fn extension_file_name_shebang_modeline_default() {
+    assert_eq!(lang_of("render/language_detection/Makefile"), "makefile");
     assert_eq!(
-        lang_of("t-013/deploy.sh"),
+        lang_of("render/language_detection/script"),
+        "py",
+        "shebang, no extension"
+    );
+    assert_eq!(
+        lang_of("render/language_detection/deploy.sh"),
         "sh",
         "the extension beats the shebang"
     );
     assert_eq!(
-        lang_of("t-013/notes"),
+        lang_of("render/language_detection/notes"),
         "toml",
         "vim modeline on the last line"
     );
-    assert_eq!(lang_of("t-013/plain"), "txt");
+    assert_eq!(lang_of("render/language_detection/plain"), "txt");
     assert_eq!(lang_of("t-011/repeated.rs"), "rs");
 }
 
 #[test]
-fn ac1_document_referencing_a_file_detects_from_its_content() {
-    let opened = fs::open(fixture("t-013/script.ref.tiza").to_str().unwrap()).unwrap();
+fn document_referencing_a_file_detects_from_its_content() {
+    let opened = fs::open(
+        fixture("render/language_detection/script.ref.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap();
     assert_eq!(opened.document.source.language, "py");
     assert_eq!(opened.document.annotations.len(), 1);
 }
 
 #[test]
-fn ac2_stdin_detects_from_content_and_lang_wins() {
+fn stdin_detects_from_content_and_lang_wins() {
     let o = fs::from_stdin("#!/bin/bash\necho hi\n", None).unwrap();
     assert_eq!(o.document.source.language, "sh");
     let o = fs::from_stdin("#!/bin/bash\necho hi\n", Some("py")).unwrap();
@@ -64,7 +73,7 @@ fn ac2_stdin_detects_from_content_and_lang_wins() {
     // The binary: `--lang` without a grammar warns on stderr but still renders.
     let out = tiza(&[
         "render",
-        fixture("t-013/plain").to_str().unwrap(),
+        fixture("render/language_detection/plain").to_str().unwrap(),
         "--lang",
         "klingon",
         "--out",
@@ -81,8 +90,8 @@ fn ac2_stdin_detects_from_content_and_lang_wins() {
 }
 
 #[test]
-fn ac3_lang_command_shows_overrides_normalizes_and_auto_redetects() {
-    let live = Live::from_code("#!/usr/bin/env node\nconsole.log(1)\n", "txt", "t013-lang");
+fn lang_command_shows_overrides_normalizes_and_auto_redetects() {
+    let live = Live::from_code("#!/usr/bin/env node\nconsole.log(1)\n", "txt", "lang");
     live.command("lang");
     let (msg, err) = live.message().unwrap();
     assert!(!err && msg.starts_with("language: txt"), "{msg}");
@@ -111,8 +120,8 @@ fn ac3_lang_command_shows_overrides_normalizes_and_auto_redetects() {
 }
 
 #[test]
-fn ac4_paste_redetects_only_plain_text_documents() {
-    let live = Live::from_code("plain words\n", "txt", "t013-paste");
+fn paste_redetects_only_plain_text_documents() {
+    let live = Live::from_code("plain words\n", "txt", "paste");
     live.with(|a| {
         a.replace_code("#!/usr/bin/env python3\nprint(1)\n")
             .unwrap()
@@ -123,13 +132,13 @@ fn ac4_paste_redetects_only_plain_text_documents() {
     live.with(|a| a.replace_code("#!/bin/sh\necho\n").unwrap());
     assert_eq!(live.with(|a| a.doc.source.language.clone()), "rs");
     // Pasting text without hints into a plain-text document keeps plain text.
-    let live = Live::from_code("plain\n", "txt", "t013-paste2");
+    let live = Live::from_code("plain\n", "txt", "paste2");
     live.with(|a| a.replace_code("more plain\n").unwrap());
     assert_eq!(live.with(|a| a.doc.source.language.clone()), "txt");
 }
 
 #[test]
-fn corner_shebang_variants_and_modeline_positions() {
+fn shebang_variants_and_modeline_positions() {
     use tiza_core::highlight::{Via, detect_language};
     let d = |lines: &[&str]| {
         let v: Vec<String> = lines.iter().map(|s| s.to_string()).collect();
@@ -160,7 +169,7 @@ fn corner_shebang_variants_and_modeline_positions() {
 }
 
 #[test]
-fn corner_dotfiles_and_dockerfile_variants() {
+fn dotfiles_and_dockerfile_variants() {
     use tiza_core::highlight::{Via, detect_language};
     for (name, want) in [
         (".bashrc", "sh"),
@@ -180,13 +189,13 @@ fn corner_dotfiles_and_dockerfile_variants() {
 }
 
 #[test]
-fn corner_lang_given_a_path_detects_from_it() {
+fn lang_given_a_path_detects_from_it() {
     // The Zed selection task passes `--lang "$ZED_FILE"` (the whole path;
     // Zed allows no shell expansion in tasks): `--lang /repo/Makefile`
     // must not become the language id.
     let out = tiza(&[
         "render",
-        fixture("t-013/plain").to_str().unwrap(),
+        fixture("render/language_detection/plain").to_str().unwrap(),
         "--lang",
         "/repo/Makefile",
         "--out",

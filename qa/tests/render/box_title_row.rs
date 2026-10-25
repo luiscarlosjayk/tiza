@@ -1,4 +1,4 @@
-//! t-114 — Box title row when the box starts at the first line of the
+//! Box title row when the box starts at the first line of the
 //! frame (line 1, a `FILE:A-B` range, or the first visible row after a
 //! scroll).
 //!
@@ -8,7 +8,7 @@
 //!   border like any other box.
 //! - AC2 Same for a box at the first line of a `FILE:A-B` range or of a
 //!   `--focus` window; presentation mode and exports agree with the TUI.
-//! - AC3 Boxes that start lower are unchanged (t-053 snapshots).
+//! - AC3 Boxes that start lower are unchanged (the frame snapshots).
 //! - AC4 This file, with a fixture whose box starts at line 1; CHANGELOG.
 
 use crossterm::event::KeyCode;
@@ -34,14 +34,14 @@ fn title_then_code(screen: &str, title: &str, first_code: &str) {
 }
 
 #[test]
-fn ac1_ac4_a_box_on_line_1_has_its_title_row_in_the_tui_and_in_render() {
-    let fix = fixture("t-114/top.tiza");
+fn a_box_on_line_1_has_its_title_row_in_the_tui_and_in_render() {
+    let fix = fixture("render/box_title_row/top.tiza");
     let out = tiza_ok(&["render", fix.to_str().unwrap(), "--width", "60"]);
     title_then_code(&out, "╭─ first", "fn main()");
     assert!(out.trim_start().starts_with("╭─ first"), "{out}");
 
     let doc = tiza_core::fs::open(fix.to_str().unwrap()).unwrap().document;
-    let dir = scratch("t114-top");
+    let dir = scratch("top");
     let live = Live::open(doc, dir.join("top.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 1}));
     let s = live.screen(60, 12);
@@ -56,10 +56,10 @@ fn ac1_ac4_a_box_on_line_1_has_its_title_row_in_the_tui_and_in_render() {
 }
 
 #[test]
-fn ac2_a_box_on_the_first_line_of_a_range_or_focus_window() {
-    let dir = scratch("t114-range");
+fn a_box_on_the_first_line_of_a_range_or_focus_window() {
+    let dir = scratch("range");
     let src = dir.join("main.rs");
-    std::fs::copy(fixture("ownership/ownership.rs"), &src).unwrap();
+    std::fs::copy(fixture("shared/ownership/ownership.rs"), &src).unwrap();
     let opened = tiza_core::fs::open(&format!("{}:15-17", src.display())).unwrap();
     let live = Live::open(
         opened.document,
@@ -80,9 +80,13 @@ fn ac2_a_box_on_the_first_line_of_a_range_or_focus_window() {
     );
     // A --focus window dims the rest but keeps every row: the box at the
     // top of the window still has its title.
-    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let l = tiza_core::layout::layout(
         &doc,
         &tiza_core::Theme::dark(),
@@ -97,14 +101,14 @@ fn ac2_a_box_on_the_first_line_of_a_range_or_focus_window() {
 }
 
 #[test]
-fn ac1_scrolling_keeps_the_title_row_with_the_first_line_of_the_box() {
-    // Before t-114 the TUI scrolled the cursor line to the first row and
+fn scrolling_keeps_the_title_row_with_the_first_line_of_the_box() {
+    // Before this fix the TUI scrolled the cursor line to the first row and
     // left the box's title row (a virtual row above it) out of the screen.
     let code = (1..=30)
         .map(|i| format!("line {i}"))
         .collect::<Vec<_>>()
         .join("\n");
-    let live = Live::from_code(&code, "txt", "t114-scroll");
+    let live = Live::from_code(&code, "txt", "scroll");
     live.command("box 20-22 deep");
     live.command("step 1");
     // Down past the box so its title scrolls out, then back to its first line.

@@ -214,7 +214,7 @@ fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
         live.with(|a| a.autosave = false);
         live
     };
-    let example = || tiza_qa::fixture("ownership");
+    let example = || tiza_qa::fixture("shared/ownership");
     let old = || tiza_qa::fixture("t-246");
     let wide = || {
         let code = std::fs::read_to_string(tiza_qa::fixture("t-173/wide.rs")).unwrap();

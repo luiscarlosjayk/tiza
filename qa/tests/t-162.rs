@@ -108,7 +108,7 @@ fn ac3_tool_names_and_input_schemas_are_the_ones_of_main() {
 /// the same width, at every step.
 #[test]
 fn ac3_render_text_is_the_export_in_presentation_mode() {
-    let src = fixture("ownership/ownership.rs.tiza");
+    let src = fixture("shared/ownership/ownership.rs.tiza");
     let o = tiza_core::fs::open(src.to_str().unwrap()).unwrap();
     let last = o.document.max_step();
     let dir = scratch("t162-render-text");

@@ -92,7 +92,7 @@ fn ac1_the_symbols_face_comes_only_with_a_symbol_the_mono_lacks() {
 fn ac1_ac3_ownership_step_7_drops_the_unused_bold_italic() {
     let s = svg(
         "t130-own7",
-        &fixture("ownership/ownership.rs.tiza"),
+        &fixture("shared/ownership/ownership.rs.tiza"),
         &["--step", "7"],
     );
     assert!(s.contains(r#"class="b""#) && s.contains(r#"class="i""#));

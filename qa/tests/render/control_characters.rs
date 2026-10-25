@@ -1,4 +1,4 @@
-//! t-182 — Control characters in the code (ESC, NUL, BEL…) no longer break
+//! Control characters in the code (ESC, NUL, BEL…) no longer break
 //! exports nor reach a terminal raw.
 //!
 //! Acceptance criteria:
@@ -6,11 +6,11 @@
 //!   `render.text`, MCP `export_image` and resources) and the TUI draw the
 //!   control characters of the code as visible one-cell placeholders (C0 →
 //!   `␀`…`␟`, DEL → `␡`, C1 → `�`), never as raw bytes; bidi controls never
-//!   reorder the line (since t-190 each shows as a one-cell ⬚ in the code);
+//!   reorder the line (each shows as a one-cell ⬚ in the code);
 //!   the SVG is valid XML; PNG/GIF are written. Annotation text is never
-//!   drawn raw either (since t-190 its controls show as their pictures).
+//!   drawn raw either (its controls show as their pictures).
 //! - AC2 Errors never quote a control character raw (the CLI, `tiza check`,
-//!   the MCP), after the t-167 filter.
+//!   the MCP), after the filter of quoted values.
 //! - AC3 `.ansi` and `.cast` hold only the escape sequences Tiza writes
 //!   (SGR colours, and clear/home in a cast frame); a title cannot start a
 //!   line of a `.tape`.
@@ -101,8 +101,8 @@ fn assert_placeholders(what: &str, s: &str) {
 }
 
 #[test]
-fn ac1_test_step_1_ansi_shows_placeholders_and_cannot_retitle_the_terminal() {
-    let dir = scratch("t182-ansi");
+fn test_step_1_ansi_shows_placeholders_and_cannot_retitle_the_terminal() {
+    let dir = scratch("ansi");
     let f = write(&dir, "f.rs", CODE);
     let ansi = tiza_ok(&["render", f.to_str().unwrap(), "--format", "ansi"]);
     // AC3: only Tiza's own SGR sequences; everything else is text.
@@ -112,8 +112,8 @@ fn ac1_test_step_1_ansi_shows_placeholders_and_cannot_retitle_the_terminal() {
 }
 
 #[test]
-fn ac1_txt_md_and_render_text_show_placeholders() {
-    let dir = scratch("t182-txt");
+fn txt_md_and_render_text_show_placeholders() {
+    let dir = scratch("txt");
     let f = write(&dir, "f.rs", CODE);
     for format in ["txt", "md"] {
         let out = tiza_ok(&["render", f.to_str().unwrap(), "--format", format]);
@@ -123,8 +123,8 @@ fn ac1_txt_md_and_render_text_show_placeholders() {
 }
 
 #[test]
-fn ac1_test_step_2_svg_is_valid_xml_and_png_gif_are_written() {
-    let dir = scratch("t182-img");
+fn test_step_2_svg_is_valid_xml_and_png_gif_are_written() {
+    let dir = scratch("img");
     let f = write(&dir, "f.rs", CODE);
     let svg = dir.join("x.svg");
     tiza_ok(&[
@@ -168,8 +168,8 @@ fn ac1_test_step_2_svg_is_valid_xml_and_png_gif_are_written() {
 }
 
 #[test]
-fn ac1_annotation_text_is_never_drawn_raw() {
-    let dir = scratch("t182-labels");
+fn annotation_text_is_never_drawn_raw() {
+    let dir = scratch("labels");
     let doc = json!({
         "schema": 1,
         "title": "T\u{1b}]0;pwned\u{7}",
@@ -204,17 +204,17 @@ fn ac1_annotation_text_is_never_drawn_raw() {
 }
 
 #[test]
-fn ac1_test_step_3_the_tui_shows_the_placeholders() {
-    let live = Live::from_code(CODE, "rs", "t182-tui");
+fn test_step_3_the_tui_shows_the_placeholders() {
+    let live = Live::from_code(CODE, "rs", "tui");
     let screen = live.screen(100, 12);
     assert_clean("TUI", &screen);
     assert_placeholders("TUI", &screen);
 }
 
 #[test]
-fn ac1_ac2_mcp_render_resources_exports_and_errors() {
-    let live = Live::from_code(CODE, "rs", "t182-mcp");
-    let dir = scratch("t182-mcp-out");
+fn mcp_render_resources_exports_and_errors() {
+    let live = Live::from_code(CODE, "rs", "mcp");
+    let dir = scratch("mcp-out");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("render_text", json!({}));
     assert!(!err, "{text}");
@@ -286,8 +286,8 @@ fn ac1_ac2_mcp_render_resources_exports_and_errors() {
 }
 
 #[test]
-fn ac2_theme_notes_quote_the_overrides_without_raw_controls() {
-    let dir = scratch("t182-theme");
+fn theme_notes_quote_the_overrides_without_raw_controls() {
+    let dir = scratch("theme");
     let doc = r##"{"schema": 1, "source": {"language": "rs", "first_line": 1}, "code": ["let a = 1;"],
         "theme_overrides": {"fg\u001b]0;THEMEKEY\u0007": "#fff", "accent": "\u001b]0;V\u0007", "x\u001b[31m": {}}}"##;
     let f = write(&dir, "th.tiza", doc);
@@ -301,8 +301,8 @@ fn ac2_theme_notes_quote_the_overrides_without_raw_controls() {
 }
 
 #[test]
-fn ac3_a_tape_is_refused_for_a_path_vhs_would_read_as_commands() {
-    let dir = scratch("t182-tape-path");
+fn a_tape_is_refused_for_a_path_vhs_would_read_as_commands() {
+    let dir = scratch("tape-path");
     // A document named so that its tape line would type and run more.
     let evil = "ev\nType \"touch PWNED\"\nEnter\n\u{1b}]0;x\u{7}.rs";
     let f = write(&dir, evil, "let a = 1;\n");
@@ -349,8 +349,8 @@ fn ac3_a_tape_is_refused_for_a_path_vhs_would_read_as_commands() {
 }
 
 #[test]
-fn ac2_cli_errors_and_check_never_print_a_raw_control() {
-    let dir = scratch("t182-errors");
+fn cli_errors_and_check_never_print_a_raw_control() {
+    let dir = scratch("errors");
     let doc = json!({
         "schema": 1,
         "source": {"language": "rs", "first_line": 1},
@@ -373,7 +373,7 @@ fn ac2_cli_errors_and_check_never_print_a_raw_control() {
     assert!(err.contains("zz␛]0;pwned␇"), "{err}");
 
     // An error from the live instance, through `tiza api`.
-    let live = Live::from_code(CODE, "rs", "t182-api");
+    let live = Live::from_code(CODE, "rs", "api");
     let sock = live.socket.to_str().unwrap().to_string();
     let run = tiza(&[
         "api",
@@ -400,8 +400,8 @@ fn ac2_cli_errors_and_check_never_print_a_raw_control() {
 }
 
 #[test]
-fn ac3_cast_frames_hold_only_tiza_sequences_and_the_tape_title_one_line() {
-    let dir = scratch("t182-cast");
+fn cast_frames_hold_only_tiza_sequences_and_the_tape_title_one_line() {
+    let dir = scratch("cast");
     let doc = json!({
         "schema": 1,
         "title": "T\u{1b}]0;pwned\u{7}\nType \"rm -rf x\"\u{9b}",
@@ -451,8 +451,8 @@ fn ac3_cast_frames_hold_only_tiza_sequences_and_the_tape_title_one_line() {
 }
 
 #[test]
-fn corner_tabs_keep_their_handling() {
-    let dir = scratch("t182-tab");
+fn tabs_keep_their_handling() {
+    let dir = scratch("tab");
     let f = write(&dir, "f.rs", "\tx = 2\n  \ty\n");
     let txt = tiza_ok(&["render", f.to_str().unwrap(), "--format", "txt"]);
     assert!(!txt.contains('␉'), "a tab is never a placeholder:\n{txt}");
@@ -464,8 +464,8 @@ fn corner_tabs_keep_their_handling() {
 }
 
 #[test]
-fn corner_wide_characters_next_to_placeholders_keep_alignment() {
-    let dir = scratch("t182-wide");
+fn wide_characters_next_to_placeholders_keep_alignment() {
+    let dir = scratch("wide");
     // 中 is two cells, ␛ one: x sits 3 cells into the code on both lines.
     let doc = json!({
         "schema": 1,

@@ -22,7 +22,7 @@ use serde_json::Value;
 use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn ownership() -> String {
-    fixture("ownership/ownership.rs.tiza")
+    fixture("shared/ownership/ownership.rs.tiza")
         .to_string_lossy()
         .into_owned()
 }
@@ -229,7 +229,11 @@ fn ac2_tape_drives_the_real_binary() {
     // A path with a space is quoted for the shell.
     let spaced = dir.join("my demo.tiza");
     std::fs::copy(ownership(), &spaced).unwrap();
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
     let t2 = tiza_ok(&[
         "render",
         spaced.to_str().unwrap(),

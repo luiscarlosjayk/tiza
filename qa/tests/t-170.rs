@@ -240,7 +240,7 @@ fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str
 fn ac1_ac2_ac3_the_last_step_of_the_example_lasts_four_seconds_not_eight() {
     let Some(ff) = ffmpeg() else { return };
     let dir = scratch("t170-example");
-    let ex = fixture("ownership/ownership.rs.tiza");
+    let ex = fixture("shared/ownership/ownership.rs.tiza");
     // 18 s: seven steps of 2 s and the last one twice as long, as the GIF.
     let delays = same_as_the_gif(&ff, &dir, &ex, "mp4", &[]);
     assert_eq!(delays, vec![2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0]);
@@ -328,7 +328,7 @@ fn corner_webm_shares_the_frame_list_and_the_fix() {
     let delays = same_as_the_gif(
         &ff,
         &dir,
-        &fixture("ownership/ownership.rs.tiza"),
+        &fixture("shared/ownership/ownership.rs.tiza"),
         "webm",
         &flags,
     );

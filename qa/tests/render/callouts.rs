@@ -1,4 +1,4 @@
-//! t-092 — Callout annotation (bordered multi-line text block).
+//! Callout annotation (bordered multi-line text block).
 //!
 //! Acceptance criteria (from the board):
 //! - AC1 `placement: margin` draws a bordered block in the right margin aligned
@@ -20,7 +20,7 @@ use tiza_qa::{Live, fixture, scratch, tiza_ok};
 fn render(step: &str, width: &str) -> String {
     tiza_ok(&[
         "render",
-        fixture("t-092/callouts.tiza").to_str().unwrap(),
+        fixture("render/callouts/callouts.tiza").to_str().unwrap(),
         "--step",
         step,
         "--width",
@@ -31,7 +31,7 @@ fn render(step: &str, width: &str) -> String {
 }
 
 #[test]
-fn ac1_margin_block_keeps_the_following_label_on_its_line() {
+fn margin_block_keeps_the_following_label_on_its_line() {
     let out = render("1", "114");
     let lines: Vec<&str> = out.lines().collect();
     let top = lines
@@ -53,7 +53,7 @@ fn ac1_margin_block_keeps_the_following_label_on_its_line() {
 }
 
 #[test]
-fn ac2_below_block_inside_a_box_that_contains_it() {
+fn below_block_inside_a_box_that_contains_it() {
     let out = render("2", "80");
     let lines: Vec<&str> = out.lines().collect();
     let block = lines
@@ -75,7 +75,7 @@ fn ac2_below_block_inside_a_box_that_contains_it() {
 }
 
 #[test]
-fn ac3_below_block_wider_than_the_box_goes_after_its_border() {
+fn below_block_wider_than_the_box_goes_after_its_border() {
     let out = render("3", "80");
     let lines: Vec<&str> = out.lines().collect();
     let block = lines
@@ -97,14 +97,14 @@ fn ac3_below_block_wider_than_the_box_goes_after_its_border() {
 }
 
 #[test]
-fn ac4_auto_follows_the_available_margin() {
+fn auto_follows_the_available_margin() {
     // Enough lines below for the block in the margin at 140 columns (with
-    // three, it had no rows there and, since t-201, falls under its line at
+    // three, it had no rows there and, since the margin callouts, falls under its line at
     // every width as a block, as at 50).
     let live = Live::from_code(
         "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}\nfn f() {}\n",
         "rs",
-        "t092-auto",
+        "auto",
     );
     live.api_ok(
         "annotation.add",
@@ -119,11 +119,11 @@ fn ac4_auto_follows_the_available_margin() {
 }
 
 #[test]
-fn ac5_command_selection_and_socket_create_callouts() {
+fn command_selection_and_socket_create_callouts() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    takes(s);\n}\n",
         "rs",
-        "t092-cmd",
+        "cmd",
     );
     live.command("callout 2-3 @below title=\"why\" because s is moved");
     assert!(
@@ -161,8 +161,8 @@ fn ac5_command_selection_and_socket_create_callouts() {
 }
 
 #[test]
-fn ac6_old_documents_load_and_optional_fields_default() {
-    let dir = scratch("t092-compat");
+fn old_documents_load_and_optional_fields_default() {
+    let dir = scratch("compat");
     let path = dir.join("old.tiza");
     std::fs::write(&path, r#"{"schema":1,"source":{"language":"rs"},"code":["fn a() {}"],"annotations":[{"id":"n","step":1,"type":"note","line":1,"text":"old"}]}"#).unwrap();
     let out = tiza_ok(&["render", path.to_str().unwrap(), "--out", "-"]);

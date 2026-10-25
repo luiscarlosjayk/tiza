@@ -1,4 +1,4 @@
-//! t-111 — Stable geometry across steps in presentation mode and exports.
+//! Stable geometry across steps in presentation mode and exports.
 //!
 //! Acceptance criteria:
 //! - AC1 In presentation mode and in every export that spans steps (`render
@@ -19,9 +19,13 @@ use tiza_core::layout::{LayoutOptions, StableGeometry, layout, stable_geometry};
 use tiza_qa::{Live, fixture, tiza_ok};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(fixture("t-111/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document
+    tiza_core::fs::open(
+        fixture("render/stable_geometry/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document
 }
 
 /// x of the first code cell and width of the right margin at `step`.
@@ -47,7 +51,7 @@ fn geometry(doc: &tiza_core::Document, step: u32, stable: bool) -> (usize, usize
 }
 
 #[test]
-fn ac1_ac5_stable_layout_puts_the_code_at_one_x_for_every_step() {
+fn stable_layout_puts_the_code_at_one_x_for_every_step() {
     let doc = ownership();
     let last = doc.max_step();
     assert!(last >= 7, "the example has {last} steps");
@@ -71,7 +75,7 @@ fn ac1_ac5_stable_layout_puts_the_code_at_one_x_for_every_step() {
 }
 
 #[test]
-fn ac1_each_arrow_keeps_its_lane_across_the_take() {
+fn each_arrow_keeps_its_lane_across_the_take() {
     let doc = ownership();
     let th = tiza_core::Theme::dark();
     // The first arrow of the example is drawn at step 1; at step 7 three more
@@ -102,8 +106,8 @@ fn ac1_each_arrow_keeps_its_lane_across_the_take() {
 }
 
 #[test]
-fn ac1_render_per_step_and_the_cast_share_the_geometry() {
-    let path = fixture("t-111/ownership.rs.tiza");
+fn render_per_step_and_the_cast_share_the_geometry() {
+    let path = fixture("render/stable_geometry/ownership.rs.tiza");
     let path = path.to_str().unwrap();
     let code_col = |text: &str| {
         text.lines()
@@ -130,7 +134,7 @@ fn ac1_render_per_step_and_the_cast_share_the_geometry() {
     );
     // The cast's frames: every step at the same column (frames are ANSI; the
     // text between escapes keeps the column count once they are stripped).
-    let dir = tiza_qa::scratch("t111-cast");
+    let dir = tiza_qa::scratch("cast");
     let out = dir.join("take.cast");
     tiza_ok(&[
         "render",
@@ -179,7 +183,7 @@ fn ac1_render_per_step_and_the_cast_share_the_geometry() {
 }
 
 #[test]
-fn ac3_a_label_that_fits_at_step_1_still_fits_at_step_7() {
+fn a_label_that_fits_at_step_1_still_fits_at_step_7() {
     let doc = ownership();
     let th = tiza_core::Theme::dark();
     let text_at = |step: u32, width: usize| {
@@ -210,8 +214,8 @@ fn ac3_a_label_that_fits_at_step_1_still_fits_at_step_7() {
 }
 
 #[test]
-fn ac2_authoring_is_dynamic_unless_layout_stable_and_presentation_is_always_stable() {
-    let dir = tiza_qa::scratch("t111-live");
+fn authoring_is_dynamic_unless_layout_stable_and_presentation_is_always_stable() {
+    let dir = tiza_qa::scratch("live");
     let live = Live::open(ownership(), dir.join("doc.tiza"), dir.join("live.sock"));
     let code_col = |live: &Live| {
         let s = live.screen(100, 30);

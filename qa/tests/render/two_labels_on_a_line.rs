@@ -1,4 +1,4 @@
-//! t-172 — Two labels on the same line: draw them under that line (as
+//! Two labels on the same line: draw them under that line (as
 //! narrow layouts do) instead of letting the second sit next to the line
 //! below.
 //!
@@ -27,7 +27,7 @@ use tiza_core::layout::{LayoutOptions, Row, layout};
 use tiza_qa::{Live, example, fixture, scratch, tiza_ok};
 
 fn path(name: &str) -> String {
-    fixture(&format!("t-172/{name}"))
+    fixture(&format!("render/two_labels_on_a_line/{name}"))
         .to_str()
         .unwrap()
         .to_string()
@@ -86,7 +86,7 @@ const HL_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
 ";
 
 #[test]
-fn ac1_step1_highlight_and_note_go_under_l1_at_100_columns() {
+fn highlight_and_note_go_under_l1_at_100_columns() {
     let t = render("two-labels-hl.tiza", 100, &[]);
     assert_eq!(t, HL_100, "{t}");
     assert_eq!(margin_of(&t, 2, "API_TOKEN=demo-token-123"), "");
@@ -98,7 +98,7 @@ fn ac1_step1_highlight_and_note_go_under_l1_at_100_columns() {
 }
 
 #[test]
-fn ac1_ac2_step2_mark_and_note_and_highlight_and_mark() {
+fn mark_and_note_and_highlight_and_mark() {
     let t = render("two-labels-mark.tiza", 100, &[]);
     assert_eq!(
         t,
@@ -126,7 +126,7 @@ fn ac1_ac2_step2_mark_and_note_and_highlight_and_mark() {
 }
 
 #[test]
-fn ac3_step3_sixty_columns_are_the_narrow_layout_as_before() {
+fn sixty_columns_are_the_narrow_layout_as_before() {
     // The 60-column renders, as `origin/main` (c8a271e) drew them.
     let cases = [
         (
@@ -173,10 +173,10 @@ fn ac3_step3_sixty_columns_are_the_narrow_layout_as_before() {
 }
 
 #[test]
-fn ac3_step4_examples_with_one_label_per_line_render_as_before() {
-    // `qa/fixtures/t-172/expected/<example>-<width>.txt`: `render
+fn examples_with_one_label_per_line_render_as_before() {
+    // `qa/fixtures/render/two_labels_on_a_line/expected/<example>-<width>.txt`: `render
     // --all-steps --format txt` of the example by the binary of c8a271e
-    // (before t-172), the steps one after another behind `== step-NN.txt`.
+    // (before two labels on a line), the steps one after another behind `== step-NN.txt`.
     // ownership.rs at 108 is the README's width (scripts/readme-images.sh).
     // ownership-moves (L7) and stack-impl (L20) change on purpose at steps
     // 4-5 and are not here.
@@ -188,12 +188,12 @@ fn ac3_step4_examples_with_one_label_per_line_render_as_before() {
         ("tally-tour", 100),
         ("tally-tour", 130),
     ] {
-        let dir = scratch(&format!("t172-ac3-{name}-{width}"));
+        let dir = scratch(&format!("ac3-{name}-{width}"));
         let out = format!("{}/", dir.display());
         // The ownership example as it was then: its own copy, since the
         // example changed later (shorter labels and code).
         let file = if name == "ownership.rs" {
-            fixture("t-172/ownership.rs.tiza")
+            fixture("render/two_labels_on_a_line/ownership.rs.tiza")
         } else {
             example(&format!("{name}.tiza"))
         };
@@ -219,11 +219,13 @@ fn ac3_step4_examples_with_one_label_per_line_render_as_before() {
             got.push_str(&format!("== {s}\n"));
             got.push_str(&std::fs::read_to_string(dir.join(s)).unwrap());
         }
-        let want = std::fs::read_to_string(fixture(&format!("t-172/expected/{name}-{width}.txt")))
-            .unwrap();
+        let want = std::fs::read_to_string(fixture(&format!(
+            "render/two_labels_on_a_line/expected/{name}-{width}.txt"
+        )))
+        .unwrap();
         assert!(
             got == want,
-            "{name} at {width} differs from before t-172:\n{got}"
+            "{name} at {width} differs from before two labels on a line:\n{got}"
         );
     }
 }
@@ -244,8 +246,8 @@ fn from_l1(screen: &str) -> Vec<String> {
 }
 
 #[test]
-fn ac1_ac5_step5_tui_switches_l1_to_under_rows_when_its_second_label_arrives() {
-    let live = live("two-labels-hl.tiza", "t172-tui");
+fn tui_switches_l1_to_under_rows_when_its_second_label_arrives() {
+    let live = live("two-labels-hl.tiza", "tui");
     live.command("step 0");
     live.keys(&[KeyCode::Char('n')]);
     assert_eq!(live.with(|a| a.doc.step), 1);
@@ -273,7 +275,7 @@ fn ac1_ac5_step5_tui_switches_l1_to_under_rows_when_its_second_label_arrives() {
 }
 
 #[test]
-fn ac1_corner_second_label_at_a_later_step_moves_the_code_down_like_narrow() {
+fn second_label_at_a_later_step_moves_the_code_down_like_narrow() {
     // Step 1: one label on L1, in the margin; step 2: the note arrives and
     // L1 switches to under rows, so L2 moves two rows down (the label of
     // step 1 and the note) — at 60 columns the label of step 1 was under
@@ -295,12 +297,12 @@ fn ac1_corner_second_label_at_a_later_step_moves_the_code_down_like_narrow() {
         let l2 = lay(&doc, width, 2, false).row_of_line[&2];
         assert_eq!(l2, l1 + if width == 60 { 1 } else { 2 }, "width {width}");
     }
-    // While step 2's typing runs its annotations wait (t-098): L1 still has
+    // While step 2's typing runs its annotations wait: L1 still has
     // one label and stays in the margin until the typing ends.
     let typing = lay(&doc, 100, 2, true);
     assert_eq!(typing.row_of_line[&2], 1);
     // `--all-steps` pads every step to the tallest one, and a GIF takes them.
-    let dir = scratch("t172-all-steps");
+    let dir = scratch("all-steps");
     let out = format!("{}/", dir.display());
     let p = path("two-labels-hl.tiza");
     tiza_ok(&[
@@ -329,7 +331,7 @@ fn ac1_corner_second_label_at_a_later_step_moves_the_code_down_like_narrow() {
 }
 
 #[test]
-fn ac1_corner_three_labels_on_one_line_all_under_it_in_order() {
+fn three_labels_on_one_line_all_under_it_in_order() {
     let t = render("three-labels.tiza", 100, &[]);
     assert_eq!(
         t,
@@ -351,7 +353,7 @@ fn ac1_corner_three_labels_on_one_line_all_under_it_in_order() {
 }
 
 #[test]
-fn ac1_ac2_corner_two_consecutive_lines_each_under_its_own_line() {
+fn two_consecutive_lines_each_under_its_own_line() {
     let t = render("consecutive.tiza", 100, &[]);
     assert_eq!(
         t,
@@ -369,7 +371,7 @@ fn ac1_ac2_corner_two_consecutive_lines_each_under_its_own_line() {
 }
 
 #[test]
-fn ac1_corner_box_arrow_and_spotlight_follow_the_extra_rows() {
+fn box_arrow_and_spotlight_follow_the_extra_rows() {
     let t = render("geometry.tiza", 100, &[]);
     assert_eq!(
         t,
@@ -394,8 +396,8 @@ fn ac1_corner_box_arrow_and_spotlight_follow_the_extra_rows() {
 }
 
 #[test]
-fn ac1_corner_presentation_mode_uses_the_same_rule() {
-    let live = live("two-labels-hl.tiza", "t172-present");
+fn presentation_mode_uses_the_same_rule() {
+    let live = live("two-labels-hl.tiza", "present");
     live.with(|a| {
         a.set_present(true);
         a.set_step(2);
@@ -408,8 +410,8 @@ fn ac1_corner_presentation_mode_uses_the_same_rule() {
 }
 
 #[test]
-fn ac2_ac4_check_counts_the_new_rows() {
-    // Before t-172, consecutive.tiza lost «sent as a bearer header» at 100
+fn check_counts_the_new_rows() {
+    // Before two labels on a line, consecutive.tiza lost «sent as a bearer header» at 100
     // columns and no width showed every label; now nothing is clipped from
     // 81 columns on (below that the last line's margin note is clipped).
     let p = path("consecutive.tiza");
@@ -433,7 +435,7 @@ fn ac2_ac4_check_counts_the_new_rows() {
 }
 
 #[test]
-fn ac5_every_export_draws_the_same_rows() {
+fn every_export_draws_the_same_rows() {
     let p = path("two-labels-hl.tiza");
     let txt = render("two-labels-hl.tiza", 100, &[]);
     // ansi without its escapes is the txt.
@@ -482,7 +484,7 @@ fn ac5_every_export_draws_the_same_rows() {
     assert_eq!(key.0, note.0);
     assert!(key.0 > l1.0);
     // PNG: the same canvas as the SVG (scale 2).
-    let dir = scratch("t172-png");
+    let dir = scratch("png");
     let png = dir.join("hl.png");
     tiza_ok(&[
         "render",
@@ -502,10 +504,10 @@ fn ac5_every_export_draws_the_same_rows() {
 }
 
 #[test]
-fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
+fn a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
     // QA's callout-short: the callout has no room for its block on L3 and
     // falls back; with the note it goes under L3 (it sat beside L4 before),
-    // as a whole block since t-201 (it was one row cut with `…`).
+    // as a whole block since the margin callouts (it was one row cut with `…`).
     let t = render("callout-short.tiza", 100, &["--step", "1"]);
     assert_eq!(
         t,
@@ -555,7 +557,7 @@ fn ac1_ac2_corner_a_margin_callout_with_no_room_counts_as_a_label_of_its_line() 
 }
 
 #[test]
-fn ac5_corner_labels_under_a_line_keep_the_fill_of_their_box() {
+fn labels_under_a_line_keep_the_fill_of_their_box() {
     // stack-impl step 5: the rows under L20 are inside the filled `impl`
     // box; every cell of them between the rails has the fill the code rows
     // have (it was the base background behind the text), at 100 and 60.

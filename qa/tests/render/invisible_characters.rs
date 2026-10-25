@@ -160,8 +160,8 @@ fn assert_pictures(what: &str, s: &str) {
 }
 
 #[test]
-fn step1_ac1_annotation_controls_show_their_pictures_in_every_export() {
-    let f = write("t190-ac1", "c.tiza", &controls_doc().to_string());
+fn annotation_controls_show_their_pictures_in_every_export() {
+    let f = write("ac1", "c.tiza", &controls_doc().to_string());
     for format in ["txt", "md"] {
         let out = render(&f, format, &["--step", "1", "--width", "160"]);
         assert_pictures(format, &out);
@@ -197,8 +197,8 @@ fn step1_ac1_annotation_controls_show_their_pictures_in_every_export() {
 }
 
 #[test]
-fn ac1_the_tui_shows_the_pictures() {
-    let f = write("t190-ac1-tui", "c.tiza", &controls_doc().to_string());
+fn the_tui_shows_the_pictures() {
+    let f = write("ac1-tui", "c.tiza", &controls_doc().to_string());
     let doc = tiza_core::fs::load_document(&f).unwrap();
     let live = Live::open(doc, f.clone(), f.with_file_name("live.sock"));
     live.command("step 1");
@@ -225,7 +225,7 @@ const TROJAN: [&str; 3] = [
 ];
 
 #[test]
-fn step2_ac2_bidi_controls_show_a_mark_and_the_columns_line_up() {
+fn bidi_controls_show_a_mark_and_the_columns_line_up() {
     let doc = doc_of(&code_doc(&TROJAN, json!([])));
     let l = lay(&doc, 120, 1);
     assert_eq!(
@@ -254,9 +254,9 @@ fn step2_ac2_bidi_controls_show_a_mark_and_the_columns_line_up() {
 }
 
 #[test]
-fn step2_ac2_a_highlight_and_the_cursor_after_the_controls() {
+fn a_highlight_and_the_cursor_after_the_controls() {
     let code = TROJAN.join("\n") + "\n";
-    let live = Live::from_code(&code, "rs", "t190-ac2-live");
+    let live = Live::from_code(&code, "rs", "ac2-live");
     live.command("hl 2:admin");
     let (span, doc) = live.with(|a| {
         let ann = a.doc.annotations.last().cloned().unwrap();
@@ -295,9 +295,9 @@ fn step2_ac2_a_highlight_and_the_cursor_after_the_controls() {
 }
 
 #[test]
-fn step3_ac3_a_zero_width_space_in_an_identifier_shows_the_mark() {
+fn a_zero_width_space_in_an_identifier_shows_the_mark() {
     let code = "let ad\u{200B}min = 1;\nlet admin = 2;\n";
-    let live = Live::from_code(code, "rs", "t190-ac3");
+    let live = Live::from_code(code, "rs", "ac3");
     live.command("hl 1:min");
     let doc = live.with(|a| a.doc.clone());
     let l = lay(&doc, 100, 1);
@@ -322,7 +322,7 @@ fn step3_ac3_a_zero_width_space_in_an_identifier_shows_the_mark() {
         screen.contains(&format!("let ad{MARK}min = 1;")),
         "{screen}"
     );
-    let f = write("t190-ac3-files", "z.rs", code);
+    let f = write("ac3-files", "z.rs", code);
     for format in ["txt", "md"] {
         let out = render(&f, format, &[]);
         assert!(out.contains(&format!("ad{MARK}min")), "{format}:\n{out}");
@@ -349,7 +349,7 @@ fn step3_ac3_a_zero_width_space_in_an_identifier_shows_the_mark() {
 }
 
 #[test]
-fn ac3_which_joiners_and_zero_width_characters_are_marked() {
+fn which_joiners_and_zero_width_characters_are_marked() {
     for (code, want) in [
         // Marked: they join nothing.
         ("ad\u{200D}min", format!("ad{MARK}min")),
@@ -388,9 +388,9 @@ fn ac3_which_joiners_and_zero_width_characters_are_marked() {
 }
 
 #[test]
-fn ac3_a_find_target_with_a_zero_width_character_matches() {
+fn a_find_target_with_a_zero_width_character_matches() {
     let code = "let ad\u{200B}min = 1;\nlet admin = 2;\n";
-    let live = Live::from_code(code, "rs", "t190-find");
+    let live = Live::from_code(code, "rs", "find");
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "highlight", "at": {"line": 1, "find": "ad\u{200B}min"}}),
@@ -416,8 +416,8 @@ fn ac3_a_find_target_with_a_zero_width_character_matches() {
 }
 
 #[test]
-fn ac3_a_bom_that_starts_the_file_is_dropped_on_every_read() {
-    let dir = scratch("t190-bom");
+fn a_bom_that_starts_the_file_is_dropped_on_every_read() {
+    let dir = scratch("bom");
     let src = dir.join("b.rs");
     std::fs::write(&src, "\u{FEFF}fn main() {}\nlet x = \"\u{FEFF}\";\n").unwrap();
     // Opened, and re-read through the `.tiza` that references it.
@@ -461,8 +461,9 @@ fn drawn_outside_code(l: &Layout, doc: &Document) -> String {
 }
 
 #[test]
-fn step4_ac4_zwsp_note_is_whole_or_cut_with_an_ellipsis_at_every_width() {
-    let doc = tiza_core::fs::load_document(&fixture("t-190/zwsp-note.tiza")).unwrap();
+fn zwsp_note_is_whole_or_cut_with_an_ellipsis_at_every_width() {
+    let doc = tiza_core::fs::load_document(&fixture("render/invisible_characters/zwsp-note.tiza"))
+        .unwrap();
     let mut whole = 0;
     for width in 60..=200 {
         let l = lay(&doc, width, 1);
@@ -494,20 +495,21 @@ fn step4_ac4_zwsp_note_is_whole_or_cut_with_an_ellipsis_at_every_width() {
     // The CLI `tiza check --width` (its own path, the layout of the take)
     // says the same at that width and one column less (moved here from
     // step4_ac4_check_and_render_at_180_agree).
-    let f = fixture("t-190/zwsp-note.tiza");
+    let f = fixture("render/invisible_characters/zwsp-note.tiza");
     let check_at = |w| tiza_ok(&["check", f.to_str().unwrap(), "--width", &format!("{w}")]);
     let at_clean = check_at(clean);
     assert!(at_clean.contains(" 0 warnings"), "{at_clean}");
     let below = check_at(clean - 1);
     assert!(!below.contains(" 0 warnings"), "{below}");
     // The stored text keeps its zero-width spaces.
-    let text = std::fs::read_to_string(fixture("t-190/zwsp-note.tiza")).unwrap();
+    let text =
+        std::fs::read_to_string(fixture("render/invisible_characters/zwsp-note.tiza")).unwrap();
     assert!(text.contains("\\u200b") || text.contains('\u{200B}'));
 }
 
 #[test]
-fn ac4_visible_and_clipped_agree_with_the_drawing() {
-    let live = Live::from_code("fn main() {\n    let a = 1;\n}\n", "rs", "t190-visible");
+fn visible_and_clipped_agree_with_the_drawing() {
+    let live = Live::from_code("fn main() {\n    let a = 1;\n}\n", "rs", "visible");
     live.with(|a| a.size = (100, 30));
     let text = "word\u{200B}".repeat(40);
     let r = live.api_ok(
@@ -525,7 +527,7 @@ fn ac4_visible_and_clipped_agree_with_the_drawing() {
 }
 
 #[test]
-fn corner_a_label_made_only_of_zero_width_characters_draws_nothing() {
+fn a_label_made_only_of_zero_width_characters_draws_nothing() {
     let doc = doc_of(&code_doc(
         &["let a = 1;"],
         json!([{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "\u{200B}\u{2060}\u{200D}"}]),
@@ -578,7 +580,7 @@ fn letters(s: &str) -> String {
 }
 
 #[test]
-fn ac6_random_documents_draw_every_letter_or_an_ellipsis() {
+fn random_documents_draw_every_letter_or_an_ellipsis() {
     let mut g = Gen(0x7a11_1900_5eed_0002);
     let (mut checked, mut cut) = (0, 0);
     for i in 0..150 {
@@ -644,7 +646,7 @@ fn ac6_random_documents_draw_every_letter_or_an_ellipsis() {
 // ---------- AC5: files without these characters ----------
 
 #[test]
-fn ac5_without_these_characters_every_measure_is_the_old_one() {
+fn without_these_characters_every_measure_is_the_old_one() {
     // The new measures differ from the old ones only on the characters
     // this card is about: every example lays out as before.
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../examples");
@@ -683,7 +685,7 @@ fn ac5_without_these_characters_every_measure_is_the_old_one() {
 }
 
 #[test]
-fn ac6_changelog() {
+fn changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert!(changelog.contains("U+2B1A"), "CHANGELOG");
@@ -699,7 +701,7 @@ fn doc_in(lang: &str, code: &[&str], annotations: Value) -> Document {
 }
 
 #[test]
-fn rev_a_grammar_that_splits_a_cluster_draws_what_it_measures() {
+fn a_grammar_that_splits_a_cluster_draws_what_it_measures() {
     // TypeScript's grammar splits the ZWNJ from its letter and TOML an
     // emoji from its ZWJ: the drawing goes by whole graphemes, as the
     // columns are measured.
@@ -749,7 +751,7 @@ fn rev_a_grammar_that_splits_a_cluster_draws_what_it_measures() {
 }
 
 #[test]
-fn rev_many_joiners_in_one_grapheme_lay_out_in_linear_time() {
+fn many_joiners_in_one_grapheme_lay_out_in_linear_time() {
     // `a` and 100,000 ZWJs are one grapheme: deciding each joiner by
     // looking at all the ones after it took minutes.
     let code = format!("a{}", "\u{200D}".repeat(100_000));
@@ -766,7 +768,7 @@ fn rev_many_joiners_in_one_grapheme_lay_out_in_linear_time() {
 }
 
 #[test]
-fn rev_every_default_ignorable_character_is_marked_unless_it_does_a_job() {
+fn every_default_ignorable_character_is_marked_unless_it_does_a_job() {
     for c in [
         '\u{00AD}',
         '\u{034F}',
@@ -825,7 +827,7 @@ fn rev_every_default_ignorable_character_is_marked_unless_it_does_a_job() {
 }
 
 #[test]
-fn rev_joiners_of_more_scripts_are_left_alone() {
+fn joiners_of_more_scripts_are_left_alone() {
     for code in [
         "\u{A9B2}\u{A9C0}\u{200C}\u{A9B1}",    // Javanese
         "\u{1B13}\u{1B44}\u{200C}\u{1B31}",    // Balinese
@@ -838,7 +840,7 @@ fn rev_joiners_of_more_scripts_are_left_alone() {
 }
 
 #[test]
-fn rev_a_mark_keeps_its_colour_under_a_highlight() {
+fn a_mark_keeps_its_colour_under_a_highlight() {
     let doc = doc_of(&code_doc(
         &["let ad\u{200B}min = 1;"],
         json!([{"id": "h", "step": 1, "type": "highlight", "span": {"line": 1, "start": 4, "end": 10}}]),
@@ -856,9 +858,9 @@ fn rev_a_mark_keeps_its_colour_under_a_highlight() {
 }
 
 #[test]
-fn rev_a_step_title_shows_its_control_pictures_on_the_bar() {
+fn a_step_title_shows_its_control_pictures_on_the_bar() {
     let f = write(
-        "t190-title",
+        "title",
         "t.tiza",
         &json!({
             "schema": 1, "source": {"language": "rs", "first_line": 1}, "step": 1,
@@ -874,7 +876,7 @@ fn rev_a_step_title_shows_its_control_pictures_on_the_bar() {
     assert!(screen.contains("Intro␛[2J bell␇"), "{screen}");
 }
 
-// ---------- On the margin callouts of t-201 ----------
+// ---------- On the margin callouts ----------
 
 /// The cell's text at `(x, y)`, or nothing outside the canvas.
 fn sym(l: &Layout, x: usize, y: usize) -> String {
@@ -887,7 +889,9 @@ fn sym(l: &Layout, x: usize, y: usize) -> String {
 fn rev2_a_callout_with_zero_width_spaces_stays_in_its_border() {
     // On main the zero-width spaces each took a cell the block did not
     // count: the text crossed the right border (61 and 100 columns).
-    let doc = tiza_core::fs::load_document(&fixture("t-190/zwsp-callout.tiza")).unwrap();
+    let doc =
+        tiza_core::fs::load_document(&fixture("render/invisible_characters/zwsp-callout.tiza"))
+            .unwrap();
     let (mut beside, mut under) = (0, 0);
     for width in 40..=200 {
         let l = lay(&doc, width, 1);
@@ -928,11 +932,11 @@ fn rev2_a_callout_with_zero_width_spaces_stays_in_its_border() {
 
 #[test]
 fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
-    // blank-null (a copy of t-201's) has no labels; zero-width-labels has
+    // blank-null (a copy of the margin callouts fixture) has no labels; zero-width-labels has
     // U+200B U+2060 U+200D as the label of a highlight, a mark, an arrow
     // and a box, as the title of two callouts, and a note of two U+200B.
-    let a = fixture("t-190/zero-width-labels.tiza");
-    let b = fixture("t-190/blank-null.tiza");
+    let a = fixture("render/invisible_characters/zero-width-labels.tiza");
+    let b = fixture("render/invisible_characters/blank-null.tiza");
     for w in [61, 80, 100, 140] {
         let w = w.to_string();
         for format in ["txt", "svg"] {
@@ -949,7 +953,7 @@ fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
 fn rev2_a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
     // Refused like a text of only spaces; before, it was added and drew
     // nothing, and `check` said nothing.
-    let live = Live::from_code("a = 1\nb = 2\n", "sh", "t190-empty-text");
+    let live = Live::from_code("a = 1\nb = 2\n", "sh", "empty-text");
     let r = live.api(
         "annotation.add",
         json!({"type": "note", "line": 1, "text": "\u{200B}\u{2060}", "step": 1}),
@@ -971,7 +975,7 @@ fn rev2_a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
         &["let a = 1;"],
         json!([{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "\u{200B}\u{200B}"}]),
     );
-    let f = write("t190-empty-check", "e.tiza", &doc.to_string());
+    let f = write("empty-check", "e.tiza", &doc.to_string());
     let out = tiza_qa::tiza(&["check", f.to_str().unwrap()]);
     assert!(!out.status.success(), "check passes");
     let text = String::from_utf8_lossy(&out.stdout);
@@ -1099,7 +1103,7 @@ fn rev2_a_step_message_shows_the_titles_control_pictures() {
         json!([{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "one"}]),
     );
     doc["steps"] = json!([{"step": 0, "title": "s\u{7}tart"}, {"step": 1, "title": "t\u{7}itle"}]);
-    let f = write("t190-step-msg", "c.tiza", &doc.to_string());
+    let f = write("step-msg", "c.tiza", &doc.to_string());
     let live = Live::open(
         tiza_core::fs::load_document(&f).unwrap(),
         f.clone(),

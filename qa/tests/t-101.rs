@@ -75,13 +75,17 @@ fn with_code(v: &[Value], code: &str) -> Vec<Value> {
 }
 
 /// A copy of a bundled example, or of the copy of the ownership demo in
-/// `qa/fixtures/ownership/` (and the file it references), in a scratch
+/// `qa/fixtures/shared/ownership/` (and the file it references), in a scratch
 /// directory, edited by `edit`.
 fn edited_example(name: &str, file: &str, edit: impl Fn(String) -> String) -> PathBuf {
     let dir = scratch(name);
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
     let src = match file {
-        "ownership.rs.tiza" => fixture("ownership/ownership.rs.tiza"),
+        "ownership.rs.tiza" => fixture("shared/ownership/ownership.rs.tiza"),
         _ => example(file),
     };
     let text = std::fs::read_to_string(src).unwrap();

@@ -69,7 +69,12 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
         "old note gone"
     );
 
-    let r = put_file(&live, fixture("t-013/script.ref.tiza").to_str().unwrap());
+    let r = put_file(
+        &live,
+        fixture("render/language_detection/script.ref.tiza")
+            .to_str()
+            .unwrap(),
+    );
     assert_eq!(r["lines"], json!(7), "{r}");
     assert_eq!(r["annotations"], json!(1));
     let (lang, embedded) = live.with(|a| {

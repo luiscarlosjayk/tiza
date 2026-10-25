@@ -1,4 +1,4 @@
-//! t-095 — Box and callout border styles.
+//! Box and callout border styles.
 //!
 //! Acceptance criteria:
 //! - AC1 `border`: solid (default), dashed, dotted, thick, double; `corners`:
@@ -20,7 +20,9 @@ use tiza_qa::{Live, fixture, tiza_ok};
 fn render() -> String {
     tiza_ok(&[
         "render",
-        fixture("t-095/borders.tiza").to_str().unwrap(),
+        fixture("render/border_styles/borders.tiza")
+            .to_str()
+            .unwrap(),
         "--width",
         "70",
         "--out",
@@ -29,7 +31,7 @@ fn render() -> String {
 }
 
 #[test]
-fn ac1_strokes_and_corners_per_box() {
+fn strokes_and_corners_per_box() {
     let out = render();
     assert!(out.contains("┏━ thick sharp"), "{out}");
     assert!(out.contains("┗━━"), "{out}");
@@ -42,11 +44,11 @@ fn ac1_strokes_and_corners_per_box() {
 }
 
 #[test]
-fn ac2_fill_is_a_choice() {
+fn fill_is_a_choice() {
     let live = Live::from_code(
         "a // a line long enough for a callout below it\nbb\ncc\ndd\n",
         "rs",
-        "t095-fill",
+        "fill",
     );
     live.command("box 1-2 tinted");
     live.command("box 3-4 plain fill=no");
@@ -72,7 +74,7 @@ fn ac2_fill_is_a_choice() {
 }
 
 #[test]
-fn ac3_nested_boxes_and_clipped_callout_titles() {
+fn nested_boxes_and_clipped_callout_titles() {
     let out = render();
     assert!(
         out.contains("┆╭─ inner ─"),
@@ -95,12 +97,8 @@ fn ac3_nested_boxes_and_clipped_callout_titles() {
 }
 
 #[test]
-fn ac4_commands_socket_and_mcp() {
-    let live = Live::from_code(
-        "fn main() {\n    let s = 1;\n}\nfn t() {}\n",
-        "rs",
-        "t095-cmd",
-    );
+fn commands_socket_and_mcp() {
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\nfn t() {}\n", "rs", "cmd");
     live.command("box 1-3 main border=double corners=sharp fill=no");
     assert!(
         matches!(live.message(), Some((_, false))),
@@ -204,7 +202,7 @@ fn ac4_commands_socket_and_mcp() {
 }
 
 #[test]
-fn ac5_defaults_are_not_written() {
+fn defaults_are_not_written() {
     let doc = tiza_core::fs::parse_document(
         r#"{"schema":1,"source":{"language":"rs"},"code":["a","b"],"annotations":[{"id":"x","step":1,"type":"box","from_line":1,"to_line":2},{"id":"c","step":1,"type":"callout","from_line":1,"text":"t"}]}"#,
         None,

@@ -50,7 +50,7 @@ fn decode(bytes: &[u8]) -> Gif {
 fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
     let dir = scratch("t120-own");
     let out = dir.join("own.gif");
-    let ex = fixture("ownership/ownership.rs.tiza");
+    let ex = fixture("shared/ownership/ownership.rs.tiza");
     let err = tiza_ok(&[
         "render",
         ex.to_str().unwrap(),
@@ -168,7 +168,7 @@ fn ac1_typed_moves_animate_at_their_speed() {
 fn ac3_mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
     let dir = scratch("t120-mp4");
     let out = dir.join("own.mp4");
-    let ex = fixture("ownership/ownership.rs.tiza");
+    let ex = fixture("shared/ownership/ownership.rs.tiza");
     let r = std::process::Command::new(tiza_qa::bin())
         .args([
             "render",
@@ -227,9 +227,13 @@ fn ac3_mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
 #[test]
 fn ac5_the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
     let dir = scratch("t120-live");
-    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 3}));
     // `tiza render --out x.gif` without FILE: the live scene, every step.

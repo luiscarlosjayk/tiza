@@ -1,4 +1,4 @@
-//! t-113 — Right-margin width cap: `:margin N` / document field `margin`.
+//! Right-margin width cap: `:margin N` / document field `margin`.
 //!
 //! Acceptance criteria:
 //! - AC1 `:margin N` caps the right margin at N cells, `:margin auto`
@@ -16,9 +16,13 @@ use tiza_core::layout::{LayoutOptions, layout};
 use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(fixture("t-113/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document
+    tiza_core::fs::open(
+        fixture("render/right_margin/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document
 }
 
 fn text(doc: &tiza_core::Document, width: usize, cap: Option<usize>) -> String {
@@ -37,7 +41,7 @@ fn text(doc: &tiza_core::Document, width: usize, cap: Option<usize>) -> String {
 }
 
 #[test]
-fn ac1_ac2_ac3_the_cap_wraps_notes_and_ends_the_frame() {
+fn the_cap_wraps_notes_and_ends_the_frame() {
     let doc = ownership();
     let wide = text(&doc, 160, None);
     let note = "s no longer owns it: using it here does not compile";
@@ -80,8 +84,8 @@ fn ac1_ac2_ac3_the_cap_wraps_notes_and_ends_the_frame() {
 }
 
 #[test]
-fn ac1_ac4_tui_command_document_field_status_and_patch() {
-    let dir = scratch("t113-live");
+fn tui_command_document_field_status_and_patch() {
+    let dir = scratch("live");
     let live = Live::open(ownership(), dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 7}));
     let note = "s no longer owns it: using it here does not compile";
@@ -135,13 +139,14 @@ fn ac1_ac4_tui_command_document_field_status_and_patch() {
 }
 
 #[test]
-fn ac1_render_honours_the_field_and_margin_cols_overrides_it() {
-    let dir = scratch("t113-render");
-    let mut doc: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(fixture("t-113/ownership.rs.tiza")).unwrap())
-            .unwrap();
+fn render_honours_the_field_and_margin_cols_overrides_it() {
+    let dir = scratch("render");
+    let mut doc: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixture("render/right_margin/ownership.rs.tiza")).unwrap(),
+    )
+    .unwrap();
     doc["margin"] = json!(24);
-    doc["code"] = json!({"file": fixture("t-113/ownership.rs").to_str().unwrap()});
+    doc["code"] = json!({"file": fixture("render/right_margin/ownership.rs").to_str().unwrap()});
     let path = dir.join("capped.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let p = path.to_str().unwrap();
@@ -192,6 +197,6 @@ fn ac1_render_honours_the_field_and_margin_cols_overrides_it() {
         u32::from_be_bytes([bytes[16], bytes[17], bytes[18], bytes[19]])
     };
     assert!(w(&a) < w(&b), "{} vs {}", w(&a), w(&b));
-    // Documents without the field: unchanged (t-053 snapshots cover it).
+    // Documents without the field: unchanged (the frame snapshots cover it).
     assert!(ownership().margin.is_none());
 }

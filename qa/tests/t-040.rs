@@ -128,7 +128,7 @@ fn ac3_dash_reads_stdin() {
     );
     assert!(String::from_utf8_lossy(&out.stdout).contains("fn a() {}"));
     // A document through stdin (embedded code).
-    let doc = std::fs::read_to_string(fixture("t-092/callouts.tiza")).unwrap();
+    let doc = std::fs::read_to_string(fixture("render/callouts/callouts.tiza")).unwrap();
     let out = run_with_stdin(
         &["render", "-", "--out", "-", "--step", "1", "--width", "114"],
         &doc,

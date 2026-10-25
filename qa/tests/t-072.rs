@@ -104,7 +104,9 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
+                fixture("shared/ownership/ownership.rs.tiza")
+                    .to_str()
+                    .unwrap(),
                 "--step",
                 "7",
                 "--theme",
@@ -136,7 +138,9 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
+                fixture("shared/ownership/ownership.rs.tiza")
+                    .to_str()
+                    .unwrap(),
                 "--step",
                 "7",
                 "--theme",

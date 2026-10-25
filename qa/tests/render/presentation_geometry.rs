@@ -125,8 +125,8 @@ fn every_step_the_same(app: &mut App, what: &str) {
 // ---------- AC1, AC3 ----------
 
 #[test]
-fn ac1_ac3_presentation_reuses_one_geometry_and_draws_the_same() {
-    let mut app = app_of(big_with_moves(), "t191-big");
+fn presentation_reuses_one_geometry_and_draws_the_same() {
+    let mut app = app_of(big_with_moves(), "big");
     app.present = true;
     let before = app.geometries.get();
     every_step_the_same(&mut app, "presentation, 2,000 lines with moves");
@@ -135,7 +135,7 @@ fn ac1_ac3_presentation_reuses_one_geometry_and_draws_the_same() {
 }
 
 #[test]
-fn ac3_the_examples_draw_the_same_with_the_kept_geometry() {
+fn the_examples_draw_the_same_with_the_kept_geometry() {
     for (name, file) in [
         ("moves", "ownership-moves.rs.tiza"),
         ("links", "stack-and-queue.tiza"),
@@ -144,7 +144,7 @@ fn ac3_the_examples_draw_the_same_with_the_kept_geometry() {
     ] {
         let doc = tiza_core::fs::load_document(&example(file)).unwrap();
         for stable in [true, false] {
-            let mut app = app_of(doc.clone(), &format!("t191-{name}"));
+            let mut app = app_of(doc.clone(), name);
             app.layout_stable = stable;
             every_step_the_same(&mut app, &format!("{file}, stable {stable}"));
         }
@@ -152,8 +152,8 @@ fn ac3_the_examples_draw_the_same_with_the_kept_geometry() {
 }
 
 #[test]
-fn ac1_every_change_computes_the_geometry_again() {
-    let dir = scratch("t191-changes");
+fn every_change_computes_the_geometry_again() {
+    let dir = scratch("changes");
     let doc = tiza_core::fs::load_document(&example("ownership-moves.rs.tiza")).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.with(|app| {
@@ -198,8 +198,8 @@ fn ac1_every_change_computes_the_geometry_again() {
 }
 
 #[test]
-fn corner_a_follow_reload_computes_the_geometry_again() {
-    let dir = scratch("t191-follow");
+fn a_follow_reload_computes_the_geometry_again() {
+    let dir = scratch("follow");
     let src = dir.join("main.rs");
     std::fs::write(&src, "fn main() {\n    let a = 1;\n}\n").unwrap();
     let opened = tiza_core::fs::open(src.to_str().unwrap()).unwrap();
@@ -233,12 +233,12 @@ fn corner_a_follow_reload_computes_the_geometry_again() {
 }
 
 #[test]
-fn corner_a_typing_tick_draws_the_code_typed_so_far() {
+fn a_typing_tick_draws_the_code_typed_so_far() {
     // The take's geometry at the typed step comes from the code shown
     // there: each tick (a revision) sizes it again, as every frame did.
     let mut doc = tiza_core::fs::load_document(&example("ownership-moves.rs.tiza")).unwrap();
     doc.step = 0;
-    let mut app = app_of(doc, "t191-typing");
+    let mut app = app_of(doc, "typing");
     app.present = true;
     let typed = (1..=app.doc.max_step())
         .find(|s| tiza_core::moves::typing_plan(&app.doc, *s).is_some())
@@ -268,8 +268,8 @@ fn corner_a_typing_tick_draws_the_code_typed_so_far() {
 // ---------- AC4 ----------
 
 #[test]
-fn ac4_status_reads_the_last_frame_and_lays_nothing_out() {
-    let dir = scratch("t191-status");
+fn status_reads_the_last_frame_and_lays_nothing_out() {
+    let dir = scratch("status");
     let live = Live::open(
         big_with_moves(),
         dir.join("doc.tiza"),
@@ -296,8 +296,8 @@ fn ac4_status_reads_the_last_frame_and_lays_nothing_out() {
 }
 
 #[test]
-fn ac4_a_change_not_drawn_yet_is_laid_out_once() {
-    let dir = scratch("t191-status-change");
+fn a_change_not_drawn_yet_is_laid_out_once() {
+    let dir = scratch("status-change");
     let live = Live::open(
         big_with_moves(),
         dir.join("doc.tiza"),
@@ -324,8 +324,8 @@ fn ac4_a_change_not_drawn_yet_is_laid_out_once() {
 }
 
 #[test]
-fn ac4_status_before_the_first_frame() {
-    let dir = scratch("t191-status-first");
+fn status_before_the_first_frame() {
+    let dir = scratch("status-first");
     let live = Live::open(
         big_with_moves(),
         dir.join("doc.tiza"),
@@ -356,7 +356,7 @@ fn ac4_status_before_the_first_frame() {
 // ---------- AC5, AC7 ----------
 
 #[test]
-fn ac7_a_read_only_request_does_not_redraw() {
+fn a_read_only_request_does_not_redraw() {
     for m in tiza_tui::app::READ_ONLY_METHODS {
         assert!(!tiza_tui::request_redraws(m, false), "{m}");
         // Unless it changed something anyway (a message, a revision).
@@ -376,14 +376,14 @@ fn ac7_a_read_only_request_does_not_redraw() {
 // ---------- AC6 ----------
 
 #[test]
-fn ac6_presentation_with_moves_reuses_the_geometry_every_frame() {
+fn presentation_with_moves_reuses_the_geometry_every_frame() {
     // What made a presentation frame slow is counted, not timed: every
     // frame lays the document out, none computes the take's geometry again
     // (that was ~200 ms of a debug frame, ~38 ms without it). A time budget
     // here failed on a loaded machine; the time is the bench's to judge.
     // `scripts/bench.sh` («presentation + moves») reads the median printed
     // below and compares it with `qa/bench/baseline.json`.
-    let dir = scratch("t191-bench");
+    let dir = scratch("bench");
     let live = Live::open(
         big_with_moves(),
         dir.join("doc.tiza"),
@@ -472,23 +472,23 @@ fn both(live: &Live, width: usize) -> (String, String) {
 }
 
 #[test]
-fn rev_a_typing_ended_by_step_prev_over_the_socket() {
-    typed_then("t191-typed-prev", |live| {
+fn a_typing_ended_by_step_prev_over_the_socket() {
+    typed_then("typed-prev", |live| {
         live.api_ok("step.prev", json!({}));
     });
 }
 
 #[test]
-fn rev_a_typing_ended_by_step_next_at_the_last_step_then_p() {
-    typed_then("t191-typed-next", |live| {
+fn a_typing_ended_by_step_next_at_the_last_step_then_p() {
+    typed_then("typed-next", |live| {
         live.api_ok("step.next", json!({}));
         live.keys(&[crossterm::event::KeyCode::Char('p')]);
     });
 }
 
 #[test]
-fn rev_a_typing_ended_by_a_refused_move_delete_then_p() {
-    typed_then("t191-typed-refused", |live| {
+fn a_typing_ended_by_a_refused_move_delete_then_p() {
+    typed_then("typed-refused", |live| {
         assert!(
             live.api("move.delete", json!({"index": 99}))
                 .error
@@ -499,14 +499,14 @@ fn rev_a_typing_ended_by_a_refused_move_delete_then_p() {
 }
 
 #[test]
-fn rev_a_typing_ended_by_a_step_set_in_the_app() {
-    typed_then("t191-typed-set", |live| {
+fn a_typing_ended_by_a_step_set_in_the_app() {
+    typed_then("typed-set", |live| {
         live.with(|app| app.set_step(1));
     });
 }
 
 #[test]
-fn rev_scene_patch_to_a_step_shows_that_steps_code() {
+fn scene_patch_to_a_step_shows_that_steps_code() {
     // A line wider than the rest exists only at step 3.
     let doc = json!({
         "schema": 1, "source": {"language": "rs", "first_line": 1},
@@ -519,7 +519,7 @@ fn rev_scene_patch_to_a_step_shows_that_steps_code() {
         ],
         "step": 1
     });
-    let dir = scratch("t191-patch-step");
+    let dir = scratch("patch-step");
     let live = Live::open(
         tiza_core::fs::parse_document(&doc.to_string(), None).unwrap(),
         dir.join("doc.tiza"),

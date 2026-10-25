@@ -44,7 +44,7 @@ fn ac5_every_command_name_is_classified() {
     assert_eq!(App::selection_use("nonsense"), None);
 }
 
-/// Runs `tiza --no-save main.rs` (a copy of `qa/fixtures/ownership/ownership.rs`) on a
+/// Runs `tiza --no-save main.rs` (a copy of `qa/fixtures/shared/ownership/ownership.rs`) on a
 /// pty and plays `steps`, then quits with `:q!`. A step is `["k", keys,
 /// what]` (sends `keys`, then waits until `what` is on the screen, when
 /// given), `["anns", n]` (waits until the document has `n` annotations) or
@@ -52,7 +52,11 @@ fn ac5_every_command_name_is_classified() {
 /// the directory.
 fn run(name: &str, steps: Value) -> (String, std::path::PathBuf) {
     let dir = scratch(name);
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("main.rs")).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("main.rs"),
+    )
+    .unwrap();
     let body = r##"
 import json
 binary, cwd, steps = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])

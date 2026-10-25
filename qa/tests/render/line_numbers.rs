@@ -1,4 +1,4 @@
-//! t-112 — `:numbers on|off` and the document field `numbers`.
+//! `:numbers on|off` and the document field `numbers`.
 //!
 //! Acceptance criteria:
 //! - AC1 `:numbers off` hides the gutter (code, lanes and boxes shift
@@ -23,11 +23,15 @@ fn code_col(screen: &str) -> usize {
 }
 
 #[test]
-fn ac1_ac4_toggle_in_the_tui_is_saved_and_reported() {
-    let dir = scratch("t112-live");
-    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+fn toggle_in_the_tui_is_saved_and_reported() {
+    let dir = scratch("live");
+    let doc = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 7}));
     let with = live.screen(100, 40);
@@ -89,13 +93,13 @@ fn ac1_ac4_toggle_in_the_tui_is_saved_and_reported() {
 }
 
 #[test]
-fn ac2_render_honours_the_field_and_the_flags_override_it() {
-    let dir = scratch("t112-render");
-    let src = fixture("ownership/ownership.rs.tiza");
+fn render_honours_the_field_and_the_flags_override_it() {
+    let dir = scratch("render");
+    let src = fixture("shared/ownership/ownership.rs.tiza");
     let mut doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&src).unwrap()).unwrap();
     doc["numbers"] = json!(false);
-    doc["code"] = json!({"file": fixture("ownership/ownership.rs").to_str().unwrap()});
+    doc["code"] = json!({"file": fixture("shared/ownership/ownership.rs").to_str().unwrap()});
     let path = dir.join("no-numbers.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let p = path.to_str().unwrap();
@@ -108,7 +112,9 @@ fn ac2_render_honours_the_field_and_the_flags_override_it() {
     assert!(forced.contains(" 15 "), "{forced}");
     let off = tiza_ok(&[
         "render",
-        fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
         "--step",
         "7",
         "--width",
@@ -123,17 +129,21 @@ fn ac2_render_honours_the_field_and_the_flags_override_it() {
     tiza_ok(&["render", p, "--out", cast.to_str().unwrap()]);
     assert!(!std::fs::read_to_string(&cast).unwrap().contains(" 15 "));
     // Old documents without the field: numbers on.
-    let old = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let old = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     assert!(old.numbers);
 }
 
 #[test]
-fn ac3_a_range_without_numbers_still_knows_its_lines() {
-    let dir = scratch("t112-range");
+fn a_range_without_numbers_still_knows_its_lines() {
+    let dir = scratch("range");
     let src = dir.join("main.rs");
-    std::fs::copy(fixture("ownership/ownership.rs"), &src).unwrap();
+    std::fs::copy(fixture("shared/ownership/ownership.rs"), &src).unwrap();
     let opened = tiza_core::fs::open(&format!("{}:15-17", src.display())).unwrap();
     let live = Live::open(
         opened.document,

@@ -26,8 +26,12 @@ use tiza_qa::{Live, fixture, scratch};
 fn opened(name: &str, no_save: bool) -> (Live, std::path::PathBuf) {
     let dir = scratch(name);
     let path = dir.join("ownership.rs.tiza");
-    std::fs::copy(fixture("ownership/ownership.rs.tiza"), &path).unwrap();
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(fixture("shared/ownership/ownership.rs.tiza"), &path).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));
     if no_save {

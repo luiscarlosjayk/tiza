@@ -1,4 +1,4 @@
-//! t-201 — Margin callouts and long labels: a fallen-back callout under its
+//! Margin callouts and long labels: a fallen-back callout under its
 //! line as a block, two callouts on one line never overlap, a callout block
 //! never hides or displaces a label, a long under-line label stops at the
 //! box rail, an empty label is no label.
@@ -25,7 +25,7 @@
 //! - AC6 Documents that hit none of these cases render byte-identical (txt,
 //!   svg). Any visual change re-runs `scripts/readme-images.sh` and the herdr
 //!   captures in the same commit.
-//! - AC7 This file with the repro documents of QA 1 (`qa/fixtures/t-201/`,
+//! - AC7 This file with the repro documents of QA 1 (`qa/fixtures/render/margin_callouts/`,
 //!   p1–p6 and their variants, as Luis decided on them) and a width sweep, `visible`/`clipped` in the `annotation.add`
 //!   reply agreeing with `check` at every width; CHANGELOG (Fixed).
 //!
@@ -41,8 +41,8 @@
 //! - The «…» of a label cut inside a box sits one cell before the rail, as
 //!   the code does (`servi… │`).
 //!
-//! Decided by Luis for the second rework (2026-10-23), after t-216 found a
-//! note under its line cut by a margin block with no «…» and no warning:
+//! Decided by Luis for the second rework (2026-10-23), after a test of `render.text`
+//! found a note under its line cut by a margin block with no «…» and no warning:
 //! - A row under a line (a note, a label, an arrow's label) that passes a
 //!   margin block ends before that block, with «…» one cell before its
 //!   border, by the same rule as the box rail; `check` counts it as clipped
@@ -52,7 +52,7 @@
 //!   stays inside the code column).
 //!
 //! Third rework (QA 1's final QA, 2026-10-23), each with a repro in
-//! `qa/fixtures/t-201/`:
+//! `qa/fixtures/render/margin_callouts/`:
 //! - A callout block under its line beside code of 11 columns or fewer
 //!   lost the end of each row (its text wrapped at 8 cells, its block held
 //!   6), with no «…» and no warning: its text now wraps at the block's
@@ -70,7 +70,7 @@ use tiza_core::check::{CheckOptions, check_document};
 use tiza_qa::{Live, fixture, scratch, tiza_ok};
 
 fn path(name: &str) -> String {
-    fixture(&format!("t-201/{name}"))
+    fixture(&format!("render/margin_callouts/{name}"))
         .to_str()
         .unwrap()
         .to_string()
@@ -263,7 +263,7 @@ const P1_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
 ";
 
 #[test]
-fn ac1_p1_looks_the_same_from_61_columns_on() {
+fn p1_looks_the_same_from_61_columns_on() {
     // The narrow layout drew this already; every width up to the one where
     // the block fits in the margin draws the same block now.
     for w in [61, 62, 80, 100, 104, 140] {
@@ -273,7 +273,7 @@ fn ac1_p1_looks_the_same_from_61_columns_on() {
 }
 
 #[test]
-fn ac1_a_fallen_back_callout_next_to_a_note_is_a_block_at_80() {
+fn a_fallen_back_callout_next_to_a_note_is_a_block_at_80() {
     // p3 at 80: the block does not fit in the margin and falls back; it
     // shares L2 with the note, so both go under L2, the callout as a block.
     let t = render("p3.tiza", 80);
@@ -307,7 +307,7 @@ const P1B_BLOCK: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
 ";
 
 #[test]
-fn ac1_a_callout_alone_on_its_line_with_no_room_in_the_margin_is_a_block_under_it() {
+fn a_callout_alone_on_its_line_with_no_room_in_the_margin_is_a_block_under_it() {
     // p1b: four lines, so the block never has the rows in the margin; it
     // was a `┆` label there, cut with … up to 100 columns, whole from 101.
     for w in [61, 62, 81, 90, 100, 101, 140, 200] {
@@ -335,7 +335,7 @@ fn ac1_a_callout_alone_on_its_line_with_no_room_in_the_margin_is_a_block_under_i
 }
 
 #[test]
-fn ac2_p2b_at_100_the_second_block_does_not_overlap_the_first() {
+fn p2b_at_100_the_second_block_does_not_overlap_the_first() {
     let t = render("p2b.tiza", 100);
     assert_eq!(
         t,
@@ -355,7 +355,7 @@ fn ac2_p2b_at_100_the_second_block_does_not_overlap_the_first() {
 }
 
 #[test]
-fn ac2_p2_at_100_the_second_callout_is_a_block_under_its_line() {
+fn p2_at_100_the_second_callout_is_a_block_under_its_line() {
     // The second does not fit beside the first, and the rows of L2 hold no
     // other spot: a block under L2, never a label beside the first block.
     let t = render("p2.tiza", 100);
@@ -377,7 +377,7 @@ fn ac2_p2_at_100_the_second_callout_is_a_block_under_its_line() {
 }
 
 #[test]
-fn ac2_p2_and_p2b_never_lose_text_silently_from_60_to_140() {
+fn p2_and_p2b_never_lose_text_silently_from_60_to_140() {
     for name in ["p2.tiza", "p2b.tiza"] {
         for w in 60..=140 {
             assert_in_place(name, w);
@@ -386,7 +386,7 @@ fn ac2_p2_and_p2b_never_lose_text_silently_from_60_to_140() {
 }
 
 #[test]
-fn ac2_two_blocks_side_by_side_when_the_margin_holds_both() {
+fn two_blocks_side_by_side_when_the_margin_holds_both() {
     // p2 at 140: the second block goes beside the first, on L2.
     let t = render("p2.tiza", 140);
     let r = t.lines().nth(row_of(&t, 2)).unwrap();
@@ -398,7 +398,7 @@ fn ac2_two_blocks_side_by_side_when_the_margin_holds_both() {
 }
 
 #[test]
-fn ac2_three_callouts_on_one_line_go_side_by_side_or_under_it() {
+fn three_callouts_on_one_line_go_side_by_side_or_under_it() {
     // At 140 two blocks fit beside each other on L2 and the third goes
     // under L2; at 180 the three are side by side.
     let t = render("three-on-one-line.tiza", 140);
@@ -418,7 +418,7 @@ fn ac2_three_callouts_on_one_line_go_side_by_side_or_under_it() {
 }
 
 #[test]
-fn ac2_a_block_never_starts_beside_a_later_line() {
+fn a_block_never_starts_beside_a_later_line() {
     // consecutive-lines at 130: the callout of L4 has no room beside the
     // blocks of L2 and L3; it was drawn beside L6–L8, it is now a block
     // under L4.
@@ -449,7 +449,7 @@ fn ac2_a_block_never_starts_beside_a_later_line() {
 }
 
 #[test]
-fn ac2_three_and_consecutive_never_lose_text_silently_from_60_to_140() {
+fn three_and_consecutive_never_lose_text_silently_from_60_to_140() {
     for name in ["three-on-one-line.tiza", "consecutive-lines.tiza"] {
         for w in 60..=140 {
             assert_in_place(name, w);
@@ -471,14 +471,14 @@ const P3_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
 ";
 
 #[test]
-fn ac3_p3_at_100_the_note_goes_under_its_line() {
+fn p3_at_100_the_note_goes_under_its_line() {
     let t = render("p3.tiza", 100);
     assert_eq!(t, P3_100, "{t}");
     assert!(check_cuts("p3.tiza", 100).is_empty());
 }
 
 #[test]
-fn ac3_p3b_at_100_the_note_stays_with_l2_not_l6() {
+fn p3b_at_100_the_note_stays_with_l2_not_l6() {
     let t = render("p3b.tiza", 100);
     assert_eq!(
         t,
@@ -490,7 +490,7 @@ fn ac3_p3b_at_100_the_note_stays_with_l2_not_l6() {
 }
 
 #[test]
-fn ac3_p6_from_98_to_115_the_note_is_drawn_on_l2() {
+fn p6_from_98_to_115_the_note_is_drawn_on_l2() {
     for w in 98..=115 {
         let t = render("p6.tiza", w);
         assert_label_on_its_line(&t, "┆ the API token", 2);
@@ -499,7 +499,7 @@ fn ac3_p6_from_98_to_115_the_note_is_drawn_on_l2() {
 }
 
 #[test]
-fn ac3_every_label_starts_on_its_own_line_from_60_to_140() {
+fn every_label_starts_on_its_own_line_from_60_to_140() {
     for w in 60..=140 {
         for (name, label, line) in [
             ("p3.tiza", "┆ sent as a", 2),
@@ -514,7 +514,7 @@ fn ac3_every_label_starts_on_its_own_line_from_60_to_140() {
 }
 
 #[test]
-fn ac4_p4_the_note_is_cut_at_the_box_rail() {
+fn p4_the_note_is_cut_at_the_box_rail() {
     for w in [61, 100] {
         let t = render("p4.tiza", w);
         assert_eq!(
@@ -535,7 +535,7 @@ fn ac4_p4_the_note_is_cut_at_the_box_rail() {
 }
 
 #[test]
-fn ac5_an_empty_highlight_label_is_no_label() {
+fn an_empty_highlight_label_is_no_label() {
     // p5 ("") and p5b (null) are the same picture, in text and in SVG.
     for w in [61, 100] {
         assert_eq!(render("p5.tiza", w), render("p5b.tiza", w), "at {w}");
@@ -559,7 +559,7 @@ fn ac5_an_empty_highlight_label_is_no_label() {
 }
 
 #[test]
-fn ac5_labels_of_only_spaces_are_no_label_for_every_kind() {
+fn labels_of_only_spaces_are_no_label_for_every_kind() {
     // blank-spaces has `"  "` as the label of a highlight, a mark, an arrow
     // and a box and as the title of two callouts; blank-null has none.
     for w in [61, 80, 100, 140] {
@@ -579,7 +579,7 @@ fn ac5_labels_of_only_spaces_are_no_label_for_every_kind() {
 }
 
 #[test]
-fn ac5_an_empty_mark_label_and_box_label_are_no_label() {
+fn an_empty_mark_label_and_box_label_are_no_label() {
     let t = render("p5c.tiza", 100);
     assert!(!t.contains("warning:") && t.contains("! warning"), "{t}");
     assert!(
@@ -592,7 +592,7 @@ fn ac5_an_empty_mark_label_and_box_label_are_no_label() {
     for a in doc["annotations"].as_array_mut().unwrap() {
         a["label"] = Value::Null;
     }
-    let dir = scratch("t201-p5c-null");
+    let dir = scratch("p5c-null");
     let null = dir.join("p5c-null.tiza");
     std::fs::write(&null, doc.to_string()).unwrap();
     let n = null.to_str().unwrap();
@@ -606,8 +606,8 @@ fn ac5_an_empty_mark_label_and_box_label_are_no_label() {
 }
 
 #[test]
-fn ac5_an_empty_callout_title_is_no_title() {
-    let dir = scratch("t201-title");
+fn an_empty_callout_title_is_no_title() {
+    let dir = scratch("title");
     let doc = |title: Value| {
         json!({"schema": 1, "source": {"language": "sh", "first_line": 1},
             "code": ["A=1", "B=2", "C=3", "D=4", "E=5"],
@@ -627,11 +627,11 @@ fn ac5_an_empty_callout_title_is_no_title() {
 }
 
 #[test]
-fn ac6_p6_with_room_beside_the_block_draws_as_before() {
+fn p6_with_room_beside_the_block_draws_as_before() {
     // As origin/main drew it: the block fits in the margin at 118 and the
     // note of L2 is beside it. p6's first two code lines are the fixture's
     // (`four.env`), not repeated here.
-    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let env = std::fs::read_to_string(fixture("render/margin_callouts/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
     assert_eq!(
@@ -663,13 +663,13 @@ fn add_params(ann: &Value) -> Value {
 fn reply_agrees_with_check(name: &str) {
     let full = tiza_core::fs::open(&path(name)).unwrap().document;
     let raw: Value = serde_json::from_str(&std::fs::read_to_string(path(name)).unwrap()).unwrap();
-    let base_dir = fixture("t-201");
+    let base_dir = fixture("render/margin_callouts");
     for (k, ann) in raw["annotations"].as_array().unwrap().iter().enumerate() {
         let id = ann["id"].as_str().unwrap().to_string();
         let mut doc = full.clone();
         doc.annotations.retain(|a| a.id != id);
         doc.step = 1;
-        let dir = scratch(&format!("t201-{name}-{k}"));
+        let dir = scratch(&format!("{name}-{k}"));
         let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
         for w in 60..=140usize {
             let cols = u16::try_from(w + 2).unwrap();
@@ -707,35 +707,35 @@ fn reply_agrees_with_check(name: &str) {
 }
 
 #[test]
-fn ac7_reply_agrees_with_check_p1_p1b_p2() {
+fn reply_agrees_with_check_p1_p1b_p2() {
     for name in ["p1.tiza", "p1b.tiza", "p2.tiza"] {
         reply_agrees_with_check(name);
     }
 }
 
 #[test]
-fn ac7_reply_agrees_with_check_p2b_p3_p3b() {
+fn reply_agrees_with_check_p2b_p3_p3b() {
     for name in ["p2b.tiza", "p3.tiza", "p3b.tiza"] {
         reply_agrees_with_check(name);
     }
 }
 
 #[test]
-fn ac7_reply_agrees_with_check_p4_p5_p5b() {
+fn reply_agrees_with_check_p4_p5_p5b() {
     for name in ["p4.tiza", "p5.tiza", "p5b.tiza"] {
         reply_agrees_with_check(name);
     }
 }
 
 #[test]
-fn ac7_reply_agrees_with_check_p5c_p6() {
+fn reply_agrees_with_check_p5c_p6() {
     for name in ["p5c.tiza", "p6.tiza"] {
         reply_agrees_with_check(name);
     }
 }
 
 #[test]
-fn ac7_reply_agrees_with_check_three_and_consecutive() {
+fn reply_agrees_with_check_three_and_consecutive() {
     for name in ["three-on-one-line.tiza", "consecutive-lines.tiza"] {
         reply_agrees_with_check(name);
     }
@@ -768,11 +768,11 @@ fn assert_clear_of_blocks(at: &str, text: &str) {
 }
 
 #[test]
-fn r2_a_note_under_its_line_stops_one_cell_before_the_margin_block() {
+fn a_note_under_its_line_stops_one_cell_before_the_margin_block() {
     // The note of L2 goes under its line (the block leaves fewer than 14
     // columns beside it) and the block covers that row: before, the row ran
     // under the block, cut with no «…» and no warning.
-    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let env = std::fs::read_to_string(fixture("render/margin_callouts/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
     assert_eq!(
@@ -793,10 +793,10 @@ fn r2_a_note_under_its_line_stops_one_cell_before_the_margin_block() {
 }
 
 #[test]
-fn r2_arrow_labels_under_their_line_stop_before_the_margin_block() {
+fn arrow_labels_under_their_line_stop_before_the_margin_block() {
     // The label of an arrow that ends on L2 and the label of an arrow along
     // L2, both under L2 beside the block of L1.
-    let env = std::fs::read_to_string(fixture("t-201/four.env")).unwrap();
+    let env = std::fs::read_to_string(fixture("render/margin_callouts/four.env")).unwrap();
     let code: Vec<&str> = env.lines().collect();
     let fill = |t: &str| t.replace("{L1}", code[0]).replace("{L2}", code[1]);
     assert_eq!(
@@ -821,7 +821,7 @@ fn r2_arrow_labels_under_their_line_stop_before_the_margin_block() {
 }
 
 #[test]
-fn r2_rows_under_a_line_never_run_into_a_margin_block_from_60_to_140() {
+fn rows_under_a_line_never_run_into_a_margin_block_from_60_to_140() {
     // (p3, p3b and p6 are swept for their labels' place above.)
     for name in [
         "under-beside-block.tiza",
@@ -836,7 +836,7 @@ fn r2_rows_under_a_line_never_run_into_a_margin_block_from_60_to_140() {
 }
 
 #[test]
-fn r2_reply_agrees_with_check_under_and_arrow_beside_block() {
+fn reply_agrees_with_check_under_and_arrow_beside_block() {
     for name in ["under-beside-block.tiza", "arrow-beside-block.tiza"] {
         reply_agrees_with_check(name);
     }
@@ -854,7 +854,7 @@ fn letters_after(text: &str, n: u32) -> String {
 }
 
 #[test]
-fn r3_a_block_under_its_line_beside_narrow_code_loses_no_text() {
+fn a_block_under_its_line_beside_narrow_code_loses_no_text() {
     // Code of 3 columns: the code column is 10 cells. The text wrapped at
     // 8 and the block held 6, at every width.
     for w in [20, 30, 40, 61, 80, 100, 140, 200] {
@@ -890,7 +890,7 @@ fn assert_gap_after_block(at: &str, t: &str, n: u32) {
 }
 
 #[test]
-fn r3_a_block_under_its_line_keeps_a_cell_from_the_margin() {
+fn a_block_under_its_line_keeps_a_cell_from_the_margin() {
     // At 12 cells the block's border touched a margin block or a label's
     // continuation; it is one cell narrower beside code of 10 columns.
     for w in 30..=60 {
@@ -906,7 +906,7 @@ fn r3_a_block_under_its_line_keeps_a_cell_from_the_margin() {
 }
 
 #[test]
-fn r3_a_label_continues_on_the_rows_of_its_own_line() {
+fn a_label_continues_on_the_rows_of_its_own_line() {
     // L1 draws its notes under itself; the label of the arrow along L1
     // continues on those rows where the notes leave the margin blank.
     for w in (40..=140).step_by(5) {
@@ -918,7 +918,7 @@ fn r3_a_label_continues_on_the_rows_of_its_own_line() {
 }
 
 #[test]
-fn r3_inside_a_box_the_block_wraps_its_text_at_the_box_rail() {
+fn inside_a_box_the_block_wraps_its_text_at_the_box_rail() {
     // The block must not cross the box's right rail: its text wraps at the
     // code column's width, splitting long words, and loses nothing.
     for w in [20, 30, 40, 61, 80, 100, 140, 200] {
@@ -955,7 +955,7 @@ fn r3_inside_a_box_the_block_wraps_its_text_at_the_box_rail() {
 }
 
 #[test]
-fn r3_a_note_continues_only_on_rows_no_other_line_owns() {
+fn a_note_continues_only_on_rows_no_other_line_owns() {
     // L2 draws its two notes under itself: the rows of L2 belong to them,
     // and the note of L1 never writes over them nor sits beside L2.
     for name in ["under-rows.tiza", "under-rows-long.tiza"] {
@@ -985,7 +985,7 @@ fn r3_a_note_continues_only_on_rows_no_other_line_owns() {
 }
 
 #[test]
-fn r3_a_block_never_starts_on_the_top_row_of_the_next_lines_box() {
+fn a_block_never_starts_on_the_top_row_of_the_next_lines_box() {
     for w in (40..=140).step_by(2) {
         let t = render("block-before-box.tiza", w);
         let rows: Vec<&str> = t.lines().collect();

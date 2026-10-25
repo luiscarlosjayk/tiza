@@ -1,4 +1,4 @@
-//! t-090 — Padding around the drawing.
+//! Padding around the drawing.
 //!
 //! Acceptance criteria:
 //! - AC1 Without `padding` in the document the TUI keeps one blank column at
@@ -12,8 +12,8 @@ use crossterm::event::KeyCode;
 use tiza_qa::Live;
 
 #[test]
-fn ac1_default_padding_is_one_column_and_pad_changes_it() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t090-default");
+fn default_padding_is_one_column_and_pad_changes_it() {
+    let live = Live::from_code("fn main() {}\n", "rs", "default");
     let default_first = live.screen(60, 10).lines().next().unwrap().to_string();
     live.command("pad 0 0");
     let bare_first = live.screen(60, 10).lines().next().unwrap().to_string();
@@ -37,8 +37,8 @@ fn ac1_default_padding_is_one_column_and_pad_changes_it() {
 }
 
 #[test]
-fn ac3_margin_labels_keep_a_blank_right_column() {
-    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "t090-right");
+fn margin_labels_keep_a_blank_right_column() {
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "right");
     live.command(
         "note 2 a label long enough to wrap across the margin several times over and over again",
     );
@@ -52,8 +52,8 @@ fn ac3_margin_labels_keep_a_blank_right_column() {
 }
 
 #[test]
-fn ac4_padding_is_clamped_on_small_terminals() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t090-clamp");
+fn padding_is_clamped_on_small_terminals() {
+    let live = Live::from_code("fn main() {}\n", "rs", "clamp");
     live.command("pad 20 40");
     let screen = live.screen(50, 12);
     assert!(screen.contains("fn main"), "code still visible:\n{screen}");

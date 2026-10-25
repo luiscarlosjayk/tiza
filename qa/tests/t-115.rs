@@ -171,7 +171,7 @@ fn ac1_export_sizes_are_bounded_in_the_tui_and_the_cli() {
     );
     assert!(!png.exists());
     // The CLI: same message, non-zero exit, no allocator text.
-    let ex = fixture("ownership/ownership.rs.tiza");
+    let ex = fixture("shared/ownership/ownership.rs.tiza");
     let out = tiza(&[
         "render",
         ex.to_str().unwrap(),

@@ -1,4 +1,4 @@
-//! t-053 — Render snapshots with ratatui's TestBackend and insta.
+//! Render snapshots with ratatui's TestBackend and insta.
 //!
 //! Acceptance criteria:
 //! - AC1 Every annotation kind (highlight, mark, box, arrow between lines and
@@ -34,49 +34,49 @@ fn snap(name: &str, live: &Live, cols: u16, rows: u16) {
 }
 
 #[test]
-fn ac1_every_annotation_kind() {
+fn every_annotation_kind() {
     // ownership: highlights, marks, boxes, arrows (lanes + same line), notes, spotlights, callout below.
     for step in [1u32, 2, 3, 5, 7] {
         let live = open(
-            "ownership/ownership.rs.tiza",
-            &format!("t053-own-{step}"),
+            "shared/ownership/ownership.rs.tiza",
+            &format!("own-{step}"),
             step,
         );
         snap(&format!("ownership-step{step}-100x30"), &live, 100, 30);
     }
-    let live = open("ownership/ownership.rs.tiza", "t053-own-narrow", 5);
+    let live = open("shared/ownership/ownership.rs.tiza", "own-narrow", 5);
     snap("ownership-step5-60x20", &live, 60, 20);
     // callouts in the margin and below, labels beside the block
-    let live = open("t-092/callouts.tiza", "t053-callout-margin", 1);
+    let live = open("render/callouts/callouts.tiza", "callout-margin", 1);
     snap("callout-margin-114x14", &live, 114, 14);
-    let live = open("t-092/callouts.tiza", "t053-callout-below", 3);
+    let live = open("render/callouts/callouts.tiza", "callout-below", 3);
     snap("callout-below-80x20", &live, 80, 20);
     // every arrow and border style
-    let live = open("t-094/arrows.tiza", "t053-arrows", 1);
+    let live = open("render/arrow_styles/arrows.tiza", "arrows", 1);
     snap("arrow-styles-90x24", &live, 90, 24);
-    let live = open("t-095/borders.tiza", "t053-borders", 1);
+    let live = open("render/border_styles/borders.tiza", "borders", 1);
     snap("border-styles-70x30", &live, 70, 30);
 }
 
 #[test]
-fn ac2_modes_themes_and_states() {
-    let live = open("ownership/ownership.rs.tiza", "t053-step0", 0);
+fn modes_themes_and_states() {
+    let live = open("shared/ownership/ownership.rs.tiza", "step0", 0);
     snap("ownership-step0-100x30", &live, 100, 30);
-    let live = open("ownership/ownership.rs.tiza", "t053-present", 3);
+    let live = open("shared/ownership/ownership.rs.tiza", "present", 3);
     live.keys(&[KeyCode::Char('P')]);
     snap("ownership-step3-presentation-100x30", &live, 100, 30);
-    let live = open("ownership/ownership.rs.tiza", "t053-light", 3);
+    let live = open("shared/ownership/ownership.rs.tiza", "light", 3);
     live.command("theme light");
     snap("ownership-step3-light-100x30", &live, 100, 30);
-    let live = open("ownership/ownership.rs.tiza", "t053-vline", 3);
+    let live = open("shared/ownership/ownership.rs.tiza", "vline", 3);
     live.with(|app| app.cursor_line = 15);
     live.keys(&[KeyCode::Char('V'), KeyCode::Char('j'), KeyCode::Char('j')]);
     snap("ownership-step3-vline-100x30", &live, 100, 30);
-    let live = open("ownership/ownership.rs.tiza", "t053-tab", 3);
+    let live = open("shared/ownership/ownership.rs.tiza", "tab", 3);
     live.keys(&[KeyCode::Tab, KeyCode::Tab]);
     snap("ownership-step3-tab-selected-100x30", &live, 100, 30);
     // The badge needs what the example no longer has at 80 columns:
     // labels cut or code clipped. Its own copy of the example as it was.
-    let live = open("t-053/ownership.rs.tiza", "t053-small", 3);
+    let live = open("render/frame_snapshots/ownership.rs.tiza", "small", 3);
     snap("ownership-step3-small-80x24", &live, 80, 24);
 }

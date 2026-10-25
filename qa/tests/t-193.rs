@@ -379,7 +379,11 @@ fn rev_ref_with_moves_applied_is_refused_when_it_would_change_the_code() {
     let dir = scratch("t193-ref-step");
     let moves = "ownership-moves.rs.tiza";
     std::fs::copy(tiza_qa::example(moves), dir.join(moves)).unwrap();
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
     let path = dir.join("ownership-moves.rs.tiza");
     let doc = tiza_core::fs::load_document(&path).unwrap();
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));

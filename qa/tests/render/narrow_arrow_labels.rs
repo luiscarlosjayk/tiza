@@ -1,4 +1,4 @@
-//! t-116 — Narrow mode: arrow labels attached to the arrowhead instead of
+//! Narrow mode: arrow labels attached to the arrowhead instead of
 //! orphaned under the line.
 //!
 //! Acceptance criteria:
@@ -9,18 +9,22 @@
 //! - AC2 Marks keep glyph + legend, notes keep `┆`; only arrow labels change.
 //! - AC3 A label inside a box range stays tied to its arrow and never touches
 //!   the box border.
-//! - AC4 Wide mode is unchanged (t-053 snapshots at ≥ 100 columns).
+//! - AC4 Wide mode is unchanged (the frame snapshots at ≥ 100 columns).
 //! - AC5 This file, with the ownership example at 80 and 60 columns (its
-//!   copy from then in `qa/fixtures/t-116/`: the example changed later).
+//!   copy from then in `qa/fixtures/render/narrow_arrow_labels/`: the example changed later).
 
 use serde_json::json;
 use tiza_core::layout::{LayoutOptions, layout};
 use tiza_qa::{Live, fixture};
 
 fn ownership() -> tiza_core::Document {
-    tiza_core::fs::open(fixture("t-116/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document
+    tiza_core::fs::open(
+        fixture("render/narrow_arrow_labels/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document
 }
 
 fn text(doc: &tiza_core::Document, width: usize, step: u32) -> String {
@@ -38,7 +42,7 @@ fn text(doc: &tiza_core::Document, width: usize, step: u32) -> String {
 }
 
 #[test]
-fn ac1_ac3_ac5_labels_sit_beside_the_arrowhead_at_80_and_60_columns() {
+fn labels_sit_beside_the_arrowhead_at_80_and_60_columns() {
     let doc = ownership();
     for width in [80usize, 60] {
         let t = text(&doc, width, 7);
@@ -78,7 +82,7 @@ fn ac1_ac3_ac5_labels_sit_beside_the_arrowhead_at_80_and_60_columns() {
 }
 
 #[test]
-fn ac1_a_label_that_does_not_fit_goes_below_with_the_glyph() {
+fn a_label_that_does_not_fit_goes_below_with_the_glyph() {
     let mut doc = ownership();
     let id = doc
         .annotations
@@ -110,7 +114,7 @@ fn ac1_a_label_that_does_not_fit_goes_below_with_the_glyph() {
 }
 
 #[test]
-fn corner_two_arrows_into_one_line_follow_each_other() {
+fn two_arrows_into_one_line_follow_each_other() {
     // A long line keeps the margin under 14 columns (narrow mode) while
     // the short target line leaves room beside its code.
     let mut doc = tiza_core::Document::from_code(
@@ -143,7 +147,7 @@ fn corner_two_arrows_into_one_line_follow_each_other() {
 }
 
 #[test]
-fn ac4_wide_mode_and_the_tui_agree() {
+fn wide_mode_and_the_tui_agree() {
     let doc = ownership();
     let wide = text(&doc, 120, 7);
     assert!(
@@ -156,7 +160,7 @@ fn ac4_wide_mode_and_the_tui_agree() {
     );
     // The TUI at 80 columns shows the same attached label (presentation and
     // normal mode).
-    let dir = tiza_qa::scratch("t116-live");
+    let dir = tiza_qa::scratch("live");
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 7}));
     let s = live.screen(80, 40);

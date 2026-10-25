@@ -40,8 +40,16 @@ fn run(
     after: &[u8],
 ) -> String {
     let dir = scratch(name);
-    std::fs::copy(fixture("ownership/ownership.rs.tiza"), dir.join("doc.tiza")).unwrap();
-    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs.tiza"),
+        dir.join("doc.tiza"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
     let body = r##"
 import json
 binary, cwd, args, seed, typed, delay, after, want = sys.argv[1:9]
@@ -245,8 +253,16 @@ fn rev_an_early_key_that_quits_ends_them() {
     // saved (`x` would delete the selected annotation, autosaved).
     for (name, seed) in [("ctrl-c", b"\x03n\tx".as_slice()), ("q", b"qn\tx")] {
         let dir = scratch(&format!("t204-quit-{name}"));
-        std::fs::copy(fixture("ownership/ownership.rs.tiza"), dir.join("doc.tiza")).unwrap();
-        std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
+        std::fs::copy(
+            fixture("shared/ownership/ownership.rs.tiza"),
+            dir.join("doc.tiza"),
+        )
+        .unwrap();
+        std::fs::copy(
+            fixture("shared/ownership/ownership.rs"),
+            dir.join("ownership.rs"),
+        )
+        .unwrap();
         let before = std::fs::read(dir.join("doc.tiza")).unwrap();
         let body = r##"
 binary, cwd, seed = sys.argv[1], sys.argv[2], bytes.fromhex(sys.argv[3])

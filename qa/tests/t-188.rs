@@ -1013,7 +1013,7 @@ fn review2_a_later_range_takes_the_lines_inserted_inside() {
 fn review2_refusals_name_what_is_lost_and_why() {
     let dir = examples_copy("messages");
     for f in ["ownership.rs.tiza", "ownership.rs"] {
-        std::fs::copy(fixture(&format!("ownership/{f}")), dir.join(f)).unwrap();
+        std::fs::copy(fixture(&format!("shared/ownership/{f}")), dir.join(f)).unwrap();
     }
     let live = open(&dir.join("ownership.rs.tiza"));
     let a4 = ann(&get(&live), "a4");

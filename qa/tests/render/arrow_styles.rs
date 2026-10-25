@@ -1,4 +1,4 @@
-//! t-094 — Arrow styles: stroke, corners and heads (Figma-like, cell-grid version).
+//! Arrow styles: stroke, corners and heads (Figma-like, cell-grid version).
 //!
 //! Acceptance criteria:
 //! - AC1 `stroke`: solid (default), dashed (╌╎), dotted (┄┆), thick (━┃), double (═║);
@@ -6,7 +6,7 @@
 //! - AC2 `route`: rounded (╭╰, default) or sharp (┌└).
 //! - AC3 `heads.start` / `heads.end`: none | arrow | dot | bar | open; default
 //!   start none, end arrow; none+none is a plain connector. Same-line arrows too.
-//! - AC4 (amended in t-091, 2026-10-17) Where a stub crosses another arrow's
+//! - AC4 (amended on 2026-10-17) Where a stub crosses another arrow's
 //!   rail it breaks for one cell and the rail shows through (the arrow passes
 //!   under); crossings with a box border pick the junction by the two
 //!   strokes (┼ ┿ ╂ ╋ ╪ ╫ ╬).
@@ -22,7 +22,7 @@ use tiza_qa::{Live, fixture, tiza_ok};
 fn render() -> String {
     tiza_ok(&[
         "render",
-        fixture("t-094/arrows.tiza").to_str().unwrap(),
+        fixture("render/arrow_styles/arrows.tiza").to_str().unwrap(),
         "--width",
         "90",
         "--out",
@@ -38,7 +38,7 @@ fn line(out: &str, n: usize) -> String {
 }
 
 #[test]
-fn ac1_ac2_strokes_and_corners() {
+fn strokes_and_corners() {
     let out = render();
     assert!(
         line(&out, 2).contains("╭─"),
@@ -89,7 +89,7 @@ fn ac1_ac2_strokes_and_corners() {
 }
 
 #[test]
-fn ac3_heads_at_both_ends_and_plain_connector() {
+fn heads_at_both_ends_and_plain_connector() {
     let out = render();
     assert!(
         line(&out, 4).contains("▶"),
@@ -125,7 +125,7 @@ fn ac3_heads_at_both_ends_and_plain_connector() {
 }
 
 #[test]
-fn ac4_stubs_pass_under_rails_and_box_borders_get_junctions() {
+fn stubs_pass_under_rails_and_box_borders_get_junctions() {
     let out = render();
     let l3 = line(&out, 3);
     assert!(
@@ -137,7 +137,7 @@ fn ac4_stubs_pass_under_rails_and_box_borders_get_junctions() {
         l12.contains("━┃━") && !l12.contains('╋'),
         "thick under thick: {l12}"
     );
-    let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "t094-junction");
+    let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "junction");
     live.command("arrow 2 5 x stroke=thick");
     live.command("arrow 1 3 y stroke=double heads=none,none");
     let s = live.with(|app| app.layout(60).canvas.to_plain_text());
@@ -146,7 +146,7 @@ fn ac4_stubs_pass_under_rails_and_box_borders_get_junctions() {
         "thick horizontal under a double rail:\n{s}"
     );
     // A box border is not a rail: the stub crosses it with a junction glyph.
-    let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "t094-box-junction");
+    let live = Live::from_code("a\nb\nc\nd\ne\n", "rs", "box-junction");
     live.command("box 2-4 b");
     live.command("arrow 3 5 z");
     let s = live.with(|app| app.layout(60).canvas.to_plain_text());
@@ -154,11 +154,11 @@ fn ac4_stubs_pass_under_rails_and_box_borders_get_junctions() {
 }
 
 #[test]
-fn ac5_commands_socket_and_mcp_set_styles() {
+fn commands_socket_and_mcp_set_styles() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    takes(s);\n}\nfn takes(s: i32) {}\n",
         "rs",
-        "t094-cmd",
+        "cmd",
     );
     live.command("arrow 2:s 5:s move stroke=dashed heads=dot,bar route=sharp");
     assert!(

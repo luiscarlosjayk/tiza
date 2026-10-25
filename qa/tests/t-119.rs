@@ -86,7 +86,7 @@ fn pty_run(dir: &std::path::Path, doc: &std::path::Path, first: &str, second: &s
 
 fn plain_source(dir: &std::path::Path) -> std::path::PathBuf {
     let src = dir.join("plain.rs");
-    std::fs::copy(fixture("ownership/ownership.rs"), &src).unwrap();
+    std::fs::copy(fixture("shared/ownership/ownership.rs"), &src).unwrap();
     src
 }
 
@@ -146,9 +146,13 @@ fn ac1_the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
 fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
     // A document that names a theme is not asked about: no `·auto`, and a
     // host answer does not move it.
-    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     assert_eq!(doc.theme, Some(ThemeName::Dark));
     let dir = scratch("t119-fixed");
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -200,9 +204,13 @@ fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
 
 #[test]
 fn ac2_terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
-    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let dir = scratch("t119-terminal");
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 7}));
@@ -244,7 +252,9 @@ fn ac2_terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
     // The CLI: `render --theme terminal` says so and paints dark.
     let r = tiza(&[
         "render",
-        fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
         "--theme",
         "terminal",
         "--format",
@@ -266,7 +276,7 @@ fn ac3_overrides_built_in_then_config_then_document_then_command() {
         "[theme]\naccent = \"#a6e3a1\"\nmuted = \"#202020\"\n[theme.light]\naccent = \"#b7410e\"\n",
     )
     .unwrap();
-    let ex = fixture("ownership/ownership.rs.tiza");
+    let ex = fixture("shared/ownership/ownership.rs.tiza");
     let svg = |args: &[&str]| {
         let r = std::process::Command::new(tiza_qa::bin())
             .args([
@@ -301,7 +311,7 @@ fn ac3_overrides_built_in_then_config_then_document_then_command() {
     let mut doc: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&ex).unwrap()).unwrap();
     doc["theme_overrides"] = json!({"accent": "#89b4fa"});
-    doc["code"] = json!({"file": fixture("ownership/ownership.rs").to_str().unwrap()});
+    doc["code"] = json!({"file": fixture("shared/ownership/ownership.rs").to_str().unwrap()});
     let path = dir.join("doc.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let r = std::process::Command::new(tiza_qa::bin())
@@ -426,7 +436,7 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
         let r = std::process::Command::new("python3")
             .args([
                 "scripts/legibility.py",
-                "qa/fixtures/ownership/ownership.rs.tiza",
+                "qa/fixtures/shared/ownership/ownership.rs.tiza",
                 "--step",
                 "7",
                 "--theme-file",
@@ -452,7 +462,9 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
     // The CLI loads it too.
     let txt = tiza_ok(&[
         "render",
-        fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
+        fixture("shared/ownership/ownership.rs.tiza")
+            .to_str()
+            .unwrap(),
         "--theme-file",
         file.to_str().unwrap(),
         "--format",

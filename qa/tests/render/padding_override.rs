@@ -1,4 +1,4 @@
-//! t-090 (follow-up from the QA agent) — `--padding` is a session override.
+//! `--padding` is a session override.
 //!
 //! - AC1 The override is shown but never saved; `:pad` sets the document and clears it.
 //! - AC2 `:pad` reports clamping when the terminal is too small.
@@ -6,8 +6,8 @@
 use tiza_qa::{Live, scratch};
 
 #[test]
-fn ac1_override_not_saved_and_cleared_by_pad() {
-    let dir = scratch("t090b");
+fn override_not_saved_and_cleared_by_pad() {
+    let dir = scratch("padding_override");
     let save = dir.join("doc.tiza");
     let live = Live::open(
         tiza_core::Document::from_code("fn main() {}\n", "rs", None),
@@ -35,8 +35,8 @@ fn ac1_override_not_saved_and_cleared_by_pad() {
 }
 
 #[test]
-fn ac2_pad_reports_clamping() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t090b-clamp");
+fn pad_reports_clamping() {
+    let live = Live::from_code("fn main() {}\n", "rs", "clamp");
     live.screen(100, 30);
     live.command("pad 30 60");
     let (m, err) = live.message().unwrap();

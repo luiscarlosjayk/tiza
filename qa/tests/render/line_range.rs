@@ -1,4 +1,4 @@
-//! t-008 — Opening a file with a line range.
+//! Opening a file with a line range.
 //!
 //! Acceptance criteria:
 //! - AC1 `file.rs:12-48`, `file.rs:12..48` and `file.rs:12` open that range with the file's numbering.
@@ -7,7 +7,7 @@
 use tiza_qa::{example, tiza, tiza_ok};
 
 #[test]
-fn ac1_range_syntaxes() {
+fn range_syntaxes() {
     let f = example("src/stack.rs");
     for spec in [
         format!("{}:7-9", f.display()),
@@ -25,7 +25,7 @@ fn ac1_range_syntaxes() {
 }
 
 #[test]
-fn ac2_bad_and_clamped_ranges() {
+fn bad_and_clamped_ranges() {
     let f = example("src/stack.rs");
     let out = tiza(&["render", &format!("{}:30-7", f.display()), "--out", "-"]);
     assert!(!out.status.success());
@@ -40,7 +40,7 @@ fn ac2_bad_and_clamped_ranges() {
 }
 
 #[test]
-fn qa_malformed_numeric_ranges_are_errors() {
+fn malformed_numeric_ranges_are_errors() {
     let f = example("src/stack.rs");
     for bad in ["12-", "-5", "12..", "1-2-3", "0"] {
         let out = tiza(&["render", &format!("{}:{bad}", f.display()), "--out", "-"]);

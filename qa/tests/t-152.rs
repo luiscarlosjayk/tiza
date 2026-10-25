@@ -1016,11 +1016,11 @@ fn ids_matcher_and_bench_exception() {
         Vec::<usize>::new()
     );
     assert_eq!(ticket_ids("// t-123"), vec![3]);
-    let line = r#"ms = frame_median("t-191", "ac6")"#;
+    let line = r#"ms = frame_median("t-152", "ac6")"#;
     let at = ticket_ids(line)[0];
     assert!(allowed("scripts/bench.py", line, at));
     assert!(!allowed("scripts/other.py", line, at));
-    let bare = "# see t-191";
+    let bare = "# see t-152";
     assert!(!allowed("scripts/bench.py", bare, ticket_ids(bare)[0]));
     let none = r#"frame_median("t-999")"#;
     assert!(!root().join("qa/tests/t-999.rs").exists());

@@ -1,4 +1,4 @@
-//! t-138 — TypeScript highlighting is ~10x slower per line than Rust
+//! TypeScript highlighting is ~10x slower per line than Rust
 //! (3,000-line file: 1.65 s to render).
 //!
 //! Acceptance criteria:
@@ -82,7 +82,7 @@ fn sequential(code: &[String], lang: &str) -> Vec<Vec<Segment>> {
 }
 
 #[test]
-fn ac2_chunked_output_is_the_sequential_one_for_ts_tsx_js_and_rust() {
+fn chunked_output_is_the_sequential_one_for_ts_tsx_js_and_rust() {
     let ts = typescript(800);
     let rs = rust(1_200);
     for (code, lang) in [(&ts, "ts"), (&ts, "tsx"), (&ts, "js"), (&rs, "rs")] {
@@ -100,7 +100,7 @@ fn ac2_chunked_output_is_the_sequential_one_for_ts_tsx_js_and_rust() {
 }
 
 #[test]
-fn ac2_boundaries_land_at_top_level_on_ordinary_typescript() {
+fn boundaries_land_at_top_level_on_ordinary_typescript() {
     // The generated file returns to the top level after every `}` + blank
     // line, so no speculative chunk should be thrown away.
     let ts = typescript(1_200);
@@ -116,7 +116,7 @@ fn ac2_boundaries_land_at_top_level_on_ordinary_typescript() {
 }
 
 #[test]
-fn corner_boundary_inside_a_block_comment_is_redone_and_still_exact() {
+fn boundary_inside_a_block_comment_is_redone_and_still_exact() {
     // A block comment that spans every boundary, full of blank lines and
     // non-indented lines that look like top level.
     let mut code = vec!["/*".to_string()];
@@ -136,7 +136,7 @@ fn corner_boundary_inside_a_block_comment_is_redone_and_still_exact() {
 }
 
 #[test]
-fn corner_template_literal_and_python_string_across_boundaries() {
+fn template_literal_and_python_string_across_boundaries() {
     let mut ts = vec!["const sql = `".to_string()];
     for i in 0..900 {
         ts.push(if i % 3 == 0 {
@@ -164,7 +164,7 @@ fn corner_template_literal_and_python_string_across_boundaries() {
 }
 
 #[test]
-fn corner_minified_single_line_and_tiny_files_stay_on_one_thread() {
+fn minified_single_line_and_tiny_files_stay_on_one_thread() {
     let line: String = (0..400)
         .map(|i| {
             format!("var a{i}=function(b){{return b.map(function(c){{return c*{i}+\"x\"}})}};")
@@ -185,7 +185,7 @@ fn corner_minified_single_line_and_tiny_files_stay_on_one_thread() {
 }
 
 #[test]
-fn corner_plain_text_is_never_split() {
+fn plain_text_is_never_split() {
     let code: Vec<String> = (0..2_000).map(|i| format!("line {i}")).collect();
     let (got, chunking) = highlight_chunked(&code, "txt", THEME, 4);
     assert_eq!(chunking.starts, vec![0]);
@@ -193,7 +193,7 @@ fn corner_plain_text_is_never_split() {
 }
 
 #[test]
-fn ac2_thread_count_follows_the_file_size() {
+fn thread_count_follows_the_file_size() {
     assert_eq!(default_threads(0), 1);
     assert_eq!(default_threads(MIN_CHUNK_LINES * 2 - 1), 1);
     let cpus = std::thread::available_parallelism().map_or(1, |n| n.get());

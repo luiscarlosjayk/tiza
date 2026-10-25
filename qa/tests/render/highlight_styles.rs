@@ -1,4 +1,4 @@
-//! t-096 — Highlight styles: fill, underline, brackets, strike.
+//! Highlight styles: fill, underline, brackets, strike.
 //!
 //! Acceptance criteria:
 //! - AC1 Highlights and marks accept `emphasis`: fill (default tint),
@@ -33,8 +33,8 @@ fn emphasis_of(live: &Live, id: &str) -> Emphasis {
 }
 
 #[test]
-fn step1_underline_row_and_brackets_with_room() {
-    let live = Live::from_code(CODE, "rs", "t096-s1");
+fn underline_row_and_brackets_with_room() {
+    let live = Live::from_code(CODE, "rs", "s1");
     live.command("hl 3:takes(s) emphasis=underline");
     live.command("hl 4:&s hooked emphasis=brackets");
     let t = text(&live);
@@ -53,8 +53,8 @@ fn step1_underline_row_and_brackets_with_room() {
 }
 
 #[test]
-fn step2_glued_brackets_fall_back_to_the_row_below() {
-    let live = Live::from_code(CODE, "rs", "t096-s2");
+fn glued_brackets_fall_back_to_the_row_below() {
+    let live = Live::from_code(CODE, "rs", "s2");
     live.command("hl 3:s emphasis=brackets");
     let t = text(&live);
     assert!(t.contains("takes(s);"), "code intact: {t}");
@@ -74,8 +74,8 @@ fn step2_glued_brackets_fall_back_to_the_row_below() {
 }
 
 #[test]
-fn step3_strike_in_text_and_png() {
-    let live = Live::from_code(CODE, "rs", "t096-s3");
+fn strike_in_text_and_png() {
+    let live = Live::from_code(CODE, "rs", "s3");
     live.command("hl 5:println! gone emphasis=strike");
     let t = text(&live);
     assert!(
@@ -83,7 +83,7 @@ fn step3_strike_in_text_and_png() {
         "{t}"
     );
     assert!(t.contains("(\"{n}\");"), "only the span is struck: {t}");
-    let dir = scratch("t096-png");
+    let dir = scratch("png");
     let doc = dir.join("doc.tiza");
     live.command(&format!("w {}", doc.display()));
     let png = dir.join("strike.png");
@@ -109,8 +109,8 @@ fn step3_strike_in_text_and_png() {
 }
 
 #[test]
-fn step4_set_emphasis_and_errors() {
-    let live = Live::from_code(CODE, "rs", "t096-s4");
+fn set_emphasis_and_errors() {
+    let live = Live::from_code(CODE, "rs", "s4");
     live.command("hl 3:takes(s) emphasis=underline");
     assert_eq!(emphasis_of(&live, "a1"), Emphasis::Underline);
     live.command("set a1 emphasis=fill");
@@ -140,8 +140,8 @@ fn step4_set_emphasis_and_errors() {
 }
 
 #[test]
-fn step5_socket_mcp_and_serialization() {
-    let live = Live::from_code(CODE, "rs", "t096-s5");
+fn socket_mcp_and_serialization() {
+    let live = Live::from_code(CODE, "rs", "s5");
     let v = live.api_ok(
         "annotation.add",
         json!({"type": "highlight", "at": {"line": 3, "find": "takes"}, "emphasis": "underline"}),
@@ -193,8 +193,8 @@ fn step5_socket_mcp_and_serialization() {
 }
 
 #[test]
-fn step6_two_underlines_share_one_row_and_marks_keep_their_legend() {
-    let live = Live::from_code(CODE, "rs", "t096-s6");
+fn two_underlines_share_one_row_and_marks_keep_their_legend() {
+    let live = Live::from_code(CODE, "rs", "s6");
     live.command("hl 2:let emphasis=underline");
     live.command("mark move 2:s emphasis=underline");
     let t = text(&live);
@@ -215,9 +215,9 @@ fn step6_two_underlines_share_one_row_and_marks_keep_their_legend() {
 }
 
 #[test]
-fn corner_edges_dimmed_and_reanchor() {
+fn edges_dimmed_and_reanchor() {
     // Span at column 0 and at the end of the line: bracket sides go below.
-    let live = Live::from_code("abc def\n", "rs", "t096-edges");
+    let live = Live::from_code("abc def\n", "rs", "edges");
     live.command("hl 1:abc emphasis=brackets");
     live.command("hl 1:def emphasis=brackets");
     let t = text(&live);
@@ -236,12 +236,8 @@ fn corner_edges_dimmed_and_reanchor() {
 }
 
 #[test]
-fn corner_strike_keeps_grapheme_clusters_and_box_bottom_after_under_row() {
-    let live = Live::from_code(
-        "fn f() {\n    let x = \"é👍\";\n}\n",
-        "rs",
-        "t096-graphemes",
-    );
+fn strike_keeps_grapheme_clusters_and_box_bottom_after_under_row() {
+    let live = Live::from_code("fn f() {\n    let x = \"é👍\";\n}\n", "rs", "graphemes");
     live.command("hl 2:\"é👍\" emphasis=strike");
     let t = text(&live);
     assert!(t.contains("é\u{336}"), "{t}");
@@ -259,13 +255,13 @@ fn corner_strike_keeps_grapheme_clusters_and_box_bottom_after_under_row() {
 }
 
 #[test]
-fn rework_softened_glyph_colour_and_legible_struck_text() {
+fn softened_glyph_colour_and_legible_struck_text() {
     use tiza_core::layout::{EMPHASIS_GLYPH_OPACITY, UNDERLINE_GLYPH};
     use tiza_core::theme::{MIN_CODE_CONTRAST, contrast};
     // Second review: 0.55 read too soft, the full colour too loud; the
     // glyphs sit in between, and struck text (still code) keeps 4.5:1.
     assert!((0.7..0.9).contains(&EMPHASIS_GLYPH_OPACITY));
-    let live = Live::from_code(CODE, "rs", "t096-rework");
+    let live = Live::from_code(CODE, "rs", "rework");
     live.command("hl 3:takes(s) emphasis=underline");
     live.command("hl 5:println! emphasis=strike");
     live.command("set a1 color=red");
