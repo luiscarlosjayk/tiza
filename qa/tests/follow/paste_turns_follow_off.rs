@@ -1,4 +1,4 @@
-//! t-193 — A paste turns follow off with a notice.
+//! A paste turns follow off with a notice.
 //!
 //! Acceptance criteria:
 //! - AC1 A paste while following turns follow off and says so once
@@ -79,7 +79,7 @@ fn wait_reloads(live: &Live, n: u64) {
 }
 
 /// Quiet time after which "nothing happened" is believed (several times
-/// the debounce plus the worst event latency seen on CI), as in t-011.
+/// the debounce plus the worst event latency seen on CI), as in the reload on save tests.
 fn settle() {
     std::thread::sleep(Duration::from_millis(700));
 }
@@ -91,8 +91,8 @@ fn save(path: &Path, content: &str) {
 }
 
 #[test]
-fn ac1_ac2_a_paste_turns_follow_off_and_a_save_changes_nothing() {
-    let (live, src) = followed("t193-ac1", CODE);
+fn a_paste_turns_follow_off_and_a_save_changes_nothing() {
+    let (live, src) = followed("ac1", CODE);
     assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
     live.with(|app| app.replace_code(PASTED).unwrap());
     let (msg, err) = live.message().unwrap();
@@ -125,8 +125,8 @@ fn ac1_ac2_a_paste_turns_follow_off_and_a_save_changes_nothing() {
 }
 
 #[test]
-fn ac3_follow_on_reloads_the_file_and_u_gives_the_paste_back() {
-    let (live, src) = followed("t193-ac3", CODE);
+fn follow_on_reloads_the_file_and_u_gives_the_paste_back() {
+    let (live, src) = followed("ac3", CODE);
     live.command("note 2 the string");
     live.with(|app| app.replace_code(PASTED).unwrap());
     save(&src, &CODE.replace("takes", "gives"));
@@ -167,8 +167,8 @@ fn ac3_follow_on_reloads_the_file_and_u_gives_the_paste_back() {
 }
 
 #[test]
-fn ac4_undoing_the_paste_leaves_follow_off() {
-    let (live, src) = followed("t193-ac4", CODE);
+fn undoing_the_paste_leaves_follow_off() {
+    let (live, src) = followed("ac4", CODE);
     live.with(|app| app.replace_code(PASTED).unwrap());
     live.with(|app| app.undo());
     assert_eq!(code(&live), lines(CODE));
@@ -195,8 +195,8 @@ fn ac4_undoing_the_paste_leaves_follow_off() {
 }
 
 #[test]
-fn corner_a_paste_with_follow_off_says_nothing_new() {
-    let (live, _) = followed("t193-off", CODE);
+fn a_paste_with_follow_off_says_nothing_new() {
+    let (live, _) = followed("off", CODE);
     live.command("follow off");
     live.with(|app| app.replace_code(PASTED).unwrap());
     let (msg, _) = live.message().unwrap();
@@ -205,8 +205,8 @@ fn corner_a_paste_with_follow_off_says_nothing_new() {
 }
 
 #[test]
-fn corner_a_paste_of_what_the_file_holds_keeps_following() {
-    let (live, src) = followed("t193-same", CODE);
+fn a_paste_of_what_the_file_holds_keeps_following() {
+    let (live, src) = followed("same", CODE);
     live.with(|app| app.replace_code(CODE).unwrap());
     let (msg, _) = live.message().unwrap();
     assert!(!msg.contains("follow off"), "{msg}");
@@ -218,8 +218,8 @@ fn corner_a_paste_of_what_the_file_holds_keeps_following() {
 }
 
 #[test]
-fn step4_moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
-    let (live, _) = followed("t193-moves", CODE);
+fn moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
+    let (live, _) = followed("moves", CODE);
     live.api_ok(
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "3",
@@ -248,8 +248,8 @@ fn step4_moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
 }
 
 #[test]
-fn rev_redo_of_the_reload_and_two_undos_leave_no_stale_reason() {
-    let (live, src) = followed("t193-redo", CODE);
+fn redo_of_the_reload_and_two_undos_leave_no_stale_reason() {
+    let (live, src) = followed("redo", CODE);
     live.with(|app| app.replace_code(PASTED).unwrap());
     save(&src, &CODE.replace("takes", "gives"));
     live.command("follow on");
@@ -316,8 +316,8 @@ fn live_and_saved(live: &Live, dir: &Path) -> (String, String) {
 }
 
 #[test]
-fn rev_link_or_ref_after_a_paste_shows_the_file_as_the_saved_document_does() {
-    let (live, src) = followed("t193-ref", CODE);
+fn link_or_ref_after_a_paste_shows_the_file_as_the_saved_document_does() {
+    let (live, src) = followed("ref", CODE);
     let dir = src.parent().unwrap().to_path_buf();
     let other = dir.join("other.rs");
     std::fs::write(&other, "fn other_file() {}\n").unwrap();
@@ -345,10 +345,10 @@ fn rev_link_or_ref_after_a_paste_shows_the_file_as_the_saved_document_does() {
 }
 
 #[test]
-fn rev_an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
+fn an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
     // Code from stdin (embedded), then referenced to a file with the same
     // code, followed; `u` takes back the note and with it the reference.
-    let dir = scratch("t193-embedded");
+    let dir = scratch("embedded");
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     std::fs::write(&src, CODE).unwrap();
     let live = Live::open(
@@ -375,8 +375,8 @@ fn rev_an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
 }
 
 #[test]
-fn rev_ref_with_moves_applied_is_refused_when_it_would_change_the_code() {
-    let dir = scratch("t193-ref-step");
+fn ref_with_moves_applied_is_refused_when_it_would_change_the_code() {
+    let dir = scratch("ref-step");
     let moves = "ownership-moves.rs.tiza";
     std::fs::copy(tiza_qa::example(moves), dir.join(moves)).unwrap();
     std::fs::copy(

@@ -243,9 +243,9 @@ fn save_then_step_0(live: &Live, src: &Path, tiza: &Path) {
 // ---------- AC1, AC2: every way of turning it on, at step 1 ----------
 
 #[test]
-fn ac1_ac2_follow_on_at_step_1_waits_and_says_so() {
+fn follow_on_at_step_1_waits_and_says_so() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-cmd");
+    let (live, src, tiza) = opened("cmd");
     live.command("follow on");
     let said = format!("following main.rs ({WAITING})");
     assert_eq!(message(&live), said);
@@ -263,9 +263,9 @@ fn ac1_ac2_follow_on_at_step_1_waits_and_says_so() {
 }
 
 #[test]
-fn ac1_ac2_follow_set_at_step_1_waits_and_says_so() {
+fn follow_set_at_step_1_waits_and_says_so() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-api");
+    let (live, src, tiza) = opened("api");
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     let said = format!("following main.rs ({WAITING})");
     assert_eq!(r["message"], said, "{r}");
@@ -277,9 +277,9 @@ fn ac1_ac2_follow_set_at_step_1_waits_and_says_so() {
 }
 
 #[test]
-fn ac1_mcp_set_follow_at_step_1_waits() {
+fn mcp_set_follow_at_step_1_waits() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-mcp");
+    let (live, src, tiza) = opened("mcp");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("set_follow", json!({"enabled": true}));
     assert!(!err, "{text}");
@@ -289,9 +289,9 @@ fn ac1_mcp_set_follow_at_step_1_waits() {
 }
 
 #[test]
-fn ac1_at_step_0_as_before() {
+fn at_step_0_as_before() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-step0");
+    let (live, src, tiza) = opened("step0");
     live.command("step 0");
     live.command("follow on");
     assert_eq!(message(&live), "following main.rs");
@@ -306,11 +306,11 @@ fn ac1_at_step_0_as_before() {
 }
 
 #[test]
-fn ac1_a_change_made_while_follow_was_off_waits_too() {
+fn a_change_made_while_follow_was_off_waits_too() {
     let _watchers = shared();
     // The file changed while follow was off: turning it on at step 1 does
     // not load it there; it waits like a save, and step 0 loads it.
-    let (live, src, tiza) = opened("t212-off-change");
+    let (live, src, tiza) = opened("off-change");
     save(&src, NEW);
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(
@@ -334,10 +334,10 @@ fn ac1_a_change_made_while_follow_was_off_waits_too() {
 // ---------- corner cases ----------
 
 #[test]
-fn corner_step_0_never_has_a_patch() {
+fn step_0_never_has_a_patch() {
     let _watchers = shared();
     // So a save always loads at step 0: a move at step 0 does not load.
-    let (_, _, tiza) = files("t212-step0-patch", false);
+    let (_, _, tiza) = files("step0-patch", false);
     let mut doc = repro(false);
     doc["moves"][0]["at_step"] = json!(0);
     std::fs::write(&tiza, doc.to_string()).unwrap();
@@ -346,9 +346,9 @@ fn corner_step_0_never_has_a_patch() {
 }
 
 #[test]
-fn corner_no_save_writes_nothing() {
+fn no_save_writes_nothing() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-no-save");
+    let (live, src, tiza) = opened("no-save");
     live.with(|app| app.autosave = false);
     let before = std::fs::read(&tiza).unwrap();
     live.command("follow on");
@@ -360,9 +360,9 @@ fn corner_no_save_writes_nothing() {
 }
 
 #[test]
-fn corner_the_file_missing_at_step_1() {
+fn the_file_missing_at_step_1() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-missing");
+    let (live, src, tiza) = opened("missing");
     std::fs::remove_file(&src).unwrap();
     live.command("follow on");
     assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
@@ -386,11 +386,11 @@ fn corner_the_file_missing_at_step_1() {
 }
 
 #[test]
-fn corner_pasted_code_then_step_1_then_follow_on() {
+fn pasted_code_then_step_1_then_follow_on() {
     let _watchers = shared();
     // Pasted over the file at step 0 (follow goes off), then step 1: `:follow
     // on` there waits, and step 0 loads the file over the paste as one undo.
-    let (live, _src, tiza) = opened("t212-paste");
+    let (live, _src, tiza) = opened("paste");
     live.command("step 0");
     live.command("follow on");
     let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
@@ -432,7 +432,7 @@ fn a1_line(live: &Live) -> u32 {
 }
 
 #[test]
-fn rev_a_first_move_at_step_3_loads_at_step_2() {
+fn a_first_move_at_step_3_loads_at_step_2() {
     let _watchers = shared();
     let mut doc = repro(false);
     doc["moves"][0]["at_step"] = json!(3);
@@ -441,7 +441,7 @@ fn rev_a_first_move_at_step_3_loads_at_step_2() {
         {"id": "a1", "step": 1, "type": "note", "line": 1, "text": "one"},
         {"id": "a2", "step": 2, "type": "note", "line": 1, "text": "two"}
     ]);
-    let (live, src, tiza) = opened_doc("t212-step3", doc, OLD);
+    let (live, src, tiza) = opened_doc("step3", doc, OLD);
     live.command("follow on");
     let waits = "waiting: moves applied at step 3; loads at step 2 or earlier";
     assert_eq!(message(&live), format!("following main.rs ({waits})"));
@@ -471,9 +471,9 @@ fn pasted_at_step_1(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn rev_over_a_paste_the_wait_does_not_say_the_file_changed() {
+fn over_a_paste_the_wait_does_not_say_the_file_changed() {
     let _watchers = shared();
-    let (live, tiza) = pasted_at_step_1("t212-paste-words");
+    let (live, tiza) = pasted_at_step_1("paste-words");
     live.with(|app| app.message = None);
     live.command("follow on");
     assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
@@ -491,11 +491,11 @@ fn rev_over_a_paste_the_wait_does_not_say_the_file_changed() {
 }
 
 #[test]
-fn rev_u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
+fn u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
     let _watchers = shared();
     // The paste undone at step 1: the file's code again, a reference, so
     // step 0 has nothing to load (no reload, no undo step that does nothing).
-    let (live, tiza) = pasted_at_step_1("t212-paste-u");
+    let (live, tiza) = pasted_at_step_1("paste-u");
     live.command("follow on");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(base(&live), lines(OLD));
@@ -510,9 +510,9 @@ fn rev_u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
 }
 
 #[test]
-fn rev_the_file_back_unchanged_at_step_1_is_no_change() {
+fn the_file_back_unchanged_at_step_1_is_no_change() {
     let _watchers = shared();
-    let (live, src, tiza) = opened("t212-back-same");
+    let (live, src, tiza) = opened("back-same");
     std::fs::remove_file(&src).unwrap();
     live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(status(&live)["missing"], true);
@@ -552,11 +552,11 @@ fn ranged_paste(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn rev_a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
+fn a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
     let _watchers = shared();
     // At step 1 it waits (the paste stays, embedded with its numbers); step
     // 0 loads the file's lines, numbered from 2, and a1 stays on its text.
-    let (live, tiza) = ranged_paste("t212-range-1");
+    let (live, tiza) = ranged_paste("range-1");
     live.command("step 1");
     live.command("follow on");
     assert_eq!(status(&live)["reason"], WAITING);
@@ -573,9 +573,9 @@ fn rev_a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
 }
 
 #[test]
-fn rev_a_paste_the_file_holds_on_other_lines_at_step_0() {
+fn a_paste_the_file_holds_on_other_lines_at_step_0() {
     let _watchers = shared();
-    let (live, tiza) = ranged_paste("t212-range-0");
+    let (live, tiza) = ranged_paste("range-0");
     live.command("follow on");
     assert_eq!(live.with(|app| app.doc.base_first()), 2);
     assert_eq!(a1_line(&live), 3);
@@ -587,9 +587,9 @@ fn rev_a_paste_the_file_holds_on_other_lines_at_step_0() {
 }
 
 #[test]
-fn rev_follow_set_keeps_an_error_of_its_own_on_the_bar() {
+fn follow_set_keeps_an_error_of_its_own_on_the_bar() {
     let _watchers = shared();
-    let (live, src, _tiza) = opened("t212-utf8");
+    let (live, src, _tiza) = opened("utf8");
     std::fs::write(&src, b"fn main() {\n    \xff\xfe\n}\n").unwrap();
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
@@ -746,16 +746,16 @@ fn pty_repro(name: &str, mode: &str) {
 }
 
 #[test]
-fn ac4_pty_the_repro_with_follow() {
+fn pty_the_repro_with_follow() {
     // Test step 1: `tiza --follow doc.tiza` at the last step.
-    pty_repro("t212-pty-flag", "flag");
+    pty_repro("pty-flag", "flag");
 }
 
 #[test]
-fn ac4_pty_quitting_while_waiting() {
+fn pty_quitting_while_waiting() {
     // `:q` while the save waits: the `.tiza` opens as the screen was (step
     // 1, the old code with the move applied), and the file keeps the save.
-    let (_, dir) = pty_run("t212-pty-quit", "flag", true);
+    let (_, dir) = pty_run("pty-quit", "flag", true);
     let tiza = dir.join("doc.tiza");
     let (rc, report) = check_file(&tiza);
     assert_eq!(rc, 0, "{report}");

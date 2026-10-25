@@ -105,9 +105,9 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 // ---------- AC1 ----------
 
 #[test]
-fn step1_ac1_reopened_after_a_paste_follow_on_reloads_the_file() {
+fn reopened_after_a_paste_follow_on_reloads_the_file() {
     let _w = shared();
-    let (live, _src, tiza) = followed("t207-paste");
+    let (live, _src, tiza) = followed("paste");
     paste(&live);
     let v = saved(&tiza);
     assert_eq!(v["code"], json!(lines(PASTED)), "{v}");
@@ -138,9 +138,9 @@ fn step1_ac1_reopened_after_a_paste_follow_on_reloads_the_file() {
 }
 
 #[test]
-fn ac1_reopened_after_an_undo_follow_on_reloads_the_file() {
+fn reopened_after_an_undo_follow_on_reloads_the_file() {
     let _w = shared();
-    let (live, src, tiza) = followed("t207-undo");
+    let (live, src, tiza) = followed("undo");
     // A highlight on the `1` of `x = 1`: the reload drops it, so it is an
     // undo step.
     live.command("hl 2:1 one");
@@ -164,10 +164,10 @@ fn ac1_reopened_after_an_undo_follow_on_reloads_the_file() {
 }
 
 #[test]
-fn step2_ac1_after_embed_the_message_says_how_to_link() {
+fn after_embed_the_message_says_how_to_link() {
     let _w = shared();
     for pasted_first in [false, true] {
-        let (live, _src, tiza) = followed(&format!("t207-embed-{pasted_first}"));
+        let (live, _src, tiza) = followed(&format!("embed-{pasted_first}"));
         if pasted_first {
             paste(&live);
         }
@@ -248,8 +248,8 @@ fn line_json(out: &str, key: &str) -> Value {
 }
 
 #[test]
-fn step1_ac1_pty_follow_flag_on_the_reopened_file() {
-    let (out, _dir) = pty_follow_flag("t207-pty", true);
+fn pty_follow_flag_on_the_reopened_file() {
+    let (out, _dir) = pty_follow_flag("pty", true);
     let st = line_json(&out, "STATUS");
     assert_eq!(st["enabled"], true, "{st}");
     assert_eq!(line_json(&out, "NOTHING"), false, "{out}");
@@ -258,7 +258,7 @@ fn step1_ac1_pty_follow_flag_on_the_reopened_file() {
     assert_eq!(v["code"], json!({"file": "main.rs"}), "{v}");
     assert!(v.get("follows").is_none(), "{v}");
     // An old file with no `follows`: as before.
-    let (out, _dir) = pty_follow_flag("t207-pty-old", false);
+    let (out, _dir) = pty_follow_flag("pty-old", false);
     assert_eq!(line_json(&out, "STATUS")["enabled"], false, "{out}");
     assert_eq!(line_json(&out, "CODE"), json!(lines(PASTED)), "{out}");
     assert_eq!(line_json(&out, "NOTHING"), true, "{out}");
@@ -267,9 +267,9 @@ fn step1_ac1_pty_follow_flag_on_the_reopened_file() {
 // ---------- Corner cases ----------
 
 #[test]
-fn corner_an_old_file_with_no_follows_is_unchanged() {
+fn an_old_file_with_no_follows_is_unchanged() {
     let _w = shared();
-    let dir = scratch("t207-old");
+    let dir = scratch("old");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     let tiza = dir.join("main.rs.tiza");
     let doc = json!({
@@ -288,9 +288,9 @@ fn corner_an_old_file_with_no_follows_is_unchanged() {
 }
 
 #[test]
-fn corner_follows_beside_a_file_reference_is_not_written_back() {
+fn follows_beside_a_file_reference_is_not_written_back() {
     let _w = shared();
-    let dir = scratch("t207-beside");
+    let dir = scratch("beside");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     std::fs::write(dir.join("other.rs"), SEVEN).unwrap();
     let tiza = dir.join("main.rs.tiza");
@@ -313,9 +313,9 @@ fn corner_follows_beside_a_file_reference_is_not_written_back() {
 }
 
 #[test]
-fn corner_link_and_a_reload_clear_it() {
+fn link_and_a_reload_clear_it() {
     let _w = shared();
-    let (live, _src, tiza) = followed("t207-link");
+    let (live, _src, tiza) = followed("link");
     paste(&live);
     assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}));
     live.command("link");
@@ -343,9 +343,9 @@ fn put(live: &Live, document: &Value) -> Value {
 }
 
 #[test]
-fn corner_scene_get_put_round_trip_keeps_it() {
+fn scene_get_put_round_trip_keeps_it() {
     let _w = shared();
-    let (live, _src, tiza) = followed("t207-put");
+    let (live, _src, tiza) = followed("put");
     paste(&live);
     let doc = get(&live);
     assert_eq!(doc["follows"], json!({"file": "main.rs"}), "{doc}");
@@ -374,10 +374,10 @@ fn corner_scene_get_put_round_trip_keeps_it() {
 }
 
 #[test]
-fn corner_a_put_of_another_document_takes_its_own() {
+fn a_put_of_another_document_takes_its_own() {
     let _w = shared();
     for with in [false, true] {
-        let (live, _src, _tiza) = followed(&format!("t207-other-{with}"));
+        let (live, _src, _tiza) = followed(&format!("other-{with}"));
         paste(&live);
         let mut other = get(&live);
         other["source"]["path"] = json!("elsewhere.rs");
@@ -401,9 +401,9 @@ fn corner_a_put_of_another_document_takes_its_own() {
 // ---------- Review: undo, a failed request, bad values ----------
 
 #[test]
-fn rev_a_put_that_changes_only_follows_is_undone_with_u() {
+fn a_put_that_changes_only_follows_is_undone_with_u() {
     let _w = shared();
-    let (live, src, tiza) = followed("t207-rev-only");
+    let (live, src, tiza) = followed("rev-only");
     std::fs::write(src.with_file_name("other.rs"), SEVEN).unwrap();
     paste(&live);
     let mut doc = get(&live);
@@ -418,11 +418,11 @@ fn rev_a_put_that_changes_only_follows_is_undone_with_u() {
 }
 
 #[test]
-fn rev_u_back_to_the_first_paste_follows_the_file_it_replaced() {
+fn u_back_to_the_first_paste_follows_the_file_it_replaced() {
     let _w = shared();
     // Paste over main.rs, `:ref other.rs`, paste again, `u`, `u`: the first
     // paste is back, and so is the file it replaced.
-    let (live, src, tiza) = followed("t207-rev-ref");
+    let (live, src, tiza) = followed("rev-ref");
     std::fs::write(src.with_file_name("other.rs"), SEVEN).unwrap();
     paste(&live);
     live.command("ref other.rs");
@@ -445,9 +445,9 @@ fn rev_u_back_to_the_first_paste_follows_the_file_it_replaced() {
 }
 
 #[test]
-fn rev_u_of_a_put_of_another_document_brings_the_file_back() {
+fn u_of_a_put_of_another_document_brings_the_file_back() {
     let _w = shared();
-    let (live, _src, tiza) = followed("t207-rev-other-u");
+    let (live, _src, tiza) = followed("rev-other-u");
     paste(&live);
     let mut other = get(&live);
     other["source"]["path"] = json!("elsewhere.rs");
@@ -462,9 +462,9 @@ fn rev_u_of_a_put_of_another_document_brings_the_file_back() {
 }
 
 #[test]
-fn rev_a_bad_follows_is_refused_on_load_and_on_put() {
+fn a_bad_follows_is_refused_on_load_and_on_put() {
     let _w = shared();
-    let (live, _src, tiza) = followed("t207-rev-bad");
+    let (live, _src, tiza) = followed("rev-bad");
     paste(&live);
     for (bad, says) in [
         (
@@ -489,9 +489,9 @@ fn rev_a_bad_follows_is_refused_on_load_and_on_put() {
 }
 
 #[test]
-fn rev_pty_a_put_that_panics_leaves_follows_as_it_was() {
+fn pty_a_put_that_panics_leaves_follows_as_it_was() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
-    let dir = scratch("t207-rev-panic");
+    let dir = scratch("rev-panic");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     std::fs::write(dir.join("other.rs"), SEVEN).unwrap();
     let doc = json!({

@@ -1,4 +1,4 @@
-//! t-164 — A reload or a paste that shifts the lines under a move marks it
+//! A reload or a paste that shifts the lines under a move marks it
 //! (stale) and skips it, with a notice; it never moves it in silence.
 //!
 //! Acceptance criteria:
@@ -27,7 +27,7 @@
 //! - AC6 This file; CHANGELOG; ADR 0007 §7.
 //!
 //! Follow only watches the main file today (watching a linked file is
-//! t-106), so the linked-file case checks `tiza_core::stale` directly with
+//! for later), so the linked-file case checks `tiza_core::stale` directly with
 //! the linked file's code changed.
 
 use std::path::{Path, PathBuf};
@@ -153,9 +153,8 @@ fn position_of(live: &Live, index: usize) -> Value {
 }
 
 #[test]
-fn ac1_a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_its_line_marks_it()
-{
-    let (live, dir) = replace_line_2("t164-ac1");
+fn a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_its_line_marks_it() {
+    let (live, dir) = replace_line_2("ac1");
     follow(&live);
     assert_eq!(code_at(&live, 2)[1], "host = example.com");
     // A line on top: one block above the target, which follows it exactly.
@@ -207,8 +206,8 @@ fn ac1_a_reload_that_inserts_above_a_position_move_shifts_it_and_one_that_edits_
 }
 
 #[test]
-fn ac3_a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_and_u_restores() {
-    let (live, _dir) = replace_line_2("t164-paste");
+fn a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_and_u_restores() {
+    let (live, _dir) = replace_line_2("paste");
     let before = live.with(|app| app.doc.clone());
     paste(&live, INI.split_once('\n').unwrap().1);
     assert_eq!(message(&live), "4 lines pasted (0 annotations kept)");
@@ -239,8 +238,8 @@ fn ac3_a_paste_that_deletes_the_first_line_shifts_it_one_that_edits_it_marks_it_
 }
 
 #[test]
-fn corner_a_change_that_touches_no_target_and_an_identical_paste_say_nothing() {
-    let (live, dir) = replace_line_2("t164-quiet");
+fn a_change_that_touches_no_target_and_an_identical_paste_say_nothing() {
+    let (live, dir) = replace_line_2("quiet");
     follow(&live);
     reload(&live, &dir, &INI.replace("admin", "root"), 1);
     assert_eq!(
@@ -255,8 +254,8 @@ fn corner_a_change_that_touches_no_target_and_an_identical_paste_say_nothing() {
 }
 
 #[test]
-fn ac2_move_list_and_mcp_list_moves_say_stale_and_why() {
-    let (live, _dir) = replace_line_2("t164-list");
+fn move_list_and_mcp_list_moves_say_stale_and_why() {
+    let (live, _dir) = replace_line_2("list");
     paste(&live, &host_edited());
     let ml = live.api_ok("move.list", json!({}));
     assert_eq!(ml["moves"][0]["stale"], true, "{ml}");
@@ -284,9 +283,9 @@ fn ac2_move_list_and_mcp_list_moves_say_stale_and_why() {
 // ---------------------------------------------------------------- targets
 
 #[test]
-fn corner_a_find_that_now_matches_twice_is_stale_and_deleting_the_copy_clears_it() {
+fn a_find_that_now_matches_twice_is_stale_and_deleting_the_copy_clears_it() {
     let (live, dir) = demo(
-        "t164-find",
+        "find",
         INI,
         json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "port = 8080", "content": "port = 9090"}]),
         json!([]),
@@ -314,9 +313,9 @@ fn corner_a_find_that_now_matches_twice_is_stale_and_deleting_the_copy_clears_it
 }
 
 #[test]
-fn corner_an_occurrence_past_the_matches_is_stale() {
+fn an_occurrence_past_the_matches_is_stale() {
     let (live, _dir) = demo(
-        "t164-occ",
+        "occ",
         "a = 1\nb = 1\nc = 1\n",
         json!([{"at_step": 1, "action": "code.patch", "op": "delete", "find": "= 1", "occurrence": 3}]),
         json!([]),
@@ -331,8 +330,8 @@ fn corner_an_occurrence_past_the_matches_is_stale() {
 }
 
 #[test]
-fn corner_reindenting_the_target_is_stale_whitespace_and_undoing_it_in_the_editor_clears_it() {
-    let (live, dir) = replace_line_2("t164-ws");
+fn reindenting_the_target_is_stale_whitespace_and_undoing_it_in_the_editor_clears_it() {
+    let (live, dir) = replace_line_2("ws");
     follow(&live);
     reload(&live, &dir, &INI.replace("host =", "    host ="), 1);
     assert_eq!(
@@ -344,8 +343,8 @@ fn corner_reindenting_the_target_is_stale_whitespace_and_undoing_it_in_the_edito
 }
 
 #[test]
-fn corner_line_endings_and_a_final_newline_change_nothing() {
-    let (live, dir) = replace_line_2("t164-crlf");
+fn line_endings_and_a_final_newline_change_nothing() {
+    let (live, dir) = replace_line_2("crlf");
     follow(&live);
     // The reload reads lines as before: CRLF and a missing final newline
     // are the same code, so nothing reloads and nothing goes stale.
@@ -361,9 +360,9 @@ fn corner_line_endings_and_a_final_newline_change_nothing() {
 }
 
 #[test]
-fn corner_ranges_out_of_range_inserts_cursors_selections_and_waits() {
+fn ranges_out_of_range_inserts_cursors_selections_and_waits() {
     let (live, _dir) = demo(
-        "t164-kinds",
+        "kinds",
         INI,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "delete", "position": "4-5"},
@@ -413,9 +412,9 @@ fn corner_ranges_out_of_range_inserts_cursors_selections_and_waits() {
 }
 
 #[test]
-fn corner_a_move_whose_target_a_stale_one_wrote_is_stale_too_and_both_clear() {
+fn a_move_whose_target_a_stale_one_wrote_is_stale_too_and_both_clear() {
     let (live, dir) = demo(
-        "t164-chain",
+        "chain",
         INI,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "port = 9090"},
@@ -441,9 +440,9 @@ fn corner_a_move_whose_target_a_stale_one_wrote_is_stale_too_and_both_clear() {
 }
 
 #[test]
-fn corner_an_annotation_on_text_a_stale_move_writes_is_unanchored_never_drawn_elsewhere() {
+fn an_annotation_on_text_a_stale_move_writes_is_unanchored_never_drawn_elsewhere() {
     let (live, dir) = demo(
-        "t164-ann",
+        "ann",
         INI,
         json!([{"at_step": 2, "action": "code.patch", "op": "replace", "position": "2", "content": "host = example.com"}]),
         json!([
@@ -487,9 +486,9 @@ fn corner_an_annotation_on_text_a_stale_move_writes_is_unanchored_never_drawn_el
 }
 
 #[test]
-fn corner_a_step_whose_only_move_is_stale_is_still_stepped_through_and_types_nothing() {
+fn a_step_whose_only_move_is_stale_is_still_stepped_through_and_types_nothing() {
     let (live, _dir) = demo(
-        "t164-typing",
+        "typing",
         INI,
         json!([{"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "; a\n; b", "typing": "line", "speed_ms": 500}]),
         json!([]),
@@ -510,9 +509,9 @@ fn corner_a_step_whose_only_move_is_stale_is_still_stepped_through_and_types_not
 }
 
 #[test]
-fn corner_a_loop_says_it_once_per_change_not_once_per_round() {
+fn a_loop_says_it_once_per_change_not_once_per_round() {
     let (live, _dir) = demo(
-        "t164-loop",
+        "loop",
         INI,
         json!([{"at_step": 2, "action": "code.patch", "op": "replace", "position": "2", "content": "host = example.com"}]),
         json!([]),
@@ -552,7 +551,7 @@ fn corner_a_loop_says_it_once_per_change_not_once_per_round() {
 // ---------------------------------------------------------------- files
 
 #[test]
-fn corner_a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
+fn a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
     let mut doc = tiza_core::fs::parse_document(
         &json!({
             "schema": 1,
@@ -591,9 +590,9 @@ fn corner_a_linked_file_changed_on_its_own_only_marks_its_own_moves() {
 }
 
 #[test]
-fn corner_restart_render_and_check_load_strictly_and_autosave_keeps_the_moves() {
+fn restart_render_and_check_load_strictly_and_autosave_keeps_the_moves() {
     let (live, dir) = demo(
-        "t164-strict",
+        "strict",
         INI,
         json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "port = 8080", "content": "port = 9090"}]),
         json!([]),
@@ -656,8 +655,8 @@ fn corner_restart_render_and_check_load_strictly_and_autosave_keeps_the_moves() 
 // ---------------------------------------------------------------- agents
 
 #[test]
-fn corner_agents_add_and_delete_moves_and_get_put_round_trips_with_stale_moves() {
-    let (live, dir) = replace_line_2("t164-agents");
+fn agents_add_and_delete_moves_and_get_put_round_trips_with_stale_moves() {
+    let (live, dir) = replace_line_2("agents");
     follow(&live);
     reload(&live, &dir, &host_edited(), 1);
     assert_eq!(stale_count(&live), 1);
@@ -695,7 +694,7 @@ fn corner_agents_add_and_delete_moves_and_get_put_round_trips_with_stale_moves()
 // ---------------------------------------------------------------- speed
 
 #[test]
-fn corner_a_big_file_with_thirty_moves_revalidates_without_a_pause() {
+fn a_big_file_with_thirty_moves_revalidates_without_a_pause() {
     let lines: Vec<String> = (0..3000)
         .map(|i| match i % 4 {
             0 => format!("pub fn f{i}(s: String) -> usize {{"),
@@ -714,7 +713,7 @@ fn corner_a_big_file_with_thirty_moves_revalidates_without_a_pause() {
             }
         })
         .collect();
-    let (live, _dir) = demo("t164-big", &code, json!(moves), json!([]), json!({}));
+    let (live, _dir) = demo("big", &code, json!(moves), json!([]), json!({}));
     let mut worst = Duration::ZERO;
     for round in 0..10 {
         // A line added on top and taken out again: every position follows.
@@ -730,7 +729,7 @@ fn corner_a_big_file_with_thirty_moves_revalidates_without_a_pause() {
         });
         worst = worst.max(took);
     }
-    eprintln!("t-164 big file: worst paste + revalidation of 10: {worst:?}");
+    eprintln!("stale moves, big file: worst paste + revalidation of 10: {worst:?}");
     assert!(worst < Duration::from_secs(2), "{worst:?}");
     assert_eq!(
         stale_count(&live),
@@ -760,8 +759,8 @@ fn two_stale(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn review_live_exports_skip_what_the_screen_skips() {
-    let (live, dir) = two_stale("t164-export");
+fn live_exports_skip_what_the_screen_skips() {
+    let (live, dir) = two_stale("export");
     let mut mcp = McpClient::start(&live.socket);
     for step in [1, 2] {
         let path = dir.join(format!("out{step}.txt"));
@@ -803,9 +802,9 @@ fn review_live_exports_skip_what_the_screen_skips() {
 }
 
 #[test]
-fn review_a_held_annotation_comes_back_on_what_the_move_writes_now() {
+fn a_held_annotation_comes_back_on_what_the_move_writes_now() {
     let (live, _dir) = demo(
-        "t164-release",
+        "release",
         INI,
         json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "port = 8080", "content": "port = 9090"}]),
         json!([{"id": "n1", "step": 1, "type": "note", "line": 3, "text": "new port"}]),
@@ -834,9 +833,9 @@ fn review_a_held_annotation_comes_back_on_what_the_move_writes_now() {
 }
 
 #[test]
-fn review_a_put_pairs_stale_marks_by_move_not_by_place() {
+fn a_put_pairs_stale_marks_by_move_not_by_place() {
     let (live, _dir) = demo(
-        "t164-pair",
+        "pair",
         INI,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = example.com"},
@@ -856,8 +855,8 @@ fn review_a_put_pairs_stale_marks_by_move_not_by_place() {
 }
 
 #[test]
-fn review_the_live_check_lists_position_moves() {
-    let (live, _dir) = replace_line_2("t164-check");
+fn the_live_check_lists_position_moves() {
+    let (live, _dir) = replace_line_2("check");
     paste(&live, &host_edited());
     let report = live.api_ok("check", json!({}));
     assert_eq!(report["ok"], false, "{report}");
@@ -871,9 +870,9 @@ fn review_the_live_check_lists_position_moves() {
 }
 
 #[test]
-fn review_cursor_and_select_by_line_follow_their_lines_like_a_position() {
+fn cursor_and_select_by_line_follow_their_lines_like_a_position() {
     let (live, _dir) = demo(
-        "t164-lines",
+        "lines",
         INI,
         json!([
             {"at_step": 1, "action": "cursor", "line": 4},
@@ -910,10 +909,9 @@ fn brace(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_even_on_the_same_text()
- {
+fn a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_even_on_the_same_text() {
     let (live, dir) = demo(
-        "t164-blocks",
+        "blocks",
         BRACES,
         json!([{"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "} // end of a"}]),
         json!([]),
@@ -966,9 +964,9 @@ fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_ev
 }
 
 #[test]
-fn review_3_a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_stale() {
+fn a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_stale() {
     // C2a: the common end `1`, `}` also follows the copy in fn c.
-    for (position, name) in [("3", "t164-c2a"), ("2", "t164-c2a-body")] {
+    for (position, name) in [("3", "c2a"), ("2", "c2a-body")] {
         let (live, _dir) = demo(
             name,
             "fn a() {\n    1\n}\n",
@@ -982,7 +980,7 @@ fn review_3_a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_s
         assert!(!code_at(&live, 1).contains(&"X".to_string()), "{name}");
     }
     // C2c: the common start `fn a() {` is also the new function's header.
-    let (live, _dir) = ab("t164-c2c", "1");
+    let (live, _dir) = ab("c2c", "1");
     paste(
         &live,
         &format!(
@@ -997,10 +995,10 @@ fn review_3_a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_s
     let above = format!("fn a() {{\n    1\n}}\n{AB}");
     let below = format!("{AB}fn b() {{\n    2\n}}\n");
     for (code, position, after, name) in [
-        (&above, "3", None, "t164-dup-above-a"),
-        (&above, "6", Some("9"), "t164-dup-above-b"),
-        (&below, "3", None, "t164-dup-below-a"),
-        (&below, "6", None, "t164-dup-below-b"),
+        (&above, "3", None, "dup-above-a"),
+        (&above, "6", Some("9"), "dup-above-b"),
+        (&below, "3", None, "dup-below-a"),
+        (&below, "6", None, "dup-below-b"),
     ] {
         let (live, _dir) = ab(name, position);
         paste(&live, code);
@@ -1019,7 +1017,7 @@ fn review_3_a_boundary_line_the_change_repeats_is_ambiguous_and_makes_the_move_s
         }
     }
     // Luis's case still follows: `fn a() {` is not in the pasted block.
-    let (live, _dir) = brace("t164-brace-still");
+    let (live, _dir) = brace("brace-still");
     paste(&live, &format!("fn z() {{\n    zero();\n}}\n{BRACES}"));
     assert_eq!(position_of(&live, 0), "6");
     assert_eq!(stale_count(&live), 0);
@@ -1038,8 +1036,8 @@ fn ab(name: &str, position: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn review_2_two_edits_with_a_common_end_by_chance_mark_what_is_below_them() {
-    let (live, _dir) = ab("t164-suffix", "6");
+fn two_edits_with_a_common_end_by_chance_mark_what_is_below_them() {
+    let (live, _dir) = ab("suffix", "6");
     // `1` → `10` and a `fn c` added: only the last `}` is alike at the end.
     paste(
         &live,
@@ -1054,7 +1052,7 @@ fn review_2_two_edits_with_a_common_end_by_chance_mark_what_is_below_them() {
     assert_eq!(at1[5], "}");
     assert_eq!(at1[8], "}", "fn c's brace untouched");
     // One block above the target (a line inserted in `a`): it follows.
-    let (live, _dir) = ab("t164-suffix-one", "6");
+    let (live, _dir) = ab("suffix-one", "6");
     paste(&live, &AB.replace("    1\n", "    1\n    1b\n"));
     assert_eq!(stale_count(&live), 0, "{}", message(&live));
     assert_eq!(position_of(&live, 0), "7");
@@ -1062,8 +1060,8 @@ fn review_2_two_edits_with_a_common_end_by_chance_mark_what_is_below_them() {
 }
 
 #[test]
-fn review_2_a_stale_move_follows_the_change_and_is_checked_where_its_line_went() {
-    let (live, _dir) = ab("t164-stale-shift", "3");
+fn a_stale_move_follows_the_change_and_is_checked_where_its_line_went() {
+    let (live, _dir) = ab("stale-shift", "3");
     let broken = AB.replacen("}\n", ")\n", 1);
     paste(&live, &broken);
     assert_eq!(
@@ -1093,9 +1091,9 @@ fn review_2_a_stale_move_follows_the_change_and_is_checked_where_its_line_went()
 }
 
 #[test]
-fn review_a_put_or_a_move_that_makes_a_stale_move_match_says_so_and_clears_it() {
+fn a_put_or_a_move_that_makes_a_stale_move_match_says_so_and_clears_it() {
     let (live, _dir) = demo(
-        "t164-recheck",
+        "recheck",
         "a\nb\n",
         json!([{"at_step": 2, "action": "code.patch", "op": "replace", "find": "b", "content": "B"}]),
         json!([]),
@@ -1125,9 +1123,9 @@ fn review_a_put_or_a_move_that_makes_a_stale_move_match_says_so_and_clears_it() 
 }
 
 #[test]
-fn review_4_at_120_columns_the_bar_shows_the_hint_and_the_first_move() {
+fn at_120_columns_the_bar_shows_the_hint_and_the_first_move() {
     let (live, _dir) = demo(
-        "t164-bar",
+        "bar",
         BRACES,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "replace", "position": "3", "content": "X"},
@@ -1180,8 +1178,8 @@ fn three_by_line(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn rework_with_follow_at_120_columns_the_bar_names_every_stale_move() {
-    let (live, dir) = three_by_line("t164-bar-follow");
+fn with_follow_at_120_columns_the_bar_names_every_stale_move() {
+    let (live, dir) = three_by_line("bar-follow");
     // A first reload, so the bar has a time of the last reload to show.
     reload(&live, &dir, &INI.replace("[db]", "[database]"), 1);
     reload(
@@ -1206,9 +1204,9 @@ fn rework_with_follow_at_120_columns_the_bar_names_every_stale_move() {
 }
 
 #[test]
-fn rework_quitting_with_stale_moves_is_refused_until_q_bang() {
+fn quitting_with_stale_moves_is_refused_until_q_bang() {
     let (live, _dir) = demo(
-        "t164-quit",
+        "quit",
         INI,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "host = a"},
@@ -1249,9 +1247,9 @@ fn rework_quitting_with_stale_moves_is_refused_until_q_bang() {
 }
 
 #[test]
-fn rework_the_refusal_to_quit_keeps_the_way_out_at_120_columns_with_follow() {
+fn the_refusal_to_quit_keeps_the_way_out_at_120_columns_with_follow() {
     let (live, dir) = demo(
-        "t164-quit-bar",
+        "quit-bar",
         "fn main() {\n    let a = 1;\n    let b = 2;\n    show(a, b);\n    done();\n}\n",
         json!([
             {"at_step": 1, "action": "code.patch", "op": "replace", "position": "2", "content": "    let a = 10;"},
@@ -1279,9 +1277,9 @@ fn rework_the_refusal_to_quit_keeps_the_way_out_at_120_columns_with_follow() {
 }
 
 #[test]
-fn rework_the_live_check_calls_a_stale_find_stale() {
+fn the_live_check_calls_a_stale_find_stale() {
     let (live, _dir) = demo(
-        "t164-check-find",
+        "check-find",
         "x = 1\nx + 1\n",
         json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "x + 1", "content": "x + 2"}]),
         json!([]),
@@ -1307,11 +1305,11 @@ fn rework_the_live_check_calls_a_stale_find_stale() {
 }
 
 #[test]
-fn rework_an_insert_at_the_end_follows_when_the_last_line_is_sure() {
+fn an_insert_at_the_end_follows_when_the_last_line_is_sure() {
     // Lines 1-3 indented; undoing it makes them repeat lines 4-6.
     let indented = "    a\n    b\n    c\na\nb\nc\nx\ny\n";
     let (live, _dir) = demo(
-        "t164-append",
+        "append",
         indented,
         json!([
             {"at_step": 1, "action": "code.patch", "op": "insert", "position": "9", "content": "z"},

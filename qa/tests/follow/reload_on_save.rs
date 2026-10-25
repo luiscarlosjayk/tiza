@@ -1,4 +1,4 @@
-//! t-011 — Follow mode: reload the code when the source file is saved.
+//! Follow mode: reload the code when the source file is saved.
 //!
 //! Acceptance criteria:
 //! - AC1 `--follow` / `:follow on` watches the *parent directory* of the
@@ -96,8 +96,8 @@ fn box_lines(live: &Live, id: &str) -> Option<(u32, u32)> {
 }
 
 #[test]
-fn ac1_tmp_rename_save_reloads_once_after_debounce() {
-    let (live, src) = followed("t011-ac1", CODE);
+fn tmp_rename_save_reloads_once_after_debounce() {
+    let (live, src) = followed("ac1", CODE);
     live.command("follow on");
     assert_eq!(live.message().unwrap().0, "following main.rs");
     assert_eq!(
@@ -125,8 +125,8 @@ fn ac1_tmp_rename_save_reloads_once_after_debounce() {
 }
 
 #[test]
-fn ac2_annotations_follow_their_text_and_u_undoes() {
-    let (live, src) = followed("t011-ac2", CODE);
+fn annotations_follow_their_text_and_u_undoes() {
+    let (live, src) = followed("ac2", CODE);
     live.command("box 2-3 ownership");
     live.command("note 4 prints");
     live.command("set a1 step=2");
@@ -173,8 +173,8 @@ fn ac2_annotations_follow_their_text_and_u_undoes() {
 }
 
 #[test]
-fn ac3_status_line_and_follow_command() {
-    let (live, src) = followed("t011-ac3", CODE);
+fn status_line_and_follow_command() {
+    let (live, src) = followed("ac3", CODE);
     let bar = live.screen(120, 12).lines().last().unwrap().to_string();
     assert!(!bar.contains("following"), "{bar}");
     live.command("follow");
@@ -224,8 +224,8 @@ fn ac3_status_line_and_follow_command() {
 }
 
 #[test]
-fn ac4_socket_and_mcp() {
-    let (live, src) = followed("t011-ac4", CODE);
+fn socket_and_mcp() {
+    let (live, src) = followed("ac4", CODE);
     let st = live.api_ok("follow.status", json!({}));
     assert_eq!(st["enabled"], false);
     assert_eq!(st["path"].as_str().unwrap(), src.display().to_string());
@@ -259,8 +259,8 @@ fn ac4_socket_and_mcp() {
 }
 
 #[test]
-fn corner_embedded_code_has_nothing_to_follow() {
-    let live = Live::from_code(CODE, "rs", "t011-embedded");
+fn embedded_code_has_nothing_to_follow() {
+    let live = Live::from_code(CODE, "rs", "embedded");
     live.command("follow on");
     let (msg, is_err) = live.message().unwrap();
     assert!(is_err);
@@ -277,8 +277,8 @@ fn corner_embedded_code_has_nothing_to_follow() {
 }
 
 #[test]
-fn corner_removed_file_waits_and_recreation_reloads() {
-    let (live, src) = followed("t011-removed", CODE);
+fn removed_file_waits_and_recreation_reloads() {
+    let (live, src) = followed("removed", CODE);
     live.command("follow on");
     std::fs::remove_file(&src).unwrap();
     let start = Instant::now();
@@ -310,8 +310,8 @@ fn corner_removed_file_waits_and_recreation_reloads() {
 }
 
 #[test]
-fn corner_truncate_then_write_is_one_reload() {
-    let (live, src) = followed("t011-truncate", CODE);
+fn truncate_then_write_is_one_reload() {
+    let (live, src) = followed("truncate", CODE);
     live.command("box 2-3 keep");
     live.command("follow on");
     // An editor that truncates first and writes the content afterwards.
@@ -330,8 +330,8 @@ fn corner_truncate_then_write_is_one_reload() {
 }
 
 #[test]
-fn corner_identical_content_and_sidecar_autosave_do_not_reload() {
-    let (live, src) = followed("t011-same", CODE);
+fn identical_content_and_sidecar_autosave_do_not_reload() {
+    let (live, src) = followed("same", CODE);
     live.command("follow on");
     save_like_zed(&src, CODE);
     settle();
@@ -348,8 +348,8 @@ fn corner_identical_content_and_sidecar_autosave_do_not_reload() {
 }
 
 #[test]
-fn corner_non_utf8_keeps_previous_content() {
-    let (live, src) = followed("t011-utf8", CODE);
+fn non_utf8_keeps_previous_content() {
+    let (live, src) = followed("utf8", CODE);
     live.command("follow on");
     std::fs::write(&src, [0xff, 0xfe, b'f', b'n']).unwrap();
     let start = Instant::now();
@@ -378,8 +378,8 @@ fn corner_non_utf8_keeps_previous_content() {
 }
 
 #[test]
-fn corner_line_range_reloads_only_its_lines() {
-    let dir = scratch("t011-range");
+fn line_range_reloads_only_its_lines() {
+    let dir = scratch("range");
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     std::fs::write(&src, CODE).unwrap();
     let all: Vec<&str> = CODE.lines().collect();
@@ -406,8 +406,8 @@ fn corner_line_range_reloads_only_its_lines() {
 }
 
 #[test]
-fn corner_editing_one_edge_line_of_a_box_keeps_it() {
-    let (live, src) = followed("t011-edge", CODE);
+fn editing_one_edge_line_of_a_box_keeps_it() {
+    let (live, src) = followed("edge", CODE);
     live.command("box 2-3 ownership");
     live.command("callout 2-4 @below title=\"t\" explains");
     live.command("follow on");
@@ -434,7 +434,7 @@ fn corner_editing_one_edge_line_of_a_box_keeps_it() {
 // ---------- repeated lines: the nearest copy, never the first ----------
 
 fn repeated_fixture(name: &str) -> (Live, PathBuf, String) {
-    let code = std::fs::read_to_string(fixture("t-011/repeated.rs")).unwrap();
+    let code = std::fs::read_to_string(fixture("follow/reload_on_save/repeated.rs")).unwrap();
     let (live, src) = followed(name, &code);
     (live, src, code)
 }
@@ -465,8 +465,8 @@ fn lines_of(live: &Live, id: &str) -> Option<(u32, u32)> {
 }
 
 #[test]
-fn step10_second_brace_and_second_fn_new_stay_on_their_copy() {
-    let (live, src, code) = repeated_fixture("t011-repeated");
+fn second_brace_and_second_fn_new_stay_on_their_copy() {
+    let (live, src, code) = repeated_fixture("repeated");
     // Line 9 is the second `}` (closing `impl Stack`); line 16 the second `fn new`.
     assert_eq!(code.lines().nth(8).unwrap(), "}");
     assert_eq!(code.lines().nth(15).unwrap(), "    fn new() -> Self {");
@@ -500,8 +500,8 @@ fn step10_second_brace_and_second_fn_new_stay_on_their_copy() {
 }
 
 #[test]
-fn step11_deleting_a_neighbour_keeps_the_copy_deleting_the_copy_drops_it() {
-    let (live, src, code) = repeated_fixture("t011-repeated2");
+fn deleting_a_neighbour_keeps_the_copy_deleting_the_copy_drops_it() {
+    let (live, src, code) = repeated_fixture("repeated2");
     live.command("note 9 end of impl Stack");
     live.command("follow on");
 
@@ -530,11 +530,8 @@ fn step11_deleting_a_neighbour_keeps_the_copy_deleting_the_copy_drops_it() {
 }
 
 #[test]
-fn corner_same_word_twice_in_a_line_keeps_the_occurrence() {
-    let (live, src) = followed(
-        "t011-occurrence",
-        "fn f(s: &str) {\n    takes(s, s.len());\n}\n",
-    );
+fn same_word_twice_in_a_line_keeps_the_occurrence() {
+    let (live, src) = followed("occurrence", "fn f(s: &str) {\n    takes(s, s.len());\n}\n");
     live.command("hl 2:s second s");
     // The second `s` is at column 13: `hl L:text` finds the first one, so move it.
     live.with(|app| {
@@ -567,12 +564,12 @@ fn corner_same_word_twice_in_a_line_keeps_the_occurrence() {
 }
 
 #[test]
-fn corner_far_copy_counts_as_gone() {
+fn far_copy_counts_as_gone() {
     // A `}` at the top and the annotated `}` 60 lines below; the second is
     // deleted. The first is beyond MAX_DISTANCE (50) → dropped, not moved.
     let filler: String = (0..60).map(|i| format!("// line {i}\n")).collect();
     let code = format!("}}\n{filler}}}\n// end\n");
-    let (live, src) = followed("t011-far", &code);
+    let (live, src) = followed("far", &code);
     live.command("note 62 closes");
     live.command("follow on");
     save_like_zed(&src, &format!("}}\n{filler}// end\n"));
@@ -587,7 +584,7 @@ fn corner_far_copy_counts_as_gone() {
 }
 
 #[test]
-fn step12_random_edits_above_keep_a_unique_line_and_never_panic() {
+fn random_edits_above_keep_a_unique_line_and_never_panic() {
     use proptest::prelude::*;
     use tiza_tui::reanchor::Remap;
 
@@ -646,7 +643,7 @@ fn step12_random_edits_above_keep_a_unique_line_and_never_panic() {
 /// `examples/src/stack.rs` as Luis tested it (37 lines; `fn pop` 16-18,
 /// `fn peek` 20-22, `fn is_empty` 28-30).
 fn stack_fixture(name: &str) -> (Live, PathBuf, Vec<String>) {
-    let code = std::fs::read_to_string(fixture("t-011/stack.rs")).unwrap();
+    let code = std::fs::read_to_string(fixture("follow/reload_on_save/stack.rs")).unwrap();
     let (live, src) = followed(name, &code);
     (live, src, code.lines().map(String::from).collect())
 }
@@ -673,8 +670,8 @@ fn count(live: &Live) -> usize {
 }
 
 #[test]
-fn step13_bottom_edge_leaves_with_a_moved_block_all_three_kinds_keep_their_height() {
-    let (live, src, lines) = stack_fixture("t011-step13");
+fn bottom_edge_leaves_with_a_moved_block_all_three_kinds_keep_their_height() {
+    let (live, src, lines) = stack_fixture("step13");
     assert_eq!(lines[15], "    pub fn pop(&mut self) -> Option<T> {");
     live.command("box 12-18 push and pop");
     live.command("spot 12-18");
@@ -696,8 +693,8 @@ fn step13_bottom_edge_leaves_with_a_moved_block_all_three_kinds_keep_their_heigh
 }
 
 #[test]
-fn step14_unique_bottom_edge_moves_away_the_range_never_stretches() {
-    let (live, src, lines) = stack_fixture("t011-step14");
+fn unique_bottom_edge_moves_away_the_range_never_stretches() {
+    let (live, src, lines) = stack_fixture("step14");
     assert_eq!(lines[19], "    pub fn peek(&self) -> Option<&T> {");
     live.command("box 14-20 x");
     live.command("spot 14-20");
@@ -720,8 +717,8 @@ fn step14_unique_bottom_edge_moves_away_the_range_never_stretches() {
 }
 
 #[test]
-fn corner_reordering_methods_the_callout_travels_with_its_block() {
-    let (live, src, lines) = stack_fixture("t011-reorder");
+fn reordering_methods_the_callout_travels_with_its_block() {
+    let (live, src, lines) = stack_fixture("reorder");
     live.command("callout 20-22 @below peek borrows");
     live.command("follow on");
     // peek (20-22 + blank) is cut and pasted above push (line 12).
@@ -737,8 +734,8 @@ fn corner_reordering_methods_the_callout_travels_with_its_block() {
 }
 
 #[test]
-fn step15_rustfmt_split_and_join_follow_the_span() {
-    let (live, src, lines) = stack_fixture("t011-step15");
+fn rustfmt_split_and_join_follow_the_span() {
+    let (live, src, lines) = stack_fixture("step15");
     assert_eq!(lines[8], "        Self { items: Vec::new() }");
     live.command("hl 9:Vec::new x");
     live.command("follow on");
@@ -772,8 +769,8 @@ fn step15_rustfmt_split_and_join_follow_the_span() {
 }
 
 #[test]
-fn step16_replaced_line_keeps_its_note_not_a_span_whose_text_is_gone() {
-    let (live, src, lines) = stack_fixture("t011-step16");
+fn replaced_line_keeps_its_note_not_a_span_whose_text_is_gone() {
+    let (live, src, lines) = stack_fixture("step16");
     assert_eq!(lines[3], "    items: Vec<T>,");
     live.command("note 4 owned");
     live.command("hl 4:Vec<T> y");
@@ -798,8 +795,8 @@ fn step16_replaced_line_keeps_its_note_not_a_span_whose_text_is_gone() {
 }
 
 #[test]
-fn step17_one_u_after_the_editor_undo_brings_the_dropped_annotation_back() {
-    let (live, src, lines) = stack_fixture("t011-step17");
+fn one_u_after_the_editor_undo_brings_the_dropped_annotation_back() {
+    let (live, src, lines) = stack_fixture("step17");
     live.command("hl 9:Vec::new x");
     live.command("follow on");
     let mut edited = lines.clone();
@@ -841,8 +838,8 @@ fn step17_one_u_after_the_editor_undo_brings_the_dropped_annotation_back() {
 }
 
 #[test]
-fn step18_n_to_n_hunk_keeps_the_mark_and_the_box_in_place() {
-    let (live, src, lines) = stack_fixture("t011-step18");
+fn n_to_n_hunk_keeps_the_mark_and_the_box_in_place() {
+    let (live, src, lines) = stack_fixture("step18");
     live.command("mark write 13:push moved");
     live.command("box 12-14 push");
     assert_eq!(count(&live), 2, "{:?}", live.message());

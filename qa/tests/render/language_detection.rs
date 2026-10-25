@@ -47,7 +47,7 @@ fn extension_file_name_shebang_modeline_default() {
         "vim modeline on the last line"
     );
     assert_eq!(lang_of("render/language_detection/plain"), "txt");
-    assert_eq!(lang_of("t-011/repeated.rs"), "rs");
+    assert_eq!(lang_of("follow/reload_on_save/repeated.rs"), "rs");
 }
 
 #[test]

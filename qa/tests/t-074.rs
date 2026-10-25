@@ -300,7 +300,9 @@ print(text[text.find("EXIT="):].strip())
 "#,
         &[
             tiza_qa::bin().to_str().unwrap(),
-            fixture("t-011/repeated.rs").to_str().unwrap(),
+            fixture("follow/reload_on_save/repeated.rs")
+                .to_str()
+                .unwrap(),
         ],
     );
     assert!(stdout.contains("ALTSCREEN_IN"), "{stdout}");
@@ -311,5 +313,5 @@ print(text[text.find("EXIT="):].strip())
     assert!(stdout.contains("CODE"), "{stdout}");
     assert!(stdout.contains("EXIT=0"), "{stdout}");
     // `--smoke` never writes a sidecar next to the source.
-    assert!(!fixture("t-011/repeated.rs.tiza").exists());
+    assert!(!fixture("follow/reload_on_save/repeated.rs.tiza").exists());
 }

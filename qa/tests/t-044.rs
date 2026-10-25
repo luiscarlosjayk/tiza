@@ -114,9 +114,13 @@ fn ac2_reads_return_the_live_content() {
     assert!(scene2.contains("\"moved\""));
 
     // File-backed document: the Markdown view is titled with the file name and step.
-    let doc = tiza_core::fs::open(tiza_qa::fixture("t-011/repeated.rs").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        tiza_qa::fixture("follow/reload_on_save/repeated.rs")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let dir = tiza_qa::scratch("t044-file");
     let live2 = Live::open(doc, dir.join("repeated.rs.tiza"), dir.join("live.sock"));
     let mut mcp2 = McpClient::start(&live2.socket);

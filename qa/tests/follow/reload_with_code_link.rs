@@ -1,4 +1,4 @@
-//! t-230 — A follow reload in a document with a `code.link` moved two
+//! A follow reload in a document with a `code.link` moved two
 //! annotations, and the autosave wrote them to the `.tiza`.
 //!
 //! The reload re-added each re-anchored annotation through `Document::add`,
@@ -23,7 +23,7 @@
 //! Corner cases: an annotation that cannot be re-anchored is dropped, as
 //! before; a document without `code.link` does not change.
 //!
-//! The fixture (QA of t-106): `n0` at step 0 on main.rs L9, `q3` at step 3
+//! The fixture (from the QA of the linked files): `n0` at step 0 on main.rs L9, `q3` at step 3
 //! on src/queue.rs, `m5` at step 5 on main.rs L3 while step 5 shows
 //! src/queue.rs (step 6 shows main.rs again). The editor save adds a line
 //! at the top of main.rs, so the main-file annotations move down one line.
@@ -92,7 +92,11 @@ fn copy(dir_name: &str, name: &str) -> (PathBuf, PathBuf) {
     let dir = scratch(dir_name);
     std::fs::create_dir_all(dir.join("src")).unwrap();
     for f in ["main.rs", QUEUE, name] {
-        std::fs::copy(fixture(&format!("t-230/{f}")), dir.join(f)).unwrap();
+        std::fs::copy(
+            fixture(&format!("follow/reload_with_code_link/{f}")),
+            dir.join(f),
+        )
+        .unwrap();
     }
     let tiza = dir.join(name);
     (dir, tiza)
@@ -204,22 +208,22 @@ fn save_at(step: u64) {
 }
 
 #[test]
-fn ac1_save_at_step_0_keeps_step_and_file() {
+fn save_at_step_0_keeps_step_and_file() {
     save_at(0);
 }
 
 #[test]
-fn ac1_save_at_step_5_where_queue_rs_is_shown() {
+fn save_at_step_5_where_queue_rs_is_shown() {
     save_at(5);
 }
 
 #[test]
-fn ac1_save_at_step_3_on_the_link() {
+fn save_at_step_3_on_the_link() {
     save_at(3);
 }
 
 #[test]
-fn ac2_undo_and_redo_of_the_reload() {
+fn undo_and_redo_of_the_reload() {
     let (live, src, tiza) = followed("undo", "demo.tiza");
     edit(&src);
     wait_for("the reload", || reloads(&live) >= 1);
@@ -234,7 +238,7 @@ fn ac2_undo_and_redo_of_the_reload() {
 }
 
 #[test]
-fn ac2_paste_at_step_0() {
+fn paste_at_step_0() {
     let (dir, tiza) = copy("paste", "demo.tiza");
     let live = open(&dir, &tiza);
     let text = format!(
@@ -248,7 +252,7 @@ fn ac2_paste_at_step_0() {
 }
 
 #[test]
-fn ac2_ref_of_the_changed_file() {
+fn ref_of_the_changed_file() {
     let (dir, tiza) = copy("ref", "demo.tiza");
     let live = open(&dir, &tiza);
     edit(&dir.join("main.rs"));
@@ -261,7 +265,7 @@ fn ac2_ref_of_the_changed_file() {
 }
 
 #[test]
-fn ac2_scene_put_round_trip() {
+fn scene_put_round_trip() {
     let (live, src, tiza) = followed("put", "demo.tiza");
     edit(&src);
     wait_for("the reload", || reloads(&live) >= 1);
@@ -276,7 +280,7 @@ fn ac2_scene_put_round_trip() {
 }
 
 #[test]
-fn ac3_a_file_saved_with_moved_annotations_stays_as_saved() {
+fn a_file_saved_with_moved_annotations_stays_as_saved() {
     let moved = vec![
         place("n0", 1, None, 9),
         place("q3", 3, Some(QUEUE), 2),
@@ -296,7 +300,7 @@ fn ac3_a_file_saved_with_moved_annotations_stays_as_saved() {
 }
 
 #[test]
-fn corner_an_annotation_without_its_text_is_dropped() {
+fn an_annotation_without_its_text_is_dropped() {
     let (live, src, tiza) = followed("dropped", "demo.tiza");
     // L9 (`println!`) goes away: n0 has no text to go to.
     let text = std::fs::read_to_string(&src)
@@ -312,7 +316,7 @@ fn corner_an_annotation_without_its_text_is_dropped() {
 }
 
 #[test]
-fn corner_a_document_without_code_link_does_not_change() {
+fn a_document_without_code_link_does_not_change() {
     let (live, src, tiza) = followed("plain", "plain.tiza");
     edit(&src);
     wait_for("the reload", || reloads(&live) >= 1);

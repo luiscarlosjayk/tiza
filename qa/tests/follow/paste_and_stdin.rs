@@ -1,4 +1,4 @@
-//! t-010 — Paste and stdin input.
+//! Paste and stdin input.
 //!
 //! Acceptance criteria:
 //! - AC1 Pasting replaces the code; annotations are re-anchored by the text they
@@ -9,11 +9,11 @@
 use tiza_qa::Live;
 
 #[test]
-fn ac1_paste_reanchors_by_text_and_undo_restores() {
+fn paste_reanchors_by_text_and_undo_restores() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    let t = 2;\n}\n",
         "rs",
-        "t010-paste",
+        "paste",
     );
     live.command("note 1 keep");
     live.command("note 3 gone");

@@ -156,9 +156,9 @@ const SETTLE: Duration = Duration::from_millis(600);
 // ---------- AC1 ----------
 
 #[test]
-fn ac1_ref_another_file_while_following_follows_it() {
+fn ref_another_file_while_following_follows_it() {
     // Test step 1.
-    let (live, dir, tiza) = opened("t213-ref");
+    let (live, dir, tiza) = opened("ref");
     live.command("follow on");
     live.command("ref other.rs");
     // The document reads other.rs now, so the screen shows its code.
@@ -186,8 +186,8 @@ fn ac1_ref_another_file_while_following_follows_it() {
 }
 
 #[test]
-fn ac1_u_of_the_ref_follows_the_old_file_again() {
-    let (live, dir, tiza) = opened("t213-ref-u");
+fn u_of_the_ref_follows_the_old_file_again() {
+    let (live, dir, tiza) = opened("ref-u");
     live.command("follow on");
     live.command("ref other.rs");
     assert_eq!(base(&live), lines(OTHER));
@@ -212,11 +212,11 @@ fn ac1_u_of_the_ref_follows_the_old_file_again() {
 }
 
 #[test]
-fn ac1_follow_on_after_ref_and_a_paste_reloads_the_new_file() {
+fn follow_on_after_ref_and_a_paste_reloads_the_new_file() {
     // A paste over main.rs while following (follow off, it remembers
     // main.rs), `:ref other.rs`, then another paste with follow off:
     // `:follow on` reloads other.rs, the file the document referenced last.
-    let (live, _dir, tiza) = opened("t213-ref-paste");
+    let (live, _dir, tiza) = opened("ref-paste");
     live.command("follow on");
     live.with(|app| app.replace_code("fn pasted() {}\n"))
         .unwrap();
@@ -233,8 +233,8 @@ fn ac1_follow_on_after_ref_and_a_paste_reloads_the_new_file() {
 }
 
 #[test]
-fn ac1_link_at_step_0_is_the_same() {
-    let (live, dir, tiza) = opened("t213-link");
+fn link_at_step_0_is_the_same() {
+    let (live, dir, tiza) = opened("link");
     live.command("follow on");
     live.command("step 0");
     live.command("link other.rs");
@@ -245,9 +245,9 @@ fn ac1_link_at_step_0_is_the_same() {
 }
 
 #[test]
-fn ac1_ref_to_the_same_code_keeps_everything() {
+fn ref_to_the_same_code_keeps_everything() {
     // other.rs holds main.rs's code: only the reference changes.
-    let (live, dir, tiza) = opened("t213-same-code");
+    let (live, dir, tiza) = opened("same-code");
     std::fs::write(dir.join("other.rs"), MAIN).unwrap();
     live.command("follow on");
     let annotations = live.with(|app| app.doc.annotations.len());
@@ -263,9 +263,9 @@ fn ac1_ref_to_the_same_code_keeps_everything() {
 // ---------- AC2 ----------
 
 #[test]
-fn ac2_a_put_of_another_document_turns_follow_off() {
+fn a_put_of_another_document_turns_follow_off() {
     // Test step 2.
-    let (live, dir, _tiza) = opened("t213-put");
+    let (live, dir, _tiza) = opened("put");
     live.command("follow on");
     let other = json!({
         "schema": 1,
@@ -289,8 +289,8 @@ fn ac2_a_put_of_another_document_turns_follow_off() {
 }
 
 #[test]
-fn ac2_with_autosave_already_off_the_put_says_follow_off() {
-    let (live, _dir, _tiza) = opened("t213-put-nosave");
+fn with_autosave_already_off_the_put_says_follow_off() {
+    let (live, _dir, _tiza) = opened("put-nosave");
     live.command("follow on");
     live.command("autosave off");
     let other = json!({
@@ -309,8 +309,8 @@ fn ac2_with_autosave_already_off_the_put_says_follow_off() {
 }
 
 #[test]
-fn corner_a_put_of_the_documents_own_copy_keeps_following() {
-    let (live, dir, tiza) = opened("t213-put-same");
+fn a_put_of_the_documents_own_copy_keeps_following() {
+    let (live, dir, tiza) = opened("put-same");
     live.command("follow on");
     let scene = live.api_ok("scene.get", json!({}));
     live.api_ok("scene.put", json!({"document": scene["document"]}));
@@ -323,9 +323,9 @@ fn corner_a_put_of_the_documents_own_copy_keeps_following() {
 // ---------- AC3 ----------
 
 #[test]
-fn ac3_an_identical_paste_with_follow_off_stays_a_reference() {
+fn an_identical_paste_with_follow_off_stays_a_reference() {
     // Test step 3.
-    let (live, _dir, tiza) = opened("t213-paste");
+    let (live, _dir, tiza) = opened("paste");
     assert_eq!(status(&live)["enabled"], false);
     live.with(|app| app.replace_code(MAIN)).unwrap();
     assert!(live.with(|app| !app.doc.is_embedded()));
@@ -334,10 +334,10 @@ fn ac3_an_identical_paste_with_follow_off_stays_a_reference() {
 }
 
 #[test]
-fn ac3_a_paste_of_what_the_file_holds_now_stays_a_reference() {
+fn a_paste_of_what_the_file_holds_now_stays_a_reference() {
     // The file changed on disk while follow was off; a paste of its new
     // text is the file's code: still a reference, now showing that text.
-    let (live, dir, tiza) = opened("t213-paste-new");
+    let (live, dir, tiza) = opened("paste-new");
     std::fs::write(dir.join("main.rs"), MAIN2).unwrap();
     live.with(|app| app.replace_code(MAIN2)).unwrap();
     assert_eq!(base(&live), lines(MAIN2));
@@ -347,9 +347,9 @@ fn ac3_a_paste_of_what_the_file_holds_now_stays_a_reference() {
 }
 
 #[test]
-fn ac3_a_paste_of_older_code_with_follow_off_is_embedded() {
+fn a_paste_of_older_code_with_follow_off_is_embedded() {
     // Not the file's code now (the file changed on disk): embedded, as before.
-    let (live, dir, tiza) = opened("t213-paste-old");
+    let (live, dir, tiza) = opened("paste-old");
     std::fs::write(dir.join("main.rs"), MAIN2).unwrap();
     live.with(|app| app.replace_code(MAIN)).unwrap();
     assert!(live.with(|app| app.doc.is_embedded()));
@@ -359,8 +359,8 @@ fn ac3_a_paste_of_older_code_with_follow_off_is_embedded() {
 // ---------- corner cases ----------
 
 #[test]
-fn corner_ref_to_a_missing_file_changes_nothing() {
-    let (live, _dir, tiza) = opened("t213-missing");
+fn ref_to_a_missing_file_changes_nothing() {
+    let (live, _dir, tiza) = opened("missing");
     live.command("follow on");
     let before = live.with(|app| app.doc.code_src.clone());
     live.command("ref nowhere.rs");
@@ -374,8 +374,8 @@ fn corner_ref_to_a_missing_file_changes_nothing() {
 }
 
 #[test]
-fn corner_ref_to_other_code_with_moves_applied_is_refused() {
-    let (live, _dir, tiza) = opened("t213-moves");
+fn ref_to_other_code_with_moves_applied_is_refused() {
+    let (live, _dir, tiza) = opened("moves");
     live.api_ok(
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "replace", "find": "let a = 1;", "content": "    let a = 2;"}),
@@ -391,10 +391,10 @@ fn corner_ref_to_other_code_with_moves_applied_is_refused() {
 // ---------- review ----------
 
 #[test]
-fn rev_ref_to_another_range_of_the_same_file_then_a_paste() {
+fn ref_to_another_range_of_the_same_file_then_a_paste() {
     // The watch stays on main.rs; what it loaded last is the range now on
     // screen, so a paste of the whole file is not «what the file holds».
-    let (live, _dir, tiza) = opened("t213-range");
+    let (live, _dir, tiza) = opened("range");
     live.command("follow on");
     live.command("step 0");
     live.command("ref main.rs:2-3");
@@ -408,8 +408,8 @@ fn rev_ref_to_another_range_of_the_same_file_then_a_paste() {
 }
 
 #[test]
-fn rev_ref_to_the_whole_file_from_a_range_then_a_paste() {
-    let dir = scratch("t213-range-whole");
+fn ref_to_the_whole_file_from_a_range_then_a_paste() {
+    let dir = scratch("range-whole");
     std::fs::write(dir.join("main.rs"), MAIN).unwrap();
     let opened = tiza_core::fs::open(&format!("{}:2-3", dir.join("main.rs").display())).unwrap();
     let tiza = opened.save_path.clone();
@@ -424,8 +424,8 @@ fn rev_ref_to_the_whole_file_from_a_range_then_a_paste() {
 }
 
 #[test]
-fn rev_ref_to_a_file_a_code_link_shows_is_refused() {
-    let (live, _dir, tiza) = opened("t213-linked");
+fn ref_to_a_file_a_code_link_shows_is_refused() {
+    let (live, _dir, tiza) = opened("linked");
     live.command("step 1");
     live.command("link other.rs");
     live.command("note 2 on other");
@@ -441,9 +441,9 @@ fn rev_ref_to_a_file_a_code_link_shows_is_refused() {
 }
 
 #[test]
-fn rev_with_follow_never_on_a_paste_has_nothing_to_follow() {
+fn with_follow_never_on_a_paste_has_nothing_to_follow() {
     // As before: an unrelated undo does not make `:follow on` reload a file.
-    let (live, _dir, _tiza) = opened("t213-never");
+    let (live, _dir, _tiza) = opened("never");
     live.command("note 2 x");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     live.command("step 0");
@@ -458,9 +458,9 @@ fn rev_with_follow_never_on_a_paste_has_nothing_to_follow() {
 }
 
 #[test]
-fn rev_u_of_a_ref_over_a_paste_follows_the_first_file_again() {
+fn u_of_a_ref_over_a_paste_follows_the_first_file_again() {
     // The paste was over main.rs; `:ref other.rs` and its `u` leave it so.
-    let (live, _dir, tiza) = opened("t213-paste-ref-u");
+    let (live, _dir, tiza) = opened("paste-ref-u");
     live.command("follow on");
     live.command("step 0");
     live.with(|app| app.replace_code("fn pasted() {}\n"))
@@ -477,8 +477,8 @@ fn rev_u_of_a_ref_over_a_paste_follows_the_first_file_again() {
 }
 
 #[test]
-fn rev_a_redo_of_the_ref_names_the_file_on_screen() {
-    let (live, dir, _tiza) = opened("t213-redo-words");
+fn a_redo_of_the_ref_names_the_file_on_screen() {
+    let (live, dir, _tiza) = opened("redo-words");
     live.command("follow on");
     live.command("step 0");
     live.command("ref other.rs");
@@ -491,8 +491,8 @@ fn rev_a_redo_of_the_ref_names_the_file_on_screen() {
 }
 
 #[test]
-fn rev_a_symlink_to_the_followed_file_keeps_reloading() {
-    let (live, dir, tiza) = opened("t213-symlink");
+fn a_symlink_to_the_followed_file_keeps_reloading() {
+    let (live, dir, tiza) = opened("symlink");
     std::os::unix::fs::symlink(dir.join("main.rs"), dir.join("link.rs")).unwrap();
     live.command("follow on");
     live.command("ref link.rs");
@@ -505,8 +505,8 @@ fn rev_a_symlink_to_the_followed_file_keeps_reloading() {
 }
 
 #[test]
-fn rev_link_without_a_path_on_a_reference_keeps_it() {
-    let dir = scratch("t213-link-noarg");
+fn link_without_a_path_on_a_reference_keeps_it() {
+    let dir = scratch("link-noarg");
     std::fs::write(dir.join("main.rs"), MAIN).unwrap();
     let opened = tiza_core::fs::open(&format!("{}:1-2", dir.join("main.rs").display())).unwrap();
     let tiza = opened.save_path.clone();

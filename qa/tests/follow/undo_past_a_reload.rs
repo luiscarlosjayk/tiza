@@ -1,11 +1,11 @@
-//! t-202 — With follow on, `u` past a reload brings back the old code: the
+//! With follow on, `u` past a reload brings back the old code: the
 //! screen must not claim to follow a file that holds other code, and the
 //! autosave must not pair that code's annotations with the file.
 //!
 //! Acceptance criteria:
 //! - AC1 With follow on, an undo or a redo that puts on screen code the
 //!   followed file does not hold turns follow off and says so once, in
-//!   t-193's words (`follow off: the code on screen is not main.rs; :follow
+//!   the words of a paste (`follow off: the code on screen is not main.rs; :follow
 //!   on reloads main.rs · undone: …`); `follow.status` gives `enabled:
 //!   false` and that `reason`. An undo that lands on the file's code leaves
 //!   follow on.
@@ -106,7 +106,7 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 }
 
 /// Quiet time after which "nothing happened" is believed (several times
-/// the debounce plus the worst event latency seen on CI), as in t-011.
+/// the debounce plus the worst event latency seen on CI), as in the reload on save tests.
 fn settle() {
     std::thread::sleep(Duration::from_millis(700));
 }
@@ -171,7 +171,7 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     for r in [&mut live_report, &mut disk_report] {
         r.as_object_mut().unwrap().remove("narrower");
     }
-    // The live reply also names the revision it checked (t-210).
+    // The live reply also names the revision it checked.
     live_report.as_object_mut().unwrap().remove("revision");
     assert_eq!(live_report, disk_report, "{what}: live check vs fresh load");
     let dir = tiza.parent().unwrap();
@@ -202,8 +202,8 @@ fn reloaded_over_a_highlight(name: &str) -> (Live, PathBuf, PathBuf) {
 }
 
 #[test]
-fn step1_ac1_ac5_u_past_the_reload_turns_follow_off_once_and_saves_embedded() {
-    let (live, _src, tiza) = reloaded_over_a_highlight("t202-step1");
+fn u_past_the_reload_turns_follow_off_once_and_saves_embedded() {
+    let (live, _src, tiza) = reloaded_over_a_highlight("step1");
     assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
 
     // First `u`: the reload. x = 1 and the highlight are back; main.rs
@@ -243,10 +243,10 @@ fn step1_ac1_ac5_u_past_the_reload_turns_follow_off_once_and_saves_embedded() {
 }
 
 #[test]
-fn ac1_u_of_a_note_from_before_a_harmless_reload_turns_follow_off() {
+fn u_of_a_note_from_before_a_harmless_reload_turns_follow_off() {
     // A reload that moves no annotation leaves no undo step: the note's own
     // undo step holds the code from before it.
-    let (live, src, tiza) = followed("t202-harmless", CODE);
+    let (live, src, tiza) = followed("harmless", CODE);
     live.command("note 1 entry");
     save(&src, SEVEN);
     wait_reloads(&live, 1);
@@ -255,7 +255,7 @@ fn ac1_u_of_a_note_from_before_a_harmless_reload_turns_follow_off() {
     assert_eq!(message(&live), format!("{NOTICE} · undone: note a1"));
     assert_eq!(status(&live)["enabled"], false);
     same_as_fresh(&live, &tiza, "after u of the note");
-    // `u` names what it undid for a `:clear` too (moved here from t-011).
+    // `u` names what it undid for a `:clear` too (moved here from the reload on save tests).
     live.command("note 1 one");
     live.command("note 2 two");
     live.command("clear");
@@ -264,8 +264,8 @@ fn ac1_u_of_a_note_from_before_a_harmless_reload_turns_follow_off() {
 }
 
 #[test]
-fn step2_ac2_follow_on_reloads_as_one_undo_step_and_u_turns_it_off_again() {
-    let (live, _src, tiza) = reloaded_over_a_highlight("t202-step2");
+fn follow_on_reloads_as_one_undo_step_and_u_turns_it_off_again() {
+    let (live, _src, tiza) = reloaded_over_a_highlight("step2");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(status(&live)["enabled"], false);
 
@@ -288,8 +288,8 @@ fn step2_ac2_follow_on_reloads_as_one_undo_step_and_u_turns_it_off_again() {
 }
 
 #[test]
-fn step3_u_of_a_note_made_after_the_reload_keeps_following() {
-    let (live, src, tiza) = followed("t202-step3", CODE);
+fn u_of_a_note_made_after_the_reload_keeps_following() {
+    let (live, src, tiza) = followed("step3", CODE);
     save(&src, SEVEN);
     wait_reloads(&live, 1);
     live.command("note 1 entry");
@@ -340,8 +340,8 @@ fn rebind_followed(name: &str) -> (Live, PathBuf, PathBuf) {
 }
 
 #[test]
-fn step5_ac5_u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_file() {
-    let (live, src, tiza) = rebind_followed("t202-step5");
+fn u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_file() {
+    let (live, src, tiza) = rebind_followed("step5");
 
     save(&src, &REBIND_SRC.replace("t.len()", "t.chars().count()"));
     wait_reloads(&live, 1);
@@ -368,8 +368,8 @@ fn step5_ac5_u_after_a_reload_that_dropped_a_rebound_annotation_saves_a_clean_fi
 }
 
 #[test]
-fn corner_redo_onto_the_files_code_leaves_follow_off_and_says_how() {
-    let (live, src, tiza) = reloaded_over_a_highlight("t202-redo");
+fn redo_onto_the_files_code_leaves_follow_off_and_says_how() {
+    let (live, src, tiza) = reloaded_over_a_highlight("redo");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     live.keys(&[crossterm::event::KeyCode::Char('U')]);
     assert_eq!(code(&live), lines(SEVEN));
@@ -401,8 +401,8 @@ fn corner_redo_onto_the_files_code_leaves_follow_off_and_says_how() {
 }
 
 #[test]
-fn corner_moves_applied_the_undo_is_embedded_and_follow_on_waits_for_step_0() {
-    let (live, src, tiza) = followed("t202-moves", CODE);
+fn moves_applied_the_undo_is_embedded_and_follow_on_waits_for_step_0() {
+    let (live, src, tiza) = followed("moves", CODE);
     live.api_ok(
         "move.add",
         json!({"at_step": 2, "action": "code.patch", "op": "insert", "position": "4",
@@ -443,8 +443,8 @@ fn corner_moves_applied_the_undo_is_embedded_and_follow_on_waits_for_step_0() {
 }
 
 #[test]
-fn corner_a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
-    let (live, src, tiza) = reloaded_over_a_highlight("t202-removed");
+fn a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
+    let (live, src, tiza) = reloaded_over_a_highlight("removed");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert!(live.with(|app| app.doc.is_embedded()));
     std::fs::remove_file(&src).unwrap();
@@ -474,8 +474,8 @@ fn corner_a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
 }
 
 #[test]
-fn corner_u_of_a_paste_after_the_file_changed_is_embedded() {
-    let (live, src, tiza) = followed("t202-paste-u", CODE);
+fn u_of_a_paste_after_the_file_changed_is_embedded() {
+    let (live, src, tiza) = followed("paste-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
     save(&src, SEVEN);
     settle();
@@ -533,8 +533,8 @@ fn get_put_keeps_the_screen(live: &Live, tiza: &Path, what: &str) {
 }
 
 #[test]
-fn rev_get_put_after_the_step5_u_keeps_the_code_embedded() {
-    let (live, src, tiza) = rebind_followed("t202-put-step5");
+fn get_put_after_the_step5_u_keeps_the_code_embedded() {
+    let (live, src, tiza) = rebind_followed("put-step5");
     save(&src, &REBIND_SRC.replace("t.len()", "t.chars().count()"));
     wait_reloads(&live, 1);
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
@@ -545,8 +545,8 @@ fn rev_get_put_after_the_step5_u_keeps_the_code_embedded() {
 }
 
 #[test]
-fn rev_get_put_after_a_paste_keeps_the_code_embedded() {
-    let (live, _src, tiza) = followed("t202-put-paste", CODE);
+fn get_put_after_a_paste_keeps_the_code_embedded() {
+    let (live, _src, tiza) = followed("put-paste", CODE);
     live.command("hl 3:println one");
     live.with(|app| {
         app.replace_code("fn other() {\n    println!(\"hi\");\n}\n")
@@ -558,8 +558,8 @@ fn rev_get_put_after_a_paste_keeps_the_code_embedded() {
 }
 
 #[test]
-fn rev_u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
-    let (live, src, tiza) = followed("t202-wait-u", CODE);
+fn u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
+    let (live, src, tiza) = followed("wait-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
     std::fs::remove_file(&src).unwrap();
     live.command("follow on");
@@ -605,8 +605,8 @@ fn rev_u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
 }
 
 #[test]
-fn rev_follow_off_keeps_the_file_follow_on_reloads() {
-    let (live, _src, tiza) = reloaded_over_a_highlight("t202-off-on");
+fn follow_off_keeps_the_file_follow_on_reloads() {
+    let (live, _src, tiza) = reloaded_over_a_highlight("off-on");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     live.command("follow off");
     assert_eq!(message(&live), "follow off");
@@ -625,8 +625,8 @@ fn rev_follow_off_keeps_the_file_follow_on_reloads() {
 }
 
 #[test]
-fn rev_the_reason_says_what_the_screen_shows_after_every_change() {
-    let (live, src, tiza) = reloaded_over_a_highlight("t202-reason");
+fn the_reason_says_what_the_screen_shows_after_every_change() {
+    let (live, src, tiza) = reloaded_over_a_highlight("reason");
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(status(&live)["reason"], REASON);
     // A paste on top: pasted.
@@ -655,10 +655,10 @@ fn rev_the_reason_says_what_the_screen_shows_after_every_change() {
 }
 
 #[test]
-fn rev_a_redo_back_to_the_paste_says_paste_not_version() {
+fn a_redo_back_to_the_paste_says_paste_not_version() {
     // Paste, save main.rs, `:follow on` (reload), `u` (the paste), `u` (the
     // code before the paste, which main.rs no longer holds), `U` (the paste).
-    let (live, src, tiza) = followed("t202-redo-paste", CODE);
+    let (live, src, tiza) = followed("redo-paste", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
     save(&src, SEVEN);
     live.command("follow on");
@@ -683,12 +683,12 @@ fn rev_a_redo_back_to_the_paste_says_paste_not_version() {
 }
 
 #[test]
-fn rev_u_from_the_files_code_onto_an_embedded_version_says_why_once() {
+fn u_from_the_files_code_onto_an_embedded_version_says_why_once() {
     // A note and a highlight, a reload that drops the highlight; `u` ×3
     // (reload, highlight, note), `U` ×3 back to the reload: the file's
     // code with follow off. The next `u` lands on a snapshot that is
     // already embedded (x = 1): follow is off and the bar says why.
-    let (live, src, tiza) = followed("t202-u-embedded", CODE);
+    let (live, src, tiza) = followed("u-embedded", CODE);
     live.command("note 1 entry");
     live.command("hl 2:1 one");
     save(&src, SEVEN);

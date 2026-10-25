@@ -1,4 +1,4 @@
-//! t-206 — With follow on and moves applied (step ≥ 1), saving the file in
+//! With follow on and moves applied (step ≥ 1), saving the file in
 //! the editor left a `.tiza` that did not open, and going back to step 0
 //! did not reload.
 //!
@@ -13,14 +13,14 @@
 //! Acceptance criteria:
 //! - AC1 While a reload is deferred because moves are applied, what is
 //!   saved always agrees with a fresh load: the sidecar is saved with the
-//!   code on screen embedded (as t-193/t-202 do) or not saved, never
+//!   code on screen embedded (as a paste and an undo past a reload do) or not saved, never
 //!   `code: {file}` against a file that now holds other code. `tiza check`
 //!   on the autosave = the screen, and the .tiza always opens.
 //! - AC2 Going back to step 0 with a deferred change reloads it at once as
 //!   a normal reload (one undo entry, re-anchoring, the moves' stale rule),
 //!   or turns follow off saying why; never «⟳ following» over code the file
 //!   no longer has.
-//! - AC3 Quitting (`:q`, Ctrl-C, terminal gone per t-205) while the reload
+//! - AC3 Quitting (`:q`, Ctrl-C, a closed terminal) while the reload
 //!   is still deferred leaves a .tiza that opens and shows what the screen
 //!   showed.
 //! - AC4 This file, with the repro above, with and without a rebind,
@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use serde_json::{Value, json};
 use tiza_qa::{Live, bin, scratch};
 
-/// QA 1's fixture (pruebas/t199/qa1/paste): `a1` highlights `t.len()` from
+/// QA 1's fixture: `a1` highlights `t.len()` from
 /// step 1, the step-2 move replaces `n + 1`.
 const OLD: &str = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\n";
 /// The editor's save: `t.len()` is gone.
@@ -185,7 +185,7 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     for r in [&mut live_report, &mut disk_report] {
         r.as_object_mut().unwrap().remove("narrower");
     }
-    // The live reply also names the revision it checked (t-210).
+    // The live reply also names the revision it checked.
     live_report.as_object_mut().unwrap().remove("revision");
     assert_eq!(live_report, disk_report, "{what}: live check vs fresh load");
     let dir = tiza.parent().unwrap();
@@ -213,7 +213,7 @@ fn the_repro(name: &str, rebind: bool) {
     same_as_fresh(&live, &tiza, "the reload waits at step 2");
     assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
     // A paste there is refused, and follow stays on with its reload waiting
-    // (moved here from t-193 and from the paste corner of this file).
+    // (moved here from the paste tests and from the paste corner of this file).
     let err = live
         .with(|app| app.replace_code("fn g() {}\n"))
         .unwrap_err()
@@ -243,7 +243,7 @@ fn the_repro(name: &str, rebind: bool) {
     assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
 
     // One undo entry: `u` brings the old code and a1 back, embedded, and
-    // follow goes off saying why (t-202).
+    // follow goes off saying why.
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(base(&live), lines(OLD));
     assert_eq!(live.with(|app| app.doc.annotations.len()), 1);
@@ -256,22 +256,22 @@ fn the_repro(name: &str, rebind: bool) {
 }
 
 #[test]
-fn ac1_ac2_the_repro_with_a_rebind() {
-    the_repro("t206-rebind", true);
+fn the_repro_with_a_rebind() {
+    the_repro("rebind", true);
 }
 
 #[test]
-fn ac1_ac2_the_repro_without_a_rebind() {
+fn the_repro_without_a_rebind() {
     // Without a rebind the fresh load did not fail: it drew `a1` on other
     // text in silence.
-    the_repro("t206-no-rebind", false);
+    the_repro("no-rebind", false);
 }
 
 #[test]
-fn ac3_quitting_at_step_2_leaves_the_screen() {
+fn quitting_at_step_2_leaves_the_screen() {
     // Test step 3: what is on disk while the reload waits is what quitting
     // leaves; a fresh load opens it at step 2 with the old code.
-    let (live, src, tiza) = followed("t206-quit-step2", true);
+    let (live, src, tiza) = followed("quit-step2", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     same_as_fresh(&live, &tiza, "quit at step 2");
@@ -284,8 +284,8 @@ fn ac3_quitting_at_step_2_leaves_the_screen() {
 }
 
 #[test]
-fn corner_two_saves_at_step_2_only_the_last_counts() {
-    let (live, src, tiza) = followed("t206-two-saves", true);
+fn two_saves_at_step_2_only_the_last_counts() {
+    let (live, src, tiza) = followed("two-saves", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     save_at_step_2(&live, &src, OTHER);
@@ -297,10 +297,10 @@ fn corner_two_saves_at_step_2_only_the_last_counts() {
 }
 
 #[test]
-fn corner_saved_back_as_it_was_is_no_reload() {
+fn saved_back_as_it_was_is_no_reload() {
     // A save and then one back to the code on screen: at step 0 there is
     // nothing to reload, and the document references the file again.
-    let (live, src, tiza) = followed("t206-saved-back", true);
+    let (live, src, tiza) = followed("saved-back", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
@@ -316,8 +316,8 @@ fn corner_saved_back_as_it_was_is_no_reload() {
 }
 
 #[test]
-fn corner_the_file_removed_at_step_2_and_back_with_other_code() {
-    let (live, src, tiza) = followed("t206-removed", true);
+fn the_file_removed_at_step_2_and_back_with_other_code() {
+    let (live, src, tiza) = followed("removed", true);
     live.command("step 2");
     std::fs::remove_file(&src).unwrap();
     wait_for("the removal", || {
@@ -331,8 +331,8 @@ fn corner_the_file_removed_at_step_2_and_back_with_other_code() {
 }
 
 #[test]
-fn corner_no_save_writes_nothing_and_the_live_rule_holds() {
-    let (live, src, tiza) = followed("t206-no-save", true);
+fn no_save_writes_nothing_and_the_live_rule_holds() {
+    let (live, src, tiza) = followed("no-save", true);
     live.with(|app| app.autosave = false);
     let before = std::fs::read(&tiza).unwrap();
     live.command("step 2");
@@ -345,10 +345,10 @@ fn corner_no_save_writes_nothing_and_the_live_rule_holds() {
 }
 
 #[test]
-fn rev_follow_on_while_a_change_waits_keeps_the_wait() {
+fn follow_on_while_a_change_waits_keeps_the_wait() {
     // `:follow on` (or an agent's `set_follow true`) while following says
     // so and changes nothing: step 0 still reloads.
-    let (live, src, tiza) = followed("t206-follow-on", true);
+    let (live, src, tiza) = followed("follow-on", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     live.command("follow on");
@@ -365,10 +365,10 @@ fn rev_follow_on_while_a_change_waits_keeps_the_wait() {
 }
 
 #[test]
-fn rev_an_undo_that_leaves_the_code_keeps_follow_and_the_wait() {
+fn an_undo_that_leaves_the_code_keeps_follow_and_the_wait() {
     // `u` of a note while a change waits: the step-0 code is the same, so
     // follow stays on, the code embedded, and step 0 still reloads.
-    let (live, src, tiza) = followed("t206-undo-note", true);
+    let (live, src, tiza) = followed("undo-note", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     live.command("note 1 hello");
@@ -385,11 +385,11 @@ fn rev_an_undo_that_leaves_the_code_keeps_follow_and_the_wait() {
 }
 
 #[test]
-fn rev_an_unreadable_file_then_saved_back_is_a_reference_again() {
+fn an_unreadable_file_then_saved_back_is_a_reference_again() {
     // The change that waited became unreadable (not UTF-8): step 0 cannot
     // reload it and keeps the code embedded; the file saved back as the
     // screen has it makes the document reference it again.
-    let (live, src, tiza) = followed("t206-unreadable", true);
+    let (live, src, tiza) = followed("unreadable", true);
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     live.with(|app| app.message = None);
