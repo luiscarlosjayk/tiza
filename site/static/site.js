@@ -125,7 +125,7 @@
       b.className = "prompt-copy";
       b.textContent = "Copy prompt";
       b.addEventListener("click", function () {
-        navigator.clipboard.writeText(pre.textContent).then(function () {
+        navigator.clipboard.writeText(pre.innerText.replace(/\n+$/, "")).then(function () {
           b.textContent = "Copied";
           setTimeout(function () { b.textContent = "Copy prompt"; }, 1500);
         }, function () {});

@@ -53,6 +53,8 @@ TABLE_DELIM_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
 TABLE_OPEN = '<div class="table-wrap">'
 # The info string of a prompt block: the text that a reader gives an agent.
 PROMPT_INFO = "text prompt"
+# A URL in a prompt: the site shows it in the code font.
+PROMPT_URL_RE = re.compile(r"https?://[^\s<]+")
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
@@ -227,8 +229,18 @@ class Site:
                         continue
                     # One HTML block: <pre> ends only at </pre>, so blank
                     # lines in the prompt do not end it.
-                    out.append('<pre class="prompt"><code>%s</code></pre>'
-                               % html.escape("\n".join(prompt), quote=False))
+                    # One block per line: a long URL that wraps keeps its
+                    # lines close, and the lines of the prompt keep space
+                    # between them. site.js copies the text with innerText,
+                    # which gives one line for each block.
+                    text = "".join(
+                        '<span class="prompt-line">%s</span>' % PROMPT_URL_RE.sub(
+                            # <wbr> lets a long URL wrap after a "/".
+                            lambda u: '<span class="prompt-url">%s</span>'
+                            % u.group(0).replace("/", "/<wbr>"),
+                            html.escape(l, quote=False))
+                        for l in prompt)
+                    out.append('<pre class="prompt"><code>%s</code></pre>' % text)
                     prompt = None
                 else:
                     out.append(line)
