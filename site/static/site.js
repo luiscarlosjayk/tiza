@@ -46,14 +46,44 @@
   if (current && current.scrollIntoView) current.scrollIntoView({ block: "nearest" });
 
   // ---- Heading anchors ---------------------------------------------------
+  // The text of a heading and the "#" after it link to the heading. A click
+  // (or Enter) goes to the anchor, as a link does, and also copies the link.
+  // "Link copied" shows in the heading line, so it covers no text.
+  function copyLink(h, a) {
+    if (!navigator.clipboard || !window.isSecureContext) return;
+    var url = location.href.split("#")[0] + "#" + h.id;
+    navigator.clipboard.writeText(url).then(function () {
+      var note = h.querySelector(".anchor-copied");
+      if (!note) {
+        note = document.createElement("span");
+        note.className = "anchor-copied";
+        note.setAttribute("role", "status");
+        a.after(note);
+      }
+      note.textContent = "Link copied";
+      clearTimeout(note.timer);
+      note.timer = setTimeout(function () { note.textContent = ""; }, 1500);
+    }, function () {});
+  }
   document.querySelectorAll(".doc :is(h2, h3, h4)[id]").forEach(function (h) {
+    var href = "#" + h.id;
+    // A heading that holds a link keeps its text as it is: links do not nest.
+    if (!h.querySelector("a")) {
+      var text = document.createElement("a");
+      text.className = "heading-link";
+      text.href = href;
+      while (h.firstChild) text.appendChild(h.firstChild);
+      h.appendChild(text);
+      text.addEventListener("click", function () { copyLink(h, a); });
+    }
     var a = document.createElement("a");
     a.className = "anchor";
-    a.href = "#" + h.id;
-    a.setAttribute("aria-label", "Link to this section");
+    a.href = href;
+    a.setAttribute("aria-label", "Copy the link to this section");
     a.textContent = "#";
     h.appendChild(document.createTextNode(" "));
     h.appendChild(a);
+    a.addEventListener("click", function () { copyLink(h, a); });
   });
 
   // ---- Blocks of `:` commands wrap -----------------------------------------
