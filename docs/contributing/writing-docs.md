@@ -107,7 +107,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | normal mode | the mode where you write annotations | authoring screen |
 | move | a change that a step makes to the code or the view (`code.patch`, `code.link`, `cursor`, `select`, `wait`) | patch (except `code.patch`) |
 | view | one file that a `code.link` shows, with its own annotations | pane (Herdr panes keep their name) |
-| mark | the annotation that puts a glyph and a legend on a span | badge, tag |
+| mark | the annotation that puts a glyph and a legend on a span | badge (that word is for the status bar sign), tag |
 | kind | the name of a mark, built in or custom (`warn`, `read`, `io`) | type |
 | style | a custom kind that you define (`:style`, `define_style`) | theme |
 | anchor | the code text that an annotation follows | position, cell |
@@ -117,6 +117,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | 24-bit color | the terminal feature that shows any RGB color | truecolor, RGB |
 | status bar | the bottom row of normal mode, with the state and the last message | status line, the bar, message line |
 | message | the text that a command shows in the status bar | notice, toast |
+| badge | the `!` sign and its text on the status bar that tells what the step on screen loses (`! 3 labels cut`, `! code needs N cols`) | warning sign, alert |
 | presenter | the person who shows the code; only in agent pages | user |
 | code reference | code that the document reads from a file (`"code": {"file": …}`) | file link, pointer |
 | embedded code | code that the document holds as a copy (`:embed`) | inline code, frozen code |
