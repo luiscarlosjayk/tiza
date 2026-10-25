@@ -492,17 +492,20 @@ fn scenario_12_starts_by_itself_and_loops_round_again() {
     for e in fast["steps"].as_array_mut().unwrap() {
         e["auto_advance_ms"] = json!(30);
     }
+    // Read every step the app went through (`Live::steps`), not samples of
+    // `doc.step`: a 30 ms step can fall between two polls on a slow runner.
+    let from = live.steps().len() - 1;
     live.api_ok("scene.patch", fast);
-    let mut seen = vec![live.with(|a| a.doc.step)];
+    let mut seen = Vec::new();
     wait_until("a whole pass and the start of the next", || {
-        let now = live.with(|a| a.doc.step);
-        if seen.last() != Some(&now) {
-            seen.push(now);
-        }
-        seen.ends_with(&[5, 0, 1])
+        seen = live.steps()[from..].to_vec();
+        seen.len() >= 8
     });
-    let first = seen.iter().position(|&s| s == 0).unwrap();
-    assert_eq!(&seen[first..], &[0, 1, 2, 3, 4, 5, 0, 1], "{seen:?}");
+    assert_eq!(&seen[..8], &[0, 1, 2, 3, 4, 5, 0, 1], "{seen:?}");
+    // No step skipped or repeated after that either: steps 0 to 5, round
+    // and round.
+    let cycle: Vec<u32> = (0..seen.len() as u32).map(|i| i % 6).collect();
+    assert_eq!(seen, cycle);
     // Then the patch as written: the copy keeps it, and the GIF holds
     // every step for its duration.
     live.api_ok("scene.patch", patch.clone());

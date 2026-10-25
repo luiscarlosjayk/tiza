@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::{Mutex, Once, mpsc};
+use std::sync::{Arc, Mutex, Once, mpsc};
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -136,6 +136,7 @@ pub struct Live {
     pub socket: PathBuf,
     tx: Mutex<Option<mpsc::Sender<Job>>>,
     join: Option<std::thread::JoinHandle<()>>,
+    steps: Arc<Mutex<Vec<u32>>>,
 }
 
 type Job = Box<dyn FnOnce(&mut App) + Send>;
@@ -146,22 +147,41 @@ impl Live {
         let (tx, rx) = mpsc::channel::<Job>();
         let sock = socket.clone();
         let (ready_tx, ready_rx) = mpsc::channel();
+        let steps = Arc::new(Mutex::new(Vec::new()));
+        let log = Arc::clone(&steps);
         let join = std::thread::spawn(move || {
             let mut app = App::new(doc, save_path);
             let server = tiza_tui::ipc::start(&sock).expect("socket");
             app.socket_path = Some(server.path.clone());
+            // See [`Live::steps`]: noted on this thread after each call that
+            // can change the step, so no change is lost between two polls.
+            let note = |app: &App| {
+                let mut log = log.lock().unwrap();
+                if log.last() != Some(&app.doc.step) {
+                    log.push(app.doc.step);
+                }
+            };
+            note(&app);
             ready_tx.send(()).unwrap();
             loop {
                 while let Ok(r) = server.rx.try_recv() {
                     app.handle_ipc(r.req, r.reply);
+                    note(&app);
                 }
                 app.follow_tick();
+                note(&app);
                 app.expire_proposals();
+                note(&app);
                 app.typing_tick();
+                note(&app);
                 app.auto_advance_tick(std::time::Instant::now());
+                note(&app);
                 app.present_message_tick(std::time::Instant::now());
                 match rx.recv_timeout(std::time::Duration::from_millis(10)) {
-                    Ok(job) => job(&mut app),
+                    Ok(job) => {
+                        job(&mut app);
+                        note(&app);
+                    }
                     Err(mpsc::RecvTimeoutError::Timeout) => {}
                     Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
@@ -173,6 +193,7 @@ impl Live {
             socket,
             tx: Mutex::new(Some(tx)),
             join: Some(join),
+            steps,
         }
     }
 
@@ -184,6 +205,15 @@ impl Live {
             dir.join("doc.tiza"),
             dir.join("live.sock"),
         )
+    }
+
+    /// Every step the app thread has been at, in order: the step it opened
+    /// on, then one entry for each change. The thread notes the step after
+    /// each request, tick and job, and an auto-advance moves one step per
+    /// tick, so a step that lasts less than a poll is in the list too. Read
+    /// a sequence of steps from here, not by polling `doc.step`.
+    pub fn steps(&self) -> Vec<u32> {
+        self.steps.lock().unwrap().clone()
     }
 
     /// Runs `f` on the app thread and returns its result.
