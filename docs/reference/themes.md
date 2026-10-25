@@ -206,7 +206,7 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 | `tiza: could not open FILE` | A value in `theme_overrides` of the document is not a string. |
 | `` `theme` must be a string: dark, light or toggle `` | `theme.set` got a `theme` that is not a string. |
 | `unknown theme (dark, light, terminal, auto, toggle)` | `theme.set` got a name that it does not know. |
-| `unknown theme (dark, light)` | `export_image` got a `theme` that it does not take. |
+| `unknown theme (dark, light) (invalid_argument)` | `export_image` got a `theme` that it does not take. |
 
 - In `theme file PATH: N token(s) applied on NAME`, `N` counts the keys at the top of the file. A subtable counts as one key, and an unknown key counts too. A value that is not a string does not count.
 - When Tiza cannot read a theme file, or its TOML is not valid, the message is `PATH:` and the error text.

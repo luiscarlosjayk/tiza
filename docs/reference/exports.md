@@ -215,13 +215,13 @@ The reply has these fields:
 
 | Message | When |
 |---|---|
-| `path must end in .png, .svg, .txt, .ansi, .md or .gif` | The extension of `path` is not a format of `export_image`. |
-| `unknown theme (dark, light)` | `theme` has another value. |
-| `width=N: use a number between 20 and 400` | `width` is out of the range. |
-| `scale=N: use a number between 0.25 and 8` | `scale` is out of the range. |
-| `font-size=N: use a number between 4 and 96` | `font_size` is out of the range. |
-| `interval=N: use a number of seconds between 0 and 3600` | `interval` is out of the range. |
-| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The PNG or a GIF frame is too large. |
+| `path must end in .png, .svg, .txt, .ansi, .md or .gif (invalid_argument)` | The extension of `path` is not a format of `export_image`. |
+| `unknown theme (dark, light) (invalid_argument)` | `theme` has another value. |
+| `width=N: use a number between 20 and 400 (invalid_argument)` | `width` is out of the range. |
+| `scale=N: use a number between 0.25 and 8 (invalid_argument)` | `scale` is out of the range. |
+| `font-size=N: use a number between 4 and 96 (invalid_argument)` | `font_size` is out of the range. |
+| `interval=N: use a number of seconds between 0 and 3600 (invalid_argument)` | `interval` is out of the range. |
+| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size (invalid_argument)` | The PNG or a GIF frame is too large. |
 | `No Tiza instance is listening on SOCKET` | No live instance answers on the socket of the MCP server. |
 | `MESSAGE (CODE)` | The live instance refuses a request, and `export_image` passes on its error. |
 | `the live document cannot be exported` | Tiza cannot load a view of the live document. |

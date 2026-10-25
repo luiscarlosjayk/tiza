@@ -127,6 +127,13 @@ pub struct ArrowParams {
     pub head_end: Option<String>,
 }
 
+/// An argument that the tool refuses itself, said as a refusal of the
+/// instance is said: the message, then the code in parentheses, so that an
+/// agent can tell the cases apart.
+fn invalid_argument(msg: impl std::fmt::Display) -> McpError {
+    McpError::invalid_params(format!("{msg} (invalid_argument)"), None)
+}
+
 /// Validates box/callout border strings and returns the protocol fields.
 fn border_style_json(
     border: &Option<String>,
@@ -137,19 +144,13 @@ fn border_style_json(
     let mut m = serde_json::Map::new();
     if let Some(b) = border {
         let v = Stroke::parse(b).ok_or_else(|| {
-            McpError::invalid_params(
-                format!("unknown border (use {})", Stroke::NAMES.join(", ")),
-                None,
-            )
+            invalid_argument(format!("unknown border (use {})", Stroke::NAMES.join(", ")))
         })?;
         m.insert("border".into(), serde_json::to_value(v).unwrap());
     }
     if let Some(c) = corners {
         let v = Route::parse(c).ok_or_else(|| {
-            McpError::invalid_params(
-                format!("unknown corners (use {})", Route::NAMES.join(", ")),
-                None,
-            )
+            invalid_argument(format!("unknown corners (use {})", Route::NAMES.join(", ")))
         })?;
         m.insert("corners".into(), serde_json::to_value(v).unwrap());
     }
@@ -166,13 +167,10 @@ fn emphasis_json(e: &Option<String>) -> Result<Option<Value>, McpError> {
         Some(e) => tiza_core::model::Emphasis::parse(e)
             .map(|v| Some(serde_json::to_value(v).unwrap()))
             .ok_or_else(|| {
-                McpError::invalid_params(
-                    format!(
-                        "unknown emphasis (use {})",
-                        tiza_core::model::Emphasis::NAMES.join(", ")
-                    ),
-                    None,
-                )
+                invalid_argument(format!(
+                    "unknown emphasis (use {})",
+                    tiza_core::model::Emphasis::NAMES.join(", ")
+                ))
             }),
     }
 }
@@ -189,19 +187,13 @@ fn line_style_json(
     let mut m = serde_json::Map::new();
     if let Some(s) = stroke {
         let v = Stroke::parse(s).ok_or_else(|| {
-            McpError::invalid_params(
-                format!("unknown stroke (use {})", Stroke::NAMES.join(", ")),
-                None,
-            )
+            invalid_argument(format!("unknown stroke (use {})", Stroke::NAMES.join(", ")))
         })?;
         m.insert("stroke".into(), serde_json::to_value(v).unwrap());
     }
     if let Some(r) = route {
         let v = Route::parse(r).ok_or_else(|| {
-            McpError::invalid_params(
-                format!("unknown route (use {})", Route::NAMES.join(", ")),
-                None,
-            )
+            invalid_argument(format!("unknown route (use {})", Route::NAMES.join(", ")))
         })?;
         m.insert("route".into(), serde_json::to_value(v).unwrap());
     }
@@ -210,10 +202,10 @@ fn line_style_json(
         for (key, val) in [("start", start), ("end", end)] {
             if let Some(v) = val {
                 let hv = Head::parse(v).ok_or_else(|| {
-                    McpError::invalid_params(
-                        format!("unknown {key} head (use {})", Head::NAMES.join(", ")),
-                        None,
-                    )
+                    invalid_argument(format!(
+                        "unknown {key} head (use {})",
+                        Head::NAMES.join(", ")
+                    ))
                 })?;
                 h.insert(key.into(), serde_json::to_value(hv).unwrap());
             }
@@ -771,7 +763,7 @@ impl TizaServer {
             .width
             .map(tiza_core::layout::check_width)
             .transpose()
-            .map_err(|e| McpError::invalid_params(e.to_string(), None))?;
+            .map_err(|e| invalid_argument(e.to_string()))?;
         // The instance checks the document it holds, linked files and all,
         // and sends back only the report.
         let report = self.call("check", json!({ "width": width })).await?;
@@ -942,9 +934,8 @@ impl TizaServer {
             params["file"] = json!(file);
         }
         if p.text.is_some() {
-            return Err(McpError::invalid_params(
-                "update_annotation has no `text`. Use `label` to change the text of a note or the title of a callout. To change the text of a callout, remove it and add it again (invalid_argument)",
-                None,
+            return Err(invalid_argument(
+                "update_annotation has no `text`. Use `label` to change the text of a note or the title of a callout. To change the text of a callout, remove it and add it again",
             ));
         }
         let v = self.call("annotation.update", params).await?;
@@ -989,10 +980,7 @@ impl TizaServer {
             Some("below") => "below",
             Some("auto") => "auto",
             Some(_) => {
-                return Err(McpError::invalid_params(
-                    "unknown placement (margin, below, auto)",
-                    None,
-                ));
+                return Err(invalid_argument("unknown placement (margin, below, auto)"));
             }
         };
         let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id});
@@ -1276,14 +1264,13 @@ impl TizaServer {
             Some("md") | Some("markdown") => "md",
             Some("gif") => "gif",
             _ => {
-                return Err(McpError::invalid_params(
+                return Err(invalid_argument(
                     "path must end in .png, .svg, .txt, .ansi, .md or .gif",
-                    None,
                 ));
             }
         };
         // Every number is checked before anything is drawn.
-        let bad = |e: tiza_core::Error| McpError::invalid_params(e.to_string(), None);
+        let bad = |e: tiza_core::Error| invalid_argument(e.to_string());
         let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
         let font_size =
             tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
@@ -1297,10 +1284,7 @@ impl TizaServer {
                 "dark" | "oscuro" => Some(tiza_core::ThemeName::Dark),
                 "light" | "claro" => Some(tiza_core::ThemeName::Light),
                 _ => {
-                    return Err(McpError::invalid_params(
-                        "unknown theme (dark, light)",
-                        None,
-                    ));
+                    return Err(invalid_argument("unknown theme (dark, light)"));
                 }
             },
             None => None,
@@ -1493,7 +1477,7 @@ impl ExportJob {
             ..Default::default()
         };
         let too_big = |e: tiza_export::Error| match e {
-            tiza_export::Error::TooBig(..) => McpError::invalid_params(e.to_string(), None),
+            tiza_export::Error::TooBig(..) => invalid_argument(e.to_string()),
             other => McpError::internal_error(other.to_string(), None),
         };
         let mut gif_frames = 0usize;

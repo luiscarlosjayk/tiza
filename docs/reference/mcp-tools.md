@@ -223,7 +223,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - An argument that does not apply to the type of the annotation fails with `invalid_argument`. `color` and `label` are not in this rule.
 - A spotlight stores a `color` and gives no error. `add_spotlight` has no `color`.
 - A spotlight ignores `label` and gives no error. Nothing changes.
-- An argument that the tool does not know fails. The reply names the arguments that it knows.
+- An argument that the tool does not know fails. The reply names the arguments that it knows. `text` is not in this rule: see the next items.
 - To change the text of a note, give `label`. For a callout, `label` changes the title.
 - No tool changes the text of a callout. The socket method `annotation.update` can do it with `shape`. See [Differences from the MCP tools](socket-api.md#differences-from-the-mcp-tools).
 - A `text` argument fails with a message that tells you to use `label`.
@@ -394,15 +394,16 @@ The socket codes are in [Error codes](socket-api.md#error-codes).
 |---|---|---|
 | `MESSAGE (CODE)` | `-32602` | The instance refused the request. |
 | `` No Tiza instance is listening on PATH (ERROR). Ask the user to open `tiza <file>` in a terminal, or pass --socket/--session to the MCP server. `` | `-32603` | The server did not get a reply from the instance. |
-| `unknown border (use solid, dashed, dotted, thick, double)` | `-32602` | `border` has a value that Tiza does not know. |
-| `unknown corners (use rounded, sharp)` | `-32602` | `corners` has a value that Tiza does not know. |
-| `unknown stroke (use solid, dashed, dotted, thick, double)` | `-32602` | `stroke` has a value that Tiza does not know. |
-| `unknown route (use rounded, sharp)` | `-32602` | `route` has a value that Tiza does not know. |
-| `unknown start head (use none, arrow, dot, bar, open)` | `-32602` | `head_start` has a value that Tiza does not know. |
-| `unknown end head (use none, arrow, dot, bar, open)` | `-32602` | `head_end` has a value that Tiza does not know. |
-| `unknown emphasis (use fill, underline, brackets, strike)` | `-32602` | `emphasis` has a value that Tiza does not know. |
-| `unknown placement (margin, below, auto)` | `-32602` | `placement` has a value that Tiza does not know. |
-| `width=N: use a number between 20 and 400` | `-32602` | The `width` of `check` is outside the limits. |
+| `unknown border (use solid, dashed, dotted, thick, double) (invalid_argument)` | `-32602` | `border` has a value that Tiza does not know. |
+| `unknown corners (use rounded, sharp) (invalid_argument)` | `-32602` | `corners` has a value that Tiza does not know. |
+| `unknown stroke (use solid, dashed, dotted, thick, double) (invalid_argument)` | `-32602` | `stroke` has a value that Tiza does not know. |
+| `unknown route (use rounded, sharp) (invalid_argument)` | `-32602` | `route` has a value that Tiza does not know. |
+| `unknown start head (use none, arrow, dot, bar, open) (invalid_argument)` | `-32602` | `head_start` has a value that Tiza does not know. |
+| `unknown end head (use none, arrow, dot, bar, open) (invalid_argument)` | `-32602` | `head_end` has a value that Tiza does not know. |
+| `unknown emphasis (use fill, underline, brackets, strike) (invalid_argument)` | `-32602` | `emphasis` has a value that Tiza does not know. |
+| `unknown placement (margin, below, auto) (invalid_argument)` | `-32602` | `placement` has a value that Tiza does not know. |
+| `` update_annotation has no `text`. Use `label` to change the text of a note or the title of a callout. To change the text of a callout, remove it and add it again (invalid_argument) `` | `-32602` | `update_annotation` got `text`. |
+| `width=N: use a number between 20 and 400 (invalid_argument)` | `-32602` | The `width` of `check` is outside the limits. |
 | `tool not found` | `-32602` | The client called a tool that the server does not have. |
 | `unknown resource; available: tiza://scene, tiza://code, tiza://render, tiza://render.md` | `-32002` | The client read a resource that the server does not have. |
 | `internal error: the WHAT call failed with a bug in Tiza (a panic; its message is on the MCP server's stderr). Please report it; the live instance is unaffected` | `-32603` | A bug in the server stopped the call. |
@@ -418,10 +419,11 @@ The socket codes are in [Error codes](socket-api.md#error-codes).
 - Thus the instance can be busy or stopped, and not only absent.
 - `WHAT` is `tool NAME` for a tool call, and `resource` for a resource read.
 - `failed to deserialize parameters:` comes when an argument has the wrong type. It also comes when a required argument is missing or `null`.
-- `failed to deserialize parameters:` also comes when `update_annotation` or `clear_annotations` gets an argument that it does not know.
+- `failed to deserialize parameters:` also comes when `update_annotation` or `clear_annotations` gets an argument that it does not know. `text` of `update_annotation` gets its own message.
 - `failed to deserialize parameters:` ends with the error of the parser, for example ``missing field `text` ``.
 - The messages of `export_image` are in [Errors of `export_image`](exports.md#errors-of-export_image).
 - The server checks `border`, `corners`, `stroke`, `route`, the heads, `emphasis`, `placement` and the `width` of `check` itself. It sends no request for a bad value.
+- These refusals of the server end with `(invalid_argument)`, as a refusal of the instance does.
 - An error about a value from a fixed set, such as `color` or `border`, does not repeat the wrong value. It gives the valid values. An error about a value of the wrong type repeats the value, cut at 40 characters.
 - The `width` of `render_text` goes to the instance. The instance refuses a bad width with `invalid_argument`.
 - Only `update_annotation` and `clear_annotations` refuse an argument that they do not know. The other tools ignore an unknown argument at the top level.
