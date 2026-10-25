@@ -28,9 +28,32 @@ pub fn example(rel: &str) -> PathBuf {
         .join(rel)
 }
 
-/// A scratch directory unique to this test binary + name, emptied on each call.
+/// A new empty scratch directory: `tiza-qa-{pid}-{name}`, and for a name
+/// that this process used before, `tiza-qa-{pid}-{name}-{n}` (n = 2, 3…).
+/// So two calls never share a folder, also with the same name. Tests run
+/// in parallel in one process: a shared folder that the second call
+/// emptied lost the first test's files. The first use keeps the short
+/// name: a socket in the folder must stay under the length limit of a
+/// Unix socket path (104 bytes on macOS). To give a folder to other code,
+/// pass the `PathBuf`, not the name.
 pub fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("tiza-qa-{}-{name}", std::process::id()));
+    static USES: Mutex<Option<std::collections::HashMap<String, usize>>> = Mutex::new(None);
+    let n = {
+        let mut uses = USES.lock().unwrap_or_else(|e| e.into_inner());
+        let count = uses
+            .get_or_insert_with(Default::default)
+            .entry(name.to_string())
+            .or_insert(0);
+        *count += 1;
+        *count
+    };
+    let folder = if n == 1 {
+        format!("tiza-qa-{}-{name}", std::process::id())
+    } else {
+        format!("tiza-qa-{}-{name}-{n}", std::process::id())
+    };
+    let dir = std::env::temp_dir().join(folder);
+    // A folder left by an earlier process with the same pid.
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     dir

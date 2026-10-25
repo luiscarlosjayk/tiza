@@ -163,7 +163,7 @@ fn wide(n: usize) -> String {
 fn corner_after_a_follow_reload_the_time_gives_way_and_the_badge_is_whole_or_its_sign() {
     // As in Zed's terminal docked on the right (68 columns): code that needs
     // more columns, followed, after one reload.
-    let dir = scratch("t246-follow");
+    let dir = scratch("t246-follow-reload");
     let src = std::path::absolute(dir.join("lib.rs")).unwrap();
     std::fs::write(&src, wide(70)).unwrap();
     let mut doc = tiza_core::Document::from_code(&wide(70), "rs", Some(src.display().to_string()));
