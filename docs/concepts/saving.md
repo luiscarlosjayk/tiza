@@ -122,11 +122,27 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 | The code of the document comes from another source. | `another document loaded: autosave off (:w saves over FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
 | The code sent is not the same as the file on disk. | `not saved — autosave off: REASON (:w saves it embedded in FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
 | The code sent is not the same as the file on disk, and autosave is off already. | `not saved: REASON (shown embedded)` |
+| The code sent is the copy that Tiza loaded, and the file changed on disk after that. | `FILE changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)` |
+| Autosave is off, the code sent is the text of a file that the open document shows embedded, and no other message of the put shows. | `FILE is a reference again; autosave still off (:autosave on resumes)` |
 
+- `REASON` is `the code sent for FILE differs from the file on disk`. For a linked file that Tiza did not read before and cannot read now, it is `FILE is not a file on disk`. Tiza joins several reasons with `; `.
+- When the code sent is not the same as one file, and another file changed on disk, the status bar shows one message. The second part starts with ` · also `.
+- In the last two rows, `FILE` can be a list of files. With more than one file, the last message says `are` in place of `is`.
 - With follow mode on, a document from another source also turns follow mode off. The message says so.
-- When the code sent is the copy that Tiza loaded, and only the file changed on disk, the code stays a code reference. Autosave goes on.
+- When the code sent is the copy that Tiza loaded, and only the file changed on disk, the code stays a code reference. Autosave goes on. The screen keeps the copy that Tiza loaded.
 - After a `scene get` and a `scene put` of the open document, a document that reads its code from a file still reads it from the file. Tiza embeds nothing.
+- After a `scene put` of changed code, the document holds the code embedded. A `scene put` of the text of the file makes the code a file reference again.
+- Tiza drops a `views` entry that no `code.link` names. It does not save it.
 - A `scene put` that changes nothing writes nothing.
+
+Tiza refuses a `scene put` in these saving cases. The error code is `invalid_argument`. The document and the file on disk do not change.
+
+| Message | When |
+|---|---|
+| `scene.put: the code sent is not what FILE holds now, and follow is on (the screen shows the file as it is): scene.get again; to change the code, edit FILE` | Follow mode is on, and the code sent for the main file is not the text of the file now. |
+| `scene.put: FILE cannot be read (ERROR) and the document reads its code from it: put the file back, or :embed to keep the copy loaded` | The open document reads code from a file, the main file or a linked file that Tiza read before. Tiza cannot read that file now. |
+
+`ERROR` is the read error of Tiza. It ends with the error text of the system. The other refusals are in [`scene.put` and `scene.patch`](../reference/socket-api.md#sceneput-and-scenepatch).
 
 ## When the terminal closes
 

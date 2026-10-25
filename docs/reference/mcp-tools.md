@@ -357,7 +357,12 @@ The `clipped` field has one of these messages.
 | `its label is cut with … at W columns (check at width W lists it)` | Tiza cuts the label at the width of the screen. |
 | `its label is not drawn: no room at W columns (check at width W lists it)` | Tiza does not draw the label at the width of the screen. |
 
-`W` is the width of the code area of the screen. `check` at that width gives the same result. To make a label fit, make it shorter, or ask the presenter for a wider terminal.
+`W` is the width of the code area of the screen. `check` at that width gives the same result.
+
+- The width of the code area is the terminal width less the side padding, from 20 to 400. For example, it is 98 in a terminal of 100 columns with the default padding.
+- Before the instance knows the size of its terminal, the width is 100.
+
+To make a label fit, make it shorter, or ask the presenter for a wider terminal.
 
 ## Resources
 

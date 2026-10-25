@@ -84,11 +84,11 @@ Follow mode also turns off in three more cases. The message gives the reason.
 | Message | When |
 |---|---|
 | `following FILE` | `:follow on` started follow mode. |
-| `following FILE (waiting: moves applied at step N; loads at step 0)` | Follow mode started at step 1 or later. See [Moves](#moves). |
+| `following FILE (waiting: moves applied at step N; loads at step 0)` | Follow mode started while a move is applied. See [Moves](#moves). |
 | `already following FILE` | Follow mode was on already. |
 | `FILE reloaded (#N): K annotations kept` | A reload kept all the annotations. |
 | `FILE reloaded (#N): K annotations kept, D dropped (text gone; u undoes)` | A reload dropped `D` annotations. |
-| `FILE changed on disk but moves are applied at step N: go back to step 0 to reload` | You saved the file at step 1 or later. |
+| `FILE changed on disk but moves are applied at step N: go back to step 0 to reload` | You saved the file while a move is applied. |
 | `FILE removed; waiting for it to come back` | The file is not on disk. |
 | `FILE is back; following it` | The file is on disk again. |
 | `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
@@ -99,20 +99,25 @@ Follow mode also turns off in three more cases. The message gives the reason.
 | `undone: reload #N` | `u` undid a reload. |
 | `follow is off: :follow on reloads FILE` | `u` brought back the code of the file. |
 | `follow off` | `:follow off` stopped follow mode. |
+| `follow off: cannot watch DIR: ERROR` | The file watcher could not start. |
+
+- When the first move is at step 2 or later, `loads at step 0` becomes `loads at step M or earlier`. `M` is the step before the first move.
+- `already following FILE` gets the same `(waiting: …)` end while a move is applied.
+- `DIR` is the folder of the file. `ERROR` is the error of the system, or `the watcher did not start`.
 
 ## Special cases
 
 ### Moves
 
-At step 1 or later, a save in the editor waits until you go back to step 0.
+A save in the editor waits while a move is applied at the step on screen. A move is applied when its `at_step` is that step or an earlier step.
 
 1. The message is `FILE changed on disk but moves are applied at step N: go back to step 0 to reload`.
-2. Until you go back to step 0, the document keeps the code on screen as embedded code. If you quit, the document opens as you saw it.
-3. At step 0, Tiza reloads the change at once. This is one reload. `u` undoes it.
+2. Until you go to a step with no move applied, the document keeps the code on screen as embedded code. If you quit, the document opens as you saw it.
+3. At a step with no move applied, Tiza reloads the change at once. This is one reload. `u` undoes it.
 
 When you save the file back to its old content, Tiza does not reload.
 
-A document opens at its saved `step`, or at step 1 when it has none. At step 1 or later, `--follow` and `:follow on` start follow mode. The reload waits for step 0, and the message is `following FILE (waiting: moves applied at step N; loads at step 0)`.
+A document opens at its saved `step`, or at step 1 when it has none. When a move is applied at that step, `--follow` and `:follow on` start follow mode, and the reload waits. The message is `following FILE (waiting: moves applied at step N; loads at step 0)`.
 
 ### Link another file
 
@@ -128,7 +133,24 @@ Some editors save a file with two writes. The first write is empty. When Tiza re
 
 ## Agents and follow mode
 
-Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `last_reload` and `missing`.
+Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `last_reload`, `missing` and `reason`.
+
+- The reply of `follow.set` comes at once, for example `following FILE`. The file watcher starts on a thread of its own.
+- A save while the watcher starts loads when the watcher runs.
+- `reason` tells why a save does not load now, or why follow mode is off. `reason` is absent when no reason applies.
+- `scene.get` gives `follows`. A `scene.put` that sends `follows` sets the file that `:follow on` reloads.
+- A `scene.put` of the open document without `follows` keeps the file that the open document follows.
+
+| `reason` | When |
+|---|---|
+| `waiting: moves applied at step N; loads at step 0` | Follow mode is on, and a move is applied at the step on screen. |
+| `the code is pasted, not FILE; :follow on reloads FILE` | Follow mode is off after a paste. |
+| `the code is the paste again, not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back a paste. |
+| `the code on screen is not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back code that the file does not have now. |
+| `cannot watch DIR: ERROR` | Follow mode is off, because the file watcher could not start. |
+
+- The first row can end with `loads at step M or earlier`, as in [Messages](#messages).
+- When the file holds the code on screen again, follow mode is off and `reason` is absent.
 
 ## How it works
 

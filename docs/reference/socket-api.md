@@ -259,7 +259,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `build` | The git commit of the instance. |
 | `protocol` | The version of the protocol. |
 | `revision` | A number that grows with the changes. See the list under this table. |
-| `file` | The file on screen: the absolute path of the main file, or the file name that the `code.link` gives. |
+| `file` | The file on screen: the path of the main file as Tiza opened it, or the file that the `code.link` gives. |
 | `lines` | The number of lines on screen, which is the size of the window of a `code.link`. |
 | `first_line`, `last_line` | The first line and the last line of the code on screen. |
 | `view` | The `code.link` view on screen, as `FILE` or `FILE:A-B`, when it is not the main file. |

@@ -191,6 +191,7 @@ Each value has this meaning:
 - `emphasis`: `underline` draws a row under the span.
 - `emphasis`: `brackets` draws `⌈ ⌉` beside the span.
 - `emphasis`: `strike` draws a line through the span.
+- `emphasis`: `fill` is the default. Tiza does not write it to the file.
 - `placement`: `margin` puts the callout in the right margin.
 - `placement`: `below` puts the callout in its own rows after `to_line`.
 - `placement`: `auto` uses the margin when the terminal has room.
