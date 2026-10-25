@@ -886,7 +886,7 @@ fn sym(l: &Layout, x: usize, y: usize) -> String {
 }
 
 #[test]
-fn rev2_a_callout_with_zero_width_spaces_stays_in_its_border() {
+fn a_callout_with_zero_width_spaces_stays_in_its_border() {
     // On main the zero-width spaces each took a cell the block did not
     // count: the text crossed the right border (61 and 100 columns).
     let doc =
@@ -931,7 +931,7 @@ fn rev2_a_callout_with_zero_width_spaces_stays_in_its_border() {
 }
 
 #[test]
-fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
+fn a_label_of_only_zero_width_characters_is_no_label() {
     // blank-null (a copy of the margin callouts fixture) has no labels; zero-width-labels has
     // U+200B U+2060 U+200D as the label of a highlight, a mark, an arrow
     // and a box, as the title of two callouts, and a note of two U+200B.
@@ -950,7 +950,7 @@ fn rev2_a_label_of_only_zero_width_characters_is_no_label() {
 // ---------- Review 2 ----------
 
 #[test]
-fn rev2_a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
+fn a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
     // Refused like a text of only spaces; before, it was added and drew
     // nothing, and `check` said nothing.
     let live = Live::from_code("a = 1\nb = 2\n", "sh", "empty-text");
@@ -986,7 +986,7 @@ fn rev2_a_note_or_callout_text_of_only_zero_width_characters_is_empty() {
 }
 
 #[test]
-fn rev2_white_space_controls_in_a_label_are_spaces_everywhere() {
+fn white_space_controls_in_a_label_are_spaces_everywhere() {
     // A vertical tab, a form feed or NEL in a label is a space, as a tab
     // is: a wrapped label (a note, a margin label) took it as one, while a
     // box label drew `␋`. A label of only these is no label.
@@ -1011,7 +1011,7 @@ fn rev2_white_space_controls_in_a_label_are_spaces_everywhere() {
 }
 
 #[test]
-fn rev2_a_label_cut_in_a_box_border_is_measured_as_drawn() {
+fn a_label_cut_in_a_box_border_is_measured_as_drawn() {
     // Each lam-alef pair is two graphemes, two cells, but the whole string
     // measured one cell each: the label ran over the box's corner.
     let doc = doc_of(&json!({
@@ -1033,7 +1033,7 @@ fn rev2_a_label_cut_in_a_box_border_is_measured_as_drawn() {
 }
 
 #[test]
-fn rev2_a_struck_mark_keeps_the_error_colour() {
+fn a_struck_mark_keeps_the_error_colour() {
     let doc = doc_of(&code_doc(
         &["x\u{2060}y = 1;"],
         json!([{"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 4}, "emphasis": "strike"}]),
@@ -1050,7 +1050,7 @@ fn rev2_a_struck_mark_keeps_the_error_colour() {
 }
 
 #[test]
-fn rev2_a_long_word_with_zero_width_spaces_wraps_at_the_full_width() {
+fn a_long_word_with_zero_width_spaces_wraps_at_the_full_width() {
     // Each zero-width space counted one cell where a long word is split:
     // the rows of a 20-column callout held 10 letters.
     let doc = doc_of(&code_doc(
@@ -1072,7 +1072,7 @@ fn rev2_a_long_word_with_zero_width_spaces_wraps_at_the_full_width() {
 }
 
 #[test]
-fn rev2_tags_in_a_flag_are_marked_unless_they_name_a_subdivision() {
+fn tags_in_a_flag_are_marked_unless_they_name_a_subdivision() {
     let flag = |tags: &str| -> String {
         let t: String = tags
             .chars()
@@ -1095,7 +1095,7 @@ fn rev2_tags_in_a_flag_are_marked_unless_they_name_a_subdivision() {
 }
 
 #[test]
-fn rev2_a_step_message_shows_the_titles_control_pictures() {
+fn a_step_message_shows_the_titles_control_pictures() {
     // `:goto`, and `:next`/`:prev` when they cannot move, name the step
     // with its title: its BEL as `␇`, as the status bar draws it.
     let mut doc = code_doc(
