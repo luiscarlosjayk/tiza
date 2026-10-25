@@ -6,7 +6,7 @@
 //! meantime timed out.
 //!
 //! Acceptance criteria:
-//! - AC1 Measured first: with t-213 running in another process, a single
+//! - AC1 Measured first: with the follow tests running in another process, a single
 //!   watcher took 8.2 s to start and 22 s to drop; idle, 2 ms and 0.3 ms
 //!   (card note).
 //! - AC2 The watcher starts and stops on threads of its own, so starting
@@ -139,8 +139,8 @@ fn assert_next_within_1s(out: &str) {
 }
 
 #[test]
-fn ac2_a_save_while_the_watch_starts_is_reloaded() {
-    let dir = setup("t228-save");
+fn a_save_while_the_watch_starts_is_reloaded() {
+    let dir = setup("save");
     let out = run(
         &dir,
         "save.py",
@@ -176,8 +176,8 @@ if ok:
 }
 
 #[test]
-fn corner_follow_off_and_quit_while_the_watch_starts() {
-    let dir = setup("t228-off");
+fn follow_off_and_quit_while_the_watch_starts() {
+    let dir = setup("off");
     let out = run(
         &dir,
         "off.py",
@@ -212,8 +212,8 @@ if ok:
 }
 
 #[test]
-fn corner_many_on_off_quickly_end_in_the_last_one_with_one_watcher() {
-    let dir = setup("t228-many");
+fn many_on_off_quickly_end_in_the_last_one_with_one_watcher() {
+    let dir = setup("many");
     let out = run(
         &dir,
         "many.py",
@@ -251,8 +251,8 @@ if ok:
 }
 
 #[test]
-fn ac2_a_watch_that_fails_turns_follow_off_and_says_why() {
-    let dir = setup("t228-fail");
+fn a_watch_that_fails_turns_follow_off_and_says_why() {
+    let dir = setup("fail");
     let out = run(
         &dir,
         "fail.py",
@@ -287,10 +287,10 @@ if ok:
 }
 
 #[test]
-fn rev_a_start_over_a_paste_at_step_1_keeps_saying_it_waits() {
+fn a_start_over_a_paste_at_step_1_keeps_saying_it_waits() {
     // The watcher's start counted as a save: over a paste at a step with
     // moves applied, the bar said the file changed on disk, and it did not.
-    let dir = scratch("t228-paste");
+    let dir = scratch("paste");
     std::fs::write(dir.join("main.rs"), "fn main() {\n    let x = 1;\n}\n").unwrap();
     let doc = serde_json::json!({
         "schema": 1,

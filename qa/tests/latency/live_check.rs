@@ -1,40 +1,4 @@
-//! t-210 — The live `check` freezes the TUI while it runs (16 s on a
-//! 3,000-line tutorial since t-200's width search).
-//!
-//! The live `check` (socket `check`, MCP `check`) ran on the TUI thread, so
-//! the screen, the keys and every other socket request waited until it
-//! ended. `tiza check` on the command line is not affected (no TUI).
-//!
-//! Acceptance criteria:
-//! - AC1 While a live `check` runs, the TUI keeps drawing and taking keys,
-//!   and other socket requests are answered (`status`, `render_text`,
-//!   annotation edits); a step change or a key during the check is not
-//!   delayed by it.
-//! - AC2 The check runs on a snapshot of the document taken when it was
-//!   asked (no lock held on the live document while it runs); if the
-//!   document changes before it ends, the reply says which revision it
-//!   checked (or the check is redone on the latest), never a mix.
-//! - AC3 Concurrent `check` requests do not stack: a new one while one runs
-//!   either waits for it and shares its result, or cancels and replaces
-//!   it; at most one runs at a time.
-//! - AC4 Same result as today, field for field, for a document that does
-//!   not change during the check (the CLI `tiza check` and the live one
-//!   agree).
-//! - AC5 Quitting (`:q`, Ctrl-C, terminal gone per t-205) while a check
-//!   runs exits at once; the check thread does not keep the process alive.
-//! - AC6 This file; CHANGELOG (Fixed); agent guide line for the reply's
-//!   new `revision` field.
-//!
-//! Corner cases: MCP `check` with a client timeout shorter than the check
-//! (the server still answers when done); `--smoke` and `render` unchanged;
-//! a panic in the check thread answers `internal` and leaves the TUI
-//! running (t-166).
-//!
-//! The document is generated (300 lines, 16 annotations over 4 steps, as
-//! the card measured), big enough for a check that takes seconds in a
-//! debug build and most of a second in a release one. Nothing waits on a
-//! fixed sleep: a request is answered within a deadline or the test
-//! fails, and "while the check runs" means before its reply arrived.
+//! Quitting while a live check runs exits at once.
 
 use std::path::PathBuf;
 
@@ -78,7 +42,7 @@ fn big_doc(lines: usize) -> Value {
         .collect();
     json!({
         "schema": 1,
-        "title": format!("Big tutorial ({lines} lines, t-210)"),
+        "title": format!("Big tutorial ({lines} lines)"),
         "source": {"language": "rust", "first_line": 1},
         "code": code,
         "annotations": annotations,
@@ -94,7 +58,7 @@ fn big_file(name: &str) -> PathBuf {
 }
 
 /// Step 4 / AC5: `:q`, Ctrl-C, SIGHUP and the terminal going away without
-/// a SIGHUP (the pty closed from the master side, t-205) while a check
+/// a SIGHUP (the pty closed from the master side) while a check
 /// runs inside the instance. That it runs there is shown by the instance
 /// itself: of three checks at three widths (the default, 60 and 70), one is
 /// told `busy` — replaced while it waited, which only happens while another
@@ -104,8 +68,8 @@ fn big_file(name: &str) -> PathBuf {
 /// the line discipline restored (canonical mode and echo on), removes its
 /// socket, and no check's client gets a report.
 #[test]
-fn ac5_quitting_while_a_check_runs_exits_at_once() {
-    let file = big_file("t210-ac5");
+fn quitting_while_a_check_runs_exits_at_once() {
+    let file = big_file("ac5");
     let dir = file.parent().unwrap().to_path_buf();
     let body = r##"
 import json

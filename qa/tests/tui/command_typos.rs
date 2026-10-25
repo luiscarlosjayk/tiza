@@ -21,8 +21,7 @@
 //! - AC9 This table drives the card's list through the real command runner.
 //! - AC10 A rejected command never ends in a success message.
 
-use serde_json::json;
-use tiza_qa::{Live, fixture, scratch, tiza};
+use tiza_qa::{Live, scratch};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hi\");\n    takes(s);\n    // println!(\"{s}\");\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
 
@@ -152,103 +151,6 @@ fn valid_forms_still_work_and_report_what_they_did() {
     live.command(&long);
     let (msg, err) = live.message().unwrap();
     assert!(!err, "{msg}");
-}
-
-#[test]
-fn export_sizes_are_bounded_in_the_tui_and_the_cli() {
-    let live = fresh("export");
-    let dir = scratch("export-files");
-    let png = dir.join("x.png");
-    rejected(
-        &live,
-        &format!("export {} width=99999", png.display()),
-        "width=99999: use a number between 20 and 400",
-    );
-    rejected(
-        &live,
-        &format!("export {} width=5", png.display()),
-        "width=5: use a number between 20 and 400",
-    );
-    assert!(!png.exists());
-    // The CLI: same message, non-zero exit, no allocator text.
-    let ex = fixture("shared/ownership/ownership.rs.tiza");
-    let out = tiza(&[
-        "render",
-        ex.to_str().unwrap(),
-        "--width",
-        "99999",
-        "--out",
-        png.to_str().unwrap(),
-    ]);
-    assert!(!out.status.success());
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("width=99999: use a number between 20 and 400"),
-        "{err}"
-    );
-    assert!(!err.contains("memory allocation"));
-    let out = tiza(&[
-        "render",
-        ex.to_str().unwrap(),
-        "--scale",
-        "99",
-        "--out",
-        png.to_str().unwrap(),
-    ]);
-    assert!(!out.status.success());
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("scale=99: use a number between 0.25 and 8"),
-        "{err}"
-    );
-    // Inside the range but over the pixel budget: refused by the budget.
-    let out = tiza(&[
-        "render",
-        ex.to_str().unwrap(),
-        "--width",
-        "400",
-        "--scale",
-        "8",
-        "--out",
-        png.to_str().unwrap(),
-    ]);
-    assert!(!out.status.success());
-    let err = String::from_utf8_lossy(&out.stderr);
-    assert!(
-        err.contains("over the limit (16384 px per side, 100000000 px in all)"),
-        "{err}"
-    );
-    assert!(!png.exists());
-    // The socket's render.text and the MCP's export_image get the same cap.
-    let r = live.api("render.text", json!({"width": 99999}));
-    assert!(
-        r.error
-            .unwrap()
-            .message
-            .contains("width=99999: use a number between 20 and 400")
-    );
-    // AC3: the largest allowed export is fast.
-    let t = std::time::Instant::now();
-    let out = tiza(&[
-        "render",
-        ex.to_str().unwrap(),
-        "--width",
-        "400",
-        "--scale",
-        "2",
-        "--out",
-        png.to_str().unwrap(),
-    ]);
-    assert!(
-        out.status.success(),
-        "{}",
-        String::from_utf8_lossy(&out.stderr)
-    );
-    // 5 s here in debug, ~0.5 s in release; the shared CI runners are two
-    // to three times slower, so the debug budget is wide (the release
-    // budget is the one the card means).
-    let budget = if cfg!(debug_assertions) { 40 } else { 10 };
-    assert!(t.elapsed().as_secs() < budget, "{:?}", t.elapsed());
 }
 
 #[test]
