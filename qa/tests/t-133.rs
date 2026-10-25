@@ -15,8 +15,9 @@
 //!   `--update-baseline --note`.
 //! - AC3 `scripts/bench.sh --install` times a cold `cargo install --path
 //!   crates/tiza-cli --root <tmp>`; the baseline keeps it as information.
-//! - AC4 README: one line with the download size; AGENTS.md: run size-check
-//!   and bench before pushing a dependency or an embedded asset.
+//! - AC4 AGENTS.md: run size-check and bench before pushing a dependency
+//!   or an embedded asset. The download size line (now in
+//!   docs/guides/install.md) is a manual check: no test pins prose.
 //! - AC5 The 2026-10-18 numbers are the first baseline.
 //! - AC6 `[profile.release]`: `lto = "fat"`, `codegen-units = 1`,
 //!   `strip = true`, the default `panic = "unwind"` (no `panic = "abort"`,

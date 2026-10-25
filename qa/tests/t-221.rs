@@ -347,7 +347,7 @@ fn ac3_the_read_only_message_points_at_saveas_and_it_works() {
 }
 
 #[test]
-fn ac5_changelog_readme_and_guide() {
+fn ac5_changelog() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("CHANGELOG.md").contains(":saveas"), "CHANGELOG");

@@ -177,7 +177,7 @@ fn corner_the_help_keeps_scrolling_with_the_page_keys() {
 }
 
 #[test]
-fn ac5_the_help_readme_and_changelog_say_so() {
+fn ac5_the_changelog_says_so() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("CHANGELOG.md").contains("To present with a clicker"));

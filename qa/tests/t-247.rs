@@ -205,7 +205,7 @@ print("EXIT", s.finish(10))
 }
 
 #[test]
-fn ac4_the_help_the_readme_and_the_changelog_say_it() {
+fn ac4_the_help_and_the_changelog_say_it() {
     let help: Vec<String> = tiza_tui::keys::HELP
         .iter()
         .flat_map(|(_, rows)| rows.iter().map(|r| r.key_text()))
@@ -443,7 +443,7 @@ fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
 }
 
 #[test]
-fn ac6_the_readme_and_the_changelog_name_the_chips_and_the_message() {
+fn ac6_the_changelog_names_the_chips_and_the_message() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     let changelog = read("CHANGELOG.md");

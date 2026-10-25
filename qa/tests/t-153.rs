@@ -1,12 +1,10 @@
-//! t-153 — Credits: Demo Time among the inspirations, Luis as the author in
-//! the README, one form of his name in Cargo.toml and LICENSE-MIT.
+//! t-153 — Credits: one form of Luis's name in Cargo.toml and LICENSE-MIT,
+//! and the license text of the README.
 //!
 //! Acceptance criteria:
-//! - AC1 README «Inspired by» line adds [Demo Time](https://demotime.show),
-//!   keeping the existing four.
-//! - AC2 README ends with the author line: «Made by
-//!   [Luis Carlos Osorio Jayk](https://github.com/luiscarlosjayk) (LuisK) ·
-//!   [LinkedIn](…) · [YouTube](…).» — exactly these three links.
+//! - AC1 and AC2 (Demo Time in the README «Inspired by» line, the author
+//!   line at the end of the README) are manual checks: since the test rule
+//!   of AGENTS.md, no test pins prose.
 //! - AC3 `[workspace.package] authors` has one entry, the full name (Claude
 //!   removed); every crate keeps `authors.workspace = true`.
 //! - AC4 LICENSE-MIT: «Copyright (c) 2026 Luis Carlos Osorio Jayk and Tiza

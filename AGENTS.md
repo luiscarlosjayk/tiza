@@ -2,8 +2,8 @@
 
 - Cargo workspace with 5 crates: `tiza-core` (model/layout, no terminal), `tiza-tui`, `tiza-mcp`, `tiza-export` (SVG/PNG, the only one linking resvg), `tiza` (the binary, in `crates/tiza-cli`).
 - Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
-- Every feature ticket ends with acceptance criteria, manual test steps and corner cases on its board card. Add automated tests only for what can break: the behavior of the binary, the API, MCP, the TUI or the render, and the regression of a bug that you fixed. Put them in `qa/tests/t-XXX.rs`, one independent crate per ticket, with fixtures in `qa/fixtures/t-XXX/` (see `qa/README.md`). `examples/` holds demos only, never test data.
-- A test must catch a bug or a broken user experience. Do not write a test that only checks that a doc, a help text, the README, the CHANGELOG or an ADR contains a sentence or a heading. A test can read a doc only in these cases:
+- Every feature ticket ends with acceptance criteria, manual test steps and corner cases on its board card. Add automated tests only for what can break. That is the behavior of the binary, the API, MCP, the TUI or the render. Also add a test for the regression of each bug that you fix. Put them in `qa/tests/t-XXX.rs`, one independent crate per ticket, with fixtures in `qa/fixtures/t-XXX/` (see `qa/README.md`). `examples/` holds demos only, never test data.
+- A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading. This applies to a doc, a help text, the README, the CHANGELOG and an ADR. A test can read a doc only in these cases:
   - A script or a workflow reads that text. Examples: `## [Unreleased]` for `scripts/bump-version.sh`, and the anchor that `release.yml` names.
   - The test compares the doc with the code. Examples: the keys table, the help against the real formats, and JSON that must parse.
   - The test checks that a generated image is equal to a fresh render.

@@ -722,7 +722,7 @@ fn ac5_without_these_characters_every_measure_is_the_old_one() {
 }
 
 #[test]
-fn ac6_changelog_and_readme() {
+fn ac6_changelog() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert!(changelog.contains("U+2B1A"), "CHANGELOG");

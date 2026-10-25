@@ -17,7 +17,7 @@ Open them with `tiza examples/<file>.tiza --no-save` and advance with `n`. Both 
 "code": { "file": "src/stack.rs", "lines": "7-30" }
 
 // 2. Absolute reference
-"code": { "file": "/Users/luis/projects/app/src/main.rs" }
+"code": { "file": "/path/to/app/src/main.rs" }
 
 // 3. Embedded: portable, frozen (`:embed` inside the TUI)
 "code": ["fn main() {", "    println!(\"hello\");", "}"]

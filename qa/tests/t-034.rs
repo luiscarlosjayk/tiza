@@ -1,25 +1,13 @@
-//! t-034 — README «Terminal support»: verified in Zed's terminal and Herdr
-//! on macOS; other truecolor terminals expected to work, with known caveats.
+//! t-034 — Terminal support: the claims that docs/reference/terminals.md
+//! makes about the code stay true.
 //!
-//! Acceptance criteria:
-//! - AC1 README section «Terminal support» (English): verified on macOS in
-//!   Zed's integrated terminal and in Herdr; any terminal with truecolor and
-//!   Unicode box drawing should work, others are not tested — reports
-//!   welcome.
-//! - AC2 Known caveats: Terminal.app has truecolor only since macOS 26; tmux
-//!   and OSC queries, tmux `mouse on/off` with `--mouse`; Zed needs
-//!   `line_height: standard` for box drawing; no essential shortcut depends
-//!   on the kitty keyboard protocol.
-//! - AC3 One line on how to report a terminal issue (terminal name, version,
-//!   `TERM`, `COLORTERM`, a screenshot). Since 2026-10-24 (Luis) the report
-//!   goes to Discussions, and to the bug report form when steps reproduce it.
-//!
-//! The section describes what the code does, so besides the text these tests
-//! pin the claims it makes about the code: a plain (not tmux-wrapped) OSC
-//! 11/10 query, no `COLORTERM` check, bracketed paste on, mouse capture only
-//! with `--mouse`, no kitty keyboard flags, and `--theme terminal` drawing
-//! without a single 24-bit colour. If one of these changes, the README
-//! section has to change with it.
+//! The text of the page (what is verified, the caveats, the report line) is
+//! a manual check: since the test rule of AGENTS.md, no test pins prose.
+//! These tests pin the claims the page makes about the code: a plain (not
+//! tmux-wrapped) OSC 11/10 query, no `COLORTERM` check, bracketed paste on,
+//! mouse capture only with `--mouse`, no kitty keyboard flags, and
+//! `--theme terminal` drawing without a single 24-bit colour. If one of
+//! these changes, docs/reference/terminals.md has to change with it.
 
 use std::path::{Path, PathBuf};
 

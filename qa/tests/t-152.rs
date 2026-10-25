@@ -1,6 +1,6 @@
 //! t-152 (part A) — Before the repository goes public: the workflows build
-//! with the pinned toolchain, the README says how to publish to crates.io by
-//! hand, the crates.io pages say what each crate is, and a crate unpacked
+//! with the pinned toolchain, docs/contributing/releasing.md says how to
+//! publish to crates.io by hand, the crates.io pages say what each crate is, and a crate unpacked
 //! from crates.io does not take the commit of a git repository it happens to
 //! sit in.
 //!
@@ -11,8 +11,9 @@
 //!   command, and the release build adds its target to that toolchain, not
 //!   to `stable`.
 //! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
-//!   crates.io and no secret is needed; the README's `## Releases
-//!   (maintainers)` section gives every manual step in order (version with
+//!   crates.io and no secret is needed; docs/contributing/releasing.md
+//!   (`# Releases (maintainers)`, the page release.yml names) gives every
+//!   manual step in order (version with
 //!   `scripts/bump-version.sh`, commit, workspace dry run before the tag,
 //!   tag, then one crate at a time in dependency order, checking the index
 //!   before the next). Every `.crate` carries the licence texts; `tiza`
@@ -283,7 +284,7 @@ fn publish_release_section_has_an_anchor_release_yml_uses() {
 /// release), the tag, then one crate at a time in dependency order, and how
 /// to check the index before the next one.
 #[test]
-fn publish_readme_has_the_manual_steps_in_order() {
+fn publish_release_page_has_the_manual_steps_in_order() {
     let section = release_section();
     let at = |needle: &str| {
         section

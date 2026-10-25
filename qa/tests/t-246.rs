@@ -142,7 +142,7 @@ fn corner_labels_under_the_lines_are_a_fact_without_a_badge() {
 }
 
 #[test]
-fn ac2_the_readme_the_guide_and_the_changelog_say_it() {
+fn ac2_the_guide_and_the_changelog_say_it() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     let t = read("CHANGELOG.md");
