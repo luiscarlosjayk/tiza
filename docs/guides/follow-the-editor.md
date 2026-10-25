@@ -35,10 +35,13 @@ Tiza keeps each annotation on the text that it points at. The rule is the same a
 - In a line, a span stays on the same occurrence of its text.
 - A line that you rewrite in place keeps its note and the spans whose text is still there.
 - When you rewrite several adjacent lines together, the lines pair one to one. An example is a parameter that you rename on the signature and on the line that uses it.
-- A block that you move keeps its annotations when its line is unique and moves 50 lines or fewer. A callout on it moves too.
-- When you edit or move one edge line of a box, callout or spotlight, it keeps its height from the other edge. It never gets taller.
+- A block that you move keeps its annotations when their line is unique and moves 50 lines or fewer. A box, callout or spotlight on the block moves with it.
+- This rule works line by line. Tiza drops a note on a moved line that is not unique, such as `}`.
+- When you edit or move one edge line of a box, callout or spotlight, it keeps its height from the edge that stays. It does not grow toward the line that moved.
+- A box, callout or spotlight grows when you insert lines between its two edges.
 - A formatter that splits or joins a line, such as rustfmt, moves the span to the line that now has its text.
 - Tiza drops an annotation when its text is gone. It never moves the annotation to another copy of the text.
+- When two identical adjacent lines become one line, the annotations of both stay on the line that is left.
 
 ### Undo a reload
 
@@ -49,7 +52,7 @@ Tiza keeps each annotation on the text that it points at. The rule is the same a
 
 ## When follow mode turns off
 
-Four cases turn follow mode off. After each one, a save in the editor does not change the code on screen.
+These cases turn follow mode off. After each one, a save in the editor does not change the code on screen.
 
 | Case | Message |
 |---|---|
@@ -58,17 +61,23 @@ Four cases turn follow mode off. After each one, a save in the editor does not c
 | You type `:embed`. | `code frozen inside the .tiza; follow off: edits on disk no longer reach the screen (:link and :follow on to resume)` |
 | You type `:follow off`. | `follow off` |
 
+Follow mode also turns off in three more cases. The message gives the reason.
+
+- An agent sends another document with `scene put`.
+- The file watcher cannot start.
+- `:link` or `:ref` names a file that Tiza cannot follow.
+
 - Tiza keeps the pasted code. A save in the editor does not replace it.
 - A paste of the exact content of the file keeps follow mode on. With follow mode off, that paste keeps the code reference to the file.
 - When `u` brings back the code of the file, the message is `follow is off: :follow on reloads FILE`.
-- After a paste, an undo or a redo, the document keeps the code on screen as embedded code.
+- When the code on screen is not the code of the file, the document keeps it as embedded code. This occurs after a paste of other code, or after an undo or a redo to code that the file does not have now.
 
 ## Turn follow mode on again
 
 - `:follow on` loads the file over the code on screen. This is one reload. `u` undoes it.
 - The document keeps the name of the file in `"follows": {"file": "main.rs"}`. Thus `:follow on` and `--follow` reload the file also after you quit and open the document again.
 - `:embed`, `:link` and a reload back to the file remove `follows`.
-- A document with embedded code has no file to follow. Type `:link PATH` first.
+- A document with embedded code and no `follows` has no file to follow. Type `:link PATH` first.
 
 ## Messages
 
@@ -85,6 +94,8 @@ Four cases turn follow mode off. After each one, a save in the editor does not c
 | `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
 | `nothing to follow: the code is embedded (use :link path to reference a file)` | `:follow on` found embedded code. |
 | `the .tiza already references FILE` | `:link` with no path found the code reference. |
+| `the .tiza now references FILE` | `:link PATH` or `:ref PATH` found the same code in the file. |
+| `FILE is shown by a code.link at step N, with annotations of its own: delete that link first to reference it` | `:link PATH` or `:ref PATH` named a file that a `code.link` shows. |
 | `undone: reload #N` | `u` undid a reload. |
 | `follow is off: :follow on reloads FILE` | `u` brought back the code of the file. |
 | `follow off` | `:follow off` stopped follow mode. |
@@ -105,7 +116,8 @@ A document opens at its saved `step`, or at step 1 when it has none. At step 1 o
 
 ### Link another file
 
-- `:link PATH` or `:ref PATH` at step 0 loads the code of that file, as a reload does. The screen always shows what the saved document will show.
+- `:link PATH` or `:ref PATH` at step 0 to a file with other code loads the code of that file, as a reload does. The screen always shows what the saved document will show.
+- When the file has the same code as the screen, Tiza only references the file. There is no reload and no undo step.
 - When follow mode is on, follow mode moves to the new file. A save of the old file does not reload anything. `u` moves follow mode back.
 - Tiza refuses a file that a `code.link` shows already, because its annotations belong to that view.
 - `:link` with no path changes nothing when the document references its file already.
@@ -120,4 +132,4 @@ Agents control follow mode through the socket methods `follow.set` and `follow.s
 
 ## How it works
 
-Tiza watches the folder of the file, not only the file. Some editors, such as Zed, save to a temporary file and then rename it. Tiza waits about 120 ms after the last write, then reads the file. A line diff matches the old code with the new code. Each annotation goes to the line that now has its text.
+Tiza watches the folder of the file, not only the file. Some editors, such as Zed, save to a temporary file and then rename it. Tiza waits about 120 ms after the last write, then reads the file. A line diff matches the old code with the new code. Each annotation goes to the line that matches its old line.
