@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `SECURITY.md` tells how to report a vulnerability in private. `CONTRIBUTING.md` tells how to report a bug, and where to give ideas and feedback. Tiza does not accept pull requests for now.
 - `docs/demos/scenarios.md` describes twelve ways to use Tiza with an agent. The new examples are `examples/tally-tour.tiza`, a tour of several files in `examples/tally/`, and `examples/stack-and-queue.tiza`.
 - The new README section «Terminal support» tells what Tiza needs from a terminal, with known problems in Terminal.app, tmux and Zed. The new section «What Tiza reads and writes» tells that the binary never opens a network connection.
+- `install.sh` installs the `tiza` binary of the latest release on macOS and Linux: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. It checks the SHA-256 checksum of the download and puts `tiza` in `~/.local/bin`, or in `$TIZA_INSTALL_DIR`. `TIZA_VERSION` sets the release to install.
 
 ### Changed
 - The status bar warns only when the step on screen loses something: `! 3 labels cut` when labels or notes are cut or not drawn, and `! code needs 83 cols` when a code line is clipped. 83 is the terminal width from which the step shows every code line, with the line numbers, the arrow lanes and the padding. It no longer shows `! small terminal` on every terminal under 100 columns. `status.warnings` gives the details: the width, and the id of each label that is cut or not drawn.
