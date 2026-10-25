@@ -162,7 +162,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **Features:** follow mode and re-anchoring, `set_follow`, `follow.status` (`reloads`, `last_reload`), `list_annotations`, `u` to undo a reload.
 
-**Recording:** a screen recording, 3-5 min; the editor at 50 % and Tiza at 50 % ([Recommended recording profile](../guides/check-before-you-record.md)).
+**Recording:** a screen recording, 3-5 min; the editor at 50 % and Tiza at 50 % ([Check before you record](../guides/check-before-you-record.md)).
 
 ## 8. Supervised session: the agent proposes, you approve on camera
 

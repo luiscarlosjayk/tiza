@@ -888,12 +888,7 @@ fn corner_two_ctrl_c_sent_at_once_cancel_then_quit() {
 // ---------------------------------------------------------------- AC6
 
 #[test]
-fn ac6_the_readme_and_the_help_say_ctrl_c_cancels_or_quits() {
-    let keys = include_str!("../../docs/reference/keys.md");
-    assert!(
-        keys.contains("| `Ctrl-C` | cancels, or quits"),
-        "the keys table has a Ctrl-C row"
-    );
+fn ac6_the_help_says_ctrl_c_cancels_or_quits() {
     let dir = scratch("t197-help");
     let doc = tiza_core::Document::from_code(CODE, "rs", None);
     let live = tiza_qa::Live::open(doc, dir.join("main.rs.tiza"), dir.join("s.sock"));

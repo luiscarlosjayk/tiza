@@ -8,6 +8,12 @@ Two environment variables change the install. `TIZA_VERSION` sets the release, f
 curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | TIZA_VERSION=v0.1.0 TIZA_INSTALL_DIR="$HOME/bin" sh
 ```
 
+To install from `main` of the repository, use Rust 1.88 or later:
+
+```sh
+cargo install --git https://github.com/luiscarlosjayk/tiza tiza
+```
+
 To read the script before you run it, download it first:
 
 ```sh

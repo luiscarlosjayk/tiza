@@ -1,4 +1,4 @@
-# Export to text, Markdown, ANSI, SVG, PNG, GIF, MP4, asciicast or VHS
+# Exports
 
 Use `tiza render` to export a step or all the steps.
 

@@ -1,6 +1,6 @@
 # ╭─ Tiza ─▶
 
-![Tiza: step-by-step code annotations for the terminal. Three real frames of the Rust ownership example, steps 1, 4 and 7](https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/img/hero.png)
+![Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 4 and 7](https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/img/hero.png)
 
 **Draw on top of code in your terminal to explain, debug and teach.**
 
@@ -31,7 +31,7 @@ tiza src/main.rs --follow   # reload when the file is saved in the editor
 pbpaste | tiza              # code from the clipboard (macOS); --lang rs when it cannot be guessed
 ```
 
-Keys, `:` commands, exports, the MCP tools and the `.tiza` format are documented in the [full README](https://github.com/luiscarlosjayk/tiza#readme) and the [agent guide](https://github.com/luiscarlosjayk/tiza/blob/main/docs/agent-guide.md); the demos are in [examples/](https://github.com/luiscarlosjayk/tiza/tree/main/examples).
+Read the [keys](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/keys.md), the [`:` commands](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/commands.md), the [exports](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/exports.md), the [MCP tools](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/mcp-tools.md) and the [`.tiza` format](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/document-format.md). The [README](https://github.com/luiscarlosjayk/tiza#readme) links to the user pages. The [agent guide](https://github.com/luiscarlosjayk/tiza/blob/main/docs/agent-guide.md) is for AI agents. The demos are in [examples/](https://github.com/luiscarlosjayk/tiza/tree/main/examples).
 
 The other `tiza-*` crates are internal: published only so that `cargo install tiza` works, with no stable API.
 

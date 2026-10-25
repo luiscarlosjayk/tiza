@@ -1,6 +1,6 @@
 # Connect an agent
 
-Start the MCP server and add it to your MCP client.
+Add the Tiza MCP server to your MCP client. The client starts `tiza mcp`.
 
 With the TUI open, start the MCP server in another process:
 

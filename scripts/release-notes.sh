@@ -77,6 +77,6 @@ elif [ -n "$pre" ]; then
   printf 'Prerelease of Tiza %s, to try before the release.\n' "$version"
   printf 'What changed: [CHANGELOG](https://github.com/%s/blob/%s/CHANGELOG.md).\n' "$repo" "$tag"
 else
-  echo "no release notes for $tag: write $notes first (README, \"Releases (maintainers)\")" >&2
+  echo "no release notes for $tag: write $notes first (docs/contributing/releasing.md, \"Releases (maintainers)\")" >&2
   exit 1
 fi

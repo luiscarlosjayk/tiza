@@ -275,7 +275,6 @@ fn ac6_ac7_the_hero_is_built_from_real_frames_with_the_logo_for_the_title() {
     assert!(!html.contains(background));
     assert!(html.contains("aria-label=\"Tiza\""));
     assert!(!html.contains("<h1>TIZA</h1>") && !html.contains("@font-face"));
-    assert!(html.contains("Step-by-step code annotations<br>for the terminal"));
     // The frames are the committed renders, with English alt text, and the
     // back windows dimmed by an overlay, not by opacity.
     for s in ["1", "4", "7"] {

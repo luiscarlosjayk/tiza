@@ -1,4 +1,4 @@
-# Recommended recording profile
+# Check before you record
 
 Do these checks before you record a video or a GIF.
 

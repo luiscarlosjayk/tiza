@@ -112,7 +112,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 - A commit that changes behavior also changes its page. The structure note has the change-to-page map.
 - Run every command that you write against the built binary. List the commands in the commit message.
 - Check every claim against the code or a test. Never write a flag, a key or a number from memory.
-- QA tests check behavior, contracts with scripts, generated images and links. They never check the prose of a doc.
+- QA tests check behavior, contracts with scripts, generated images, links and repo policies. A test can compare a doc with the code. A test never checks the prose of a doc. [AGENTS.md](https://github.com/luiscarlosjayk/tiza/blob/main/AGENTS.md) gives the full rule.
 - Before you move text, find the tests that read it: an anchor, a link or a line that a script writes. Change them in the same commit. A change to what a test checks needs the owner.
 - Move text verbatim in one commit and edit it in the next. Then `git log --follow` and the review stay simple.
 - Text that you edit changes to this style. Do not change other text in the same commit.

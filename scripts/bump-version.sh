@@ -12,8 +12,8 @@
 # - README.md: the version in the `> Status:` line.
 #
 # It changes those four files and nothing else; then write the release
-# notes, commit, dry-run and tag as the README says ("Releases
-# (maintainers)"). A final X.Y.Z only.
+# notes, commit, dry-run and tag as docs/contributing/releasing.md says
+# ("Releases (maintainers)"). A final X.Y.Z only.
 
 set -euo pipefail
 

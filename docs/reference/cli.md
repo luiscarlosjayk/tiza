@@ -1,6 +1,6 @@
 # Command line
 
-These commands open code in Tiza. The last paragraph tells how Tiza finds the language of the code.
+These commands open code in Tiza. The paragraph after them tells how Tiza finds the language of the code.
 
 ```sh
 tiza src/main.rs            # open a file

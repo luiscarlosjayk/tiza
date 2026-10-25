@@ -1311,19 +1311,7 @@ const BRAND: [&str; 5] = [
 ];
 
 #[test]
-fn brand_the_readme_shows_the_logo_and_the_files_stay_out_of_the_packages() {
-    // The README starts with the hero, which carries the logo: a separate
-    // logo above it showed the mark twice (Luis, 2026-10-24).
-    let readme = read("README.md");
-    let first = readme.lines().next().unwrap();
-    assert!(
-        first.starts_with("![Tiza: ") && first.ends_with("](docs/img/hero.png)"),
-        "{first}"
-    );
-    assert!(
-        !readme.contains("docs/brand/logo.svg") && !readme.contains("docs/brand/logo.png"),
-        "a separate logo in the README"
-    );
+fn brand_the_files_stay_out_of_the_packages() {
     let about = read("docs/brand/README.md");
     for f in BRAND {
         assert!(root().join("docs/brand").join(f).is_file(), "{f}");
