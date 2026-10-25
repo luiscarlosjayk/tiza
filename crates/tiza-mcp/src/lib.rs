@@ -1739,9 +1739,9 @@ impl ServerHandler for TizaServer {
         )
             .with_server_info(Implementation::new("tiza", tiza_core::VERSION))
             .with_instructions(
-                "Tiza: draw on top of code in the terminal to explain it on video. \
+                "Tiza: draw on top of code in your terminal to explain, debug and teach. \
                  Use it to explain code to a person or another agent, live or recorded, step by step: \
-                 a code walkthrough, tutorial, screencast or presentation, to teach or show on screen. \
+                 a code walkthrough, a lesson, a pull request review, a debugging session with a person or an agent, a tutorial or a presentation. \
                  It draws a box, arrow, highlight, note, callout or mark (move, read, write, drop…) on the live code, \
                  groups them in steps, can type code or change it at a step (a move, `add_move`), link another file, \
                  and export PNG, SVG, GIF or text.\n\

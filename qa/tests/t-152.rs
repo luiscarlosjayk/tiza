@@ -1399,3 +1399,57 @@ fn render_help_names_every_format_that_out_writes() {
         );
     }
 }
+
+// --- Positioning (Luis, 2026-10-24) ------------------------------------
+
+/// The one sentence that says what Tiza is: not only tutorials and video,
+/// also learning with an LLM, reviewing and debugging.
+const POSITIONING: &str = "Draw on top of code in your terminal to explain, debug and teach";
+
+#[test]
+fn positioning_is_the_same_sentence_everywhere() {
+    let bold = format!("**{POSITIONING}.**");
+    for f in [
+        "README.md",
+        "crates/tiza-cli/README.md",
+        "docs/release-notes/v0.1.0.md",
+    ] {
+        assert!(read(f).lines().any(|l| l == bold), "{f} lacks {bold}");
+    }
+    let meta = metadata();
+    let description = package(&meta, "tiza")["description"].as_str().unwrap();
+    assert_eq!(
+        description,
+        format!("{POSITIONING}: a TUI, a CLI and an MCP server")
+    );
+    let help = Command::new(bin()).arg("--help").output().unwrap();
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert_eq!(
+        help.lines().next(),
+        Some(format!("{POSITIONING}.").as_str())
+    );
+    let mcp = tiza_qa::McpClient::start(&scratch("t152-mcp").join("none.sock"));
+    let instructions = mcp.initialize_result()["instructions"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let lower = POSITIONING.replacen("Draw", "draw", 1);
+    assert!(
+        instructions.starts_with(&format!("Tiza: {lower}.")),
+        "{instructions}"
+    );
+    // The old positioning is gone from what people read.
+    for f in [
+        "README.md",
+        "crates/tiza-cli/README.md",
+        "crates/tiza-cli/Cargo.toml",
+        "crates/tiza-cli/src/main.rs",
+        "crates/tiza-mcp/src/lib.rs",
+        "docs/release-notes/v0.1.0.md",
+        "CHANGELOG.md",
+    ] {
+        let t = read(f);
+        assert!(!t.contains("built for tutorials"), "{f}");
+        assert!(!t.contains("explain it on video"), "{f}");
+    }
+}

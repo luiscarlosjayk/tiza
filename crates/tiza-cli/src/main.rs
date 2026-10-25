@@ -15,7 +15,7 @@ use tiza_core::socket;
 use tiza_core::{Theme, ThemeName};
 
 #[derive(Parser)]
-#[command(name = "tiza", version = tiza_core::VERSION_LONG, about = "Draw on top of code in the terminal to explain it on video.", long_about = None)]
+#[command(name = "tiza", version = tiza_core::VERSION_LONG, about = "Draw on top of code in your terminal to explain, debug and teach.", long_about = None)]
 #[command(
     after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza check demo.tiza           preflight before a take (anchors, moves, clipped labels)\n  tiza render demo.tiza --all-steps --out steps/   one PNG per step\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
 )]

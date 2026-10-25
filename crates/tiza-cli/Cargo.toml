@@ -1,6 +1,6 @@
 [package]
 name = "tiza"
-description = "Tiza: a Rust TUI to draw on top of code in the terminal and explain it on video (TUI, CLI and MCP server)"
+description = "Draw on top of code in your terminal to explain, debug and teach: a TUI, a CLI and an MCP server"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

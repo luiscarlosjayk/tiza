@@ -2,13 +2,19 @@
 
 ![Tiza: step-by-step code annotations for the terminal. Three real frames of the Rust ownership example, steps 1, 4 and 7](https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/img/hero.png)
 
-**Draw on top of code in the terminal to explain it on video.**
+**Draw on top of code in your terminal to explain, debug and teach.**
 
-Tiza is a Rust TUI (ratatui) built for tutorials: you send the code to Tiza in a terminal and draw on top of it (boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes. Every step exports to text, Markdown, ANSI, SVG, PNG, GIF, MP4 (with your `ffmpeg`), asciicast or VHS.
+Tiza is an interactive terminal tool for visual annotations on code. Use it to give a walkthrough, to present on screen, to record a video or to work through a bug with an LLM. AI agents can draw on the same code through MCP.
+
+Send code to Tiza from your editor. Then draw on it, highlight what is important and go through it step by step.
+
+The annotations are boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes. Every step exports to text, Markdown, ANSI, SVG, PNG, GIF, MP4 (with your `ffmpeg`), asciicast or VHS.
 
 It is also **for agents**: a local socket API and an MCP server (`tiza mcp`) let Claude Code, or any MCP client, draw live on what you are showing.
 
 ## Installation
+
+Tiza is written in Rust with [ratatui](https://ratatui.rs).
 
 ```sh
 cargo install tiza

@@ -1,8 +1,12 @@
 ![Tiza: step-by-step code annotations for the terminal. Three real frames of the Rust ownership example, steps 1, 4 and 7](docs/img/hero.png)
 
-**Draw on top of code in the terminal to explain it on video.**
+**Draw on top of code in your terminal to explain, debug and teach.**
 
-Tiza is a Rust TUI (ratatui) built for tutorials: you share your screen with your editor, send the code to Tiza in a terminal and draw on top of it (boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*, plus any style you define, emoji included) to explain a concept step by step. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
+Tiza is an interactive terminal tool for visual annotations on code. Use it to give a walkthrough, to present on screen, to record a video or to work through a bug with an LLM. AI agents can draw on the same code through MCP.
+
+Send code to Tiza from your editor. Then draw on it, highlight what is important and go through it step by step.
+
+The annotations are boxes, arrows, highlights, notes and semantic marks such as *warn*, *read*, *write*, *move* or *drop*, plus any style you define, emoji included. Annotations are anchored to the code text, not to screen cells, so they survive scrolling, resizing and theme changes.
 
 It is also **for agents**: it exposes a local socket API and an **MCP server**, so Claude Code (or any MCP client) can draw live on what you are showing.
 
@@ -36,6 +40,8 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 <!-- /readme-images:ownership-txt -->
 
 ## Installation
+
+Tiza is written in Rust with [ratatui](https://ratatui.rs).
 
 Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Each release's description is its notes (`docs/release-notes/vX.Y.Z.md`): what is new, which archive is for which platform (the Linux one needs glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 or later).
 

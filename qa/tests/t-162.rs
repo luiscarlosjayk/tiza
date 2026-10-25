@@ -42,8 +42,11 @@ use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const CORE: [&str; 4] = ["add_box", "get_code", "render_text", "status"];
 
-/// The words a person says when they want what Tiza does (AC1).
-const KEYWORDS: [&str; 22] = [
+/// The words a person says when they want what Tiza does (AC1). Since
+/// the positioning of 2026-10-24 (Luis: explain, debug and teach, not only
+/// tutorials and video) a lesson, a pull request review and debugging
+/// replace «screencast» and «show on screen».
+const KEYWORDS: [&str; 23] = [
     "box",
     "arrow",
     "highlight",
@@ -54,10 +57,11 @@ const KEYWORDS: [&str; 22] = [
     "presentation",
     "explain code",
     "code walkthrough",
-    "screencast",
+    "lesson",
+    "pull request review",
+    "debug",
     "tutorial",
     "teach",
-    "show on screen",
     "type code",
     "move",
     "link another file",
