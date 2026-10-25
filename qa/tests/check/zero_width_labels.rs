@@ -71,13 +71,13 @@ fn doc_of(v: &Value) -> tiza_core::Document {
 }
 
 #[test]
-fn ac1_ac2_the_zwsp_note_checks_without_a_panic_and_says_83() {
+fn the_zwsp_note_checks_without_a_panic_and_says_83() {
     // Test step 1, with the debug build the tests run. (83 is what release
     // announced before; that the note is cut at the canvas edge from 172 to
     // 192 columns without a `…` is the layout's, for another card.)
     let out = std::process::Command::new(bin())
         .arg("check")
-        .arg(fixture("t-208/zwsp-note.tiza"))
+        .arg(fixture("check/zero_width_labels/zwsp-note.tiza"))
         .output()
         .unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
@@ -88,7 +88,8 @@ fn ac1_ac2_the_zwsp_note_checks_without_a_panic_and_says_83() {
         text.contains("no label is clipped at 83 or wider"),
         "{text}"
     );
-    let doc = tiza_core::fs::load_document(&fixture("t-208/zwsp-note.tiza")).unwrap();
+    let doc =
+        tiza_core::fs::load_document(&fixture("check/zero_width_labels/zwsp-note.tiza")).unwrap();
     bounded(&doc).unwrap();
     assert_eq!(min_clean_width(&doc, &tiza_core::Theme::dark()), Some(83));
 }
@@ -109,7 +110,7 @@ fn labelled(text: &str) -> Value {
 }
 
 #[test]
-fn corner_other_zero_width_and_wide_spaces() {
+fn other_zero_width_and_wide_spaces() {
     for (what, piece) in [
         ("zero-width space", "word\u{200b}"),
         ("ZWJ sequence", "👩\u{200d}💻"),
@@ -134,7 +135,7 @@ fn corner_other_zero_width_and_wide_spaces() {
 }
 
 #[test]
-fn rev_a_callout_with_a_character_wider_than_its_width() {
+fn a_callout_with_a_character_wider_than_its_width() {
     // One grapheme 14 columns wide in a callout 8 wide: the block grows to
     // hold it, and the note beside it moves; the bound counts it.
     for text in [

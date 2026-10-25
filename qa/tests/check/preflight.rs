@@ -1,4 +1,4 @@
-//! t-101 — Preflight: `tiza check FILE` validates anchors, steps, moves
+//! Preflight: `tiza check FILE` validates anchors, steps, moves
 //! and views; `render --all-steps` writes one image per step.
 //!
 //! Acceptance criteria:
@@ -21,7 +21,7 @@
 //!   text, and ends with the narrowest width from which nothing is clipped:
 //!   on examples/ownership.rs.tiza at 100, «move: s moves into takes» and
 //!   «read: shared borrow», and 108. The example has shorter labels now:
-//!   the tests read its copy from then, in `qa/fixtures/t-101/`.
+//!   the tests read its copy from then, in `qa/fixtures/check/preflight/`.
 //! - AC7 Docs: README, agent guide, CHANGELOG; this file.
 //!
 //!
@@ -119,7 +119,7 @@ fn png_size(path: &Path) -> (u32, u32) {
 }
 
 #[test]
-fn ac1_step1_every_bundled_example_passes() {
+fn every_bundled_example_passes() {
     let mut n = 0;
     for e in std::fs::read_dir(example("")).unwrap() {
         let p = e.unwrap().path();
@@ -139,8 +139,8 @@ fn ac1_step1_every_bundled_example_passes() {
 }
 
 #[test]
-fn ac1_step2_a_wrong_find_is_listed_with_its_move_and_step() {
-    let path = edited_example("t101-find", "ownership-moves.rs.tiza", |t| {
+fn a_wrong_find_is_listed_with_its_move_and_step() {
+    let path = edited_example("find", "ownership-moves.rs.tiza", |t| {
         t.replace(
             r#""find": "let n = len(&t);""#,
             r#""find": "let n = nope;""#,
@@ -158,10 +158,10 @@ fn ac1_step2_a_wrong_find_is_listed_with_its_move_and_step() {
 }
 
 #[test]
-fn ac2_step4_a_move_target_that_matches_twice() {
+fn a_move_target_that_matches_twice() {
     let ok = example("ownership-moves.rs.tiza");
     assert_eq!(check(&[ok.to_str().unwrap()]).0, 0);
-    let path = edited_example("t101-twice", "ownership-moves.rs.tiza", |t| {
+    let path = edited_example("twice", "ownership-moves.rs.tiza", |t| {
         t.replace(r#""find": "let n = len(&t);""#, r#""find": "println""#)
     });
     let (code, v) = check_json(&path, &[]);
@@ -181,8 +181,8 @@ fn ac2_step4_a_move_target_that_matches_twice() {
 }
 
 #[test]
-fn ac2_every_error_of_a_broken_file_at_once() {
-    let (code, v) = check_json(&fixture("t-101/broken.tiza"), &[]);
+fn every_error_of_a_broken_file_at_once() {
+    let (code, v) = check_json(&fixture("check/preflight/broken.tiza"), &[]);
     assert_eq!(code, 1);
     let f = findings(&v);
     let get = |code: &str, id: &str| -> Value {
@@ -205,7 +205,7 @@ fn ac2_every_error_of_a_broken_file_at_once() {
             .unwrap()
             .contains("nobody")
     );
-    // A rebind naming no annotation is ignored, a warning (t-199).
+    // A rebind naming no annotation is ignored, a warning.
     let zz = get("unknown_id", "move #3");
     assert_eq!(zz["level"], "warning");
     assert!(
@@ -250,7 +250,7 @@ fn ac2_every_error_of_a_broken_file_at_once() {
     assert!(with_code(&f, "unanchored").is_empty(), "{v}");
     assert_eq!(v["errors"], 7, "{v}");
     // The text report: one line per finding, then the summary.
-    let (_, out, _) = check(&[fixture("t-101/broken.tiza").to_str().unwrap()]);
+    let (_, out, _) = check(&[fixture("check/preflight/broken.tiza").to_str().unwrap()]);
     assert!(
         out.contains("error: a1, step 1, L99: line 99 does not exist"),
         "{out}"
@@ -259,8 +259,8 @@ fn ac2_every_error_of_a_broken_file_at_once() {
 }
 
 #[test]
-fn ac2_schema_violations_and_unreadable_code() {
-    let dir = scratch("t101-schema");
+fn schema_violations_and_unreadable_code() {
+    let dir = scratch("schema");
     let bad = dir.join("bad.tiza");
     std::fs::write(
         &bad,
@@ -292,7 +292,7 @@ fn ac2_schema_violations_and_unreadable_code() {
 }
 
 #[test]
-fn ac3_an_annotation_a_move_hides_warns_with_its_steps() {
+fn an_annotation_a_move_hides_warns_with_its_steps() {
     let (code, v) = check_json(&example("ownership-moves.rs.tiza"), &[]);
     assert_eq!(code, 0);
     let hidden = with_code(&findings(&v), "unanchored")
@@ -307,8 +307,8 @@ fn ac3_an_annotation_a_move_hides_warns_with_its_steps() {
 }
 
 #[test]
-fn ac3_a_step_with_nothing_new_warns() {
-    let (code, v) = check_json(&fixture("t-101/empty-step.tiza"), &[]);
+fn a_step_with_nothing_new_warns() {
+    let (code, v) = check_json(&fixture("check/preflight/empty-step.tiza"), &[]);
     assert_eq!(code, 0);
     let empty = with_code(&findings(&v), "empty_step");
     assert_eq!(empty.len(), 1, "{v}");
@@ -316,8 +316,8 @@ fn ac3_a_step_with_nothing_new_warns() {
 }
 
 #[test]
-fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
-    let file = fixture("t-101/ownership.rs.tiza");
+fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let file = file.to_str().unwrap();
     // Plain `check`: the default width (100, as `render`).
     let (code, plain, _) = check(&[file]);
@@ -348,7 +348,10 @@ fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
         plain.contains("at width 100, first at step 3, then at steps 5-7"),
         "{plain}"
     );
-    let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", "100"]);
+    let (_, v) = check_json(
+        &fixture("check/preflight/ownership.rs.tiza"),
+        &["--width", "100"],
+    );
     assert_eq!(v["width"], 100);
     assert_eq!(v["min_clean_width"], 108);
     let clipped = with_code(&findings(&v), "clipped_label");
@@ -387,8 +390,8 @@ fn ac6_step6_clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
 }
 
 #[test]
-fn ac4_step7_json_holds_the_same_findings_as_the_text() {
-    let file = fixture("t-101/broken.tiza");
+fn json_holds_the_same_findings_as_the_text() {
+    let file = fixture("check/preflight/broken.tiza");
     let (_, text, _) = check(&[file.to_str().unwrap()]);
     let (code, v) = check_json(&file, &[]);
     assert_eq!(code, 1);
@@ -406,10 +409,10 @@ fn ac4_step7_json_holds_the_same_findings_as_the_text() {
 }
 
 #[test]
-fn ac5_step3_render_all_steps_writes_one_png_per_step_of_one_size() {
-    let dir = scratch("t101-steps");
+fn render_all_steps_writes_one_png_per_step_of_one_size() {
+    let dir = scratch("steps");
     let out = dir.join("steps");
-    let file = fixture("t-101/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let r = tiza(&[
         "render",
         file.to_str().unwrap(),
@@ -471,11 +474,11 @@ fn ac5_step3_render_all_steps_writes_one_png_per_step_of_one_size() {
 }
 
 #[test]
-fn corner_all_steps_of_a_document_without_annotations_and_to_stdout() {
-    let dir = scratch("t101-zero");
+fn all_steps_of_a_document_without_annotations_and_to_stdout() {
+    let dir = scratch("zero");
     let r = tiza(&[
         "render",
-        fixture("t-101/zero.tiza").to_str().unwrap(),
+        fixture("check/preflight/zero.tiza").to_str().unwrap(),
         "--all-steps",
         "--format",
         "svg",
@@ -486,7 +489,7 @@ fn corner_all_steps_of_a_document_without_annotations_and_to_stdout() {
     assert_eq!(listing(&dir.join("out")).len(), 1);
     assert!(dir.join("out/step-00.svg").exists());
     // `--out -` (the default) is refused: one file per step needs a directory.
-    let file = fixture("t-101/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership.rs.tiza");
     for args in [
         vec!["render", file.to_str().unwrap(), "--all-steps"],
         vec![
@@ -531,8 +534,8 @@ fn corner_all_steps_of_a_document_without_annotations_and_to_stdout() {
 }
 
 #[test]
-fn corner_check_writes_nothing_and_needs_no_terminal() {
-    let path = edited_example("t101-nowrite", "ownership.rs.tiza", |t| t);
+fn check_writes_nothing_and_needs_no_terminal() {
+    let path = edited_example("nowrite", "ownership.rs.tiza", |t| t);
     let dir = path.parent().unwrap().to_path_buf();
     let before = listing(&dir);
     let mtime = std::fs::metadata(&path).unwrap().modified().unwrap();
@@ -557,7 +560,7 @@ fn corner_check_writes_nothing_and_needs_no_terminal() {
     // stdin works too.
     let o = Command::new(bin())
         .args(["check", "-", "--json"])
-        .stdin(std::fs::File::open(fixture("t-101/zero.tiza")).unwrap())
+        .stdin(std::fs::File::open(fixture("check/preflight/zero.tiza")).unwrap())
         .output()
         .unwrap();
     assert!(o.status.success());
@@ -578,27 +581,27 @@ fn mcp_check(name: &str, file: &Path, args: Value) -> Value {
     let (err, out, _) = mcp.call("check", args);
     assert!(!err, "{out}");
     let mut v: Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
-    // The live reply also names the revision it checked (t-210).
+    // The live reply also names the revision it checked.
     let revision = v.as_object_mut().unwrap().remove("revision");
     assert!(revision.is_some_and(|r| r.is_u64()), "{out}");
     v
 }
 
 #[test]
-fn rework1_mcp_check_is_the_cli_check() {
+fn mcp_check_is_the_cli_check() {
     for (name, args, cli) in [
         ("w-label-under", json!({}), vec![]),
         ("w-label-under", json!({"width": 60}), vec!["--width", "60"]),
         ("markers", json!({}), vec![]),
     ] {
-        let file = fixture(&format!("t-101/{name}.tiza"));
+        let file = fixture(&format!("check/preflight/{name}.tiza"));
         let (_, want) = check_json(&file, &cli);
-        let got = mcp_check(&format!("t101-mcp-{name}"), &file, args);
+        let got = mcp_check(&format!("mcp-{name}"), &file, args);
         assert_eq!(got, want, "{name} {cli:?}: MCP\n{got}\nCLI\n{want}");
     }
     // A width that the MCP refuses on its own: the error names it.
-    let dir = scratch("t101-mcp-width3");
-    let file = fixture("t-101/w-label-under.tiza");
+    let dir = scratch("mcp-width3");
+    let file = fixture("check/preflight/w-label-under.tiza");
     let doc = fs::open(file.to_str().unwrap()).unwrap().document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
@@ -607,12 +610,16 @@ fn rework1_mcp_check_is_the_cli_check() {
 }
 
 #[test]
-fn rework1_the_live_check_sees_unsaved_changes_and_linked_files() {
+fn the_live_check_sees_unsaved_changes_and_linked_files() {
     // The instance checks what it holds, not the file on disk.
-    let dir = scratch("t101-mcp-live");
-    let doc = fs::open(fixture("t-101/w-label-under.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let dir = scratch("mcp-live");
+    let doc = fs::open(
+        fixture("check/preflight/w-label-under.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok(
         "annotation.add",
@@ -624,10 +631,14 @@ fn rework1_the_live_check_sees_unsaved_changes_and_linked_files() {
     let r = live.api("check", json!({"width": 3}));
     assert!(r.error.is_some_and(|e| e.message.contains("width=3")));
     // A linked file: the message names it.
-    let (_, cli) = check_json(&fixture("t-101/linked.tiza"), &[]);
-    let got = mcp_check("t101-mcp-linked", &fixture("t-101/linked.tiza"), json!({}));
+    let (_, cli) = check_json(&fixture("check/preflight/linked.tiza"), &[]);
+    let got = mcp_check(
+        "mcp-linked",
+        &fixture("check/preflight/linked.tiza"),
+        json!({}),
+    );
     assert_eq!(got, cli);
-    let (_, out, _) = check(&[fixture("t-101/linked.tiza").to_str().unwrap()]);
+    let (_, out, _) = check(&[fixture("check/preflight/linked.tiza").to_str().unwrap()]);
     assert!(
         out.contains(
             "error: q1, step 2, src/queue.rs, L9: line 9 does not exist (src/queue.rs spans 1 to 3)"
@@ -637,8 +648,8 @@ fn rework1_the_live_check_sees_unsaved_changes_and_linked_files() {
 }
 
 #[test]
-fn rework2_a_marker_that_matches_more_than_once_warns_with_its_lines() {
-    let (_, v) = check_json(&fixture("t-101/markers.tiza"), &[]);
+fn a_marker_that_matches_more_than_once_warns_with_its_lines() {
+    let (_, v) = check_json(&fixture("check/preflight/markers.tiza"), &[]);
     let b1: Vec<Value> = findings(&v)
         .into_iter()
         .filter(|f| f["id"] == "b1")
@@ -660,7 +671,7 @@ fn rework2_a_marker_that_matches_more_than_once_warns_with_its_lines() {
         "{v}"
     );
     // Warnings: the document still passes.
-    let dir = scratch("t101-twice-marker");
+    let dir = scratch("twice-marker");
     let path = dir.join("twice.tiza");
     std::fs::write(
         &path,
@@ -682,15 +693,15 @@ fn rework2_a_marker_that_matches_more_than_once_warns_with_its_lines() {
 }
 
 #[test]
-fn rework4_all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
-    let dir = scratch("t101-rerun");
+fn all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
+    let dir = scratch("rerun");
     let out = dir.join("steps");
     std::fs::create_dir_all(&out).unwrap();
     // An earlier run of a longer document, an SVG run, and a file of the user's.
     for f in ["step-08.txt", "step-09.txt", "step-03.svg", "notes.txt"] {
         std::fs::write(out.join(f), "old").unwrap();
     }
-    let file = fixture("t-101/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let run = |extra: &[&str]| {
         let mut args = vec![
             "render",
@@ -730,7 +741,7 @@ fn rework4_all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
     assert!(!out.join("step-00.txt").exists());
     assert!(out.join("step-01.txt").exists() && out.join("notes.txt").exists());
     // One file: singular. A document with only step 0 and --skip-zero: refused.
-    let zero = fixture("t-101/zero.tiza");
+    let zero = fixture("check/preflight/zero.tiza");
     let r = tiza(&[
         "render",
         zero.to_str().unwrap(),
@@ -758,7 +769,7 @@ fn rework4_all_steps_cleans_its_own_leftovers_and_honours_skip_zero() {
 }
 
 #[test]
-fn rework4_check_help_has_no_socket_or_session() {
+fn check_help_has_no_socket_or_session() {
     let o = tiza(&["check", "--help"]);
     let help = String::from_utf8_lossy(&o.stdout);
     assert!(
@@ -770,7 +781,7 @@ fn rework4_check_help_has_no_socket_or_session() {
         "{help}"
     );
     // Still accepted (and ignored), before or after the command.
-    let file = fixture("t-101/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let (code, _, err) = check(&[file.to_str().unwrap(), "--socket", "/nonexistent.sock"]);
     assert_eq!(code, 0, "{err}");
     let o = tiza(&["--session", "x", "check", file.to_str().unwrap()]);
@@ -781,8 +792,8 @@ fn rework4_check_help_has_no_socket_or_session() {
 }
 
 #[test]
-fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
-    let file = fixture("t-101/ownership.rs.tiza");
+fn a_clean_width_below_the_narrowest_one_says_so() {
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let file = file.to_str().unwrap();
     // 85: no label clipped (notes under the lines), below 108.
     let (code, out, _) = check(&[file, "--width", "85"]);
@@ -803,14 +814,20 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
         "{out}"
     );
     assert!(out.contains("79-93 are clean too"), "{out}");
-    let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", "85"]);
+    let (_, v) = check_json(
+        &fixture("check/preflight/ownership.rs.tiza"),
+        &["--width", "85"],
+    );
     assert_eq!(
         v["narrower"],
         json!({"clean": [[79, 93]], "code_fits_from": 79, "margin_from": 94})
     );
     // At 100 labels are clipped and at 108 nothing is: no `narrower`.
     for w in ["100", "108"] {
-        let (_, v) = check_json(&fixture("t-101/ownership.rs.tiza"), &["--width", w]);
+        let (_, v) = check_json(
+            &fixture("check/preflight/ownership.rs.tiza"),
+            &["--width", w],
+        );
         assert!(v.get("narrower").is_none(), "{w}: {v}");
     }
 }
@@ -824,7 +841,7 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
 /// `tiza render` of the copy of the ownership example `--all-steps --out <out> <extra>`:
 /// (exit code, stderr). The example has steps 0-7.
 fn all_steps(out: &Path, extra: &[&str]) -> (i32, String) {
-    let file = fixture("t-101/ownership.rs.tiza");
+    let file = fixture("check/preflight/ownership.rs.tiza");
     let mut args = vec![
         "render",
         file.to_str().unwrap(),
@@ -845,8 +862,8 @@ fn names_in(dir: &Path) -> Vec<String> {
 }
 
 #[test]
-fn rework6_a_names_tiza_never_writes_survive_byte_for_byte() {
-    let out = scratch("t101-r2-a").join("steps");
+fn a_names_tiza_never_writes_survive_byte_for_byte() {
+    let out = scratch("r2-a").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     // No two of these differ only in case (a case-insensitive APFS would
     // make them one file), and none is a name this run writes.
@@ -889,8 +906,8 @@ fn rework6_a_names_tiza_never_writes_survive_byte_for_byte() {
 }
 
 #[test]
-fn rework6_b_f_leftovers_of_its_format_and_width_go_and_are_named() {
-    let out = scratch("t101-r2-b").join("steps");
+fn b_f_leftovers_of_its_format_and_width_go_and_are_named() {
+    let out = scratch("r2-b").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     // B: an earlier, longer run. F: names of a 100+ / 1000+ step document
     // are another width: they stay, unnamed (QA 2: the safer rule).
@@ -925,8 +942,8 @@ fn rework6_b_f_leftovers_of_its_format_and_width_go_and_are_named() {
 
 #[cfg(unix)]
 #[test]
-fn rework6_c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
-    let dir = scratch("t101-r2-c");
+fn c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
+    let dir = scratch("r2-c");
     let out = dir.join("steps");
     std::fs::create_dir_all(out.join("step-08.png")).unwrap();
     std::fs::write(out.join("step-08.png").join("inside"), "keep").unwrap();
@@ -951,8 +968,8 @@ fn rework6_c_a_directory_or_symlink_named_like_a_step_is_left_and_named() {
 }
 
 #[test]
-fn rework6_d_e_another_format_is_left_and_skip_zero_removes_step_00() {
-    let out = scratch("t101-r2-d").join("steps");
+fn d_e_another_format_is_left_and_skip_zero_removes_step_00() {
+    let out = scratch("r2-d").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     for s in 0..=7 {
         std::fs::write(out.join(format!("step-{s:02}.svg")), "svg").unwrap();
@@ -987,9 +1004,9 @@ fn rework6_d_e_another_format_is_left_and_skip_zero_removes_step_00() {
 /// `chflags uchg` on macOS, gives `could not remove … left as it is`.)
 #[cfg(unix)]
 #[test]
-fn rework6_g_a_directory_without_write_permission_changes_no_exit_code() {
+fn g_a_directory_without_write_permission_changes_no_exit_code() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = scratch("t101-r2-g");
+    let dir = scratch("r2-g");
     let (with, without) = (dir.join("with"), dir.join("without"));
     for d in [&with, &without] {
         std::fs::create_dir_all(d).unwrap();
@@ -1014,8 +1031,8 @@ fn rework6_g_a_directory_without_write_permission_changes_no_exit_code() {
 }
 
 #[test]
-fn rework6_h_thousands_of_unrelated_files_and_a_long_list() {
-    let (big, empty) = (scratch("t101-r2-h").join("big"), scratch("t101-r2-h0"));
+fn h_thousands_of_unrelated_files_and_a_long_list() {
+    let (big, empty) = (scratch("r2-h").join("big"), scratch("r2-h0"));
     std::fs::create_dir_all(&big).unwrap();
     for i in 0..5000 {
         std::fs::write(big.join(format!("frame-{i}.png")), "").unwrap();
@@ -1047,8 +1064,8 @@ fn rework6_h_thousands_of_unrelated_files_and_a_long_list() {
 /// root for `chattr`, a filesystem without the flag) only the run is checked.
 #[cfg(unix)]
 #[test]
-fn rework6_g_a_leftover_that_cannot_be_removed_is_a_warning() {
-    let out = scratch("t101-r2-g2").join("steps");
+fn g_a_leftover_that_cannot_be_removed_is_a_warning() {
+    let out = scratch("r2-g2").join("steps");
     std::fs::create_dir_all(&out).unwrap();
     let f = out.join("step-09.png");
     std::fs::write(&f, "old").unwrap();

@@ -1,10 +1,10 @@
-//! t-200 — `tiza check` announces a clean width that is not: «no label is
+//! `tiza check` announces a clean width that is not: «no label is
 //! clipped at 30 or wider» while 62 clips.
 //!
 //! The narrowest clean width used to be searched down from 400 in strides
 //! of 8, on the assumption that a wider take never clips more than a
 //! narrower one. That is false where the side margin first appears (62
-//! columns on the t-172 fixtures: the margin is narrower there than the
+//! columns on the fixtures of two labels on a line: the margin is narrower there than the
 //! rows under the lines were) and where an `auto` callout moves into the
 //! margin and finds no room (106-108 on `examples/tally-tour.tiza`).
 //!
@@ -16,7 +16,7 @@
 //!   widest one that clips is laid out at every step; the announced width is
 //!   the one above that.)
 //! - AC2 Cost: checking every width from 30 to 400 must stay fast; report
-//!   the time on the t-138 big file. (The search starts at the width from
+//!   the time on the big file of chunked highlighting. (The search starts at the width from
 //!   which the take no longer changes, `check::saturation_width`, a bound
 //!   from the layout's rules checked on every step against the take at 400;
 //!   the moves are replayed once per step instead of once per layout, a step
@@ -26,7 +26,7 @@
 //! - AC3 Same in `check` over the socket/MCP and in `status`. (The socket
 //!   and MCP `check` run the same search on the live document; `status`
 //!   reports no clean width, only the live layout's warnings.)
-//! - AC4 This file, with the t-172 fixtures at 62 and tally-tour at
+//! - AC4 This file, with the two-label fixtures at 62 and tally-tour at
 //!   106–108; CHANGELOG (Fixed).
 //!
 //! Corner cases: a document that clips at every width keeps saying so; the
@@ -38,7 +38,7 @@ use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
 use tiza_qa::{Live, McpClient, example, fixture, scratch, tiza, tiza_ok};
 
 /// The fixtures that clipped at 62 while `check` said «30 or wider» (or
-/// «33»), with the width it announces now: four of t-172 and two written
+/// «33»), with the width it announces now: four of two labels on a line and two written
 /// for this ticket (the second label of L1 arrives with a typing move; the
 /// note comes before the highlight, which also clips at 63).
 const AT_62: [(&str, usize); 6] = [
@@ -46,8 +46,8 @@ const AT_62: [(&str, usize); 6] = [
     ("render/two_labels_on_a_line/two-labels-mark.tiza", 63),
     ("render/two_labels_on_a_line/three-labels.tiza", 63),
     ("render/two_labels_on_a_line/two-labels-hl-mark.tiza", 63),
-    ("t-200/typing.tiza", 63),
-    ("t-200/order-note-first.tiza", 64),
+    ("check/clean_width/typing.tiza", 63),
+    ("check/clean_width/order-note-first.tiza", 64),
 ];
 
 fn path(rel: &str) -> String {
@@ -230,7 +230,7 @@ fn last_line(out: &str) -> String {
 }
 
 #[test]
-fn ac1_ac4_the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_clean() {
+fn the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_clean() {
     for (rel, clean) in AT_62 {
         let p = path(rel);
         let doc = open(&p);
@@ -276,10 +276,10 @@ fn ac1_ac4_the_62_fixtures_announce_a_width_above_62_and_every_width_above_is_cl
 }
 
 #[test]
-fn ac1_ac4_tally_tour_says_55_and_its_callout_is_never_cut_at_106_to_108() {
+fn tally_tour_says_55_and_its_callout_is_never_cut_at_106_to_108() {
     let p = example("tally-tour.tiza");
     let p = p.to_str().unwrap();
-    // Until t-201 the `auto` callout of step 3 moved into the margin at 106
+    // Until the margin callouts the `auto` callout of step 3 moved into the margin at 106
     // and, with no room for its block until 109, was a label cut with …
     // there (`check` said «109 or wider; 91-105 are clean too»). With no
     // room for its block in the margin it is now a block under its lines,
@@ -328,7 +328,7 @@ fn corpus() -> Vec<String> {
 }
 
 #[test]
-fn ac1_ac2_every_example_and_fixture_saturates_at_the_bound_and_agrees_with_every_width() {
+fn every_example_and_fixture_saturates_at_the_bound_and_agrees_with_every_width() {
     let mut opened = Vec::new();
     for p in corpus() {
         let Ok(o) = tiza_core::fs::open(&p) else {
@@ -341,7 +341,7 @@ fn ac1_ac2_every_example_and_fixture_saturates_at_the_bound_and_agrees_with_ever
         "ownership-moves.rs.tiza",
         "stack-impl.tiza",
         "tally-tour.tiza",
-        "t-200/capped.tiza",
+        "check/clean_width/capped.tiza",
     ] {
         assert!(
             names.iter().any(|p| p.ends_with(want)),
@@ -383,7 +383,7 @@ impl Gen {
     /// ZWJ sequence, a combining mark (also alone, after a space), a word
     /// joiner, a no-break or an ideographic space, which take more (or
     /// other) cells once drawn than their display width says. One label in
-    /// four glues its words with no space (the words of t-208).
+    /// four glues its words with no space (the words of the zero-width labels).
     fn words(&mut self, max: u64) -> String {
         const W: [&str; 16] = [
             "the",
@@ -509,8 +509,8 @@ fn random_doc(g: &mut Gen, name: &str) -> (Value, Option<Vec<String>>) {
 }
 
 #[test]
-fn ac2_random_documents_saturate_at_the_bound() {
-    let dir = scratch("t200-random");
+fn random_documents_saturate_at_the_bound() {
+    let dir = scratch("random");
     let mut g = Gen(0x7a11_2000_5eed_0001);
     let (mut checked, mut below, mut linked, mut brute) = (0, 0, 0, 0);
     let start = std::time::Instant::now();
@@ -568,8 +568,8 @@ fn ac2_random_documents_saturate_at_the_bound() {
 }
 
 #[test]
-fn corner_a_document_that_clips_at_every_width_keeps_saying_so() {
-    let p = path("t-200/clips-everywhere.tiza");
+fn a_document_that_clips_at_every_width_keeps_saying_so() {
+    let p = path("check/clean_width/clips-everywhere.tiza");
     assert_eq!(clipping_widths(&open(&p)).len(), MAX_WIDTH - MIN_WIDTH + 1);
     let out = tiza(&["check", &p]);
     let out = String::from_utf8_lossy(&out.stdout);
@@ -582,7 +582,7 @@ fn corner_a_document_that_clips_at_every_width_keeps_saying_so() {
 }
 
 #[test]
-fn corner_the_narrow_layout_below_62_is_unchanged() {
+fn the_narrow_layout_below_62_is_unchanged() {
     let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
     let doc = open(&p);
     // Below the margin the labels go under the lines and fit from 30 on,
@@ -609,12 +609,12 @@ fn corner_the_narrow_layout_below_62_is_unchanged() {
 }
 
 #[test]
-fn corner_a_margin_cap_and_width_only_count_the_widths_that_matter() {
+fn a_margin_cap_and_width_only_count_the_widths_that_matter() {
     // With the margin capped at 16, every width from the one where the cap
     // ends the frame up draws the same take: the announcement is the same
     // as trying every width, and `--width` changes only the findings, never
     // the announced width.
-    let p = path("t-200/capped.tiza");
+    let p = path("check/clean_width/capped.tiza");
     let doc = open(&p);
     assert_eq!(doc.margin, Some(16));
     let clipping = clipping_widths(&doc);
@@ -642,8 +642,8 @@ fn corner_a_margin_cap_and_width_only_count_the_widths_that_matter() {
 }
 
 #[test]
-fn ac3_the_socket_and_mcp_check_say_the_same() {
-    let dir = scratch("t200-live");
+fn the_socket_and_mcp_check_say_the_same() {
+    let dir = scratch("live");
     let p = path("render/two_labels_on_a_line/two-labels-hl.tiza");
     let live = Live::open(open(&p), dir.join("doc.tiza"), dir.join("live.sock"));
     let v = live.api_ok("check", json!({}));
