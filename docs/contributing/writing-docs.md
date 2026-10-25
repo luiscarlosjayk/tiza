@@ -53,6 +53,8 @@ A page about one feature uses this order. For that page, it replaces the templat
 
 [Saving](../concepts/saving.md) is the model page for this order.
 
+Write a heading as a noun phrase for a topic, for example "Messages". Write it in the imperative for a task that the reader does, for example "Undo a reload".
+
 ### Limits
 
 - Keep a paragraph to five sentences or fewer.
@@ -74,7 +76,9 @@ These limits are rules for the writer. A QA test does not check them.
 | A callout | a warning about lost work, at most one on a page |
 
 - Write a callout as a quote with a bold label: `> **Warning:** …`. GitHub and mdBook both show it.
-- Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`.
+- Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`, `N`, `ID`.
+- Do not put a literal value in a message table. When a literal value helps, put it in a code block after a line that starts with "For example".
+- A message table lists every message of the page. In the text, quote a message only where it explains its case.
 
 ## 4. Voice and glossary
 
@@ -107,6 +111,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | kind | the name of a mark, built in or custom (`warn`, `read`, `io`) | type |
 | style | a custom kind that you define (`:style`, `define_style`) | theme |
 | anchor | the code text that an annotation follows | position, cell |
+| span | the part of a line that a highlight, a mark or an arrow end covers | range (except a line range) |
 | instance | the running TUI that agents talk to | server, app |
 | color | the color of an annotation or a theme token | colour |
 | 24-bit color | the terminal feature that shows any RGB color | truecolor, RGB |
