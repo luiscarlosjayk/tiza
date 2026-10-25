@@ -1,5 +1,3 @@
-# ╭─ Tiza ─▶
-
 ![Tiza: step-by-step code annotations for the terminal. Three real frames of the Rust ownership example, steps 1, 4 and 7](docs/img/hero.png)
 
 **Draw on top of code in the terminal to explain it on video.**

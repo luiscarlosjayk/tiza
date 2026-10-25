@@ -1282,3 +1282,64 @@ fn ac7_the_issue_and_discussion_forms_are_valid_and_complete() {
         assert_eq!(ids(&form), want, "{f}");
     }
 }
+
+// --- Brand assets (Luis, 2026-10-24) -----------------------------------
+
+/// The logo files Luis chose, kept in the repository as Herdr keeps its
+/// own: the README's hero shows the logo (t-121 checks it is this one), and
+/// no crate and no release tar carries them.
+const BRAND: [&str; 5] = [
+    "logo.svg",
+    "logo.png",
+    "og-card.png",
+    "mark.svg",
+    "mark-small.svg",
+];
+
+#[test]
+fn brand_the_readme_shows_the_logo_and_the_files_stay_out_of_the_packages() {
+    // The README starts with the hero, which carries the logo: a separate
+    // logo above it showed the mark twice (Luis, 2026-10-24).
+    let readme = read("README.md");
+    let first = readme.lines().next().unwrap();
+    assert!(
+        first.starts_with("![Tiza: ") && first.ends_with("](docs/img/hero.png)"),
+        "{first}"
+    );
+    assert!(
+        !readme.contains("docs/brand/logo.svg") && !readme.contains("docs/brand/logo.png"),
+        "a separate logo in the README"
+    );
+    let about = read("docs/brand/README.md");
+    for f in BRAND {
+        assert!(root().join("docs/brand").join(f).is_file(), "{f}");
+        assert!(
+            about.contains(&format!("`{f}`")),
+            "docs/brand/README.md: {f}"
+        );
+    }
+    let svg = read("docs/brand/logo.svg");
+    for color in ["#22272b", "#f3f0e7"] {
+        assert!(svg.contains(color) && about.contains(color), "{color}");
+    }
+    // Outlines, not text: the logo does not depend on the font, and has
+    // nothing that runs or loads.
+    for f in ["logo.svg", "mark.svg", "mark-small.svg"] {
+        let s = read(&format!("docs/brand/{f}"));
+        for bad in ["<text", "font-family", "<script", "href", "<image"] {
+            assert!(!s.contains(bad), "{f} has {bad}");
+        }
+    }
+    // Neither a crate nor the release tar (README, licences, examples and
+    // the binary) carries them.
+    for name in ["tiza", "tiza-core", "tiza-tui", "tiza-mcp", "tiza-export"] {
+        let files = packaged(name);
+        assert!(
+            files.iter().all(|f| !f.contains("brand/")),
+            "{name} packages brand files"
+        );
+    }
+    let release = read("scripts/release-local.sh");
+    assert!(release.contains("cp README.md LICENSE-MIT LICENSE-APACHE \"$stage/\""));
+    assert!(!release.contains("docs/brand"));
+}
