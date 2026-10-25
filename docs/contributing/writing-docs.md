@@ -81,6 +81,9 @@ These limits are rules for the writer. A QA test does not check them.
 - Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`, `N`, `ID`.
 - Do not put a literal value in a message table. When a literal value helps, put it in a code block after a line that starts with "For example".
 - A message table lists every message of the page. In the text, quote a message only where it explains its case.
+- When a message contains a backtick, quote it with two backticks on each side. Put a space between the two backticks and the message.
+- When a message ends with the error text of the system, stop the table cell at the text of Tiza. Write one sentence under the table that says which messages add the system error.
+- When part of a placeholder is optional, write the short form in the table. Explain the optional part in a list item under the table.
 
 ## 4. Voice and glossary
 
@@ -126,6 +129,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | presenter | the person who shows the code; only in agent pages | user |
 | code reference | code that the document reads from a file (`"code": {"file": …}`) | file link, pointer |
 | embedded code | code that the document holds as a copy (`:embed`) | inline code, frozen code |
+| mouse capture | the state in which Tiza gets the mouse events of the terminal (`--mouse`, `:mouse`) | mouse mode, mouse reporting |
 | follow mode | the mode that reloads the code when the file changes on disk (`--follow`, `:follow`) | watch mode, live reload |
 | autosave | the save of each change to the document when you make it (`:autosave`) | auto-save, autosaving |
 | no-save mode | the mode that never saves the document by itself (`--no-save`) | dry run, read-only mode |
@@ -155,6 +159,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 ## 7. Links
 
 - Inside `docs/`, use relative links. They work on GitHub and in mdBook.
+- A link from `docs/` to a file outside `docs/`, for example `../../schema/tiza.schema.json`, is also relative. The docs site changes it to a link to GitHub.
 - In README.md, link to a page outside `examples/` with an absolute URL. The release archive holds the binary, the README, the two licenses and `examples/`.
 - The docs site is https://tiza.luisk.dev. Until it exists, link to the page on GitHub.
 - The text of a link names the page or the section: `[Saving](../concepts/saving.md)`, not the file name.
