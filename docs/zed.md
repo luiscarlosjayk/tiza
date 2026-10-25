@@ -98,6 +98,8 @@ Tiza shows the first two messages in the status bar. It writes the others on std
 tiza: no step is named "nope" (named steps: main, args, count, report, recap) (not_found)
 ```
 
+The other messages of `tiza` are in [Messages](reference/cli.md#messages).
+
 ## Special cases
 
 ### Rust files and Cargo

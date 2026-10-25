@@ -636,6 +636,8 @@ The message `no Tiza instance is listening on …` ends with the error of the sy
 tiza: no step is named "x" (named steps: a) (not_found)
 ```
 
+The other messages of `tiza` are in [Messages](cli.md#messages).
+
 ## Special cases
 
 ### A paste while a move is applied

@@ -288,6 +288,8 @@ The reply has these fields:
 
 These messages end with the error of the system or the reason: `could not open FILE`, `could not read the document from stdin`, the `no Tiza instance` message, the two `unexpected` messages, `the live document cannot be rendered` and `could not create FOLDER`.
 
+The other messages of `tiza` are in [Messages](cli.md#messages).
+
 ### Warnings of `tiza render`
 
 | Message | When |
