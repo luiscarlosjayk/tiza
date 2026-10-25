@@ -132,7 +132,7 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 
 Tiza quits as with Ctrl-C when its terminal closes. A closed pane or tab and a lost SSH session are examples.
 
-Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime directory. Each line has this form:
+Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime folder. Each line has this form:
 
 ```
 TIME tiza VERSION (COMMIT) pid PID: the terminal went away: TEXT
@@ -140,7 +140,7 @@ TIME tiza VERSION (COMMIT) pid PID: the terminal went away: TEXT
 
 `TIME` is in seconds since 1970. `TEXT` is the line that Tiza could not print.
 
-The runtime directory is `$XDG_RUNTIME_DIR/tiza/`. When that variable is empty or not set, it is `$TMPDIR/tiza/`, or else `/tmp/tiza/`.
+The runtime folder is `$XDG_RUNTIME_DIR/tiza/`. When that variable is empty or not set, it is `$TMPDIR/tiza/`, or else `/tmp/tiza/`.
 
 When Tiza gets a hang-up signal and its terminal is still open, it prints on that terminal.
 
