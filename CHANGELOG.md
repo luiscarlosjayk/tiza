@@ -4,6 +4,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-25
+
 ### Added
 - `tiza render FILE --out demo.gif` and MCP `export_image` write an animated GIF from Tiza's own frames, one for each step, with `code.patch` moves typed at their speed. `--out demo.mp4` or `.webm` encodes the same frames with your own `ffmpeg`, from `PATH` or `$TIZA_FFMPEG`.
 - `tiza render FILE --all-steps --out DIR/` writes one file for each step, `step-00.png` to `step-NN.png` (or `--format svg|txt|ansi|md`), all at the same pixel size. It removes the files of that format that an earlier run left after the last step.

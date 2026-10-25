@@ -12,7 +12,7 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 ![Tiza explaining Rust ownership step by step](docs/img/ownership.gif)
 
-> Status: **v0.0.1**, early: the document format and the API may still change before 1.0. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev), [tuios](https://github.com/Gaurav-Gosain/tuios) and [Demo Time](https://demotime.show).
+> Status: **v0.1.0**, early: the document format and the API may still change before 1.0. Inspired by [Excalidraw](https://excalidraw.com), [excalidraw/cli](https://github.com/excalidraw/cli), [herdr](https://herdr.dev), [tuios](https://github.com/Gaurav-Gosain/tuios) and [Demo Time](https://demotime.show).
 
 <!-- readme-images:ownership-txt -->
 ```
