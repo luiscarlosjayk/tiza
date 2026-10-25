@@ -121,7 +121,6 @@ fn ac1_ac4_the_texts_say_where_a_relative_path_starts() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     let sentence = "A relative path starts at the folder where you started Tiza";
-    assert!(read("README.md").contains(sentence), "README");
     assert!(
         read("docs/agent-guide.md").contains(sentence),
         "agent guide"

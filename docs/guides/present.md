@@ -1,0 +1,5 @@
+# Present
+
+This page tells how to use the mouse while you explain code.
+
+**Mouse** (`--mouse`, `:mouse on|off`): off by default, because capturing the mouse takes the terminal's own text selection away; while it is on, a click moves the cursor, a drag selects a span (one line) or a range of lines and leaves the selection open for `h` (highlight), `b` (box), `a` (arrow end), `n` (note), `C` (callout), and the wheel scrolls. It is for live, spontaneous explanations in normal mode, where the status bar shows what you select; presentation mode (`P`) ignores clicks, drags and the wheel (the cursor and the selection are hidden there, so a mouse selection would be blind) — to annotate with the mouse, leave presentation mode first. To copy text from the terminal while Tiza captures the mouse, hold Shift while dragging (Ghostty, WezTerm, most Linux terminals) or Option (iTerm2, Terminal.app); Zed keeps Cmd+click for links even with mouse reporting on; under tmux the mouse reaches Tiza only with `set -g mouse on`.

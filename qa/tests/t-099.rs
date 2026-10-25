@@ -775,8 +775,6 @@ fn ac10_schema_scene_get_and_docs_cover_steps_and_loop() {
     let v = jsonschema::validator_for(&committed).unwrap();
     assert!(v.is_valid(&doc));
     for (file, needle) in [
-        ("README.md", "auto_advance_ms"),
-        ("README.md", "tiza goto"),
         ("docs/agent-guide.md", "step.goto"),
         ("docs/agent-guide.md", "goto_step"),
         // (The CHANGELOG of 0.1.0 was condensed in t-217.)

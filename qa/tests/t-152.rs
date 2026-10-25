@@ -238,7 +238,7 @@ fn publish_no_workflow_publishes_to_crates_io() {
     }
 }
 
-/// The README section of the release, as GitHub anchors it: lowercase,
+/// The heading of the release page, as GitHub anchors it: lowercase,
 /// letters, digits, `-` and `_` kept, spaces to `-`, the rest dropped.
 fn anchor(heading: &str) -> String {
     heading
@@ -252,26 +252,26 @@ fn anchor(heading: &str) -> String {
         .collect()
 }
 
-/// The text of the README's `## Releases (maintainers)` section.
+/// The text of `docs/contributing/releasing.md`, the page release.yml
+/// names: its H1 is `# Releases (maintainers)`.
 fn release_section() -> String {
-    let readme = read("README.md");
-    let start = readme
-        .find("\n## Releases (maintainers)\n")
-        .expect("a `## Releases (maintainers)` section in the README");
-    let body = &readme[start + 1..];
-    let end = body[3..].find("\n## ").map_or(body.len(), |i| i + 4);
-    body[..end].to_string()
+    let page = read("docs/contributing/releasing.md");
+    assert!(
+        page.starts_with("# Releases (maintainers)\n"),
+        "docs/contributing/releasing.md starts with `# Releases (maintainers)`"
+    );
+    page
 }
 
 /// QA P3-4: a real section, with the anchor release.yml points at.
 #[test]
 fn publish_release_section_has_an_anchor_release_yml_uses() {
     let section = release_section();
-    let heading = section.lines().next().unwrap().trim_start_matches("## ");
+    let heading = section.lines().next().unwrap().trim_start_matches("# ");
     assert_eq!(anchor(heading), "releases-maintainers");
     let yml = read(".github/workflows/release.yml");
     assert!(
-        yml.contains("README.md#releases-maintainers"),
+        yml.contains("docs/contributing/releasing.md#releases-maintainers"),
         "release.yml points at the section"
     );
     // QA P3-5: no blank line at the end of the workflow.
@@ -1409,11 +1409,7 @@ const POSITIONING: &str = "Draw on top of code in your terminal to explain, debu
 #[test]
 fn positioning_is_the_same_sentence_everywhere() {
     let bold = format!("**{POSITIONING}.**");
-    for f in [
-        "README.md",
-        "crates/tiza-cli/README.md",
-        "docs/release-notes/v0.1.0.md",
-    ] {
+    for f in ["crates/tiza-cli/README.md", "docs/release-notes/v0.1.0.md"] {
         assert!(read(f).lines().any(|l| l == bold), "{f} lacks {bold}");
     }
     let meta = metadata();
@@ -1440,7 +1436,6 @@ fn positioning_is_the_same_sentence_everywhere() {
     );
     // The old positioning is gone from what people read.
     for f in [
-        "README.md",
         "crates/tiza-cli/README.md",
         "crates/tiza-cli/Cargo.toml",
         "crates/tiza-cli/src/main.rs",

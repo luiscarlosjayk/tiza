@@ -351,7 +351,6 @@ fn ac5_changelog_readme_and_guide() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
     assert!(read("CHANGELOG.md").contains(":saveas"), "CHANGELOG");
-    assert!(read("README.md").contains(":saveas PATH"), "README");
 }
 
 // ---------- Review ----------

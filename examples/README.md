@@ -40,4 +40,4 @@ A document style wins over a built-in kind or alias of the same name (`borrow_mu
 
 ## Themes
 
-`themes/catppuccin-mocha.toml` is the one shipped theme file: Catppuccin's published Mocha values on Tiza's roles, and the example to copy when writing your own (`tiza FILE --theme-file examples/themes/catppuccin-mocha.toml`, or `:theme file PATH` inside the TUI; paste the tokens into the `[theme]` table of `~/.config/tiza/config.toml` to apply them everywhere). See «Themes» in the README.
+`themes/catppuccin-mocha.toml` is the one shipped theme file: Catppuccin's published Mocha values on Tiza's roles, and the example to copy when writing your own (`tiza FILE --theme-file examples/themes/catppuccin-mocha.toml`, or `:theme file PATH` inside the TUI; paste the tokens into the `[theme]` table of `~/.config/tiza/config.toml` to apply them everywhere). See [Themes](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/themes.md).

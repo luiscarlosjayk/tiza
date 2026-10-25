@@ -1,0 +1,7 @@
+# What Tiza reads and writes
+
+This page tells which files and connections the `tiza` binary uses.
+
+**The `tiza` binary that shows your code has no network dependencies and never opens a connection.** Its only I/O is your terminal, the files you name, the `.tiza` sidecar next to them, and a local Unix socket for agents (never TCP). Features that talk to the internet live in a separate crate and binary, are off unless you run them, and state what they send before they send it ([ADR 0009](../adr/0009-politica-de-red.md)).
+
+In detail, `tiza` reads the source file you open (and re-reads it in follow mode), the `.tiza` document, the files a `.tiza` references, and what agents send over the socket; it writes the `.tiza` sidecar (every change, unless `--no-save` / `:autosave off`), the exports you ask for (`:export`, `render`, `export_image`) and the socket itself. It never reads your shell history, your editor's configuration, environment variables other than `TIZA_*`, `TMPDIR` and `XDG_RUNTIME_DIR`, or any file you did not name. There is no telemetry, no crash reporting, no update check and no identifier of any kind; `Cargo.lock` has no HTTP or TLS crate, and `cargo-deny` keeps it that way (`deny.toml`). When a network feature exists it will be a separate `tiza-net` binary that runs only on your command (`tiza-net publish demo.gif`, `tiza-net update-check`), prints what it is about to send, never includes your code or annotations unless sending them is the point and you asked.

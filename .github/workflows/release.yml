@@ -5,7 +5,7 @@ name: Release
 # (scripts/release-notes.sh: a vX.Y.Z tag without its notes stops in the first
 # job, before anything is built).
 # Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
-# crates.io is published by hand: README.md#releases-maintainers.
+# crates.io is published by hand: docs/contributing/releasing.md#releases-maintainers.
 # scripts/release-local.sh builds the same archives when Actions is off.
 
 on:

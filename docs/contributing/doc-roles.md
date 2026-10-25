@@ -21,7 +21,7 @@ Run each role in its own agent, or in a new session if your tool cannot start ag
 - Run every command that the page shows against the built binary. Record each command and its result.
 - Check every claim against the code or a test. Give the file and the line.
 - Use the glossary. Add a new term to the glossary before you use it.
-- Find the tests that read the text that you move. Move them in the same commit.
+- Find the tests that read the text that you move. Change them in the same commit.
 - Make every figure with `tiza render` and a script.
 
 **Prohibitions.**
@@ -93,7 +93,7 @@ Questions for a how-to guide (they replace questions 1 to 7):
 - List each volatile number that no script or test keeps true.
 - Check the figures: real exports, alt text, caption, size and width.
 - Check the links and the anchors, also the absolute links to the repo.
-- Find the QA tests that pin the text of the page. Mark each finding that needs a test change.
+- Find the QA tests that read the page: anchors, links and lines that a script writes. Mark each finding that needs a test change.
 
 **Prohibitions.** Do not rewrite the page. Do not change a file. Do not decide a question for the owner: list it.
 

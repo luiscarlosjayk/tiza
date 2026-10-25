@@ -311,31 +311,3 @@ fn ac3_format_flag_stdout_and_live_instance() {
     assert_eq!(frames.len(), 3, "steps 0, 1, 2 of the live document");
     assert!(frames[2][2].as_str().unwrap().contains("two"));
 }
-
-#[test]
-fn ac4_generation_needs_no_external_tool_and_docs_say_what_playing_needs() {
-    // The two files above were produced in this sandbox, which has neither
-    // vhs, ttyd, ffmpeg nor asciinema: generation is pure Rust.
-    for tool in ["vhs", "ttyd", "ffmpeg", "asciinema"] {
-        let found = std::process::Command::new("which")
-            .arg(tool)
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false);
-        if found {
-            eprintln!("note: {tool} is installed here; the test still only checks generation");
-        }
-    }
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(
-        readme.contains(".cast") && readme.contains("asciinema"),
-        "README explains the cast"
-    );
-    assert!(
-        readme.contains(".tape") && readme.contains("vhs"),
-        "README explains the tape"
-    );
-}

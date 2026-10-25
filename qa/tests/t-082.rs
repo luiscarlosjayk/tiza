@@ -64,9 +64,6 @@ fn ac3_docs_explain_the_reconnect() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(readme.contains("After rebuilding Tiza"));
-    assert!(readme.contains("/mcp") && readme.contains("list_changed"));
     let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
     assert!(guide.contains("## After a rebuild") && guide.contains("binary_rebuilt"));
 }

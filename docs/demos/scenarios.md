@@ -2,7 +2,7 @@
 
 Twelve concrete situations where Tiza and an agent (Claude Code, or any MCP client) explain code to someone: a viewer, a new teammate, a reviewer, or another agent. Each one is an idea for a recording and a check that the pieces exist. Scenario 1 is worked out in full as a runnable example ([below](#worked-example-a-tour-of-tally)); the others are scripts to adapt.
 
-Every command, tool and field named here exists today (README, [agent guide](../agent-guide.md)), and no script waits on a feature: the one planned change that touches them is in the [short list at the end](#planned-changes-that-touch-these-scenarios). Any frame you publish from these is a real `tiza render` export; do not retouch it.
+Every command, tool and field named here exists today ([`:` commands](../reference/commands.md), [agent guide](../agent-guide.md)), and no script waits on a feature: the one planned change that touches them is in the [short list at the end](#planned-changes-that-touch-these-scenarios). Any frame you publish from these is a real `tiza render` export; do not retouch it.
 
 Each scenario gives: **For** (the audience), **Setup** (a sample under `examples/`, or how to make a throwaway one), **Script** (the prompts to the agent and the `tiza` or MCP calls), **What the audience sees**, **Features** and **Recording** (format and length).
 
@@ -21,7 +21,7 @@ Each scenario gives: **For** (the audience), **Setup** (a sample under `examples
 | 11 | [Answering a question with an annotated frame](#11-answering-a-question-with-an-annotated-frame) | whoever asked | `examples/tally/src/count.rs` |
 | 12 | [Hands-free: a looping screen or an unattended take](#12-hands-free-a-looping-screen-or-an-unattended-take) | passers-by, viewer | `examples/tally-tour.tiza` |
 
-Common setup for every scenario with an agent: Tiza in one terminal, the agent in another, and the MCP server registered once (`claude mcp add tiza -- tiza mcp`, or the `.mcp.json` in the README). Before any take, `tiza check FILE` (or the `check` tool) and a look at the screen.
+Common setup for every scenario with an agent: Tiza in one terminal, the agent in another, and the MCP server registered once (`claude mcp add tiza -- tiza mcp`, or the `.mcp.json` in [Connect an agent](../agents/setup.md)). Before any take, `tiza check FILE` (or the `check` tool) and a look at the screen.
 
 **Work on a copy, and keep what Tiza saves.** Copy the sample to a working folder first (`rm -rf /tmp/tally && cp -r examples/tally /tmp/tally`) and open the copy normally. Start from a fresh copy every time: `cp -r` onto a folder that already exists copies into `/tmp/tally/tally` instead, and you would open the previous scenario's sidecar. The TUI writes every change to the `.tiza` sidecar next to the file it opened (`/tmp/tally/src/main.rs` → `/tmp/tally/src/main.rs.tiza`) as it happens, the agent's changes included: that sidecar *is* the result. Keep it, render it, or hand it to another agent; it references the copied files by relative path, so move the whole folder with it (or run `:embed` in the TUI to store every file inside it). Opening the copy, never `examples/` itself, keeps the repository clean.
 
@@ -162,7 +162,7 @@ tiza render /tmp/tally/src/main.rs.tiza --all-steps --width 130 --out tally-tour
 
 **Features:** follow mode and re-anchoring, `set_follow`, `follow.status` (`reloads`, `last_reload`), `list_annotations`, `u` to undo a reload.
 
-**Recording:** a screen recording, 3-5 min; the editor at 50 % and Tiza at 50 % (README «Recommended recording profile»).
+**Recording:** a screen recording, 3-5 min; the editor at 50 % and Tiza at 50 % ([Recommended recording profile](../guides/check-before-you-record.md)).
 
 ## 8. Supervised session: the agent proposes, you approve on camera
 

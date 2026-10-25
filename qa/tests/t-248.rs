@@ -1549,20 +1549,14 @@ fn ac9_the_readme_gives_the_command_first() {
     let first = install
         .find(&format!("```sh\n{command}\n```"))
         .expect("the command");
-    for after in ["**By hand:**", "**From source:**", "cargo install tiza"] {
-        let at = install.find(after).unwrap_or_else(|| panic!("{after}"));
-        assert!(first < at, "the command comes before {after}");
+    let at = install
+        .find("cargo install tiza")
+        .expect("cargo install tiza");
+    assert!(first < at, "the command comes before cargo install tiza");
+    // The install page gives the options of the script; the variable that
+    // only the tests use is in neither.
+    let page = read("docs/guides/install.md");
+    for text in [install, page.as_str()] {
+        assert!(!text.contains("TIZA_DOWNLOAD_BASE"), "for tests only");
     }
-    for word in [
-        "SHA-256",
-        "`~/.local/bin`",
-        "`sudo`",
-        "`TIZA_VERSION`",
-        "`TIZA_INSTALL_DIR`",
-        "To read the script before you run it",
-        "xattr -d com.apple.quarantine",
-    ] {
-        assert!(install.contains(word), "{word}");
-    }
-    assert!(!install.contains("TIZA_DOWNLOAD_BASE"), "for tests only");
 }

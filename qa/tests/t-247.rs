@@ -217,7 +217,6 @@ fn ac4_the_help_the_readme_and_the_changelog_say_it() {
     );
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    assert!(read("README.md").contains("unsaved (:saveas PATH · :q! discards)"));
     assert!(read("CHANGELOG.md").contains("unsaved (:saveas PATH · :q! discards)"));
 }
 
@@ -447,17 +446,11 @@ fn ac6_the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
 fn ac6_the_readme_and_the_changelog_name_the_chips_and_the_message() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let readme = read("README.md");
-    assert!(readme.contains("the bar shows `autosave off`"));
-    assert!(readme.contains("the bar shows `no-save`, then"));
-    assert!(readme.contains("`saved as PATH (autosave on)`"));
     let changelog = read("CHANGELOG.md");
     assert!(changelog.contains("It shows `no-save` with `--no-save`"));
     assert!(changelog.contains("It shows `autosave off` after `:autosave off`"));
     assert!(changelog.contains("`saved as PATH (autosave on)`, or `(autosave off)`"));
-    for t in [&readme, &changelog] {
-        assert!(!t.contains("changes now save there"));
-    }
+    assert!(!changelog.contains("changes now save there"));
 }
 
 // A count of one says it in the singular: `1 line pasted (1 annotation

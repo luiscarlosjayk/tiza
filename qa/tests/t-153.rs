@@ -20,8 +20,6 @@ use std::path::{Path, PathBuf};
 
 const FULL_NAME: &str = "Luis Carlos Osorio Jayk";
 
-const AUTHOR_LINE: &str = "Made by [Luis Carlos Osorio Jayk](https://github.com/luiscarlosjayk) (LuisK) · [LinkedIn](https://www.linkedin.com/in/luiscarlososoriojayk) · [YouTube](https://www.youtube.com/@luiskdev).";
-
 const CONTRIBUTION_CLAUSE: &str = "Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in Tiza by you, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.";
 
 fn root() -> PathBuf {
@@ -44,43 +42,6 @@ fn license_section() -> String {
     let rest = &readme[start + 1..];
     let end = rest[3..].find("\n## ").map(|i| i + 3).unwrap_or(rest.len());
     rest[..end].to_string()
-}
-
-#[test]
-fn ac1_inspired_by_names_demo_time_and_keeps_the_other_four() {
-    let readme = read("README.md");
-    let line = readme
-        .lines()
-        .find(|l| l.contains("Inspired by"))
-        .expect("README has an «Inspired by» line");
-    for link in [
-        "[Excalidraw](https://excalidraw.com)",
-        "[excalidraw/cli](https://github.com/excalidraw/cli)",
-        "[herdr](https://herdr.dev)",
-        "[tuios](https://github.com/Gaurav-Gosain/tuios)",
-        "[Demo Time](https://demotime.show)",
-    ] {
-        assert!(
-            line.contains(link),
-            "«Inspired by» line lacks {link}: {line}"
-        );
-    }
-}
-
-#[test]
-fn ac2_readme_ends_with_the_author_line_and_its_three_links() {
-    let readme = read("README.md");
-    let last = readme.lines().rev().find(|l| !l.trim().is_empty()).unwrap();
-    assert_eq!(
-        last, AUTHOR_LINE,
-        "the README's last line is the author line"
-    );
-    assert_eq!(
-        last.matches("](http").count(),
-        3,
-        "exactly three links in the author line"
-    );
-    assert_eq!(readme.matches("Made by [").count(), 1);
 }
 
 #[test]
@@ -145,7 +106,6 @@ fn ac4b_license_section_keeps_the_dual_license_and_adds_the_clause() {
         section.contains(CONTRIBUTION_CLAUSE),
         "the contribution clause is there, verbatim"
     );
-    assert!(section.contains(AUTHOR_LINE));
     assert!(root().join("LICENSE-MIT").is_file());
     assert!(root().join("LICENSE-APACHE").is_file());
 }

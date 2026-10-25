@@ -889,9 +889,9 @@ fn corner_two_ctrl_c_sent_at_once_cancel_then_quit() {
 
 #[test]
 fn ac6_the_readme_and_the_help_say_ctrl_c_cancels_or_quits() {
-    let readme = include_str!("../../README.md");
+    let keys = include_str!("../../docs/reference/keys.md");
     assert!(
-        readme.contains("| `Ctrl-C` | cancels, or quits"),
+        keys.contains("| `Ctrl-C` | cancels, or quits"),
         "the keys table has a Ctrl-C row"
     );
     let dir = scratch("t197-help");

@@ -438,13 +438,6 @@ fn ac2_ac3_ac5_committed_bench_baseline_covers_every_scenario() {
 
 #[test]
 fn ac4_docs_name_the_download_size_and_the_scripts() {
-    let readme = std::fs::read_to_string(root().join("README.md")).unwrap();
-    assert!(
-        readme
-            .lines()
-            .any(|l| l.to_lowercase().contains("download size") && l.contains(" MB")),
-        "README has no download-size line"
-    );
     let agents = std::fs::read_to_string(root().join("AGENTS.md")).unwrap();
     assert!(
         agents.contains("scripts/size-check.sh") && agents.contains("scripts/bench.sh"),

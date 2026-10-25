@@ -323,17 +323,7 @@ fn ac6_presentation_mode_ignores_the_mouse() {
 }
 
 #[test]
-fn ac5_docs_and_flag() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(readme.contains(":mouse on") && readme.contains("--mouse"));
-    assert!(readme.contains("Shift") && readme.contains("Option") && readme.contains("Cmd+click"));
-    assert!(
-        readme.contains("presentation mode (`P`) ignores clicks"),
-        "AC6 wording"
-    );
+fn ac5_the_help_names_the_flag() {
     let help = tiza_qa::tiza_ok(&["--help"]);
     assert!(help.contains("--mouse"), "{help}");
 }

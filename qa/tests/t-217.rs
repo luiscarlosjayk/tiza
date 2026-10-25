@@ -243,8 +243,6 @@ fn ac3_the_readme_status_and_the_gatekeeper_note() {
         readme.contains(&format!("\n> Status: **v{version}**")),
         "the status names v{version}"
     );
-    assert!(readme.contains("xattr -d com.apple.quarantine"));
-    assert!(readme.contains("docs/release-notes/vX.Y.Z.md"));
     assert!(read("scripts/bump-version.sh").contains("> Status: **v$new**"));
 }
 

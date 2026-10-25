@@ -726,8 +726,6 @@ fn ac6_changelog_and_readme() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
     assert!(changelog.contains("U+2B1A"), "CHANGELOG");
-    let readme = std::fs::read_to_string(root.join("README.md")).unwrap();
-    assert!(readme.contains("⬚"), "README");
 }
 
 // ---------- Review ----------

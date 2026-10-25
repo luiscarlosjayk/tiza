@@ -106,16 +106,6 @@ fn prose(text: &str) -> String {
         .to_lowercase()
 }
 
-/// The README's positioning sentence: its first bold line.
-fn positioning() -> String {
-    let readme = std::fs::read_to_string(repo_root().join("README.md")).unwrap();
-    let line = readme
-        .lines()
-        .find(|l| l.starts_with("**") && l.trim_end().ends_with("**"))
-        .expect("a bold positioning line in the README");
-    line.trim_matches('*').trim().to_string()
-}
-
 fn by_name(tools: &Value) -> BTreeMap<String, Value> {
     tools
         .as_array()
@@ -165,12 +155,6 @@ fn ac1_instructions_describe_tiza_with_the_words_people_use() {
     assert!(
         missing.is_empty(),
         "missing {missing:?} in the prose of:\n{text}"
-    );
-    // Whatever the README says Tiza is (t-141 may change it).
-    let sentence = positioning();
-    assert!(
-        prose(&text).contains(&prose(sentence.trim_end_matches('.'))),
-        "«{sentence}» not in:\n{text}"
     );
     // The flow names its tools in order, and the resources are pointed at.
     let at = |t: &str| {

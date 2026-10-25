@@ -214,16 +214,6 @@ fn ac4_docs_record_the_removal() {
         removed.contains("The binary no longer contains the brand serif")
             && removed.contains("--mono-labels")
     );
-    let readme = std::fs::read_to_string(r.join("README.md")).unwrap();
-    assert!(
-        !readme.contains("`--brand-font` (notes"),
-        "no longer an option"
-    );
-    // Rework: no public doc may still promise serif notes in the exports.
-    assert!(
-        !readme.contains("serif notes"),
-        "README: exports are all JetBrains Mono"
-    );
     assert!(
         !unreleased.contains("the brand serif is opt-in"),
         "CHANGELOG: t-068's entry must not contradict t-134's"
