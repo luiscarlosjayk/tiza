@@ -54,6 +54,8 @@ scripts/size-check.sh                        # release binary < 16 MB, download 
 scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
 ```
 
+Build the docs site locally with `site/build.sh` and Zola 0.23.6.
+
 Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with `rmcp`), `tiza-export` (SVG/PNG with `resvg` and embedded fonts), `tiza` (the binary, in `crates/tiza-cli`). `cargo-deny` checks the licenses and the advisories of the dependencies in CI.
 
 `tiza-core`, `tiza-tui`, `tiza-mcp` and `tiza-export` are on crates.io only so that `cargo install tiza` works: they have no stable API.

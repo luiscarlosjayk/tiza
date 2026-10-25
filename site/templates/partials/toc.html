@@ -1,0 +1,16 @@
+{% if items | length > 0 %}
+<p class="toc-title">On this page</p>
+<ul>
+  {% for h in items %}
+  <li><a href="#{{ h.id }}">{{ h.title }}</a>
+    {% if h.children | length > 0 %}
+    <ul>
+      {% for c in h.children %}
+      <li><a href="#{{ c.id }}">{{ c.title }}</a></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}

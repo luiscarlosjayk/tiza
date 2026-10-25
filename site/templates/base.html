@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ config.title }}{% endblock title %}</title>
+<meta name="description" content="{{ config.description }}">
+<link rel="icon" href="{{ get_url(path='favicon.svg') }}" type="image/svg+xml">
+<link rel="stylesheet" href="{{ get_url(path='giallo-light.css') }}" id="hl-light">
+<link rel="stylesheet" href="{{ get_url(path='giallo-dark.css') }}" id="hl-dark" media="not all">
+<script>
+  // Set the theme before the first paint: the stored choice, else the system setting.
+  (function () {
+    var t = null;
+    try { t = localStorage.getItem("tiza-theme"); } catch (e) {}
+    if (t !== "light" && t !== "dark") {
+      t = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    }
+    document.documentElement.setAttribute("data-theme", t);
+    document.getElementById("hl-light").media = t === "light" ? "all" : "not all";
+    document.getElementById("hl-dark").media = t === "dark" ? "all" : "not all";
+  })();
+</script>
+<link rel="stylesheet" href="{{ get_url(path='style.css') }}">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the content</a>
+{% set release_data = load_data(path="release.toml") %}{% set release = "v" ~ release_data.version %}
+<div class="release-bar">
+  Docs for <code>{{ config.extra.docs_branch }}</code>. Latest release:
+  <a href="{{ config.extra.repo_url }}/releases/tag/{{ release }}">{{ release }}</a>
+</div>
+<header class="top">
+  <button class="icon-btn nav-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open the navigation">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+  </button>
+  <a class="brand" href="{{ get_url(path='/') }}">
+    <img src="{{ get_url(path='favicon.svg') }}" alt="" width="28" height="28">
+    <span class="brand-name">Tiza</span>
+  </a>
+  <div class="search" role="search">
+    <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="11" cy="11" r="7" stroke="currentColor" stroke-width="2" fill="none"/><path d="M20 20l-4-4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <input id="search-input" type="search" placeholder="Search" aria-label="Search the docs" autocomplete="off" spellcheck="false">
+    <kbd class="search-key">/</kbd>
+    <div id="search-results" class="search-results" hidden></div>
+  </div>
+  <a class="top-link" href="{{ config.extra.repo_url }}">GitHub</a>
+  <button class="icon-btn theme-toggle" type="button" aria-label="Switch the theme">
+    <svg class="i-sun" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><circle cx="12" cy="12" r="4" fill="currentColor"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="currentColor"/></svg>
+  </button>
+</header>
+<div class="layout">
+  <nav id="sidebar" class="sidebar" aria-label="Docs">
+    {% for id in config.extra.nav_sections %}
+    {% set s = get_section(path=id ~ "/_index.md") %}
+    <details class="nav-group" open>
+      <summary>{{ s.title }}</summary>
+      <ul>
+        {% if loop.first %}
+        <li><a href="{{ get_url(path='/') }}"{% if current_path == "/" %} aria-current="page"{% endif %}>Overview</a></li>
+        {% endif %}
+        {% for p in s.pages %}
+        <li><a href="{{ p.permalink }}"{% if current_path == p.path %} aria-current="page"{% endif %}>{{ p.extra.title_md | markdown(inline=true) | safe }}</a></li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endfor %}
+    <p class="nav-foot"><a href="{{ config.extra.repo_url }}">Tiza on GitHub</a></p>
+  </nav>
+  <div class="nav-scrim" hidden></div>
+  <main id="main" class="main">
+    {% block content %}{% endblock content %}
+  </main>
+  <aside class="toc" aria-label="On this page">
+    {% block toc %}{% endblock toc %}
+  </aside>
+</div>
+<script src="{{ get_url(path='site.js') }}" data-base="{{ get_url(path='/') }}" defer></script>
+</body>
+</html>

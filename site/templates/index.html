@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block content %}
+<article class="doc home">
+  {{ section.content | safe }}
+  <footer class="page-foot">{% set source = section.extra.source %}{% include "partials/source-link.html" %}</footer>
+</article>
+{% endblock content %}
+{% block toc %}{% set items = section.toc %}{% include "partials/toc.html" %}{% endblock toc %}

@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}{{ section.title }} · {{ config.title }}{% endblock title %}
+{% block content %}
+<article class="doc">
+  <h1>{{ section.title }}</h1>
+  <ul class="section-list">
+    {% for p in section.pages %}
+    <li><a href="{{ p.permalink }}">{{ p.extra.title_md | markdown(inline=true) | safe }}</a></li>
+    {% endfor %}
+  </ul>
+</article>
+{% endblock content %}

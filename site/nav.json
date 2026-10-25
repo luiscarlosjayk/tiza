@@ -1,0 +1,75 @@
+{
+  "_comment": "The pages of the site and the order of the left navigation. Paths are relative to the repo root. A page that is not here is not on the site.",
+  "repo_url": "https://github.com/luiscarlosjayk/tiza",
+  "branch": "main",
+  "home": "README.md",
+  "home_title": "Tiza",
+  "sections": [
+    {
+      "id": "start",
+      "title": "Start here",
+      "pages": [
+        "docs/guides/install.md",
+        "docs/release-notes/v0.1.0.md"
+      ]
+    },
+    {
+      "id": "guides",
+      "title": "Guides",
+      "pages": [
+        "docs/guides/follow-the-editor.md",
+        "docs/guides/present.md",
+        "docs/guides/check-before-you-record.md",
+        "docs/guides/supervise-an-agent.md",
+        "docs/zed.md"
+      ]
+    },
+    {
+      "id": "concepts",
+      "title": "Concepts",
+      "pages": [
+        "docs/concepts/saving.md",
+        "docs/concepts/privacy-and-network.md"
+      ]
+    },
+    {
+      "id": "reference",
+      "title": "Reference",
+      "pages": [
+        "docs/reference/keys.md",
+        "docs/reference/commands.md",
+        "docs/reference/cli.md",
+        "docs/reference/document-format.md",
+        "docs/reference/exports.md",
+        "docs/reference/themes.md",
+        "docs/reference/terminals.md",
+        "docs/reference/characters.md",
+        "docs/reference/socket-api.md",
+        "docs/reference/mcp-tools.md"
+      ]
+    },
+    {
+      "id": "agents",
+      "title": "Agents",
+      "pages": [
+        "docs/agents/setup.md",
+        "docs/agent-guide.md",
+        "docs/agents/draw-for-a-presenter.md",
+        "docs/agents/moves-and-steps.md",
+        "docs/agents/supervised-mode.md",
+        "docs/demos/scenarios.md",
+        "docs/demos/tour-of-tally.md"
+      ]
+    }
+  ],
+  "skip": [
+    "docs/brand/",
+    "docs/img/"
+  ],
+  "assets": {
+    "docs/img/hero.png": "img/hero.png",
+    "docs/img/ownership.gif": "img/ownership.gif",
+    "docs/img/ownership-final.png": "img/ownership-final.png",
+    "docs/brand/mark-small.svg": "favicon.svg"
+  }
+}

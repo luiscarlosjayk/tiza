@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}{{ page.title }} · {{ config.title }}{% endblock title %}
+{% block content %}
+{% set sec = get_section(path=page.ancestors | last) %}
+<article class="doc">
+  <p class="crumb">{{ sec.title }}</p>
+  <h1>{{ page.extra.title_md | markdown(inline=true) | safe }}</h1>
+  {{ page.content | safe }}
+  <footer class="page-foot">
+    <nav class="pager" aria-label="Pages in this section">
+      {% if page.lower %}<a class="prev" href="{{ page.lower.permalink }}"><span>Previous</span>{{ page.lower.extra.title_md | markdown(inline=true) | safe }}</a>{% else %}<span></span>{% endif %}
+      {% if page.higher %}<a class="next" href="{{ page.higher.permalink }}"><span>Next</span>{{ page.higher.extra.title_md | markdown(inline=true) | safe }}</a>{% endif %}
+    </nav>
+    {% set source = page.extra.source %}{% include "partials/source-link.html" %}
+  </footer>
+</article>
+{% endblock content %}
+{% block toc %}{% set items = page.toc %}{% include "partials/toc.html" %}{% endblock toc %}
