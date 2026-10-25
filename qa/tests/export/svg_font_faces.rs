@@ -1,4 +1,4 @@
-//! t-130 — The SVG export embeds only the font faces it actually uses.
+//! The SVG export embeds only the font faces it actually uses.
 //!
 //! Acceptance criteria:
 //! - AC1 The SVG writer collects which faces the frame actually draws
@@ -7,9 +7,9 @@
 //!   embedded. Regular is always in.
 //! - AC2 Same output on screen: the drawing (every line of the SVG but the
 //!   `@font-face` blocks) is unchanged, the PNG does not depend on the
-//!   embedded faces, and the t-050/t-068/t-134 tests still pass.
+//!   embedded faces, and the SVG and PNG tests still pass.
 //! - AC3 Size: before/after bytes of the default step-7 SVG of
-//!   `examples/ownership.rs.tiza` (1,677,197 bytes after t-134) and of a
+//!   `examples/ownership.rs.tiza` (1,677,197 bytes then) and of a
 //!   document with no bold/italic text, recorded in the card's note.
 //! - AC4 (optional) Subsetting each face to the glyphs used: not done here
 //!   (follow-up card); the font files themselves stay complete.
@@ -62,8 +62,8 @@ fn drawing(svg: &str) -> Vec<&str> {
 }
 
 #[test]
-fn ac1_a_document_with_no_bold_italic_or_symbols_embeds_regular_only() {
-    let s = svg("t130-plain", &fixture("t-130/plain.tiza"), &[]);
+fn a_document_with_no_bold_italic_or_symbols_embeds_regular_only() {
+    let s = svg("plain", &fixture("export/svg_font_faces/plain.tiza"), &[]);
     assert_eq!(faces(&s), vec![REGULAR]);
     assert!(!s.contains(BOLD) && !s.contains(SYMBOLS));
     // One face of ~0.37 MB in base64 instead of five.
@@ -71,27 +71,27 @@ fn ac1_a_document_with_no_bold_italic_or_symbols_embeds_regular_only() {
 }
 
 #[test]
-fn ac1_a_box_title_brings_the_bold_face_and_nothing_else() {
-    let s = svg("t130-box", &fixture("t-130/box.tiza"), &[]);
+fn a_box_title_brings_the_bold_face_and_nothing_else() {
+    let s = svg("box", &fixture("export/svg_font_faces/box.tiza"), &[]);
     assert!(s.contains(r#"class="b""#), "the box title is bold");
     assert_eq!(faces(&s), vec![REGULAR, BOLD]);
 }
 
 #[test]
-fn ac1_the_symbols_face_comes_only_with_a_symbol_the_mono_lacks() {
-    let s = svg("t130-sym", &fixture("t-130/symbols.tiza"), &[]);
+fn the_symbols_face_comes_only_with_a_symbol_the_mono_lacks() {
+    let s = svg("sym", &fixture("export/svg_font_faces/symbols.tiza"), &[]);
     assert!(s.contains('★'));
     assert_eq!(faces(&s), vec![REGULAR, SYMBOLS]);
     // Box drawing is in JetBrains Mono: a box alone does not need the fallback.
-    let b = svg("t130-sym-box", &fixture("t-130/box.tiza"), &[]);
+    let b = svg("sym-box", &fixture("export/svg_font_faces/box.tiza"), &[]);
     assert!(b.contains('│') || b.contains('─'));
     assert!(!b.contains(SYMBOLS));
 }
 
 #[test]
-fn ac1_ac3_ownership_step_7_drops_the_unused_bold_italic() {
+fn ownership_step_7_drops_the_unused_bold_italic() {
     let s = svg(
-        "t130-own7",
+        "own7",
         &fixture("shared/ownership/ownership.rs.tiza"),
         &["--step", "7"],
     );
@@ -103,24 +103,24 @@ fn ac1_ac3_ownership_step_7_drops_the_unused_bold_italic() {
 }
 
 #[test]
-fn ac2_the_drawing_is_the_same_with_or_without_the_faces() {
+fn the_drawing_is_the_same_with_or_without_the_faces() {
     for (name, f) in [
-        ("plain", fixture("t-130/plain.tiza")),
-        ("box", fixture("t-130/box.tiza")),
-        ("symbols", fixture("t-130/symbols.tiza")),
-        ("t050", fixture("t-050/export.tiza")),
+        ("plain", fixture("export/svg_font_faces/plain.tiza")),
+        ("box", fixture("export/svg_font_faces/box.tiza")),
+        ("symbols", fixture("export/svg_font_faces/symbols.tiza")),
+        ("svg_font_faces", fixture("export/svg_and_png/export.tiza")),
     ] {
-        let with = svg(&format!("t130-d-{name}"), &f, &[]);
-        let without = svg(&format!("t130-n-{name}"), &f, &["--no-embed-fonts"]);
+        let with = svg(&format!("d-{name}"), &f, &[]);
+        let without = svg(&format!("n-{name}"), &f, &["--no-embed-fonts"]);
         assert_eq!(drawing(&with), drawing(&without), "{name}");
     }
 }
 
 #[test]
-fn corner_no_embed_fonts_embeds_nothing() {
+fn no_embed_fonts_embeds_nothing() {
     let s = svg(
-        "t130-none",
-        &fixture("t-050/export.tiza"),
+        "none",
+        &fixture("export/svg_and_png/export.tiza"),
         &["--no-embed-fonts"],
     );
     assert!(faces(&s).is_empty());

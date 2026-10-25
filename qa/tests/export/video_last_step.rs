@@ -1,4 +1,4 @@
-//! t-170 — MP4/WebM: the last step lasts what the GIF gives it, not twice
+//! MP4/WebM: the last step lasts what the GIF gives it, not twice
 //! as long (the concat list repeats the last frame, and ffmpeg 7+ counts
 //! that repeat as a whole step; Luis's 9.0.2 made an 8 s last step out of
 //! a 4 s one).
@@ -45,7 +45,7 @@ fn ffmpeg() -> Option<Ffmpeg> {
     };
     let Some(ffmpeg) = on_path("ffmpeg") else {
         eprintln!(
-            "t-170: ffmpeg is not on PATH, so the MP4/WebM durations are not measured here \
+            "video_last_step: ffmpeg is not on PATH, so the MP4/WebM durations are not measured here \
              (`brew install ffmpeg` / `sudo apt install ffmpeg` and run this test again)"
         );
         return None;
@@ -55,7 +55,7 @@ fn ffmpeg() -> Option<Ffmpeg> {
         next.is_file().then_some(next)
     }) else {
         eprintln!(
-            "t-170: ffprobe is not on PATH (ffmpeg is, at {}), so the MP4/WebM durations \
+            "video_last_step: ffprobe is not on PATH (ffmpeg is, at {}), so the MP4/WebM durations \
              are not measured here",
             ffmpeg.display()
         );
@@ -237,9 +237,9 @@ fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str
 }
 
 #[test]
-fn ac1_ac2_ac3_the_last_step_of_the_example_lasts_four_seconds_not_eight() {
+fn the_last_step_of_the_example_lasts_four_seconds_not_eight() {
     let Some(ff) = ffmpeg() else { return };
-    let dir = scratch("t170-example");
+    let dir = scratch("example");
     let ex = fixture("shared/ownership/ownership.rs.tiza");
     // 18 s: seven steps of 2 s and the last one twice as long, as the GIF.
     let delays = same_as_the_gif(&ff, &dir, &ex, "mp4", &[]);
@@ -250,21 +250,27 @@ fn ac1_ac2_ac3_the_last_step_of_the_example_lasts_four_seconds_not_eight() {
 }
 
 #[test]
-fn ac1_a_last_step_with_auto_advance_ms_lasts_exactly_that_long() {
+fn a_last_step_with_auto_advance_ms_lasts_exactly_that_long() {
     let Some(ff) = ffmpeg() else { return };
-    let dir = scratch("t170-timed");
+    let dir = scratch("timed");
     // Step 3 holds 3 s and the last step 1.5 s (not 2×interval); the
     // other steps keep `--interval`.
-    let delays = same_as_the_gif(&ff, &dir, &fixture("t-170/last-timed.tiza"), "mp4", &[]);
+    let delays = same_as_the_gif(
+        &ff,
+        &dir,
+        &fixture("export/video_last_step/last-timed.tiza"),
+        "mp4",
+        &[],
+    );
     assert_eq!(delays, vec![2.0, 2.0, 2.0, 3.0, 2.0, 2.0, 2.0, 1.5]);
     assert_eq!(delays.iter().sum::<f64>(), 16.5);
 }
 
 #[test]
-fn corner_a_single_step_document() {
+fn a_single_step_document() {
     let Some(ff) = ffmpeg() else { return };
-    let dir = scratch("t170-one");
-    let doc = fixture("t-170/one-step.tiza");
+    let dir = scratch("one");
+    let doc = fixture("export/video_last_step/one-step.tiza");
     // Step 0 and the only annotated step: 2 s + 4 s.
     let delays = same_as_the_gif(&ff, &dir, &doc, "mp4", &[]);
     assert_eq!(delays, vec![2.0, 4.0]);
@@ -275,9 +281,9 @@ fn corner_a_single_step_document() {
 }
 
 #[test]
-fn review_typed_frames_are_timed_as_the_gif_times_them() {
+fn typed_frames_are_timed_as_the_gif_times_them() {
     let Some(ff) = ffmpeg() else { return };
-    let dir = scratch("t170-typed");
+    let dir = scratch("typed");
     // A move typed at 25 ms per character: the GIF rounds each typed frame
     // up to its 10 ms unit (30 ms), and the video uses the same delays, so
     // both add up to the same length (the typed frames are too short for
@@ -285,7 +291,7 @@ fn review_typed_frames_are_timed_as_the_gif_times_them() {
     let (delays, _) = total_as_the_gif(
         &ff,
         &dir,
-        &fixture("t-170/typed.tiza"),
+        &fixture("export/video_last_step/typed.tiza"),
         "mp4",
         &["--scale", "1"],
     );
@@ -299,12 +305,12 @@ fn review_typed_frames_are_timed_as_the_gif_times_them() {
 }
 
 #[test]
-fn review_interval_zero_still_writes_a_video_stream() {
+fn interval_zero_still_writes_a_video_stream() {
     let Some(ff) = ffmpeg() else { return };
-    let dir = scratch("t170-zero");
+    let dir = scratch("zero");
     // `--interval 0`: the GIF gives each step its 20 ms floor; the video
     // used to get `-t 0.000` and come out as a file with no stream at all.
-    let doc = fixture("t-170/one-step.tiza");
+    let doc = fixture("export/video_last_step/one-step.tiza");
     let (delays, video) =
         total_as_the_gif(&ff, &dir, &doc, "mp4", &["--interval", "0", "--scale", "1"]);
     assert_eq!(delays, vec![0.02, 0.02]);
@@ -312,16 +318,16 @@ fn review_interval_zero_still_writes_a_video_stream() {
 }
 
 #[test]
-fn corner_webm_shares_the_frame_list_and_the_fix() {
+fn webm_shares_the_frame_list_and_the_fix() {
     let Some(ff) = ffmpeg() else { return };
     if !ff.has_encoder("libvpx-vp9") {
         eprintln!(
-            "t-170: this ffmpeg ({}) has no libvpx-vp9 encoder, so the WebM is not measured here",
+            "video_last_step: this ffmpeg ({}) has no libvpx-vp9 encoder, so the WebM is not measured here",
             ff.ffmpeg.display()
         );
         return;
     }
-    let dir = scratch("t170-webm");
+    let dir = scratch("webm");
     // `--scale 1`: VP9 takes its time on the 2048 px frames, and the
     // timing is the same at half the size.
     let flags = ["--scale", "1"];
@@ -333,6 +339,12 @@ fn corner_webm_shares_the_frame_list_and_the_fix() {
         &flags,
     );
     assert_eq!(delays.iter().sum::<f64>(), 18.0);
-    let delays = same_as_the_gif(&ff, &dir, &fixture("t-170/last-timed.tiza"), "webm", &flags);
+    let delays = same_as_the_gif(
+        &ff,
+        &dir,
+        &fixture("export/video_last_step/last-timed.tiza"),
+        "webm",
+        &flags,
+    );
     assert_eq!(delays.last(), Some(&1.5));
 }

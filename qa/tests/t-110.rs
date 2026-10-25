@@ -106,7 +106,7 @@ fn ac2_autosave_command_and_status() {
 fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
     let dir = scratch("t110-readonly");
     let path = dir.join("doc.tiza");
-    std::fs::copy(fixture("t-050/export.tiza"), &path).unwrap();
+    std::fs::copy(fixture("export/svg_and_png/export.tiza"), &path).unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));
     // `chmod a-w doc.tiza`: the atomic replace would walk over it, so the
@@ -176,7 +176,7 @@ fn ac3_read_only_sidecar_warns_once_and_keeps_going() {
 fn ac3_read_only_then_saveas_elsewhere_clears_the_state() {
     let dir = scratch("t110-readonly-w");
     let path = dir.join("doc.tiza");
-    std::fs::copy(fixture("t-050/export.tiza"), &path).unwrap();
+    std::fs::copy(fixture("export/svg_and_png/export.tiza"), &path).unwrap();
     let doc = fs::open(path.to_str().unwrap()).unwrap().document;
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));
     let mut perms = std::fs::metadata(&path).unwrap().permissions();
@@ -221,7 +221,7 @@ fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
 fn ac7_put_of_another_document_stops_autosave_until_asked() {
     let (live, path) = opened("t110-put", false);
     let before = std::fs::read(&path).unwrap();
-    let other = fs::load_document(&fixture("t-050/export.tiza")).unwrap();
+    let other = fs::load_document(&fixture("export/svg_and_png/export.tiza")).unwrap();
     live.api_ok("scene.put", json!({"document": other}));
     assert!(!live.with(|a| a.autosave));
     assert_eq!(live.with(|a| a.doc.code.len()), 6);

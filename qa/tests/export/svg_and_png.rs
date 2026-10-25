@@ -1,4 +1,4 @@
-//! t-050 — SVG and PNG export with embedded fonts.
+//! SVG and PNG export with embedded fonts.
 //!
 //! Acceptance criteria:
 //! - AC1 `tiza render FILE --out x.svg` writes a standalone SVG: theme
@@ -10,9 +10,9 @@
 //! - AC4 Symbols the main font lacks (★ ✎ ⇄), wide glyphs and box drawing render
 //!   with the bundled fonts; emoji need `--system-fonts`.
 //! - AC5 PNG bytes are refused on a terminal stdout but written to a pipe.
-//! - AC6 The MCP `export_image` tool writes .png/.svg (and, since t-049, .txt/.ansi/.md) and rejects other extensions.
+//! - AC6 The MCP `export_image` tool writes .png/.svg (and .txt/.ansi/.md) and rejects other extensions.
 //! - AC7 Dark and light themes both export; `--theme` overrides the document's.
-//! - AC8 (from t-068, with the grid checks of t-134) A mark label's glyphs
+//! - AC8 (with the grid checks) A mark label's glyphs
 //!   keep their own run, the words start on the next cell, and every text
 //!   run sits on the grid.
 
@@ -28,9 +28,9 @@ fn png_size(bytes: &[u8]) -> (u32, u32) {
 }
 
 #[test]
-fn ac1_svg_is_standalone_and_fonts_are_optional() {
-    let dir = scratch("t050-svg");
-    let f = fixture("t-050/export.tiza");
+fn svg_is_standalone_and_fonts_are_optional() {
+    let dir = scratch("svg");
+    let f = fixture("export/svg_and_png/export.tiza");
     let svg = dir.join("a.svg");
     tiza_ok(&[
         "render",
@@ -45,7 +45,7 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
     assert_eq!(
         text.matches("@font-face").count(),
         4,
-        "regular, bold, italic + symbols: the faces this export draws (t-130; no bold italic text)"
+        "regular, bold, italic + symbols: the faces this export draws (no bold italic text)"
     );
     assert!(text.contains("<title>t-050 export"));
     assert!(text.contains("hot path"), "mark legend");
@@ -65,9 +65,9 @@ fn ac1_svg_is_standalone_and_fonts_are_optional() {
 }
 
 #[test]
-fn ac2_png_size_follows_columns_rows_and_scale() {
-    let dir = scratch("t050-png");
-    let f = fixture("t-050/export.tiza");
+fn png_size_follows_columns_rows_and_scale() {
+    let dir = scratch("png");
+    let f = fixture("export/svg_and_png/export.tiza");
     let txt = tiza_ok(&[
         "render",
         f.to_str().unwrap(),
@@ -118,9 +118,9 @@ fn ac2_png_size_follows_columns_rows_and_scale() {
 }
 
 #[test]
-fn ac3_live_instance_is_exported_without_a_file() {
-    let dir = scratch("t050-live");
-    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
+fn live_instance_is_exported_without_a_file() {
+    let dir = scratch("live");
+    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -161,9 +161,9 @@ fn ac3_live_instance_is_exported_without_a_file() {
 }
 
 #[test]
-fn ac4_symbols_and_wide_glyphs_render_with_bundled_fonts() {
-    let dir = scratch("t050-glyphs");
-    let f = fixture("t-050/export.tiza");
+fn symbols_and_wide_glyphs_render_with_bundled_fonts() {
+    let dir = scratch("glyphs");
+    let f = fixture("export/svg_and_png/export.tiza");
     let png = dir.join("g.png");
     tiza_ok(&[
         "render",
@@ -208,8 +208,8 @@ fn resvg_decode(bytes: &[u8]) -> (u32, u32) {
 }
 
 #[test]
-fn ac5_png_to_stdout_only_through_a_pipe() {
-    let f = fixture("t-050/export.tiza");
+fn png_to_stdout_only_through_a_pipe() {
+    let f = fixture("export/svg_and_png/export.tiza");
     let out = tiza(&[
         "render",
         f.to_str().unwrap(),
@@ -223,9 +223,9 @@ fn ac5_png_to_stdout_only_through_a_pipe() {
 }
 
 #[test]
-fn ac6_mcp_export_image_tool() {
-    let dir = scratch("t050-mcp");
-    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
+fn mcp_export_image_tool() {
+    let dir = scratch("mcp");
+    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -275,9 +275,9 @@ fn ac6_mcp_export_image_tool() {
 }
 
 #[test]
-fn ac7_both_themes_export_and_flag_overrides_document() {
-    let dir = scratch("t050-themes");
-    let f = fixture("t-050/export.tiza");
+fn both_themes_export_and_flag_overrides_document() {
+    let dir = scratch("themes");
+    let f = fixture("export/svg_and_png/export.tiza");
     for theme in ["dark", "light"] {
         let svg = dir.join(format!("{theme}.svg"));
         tiza_ok(&[
@@ -302,10 +302,10 @@ fn ac7_both_themes_export_and_flag_overrides_document() {
     }
 }
 
-// ---------- From t-068 (with the grid checks of t-134) ----------
+// ---------- Mark labels in the SVG (with the grid checks) ----------
 
 fn svg(args: &[&str]) -> String {
-    let f = fixture("t-068/ownership.rs.tiza");
+    let f = fixture("export/svg_and_png/ownership.rs.tiza");
     let mut full = vec![
         "render",
         f.to_str().unwrap(),
@@ -372,7 +372,7 @@ fn mark_glyphs_keep_their_own_run_on_the_grid() {
         .find(|t| t.ends_with(">╳</text>"))
         .expect("drop glyph");
     assert!(!drop.contains("class=\"p"));
-    // Every text run sits on the grid (from t-134), and the glyph and the
+    // Every text run sits on the grid, and the glyph and the
     // words of `move: s moves` are where step 7 at 100 columns puts them.
     assert!(!s.contains("letter-spacing"));
     let count = s.matches("<text ").count();

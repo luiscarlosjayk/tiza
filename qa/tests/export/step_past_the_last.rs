@@ -22,7 +22,7 @@ const LAST: u32 = 2;
 const PAST: [u32; 3] = [3, 99999, u32::MAX];
 
 fn doc_path() -> String {
-    fixture("t-227/spotlight.tiza")
+    fixture("export/step_past_the_last/spotlight.tiza")
         .to_str()
         .unwrap()
         .to_string()
@@ -52,8 +52,8 @@ fn rendered(dir: &std::path::Path, step: u32, format: &str) -> (Vec<u8>, String)
 }
 
 #[test]
-fn step1_ac1_render_past_the_last_step_is_the_last_step() {
-    let dir = scratch("t227-render");
+fn render_past_the_last_step_is_the_last_step() {
+    let dir = scratch("render");
     for format in ["txt", "ansi", "md", "svg", "png"] {
         let (last, said) = rendered(&dir, LAST, format);
         assert!(!said.contains("does not exist"), "{format}: {said}");
@@ -85,8 +85,8 @@ fn step1_ac1_render_past_the_last_step_is_the_last_step() {
 }
 
 #[test]
-fn ac1_render_of_the_live_instance_past_the_last_step() {
-    let dir = scratch("t227-live");
+fn render_of_the_live_instance_past_the_last_step() {
+    let dir = scratch("live");
     let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let sock = live.socket.to_str().unwrap().to_string();
@@ -117,10 +117,10 @@ fn ac1_render_of_the_live_instance_past_the_last_step() {
 }
 
 #[test]
-fn corner_export_without_a_step_is_the_step_on_screen() {
+fn export_without_a_step_is_the_step_on_screen() {
     // `:step 3` opens a new empty step after the last one: `:export` with
     // no `step=` writes what the screen shows, with no warning.
-    let dir = scratch("t227-new-step");
+    let dir = scratch("new-step");
     let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.command("step 3");
@@ -131,8 +131,8 @@ fn corner_export_without_a_step_is_the_step_on_screen() {
 }
 
 #[test]
-fn corner_a_recording_takes_no_step_and_gives_no_warning() {
-    let dir = scratch("t227-cast");
+fn a_recording_takes_no_step_and_gives_no_warning() {
+    let dir = scratch("cast");
     let r = tiza_qa::tiza(&[
         "render",
         &doc_path(),
@@ -147,8 +147,8 @@ fn corner_a_recording_takes_no_step_and_gives_no_warning() {
 }
 
 #[test]
-fn ac1_export_past_the_last_step_is_the_last_step() {
-    let dir = scratch("t227-export");
+fn export_past_the_last_step_is_the_last_step() {
+    let dir = scratch("export");
     let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.with(|a| a.size = (82, 30));
@@ -176,8 +176,8 @@ fn ac1_export_past_the_last_step_is_the_last_step() {
 }
 
 #[test]
-fn ac1_mcp_export_image_past_the_last_step_is_the_last_step() {
-    let dir = scratch("t227-mcp");
+fn mcp_export_image_past_the_last_step_is_the_last_step() {
+    let dir = scratch("mcp");
     let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
@@ -203,8 +203,8 @@ fn ac1_mcp_export_image_past_the_last_step_is_the_last_step() {
 }
 
 #[test]
-fn corner_all_steps_never_goes_past_the_last() {
-    let dir = scratch("t227-all");
+fn all_steps_never_goes_past_the_last() {
+    let dir = scratch("all");
     let out = dir.join("steps");
     let r = tiza_qa::tiza(&[
         "render",

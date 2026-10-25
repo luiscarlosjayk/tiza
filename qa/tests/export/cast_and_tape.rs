@@ -1,4 +1,4 @@
-//! t-051 — `.cast` (asciicast v3) and `.tape` (VHS) generated from the
+//! `.cast` (asciicast v3) and `.tape` (VHS) generated from the
 //! document's steps.
 //!
 //! Acceptance criteria:
@@ -35,8 +35,8 @@ fn parse_cast(text: &str) -> (Value, Vec<Value>) {
 }
 
 #[test]
-fn ac1_cast_has_one_frame_per_step_and_replays_without_scrolling() {
-    let dir = scratch("t051-cast");
+fn cast_has_one_frame_per_step_and_replays_without_scrolling() {
+    let dir = scratch("cast");
     let out = dir.join("own.cast");
     tiza_ok(&[
         "render",
@@ -154,8 +154,8 @@ print("ALL:" + "|".join(r.rstrip() for r in screen.display))
 }
 
 #[test]
-fn ac2_tape_drives_the_real_binary() {
-    let dir = scratch("t051-tape");
+fn tape_drives_the_real_binary() {
+    let dir = scratch("tape");
     let out = dir.join("own.tape");
     tiza_ok(&[
         "render",
@@ -209,7 +209,7 @@ fn ac2_tape_drives_the_real_binary() {
     assert!(!tape.contains("Catppuccin"));
     assert!(tape.trim_end().ends_with("Type \"q\""));
     // The tape types only the start command, `n` and `q`, never a `:`
-    // command (moved here from t-107).
+    // command (moved here from the presentation command line tests).
     let start = format!(
         "Type \"tiza {} --present --no-socket --step 0\"",
         ownership()
@@ -287,7 +287,7 @@ fn ac2_tape_drives_the_real_binary() {
 }
 
 #[test]
-fn ac3_format_flag_stdout_and_live_instance() {
+fn format_flag_stdout_and_live_instance() {
     let cast = tiza_ok(&[
         "render",
         &ownership(),
@@ -302,7 +302,7 @@ fn ac3_format_flag_stdout_and_live_instance() {
     assert_eq!(header["term"]["cols"], 80);
     assert!(events.len() > 2);
     // A .cast extension on a path with another case still works.
-    let dir = scratch("t051-ext");
+    let dir = scratch("ext");
     let out = dir.join("X.CAST");
     tiza_ok(&["render", &ownership(), "--out", out.to_str().unwrap()]);
     assert!(
@@ -311,7 +311,7 @@ fn ac3_format_flag_stdout_and_live_instance() {
             .starts_with("{\"env\"")
     );
     // Live instance: the current document, every step.
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t051-live");
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "live");
     live.command("note 1 one");
     live.command("step 2");
     live.command("note 2 two");

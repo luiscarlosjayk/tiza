@@ -1,4 +1,4 @@
-//! t-120 — Native GIF export from Tiza's own frames; MP4 only through an
+//! Native GIF export from Tiza's own frames; MP4 only through an
 //! installed ffmpeg; the `.cast` stays.
 //!
 //! Acceptance criteria:
@@ -7,7 +7,7 @@
 //!   typed frames of `code.patch` moves at their `speed_ms`, a final hold of
 //!   2×interval, looping (`--loop N`), one palette per animation, sub-
 //!   rectangle diffs; pure Rust.
-//! - AC2 Every frame shares the take's geometry (t-111).
+//! - AC2 Every frame shares the take's geometry (stable geometry).
 //! - AC3 `--out demo.mp4`: frames to a temp dir, `ffmpeg` from PATH or
 //!   `$TIZA_FFMPEG` with a printed command; without ffmpeg a clear message,
 //!   exit 2, no partial file.
@@ -47,8 +47,8 @@ fn decode(bytes: &[u8]) -> Gif {
 }
 
 #[test]
-fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
-    let dir = scratch("t120-own");
+fn the_example_becomes_a_small_looping_gif_with_one_geometry() {
+    let dir = scratch("own");
     let out = dir.join("own.gif");
     let ex = fixture("shared/ownership/ownership.rs.tiza");
     let err = tiza_ok(&[
@@ -66,7 +66,7 @@ fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
     let delays: Vec<u16> = g.frames.iter().map(|f| f.4).collect();
     assert_eq!(delays, vec![200, 200, 200, 200, 200, 200, 200, 400]);
     assert!(g.looping);
-    // Scale 2 by default (t-121 AC0, Luis's decision on the t-120 review):
+    // Scale 2 by default (Luis's decision for the README images):
     // the 100-column example is ~2048 px wide and still well under 1 MB
     // (~400 kB); `--scale 1` gives exactly half the pixels per side.
     assert!(bytes.len() < 1_000_000, "{} bytes", bytes.len());
@@ -106,7 +106,7 @@ fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
             .all(|f| f.0 + f.2 <= g.width && f.1 + f.3 <= g.height)
     );
     // Stable geometry: the same PNG path at every step puts the code at
-    // one x (t-111), and the GIF is those pixels; the frame size is the
+    // one x (stable geometry), and the GIF is those pixels; the frame size is the
     // tallest step's and never changes.
     let out2 = tiza(&[
         "render",
@@ -137,8 +137,8 @@ fn ac1_ac2_ac6_the_example_becomes_a_small_looping_gif_with_one_geometry() {
 }
 
 #[test]
-fn ac1_typed_moves_animate_at_their_speed() {
-    let dir = scratch("t120-moves");
+fn typed_moves_animate_at_their_speed() {
+    let dir = scratch("moves");
     let out = dir.join("moves.gif");
     let ex = example("ownership-moves.rs.tiza");
     tiza_ok(&[
@@ -165,8 +165,8 @@ fn ac1_typed_moves_animate_at_their_speed() {
 }
 
 #[test]
-fn ac3_mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
-    let dir = scratch("t120-mp4");
+fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
+    let dir = scratch("mp4");
     let out = dir.join("own.mp4");
     let ex = fixture("shared/ownership/ownership.rs.tiza");
     let r = std::process::Command::new(tiza_qa::bin())
@@ -225,8 +225,8 @@ fn ac3_mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
 }
 
 #[test]
-fn ac5_the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
-    let dir = scratch("t120-live");
+fn the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
+    let dir = scratch("live");
     let doc = tiza_core::fs::open(
         fixture("shared/ownership/ownership.rs.tiza")
             .to_str()

@@ -75,7 +75,7 @@ fn json_strategy() -> impl Strategy<Value = Value> {
 
 /// A valid document with one random field replaced by a random value.
 fn mutated_document() -> impl Strategy<Value = String> {
-    let base = std::fs::read_to_string(fixture("t-050/export.tiza")).unwrap();
+    let base = std::fs::read_to_string(fixture("export/svg_and_png/export.tiza")).unwrap();
     let base: Value = serde_json::from_str(&base).unwrap();
     let keys = [
         "schema",
@@ -174,7 +174,7 @@ fn command_strategy() -> impl Strategy<Value = String> {
 }
 
 fn fresh_app(name: &str) -> App {
-    let doc = fs::open(fixture("t-050/export.tiza").to_str().unwrap())
+    let doc = fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let dir = scratch(name);

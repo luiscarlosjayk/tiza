@@ -52,7 +52,10 @@ fn put_replaces_the_document_and_undo_restores() {
 
     // The export fixture embeds its code; `script.ref.tiza` of language detection
     // references `script` relatively: both must arrive whole.
-    let r = put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
+    let r = put_file(
+        &live,
+        fixture("export/svg_and_png/export.tiza").to_str().unwrap(),
+    );
     assert!(r["revision"].as_u64().unwrap() > before_rev, "{r}");
     assert_eq!(r["annotations"], json!(8));
     let doc = live.with(|a| a.doc.clone());
@@ -348,7 +351,10 @@ fn undo_after_put_restores_the_step_too() {
     live.command("note 2 two step=3");
     live.api_ok("step.set", json!({"step": 0}));
     assert_eq!(live.with(|a| a.doc.step), 0);
-    put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
+    put_file(
+        &live,
+        fixture("export/svg_and_png/export.tiza").to_str().unwrap(),
+    );
     assert_eq!(live.with(|a| a.doc.step), 2, "the put document's step");
     live.with(|a| a.undo());
     assert_eq!(live.with(|a| a.doc.code.len()), 2);
@@ -434,7 +440,10 @@ fn put_of_another_document_never_autosaves_over_the_open_file() {
     let saved = std::fs::read(&sidecar).unwrap();
     assert!(live.with(|a| a.autosave));
     // Another document: shown, but the sidecar on disk is left alone.
-    put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
+    put_file(
+        &live,
+        fixture("export/svg_and_png/export.tiza").to_str().unwrap(),
+    );
     assert_eq!(live.with(|a| a.doc.code.len()), 6);
     assert!(!live.with(|a| a.autosave), "autosave stops");
     let (msg, _) = live.message().unwrap();

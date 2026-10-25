@@ -1,4 +1,4 @@
-//! t-166 — Exporting the live instance (`tiza render` with no FILE or with
+//! Exporting the live instance (`tiza render` with no FILE or with
 //! `--socket`, and the MCP `export_image`) draws the files a `code.link`
 //! shows, never panics, and every export call answers.
 //!
@@ -43,9 +43,8 @@
 //! and a `move.add code.link`; an annotation inside a linked file is drawn
 //! in the live export.
 //!
-//! The repros are QA's pruebas/t046/livebug.py, mcpbug.py, pruebas/t166/
-//! qa_t166.py and pruebas/t174/p3/panic_probe.py (on Luis's Mac), rebuilt
-//! here on scratch copies of examples/tally-tour.tiza and
+//! The repros are QA's scripts on Luis's Mac, rebuilt here on scratch
+//! copies of examples/tally-tour.tiza and
 //! examples/stack-and-queue.tiza.
 
 use std::path::{Path, PathBuf};
@@ -201,18 +200,18 @@ fn every_step_matches(which: &str) {
 }
 
 #[test]
-fn ac1_tally_every_step_live_is_the_files_render_step_0_included() {
+fn tally_every_step_live_is_the_files_render_step_0_included() {
     every_step_matches("tally");
 }
 
 #[test]
-fn ac1_stack_and_queue_every_step_live_is_the_files_render() {
+fn stack_and_queue_every_step_live_is_the_files_render() {
     // QA 1 (20:20): `--step 1` exited 101 here.
     every_step_matches("stack");
 }
 
 #[test]
-fn ac1_step_2_of_tally_shows_args_rs_as_on_screen() {
+fn step_2_of_tally_shows_args_rs_as_on_screen() {
     let path = demo("args", "tally");
     let live = open_live(&path);
     let cwd = elsewhere("args");
@@ -290,7 +289,7 @@ fn all_steps_match(which: &str) {
 }
 
 #[test]
-fn ac1_all_steps_live_is_the_files_render() {
+fn all_steps_live_is_the_files_render() {
     all_steps_match("tally");
     all_steps_match("stack");
 }
@@ -336,7 +335,7 @@ fn gif_matches(which: &str) {
 }
 
 #[test]
-fn ac1_live_gif_does_not_panic_and_is_the_files_gif() {
+fn live_gif_does_not_panic_and_is_the_files_gif() {
     gif_matches("tally");
     gif_matches("stack");
 }
@@ -360,7 +359,7 @@ fn export(mcp: &mut McpClient, args: Value) -> (bool, String) {
 }
 
 #[test]
-fn ac2_mcp_export_image_png_md_gif_answer_and_draw_the_linked_file() {
+fn mcp_export_image_png_md_gif_answer_and_draw_the_linked_file() {
     let path = demo("mcp", "tally");
     let live = open_live(&path);
     let dir = path.parent().unwrap().to_path_buf();
@@ -427,7 +426,7 @@ fn ac2_mcp_export_image_png_md_gif_answer_and_draw_the_linked_file() {
 }
 
 #[test]
-fn ac2_mcp_export_of_stack_and_queue_answers_at_every_step() {
+fn mcp_export_of_stack_and_queue_answers_at_every_step() {
     let path = demo("mcp-stack", "stack");
     let live = open_live(&path);
     let dir = path.parent().unwrap().to_path_buf();
@@ -453,7 +452,7 @@ fn ac2_mcp_export_of_stack_and_queue_answers_at_every_step() {
 }
 
 #[test]
-fn corner_a_linked_file_deleted_with_the_tui_open() {
+fn a_linked_file_deleted_with_the_tui_open() {
     let path = demo("deleted", "tally");
     let live = open_live(&path);
     let cwd = elsewhere("deleted");
@@ -554,7 +553,7 @@ fn vault_demo_linking(name: &str, linked: &str) -> PathBuf {
 }
 
 #[test]
-fn corner_an_annotation_in_a_linked_file_is_drawn_in_the_live_export() {
+fn an_annotation_in_a_linked_file_is_drawn_in_the_live_export() {
     let path = vault_demo("vault");
     let live = open_live(&path);
     let cwd = elsewhere("vault");
@@ -579,7 +578,7 @@ fn corner_an_annotation_in_a_linked_file_is_drawn_in_the_live_export() {
 }
 
 #[test]
-fn ac3_a_scene_without_a_linked_files_code_is_an_error_naming_it() {
+fn a_scene_without_a_linked_files_code_is_an_error_naming_it() {
     // The client never guesses a linked file from its own disk: a scene
     // whose `views` lack one (an older instance) says which.
     let path = demo("noview", "tally");
@@ -606,8 +605,8 @@ fn ac3_a_scene_without_a_linked_files_code_is_an_error_naming_it() {
 }
 
 #[test]
-fn ac3_layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
-    // What the live render did before t-166: the wire copy with its code
+fn layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
+    // What the live render did before this fix: the wire copy with its code
     // resolved and no view loaded, laid out at every step and as a GIF.
     for which in ["tally", "stack"] {
         let path = demo(&format!("oob-{which}"), which);
@@ -649,7 +648,7 @@ fn ac3_layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
 }
 
 #[test]
-fn corner_a_live_document_with_no_tiza_and_a_move_add_code_link() {
+fn a_live_document_with_no_tiza_and_a_move_add_code_link() {
     let dir = scratch("unsaved");
     copy_dir(&example("tally/src"), &dir.join("src"));
     let main = dir.join("src/main.rs");
@@ -727,7 +726,7 @@ fn api_err(live: &Live, method: &str, params: Value) -> (String, String) {
 /// R1: a step past the cap is refused everywhere a step enters a document,
 /// with a clear error.
 #[test]
-fn r1_steps_past_the_cap_are_refused_everywhere() {
+fn steps_past_the_cap_are_refused_everywhere() {
     let (path, live) = live_doc("r1", &small_doc());
     let huge = 4_294_967_295u32;
     for (method, params) in [
@@ -794,7 +793,7 @@ fn r1_steps_past_the_cap_are_refused_everywhere() {
 /// by the work done, not by time: `check` names every empty step once and
 /// answers, and the live export of step 0 is the file's.
 #[test]
-fn r1_r5_a_take_at_the_cap_exports_and_checks_like_a_short_one() {
+fn a_take_at_the_cap_exports_and_checks_like_a_short_one() {
     let mut doc = small_doc();
     doc["annotations"]
         .as_array_mut()
@@ -844,7 +843,7 @@ fn many_steps(n: u32) -> Value {
 /// while exports render, `status` and `tools/list` answer; an export past
 /// its deadline answers an error and writes nothing.
 #[test]
-fn r2_a_slow_export_never_holds_up_the_server_and_answers_at_its_deadline() {
+fn a_slow_export_never_holds_up_the_server_and_answers_at_its_deadline() {
     let (path, live) = live_doc("r2", &many_steps(200));
     let dir = path.parent().unwrap().to_path_buf();
     let mut mcp = McpClient::start_with_env(&live.socket, &[("TIZA_MCP_EXPORT_TIMEOUT_MS", "400")]);
@@ -904,7 +903,7 @@ fn r2_a_slow_export_never_holds_up_the_server_and_answers_at_its_deadline() {
 /// R3: holds and intervals are bounded in the CLI, the MCP and the
 /// document; the arithmetic that adds them up saturates.
 #[test]
-fn r3_holds_and_intervals_are_bounded() {
+fn holds_and_intervals_are_bounded() {
     let (path, live) = live_doc("r3", &small_doc());
     let dir = path.parent().unwrap().to_path_buf();
     // move.add: a wait past an hour, a typing speed past an hour.
@@ -1009,7 +1008,7 @@ fn r3_holds_and_intervals_are_bounded() {
 /// R3: the encoders never overflow or loop on a hold, even from a document
 /// built in memory past the checks.
 #[test]
-fn r3_the_arithmetic_of_holds_saturates() {
+fn the_arithmetic_of_holds_saturates() {
     let mut doc = tiza_core::Document::from_code("a\nb\n", "sh", None);
     doc.moves = vec![
         serde_json::from_value(json!({"at_step": 1, "action": "wait", "ms": u64::MAX})).unwrap(),
@@ -1060,7 +1059,7 @@ fn r3_the_arithmetic_of_holds_saturates() {
 /// R4: a first line near `u32::MAX` is refused (it overflowed and closed
 /// the TUI), and `last_line` saturates.
 #[test]
-fn r4_a_first_line_near_u32_max_is_refused() {
+fn a_first_line_near_u32_max_is_refused() {
     let (_, live) = live_doc("r4", &small_doc());
     let mut doc = small_doc();
     doc["source"]["first_line"] = json!(4_294_967_294u32);
@@ -1079,7 +1078,7 @@ fn r4_a_first_line_near_u32_max_is_refused() {
 /// the TUI keeps running (its screen is not restored), the document is as
 /// it was before the request and so is the file it autosaves.
 #[test]
-fn r4_a_panic_in_a_request_never_closes_the_tui() {
+fn a_panic_in_a_request_never_closes_the_tui() {
     let dir = scratch("r4-pty");
     let doc = dir.join("doc.tiza");
     std::fs::write(&doc, serde_json::to_string_pretty(&small_doc()).unwrap()).unwrap();
@@ -1138,7 +1137,7 @@ s.finish(5)
 
 /// R6: a step past the last one exports the last and says so.
 #[test]
-fn r6_export_image_past_the_last_step_says_so() {
+fn export_image_past_the_last_step_says_so() {
     let (path, live) = live_doc("r6", &small_doc());
     let dir = path.parent().unwrap().to_path_buf();
     let mut mcp = McpClient::start(&live.socket);
@@ -1170,7 +1169,7 @@ fn r6_export_image_past_the_last_step_says_so() {
 
 /// R7: the `.tape` of a live instance opens the instance's own `.tiza`.
 #[test]
-fn r7_a_live_tape_opens_the_instances_document() {
+fn a_live_tape_opens_the_instances_document() {
     let (path, live) = live_doc("r7", &small_doc());
     let cwd = elsewhere("r7");
     let tape = cwd.join("demo.tape");
@@ -1185,7 +1184,7 @@ fn r7_a_live_tape_opens_the_instances_document() {
         ],
     );
     let text = std::fs::read_to_string(&tape).unwrap();
-    // Relative to the tape's folder (t-166 verification point 7), never
+    // Relative to the tape's folder (a point of the QA check), never
     // the absolute path with the home in it, and said in a comment.
     let abs = std::path::absolute(&path).unwrap();
     let rel = format!(
@@ -1228,7 +1227,7 @@ fn r7_a_live_tape_opens_the_instances_document() {
 /// R8: a real panic inside an MCP call (a test hook) answers an error that
 /// never quotes the panic, and the server keeps answering.
 #[test]
-fn r8_a_panic_in_an_mcp_call_answers_an_error() {
+fn a_panic_in_an_mcp_call_answers_an_error() {
     let (path, live) = live_doc("r8", &small_doc());
     let dir = path.parent().unwrap().to_path_buf();
     for (place, tool, args) in [

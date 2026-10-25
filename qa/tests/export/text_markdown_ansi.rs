@@ -1,4 +1,4 @@
-//! t-049 — Export to plain text (box-drawing characters), Markdown and ANSI.
+//! Export to plain text (box-drawing characters), Markdown and ANSI.
 //!
 //! Acceptance criteria:
 //! - AC1 `tiza render FILE --out x.txt` writes exactly the screen as text:
@@ -42,14 +42,14 @@ fn strip_ansi(s: &str) -> String {
 }
 
 fn render(args: &[&str]) -> String {
-    let f = fixture("t-050/export.tiza");
+    let f = fixture("export/svg_and_png/export.tiza");
     let mut full = vec!["render", f.to_str().unwrap(), "--width", "100"];
     full.extend_from_slice(args);
     tiza_ok(&full)
 }
 
 #[test]
-fn ac1_txt_is_the_screen_without_styles_or_trailing_space() {
+fn txt_is_the_screen_without_styles_or_trailing_space() {
     let txt = render(&["--out", "-", "--format", "txt", "--step", "9"]);
     assert!(txt.contains("fn main() {"));
     assert!(
@@ -67,14 +67,14 @@ fn ac1_txt_is_the_screen_without_styles_or_trailing_space() {
     // Wide glyphs are kept as text (no continuation-cell garbage).
     assert!(txt.contains("let 名前 = 1;"), "{txt}");
     // The extension alone picks the format: same bytes through a file.
-    let dir = scratch("t049-txt");
+    let dir = scratch("txt");
     let path = dir.join("shot.txt");
     render(&["--out", path.to_str().unwrap(), "--step", "9"]);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), txt);
 }
 
 #[test]
-fn ac2_markdown_is_a_fenced_block_with_the_title() {
+fn markdown_is_a_fenced_block_with_the_title() {
     let md = render(&["--out", "-", "--format", "md", "--step", "9"]);
     let txt = render(&["--out", "-", "--format", "txt", "--step", "9"]);
     assert!(
@@ -92,8 +92,8 @@ fn ac2_markdown_is_a_fenced_block_with_the_title() {
         .unwrap();
     assert_eq!(inner, txt, "the block is exactly the .txt export");
     // A document without a title: just the fence.
-    let live = Live::from_code("fn a() {}\n", "rs", "t049-md-notitle");
-    let dir = scratch("t049-md-notitle");
+    let live = Live::from_code("fn a() {}\n", "rs", "md-notitle");
+    let dir = scratch("md-notitle");
     let out = dir.join("x.md");
     live.command(&format!("export {}", out.display()));
     let md = std::fs::read_to_string(&out).unwrap();
@@ -105,7 +105,7 @@ fn ac2_markdown_is_a_fenced_block_with_the_title() {
 }
 
 #[test]
-fn ac3_ansi_has_truecolor_resets_and_the_same_text() {
+fn ansi_has_truecolor_resets_and_the_same_text() {
     let ansi = render(&["--out", "-", "--format", "ansi", "--step", "9"]);
     let txt = render(&["--out", "-", "--format", "txt", "--step", "9"]);
     assert!(ansi.contains("\x1b[38;2;"), "24-bit foreground");
@@ -128,9 +128,9 @@ fn ac3_ansi_has_truecolor_resets_and_the_same_text() {
 }
 
 #[test]
-fn ac4_export_command_formats_defaults_and_errors() {
-    let dir = scratch("t049-cmd");
-    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
+fn export_command_formats_defaults_and_errors() {
+    let dir = scratch("cmd");
+    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("demo.tiza"), dir.join("live.sock"));
@@ -150,7 +150,7 @@ fn ac4_export_command_formats_defaults_and_errors() {
         wide.display()
     ));
     let (msg, err) = live.message().unwrap();
-    // (A step past the last one exports the last, and says so, since t-227.)
+    // (A step past the last one exports the last, and says so.)
     assert!(
         !err && msg
             .contains("step 9 does not exist (the document has steps 0 to 2); exported step 2"),
@@ -181,7 +181,7 @@ fn ac4_export_command_formats_defaults_and_errors() {
     live.command(&format!("export {}", dir.join("a.bmp").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains(".txt .ansi .md .svg .png"), "{msg}");
-    // A recording is made from the shell (t-120): the message says how.
+    // A recording is made from the shell: the message says how.
     live.command(&format!("export {}", dir.join("a.gif").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains("tiza render --out"), "{msg}");
@@ -202,7 +202,7 @@ fn ac4_export_command_formats_defaults_and_errors() {
     live.command(&format!("export {}", dir.join("a.svg").display()));
     let (msg, err) = live.message().unwrap();
     assert!(err && msg.contains("tiza render"), "{msg}");
-    // Unwritable path: an error, not a panic (since t-241 the missing
+    // Unwritable path: an error, not a panic (now the missing
     // folder is created first, and the one that cannot be is named).
     live.command("export /nonexistent-dir/x.txt");
     let (msg, err) = live.message().unwrap();
@@ -213,11 +213,11 @@ fn ac4_export_command_formats_defaults_and_errors() {
 }
 
 #[test]
-fn ac4_export_svg_and_png_through_the_binary() {
+fn export_svg_and_png_through_the_binary() {
     // The headless harness has no image exporter; install the same closure
     // the binary installs and check both formats come out through `:export`.
-    let dir = scratch("t049-img");
-    let live = Live::from_code("fn a() {}\n", "rs", "t049-img");
+    let dir = scratch("img");
+    let live = Live::from_code("fn a() {}\n", "rs", "img");
     live.with(|a| {
         a.image_exporter = Some(Box::new(|canvas, theme, format, title| {
             let svg = tiza_export::to_svg(
@@ -249,9 +249,9 @@ fn ac4_export_svg_and_png_through_the_binary() {
 }
 
 #[test]
-fn ac5_mcp_export_image_writes_text_formats() {
-    let dir = scratch("t049-mcp");
-    let doc = tiza_core::fs::open(fixture("t-050/export.tiza").to_str().unwrap())
+fn mcp_export_image_writes_text_formats() {
+    let dir = scratch("mcp");
+    let doc = tiza_core::fs::open(fixture("export/svg_and_png/export.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
@@ -279,10 +279,10 @@ fn ac5_mcp_export_image_writes_text_formats() {
 }
 
 #[test]
-fn corner_empty_document_and_stdin_render_to_md() {
+fn empty_document_and_stdin_render_to_md() {
     // An empty document exports a gutter and nothing else, no panic, no blank tail.
-    let live = Live::from_code("", "rs", "t049-empty");
-    let dir = scratch("t049-empty");
+    let live = Live::from_code("", "rs", "empty");
+    let dir = scratch("empty");
     let out = dir.join("e.txt");
     live.command(&format!("export {}", out.display()));
     let txt = std::fs::read_to_string(&out).unwrap();

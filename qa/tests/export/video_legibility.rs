@@ -1,4 +1,4 @@
-//! t-072 — Legibility at 1080p: render → YouTube-like compression → measure
+//! Legibility at 1080p: render → YouTube-like compression → measure
 //! the contrast of both themes.
 //!
 //! Acceptance criteria:
@@ -37,7 +37,7 @@ fn roles(t: &Theme) -> Vec<(&'static str, Rgb, Rgb)> {
 }
 
 #[test]
-fn ac1_every_theme_role_passes_before_compression() {
+fn every_theme_role_passes_before_compression() {
     for name in [ThemeName::Dark, ThemeName::Light] {
         let t = Theme::from_name(name);
         for (role, fg, bg) in roles(&t) {
@@ -87,17 +87,17 @@ fn tools_available() -> bool {
 }
 
 #[test]
-fn ac2_ac3_pipeline_passes_both_themes() {
+fn pipeline_passes_both_themes() {
     if !tools_available() {
         eprintln!(
-            "t-072: ffmpeg or python3+Pillow+numpy missing here; the pipeline runs in CI (job `legibility`)"
+            "video_legibility: ffmpeg or python3+Pillow+numpy missing here; the pipeline runs in CI (job `legibility`)"
         );
         return;
     }
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap();
-    let dir = scratch("t072");
+    let dir = scratch("video_legibility");
     for theme in ["dark", "light"] {
         let json = dir.join(format!("{theme}.json"));
         let out = std::process::Command::new("python3")
