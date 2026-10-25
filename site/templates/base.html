@@ -27,8 +27,9 @@
 <a class="skip" href="#main">Skip to the content</a>
 {% set release_data = load_data(path="release.toml") %}{% set release = "v" ~ release_data.version %}
 <div class="release-bar">
-  Docs for <code>{{ config.extra.docs_branch }}</code>. Latest release:
-  <a href="{{ config.extra.repo_url }}/releases/tag/{{ release }}">{{ release }}</a>
+  {% if release_data.ref == release %}Docs for the latest release,
+  <a href="{{ config.extra.repo_url }}/releases/tag/{{ release }}">{{ release }}</a>.
+  {% else %}Docs for <code>{{ release_data.ref }}</code>. This build is not published.{% endif %}
 </div>
 <header class="top">
   <button class="icon-btn nav-toggle" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open the navigation">

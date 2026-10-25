@@ -14,22 +14,20 @@ This script copies the pages that nav.json lists into content/, and:
   error,
 - serves a raw.githubusercontent.com file of this repo that is an asset from
   the site, so the site makes no request to another host,
-- replaces each "Not released yet" block with the notice of the site,
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
 - copies the images and the favicon into static/,
-- writes release.toml: the version of the workspace Cargo.toml, which the
-  header shows as the latest release.
+- writes release.toml: the version of the workspace Cargo.toml and the git
+  ref that the site describes, for the header and the source links.
 
-A "Not released yet" block is a part of a page between these two lines:
-    <!-- unreleased -->
-    <!-- /unreleased -->
-GitHub shows the text between them. The site shows its own notice there.
-scripts/bump-version.sh removes the blocks when it sets a release version.
+The site describes one ref: the release tag that CI deploys, or main in a
+build that CI only checks. Links to other files of the repo and "View the
+source" go to that ref on GitHub.
 
 Python 3.9+ standard library only. Usage:
-    python3 build.py [--repo REPO_ROOT]
+    python3 build.py [--repo REPO_ROOT] [--ref REF]
 REPO_ROOT defaults to the parent folder of this script (site/ in the repo).
+REF defaults to main.
 """
 
 import argparse
@@ -50,15 +48,6 @@ TABLE_OPEN = '<div class="table-wrap">'
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
-UNRELEASED_OPEN = "<!-- unreleased -->"
-UNRELEASED_CLOSE = "<!-- /unreleased -->"
-# A line that looks like a marker. If it is not one of the two exact markers,
-# it is a typo, and the build stops: GitHub would hide it and show the block.
-MARKER_LIKE_RE = re.compile(r"^<!--[ \t]*/?[ \t]*unreleased[ \t]*-->$", re.IGNORECASE)
-NOTICE = """<div class="notice notice-unreleased" role="note">
-<p class="notice-title">Not released yet</p>
-<p>This part describes <code>%s</code>. The latest release, v%s, does not include it.</p>
-</div>"""
 
 
 class BuildError(Exception):
@@ -116,14 +105,16 @@ def split_code_spans(line):
 
 
 class Site:
-    def __init__(self, repo, site, nav, version):
+    def __init__(self, repo, site, nav, version, ref):
         self.repo = repo
         self.version = version
+        self.ref = ref
         self.site = site
         self.nav = nav
         self.repo_url = nav["repo_url"].rstrip("/")
         self.raw_prefix = self.repo_url.replace(
             "https://github.com/", "https://raw.githubusercontent.com/", 1) + "/"
+        # The branch that the absolute GitHub links of the README name.
         self.branch = nav["branch"]
         # repo path of a page -> content path (for @/ links)
         self.pages = {nav["home"]: "_index.md"}
@@ -148,7 +139,7 @@ class Site:
         if not os.path.exists(full):
             raise BuildError("%s: the link goes to a file that does not exist: %s"
                              % (self.where, repo_path))
-        return "%s/%s/%s/%s%s" % (self.repo_url, kind, self.branch, repo_path, anchor)
+        return "%s/%s/%s/%s%s" % (self.repo_url, kind, self.ref, repo_path, anchor)
 
     def rewrite_target(self, target, src):
         if target.startswith(("mailto:", "#")):
@@ -208,7 +199,6 @@ class Site:
         with open(os.path.join(self.repo, src), encoding="utf-8") as f:
             lines = f.read().split("\n")
         title = None
-        block = None  # the line number of an open "Not released yet" block
         seen = {}
         out = []
         fence = None
@@ -228,24 +218,6 @@ class Site:
             if m:
                 fence = m.group(2)
                 out.append(line)
-                continue
-            if line.strip() == UNRELEASED_OPEN:
-                if block:
-                    raise BuildError("%s:%d: a block opens inside the block of line %d"
-                                     % (src, n, block))
-                block = n
-                out.extend(["", NOTICE % (self.branch, self.version), ""])
-                continue
-            if line.strip() == UNRELEASED_CLOSE:
-                if not block:
-                    raise BuildError("%s:%d: %s without %s" % (src, n, UNRELEASED_CLOSE,
-                                                               UNRELEASED_OPEN))
-                block = None
-                continue
-            if MARKER_LIKE_RE.match(line.strip()):
-                raise BuildError("%s:%d: not a marker: write %s or %s exactly"
-                                 % (src, n, UNRELEASED_OPEN, UNRELEASED_CLOSE))
-            if block:
                 continue
             # A table starts at a header row with "|", followed by a delimiter row.
             # The HTML lines need blank lines around them, so that the table
@@ -268,9 +240,6 @@ class Site:
                 out.append("%s %s {#%s}" % (h.group(1), self.rewrite_links(text, src), slug))
                 continue
             out.append(self.rewrite_links(line, src))
-        if block:
-            raise BuildError("%s:%d: %s without %s" % (src, block, UNRELEASED_OPEN,
-                                                       UNRELEASED_CLOSE))
         if table:
             out.extend(["", "</div>"])
         body = "\n".join(out).lstrip("\n")
@@ -294,20 +263,21 @@ def plain_title(md):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=os.path.dirname(HERE))
+    ap.add_argument("--ref", default="main")
     args = ap.parse_args()
     repo = os.path.abspath(args.repo)
     with open(os.path.join(HERE, "nav.json"), encoding="utf-8") as f:
         nav = json.load(f)
     try:
         version = workspace_version(repo)
-        build(repo, nav, version)
+        build(repo, nav, version, args.ref)
     except BuildError as e:
         print("build.py: error: %s" % e, file=sys.stderr)
         sys.exit(1)
 
 
-def build(repo, nav, version):
-    site = Site(repo, HERE, nav, version)
+def build(repo, nav, version, ref):
+    site = Site(repo, HERE, nav, version, ref)
 
     content = os.path.join(HERE, "content")
     shutil.rmtree(content, ignore_errors=True)
@@ -345,10 +315,10 @@ def build(repo, nav, version):
             with open(os.path.join(d, posixpath.basename(src)), "w", encoding="utf-8") as f:
                 f.write("\n".join(fm) + body)
 
-    # The latest release, for the header.
+    # The version and the ref, for the header and the source links.
     with open(os.path.join(HERE, "release.toml"), "w", encoding="utf-8") as f:
-        f.write("# Written by build.py from Cargo.toml. Do not edit.\nversion = %s\n"
-                % toml_str(version))
+        f.write("# Written by build.py. Do not edit.\nversion = %s\nref = %s\n"
+                % (toml_str(version), toml_str(ref)))
 
     # Assets.
     static = os.path.join(HERE, "static")

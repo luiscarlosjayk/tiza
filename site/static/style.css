@@ -255,15 +255,13 @@ code, kbd, pre { font-family: var(--mono); }
 .doc th { font-weight: 600; border-bottom-color: var(--fg-faint); white-space: nowrap; }
 .doc td:last-child, .doc th:last-child { padding-right: 0; }
 
-/* Notices: the "Not released yet" notice and the GitHub alerts. */
-.notice, .doc .markdown-alert {
+/* The GitHub alerts. */
+.doc .markdown-alert {
   margin: 0 0 1.5em; padding: 10px 16px;
   border: 1px solid var(--rule); border-left: 3px solid var(--accent);
   border-radius: 0 var(--radius) var(--radius) 0;
   background: var(--accent-soft); color: var(--fg);
 }
-.notice p { margin: 0.2em 0; }
-.notice-title { font-weight: 700; }
 
 /* Home: the README. */
 .home > p:first-child { margin: 8px 0 28px; }

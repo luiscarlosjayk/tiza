@@ -33,9 +33,8 @@ external_level = "warn"
 skip_prefixes = ["https://", "http://"]
 
 [extra]
-# The header line: "Docs for main. Latest release: vX.Y.Z". build.py writes the
-# version into release.toml from the workspace Cargo.toml.
-docs_branch = "main"
+# The header line: "Docs for the latest release, vX.Y.Z". build.py writes the
+# version and the ref into release.toml.
 repo_url = "https://github.com/luiscarlosjayk/tiza"
 # The groups of the left navigation, in order. "start" also shows the home page.
 nav_sections = ["start", "guides", "concepts", "reference", "agents"]
