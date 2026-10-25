@@ -127,7 +127,7 @@ Agents control follow mode through the socket methods `follow.set` and `follow.s
 | `the code on screen is not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back code that the file does not have now. |
 | `cannot watch DIR: ERROR` | Follow mode is off, because the file watcher could not start. |
 
-- The first row can end with `loads at step M or earlier`, as in [Messages](#messages).
+- When the first move is at step 2 or later, the first row ends with `loads at step M or earlier`. `M` is the step before the first move.
 - When the file holds the code on screen again, follow mode is off and `reason` is absent.
 
 ## How it works
