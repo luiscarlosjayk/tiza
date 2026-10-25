@@ -166,11 +166,12 @@ The runtime folder holds the socket and `panics.log`.
 | `local API disabled: PATH is there and is not a socket: Tiza does not remove it. Give another socket path with --socket or TIZA_SOCKET` | A regular file, a folder or a link is at the path of the socket. |
 | `local API disabled: an instance is already listening on PATH (use --session for another one)` | Another Tiza listens on the path of the socket. |
 | `local API disabled: cannot make the socket PATH private (0600)` | Tiza cannot set the socket to `0600`. |
+| `local API disabled: cannot check the socket PATH` | A socket is at the path, but Tiza cannot connect to it, for example the socket of another user. |
 | `PATH: ~ needs HOME, and HOME is empty or not set. Give the full path` | You type a path that starts with `~` in `:w`, `:saveas`, `:wq` or `:export`, and `HOME` is empty or not set. |
 
 - The messages show in the status bar.
 - `DIR` is the runtime folder. `PATH` is the path of the socket, or the path that you typed.
-- The two `cannot make` messages end with the error of the system.
+- The `cannot make` and `cannot check` messages end with the error of the system.
 
 ### Removal of the socket
 

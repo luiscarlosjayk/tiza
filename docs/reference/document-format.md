@@ -196,7 +196,8 @@ Each value has this meaning:
 - `placement`: `auto` uses the margin when the terminal has room.
 - `width`: in the margin, the default is 34. Tiza keeps the width from 8 to 5 columns less than the margin.
 - `width`: below the code, the default is the room below the code. Tiza keeps the width in that room.
-- `width`: the block is the width of its text plus 4 columns for the borders and the padding.
+- `width`: the block is as wide as its widest line of text, plus 4 columns for the borders and the padding.
+- `title`: in the margin, a long title makes the block wider. Below the code, Tiza cuts a long title in the border.
 
 #### Rules for annotations
 
