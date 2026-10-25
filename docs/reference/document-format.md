@@ -165,7 +165,7 @@ Each `type` adds its own fields.
 | `text` | string | Required | The text of the callout, which is not blank. |
 | `title` | string | No default | The title of the callout. |
 | `placement` | `"margin"`, `"below"` or `"auto"` | `"margin"` | Where Tiza draws the callout. |
-| `width` | integer | No default | The width of the block in columns, with its borders. |
+| `width` | integer | Depends on `placement` | The width at which Tiza wraps the text, in columns. |
 | `border` | string | `"solid"` | The line of the border, one of the [stroke values](#values-of-annotation-fields). |
 | `corners` | `"rounded"` or `"sharp"` | `"rounded"` | The shape of the corners. |
 | `fill` | `true` or `false` | `false` | When `true`, Tiza tints the inside of the callout. |
@@ -194,6 +194,9 @@ Each value has this meaning:
 - `placement`: `margin` puts the callout in the right margin.
 - `placement`: `below` puts the callout in its own rows after `to_line`.
 - `placement`: `auto` uses the margin when the terminal has room.
+- `width`: in the margin, the default is 34. Tiza keeps the width from 8 to 5 columns less than the margin.
+- `width`: below the code, the default is the room below the code. Tiza keeps the width in that room.
+- `width`: the block is the width of its text plus 4 columns for the borders and the padding.
 
 #### Rules for annotations
 
