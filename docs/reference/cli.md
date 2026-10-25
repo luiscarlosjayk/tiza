@@ -11,3 +11,5 @@ tiza examples/ownership.rs.tiza --present   # open the demo in presentation mode
 ```
 
 The language is detected from the file extension, then well-known names (`Makefile`, `Dockerfile`, `Cargo.lock`, `.bashrc`…), then a `#!` line, then a Vim/Emacs modeline in the first or last five lines; pasted or piped code uses the same shebang/modeline rule. `--lang` and `:lang <id>` override it (saved in the document); `:lang auto` re-detects and says how; an id without a grammar is shown as plain text with a warning.
+
+For each flag of `tiza render`, see [Options of `tiza render`](exports.md#options-of-tiza-render).

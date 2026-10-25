@@ -109,7 +109,9 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | annotation | anything Tiza draws on the code: mark, highlight, box, arrow, note, callout, spotlight | drawing, overlay |
 | document | the `.tiza` file (JSON) that holds the code reference, the annotations and the steps | sidecar, scene (except in `tiza scene`, `scene.get`, `tiza://scene`) |
 | step | one numbered state of a document; step 0 shows only the code | slide, frame |
-| take | the layout that presentation mode and the exports use for all the steps of a document | recording, sequence |
+| take | the layout that presentation mode and the exports use for all the steps of a document | sequence |
+| recording | an export that holds all the steps in one file: GIF, MP4, WebM, `.cast`, `.tape` | sequence |
+| screen recording | a video of the screen that another program makes | capture |
 | frame | one image of one step in an export | step |
 | export | a file that `tiza render` or `export_image` writes: text, Markdown, SVG, PNG, GIF and the others | snapshot |
 | presentation mode | the mode that hides the interface (`P`, `--present`) | take mode |
