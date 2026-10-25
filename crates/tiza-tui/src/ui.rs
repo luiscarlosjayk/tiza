@@ -870,8 +870,8 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     // The sign is ASCII `!`, one cell in every terminal: U+26A0 is drawn
     // two cells wide by some, which pushed the bar past the edge.
     let short = layout
-        .clipped_code
-        .map(|w| format!("code needs {w} cols"))
+        .code_needs
+        .map(|w| format!("code needs {} cols", app.columns_for(w)))
         .or_else(|| {
             warnings
                 .iter()

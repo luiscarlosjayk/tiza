@@ -10,7 +10,7 @@ This page is for an agent (Claude Code, Zed, any MCP client) that is going to dr
 
 ## Recommended flow
 
-1. `status` — confirm there is an instance and look at `cols`/`rows` and `warnings` (`N labels cut at C columns: a3, a5 (not drawn)` or `labels go under the lines at C columns` → keep labels short; `code needs N columns at C columns` → the presenter should widen the terminal or open a narrower range).
+1. `status` — confirm there is an instance and look at `cols`/`rows` and `warnings` (`N labels cut at C columns: a3, a5 (not drawn)` or `labels go under the lines at C columns` → keep labels short; `code needs N columns at C columns` → the presenter should widen the terminal to N columns or open a narrower range).
 2. `get_code` — read the code with line numbers. Pick exact texts.
 3. Annotate in the order of the explanation, assigning an increasing `step`:
    - `add_box {find_start, find_end}` (also `add_callout`, `add_spotlight`): two texts that delimit the range instead of line numbers — a comment marker (`// begin` … `// end`) or code (`fn takes` … `println`). The start is the first occurrence in the file, the end the first occurrence after it; a marker is plain text, so choose one that appears only where you mean it (the first `}` after `fn takes` may be inside a `println!("{s}")`). Errors name the missing marker. The markers are kept on the annotation (`markers`), so a later code change can re-resolve the range.

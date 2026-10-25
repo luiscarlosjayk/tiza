@@ -214,7 +214,7 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
     let clipped = Live::from_code(&long, "rs", "t209-ascii-clipped");
     check(&clipped, 120);
-    for form in ["  ! 1 label cut", "  !", "  ! code needs 175 cols"] {
+    for form in ["  ! 1 label cut", "  !", "  ! code needs 183 cols"] {
         assert!(seen.iter().any(|b| b == form), "{form:?} not in {seen:?}");
     }
 }

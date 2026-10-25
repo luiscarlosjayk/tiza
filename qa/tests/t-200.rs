@@ -155,8 +155,7 @@ fn same_take(a: &tiza_core::layout::Layout, b: &tiza_core::layout::Layout) -> Re
             a.clipped_labels, b.clipped_labels
         ));
     }
-    if (a.labels_in_margin, a.clipped_code, a.code_x)
-        != (b.labels_in_margin, b.clipped_code, b.code_x)
+    if (a.labels_in_margin, a.code_needs, a.code_x) != (b.labels_in_margin, b.code_needs, b.code_x)
     {
         return Err("margin, code or code column differ".into());
     }

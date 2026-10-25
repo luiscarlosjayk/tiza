@@ -21,4 +21,4 @@ expression: symbols
    10 │ ╎          let mut u = String::from("hey");
    11 │ ╎ ┏━━━     push(&mut u);
 
- ╭▶ NORMAL  step 5/7  60×20  ! code needs 55 cols    ? help
+ ╭▶ NORMAL  step 5/7  60×20  ! code needs 74 cols    ? help

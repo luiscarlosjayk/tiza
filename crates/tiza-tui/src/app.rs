@@ -362,7 +362,7 @@ struct ViewportKey {
 /// The layout's answers `status` needs for its warnings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ViewportFacts {
-    clipped_code: Option<usize>,
+    code_needs: Option<usize>,
     labels_in_margin: bool,
     /// The labels and notes drawn cut with `…` or not drawn: (id, not
     /// drawn at all).
@@ -372,7 +372,7 @@ struct ViewportFacts {
 impl ViewportFacts {
     fn of(l: &Layout) -> Self {
         ViewportFacts {
-            clipped_code: l.clipped_code,
+            code_needs: l.code_needs,
             labels_in_margin: l.labels_in_margin,
             clipped_labels: l
                 .clipped_labels
@@ -977,6 +977,22 @@ impl App {
         let (_, pad_h) =
             crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
         usize::from(cols.saturating_sub(2 * pad_h)).max(1)
+    }
+
+    /// The terminal width from which the screen lays the code out at
+    /// `width` cells or more: the first number of columns that
+    /// [`App::screen_width`] turns into `width`, its side padding taken
+    /// off. What `code needs N cols` names.
+    pub fn columns_for(&self, width: usize) -> usize {
+        let rows = self.size.1;
+        (width..=usize::from(u16::MAX))
+            .find(|&cols| {
+                let c = cols as u16;
+                let (_, pad_h) =
+                    crate::ui::clamp_padding(self.effective_padding(), (c, rows), self.present);
+                usize::from(c.saturating_sub(2 * pad_h)) >= width
+            })
+            .unwrap_or(width)
     }
 
     /// The labels cut with `…` or left out at the screen's width (within
@@ -6775,8 +6791,9 @@ impl App {
             return Vec::new();
         }
         let mut out = Vec::new();
-        if let Some(w) = l.clipped_code {
-            out.push(format!("code needs {w} columns at {cols} columns"));
+        if let Some(w) = l.code_needs {
+            let need = self.columns_for(w);
+            out.push(format!("code needs {need} columns at {cols} columns"));
         }
         // Only what the step on screen really loses: the size alone is no
         // warning.

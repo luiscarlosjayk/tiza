@@ -6,7 +6,9 @@
 //!   for lack of a margin are a fact in `status.warnings`, with no badge.
 //! - AC2 When the widest code line does not fit, the badge says
 //!   "code needs N cols" and `status.warnings` "code needs N columns at C
-//!   columns".
+//!   columns". N is the terminal width from which every code line fits
+//!   (line numbers, arrow lanes and padding included), not the width of
+//!   the code.
 //! - AC3 The badge disappears when the terminal grows; presentation mode
 //!   never shows it.
 //! - AC4 `status` over the socket returns `warnings: [...]`.
@@ -47,11 +49,15 @@ fn ac1_small_terminal_badge_and_label_placement() {
 fn ac2_clipped_code_is_reported_with_its_width() {
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
     let live = Live::from_code(&long, "rs", "t064-clip");
+    // 175 cells of code; with the line numbers, the code column's margin
+    // and the side padding, 183 columns show it whole.
     let bar = status_line(&live.screen(120, 40));
-    assert!(bar.contains("! code needs 175 cols"), "{bar}");
+    assert!(bar.contains("! code needs 183 cols"), "{bar}");
     live.screen(80, 24);
     let w = live.api_ok("status", json!({}))["warnings"].clone();
-    assert_eq!(w, json!(["code needs 175 columns at 80 columns"]));
+    assert_eq!(w, json!(["code needs 183 columns at 80 columns"]));
+    assert!(status_line(&live.screen(182, 24)).contains("! code needs 183 cols"));
+    assert!(!status_line(&live.screen(183, 24)).contains("code needs"));
 }
 
 #[test]
@@ -89,6 +95,12 @@ fn ac4_status_warnings_match_and_corner_cases() {
     let live = Live::from_code(&format!("{}\n", "y".repeat(100)), "rs", "t064-pad");
     live.command("pad 0 0");
     assert!(!status_line(&live.screen(120, 40)).contains("code needs"));
+    // The 40 columns of padding count: 40 more than with `:pad 0 0`.
+    let bare = live.screen(100, 40);
+    assert!(
+        status_line(&bare).contains("! code needs 106 cols"),
+        "{bare}"
+    );
     live.command("pad 0 20");
-    assert!(status_line(&live.screen(120, 40)).contains("! code needs 100 cols"));
+    assert!(status_line(&live.screen(120, 40)).contains("! code needs 146 cols"));
 }

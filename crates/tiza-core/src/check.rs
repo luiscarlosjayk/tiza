@@ -235,10 +235,11 @@ impl Report {
             match (self.min_clean_width, &self.narrower) {
                 (Some(w), Some(n)) => {
                     let width = self.width;
-                    if n.code_fits_from.is_some_and(|c| width < c) {
+                    // A width, as every other one here: what `--width`
+                    // takes, not the width of the code alone.
+                    if let Some(c) = n.code_fits_from.filter(|&c| width < c) {
                         out.push_str(&format!(
-                            "no label is clipped at width {width}, but code lines are: the code needs {} columns\n",
-                            n.code_fits_from.unwrap_or(w)
+                            "no label is clipped at width {width}, but code lines are: they fit from width {c} (`tiza render --width {c}`)\n"
                         ));
                     }
                     let under = n
@@ -470,7 +471,7 @@ fn narrower(take: &Take, theme: &Theme, min_clean: usize) -> Narrower {
         let found = take.sweep(i, theme, &widths, None, |l| {
             (
                 l.clipped_labels.is_empty(),
-                l.clipped_code.is_none(),
+                l.code_needs.is_none(),
                 l.labels_in_margin,
             )
         });
@@ -1839,7 +1840,7 @@ fn same_take(a: &crate::layout::Layout, b: &crate::layout::Layout, theme: &Theme
     narrow.rows == wide.rows
         && narrow.row_of_line == wide.row_of_line
         && narrow.code_x == wide.code_x
-        && narrow.clipped_code == wide.clipped_code
+        && narrow.code_needs == wide.code_needs
         && narrow.labels_in_margin == wide.labels_in_margin
         && narrow.clipped_labels == wide.clipped_labels
         && narrow.canvas.height == wide.canvas.height

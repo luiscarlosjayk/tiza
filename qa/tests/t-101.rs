@@ -805,7 +805,7 @@ fn rework5_a_clean_width_below_the_narrowest_one_says_so() {
     let (_, out, _) = check(&[file, "--width", "66"]);
     assert!(
         out.contains(
-            "no label is clipped at width 66, but code lines are: the code needs 79 columns"
+            "no label is clipped at width 66, but code lines are: they fit from width 79 (`tiza render --width 79`)"
         ),
         "{out}"
     );

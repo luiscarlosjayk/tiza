@@ -7,7 +7,8 @@
 //!   label or note cut with … or not drawn, or the code column that does not
 //!   fit. At 80 columns with nothing cut, no warning.
 //! - AC2 Luis chose the words from real captures: `! 3 labels cut`, and
-//!   `! code needs 64 cols` for the code (64: what the code needs).
+//!   `! code needs 83 cols` for the code (83: the terminal width from
+//!   which the step shows every code line, not the width of the code).
 //!   `status.warnings` says the same with the details.
 //! - AC3 It follows the step and the size; it reads the layout of the frame
 //!   (no second layout).
@@ -82,11 +83,11 @@ fn step2_ac2_step_7_names_what_is_cut_and_the_code_it_needs() {
     }
     // 80 columns: the code column does not fit; that comes first.
     let b = bar(&live, 80, 24);
-    assert!(b.contains("  ! code needs 64 cols"), "{b}");
+    assert!(b.contains("  ! code needs 83 cols"), "{b}");
     assert!(
         warnings(&live)
             .iter()
-            .any(|w| w == "code needs 64 columns at 80 columns"),
+            .any(|w| w == "code needs 83 columns at 80 columns"),
         "{:?}",
         warnings(&live)
     );
@@ -147,7 +148,7 @@ fn ac2_the_readme_the_guide_and_the_changelog_say_it() {
     for f in ["README.md", "CHANGELOG.md"] {
         let t = read(f);
         assert!(
-            t.contains("! 3 labels cut") && t.contains("! code needs 64 cols"),
+            t.contains("! 3 labels cut") && t.contains("! code needs 83 cols"),
             "{f}"
         );
     }
@@ -205,4 +206,90 @@ fn corner_after_a_follow_reload_the_time_gives_way_and_the_badge_is_whole_or_its
     assert!(!b68.contains("· last") && whole(&b68).is_some(), "{b68}");
     let b40 = bar(&live, 40, 30);
     assert!(whole(&b40).is_none() && b40.contains("  !"), "{b40}");
+}
+
+/// The `N` of `! code needs N cols` on the bar, if any.
+fn code_needs(bar: &str) -> Option<u16> {
+    let rest = &bar[bar.find("! code needs ")? + "! code needs ".len()..];
+    rest.split(' ').next()?.parse().ok()
+}
+
+#[test]
+fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
+    // N is the terminal width from which the step shows every code line
+    // whole: at N there is no warning, at N - 1 it names N. Line numbers,
+    // arrow lanes, box rails and the side padding count, not the code alone.
+    let open = |name: &str, file: std::path::PathBuf| {
+        let dir = scratch(name);
+        for f in ["ownership.rs.tiza", "ownership.rs"] {
+            std::fs::copy(file.join(f), dir.join(f)).unwrap();
+        }
+        let doc = tiza_core::fs::load_document(&dir.join("ownership.rs.tiza")).unwrap();
+        let live = Live::open(doc, dir.join("ownership.rs.tiza"), dir.join("s.sock"));
+        live.with(|a| a.autosave = false);
+        live
+    };
+    let example = || tiza_qa::example("");
+    let old = || tiza_qa::fixture("t-246");
+    let wide = || {
+        let code = std::fs::read_to_string(tiza_qa::fixture("t-173/wide.rs")).unwrap();
+        Live::from_code(&code, "rs", "t246-needs-wide")
+    };
+    let cases: Vec<(&str, Live, &str)> = vec![
+        (
+            "example, step 7",
+            open("t246-needs-ex7", example()),
+            "step 7",
+        ),
+        (
+            "example, step 1",
+            open("t246-needs-ex1", example()),
+            "step 1",
+        ),
+        (
+            "old example, step 7",
+            open("t246-needs-old7", old()),
+            "step 7",
+        ),
+        (
+            "old example, step 3",
+            open("t246-needs-old3", old()),
+            "step 3",
+        ),
+        ("padding 1 6", open("t246-needs-pad", old()), "pad 1 6"),
+        (
+            "layout stable",
+            open("t246-needs-stable", old()),
+            "layout stable",
+        ),
+        ("no line numbers", wide(), "numbers off"),
+    ];
+    for (what, live, command) in cases {
+        if command == "pad 1 6" || command == "layout stable" {
+            live.command("step 7");
+        }
+        live.command(command);
+        live.with(|a| a.message = None);
+        let n = code_needs(&bar(&live, 60, 30)).unwrap_or_else(|| panic!("{what}: no badge at 60"));
+        println!("{what}: code needs {n} cols");
+        let at = bar(&live, n, 30);
+        assert!(!at.contains("code needs"), "{what}: at {n}: {at}");
+        assert!(
+            warnings(&live).iter().all(|w| !w.starts_with("code needs")),
+            "{what}: at {n}: {:?}",
+            warnings(&live)
+        );
+        let before = bar(&live, n - 1, 30);
+        assert_eq!(
+            code_needs(&before),
+            Some(n),
+            "{what}: at {}: {before}",
+            n - 1
+        );
+        assert!(
+            warnings(&live).contains(&format!("code needs {n} columns at {} columns", n - 1)),
+            "{what}: {:?}",
+            warnings(&live)
+        );
+    }
 }

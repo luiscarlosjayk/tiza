@@ -366,7 +366,7 @@ fn ac5_the_chip_and_the_badge_fit_at_80_100_and_120_columns() {
     live.command("autosave off");
     live.with(|a| a.message = None);
     for (cols, badge) in [
-        (80, Some("  ! code needs 64 cols")),
+        (80, Some("  ! code needs 83 cols")),
         (100, Some("  ! 3 labels cut")),
         (120, None),
     ] {

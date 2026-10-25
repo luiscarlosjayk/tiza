@@ -104,9 +104,11 @@ pub struct Layout {
     pub rows: Vec<Row>,
     pub row_of_line: BTreeMap<u32, usize>,
     pub code_x: usize,
-    /// Width in cells of the widest code line when it did not fit and was
-    /// clipped (`None` when every line fits).
-    pub clipped_code: Option<usize>,
+    /// When a code line is clipped: the layout width from which every code
+    /// line fits, from the sum that decides the clip (line numbers, arrow
+    /// lanes, box rails, the widest code line and the right rail). `None`
+    /// when every line fits.
+    pub code_needs: Option<usize>,
     /// Whether labels and notes go to the right margin (false: under the line).
     pub labels_in_margin: bool,
     /// Labels and notes drawn clipped with `…`, or left out for lack of
@@ -1942,7 +1944,7 @@ fn layout_pass(
         rows,
         row_of_line,
         code_x,
-        clipped_code: (code_full_w > code_w).then_some(code_full_w),
+        code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
         labels_in_margin,
         clipped_labels: clipped,
     })
