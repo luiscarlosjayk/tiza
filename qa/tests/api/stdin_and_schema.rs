@@ -1,4 +1,4 @@
-//! t-040 — `-` as stdin everywhere and the published JSON Schema.
+//! `-` as stdin everywhere and the published JSON Schema.
 //!
 //! Acceptance criteria:
 //! - AC1 `tiza schema document` prints the JSON Schema of the `.tiza`
@@ -36,7 +36,7 @@ fn run_with_stdin(args: &[&str], input: &str) -> std::process::Output {
 }
 
 #[test]
-fn ac1_schemas_are_printed_and_committed() {
+fn schemas_are_printed_and_committed() {
     let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();
     assert_eq!(doc["title"], "Tiza document (.tiza)");
     let s = doc.to_string();
@@ -69,7 +69,7 @@ fn ac1_schemas_are_printed_and_committed() {
         assert!(methods.contains(&m), "{m} missing from the API schema");
     }
     // The replies of annotation.add/update say where the annotation is
-    // (moved here from t-155).
+    // (moved here from the tests of replies that say where).
     for name in ["annotation.add", "annotation.update"] {
         let method = api["methods"]
             .as_array()
@@ -100,8 +100,8 @@ fn ac1_schemas_are_printed_and_committed() {
 }
 
 #[test]
-fn ac2_api_schema_over_the_socket() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t040-socket");
+fn api_schema_over_the_socket() {
+    let live = Live::from_code("fn a() {}\n", "rs", "socket");
     let v = live.api_ok("api.schema", json!({}));
     assert_eq!(v["protocol"], 1);
     assert!(v["methods"].as_array().unwrap().len() >= 19);
@@ -115,7 +115,7 @@ fn ac2_api_schema_over_the_socket() {
 }
 
 #[test]
-fn ac3_dash_reads_stdin() {
+fn dash_reads_stdin() {
     // Code through stdin, language from --lang.
     let out = run_with_stdin(
         &["render", "-", "--lang", "rs", "--out", "-"],
@@ -144,7 +144,7 @@ fn ac3_dash_reads_stdin() {
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("empty stdin"));
     // `tiza api METHOD -` takes the params from stdin.
-    let live = Live::from_code("fn a() {}\n", "rs", "t040-api");
+    let live = Live::from_code("fn a() {}\n", "rs", "api");
     let out = run_with_stdin(
         &[
             "api",
@@ -165,7 +165,7 @@ fn ac3_dash_reads_stdin() {
 }
 
 #[test]
-fn ac4_examples_and_fixtures_match_the_schema_shape() {
+fn examples_and_fixtures_match_the_schema_shape() {
     // Structural check without a validator crate: every annotation's `type`
     // is one of the schema's variants and carries the required fields.
     let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();

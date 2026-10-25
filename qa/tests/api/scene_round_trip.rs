@@ -1,4 +1,4 @@
-//! t-188 — `scene.get` → `scene.put` is a faithful round trip.
+//! `scene.get` → `scene.put` is a faithful round trip.
 //!
 //! Acceptance criteria:
 //! - AC1 A `scene.put` of exactly what `scene.get` returned works and leaves
@@ -255,7 +255,7 @@ fn round_trip(live: &Live, tiza: Option<&Path>, what: &str) {
 /// added to s.json, `tiza scene put s.json`: the .tiza on disk still reads
 /// main.rs, has the note, and a later edit of main.rs shows.
 #[test]
-fn ac2_case_a_reference_kept_on_disk_and_later_edits_show() {
+fn case_a_reference_kept_on_disk_and_later_edits_show() {
     let dir = reference_demo("case-a");
     let live = open(&dir.join("main.rs"));
     let tiza = dir.join("main.rs.tiza");
@@ -319,7 +319,7 @@ fn ac2_case_a_reference_kept_on_disk_and_later_edits_show() {
 /// and links src/queue.rs with windows; a get → put with a new note keeps
 /// both as references, with their windows, and an edit of queue.rs shows.
 #[test]
-fn ac2_linked_file_stays_a_reference_with_its_window() {
+fn linked_file_stays_a_reference_with_its_window() {
     let dir = examples_copy("linked");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -363,7 +363,7 @@ fn ac2_linked_file_stays_a_reference_with_its_window() {
 /// AC2: code the agent changed is shown, not autosaved over the file it
 /// came from, and the bar says why — for the main file and a linked one.
 #[test]
-fn ac2_edited_code_is_shown_not_saved_and_the_bar_says_why() {
+fn edited_code_is_shown_not_saved_and_the_bar_says_why() {
     let dir = reference_demo("edited");
     let live = open(&dir.join("main.rs"));
     let tiza = dir.join("main.rs.tiza");
@@ -409,7 +409,7 @@ fn ac2_edited_code_is_shown_not_saved_and_the_bar_says_why() {
 /// silence), the agent's note is saved, the screen keeps the copy loaded and
 /// the bar says so; the .tiza renders the new file.
 #[test]
-fn corner_file_changed_between_get_and_put_keeps_the_reference() {
+fn file_changed_between_get_and_put_keeps_the_reference() {
     let dir = reference_demo("changed-between");
     let live = open(&dir.join("main.rs"));
     let tiza = dir.join("main.rs.tiza");
@@ -449,7 +449,7 @@ fn corner_file_changed_between_get_and_put_keeps_the_reference() {
 /// AC1: a put that changes nothing writes nothing, on a reference document
 /// and on an embedded one.
 #[test]
-fn ac1_unchanged_put_writes_nothing() {
+fn unchanged_put_writes_nothing() {
     let dir = reference_demo("no-write");
     let tiza = dir.join("main.rs.tiza");
     let live = open(&dir.join("main.rs"));
@@ -474,7 +474,7 @@ fn ac1_unchanged_put_writes_nothing() {
 
 /// AC1 on every example as it is, at every step.
 #[test]
-fn ac1_every_example_round_trips_at_every_step() {
+fn every_example_round_trips_at_every_step() {
     let dir = examples_copy("examples");
     for name in tiza_files(&dir) {
         let tiza = dir.join(&name);
@@ -492,7 +492,7 @@ fn ac1_every_example_round_trips_at_every_step() {
 
 /// Corner case: a document from stdin (no file) stays embedded.
 #[test]
-fn corner_stdin_document_stays_embedded() {
+fn stdin_document_stays_embedded() {
     let dir = scratch("stdin");
     let o = tiza_core::fs::from_stdin_text("fn main() {}\nfn other() {}\n", Some("rs"));
     let path = dir.join("stdin.tiza");
@@ -514,7 +514,7 @@ fn corner_stdin_document_stays_embedded() {
 /// Corner case: `:embed` embeds on purpose, and a put after it does not
 /// turn the code back into a reference.
 #[test]
-fn corner_embed_stays_embedded_after_a_put() {
+fn embed_stays_embedded_after_a_put() {
     let dir = examples_copy("embed");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -540,7 +540,7 @@ fn corner_embed_stays_embedded_after_a_put() {
 /// put replaces the document, step included, as `u` brings it back), and
 /// the rest is unchanged.
 #[test]
-fn corner_put_taken_at_another_step() {
+fn put_taken_at_another_step() {
     let dir = examples_copy("other-step");
     let tiza = dir.join("tally-tour.tiza");
     let live = open(&tiza);
@@ -569,7 +569,7 @@ fn corner_put_taken_at_another_step() {
 /// the same before and after. The annotations and the later moves the new
 /// patches moved are carried to the same text.
 #[test]
-fn ac3_case_b_position_and_find_moves_survive_get_put() {
+fn case_b_position_and_find_moves_survive_get_put() {
     let dir = examples_copy("case-b");
     let tiza = dir.join("ownership-moves.rs.tiza");
     let live = open(&tiza);
@@ -619,7 +619,7 @@ fn ac3_case_b_position_and_find_moves_survive_get_put() {
 /// AC3: an invalid put names the move or the annotation (with the code of
 /// the error inside).
 #[test]
-fn ac3_an_invalid_put_names_the_move_or_the_annotation() {
+fn an_invalid_put_names_the_move_or_the_annotation() {
     let dir = examples_copy("invalid");
     let live = open(&dir.join("ownership-moves.rs.tiza"));
     let scene = get(&live);
@@ -641,7 +641,7 @@ fn ac3_an_invalid_put_names_the_move_or_the_annotation() {
 /// move's target names that move; nothing changes. Deleting a move carries
 /// back what adding it carried.
 #[test]
-fn ac3_refusals_name_what_would_lose_its_line_and_delete_carries_back() {
+fn refusals_name_what_would_lose_its_line_and_delete_carries_back() {
     let dir = examples_copy("refusals");
     let live = open(&dir.join("ownership-moves.rs.tiza"));
     live.command("autosave off");
@@ -694,7 +694,7 @@ fn wait_until(what: &str, mut cond: impl FnMut() -> bool) {
 /// file's (here: the copy of a scene.get taken before follow reloaded it)
 /// is refused, and nothing changes — screen, autosave, note, follow.
 #[test]
-fn review_follow_on_refuses_a_put_of_code_the_file_no_longer_holds() {
+fn follow_on_refuses_a_put_of_code_the_file_no_longer_holds() {
     let dir = reference_demo("follow");
     let tiza = dir.join("main.rs.tiza");
     let live = open(&dir.join("main.rs"));
@@ -749,7 +749,7 @@ fn review_follow_on_refuses_a_put_of_code_the_file_no_longer_holds() {
 /// put of the file's own code makes it a reference again, so `:autosave on`
 /// saves a reference.
 #[test]
-fn review_a_put_of_the_files_code_after_an_edited_one_is_a_reference_again() {
+fn a_put_of_the_files_code_after_an_edited_one_is_a_reference_again() {
     let dir = reference_demo("back-to-reference");
     let tiza = dir.join("main.rs.tiza");
     let live = open(&dir.join("main.rs"));
@@ -780,7 +780,7 @@ fn review_a_put_of_the_files_code_after_an_edited_one_is_a_reference_again() {
 /// Deleting a `code.link` that later moves need is refused, naming the
 /// deleted move and the one that would stop applying; nothing changes.
 #[test]
-fn review_deleting_a_link_later_moves_need_is_refused() {
+fn deleting_a_link_later_moves_need_is_refused() {
     let dir = examples_copy("delete-link");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -798,7 +798,7 @@ fn review_deleting_a_link_later_moves_need_is_refused() {
 /// A move that would trim a range (the end of a box) is refused, so
 /// deleting a move always gives back the document from before it.
 #[test]
-fn review_a_move_that_would_trim_a_range_is_refused() {
+fn a_move_that_would_trim_a_range_is_refused() {
     let dir = reference_demo("trim");
     let live = open(&dir.join("main.rs"));
     live.api_ok(
@@ -838,7 +838,7 @@ fn review_a_move_that_would_trim_a_range_is_refused() {
 /// A file deleted between the get and the put: refused, saying so (the
 /// `.tiza` must not point at a file that is gone).
 #[test]
-fn review_a_file_deleted_between_get_and_put_is_refused() {
+fn a_file_deleted_between_get_and_put_is_refused() {
     let dir = reference_demo("deleted");
     let tiza = dir.join("main.rs.tiza");
     let live = open(&dir.join("main.rs"));
@@ -865,7 +865,7 @@ fn review_a_file_deleted_between_get_and_put_is_refused() {
 /// an edit says first what is not saved; a stale file and an edited one are
 /// both said.
 #[test]
-fn review_bar_messages() {
+fn bar_messages() {
     let dir = reference_demo("extra-view");
     let tiza = dir.join("main.rs.tiza");
     let live = open(&dir.join("main.rs"));
@@ -926,7 +926,7 @@ fn move_err(live: &Live, m: Value) -> String {
 /// Deleting the only `code.link` to a file with annotations is refused,
 /// naming them; nothing changes.
 #[test]
-fn review2_deleting_the_only_link_to_an_annotated_file_is_refused() {
+fn deleting_the_only_link_to_an_annotated_file_is_refused() {
     let dir = examples_copy("only-link");
     let tiza = dir.join("tally-tour.tiza");
     let live = open(&tiza);
@@ -951,7 +951,7 @@ fn review2_deleting_the_only_link_to_an_annotated_file_is_refused() {
 /// at step 1) in tally-tour, and an insert in queue.rs before the step-5
 /// window of stack-and-queue; deleting the move gives the window back.
 #[test]
-fn review2_a_window_is_carried() {
+fn a_window_is_carried() {
     let dir = examples_copy("window");
     let live = open(&dir.join("tally-tour.tiza"));
     let before = get(&live);
@@ -986,7 +986,7 @@ fn review2_a_window_is_carried() {
 /// Lines inserted inside a later move's range are taken along by it: the
 /// step-4 delete of `fn len` deletes the line added inside at step 3.
 #[test]
-fn review2_a_later_range_takes_the_lines_inserted_inside() {
+fn a_later_range_takes_the_lines_inserted_inside() {
     let dir = examples_copy("inside");
     let live = open(&dir.join("ownership-moves.rs.tiza"));
     let before = get(&live);
@@ -1010,7 +1010,7 @@ fn review2_a_later_range_takes_the_lines_inserted_inside() {
 
 /// The messages name the end that would be lost and say what to do.
 #[test]
-fn review2_refusals_name_what_is_lost_and_why() {
+fn refusals_name_what_is_lost_and_why() {
     let dir = examples_copy("messages");
     for f in ["ownership.rs.tiza", "ownership.rs"] {
         std::fs::copy(fixture(&format!("shared/ownership/{f}")), dir.join(f)).unwrap();
@@ -1092,7 +1092,7 @@ fn review2_refusals_name_what_is_lost_and_why() {
 /// After a put of edited code (autosave off), a put of the file's code
 /// says the file is a reference again and autosave still off.
 #[test]
-fn review2_the_bar_says_a_file_is_a_reference_again() {
+fn the_bar_says_a_file_is_a_reference_again() {
     let dir = reference_demo("again");
     let live = open(&dir.join("main.rs"));
     let original = get(&live);
@@ -1124,7 +1124,7 @@ fn findings(live: &Live, code: &str) -> Vec<Value> {
 /// same code and the annotation of the step stays inside it; deleting the
 /// insert gives the window back.
 #[test]
-fn rework_a_window_of_the_same_step_is_carried() {
+fn a_window_of_the_same_step_is_carried() {
     let dir = examples_copy("same-step-window");
     for (name, link, at, id, window, carried) in [
         ("stack-and-queue.tiza", 5, "21", "a7", "17-23", "17-25"),
@@ -1162,7 +1162,7 @@ fn rework_a_window_of_the_same_step_is_carried() {
 /// `tiza check` and the live `check` warn about an annotation outside the
 /// window shown at its own step, with its id and step.
 #[test]
-fn rework_check_warns_about_an_annotation_outside_its_window() {
+fn check_warns_about_an_annotation_outside_its_window() {
     let dir = examples_copy("outside-window");
     let tiza = dir.join("stack-and-queue.tiza");
     let out = std::process::Command::new(bin())
@@ -1196,7 +1196,7 @@ fn rework_check_warns_about_an_annotation_outside_its_window() {
 /// A document that already has an annotation outside the code: the refusal
 /// says so, instead of blaming the move for removing a line.
 #[test]
-fn rework_an_annotation_already_outside_the_code_is_named_as_such() {
+fn an_annotation_already_outside_the_code_is_named_as_such() {
     let dir = scratch("already-outside");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::copy(fixture("t-101/linked.tiza"), dir.join("linked.tiza")).unwrap();
@@ -1238,7 +1238,7 @@ fn two_files(name: &str, moves: Value, annotations: Value) -> (PathBuf, Live) {
 /// annotation those patches put in place would no longer fit, so the link
 /// is refused, naming it.
 #[test]
-fn review_a_new_link_that_leaves_an_annotation_without_its_line_is_refused() {
+fn a_new_link_that_leaves_an_annotation_without_its_line_is_refused() {
     let (_dir, live) = two_files(
         "new-link",
         json!([{"at_step": 3, "action": "code.patch", "op": "insert", "position": "2",
@@ -1260,7 +1260,7 @@ fn review_a_new_link_that_leaves_an_annotation_without_its_line_is_refused() {
 /// patch that pushes it out of the window is said by `check` (with the
 /// first step) and in the `move.add` reply, and the move is accepted.
 #[test]
-fn review_an_annotation_a_later_patch_pushes_out_of_a_window_is_said() {
+fn an_annotation_a_later_patch_pushes_out_of_a_window_is_said() {
     // Repro A: thirty lines in queue.rs at step 3, above the step-2 box.
     let dir = examples_copy("pushed-out");
     let live = open(&dir.join("stack-and-queue.tiza"));
@@ -1325,7 +1325,7 @@ fn review_an_annotation_a_later_patch_pushes_out_of_a_window_is_said() {
 /// was when a patch does not touch it (another file, a later step); the
 /// refusal is only for a patch that would have to carry it.
 #[test]
-fn review_an_annotation_already_outside_blocks_only_the_patches_that_reach_it() {
+fn an_annotation_already_outside_blocks_only_the_patches_that_reach_it() {
     // A note past the end, at step 2; a patch at step 5 is accepted.
     let (_dir, live) = two_files(
         "outside-later",
@@ -1368,7 +1368,7 @@ fn review_an_annotation_already_outside_blocks_only_the_patches_that_reach_it() 
 /// what it never showed; what was inside it at its step and a later patch
 /// pushes out is said by `check` too, as by the `move.add` reply.
 #[test]
-fn review_a_patch_after_a_zoom_that_pushes_an_annotation_out_is_said() {
+fn a_patch_after_a_zoom_that_pushes_an_annotation_out_is_said() {
     let (_dir, live) = two_files(
         "zoom-patch",
         json!([
@@ -1769,7 +1769,7 @@ fn random_moves(dir: &Path, name: &str, seed: u64) -> Tally {
 /// deletes) are deleted again: the document is exactly the one before.
 /// One thread per document (each its own instance and seed).
 #[test]
-fn ac5_random_moves_on_the_examples_survive_get_put() {
+fn random_moves_on_the_examples_survive_get_put() {
     let started = Instant::now();
     let dir = examples_copy("random");
     let names = tiza_files(&dir);
@@ -1788,7 +1788,7 @@ fn ac5_random_moves_on_the_examples_survive_get_put() {
     let sum = |f: fn(&Tally) -> usize| tallies.iter().map(f).sum::<usize>();
     let (tried, accepted) = (sum(|t| t.tried), sum(|t| t.accepted));
     eprintln!(
-        "t-188 random moves: seed {SEED:#x}, {} documents, {tried} moves tried, {accepted} accepted, {} refused, {} deleted again, {:.1} s",
+        "scene round trip, random moves: seed {SEED:#x}, {} documents, {tried} moves tried, {accepted} accepted, {} refused, {} deleted again, {:.1} s",
         names.len(),
         sum(|t| t.refused),
         sum(|t| t.undone),
@@ -1800,7 +1800,7 @@ fn ac5_random_moves_on_the_examples_survive_get_put() {
             *why.entry(*k).or_insert(0) += v;
         }
     }
-    eprintln!("t-188 refusals: {why:?}");
+    eprintln!("scene round trip, refusals: {why:?}");
     for (name, t) in names.iter().zip(&tallies) {
         assert!(
             t.accepted >= t.tried / 3,

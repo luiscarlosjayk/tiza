@@ -1,4 +1,4 @@
-//! t-155 — An annotation added over the socket/MCP at a step the view does
+//! An annotation added over the socket/MCP at a step the view does
 //! not show: the reply tells the agent.
 //!
 //! Acceptance criteria:
@@ -7,7 +7,7 @@
 //!   it in words.
 //! - AC2 (Luis, 2026-10-18 rework): when a socket/MCP call (not the TUI)
 //!   adds or changes an annotation the view does not show, the status bar
-//!   says so with the `:box`-style summary, ` by agent` and the t-132 tail:
+//!   says so with the `:box`-style summary, ` by agent` and the step tail:
 //!   `a17: box 3-5 added by agent (step 1, press n)`, `a4: note L13 updated
 //!   by agent (step 3, :step 3 shows it)`, `a9: note L17 added by agent
 //!   (src/queue.rs, not shown at step 2)`; several within 1 s share one
@@ -20,7 +20,7 @@
 //! Corner cases: supervised mode (the reply is computed when the presenter
 //! accepts, so `shown_step`/`visible` describe that moment); an annotation of
 //! a linked file not shown at the current step, or outside the window
-//! (t-105); a spotlight past its `until`.
+//! of a `code.link`; a spotlight past its `until`.
 
 use std::sync::mpsc;
 use std::thread;
@@ -39,8 +39,8 @@ fn at_step_0(name: &str) -> Live {
 }
 
 #[test]
-fn ac1_add_at_step_0_is_not_visible_and_at_step_1_it_is() {
-    let live = at_step_0("t155-add");
+fn add_at_step_0_is_not_visible_and_at_step_1_it_is() {
+    let live = at_step_0("add");
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "box", "from_line": 2, "to_line": 3, "label": "hi"}),
@@ -51,7 +51,7 @@ fn ac1_add_at_step_0_is_not_visible_and_at_step_1_it_is() {
     assert_eq!(r["shown_step"], json!(0), "{r}");
     assert_eq!(r["visible"], json!(false), "{r}");
     assert_eq!(r["hidden"], json!("it appears at step 1"), "{r}");
-    // The view did not move (t-079).
+    // The view did not move.
     assert_eq!(live.with(|a| a.doc.step), 0);
 
     live.api_ok("step.set", json!({"step": 1}));
@@ -77,8 +77,8 @@ fn ac1_add_at_step_0_is_not_visible_and_at_step_1_it_is() {
 }
 
 #[test]
-fn ac1_update_reports_the_new_step() {
-    let live = at_step_0("t155-update");
+fn update_reports_the_new_step() {
+    let live = at_step_0("update");
     live.api_ok("step.set", json!({"step": 1}));
     live.api_ok(
         "annotation.add",
@@ -106,8 +106,8 @@ fn ac1_update_reports_the_new_step() {
 }
 
 #[test]
-fn ac1_named_step_title_travels_with_the_reply() {
-    let live = at_step_0("t155-title");
+fn named_step_title_travels_with_the_reply() {
+    let live = at_step_0("title");
     live.api_ok(
         "scene.patch",
         json!({"steps": [{"step": 2, "id": "borrow", "title": "Shared borrow"}]}),
@@ -125,8 +125,8 @@ fn ac1_named_step_title_travels_with_the_reply() {
 }
 
 #[test]
-fn corner_spotlight_past_its_until() {
-    let live = at_step_0("t155-spot");
+fn spotlight_past_its_until() {
+    let live = at_step_0("spot");
     // Something at step 3, so the view can stand at step 2.
     live.api_ok(
         "annotation.add",
@@ -146,7 +146,7 @@ fn corner_spotlight_past_its_until() {
     assert_eq!(r["visible"], json!(true), "{r}");
 }
 
-/// A scratch copy of the two-file example of t-105.
+/// A scratch copy of the two-file example.
 fn open_demo(name: &str) -> Live {
     let dir = scratch(name);
     std::fs::create_dir_all(dir.join("src")).unwrap();
@@ -159,8 +159,8 @@ fn open_demo(name: &str) -> Live {
 }
 
 #[test]
-fn corner_linked_file_not_shown_and_outside_the_window() {
-    let live = open_demo("t155-link");
+fn linked_file_not_shown_and_outside_the_window() {
+    let live = open_demo("link");
     // Step 2 shows src/queue.rs: the stack's box a1 (step 1) is not drawn.
     live.api_ok("step.set", json!({"step": 2}));
     let r = live.api_ok("annotation.update", json!({"id": "a1", "label": "LIFO"}));
@@ -184,7 +184,7 @@ fn corner_linked_file_not_shown_and_outside_the_window() {
 
     // Step 5 shows queue.rs:17-23: the note a4 (line 13) is outside the window.
     live.api_ok("step.set", json!({"step": 5}));
-    // (A note's text is its `label`: `text` is refused since t-235.)
+    // (A note's text is its `label`: `text` is refused.)
     let r = live.api_ok(
         "annotation.update",
         json!({"id": "a4", "label": "VecDeque"}),
@@ -223,8 +223,8 @@ fn wait_pending(live: &Live, n: usize) {
 }
 
 #[test]
-fn corner_supervised_reply_describes_the_moment_of_acceptance() {
-    let live = at_step_0("t155-supervised");
+fn supervised_reply_describes_the_moment_of_acceptance() {
+    let live = at_step_0("supervised");
     live.command("supervise on");
     // Asked at step 0 …
     let h = send_async(
@@ -245,8 +245,8 @@ fn corner_supervised_reply_describes_the_moment_of_acceptance() {
 }
 
 #[test]
-fn ac1_mcp_tools_say_it_in_words() {
-    let live = at_step_0("t155-mcp");
+fn mcp_tools_say_it_in_words() {
+    let live = at_step_0("mcp");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("add_box", json!({"from_line": 2, "to_line": 3}));
     assert!(!err, "{text}");
@@ -311,8 +311,8 @@ fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
 }
 
 #[test]
-fn ac2_an_agent_box_at_step_0_is_named_on_the_bar() {
-    let live = at_step_0("t155-ac2-box");
+fn an_agent_box_at_step_0_is_named_on_the_bar() {
+    let live = at_step_0("ac2-box");
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "box", "from_line": 3, "to_line": 5}),
@@ -322,7 +322,7 @@ fn ac2_an_agent_box_at_step_0_is_named_on_the_bar() {
     assert_eq!(info(&live), want);
     assert!(bar(&live).contains(want), "{}", bar(&live));
 
-    // The presenter's own `:box` keeps the t-132 confirmation: no «by agent».
+    // The presenter's own `:box` keeps the step zero confirmation: no «by agent».
     live.command("box 2-3");
     assert_eq!(info(&live), "a2: box 2-3 (step 1, press n)");
 
@@ -338,13 +338,13 @@ fn ac2_an_agent_box_at_step_0_is_named_on_the_bar() {
 }
 
 #[test]
-fn ac2_an_agent_update_to_a_later_step() {
+fn an_agent_update_to_a_later_step() {
     let live = Live::from_code(
         &(1..=20)
             .map(|i| format!("let x{i} = {i};\n"))
             .collect::<String>(),
         "rs",
-        "t155-ac2-update",
+        "ac2-update",
     );
     live.command("step 1");
     live.api_ok(
@@ -360,8 +360,8 @@ fn ac2_an_agent_update_to_a_later_step() {
 }
 
 #[test]
-fn ac2_a_linked_file_not_shown_names_the_file() {
-    let live = open_demo("t155-ac2-link");
+fn a_linked_file_not_shown_names_the_file() {
+    let live = open_demo("ac2-link");
     live.api_ok("step.set", json!({"step": 4}));
     // Step 4 links src/stack.rs back: a note on queue.rs is not drawn.
     let r = live.api_ok(
@@ -372,7 +372,7 @@ fn ac2_a_linked_file_not_shown_names_the_file() {
     let id = r["id"].as_str().unwrap().to_string();
     let want = format!("{id}: note L17 added by agent (src/queue.rs, not shown at step 4)");
     assert_eq!(info(&live), want);
-    // The bar keeps that tail when it has to cut (t-132).
+    // The bar keeps that tail when it has to cut.
     assert_eq!(
         tiza_tui::app::step_hint_start(&want),
         Some(want.find(" (src/").unwrap())
@@ -401,8 +401,8 @@ fn ac2_a_linked_file_not_shown_names_the_file() {
 }
 
 #[test]
-fn ac2_several_within_one_second_share_one_message() {
-    let live = at_step_0("t155-ac2-group");
+fn several_within_one_second_share_one_message() {
+    let live = at_step_0("ac2-group");
     let t0 = Instant::now();
     let add = |line: u32, at: Instant| {
         ipc_at(
@@ -442,8 +442,8 @@ fn ac2_several_within_one_second_share_one_message() {
 }
 
 #[test]
-fn ac2_supervised_acceptance_carries_the_tail() {
-    let live = at_step_0("t155-ac2-supervised");
+fn supervised_acceptance_carries_the_tail() {
+    let live = at_step_0("ac2-supervised");
     live.command("supervise on");
     let h = send_async(
         &live.socket,
@@ -459,8 +459,8 @@ fn ac2_supervised_acceptance_carries_the_tail() {
 }
 
 #[test]
-fn ac2_presentation_mode_waits_for_the_bar() {
-    let live = at_step_0("t155-ac2-present");
+fn presentation_mode_waits_for_the_bar() {
+    let live = at_step_0("ac2-present");
     live.keys(&[KeyCode::Char('P')]);
     assert!(live.with(|a| a.present));
     live.api_ok(
@@ -497,9 +497,9 @@ fn ac2_presentation_mode_waits_for_the_bar() {
 }
 
 #[test]
-fn ac2_keeps_the_pointer() {
-    let live = at_step_0("t155-ac2-rows");
-    // The live pointer (t-030).
+fn keeps_the_pointer() {
+    let live = at_step_0("ac2-rows");
+    // The live pointer.
     live.keys(&[KeyCode::Char('f')]);
     live.api_ok(
         "annotation.add",

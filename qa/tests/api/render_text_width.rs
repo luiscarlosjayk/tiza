@@ -13,7 +13,7 @@
 //! - AC2 Without `width`, `render.text` (socket, MCP `render_text`, the
 //!   `tiza://render` resources) is the take at the width `visible` and
 //!   `check` use, so they always agree; with `width` nothing changes (until
-//!   t-224, which makes it the take at that width too).
+//!   the take at that width came).
 //! - AC3 The reply says the width it used (`width`); the agent guide, the
 //!   MCP description and the API schema say so.
 //! - AC4 This file; CHANGELOG.
@@ -31,7 +31,7 @@ const NOTE: &str = "the live token: rotate it right after the demo, never commit
 fn opened(name: &str, cols: u16, present: bool) -> Live {
     let dir = scratch(name);
     for f in ["four.env", "four.env.tiza"] {
-        std::fs::copy(fixture(&format!("t-216/{f}")), dir.join(f)).unwrap();
+        std::fs::copy(fixture(&format!("api/render_text_width/{f}")), dir.join(f)).unwrap();
     }
     let path = dir.join("four.env.tiza");
     let doc = tiza_core::fs::load_document(&path).unwrap();
@@ -64,10 +64,10 @@ fn says_whole(r: &Value) -> bool {
 }
 
 #[test]
-fn step1_step2_ac1_ac2_render_text_agrees_with_visible_and_check_at_every_width() {
+fn render_text_agrees_with_visible_and_check_at_every_width() {
     for present in [false, true] {
         for cols in 90..=150u16 {
-            let live = opened(&format!("t216-{present}-{cols}"), cols, present);
+            let live = opened(&format!("{present}-{cols}"), cols, present);
             let r = live.api_ok(
                 "annotation.add",
                 json!({"type": "note", "line": 2, "text": NOTE, "step": 1}),
@@ -99,8 +99,8 @@ fn step1_step2_ac1_ac2_render_text_agrees_with_visible_and_check_at_every_width(
 }
 
 #[test]
-fn corner_a_terminal_narrower_than_checks_narrowest_width() {
-    let live = opened("t216-narrow", 12, false);
+fn a_terminal_narrower_than_checks_narrowest_width() {
+    let live = opened("narrow", 12, false);
     let r = live.api_ok("render.text", json!({}));
     assert_eq!(
         r["width"].as_u64().unwrap(),
@@ -111,9 +111,9 @@ fn corner_a_terminal_narrower_than_checks_narrowest_width() {
 }
 
 #[test]
-fn corner_no_terminal_size_yet() {
+fn no_terminal_size_yet() {
     // An MCP client may ask before the TUI has drawn a frame.
-    let live = opened("t216-nosize", 0, false);
+    let live = opened("nosize", 0, false);
     live.with(|a| a.size = (0, 0));
     let r = live.api_ok("render.text", json!({}));
     assert_eq!(
@@ -127,7 +127,11 @@ fn corner_no_terminal_size_yet() {
 
 fn opened_doc(name: &str, doc: Value, cols: u16) -> Live {
     let dir = scratch(name);
-    std::fs::copy(fixture("t-216/four.env"), dir.join("four.env")).unwrap();
+    std::fs::copy(
+        fixture("api/render_text_width/four.env"),
+        dir.join("four.env"),
+    )
+    .unwrap();
     let path = dir.join("four.env.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let doc = tiza_core::fs::load_document(&path).unwrap();
@@ -137,7 +141,7 @@ fn opened_doc(name: &str, doc: Value, cols: u16) -> Live {
 }
 
 #[test]
-fn rev_during_a_typing_animation_the_step_as_it_is_once_typed() {
+fn during_a_typing_animation_the_step_as_it_is_once_typed() {
     let doc = json!({
         "schema": 1, "source": {"path": "four.env", "language": "env", "first_line": 1},
         "code": {"file": "four.env"}, "step": 0,
@@ -146,7 +150,7 @@ fn rev_during_a_typing_animation_the_step_as_it_is_once_typed() {
         "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": NOTE}]
     });
     for cols in [100u16, 117, 140] {
-        let live = opened_doc(&format!("t216-typing-{cols}"), doc.clone(), cols);
+        let live = opened_doc(&format!("typing-{cols}"), doc.clone(), cols);
         live.api_ok("step.next", json!({}));
         assert!(live.with(|a| a.typing.is_some()), "the step is typing");
         let text = live.api_ok("render.text", json!({}))["text"]
@@ -155,14 +159,14 @@ fn rev_during_a_typing_animation_the_step_as_it_is_once_typed() {
             .to_string();
         assert!(text.contains("PORT=9090"), "{cols}: typed whole\n{text}");
         // The reply about a note added now says the same of it (a note's
-        // text is its `label`: `text` is refused since t-235).
+        // text is its `label`: `text` is refused).
         let r = live.api_ok("annotation.update", json!({"id": "n1", "label": NOTE}));
         assert_eq!(whole(&text), says_whole(&r), "{cols}: {r}\n{text}");
     }
 }
 
 #[test]
-fn rev_while_authoring_the_take_not_the_screens_own_layout() {
+fn while_authoring_the_take_not_the_screens_own_layout() {
     // Arrows at step 2 take lanes on the left of the take; at step 1 the
     // authoring screen has none, so its margin is wider.
     let doc = json!({
@@ -177,7 +181,7 @@ fn rev_while_authoring_the_take_not_the_screens_own_layout() {
     });
     let mut differ = 0;
     for cols in 80..=150u16 {
-        let live = opened_doc(&format!("t216-lanes-{cols}"), doc.clone(), cols);
+        let live = opened_doc(&format!("lanes-{cols}"), doc.clone(), cols);
         let r = live.api_ok("annotation.update", json!({"id": "n1", "label": NOTE}));
         let render = live.api_ok("render.text", json!({}));
         let text = render["text"].as_str().unwrap();
@@ -195,8 +199,8 @@ fn rev_while_authoring_the_take_not_the_screens_own_layout() {
 }
 
 #[test]
-fn rev_the_mcp_tool_names_the_width_on_a_second_line() {
-    let live = opened("t216-mcp", 117, false);
+fn the_mcp_tool_names_the_width_on_a_second_line() {
+    let live = opened("mcp", 117, false);
     let mut mcp = tiza_qa::McpClient::start(&live.socket);
     let width = live.api_ok("render.text", json!({}))["width"]
         .as_u64()
@@ -209,7 +213,7 @@ fn rev_the_mcp_tool_names_the_width_on_a_second_line() {
             && second.contains(&format!("`width: {width}`")),
         "{v}"
     );
-    // (The take at that width too since t-224.)
+    // (The take at that width too.)
     let (_, _, v) = mcp.call("render_text", json!({"width": 90}));
     let second = v["result"]["content"][1]["text"].as_str().unwrap_or("");
     assert!(second.contains("take at 90 columns"), "{v}");

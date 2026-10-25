@@ -27,7 +27,11 @@ fn open(name: &str) -> (Live, PathBuf, McpClient) {
     let dir = scratch(&format!("t-236-{name}"));
     std::fs::create_dir_all(dir.join("src")).unwrap();
     for f in ["main.rs", QUEUE, "demo.tiza"] {
-        std::fs::copy(fixture(&format!("t-231/{f}")), dir.join(f)).unwrap();
+        std::fs::copy(
+            fixture(&format!("api/update_keeps_step_and_file/{f}")),
+            dir.join(f),
+        )
+        .unwrap();
     }
     let tiza = dir.join("demo.tiza");
     let doc = tiza_core::fs::load_document(&tiza).unwrap();

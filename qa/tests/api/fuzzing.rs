@@ -1,4 +1,4 @@
-//! t-074 — Input fuzzing (`.tiza` parser, `:` commands, socket NDJSON)
+//! Input fuzzing (`.tiza` parser, `:` commands, socket NDJSON)
 //! and the `use-dev-tty` smoke test.
 //!
 //! Acceptance criteria:
@@ -114,7 +114,7 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 300, ..ProptestConfig::default() })]
 
     #[test]
-    fn ac1_parser_never_panics_on_bytes(bytes in prop::collection::vec(any::<u8>(), 0..200)) {
+    fn parser_never_panics_on_bytes(bytes in prop::collection::vec(any::<u8>(), 0..200)) {
         let text = String::from_utf8_lossy(&bytes);
         if let Ok(d) = fs::parse_document(&text, None) {
             layouts_without_panic(&d);
@@ -122,14 +122,14 @@ proptest! {
     }
 
     #[test]
-    fn ac1_parser_never_panics_on_json(v in json_strategy()) {
+    fn parser_never_panics_on_json(v in json_strategy()) {
         if let Ok(d) = fs::parse_document(&v.to_string(), None) {
             layouts_without_panic(&d);
         }
     }
 
     #[test]
-    fn ac1_parser_never_panics_on_mutations(text in mutated_document()) {
+    fn parser_never_panics_on_mutations(text in mutated_document()) {
         if let Ok(d) = fs::parse_document(&text, None) {
             layouts_without_panic(&d);
             // And what parsed also round-trips.
@@ -188,8 +188,8 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 400, ..ProptestConfig::default() })]
 
     #[test]
-    fn ac2_commands_never_panic(cmds in prop::collection::vec(command_strategy(), 1..6)) {
-        let mut app = fresh_app("t074-cmds");
+    fn commands_never_panic(cmds in prop::collection::vec(command_strategy(), 1..6)) {
+        let mut app = fresh_app("cmds");
         for c in &cmds {
             app.run_command(c);
             let st = app.status();
@@ -199,18 +199,18 @@ proptest! {
     }
 
     #[test]
-    fn ac2_raw_lines_never_panic(line in "\\PC{0,40}") {
+    fn raw_lines_never_panic(line in "\\PC{0,40}") {
         let first = line.split_whitespace().next().unwrap_or("");
         prop_assume!(!EXCLUDED.contains(&first));
-        let mut app = fresh_app("t074-raw");
+        let mut app = fresh_app("raw");
         app.run_command(&line);
         let _ = app.layout(80);
     }
 }
 
 #[test]
-fn ac3_socket_survives_garbage() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t074-sock");
+fn socket_survives_garbage() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "sock");
     let garbage: Vec<Vec<u8>> = vec![
         b"".to_vec(),
         b"   ".to_vec(),
@@ -267,8 +267,8 @@ proptest! {
     #![proptest_config(ProptestConfig { cases: 120, ..ProptestConfig::default() })]
 
     #[test]
-    fn ac3_random_requests_get_a_reply(method in "[a-z.]{0,16}", params in json_strategy()) {
-        let live = Live::from_code("fn a() {}\n", "rs", "t074-rand");
+    fn random_requests_get_a_reply(method in "[a-z.]{0,16}", params in json_strategy()) {
+        let live = Live::from_code("fn a() {}\n", "rs", "rand");
         let resp = live.api("status", json!({}));
         prop_assert!(resp.error.is_none());
         let r = live.api(&method, params);
@@ -279,10 +279,10 @@ proptest! {
 }
 
 #[test]
-fn ac4_smoke_flag_draws_one_frame_and_exits_cleanly() {
+fn smoke_flag_draws_one_frame_and_exits_cleanly() {
     // A pty via Python (always on the runners): stdin is a pipe, so keys come
     // from /dev/tty. The frame must contain the code and the exit code be 0.
-    let dir = scratch("t074-smoke");
+    let dir = scratch("smoke");
     let stdout = tiza_qa::pty_script(
         &dir,
         "smoke.py",

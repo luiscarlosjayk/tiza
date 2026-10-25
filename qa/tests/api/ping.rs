@@ -1,4 +1,4 @@
-//! t-062 — the local socket: `ping` answers the plain string `"pong"`
+//! The local socket: `ping` answers the plain string `"pong"`
 //! (test step 2 of the card; `status` carries `protocol`), and the raw
 //! wire format is `{"id", "result"}` on one line.
 
@@ -10,7 +10,7 @@ use tiza_qa::Live;
 
 #[test]
 fn ping_answers_pong_on_the_wire() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t062-ping");
+    let live = Live::from_code("fn main() {}\n", "rs", "ping");
     assert_eq!(live.api_ok("ping", json!({})), json!("pong"));
     // Raw, like `printf … | nc -U $SOCKET`.
     let mut s = UnixStream::connect(&live.socket).unwrap();

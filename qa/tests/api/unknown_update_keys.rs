@@ -46,8 +46,8 @@ fn refused(live: &Live, params: Value) -> (String, String) {
 }
 
 #[test]
-fn step1_ac1_an_unknown_key_is_refused_and_named() {
-    let live = live("t235-unknown");
+fn an_unknown_key_is_refused_and_named() {
+    let live = live("unknown");
     let (code, msg) = refused(&live, json!({"id": "n0", "bogus": 1}));
     assert_eq!(code, "invalid_argument", "{msg}");
     assert!(msg.contains("unknown field `bogus`"), "{msg}");
@@ -58,8 +58,8 @@ fn step1_ac1_an_unknown_key_is_refused_and_named() {
 }
 
 #[test]
-fn step2_ac2_text_says_to_use_label() {
-    let live = live("t235-text");
+fn text_says_to_use_label() {
+    let live = live("text");
     let (code, msg) = refused(&live, json!({"id": "n0", "text": "x"}));
     assert_eq!(code, "invalid_argument", "{msg}");
     assert!(msg.contains("unknown field `text`"), "{msg}");
@@ -74,8 +74,8 @@ fn step2_ac2_text_says_to_use_label() {
 }
 
 #[test]
-fn corner_a_typo_names_the_closest_key() {
-    let live = live("t235-typo");
+fn a_typo_names_the_closest_key() {
+    let live = live("typo");
     let (_, msg) = refused(&live, json!({"id": "n0", "colour": "red"}));
     assert!(msg.contains("Did you mean `color`?"), "{msg}");
     // Far from every key: no guess.
@@ -84,15 +84,15 @@ fn corner_a_typo_names_the_closest_key() {
 }
 
 #[test]
-fn corner_id_alone_still_answers_ok() {
-    let live = live("t235-id");
+fn id_alone_still_answers_ok() {
+    let live = live("id");
     live.api_ok("annotation.update", json!({"id": "n0"}));
     assert_eq!(note_text(&live), "one");
 }
 
 #[test]
-fn step3_ac3_what_the_docs_name_keeps_working() {
-    let live = live("t235-docs");
+fn what_the_docs_name_keeps_working() {
+    let live = live("docs");
     // The agent guide's socket example: a move.
     live.api_ok(
         "annotation.update",
@@ -118,7 +118,7 @@ fn step3_ac3_what_the_docs_name_keeps_working() {
 }
 
 #[test]
-fn ac4_the_schema_refuses_other_keys() {
+fn the_schema_refuses_other_keys() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     let schema: Value = serde_json::from_str(
         &std::fs::read_to_string(root.join("schema/api.schema.json")).unwrap(),

@@ -1,4 +1,4 @@
-//! t-039 — `tiza scene put|patch` against the live instance.
+//! `tiza scene put|patch` against the live instance.
 //!
 //! Acceptance criteria:
 //! - AC1 `tiza scene put FILE` (or `-`) replaces the live document
@@ -43,14 +43,14 @@ fn patch(live: &Live, json: &str) -> std::process::Output {
 }
 
 #[test]
-fn ac1_put_replaces_the_document_and_undo_restores() {
-    let live = Live::from_code("fn old() {}\n", "rs", "t039-put");
+fn put_replaces_the_document_and_undo_restores() {
+    let live = Live::from_code("fn old() {}\n", "rs", "put");
     live.command("note 1 old note");
     let before_rev = live.api_ok("status", json!({}))["revision"]
         .as_u64()
         .unwrap();
 
-    // The t-050 fixture embeds its code; t-013's `script.ref.tiza`
+    // The export fixture embeds its code; `script.ref.tiza` of language detection
     // references `script` relatively: both must arrive whole.
     let r = put_file(&live, fixture("t-050/export.tiza").to_str().unwrap());
     assert!(r["revision"].as_u64().unwrap() > before_rev, "{r}");
@@ -86,7 +86,7 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
     assert_eq!(lang, "py", "language detected from the referenced file");
     assert!(embedded, "code travels embedded on the wire");
 
-    // Undo: back to the t-050 document, then to the original one.
+    // Undo: back to the export document, then to the original one.
     live.with(|a| a.undo());
     assert_eq!(live.with(|a| a.doc.code.len()), 6);
     live.with(|a| a.undo());
@@ -128,8 +128,8 @@ fn ac1_put_replaces_the_document_and_undo_restores() {
 }
 
 #[test]
-fn ac2_patch_merges_by_id_and_changes_only_what_it_names() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "t039-patch");
+fn patch_merges_by_id_and_changes_only_what_it_names() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "patch");
     live.command("note 1 first");
     live.command("note 2 second");
     live.command("title Old title");
@@ -196,7 +196,7 @@ fn ac2_patch_merges_by_id_and_changes_only_what_it_names() {
     );
 
     // `@file` and `-` are accepted.
-    let dir = scratch("t039-patchfile");
+    let dir = scratch("patchfile");
     let f = dir.join("p.json");
     std::fs::write(&f, r#"{"step": 1}"#).unwrap();
     let out = patch(&live, &format!("@{}", f.display()));
@@ -209,8 +209,8 @@ fn ac2_patch_merges_by_id_and_changes_only_what_it_names() {
 }
 
 #[test]
-fn ac3_errors_leave_the_document_untouched() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t039-errors");
+fn errors_leave_the_document_untouched() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "errors");
     live.command("note 1 keep");
     let snapshot = live.with(|a| a.doc.clone());
 
@@ -281,8 +281,8 @@ fn ac3_errors_leave_the_document_untouched() {
 }
 
 #[test]
-fn ac4_methods_are_published() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t039-schema");
+fn methods_are_published() {
+    let live = Live::from_code("fn a() {}\n", "rs", "schema");
     let methods = live.api_ok("api.methods", json!({}));
     let names: Vec<&str> = methods
         .as_array()
@@ -322,7 +322,7 @@ fn ac4_methods_are_published() {
     );
     // A round trip: scene.get → scene.put is a no-op on the content, and a
     // put that changes nothing is no change at all (same revision, no save;
-    // qa/tests/t-188.rs).
+    // the scene round trip tests).
     let before = live.api_ok("scene.get", json!({}));
     let r = live.api_ok("scene.put", json!({"document": before["document"]}));
     assert_eq!(r["revision"], before["revision"]);
@@ -342,8 +342,8 @@ fn ac4_methods_are_published() {
 // ------------------------------------------------------------ rework (owner QA)
 
 #[test]
-fn rework_undo_after_put_restores_the_step_too() {
-    let live = Live::from_code("fn old() {}\nfn more() {}\n", "rs", "t039-undo-step");
+fn undo_after_put_restores_the_step_too() {
+    let live = Live::from_code("fn old() {}\nfn more() {}\n", "rs", "undo-step");
     live.command("note 1 one");
     live.command("note 2 two step=3");
     live.api_ok("step.set", json!({"step": 0}));
@@ -372,8 +372,8 @@ fn rework_undo_after_put_restores_the_step_too() {
 }
 
 #[test]
-fn rework_cli_put_accepts_the_get_envelope_and_refuses_a_stray_file() {
-    let dir = scratch("t039-envelope");
+fn cli_put_accepts_the_get_envelope_and_refuses_a_stray_file() {
+    let dir = scratch("envelope");
     let src = dir.join("stack.rs");
     std::fs::write(&src, "fn a() {}\nfn b() {}\n").unwrap();
     let doc = fs::open(src.to_str().unwrap()).unwrap().document;
@@ -423,8 +423,8 @@ fn rework_cli_put_accepts_the_get_envelope_and_refuses_a_stray_file() {
 }
 
 #[test]
-fn rework_put_of_another_document_never_autosaves_over_the_open_file() {
-    let dir = scratch("t039-autosave");
+fn put_of_another_document_never_autosaves_over_the_open_file() {
+    let dir = scratch("autosave");
     let src = dir.join("stack.rs");
     std::fs::write(&src, "fn a() {}\nfn b() {}\n").unwrap();
     let doc = fs::open(src.to_str().unwrap()).unwrap().document;

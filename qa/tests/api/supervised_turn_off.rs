@@ -55,8 +55,8 @@ fn supervised(name: &str) -> Live {
 }
 
 #[test]
-fn ac1_turning_supervised_mode_off_waits_for_the_presenter() {
-    let live = supervised("t259-off");
+fn turning_supervised_mode_off_waits_for_the_presenter() {
+    let live = supervised("off");
     let rx = send(&live, "supervise.set", json!({"enabled": false}));
     wait_pending(&live, 1);
     assert!(
@@ -81,8 +81,8 @@ fn ac1_turning_supervised_mode_off_waits_for_the_presenter() {
 /// The accepted turn-off leaves the queue before it runs, so turning
 /// supervised mode off does not answer it a second time.
 #[test]
-fn ac1_the_accepted_turn_off_gets_one_answer() {
-    let live = supervised("t259-one");
+fn the_accepted_turn_off_gets_one_answer() {
+    let live = supervised("one");
     let (tx, rx) = mpsc::channel();
     let req: tiza_core::protocol::Request = serde_json::from_value(
         json!({"id": 7, "method": "supervise.set", "params": {"enabled": false}}),
@@ -100,8 +100,8 @@ fn ac1_the_accepted_turn_off_gets_one_answer() {
 }
 
 #[test]
-fn ac1_a_rejected_turn_off_leaves_supervised_mode_on() {
-    let live = supervised("t259-reject");
+fn a_rejected_turn_off_leaves_supervised_mode_on() {
+    let live = supervised("reject");
     let rx = send(&live, "supervise.set", json!({"enabled": false}));
     wait_pending(&live, 1);
     live.with(|a| a.reject_proposal()).unwrap();
@@ -111,8 +111,8 @@ fn ac1_a_rejected_turn_off_leaves_supervised_mode_on() {
 }
 
 #[test]
-fn ac1_turning_it_on_is_at_once() {
-    let live = Live::from_code(CODE, "rs", "t259-on");
+fn turning_it_on_is_at_once() {
+    let live = Live::from_code(CODE, "rs", "on");
     let r = send(&live, "supervise.set", json!({"enabled": true}))
         .recv_timeout(Duration::from_secs(10))
         .expect("turning on waited");
@@ -120,8 +120,8 @@ fn ac1_turning_it_on_is_at_once() {
 }
 
 #[test]
-fn ac2_accepting_the_turn_off_rejects_the_other_changes_with_the_reason() {
-    let live = supervised("t259-others");
+fn accepting_the_turn_off_rejects_the_other_changes_with_the_reason() {
+    let live = supervised("others");
     let add = send(
         &live,
         "annotation.add",
@@ -141,8 +141,8 @@ fn ac2_accepting_the_turn_off_rejects_the_other_changes_with_the_reason() {
 }
 
 #[test]
-fn ac2_the_presenter_turning_it_off_answers_a_waiting_turn_off_with_success() {
-    let live = supervised("t259-presenter");
+fn the_presenter_turning_it_off_answers_a_waiting_turn_off_with_success() {
+    let live = supervised("presenter");
     let add = send(
         &live,
         "annotation.add",
@@ -165,8 +165,8 @@ fn ac2_the_presenter_turning_it_off_answers_a_waiting_turn_off_with_success() {
 }
 
 #[test]
-fn ac3_wrong_parameters_get_their_error_at_once() {
-    let live = supervised("t259-params");
+fn wrong_parameters_get_their_error_at_once() {
+    let live = supervised("params");
     for bad in [
         Value::Null,
         json!([false]),
@@ -189,8 +189,8 @@ fn ac3_wrong_parameters_get_their_error_at_once() {
 }
 
 #[test]
-fn ac4_accepting_all_applies_the_other_changes_before_the_turn_off() {
-    let live = supervised("t259-all");
+fn accepting_all_applies_the_other_changes_before_the_turn_off() {
+    let live = supervised("all");
     let first = send(
         &live,
         "annotation.add",
@@ -217,8 +217,8 @@ fn ac4_accepting_all_applies_the_other_changes_before_the_turn_off() {
 }
 
 #[test]
-fn ac4_the_accepted_turn_off_says_how_many_changes_it_rejected() {
-    let live = supervised("t259-count");
+fn the_accepted_turn_off_says_how_many_changes_it_rejected() {
+    let live = supervised("count");
     let add = send(
         &live,
         "annotation.add",

@@ -1,4 +1,4 @@
-//! t-231 — `annotation.update` and `scene.patch` of an annotation that
+//! `annotation.update` and `scene.patch` of an annotation that
 //! already exists gave it the defaults of a new annotation.
 //!
 //! `Document::update` settled the file with the rule for a new annotation:
@@ -129,10 +129,14 @@ fn scene_annotation(live: &Live, id: &str) -> Value {
 
 /// The fixture opened from a scratch copy, at step 0.
 fn open(name: &str) -> (Live, PathBuf) {
-    let dir = scratch(&format!("t-231-{name}"));
+    let dir = scratch(name);
     std::fs::create_dir_all(dir.join("src")).unwrap();
     for f in ["main.rs", QUEUE, "demo.tiza"] {
-        std::fs::copy(fixture(&format!("t-231/{f}")), dir.join(f)).unwrap();
+        std::fs::copy(
+            fixture(&format!("api/update_keeps_step_and_file/{f}")),
+            dir.join(f),
+        )
+        .unwrap();
     }
     let tiza = dir.join("demo.tiza");
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
@@ -205,7 +209,7 @@ fn assert_n0_at_step_0(live: &Live, label: &str) {
 // ---------- AC1: updates ----------
 
 #[test]
-fn ac1_socket_update_of_the_label_keeps_step_and_file() {
+fn socket_update_of_the_label_keeps_step_and_file() {
     let (live, tiza) = open("ac1-socket");
     let r = live.api_ok("annotation.update", json!({"id": "m5", "label": "moved!"}));
     assert_eq!(r["step"], 5, "{r}");
@@ -221,7 +225,7 @@ fn ac1_socket_update_of_the_label_keeps_step_and_file() {
 }
 
 #[test]
-fn ac1_commands_keep_step_and_file() {
+fn commands_keep_step_and_file() {
     let (live, tiza) = open("ac1-commands");
     for cmd in [
         "label m5 moved!",
@@ -249,7 +253,7 @@ fn ac1_commands_keep_step_and_file() {
 // ---------- AC2: scene.patch ----------
 
 #[test]
-fn ac2_patch_of_an_existing_id_keeps_its_step_and_file() {
+fn patch_of_an_existing_id_keeps_its_step_and_file() {
     let (live, tiza) = open("ac2-existing");
     // Sent back as scene.get gives them.
     let n0 = scene_annotation(&live, "n0");
@@ -276,7 +280,7 @@ fn ac2_patch_of_an_existing_id_keeps_its_step_and_file() {
 }
 
 #[test]
-fn ac2_patch_of_a_new_id_takes_the_defaults() {
+fn patch_of_a_new_id_takes_the_defaults() {
     let (live, tiza) = open("ac2-new");
     let r = live.api_ok(
         "scene.patch",
@@ -296,7 +300,7 @@ fn ac2_patch_of_a_new_id_takes_the_defaults() {
 // ---------- AC3: adding does not change ----------
 
 #[test]
-fn ac3_adding_takes_the_defaults_as_before() {
+fn adding_takes_the_defaults_as_before() {
     let (live, tiza) = open("ac3");
     let mut expected = authored();
     let r = live.api_ok(
@@ -339,7 +343,7 @@ fn ac3_adding_takes_the_defaults_as_before() {
 // ---------- AC4: an explicit file or step ----------
 
 #[test]
-fn ac4_update_with_an_explicit_file_or_step() {
+fn update_with_an_explicit_file_or_step() {
     let (live, tiza) = open("ac4-update");
     live.api_ok("annotation.update", json!({"id": "m5", "file": QUEUE}));
     assert_places(
@@ -374,7 +378,7 @@ fn ac4_update_with_an_explicit_file_or_step() {
 }
 
 #[test]
-fn ac4_patch_with_an_explicit_file() {
+fn patch_with_an_explicit_file() {
     let (live, tiza) = open("ac4-patch");
     let mut m5 = scene_annotation(&live, "m5");
     m5["file"] = json!(QUEUE);
@@ -403,7 +407,7 @@ fn ac4_patch_with_an_explicit_file() {
 // ---------- corner cases ----------
 
 #[test]
-fn corner_a_line_only_the_linked_file_has_is_checked_on_the_annotations_file() {
+fn a_line_only_the_linked_file_has_is_checked_on_the_annotations_file() {
     let (live, tiza) = open("corner-line");
     // L12 is in src/queue.rs (13 lines), not in main.rs (10 lines).
     let e = refused(
@@ -433,7 +437,7 @@ fn corner_a_line_only_the_linked_file_has_is_checked_on_the_annotations_file() {
 }
 
 #[test]
-fn corner_file_null_in_an_update_is_the_main_file() {
+fn file_null_in_an_update_is_the_main_file() {
     let (live, tiza) = open("corner-null");
     goto(&live, 3);
     let r = live.api_ok("annotation.update", json!({"id": "q3", "file": null}));
@@ -507,7 +511,7 @@ fn assert_drawn_only_at(live: &Live, label: &str, step: u64, drawn: u64) {
 }
 
 #[test]
-fn ac1_keys_plus_and_minus_name_the_file_not_shown() {
+fn keys_plus_and_minus_name_the_file_not_shown() {
     let (live, tiza) = open("h1-keys");
     // The main file: n0 at step 2, `+` takes it to step 3 (src/queue.rs).
     live.api_ok("annotation.update", json!({"id": "n0", "step": 2}));
@@ -552,7 +556,7 @@ fn ac1_keys_plus_and_minus_name_the_file_not_shown() {
 }
 
 #[test]
-fn ac1_step_command_names_the_file_not_shown() {
+fn step_command_names_the_file_not_shown() {
     let (live, tiza) = open("h1-step");
     live.command("step n0 3");
     assert_eq!(info(&live), "n0 → step 3 (main.rs, not shown at step 3)");
@@ -576,7 +580,7 @@ fn ac1_step_command_names_the_file_not_shown() {
 }
 
 #[test]
-fn ac1_socket_update_of_the_step_names_the_file_not_shown() {
+fn socket_update_of_the_step_names_the_file_not_shown() {
     let (live, tiza) = open("h1-socket");
     goto(&live, 2);
     let r = live.api_ok("annotation.update", json!({"id": "n0", "step": 3}));
@@ -605,7 +609,7 @@ fn ac1_socket_update_of_the_step_names_the_file_not_shown() {
 }
 
 #[test]
-fn ac1_mcp_update_of_the_step_names_the_file_not_shown() {
+fn mcp_update_of_the_step_names_the_file_not_shown() {
     let (live, tiza) = open("h1-mcp");
     goto(&live, 2);
     let mut mcp = McpClient::start(&live.socket);
@@ -636,7 +640,7 @@ fn ac1_mcp_update_of_the_step_names_the_file_not_shown() {
 // ---------- H2: a patch without `step` ----------
 
 #[test]
-fn ac2_patch_of_an_existing_id_without_step_keeps_its_step() {
+fn patch_of_an_existing_id_without_step_keeps_its_step() {
     let (live, tiza) = open("h2");
     live.api_ok(
         "scene.patch",
@@ -664,7 +668,7 @@ fn ac2_patch_of_an_existing_id_without_step_keeps_its_step() {
 }
 
 #[test]
-fn ac2_patch_puts_a_replaced_annotation_last() {
+fn patch_puts_a_replaced_annotation_last() {
     let (live, tiza) = open("h2-order");
     let n0 = scene_annotation(&live, "n0");
     live.api_ok("scene.patch", json!({"annotations": [n0]}));
@@ -701,7 +705,7 @@ fn aliases(tiza: &Path) -> (Vec<String>, Vec<String>) {
 }
 
 #[test]
-fn ac4_update_takes_the_aliases_of_file() {
+fn update_takes_the_aliases_of_file() {
     let (live, tiza) = open("h4-update");
     let (good, bad) = aliases(&tiza);
     for f in &good {
@@ -722,7 +726,7 @@ fn ac4_update_takes_the_aliases_of_file() {
 }
 
 #[test]
-fn ac4_patch_takes_the_aliases_of_file() {
+fn patch_takes_the_aliases_of_file() {
     let (live, tiza) = open("h4-patch");
     let (good, bad) = aliases(&tiza);
     for (i, f) in good.iter().enumerate() {
@@ -753,7 +757,7 @@ fn ac4_patch_takes_the_aliases_of_file() {
 // ---------- H5: the two meanings of `file: null` ----------
 
 #[test]
-fn corner_file_null_in_a_patch_is_checked_on_the_main_file() {
+fn file_null_in_a_patch_is_checked_on_the_main_file() {
     let (live, tiza) = open("h5-patch-null");
     // q3 on L12, a line only src/queue.rs has.
     live.api_ok(
@@ -776,7 +780,7 @@ fn corner_file_null_in_a_patch_is_checked_on_the_main_file() {
 }
 
 #[test]
-fn corner_file_null_in_an_add_or_a_new_id_is_the_file_shown_at_its_step() {
+fn file_null_in_an_add_or_a_new_id_is_the_file_shown_at_its_step() {
     let (live, tiza) = open("h5-new-null");
     live.api_ok(
         "annotation.add",

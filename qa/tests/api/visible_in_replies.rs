@@ -50,7 +50,7 @@ const ENV: &str = "DATABASE_URL=postgres://app:s3cr3t-pass@db.internal:5432/app\
 /// label under a line starts 23 columns in: up to 24 columns it has no room
 /// and is left out, from 25 it is cut with …, from 35 `secret token` is
 /// whole under its line, and from 97 the labels go to the margin. (Until
-/// t-201 the scenario was a callout's block on L1 that took the margin rows
+/// the margin callouts the scenario was a callout's block on L1 that took the margin rows
 /// of L2 and L3 at 100 columns; since then those labels go under their
 /// line, so a label has no room only where the code itself leaves none.)
 fn opened(name: &str) -> (Live, std::path::PathBuf) {
@@ -128,9 +128,9 @@ fn check_findings(tiza: &std::path::Path, width: usize) -> Vec<(String, bool, u6
 }
 
 #[test]
-fn ac1_ac4_a_note_with_no_room_is_not_visible() {
+fn a_note_with_no_room_is_not_visible() {
     // Test step 1.
-    let (live, tiza) = opened("t171-no-room");
+    let (live, tiza) = opened("no-room");
     terminal(&live, 26);
     let r = add(
         &live,
@@ -154,9 +154,9 @@ fn ac1_ac4_a_note_with_no_room_is_not_visible() {
 }
 
 #[test]
-fn ac1_widened_until_drawn_the_update_says_visible() {
+fn widened_until_drawn_the_update_says_visible() {
     // Test step 2.
-    let (live, tiza) = opened("t171-widen");
+    let (live, tiza) = opened("widen");
     terminal(&live, 26);
     let r = add(
         &live,
@@ -181,10 +181,10 @@ fn ac1_widened_until_drawn_the_update_says_visible() {
 }
 
 #[test]
-fn ac2_a_clipped_label_stays_visible_and_says_so() {
+fn a_clipped_label_stays_visible_and_says_so() {
     // Test step 3: a long note on L3 in the margin, cut with … at 120
     // columns.
-    let (live, tiza) = opened("t171-clipped");
+    let (live, tiza) = opened("clipped");
     terminal(&live, 122);
     let r = add(
         &live,
@@ -200,9 +200,9 @@ fn ac2_a_clipped_label_stays_visible_and_says_so() {
 }
 
 #[test]
-fn ac2_a_highlight_whose_label_has_no_room_is_still_drawn() {
+fn a_highlight_whose_label_has_no_room_is_still_drawn() {
     // The highlight is drawn; only its label is not.
-    let (live, tiza) = opened("t171-highlight");
+    let (live, tiza) = opened("highlight");
     terminal(&live, 26);
     let r = add(
         &live,
@@ -218,8 +218,8 @@ fn ac2_a_highlight_whose_label_has_no_room_is_still_drawn() {
 }
 
 #[test]
-fn ac1_the_mcp_reply_says_it() {
-    let (live, _tiza) = opened("t171-mcp");
+fn the_mcp_reply_says_it() {
+    let (live, _tiza) = opened("mcp");
     terminal(&live, 26);
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("add_note", json!({"line": 2, "text": "secret token"}));
@@ -232,8 +232,8 @@ fn ac1_the_mcp_reply_says_it() {
 }
 
 #[test]
-fn ac3_the_bar_says_it() {
-    let (live, _tiza) = opened("t171-bar");
+fn the_bar_says_it() {
+    let (live, _tiza) = opened("bar");
     terminal(&live, 26);
     let r = add(
         &live,
@@ -250,8 +250,8 @@ fn ac3_the_bar_says_it() {
 }
 
 #[test]
-fn ac1_a_note_that_fits_is_visible_as_before() {
-    let (live, _tiza) = opened("t171-fits");
+fn a_note_that_fits_is_visible_as_before() {
+    let (live, _tiza) = opened("fits");
     terminal(&live, 122);
     let r = add(&live, json!({"type": "note", "line": 3, "text": "info"}));
     assert_eq!(r["visible"], true, "{r}");
@@ -269,8 +269,8 @@ fn ac1_a_note_that_fits_is_visible_as_before() {
 }
 
 #[test]
-fn corner_presentation_mode_follows_the_same_rule() {
-    let (live, _tiza) = opened("t171-present");
+fn presentation_mode_follows_the_same_rule() {
+    let (live, _tiza) = opened("present");
     live.with(|app| {
         app.size = (26, 30);
         app.set_present(true);
@@ -288,8 +288,8 @@ fn corner_presentation_mode_follows_the_same_rule() {
 }
 
 #[test]
-fn corner_no_terminal_size_uses_the_default_width_and_names_it() {
-    let (live, _tiza) = opened("t171-headless");
+fn no_terminal_size_uses_the_default_width_and_names_it() {
+    let (live, _tiza) = opened("headless");
     live.with(|app| app.size = (0, 0));
     assert_eq!(live.with(|app| app.screen_width()), 100);
     // At 100 the labels are in the margin; this one, on the last line,
@@ -324,7 +324,7 @@ fn verdict(r: &Value) -> (Option<bool>, Option<usize>) {
 }
 
 #[test]
-fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
+fn a_later_step_with_arrows_the_reply_is_what_check_says() {
     // Arrows at step 2 make the take keep room for their rails at step 1
     // too, where the authoring screen does not: the reply follows the take.
     let mut doc = base_doc();
@@ -333,7 +333,7 @@ fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
         json!({"id": "s2", "step": 2, "type": "arrow", "from": {"line": 2, "col": 0}, "to": {"line": 4, "col": 0}}),
         json!({"id": "s3", "step": 2, "type": "arrow", "from": {"line": 3, "col": 0}, "to": {"line": 1, "col": 0}}),
     ]);
-    let (live, tiza) = opened_with("t171-arrows", doc);
+    let (live, tiza) = opened_with("arrows", doc);
     terminal(&live, 102);
     let r = add(
         &live,
@@ -362,7 +362,7 @@ fn rev_a_later_step_with_arrows_the_reply_is_what_check_says() {
 }
 
 #[test]
-fn rev_a_note_added_while_its_step_is_typed() {
+fn a_note_added_while_its_step_is_typed() {
     // Right after `next_step` the step's typing runs: the reply is about
     // the step once typed, as the screen shows it then.
     let mut doc = base_doc();
@@ -371,7 +371,7 @@ fn rev_a_note_added_while_its_step_is_typed() {
         "at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
         "content": "PORT=9090", "typing": "char", "speed_ms": 1000
     }]);
-    let (live, tiza) = opened_with("t171-typing", doc);
+    let (live, tiza) = opened_with("typing", doc);
     terminal(&live, 26);
     live.api_ok("step.next", json!({}));
     assert!(live.with(|app| app.typing.is_some()), "the step is typing");
@@ -386,8 +386,8 @@ fn rev_a_note_added_while_its_step_is_typed() {
 }
 
 #[test]
-fn rev_a_terminal_narrower_than_check_takes_names_a_width_it_takes() {
-    let (live, tiza) = opened("t171-tiny");
+fn a_terminal_narrower_than_check_takes_names_a_width_it_takes() {
+    let (live, tiza) = opened("tiny");
     terminal(&live, 12);
     let r = add(
         &live,
@@ -404,9 +404,9 @@ fn rev_a_terminal_narrower_than_check_takes_names_a_width_it_takes() {
 }
 
 #[test]
-fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
+fn a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
     // `press n` would never show the note that has no room.
-    let (live, _tiza) = opened("t171-group");
+    let (live, _tiza) = opened("group");
     terminal(&live, 26);
     add(
         &live,
@@ -422,10 +422,10 @@ fn rev_a_grouped_notice_with_a_note_that_has_no_room_has_no_step_hint() {
 }
 
 #[test]
-fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
+fn check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
     // At 88 columns the labels go beside the code of L4, one after the
     // other. At step 1 `a2` comes second and is cut with …; at step 2 `a0`
-    // comes first and leaves `a2` no room. (Until t-201 a callout's block at
+    // comes first and leaves `a2` no room. (Until the margin callouts a callout's block at
     // step 2 took the note's row; its labels now go under their line.)
     let mut doc = base_doc();
     doc["annotations"].as_array_mut().unwrap().extend([
@@ -437,7 +437,7 @@ fn rev_check_keeps_a_label_cut_at_one_step_apart_from_it_left_out_at_another() {
             "to": {"line": 4, "col": 0}, "label": "the database answers on another port"}),
     ]);
     doc["step"] = json!(2);
-    let (live, tiza) = opened_with("t171-steps", doc);
+    let (live, tiza) = opened_with("steps", doc);
     terminal(&live, 90);
     let mut findings: Vec<(bool, u64)> = check_findings(&tiza, 88)
         .into_iter()

@@ -43,7 +43,11 @@ fn typed() -> Value {
 
 fn opened(name: &str, doc: &Value) -> (Live, std::path::PathBuf) {
     let dir = scratch(name);
-    std::fs::copy(fixture("t-216/four.env"), dir.join("four.env")).unwrap();
+    std::fs::copy(
+        fixture("api/render_text_width/four.env"),
+        dir.join("four.env"),
+    )
+    .unwrap();
     let path = dir.join("four.env.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
     let d = tiza_core::fs::load_document(&path).unwrap();
@@ -73,9 +77,9 @@ fn live_text(live: &Live, width: usize) -> String {
 }
 
 #[test]
-fn ac1_ac3_authoring_and_presenting_give_the_export_at_that_width() {
+fn authoring_and_presenting_give_the_export_at_that_width() {
     for present in [false, true] {
-        let (live, path) = opened(&format!("t224-{present}"), &lanes());
+        let (live, path) = opened(&present.to_string(), &lanes());
         if present {
             live.with(|a| a.set_present(true));
         }
@@ -96,8 +100,8 @@ fn ac1_ac3_authoring_and_presenting_give_the_export_at_that_width() {
 }
 
 #[test]
-fn ac1_during_a_typing_animation() {
-    let (live, path) = opened("t224-typing", &typed());
+fn during_a_typing_animation() {
+    let (live, path) = opened("typing", &typed());
     live.api_ok("step.next", json!({}));
     assert!(live.with(|a| a.typing.is_some()), "the step is typing");
     for width in [90usize, 117] {

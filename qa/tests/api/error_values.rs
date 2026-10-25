@@ -1,4 +1,4 @@
-//! t-189 — serde «invalid type» errors hid what the agent sent:
+//! Serde «invalid type» errors hid what the agent sent:
 //! `invalid type: string «…», expected u32` instead of `"three"`.
 //!
 //! Acceptance criteria:
@@ -7,7 +7,7 @@
 //!   …), as serde writes it: `invalid type: string "three", expected u32`.
 //! - AC2 Closed values stay as they are: never repeated over the socket or
 //!   the MCP, the list of valid names instead.
-//! - AC3 This file; the t-167 test that asserted no value for MCP
+//! - AC3 This file; the old test that asserted no value for MCP
 //!   arguments that do not deserialize now expects the wrong-typed value
 //!   named (the others assert «…» for closed values, which keep it);
 //!   CHANGELOG (Changed).
@@ -17,8 +17,8 @@
 //! `{:?}`), never raw. A non-UTF-8 file does not load at all (`stream did
 //! not contain valid UTF-8`) and quotes nothing.
 //!
-//! From t-167 (moved here when its no-echo checks of the redact era
-//! went): MCP arguments of the wrong type name the value, serde's list of
+//! From the tests of error values (moved here when their no-echo checks
+//! of the redact era went): MCP arguments of the wrong type name the value, serde's list of
 //! valid names stays whole, and `focus.set` checks its lines.
 //!
 //! Review (`rev_*`): the cut cannot be dodged by a value that says
@@ -37,9 +37,9 @@ fn error_message(live: &Live, method: &str, params: serde_json::Value) -> String
 }
 
 #[test]
-fn ac1_socket_names_the_value_sent() {
+fn socket_names_the_value_sent() {
     // Test step 1.
-    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "t189-socket");
+    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "socket");
     let m = error_message(
         &live,
         "annotation.add",
@@ -52,8 +52,8 @@ fn ac1_socket_names_the_value_sent() {
 }
 
 #[test]
-fn ac1_corner_a_long_value_is_cut_and_controls_are_escaped() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t189-long");
+fn a_long_value_is_cut_and_controls_are_escaped() {
+    let live = Live::from_code("fn main() {}\n", "rs", "long");
     let value = format!("{}\n\u{1b}[31m", "x".repeat(60));
     let m = error_message(
         &live,
@@ -76,8 +76,8 @@ fn ac1_corner_a_long_value_is_cut_and_controls_are_escaped() {
 }
 
 #[test]
-fn ac1_loading_names_the_value_and_cuts_a_long_one() {
-    let dir = scratch("t189-load");
+fn loading_names_the_value_and_cuts_a_long_one() {
+    let dir = scratch("load");
     let file = dir.join("bad.tiza");
     let doc = |line: serde_json::Value| {
         json!({
@@ -116,8 +116,8 @@ fn ac1_loading_names_the_value_and_cuts_a_long_one() {
 }
 
 #[test]
-fn rev_the_cut_cannot_be_dodged() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t189-rev-dodge");
+fn the_cut_cannot_be_dodged() {
+    let live = Live::from_code("fn main() {}\n", "rs", "rev-dodge");
     for tail in ["unknown variant `x", "\", expected u32 and more"] {
         let value = format!("{}{tail}", "A".repeat(300));
         let m = error_message(
@@ -131,8 +131,8 @@ fn rev_the_cut_cannot_be_dodged() {
 }
 
 #[test]
-fn rev_a_load_error_is_printed_once() {
-    let dir = scratch("t189-rev-once");
+fn a_load_error_is_printed_once() {
+    let dir = scratch("rev-once");
     let file = dir.join("long.tiza");
     let doc = json!({
         "schema": 1, "source": {"language": "rs"}, "code": ["fn main() {}"], "step": 0,
@@ -149,7 +149,7 @@ fn rev_a_load_error_is_printed_once() {
     assert_eq!(err.matches("invalid type").count(), 1, "{err}");
 }
 
-// ---------- From t-167 ----------
+// ---------- Wrong types in MCP arguments ----------
 
 const VALUE: &str = "abc123Q7valueXyz789";
 
@@ -248,14 +248,14 @@ fn live_valued(value: &str, name: &str) -> Live {
 }
 
 #[test]
-fn review2_mcp_parameters_of_the_wrong_type_name_the_value() {
-    // Since t-189 an `invalid type` names the value sent (it is not a
+fn mcp_parameters_of_the_wrong_type_name_the_value() {
+    // An `invalid type` names the value sent (it is not a
     // closed value): `invalid type: string "…", expected u32`. Any other
     // message that does not deserialize still quotes nothing.
-    let live = live("t167-r2");
+    let live = live("r2");
     let mut mcp = McpClient::start(&live.socket);
     // A string where an object or a line number goes is a wrong type:
-    // named since t-189.
+    // named.
     for (tool, args) in [
         ("highlight", json!({"at": "Q7valueXyz789"})),
         ("add_box", json!({"from_line": "Q7valueXyz789"})),
@@ -273,9 +273,9 @@ fn review2_mcp_parameters_of_the_wrong_type_name_the_value() {
 }
 
 #[test]
-fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
-    let dir = scratch("t167-rw2");
-    let target = live("t167-rw2-live");
+fn an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
+    let dir = scratch("rw2");
+    let target = live("rw2-live");
     let types =
         "expected one of `highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `spotlight`";
     let actions = "expected one of `code.patch`, `code.link`, `cursor`, `select`, `wait`";
@@ -319,7 +319,7 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
         anns.extend(ann);
         let p = write(&dir, name, &doc);
         let ps = p.to_str().unwrap();
-        // On load the value is quoted as written (t-047); the list stays.
+        // On load the value is quoted as written; the list stays.
         let e = stderr(&["render", ps, "--out", "-"]);
         assert!(e.contains(want), "{name}: render: {e}");
         let out = tiza(&["check", ps]);
@@ -336,7 +336,7 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
         assert_clean(&format!("{name}: scene.put"), &msg);
     }
     // The patch says `box` itself: it stays in the list.
-    let live = live("t167-rw2-socket");
+    let live = live("rw2-socket");
     let (_, msg) = err(
         &live,
         "scene.patch",
@@ -350,8 +350,8 @@ fn rework2_an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
 }
 
 #[test]
-fn review2_r3_focus_set_refuses_lines_that_are_not_line_numbers() {
-    let live = live_valued("kq48213977zx", "t167-rw2-3");
+fn focus_set_refuses_lines_that_are_not_line_numbers() {
+    let live = live_valued("kq48213977zx", "rw2-3");
     live.api_ok("focus.set", json!({"from_line": 2, "to_line": 3}));
     for p in [
         json!({"from_line": -1, "to_line": 3}),

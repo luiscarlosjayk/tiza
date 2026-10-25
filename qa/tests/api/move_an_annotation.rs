@@ -1,4 +1,4 @@
-//! t-093 — `update_annotation` / `annotation.update {move}` moves an annotation.
+//! `update_annotation` / `annotation.update {move}` moves an annotation.
 //!
 //! Acceptance criteria:
 //! - AC1 `move.at` re-anchors a highlight, mark or note by `find`/line/col,
@@ -16,15 +16,19 @@ use tiza_qa::{Live, fixture, scratch};
 
 fn live(name: &str) -> Live {
     let dir = scratch(name);
-    let doc = tiza_core::fs::open(fixture("t-093/marks.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
+    let doc = tiza_core::fs::open(
+        fixture("api/move_an_annotation/marks.tiza")
+            .to_str()
+            .unwrap(),
+    )
+    .unwrap()
+    .document;
     Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"))
 }
 
 #[test]
-fn ac1_move_a_mark_by_text_keeps_everything_else() {
-    let l = live("t093-ac1");
+fn move_a_mark_by_text_keeps_everything_else() {
+    let l = live("ac1");
     let before = l.api_ok("status", json!({}))["revision"].as_u64().unwrap();
     l.api_ok(
         "annotation.update",
@@ -42,8 +46,8 @@ fn ac1_move_a_mark_by_text_keeps_everything_else() {
 }
 
 #[test]
-fn ac2_arrows_boxes_and_notes_move_by_their_own_fields() {
-    let l = live("t093-ac2");
+fn arrows_boxes_and_notes_move_by_their_own_fields() {
+    let l = live("ac2");
     l.api_ok(
         "annotation.update",
         json!({"id": "a1", "move": {"to": {"find": "println!"}}}),
@@ -70,8 +74,8 @@ fn ac2_arrows_boxes_and_notes_move_by_their_own_fields() {
 }
 
 #[test]
-fn ac3_inapplicable_fields_fail_and_change_nothing() {
-    let l = live("t093-ac3");
+fn inapplicable_fields_fail_and_change_nothing() {
+    let l = live("ac3");
     let before = l.api_ok("scene.get", json!({}));
     for (id, mv) in [
         ("m1", json!({"from_line": 2})),
@@ -92,8 +96,8 @@ fn ac3_inapplicable_fields_fail_and_change_nothing() {
 }
 
 #[test]
-fn ac4_invalid_results_are_rolled_back() {
-    let l = live("t093-ac4");
+fn invalid_results_are_rolled_back() {
+    let l = live("ac4");
     let r = l.api(
         "annotation.update",
         json!({"id": "m1", "move": {"at": {"find": "no such text"}}}),

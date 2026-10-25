@@ -1,4 +1,4 @@
-//! t-097 — Range anchors by two text markers (`find_start` / `find_end`):
+//! Range anchors by two text markers (`find_start` / `find_end`):
 //! the terminal version of Demo Time placeholders.
 //!
 //! Acceptance criteria:
@@ -7,7 +7,7 @@
 //!   the MCP tools (`add_box`, `add_callout`, `add_spotlight`); the range is
 //!   resolved at creation (first occurrence of the start anywhere, first
 //!   occurrence of the end at or after it) and stored as lines **plus** the
-//!   markers (`markers: {start, end}` on the annotation) for t-098.
+//!   markers (`markers: {start, end}` on the annotation) for the moves.
 //! - AC2 A missing marker fails with `text_not_found` naming it (`start
 //!   marker «…»` / `end marker «…» (after line N)`); an end marker that only
 //!   exists before the start is `invalid_argument`; markers mixed with line
@@ -27,7 +27,11 @@ use tiza_qa::{Live, McpClient, fixture};
 fn live(name: &str) -> Live {
     let dir = tiza_qa::scratch(name);
     // A copy next to the sidecar, so the saved document resolves its code.
-    std::fs::copy(fixture("t-097/markers.rs"), dir.join("markers.rs")).unwrap();
+    std::fs::copy(
+        fixture("api/range_markers/markers.rs"),
+        dir.join("markers.rs"),
+    )
+    .unwrap();
     let doc = tiza_core::fs::open(dir.join("markers.rs").to_str().unwrap())
         .unwrap()
         .document;
@@ -56,8 +60,8 @@ fn markers_of(live: &Live, id: &str) -> Option<(String, String)> {
 }
 
 #[test]
-fn ac1_socket_and_mcp_resolve_markers_and_keep_them() {
-    let l = live("t097-socket");
+fn socket_and_mcp_resolve_markers_and_keep_them() {
+    let l = live("socket");
     let r = l.api_ok(
         "annotation.add",
         json!({"id": "b", "type": "box", "find_start": "// begin", "find_end": "// end", "label": "ownership"}),
@@ -124,8 +128,8 @@ fn ac1_socket_and_mcp_resolve_markers_and_keep_them() {
 }
 
 #[test]
-fn ac2_errors_name_the_marker() {
-    let l = live("t097-errors");
+fn errors_name_the_marker() {
+    let l = live("errors");
     let e = l
         .api(
             "annotation.add",
@@ -202,8 +206,8 @@ fn ac2_errors_name_the_marker() {
 }
 
 #[test]
-fn ac3_tui_commands() {
-    let l = live("t097-tui");
+fn tui_commands() {
+    let l = live("tui");
     l.command("box @'// begin'..@'// end' ownership");
     let (msg, err) = l.message().unwrap();
     assert!(!err && msg.ends_with(": box 2-5"), "{msg}");
@@ -252,8 +256,8 @@ fn ac3_tui_commands() {
 }
 
 #[test]
-fn ac4_scene_list_round_trip_and_move_drops_markers() {
-    let l = live("t097-list");
+fn scene_list_round_trip_and_move_drops_markers() {
+    let l = live("list");
     l.api_ok(
         "annotation.add",
         json!({"id": "b", "type": "box", "find_start": "// begin", "find_end": "// end", "label": "x"}),
@@ -310,8 +314,8 @@ fn ac4_scene_list_round_trip_and_move_drops_markers() {
 }
 
 #[test]
-fn ac5_repeated_marker_text_and_same_line() {
-    let l = live("t097-repeat");
+fn repeated_marker_text_and_same_line() {
+    let l = live("repeat");
     // `// begin` appears on lines 2, 6 and 13: the start is the first one;
     // an end of `// begin` is the first occurrence AFTER the start (line 6).
     l.api_ok(

@@ -1,4 +1,4 @@
-//! t-194 — Annotations whose file is not shown at their step are said, and
+//! Annotations whose file is not shown at their step are said, and
 //! an insert at a window's first line stays visible.
 //!
 //! Acceptance criteria:
@@ -179,7 +179,7 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     for r in [&mut live_report, &mut disk_report] {
         r.as_object_mut().unwrap().remove("narrower");
     }
-    // The live reply also names the revision it checked (t-210).
+    // The live reply also names the revision it checked.
     live_report.as_object_mut().unwrap().remove("revision");
     assert_eq!(live_report, disk_report, "{what}: live check vs fresh load");
     let dir = tiza.parent().unwrap();
@@ -208,7 +208,7 @@ fn window(scene: &Value, index: usize) -> Value {
 /// n3 (report.rs, step 4): the reply and `check` name them; get → put is
 /// accepted; deleting the link shows them again and says nothing.
 #[test]
-fn ac1_ac2_a_link_at_step_4_of_tally_tour_names_k2_b4_n3() {
+fn a_link_at_step_4_of_tally_tour_names_k2_b4_n3() {
     let dir = examples_copy("tally-link");
     let tiza = dir.join("tally-tour.tiza");
     let live = open(&tiza);
@@ -242,7 +242,7 @@ fn ac1_ac2_a_link_at_step_4_of_tally_tour_names_k2_b4_n3() {
 /// link gives today's findings back. a6's file shows at steps 0-1: it is
 /// still said, since it is never drawn at its own step.
 #[test]
-fn ac1_ac2_a_link_at_step_4_of_stack_and_queue_names_a6() {
+fn a_link_at_step_4_of_stack_and_queue_names_a6() {
     let dir = examples_copy("stack-link");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -277,7 +277,7 @@ fn ac1_ac2_a_link_at_step_4_of_stack_and_queue_names_a6() {
 /// AC2 on the bar: `:link` at step 4 says the same warning before what it
 /// added.
 #[test]
-fn ac2_the_bar_says_it_for_link() {
+fn the_bar_says_it_for_link() {
     let dir = examples_copy("bar-link");
     let live = open(&dir.join("stack-and-queue.tiza"));
     live.api_ok("step.set", json!({"step": 4}));
@@ -296,7 +296,7 @@ fn ac2_the_bar_says_it_for_link() {
 /// step 4 showing queue.rs, the same state a new queue.rs link makes. It is
 /// accepted with the same warning, and `check` says the same.
 #[test]
-fn ac3_deleting_a_link_that_leaves_a_step_on_another_file_is_said_and_accepted() {
+fn deleting_a_link_that_leaves_a_step_on_another_file_is_said_and_accepted() {
     let dir = examples_copy("delete-step");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -326,7 +326,7 @@ fn ac3_deleting_a_link_that_leaves_a_step_on_another_file_is_said_and_accepted()
 /// load them); with another link to report.rs at a later step, the same
 /// deletion is accepted and says that step 4 no longer shows them.
 #[test]
-fn ac3_deleting_the_only_link_to_a_file_stays_refused_and_otherwise_warns() {
+fn deleting_the_only_link_to_a_file_stays_refused_and_otherwise_warns() {
     let dir = examples_copy("delete-file");
     let tiza = dir.join("tally-tour.tiza");
     let live = open(&tiza);
@@ -364,7 +364,7 @@ fn ac3_deleting_the_only_link_to_a_file_stays_refused_and_otherwise_warns() {
 /// line is drawn at step 5; deleting the insert gives 17-23 back. tally-tour
 /// the same on its main file (window 9-28 at step 5).
 #[test]
-fn ac4_an_insert_at_a_window_first_line_at_the_link_step_grows_the_window() {
+fn an_insert_at_a_window_first_line_at_the_link_step_grows_the_window() {
     let dir = examples_copy("grow");
     for (name, link_index, step, at, was, grown, line) in [
         (
@@ -416,7 +416,7 @@ fn ac4_an_insert_at_a_window_first_line_at_the_link_step_grows_the_window() {
 /// leaves the window as it is and pushes the step-2 box out, which the
 /// reply says.
 #[test]
-fn ac4_at_other_steps_the_window_is_carried_as_before() {
+fn at_other_steps_the_window_is_carried_as_before() {
     let dir = examples_copy("grow-other-steps");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -449,7 +449,7 @@ fn ac4_at_other_steps_the_window_is_carried_as_before() {
 /// A move that creates step 6 and pushes nothing out says nothing (it used
 /// to name a4 and a5, outside the step-5 zoom already).
 #[test]
-fn ac5_a_new_step_does_not_repeat_what_was_already_outside() {
+fn a_new_step_does_not_repeat_what_was_already_outside() {
     let dir = examples_copy("new-step");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -467,7 +467,7 @@ fn ac5_a_new_step_does_not_repeat_what_was_already_outside() {
 /// q2, a queue.rs note of a step that showed stack.rs) is not named, though
 /// the new window leaves it outside. a6, drawn at step 4 before, is.
 #[test]
-fn ac5_a_link_names_only_what_its_step_drew_before() {
+fn a_link_names_only_what_its_step_drew_before() {
     let dir = examples_copy("drawn-before");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -489,7 +489,7 @@ fn ac5_a_link_names_only_what_its_step_drew_before() {
 /// `code.file` names it) and `tally/src/main.rs:4-9`, never `stack.rs` or
 /// `main.rs`.
 #[test]
-fn ac5_one_file_label_in_the_warning_the_bar_and_check() {
+fn one_file_label_in_the_warning_the_bar_and_check() {
     let dir = examples_copy("labels");
     for (name, file, lines, ids, label) in [
         (
@@ -537,7 +537,7 @@ fn ac5_one_file_label_in_the_warning_the_bar_and_check() {
 /// shows later, never at its own step): still said. An annotation outside
 /// the window of its own file is `outside_window` only.
 #[test]
-fn corner_a_file_shown_only_at_other_steps_and_no_double_warning() {
+fn a_file_shown_only_at_other_steps_and_no_double_warning() {
     let dir = examples_copy("corners");
     let tiza = dir.join("stack-and-queue.tiza");
     let live = open(&tiza);
@@ -563,7 +563,7 @@ fn corner_a_file_shown_only_at_other_steps_and_no_double_warning() {
 /// Every example as shipped: no `not_shown` finding (AC1: their findings
 /// stay as they were).
 #[test]
-fn ac1_the_examples_have_no_annotation_of_a_file_their_step_does_not_show() {
+fn the_examples_have_no_annotation_of_a_file_their_step_does_not_show() {
     for e in std::fs::read_dir(example("")).unwrap() {
         let p = e.unwrap().path();
         if p.extension().is_some_and(|x| x == "tiza") {
