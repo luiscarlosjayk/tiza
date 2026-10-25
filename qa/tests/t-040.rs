@@ -171,14 +171,24 @@ fn ac4_examples_and_fixtures_match_the_schema_shape() {
     let doc: serde_json::Value = serde_json::from_str(&tiza_ok(&["schema", "document"])).unwrap();
     let variants = doc.to_string();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let files = std::fs::read_dir(root.join("../examples")).unwrap().chain(
-        std::fs::read_dir(root.join("fixtures"))
-            .unwrap()
-            .flat_map(|d| std::fs::read_dir(d.unwrap().path()).unwrap()),
-    );
+    // Every file under qa/fixtures/, at any depth.
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                walk(&p, out);
+            } else {
+                out.push(p);
+            }
+        }
+    }
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(root.join("../examples"))
+        .unwrap()
+        .map(|f| f.unwrap().path())
+        .collect();
+    walk(&root.join("fixtures"), &mut files);
     let mut n = 0;
-    for f in files {
-        let p = f.unwrap().path();
+    for p in files {
         if p.extension().and_then(|e| e.to_str()) != Some("tiza") {
             continue;
         }

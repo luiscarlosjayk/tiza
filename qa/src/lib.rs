@@ -167,6 +167,14 @@ type Job = Box<dyn FnOnce(&mut App) + Send>;
 impl Live {
     /// Opens `doc` (saved to `save_path` on autosave) and starts serving `socket`.
     pub fn open(doc: Document, save_path: PathBuf, socket: PathBuf) -> Live {
+        // A Unix socket path has room for 104 bytes on macOS: a long scratch
+        // name fails here and says what to change.
+        let len = socket.as_os_str().len();
+        assert!(
+            len < 100,
+            "the socket path has {len} bytes, 100 or more: {}; use a shorter scratch name",
+            socket.display()
+        );
         let (tx, rx) = mpsc::channel::<Job>();
         let sock = socket.clone();
         let (ready_tx, ready_rx) = mpsc::channel();

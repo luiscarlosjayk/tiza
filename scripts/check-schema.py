@@ -6,7 +6,7 @@ schema = json.load(open("schema/tiza.schema.json"))
 Draft202012Validator.check_schema(schema)
 v = Draft202012Validator(schema)
 bad = 0
-for f in sorted(glob.glob("examples/*.tiza") + glob.glob("qa/fixtures/*/*.tiza")):
+for f in sorted(glob.glob("examples/*.tiza") + glob.glob("qa/fixtures/**/*.tiza", recursive=True)):
     errs = list(v.iter_errors(json.load(open(f))))
     print(f, "OK" if not errs else "FAIL")
     for e in errs[:5]:
