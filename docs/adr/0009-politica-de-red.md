@@ -16,6 +16,8 @@ Today the workspace has no network dependency at all: `rmcp` is built with `tran
 
 > **The `tiza` binary that shows your code has no network dependencies and never opens a connection.** Its only I/O is your terminal, the files you name, the `.tiza` sidecar next to them, and a local Unix socket for agents (never TCP). Features that talk to the internet live in a separate crate and binary, are off unless you run them, and state what they send before they send it.
 
+Note (2026-10-25): the promise is about the network. The full list of local files, environment variables and processes is in [Files and environment](../reference/files-and-environment.md).
+
 ### The structure
 
 1. The core crates — `tiza-core`, `tiza-tui`, `tiza-export`, `tiza-mcp` and the `tiza` binary (`crates/tiza-cli`) as built by default — are **network-free**. `deny.toml` enforces it: the network crates are banned for the whole workspace today, and the ban stays on these crates for good.

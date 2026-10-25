@@ -77,6 +77,7 @@ These limits are rules for the writer. A QA test does not check them.
 | A callout | a warning about lost work, at most one on a page |
 
 - Write a callout as a quote with a bold label: `> **Warning:** …`. GitHub and mdBook both show it.
+- A warning can also be about a case that can show or send your files or data to another person.
 - Presentation mode hides the status bar. Do not tell the reader to look at the status bar while they present or record.
 - Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`, `N`, `ID`.
 - Do not put a literal value in a message table. When a literal value helps, put it in a code block after a line that starts with "For example".

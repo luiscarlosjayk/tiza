@@ -130,7 +130,7 @@ The same API is also on a local Unix socket and on the command line. Read [Conne
 
 ## What Tiza reads and writes
 
-The `tiza` binary has no network dependencies and never opens a network connection. It reads the files that you name. It writes the `.tiza` file next to them and the exports that you ask for. Agents connect through a local Unix socket, never through TCP. There is no telemetry and no update check. [What Tiza reads and writes](https://github.com/luiscarlosjayk/tiza/blob/main/docs/concepts/privacy-and-network.md) gives the full list.
+The `tiza` binary has no network dependencies and never opens a network connection. Agents connect through a local Unix socket, never through TCP. There is no telemetry and no update check. [Privacy and network](https://github.com/luiscarlosjayk/tiza/blob/main/docs/concepts/privacy-and-network.md) tells what stays on your computer. [Files and environment](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/files-and-environment.md) lists each file, environment variable and process that Tiza uses.
 
 ## Feedback and bugs
 
