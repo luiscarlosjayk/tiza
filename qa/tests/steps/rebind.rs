@@ -1,4 +1,4 @@
-//! t-199 — A `rebind` entry whose annotation is gone never stops a
+//! A `rebind` entry whose annotation is gone never stops a
 //! document from opening.
 //!
 //! Acceptance criteria:
@@ -129,11 +129,11 @@ fn saved_rebind(path: &Path) -> Value {
 }
 
 #[test]
-fn ac1_ac2_a_file_saved_broken_opens_renders_and_checks() {
+fn a_file_saved_broken_opens_renders_and_checks() {
     // Written by Tiza before the fix after the paste of step 1: a1 dropped,
     // the rebind kept. It used to fail with «rebind names unknown
     // annotation».
-    let file = fixture("t-199/saved-broken.tiza");
+    let file = fixture("steps/rebind/saved-broken.tiza");
     let f = file.to_str().unwrap();
     let doc = tiza_core::fs::load_document(&file).expect("it opens");
     // The move applies: step 2 shows the patched line.
@@ -163,7 +163,7 @@ fn ac1_ac2_a_file_saved_broken_opens_renders_and_checks() {
     );
 
     // `render --all-steps` draws every step and names the entry once.
-    let out_dir = scratch("t199-render").join("steps");
+    let out_dir = scratch("render").join("steps");
     let dir_arg = format!("{}/", out_dir.display());
     let (code, _, err) = run(&[
         "render",
@@ -181,7 +181,7 @@ fn ac1_ac2_a_file_saved_broken_opens_renders_and_checks() {
     assert!(step2.contains("n * 2"), "{step2}");
 
     // The TUI opens it and names it on the bar.
-    let (live, _) = live_doc(&std::fs::read_to_string(&file).unwrap(), "t199-open");
+    let (live, _) = live_doc(&std::fs::read_to_string(&file).unwrap(), "open");
     assert_eq!(stale_moves(&live), 0);
     let f = findings(&live);
     let w = ignored_findings(&f);
@@ -191,8 +191,8 @@ fn ac1_ac2_a_file_saved_broken_opens_renders_and_checks() {
 }
 
 #[test]
-fn ac3_ac4_a_paste_that_drops_a1_says_so_once_and_u_restores_it() {
-    let (live, save) = live_doc(DOC, "t199-paste");
+fn a_paste_that_drops_a1_says_so_once_and_u_restores_it() {
+    let (live, save) = live_doc(DOC, "paste");
     live.command("w");
     live.with(|app| app.replace_code(PASTED).unwrap());
     let (msg, err) = live.message().unwrap();
@@ -238,8 +238,8 @@ fn ac3_ac4_a_paste_that_drops_a1_says_so_once_and_u_restores_it() {
 }
 
 #[test]
-fn ac3_a_follow_reload_that_drops_a1_says_so() {
-    let dir = scratch("t199-follow");
+fn a_follow_reload_that_drops_a1_says_so() {
+    let dir = scratch("follow");
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     let code = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\n";
     std::fs::write(&src, code).unwrap();
@@ -278,8 +278,8 @@ fn ac3_a_follow_reload_that_drops_a1_says_so() {
 }
 
 #[test]
-fn corner_get_put_round_trip_keeps_the_ignored_entry() {
-    let (live, _) = live_doc(DOC, "t199-roundtrip");
+fn get_put_round_trip_keeps_the_ignored_entry() {
+    let (live, _) = live_doc(DOC, "roundtrip");
     live.with(|app| app.replace_code(PASTED).unwrap());
     // What `scene.get` gives out comes back: the entry is the document's.
     let scene = live.api_ok("scene.get", json!({}));
@@ -295,14 +295,14 @@ fn corner_get_put_round_trip_keeps_the_ignored_entry() {
 }
 
 #[test]
-fn ac5_scene_put_keeps_only_the_entry_of_the_same_move() {
+fn scene_put_keeps_only_the_entry_of_the_same_move() {
     let mut v: Value = serde_json::from_str(DOC).unwrap();
     v["moves"]
         .as_array_mut()
         .unwrap()
         .push(json!({"at_step": 3, "action": "code.patch",
         "op": "insert", "position": "1", "content": "// three"}));
-    let (live, _) = live_doc(&v.to_string(), "t199-put-move");
+    let (live, _) = live_doc(&v.to_string(), "put-move");
     live.with(|app| app.replace_code(PASTED).unwrap());
     let doc = live.api_ok("scene.get", json!({}))["document"].clone();
     let entry = doc["moves"][0]["rebind"]["a1"].clone();
@@ -340,7 +340,7 @@ fn ac5_scene_put_keeps_only_the_entry_of_the_same_move() {
 }
 
 #[test]
-fn corner_two_entries_one_ignored_the_other_still_rebinds() {
+fn two_entries_one_ignored_the_other_still_rebinds() {
     // a2 highlights `n + 1`, which the patch rewrites: only its rebind keeps
     // it anchored. a1 is gone.
     let mut v: Value = serde_json::from_str(DOC).unwrap();
@@ -361,9 +361,9 @@ fn corner_two_entries_one_ignored_the_other_still_rebinds() {
 }
 
 #[test]
-fn corner_an_id_a_rebind_names_is_not_given_out_and_adding_it_back_restores() {
-    let text = std::fs::read_to_string(fixture("t-199/saved-broken.tiza")).unwrap();
-    let (live, save) = live_doc(&text, "t199-reuse");
+fn an_id_a_rebind_names_is_not_given_out_and_adding_it_back_restores() {
+    let text = std::fs::read_to_string(fixture("steps/rebind/saved-broken.tiza")).unwrap();
+    let (live, save) = live_doc(&text, "reuse");
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "note", "line": 1, "text": "new"}),
@@ -389,7 +389,7 @@ fn corner_an_id_a_rebind_names_is_not_given_out_and_adding_it_back_restores() {
     // Where the patch writes `t.len()`, a1 added on purpose picks the entry up.
     let mut v: Value = serde_json::from_str(&text).unwrap();
     v["moves"][0]["content"] = json!("    t.len() * 2");
-    let (live, save) = live_doc(&v.to_string(), "t199-reuse-ok");
+    let (live, save) = live_doc(&v.to_string(), "reuse-ok");
     live.api_ok(
         "annotation.add",
         json!({"id": "a1", "type": "highlight", "at": {"line": 2, "find": "count"}, "step": 1}),
@@ -412,7 +412,7 @@ fn corner_an_id_a_rebind_names_is_not_given_out_and_adding_it_back_restores() {
 }
 
 #[test]
-fn corner_an_annotation_that_comes_back_without_its_rebind_stays_dropped() {
+fn an_annotation_that_comes_back_without_its_rebind_stays_dropped() {
     // x (step 3) is on `val` of `let v = val(1);`, a line the step-2 patch
     // moves down; the rebind's `find` (`KEY`) is gone after the paste, and
     // so is x's text at step 3 while the patch is skipped over that `find`.
@@ -432,7 +432,7 @@ fn corner_an_annotation_that_comes_back_without_its_rebind_stays_dropped() {
         { "id": "x", "step": 3, "type": "highlight", "span": { "line": 4, "start": 12, "end": 15 } }
       ]
     }"#;
-    let (live, save) = live_doc(text, "t199-comes-back");
+    let (live, save) = live_doc(text, "comes-back");
     live.with(|app| {
         app.replace_code("fn K2() {\n    val(0);\n    let w = val(1);\n}\n")
             .unwrap()
@@ -465,13 +465,13 @@ fn corner_an_annotation_that_comes_back_without_its_rebind_stays_dropped() {
 }
 
 #[test]
-fn corner_an_ignored_entry_by_line_is_carried_and_a1_comes_back_on_its_text() {
+fn an_ignored_entry_by_line_is_carried_and_a1_comes_back_on_its_text() {
     let mut v: Value = serde_json::from_str(DOC).unwrap();
     v["moves"][0]["rebind"] = json!({"a1": {"at": {"line": 3, "col": 4}}});
     v["annotations"] = json!([
         { "id": "a1", "step": 1, "type": "highlight", "span": { "line": 3, "start": 4, "end": 5 } }
     ]);
-    let (live, save) = live_doc(&v.to_string(), "t199-by-line-back");
+    let (live, save) = live_doc(&v.to_string(), "by-line-back");
     live.api_ok("annotation.delete", json!({"id": "a1"}));
     // A line inserted on top: the ignored entry's line goes with its text.
     live.api_ok(
@@ -501,11 +501,11 @@ fn corner_an_ignored_entry_by_line_is_carried_and_a1_comes_back_on_its_text() {
 }
 
 #[test]
-fn corner_an_ignored_entry_by_line_does_not_hold_back_a_move_add() {
+fn an_ignored_entry_by_line_does_not_hold_back_a_move_add() {
     let mut v: Value = serde_json::from_str(DOC).unwrap();
     v["moves"][0]["rebind"] = json!({"a1": {"at": {"line": 3, "col": 4}}});
     v["annotations"] = json!([]);
-    let (live, save) = live_doc(&v.to_string(), "t199-by-line");
+    let (live, save) = live_doc(&v.to_string(), "by-line");
     let r = live.api(
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// hi"}),
@@ -516,8 +516,8 @@ fn corner_an_ignored_entry_by_line_does_not_hold_back_a_move_add() {
 }
 
 #[test]
-fn corner_an_ignored_entry_on_a_stale_move_reports_both() {
-    let (live, save) = live_doc(DOC, "t199-stale");
+fn an_ignored_entry_on_a_stale_move_reports_both() {
+    let (live, save) = live_doc(DOC, "stale");
     // `t.len()` and the move's target `n + 1` both gone.
     live.with(|app| {
         app.replace_code("fn f(t: &str) -> usize {\n    t.chars().count()\n}\n")

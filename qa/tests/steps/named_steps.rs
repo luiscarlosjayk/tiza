@@ -1,4 +1,4 @@
-//! t-099 — Named steps (`steps: [{step, id, title, auto_advance_ms}]`),
+//! Named steps (`steps: [{step, id, title, auto_advance_ms}]`),
 //! `step.goto {id}` / MCP `goto_step`, `tiza next|prev|goto ID`,
 //! auto-advance per step and `loop` (automation only, no timer).
 //!
@@ -53,7 +53,7 @@ use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
 /// opened live with a throwaway save path.
 fn opened(name: &str) -> (Live, std::path::PathBuf) {
     let dir = scratch(name);
-    let doc = fs::open(fixture("t-099/steps.tiza").to_str().unwrap())
+    let doc = fs::open(fixture("steps/named_steps/steps.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let live = Live::open(doc, dir.join("steps.tiza"), dir.join("live.sock"));
@@ -88,8 +88,8 @@ fn walked(name: &str, to: u32) -> (String, String) {
 }
 
 #[test]
-fn ac1_ac7_goto_jumps_as_a_full_replay_and_an_unknown_id_is_not_found() {
-    let (live, _) = opened("t099-ac1");
+fn goto_jumps_as_a_full_replay_and_an_unknown_id_is_not_found() {
+    let (live, _) = opened("ac1");
     // From step 5 back to "borrow" (3), and from 0 forward to it: both are
     // the step-3 document `n` reaches from step 0.
     live.api_ok("step.set", json!({"step": 5}));
@@ -100,7 +100,7 @@ fn ac1_ac7_goto_jumps_as_a_full_replay_and_an_unknown_id_is_not_found() {
     assert_eq!(r["label"], "step 3/5 · Shared borrow");
     let code = live.api_ok("code.get", json!({}))["text"].to_string();
     let text = live.api_ok("render.text", json!({"width": 100}))["text"].to_string();
-    assert_eq!((code.clone(), text.clone()), walked("t099-ac1-walk", 3));
+    assert_eq!((code.clone(), text.clone()), walked("ac1-walk", 3));
     live.api_ok("step.set", json!({"step": 0}));
     live.api_ok("step.goto", json!({"id": "borrow"}));
     assert_eq!(
@@ -128,8 +128,8 @@ fn ac1_ac7_goto_jumps_as_a_full_replay_and_an_unknown_id_is_not_found() {
 }
 
 #[test]
-fn corner_goto_to_a_typed_step_lands_with_the_text_complete() {
-    let (live, _) = opened("t099-typed");
+fn goto_to_a_typed_step_lands_with_the_text_complete() {
+    let (live, _) = opened("typed");
     live.api_ok("step.set", json!({"step": 1}));
     // Step 2 types eight lines; goto lands on it whole, no animation.
     live.api_ok("step.goto", json!({"id": "grow"}));
@@ -139,7 +139,7 @@ fn corner_goto_to_a_typed_step_lands_with_the_text_complete() {
     );
     let code = live.api_ok("code.get", json!({}))["text"].to_string();
     assert!(code.contains("fn len(s: &String)"), "{code}");
-    assert_eq!(code, walked("t099-typed-walk", 2).0);
+    assert_eq!(code, walked("typed-walk", 2).0);
     // `n` from 1 to 2 still types (the presenter's own walk).
     live.api_ok("step.set", json!({"step": 1}));
     live.keys(&[KeyCode::Char('n')]);
@@ -147,8 +147,8 @@ fn corner_goto_to_a_typed_step_lands_with_the_text_complete() {
 }
 
 #[test]
-fn ac2_ac9_the_title_is_on_the_bar_in_status_and_in_list_annotations() {
-    let (live, _) = opened("t099-ac2");
+fn the_title_is_on_the_bar_in_status_and_in_list_annotations() {
+    let (live, _) = opened("ac2");
     live.api_ok("step.goto", json!({"id": "borrow"}));
     let screen = live.screen(110, 30);
     let bar = screen.lines().last().unwrap();
@@ -183,7 +183,7 @@ fn ac2_ac9_the_title_is_on_the_bar_in_status_and_in_list_annotations() {
         !err && text.contains("\"label\": \"step 1/5 · Ownership moves\""),
         "{text}"
     );
-    // (The take since t-224: lanes for every step, so 140 columns for the
+    // (The take of `render.text`: lanes for every step, so 140 columns for the
     // whole label.)
     let (_, render, _) = mcp.call("render_text", json!({"width": 140}));
     assert!(render.contains("move: s moves into"), "{render}");
@@ -198,8 +198,8 @@ fn ac2_ac9_the_title_is_on_the_bar_in_status_and_in_list_annotations() {
 }
 
 #[test]
-fn ac3_ac8_auto_advance_waits_for_the_typing_and_moves_on_alone() {
-    let (live, _) = opened("t099-ac3");
+fn auto_advance_waits_for_the_typing_and_moves_on_alone() {
+    let (live, _) = opened("ac3");
     // Step 2 types 8 lines at 160 ms (1.28 s) and then waits 500 ms.
     live.api_ok(
         "scene.patch",
@@ -242,8 +242,8 @@ fn ac3_ac8_auto_advance_waits_for_the_typing_and_moves_on_alone() {
 }
 
 #[test]
-fn ac8_a_wait_move_elapses_before_the_countdown() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t099-wait");
+fn a_wait_move_elapses_before_the_countdown() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "wait");
     live.api_ok(
         "annotation.add",
         json!({"type": "note", "line": 1, "text": "one", "step": 1}),
@@ -272,8 +272,8 @@ fn ac8_a_wait_move_elapses_before_the_countdown() {
 }
 
 #[test]
-fn ac3_loop_wraps_to_step_zero() {
-    let (live, _) = opened("t099-loop");
+fn loop_wraps_to_step_zero() {
+    let (live, _) = opened("loop");
     live.api_ok("step.set", json!({"step": 5}));
     live.keys(&[KeyCode::Char('n')]);
     assert_eq!(step(&live), 5, "no loop: the last step stays");
@@ -282,7 +282,7 @@ fn ac3_loop_wraps_to_step_zero() {
     assert_eq!(step(&live), 0, "loop: n past the last step is step 0");
     assert_eq!(
         live.api_ok("code.get", json!({}))["text"].to_string(),
-        walked("t099-loop-walk", 0).0,
+        walked("loop-walk", 0).0,
         "step 0 is the untouched code"
     );
     // step.next does the same; the status says so.
@@ -301,8 +301,8 @@ fn ac3_loop_wraps_to_step_zero() {
 }
 
 #[test]
-fn corner_the_command_line_defers_the_auto_advance_until_esc() {
-    let (live, _) = opened("t099-cmdline");
+fn the_command_line_defers_the_auto_advance_until_esc() {
+    let (live, _) = opened("cmdline");
     live.api_ok(
         "scene.patch",
         json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 100}]}),
@@ -316,8 +316,8 @@ fn corner_the_command_line_defers_the_auto_advance_until_esc() {
 }
 
 #[test]
-fn ac5_titles_are_bound_by_step_number_sparse_and_saved_sorted() {
-    let (live, dir) = opened("t099-ac5");
+fn titles_are_bound_by_step_number_sparse_and_saved_sorted() {
+    let (live, dir) = opened("ac5");
     // Move an annotation of step 3 to step 4 with `+`: the titles stay.
     live.api_ok("step.set", json!({"step": 3}));
     let id = live.with(|a| {
@@ -363,8 +363,8 @@ fn ac5_titles_are_bound_by_step_number_sparse_and_saved_sorted() {
 }
 
 #[test]
-fn ac4_ac6_tiza_next_prev_goto_drive_the_instance_or_say_there_is_none() {
-    let (live, dir) = opened("t099-cli");
+fn tiza_next_prev_goto_drive_the_instance_or_say_there_is_none() {
+    let (live, dir) = opened("cli");
     let sock = live.socket.to_str().unwrap().to_string();
     live.api_ok("step.set", json!({"step": 0}));
     let run = |args: &[&str]| {
@@ -402,7 +402,7 @@ fn ac4_ac6_tiza_next_prev_goto_drive_the_instance_or_say_there_is_none() {
 fn load(steps: serde_json::Value) -> Result<Document, String> {
     static CALLS: AtomicUsize = AtomicUsize::new(0);
     let n = CALLS.fetch_add(1, Ordering::Relaxed);
-    let dir = scratch(&format!("t099-load-{n}"));
+    let dir = scratch(&format!("load-{n}"));
     let p = dir.join("d.tiza");
     std::fs::write(
         &p,
@@ -419,7 +419,7 @@ fn load(steps: serde_json::Value) -> Result<Document, String> {
 }
 
 #[test]
-fn corner_bad_ids_are_rejected_on_load_and_a_step_past_the_end_is_kept_and_warned() {
+fn bad_ids_are_rejected_on_load_and_a_step_past_the_end_is_kept_and_warned() {
     let e = load(json!([{"step": 1, "id": "a"}, {"step": 2, "id": "a"}])).unwrap_err();
     assert!(e.contains("used twice"), "{e}");
     let e = load(json!([{"step": 1, "id": "3"}])).unwrap_err();
@@ -429,7 +429,7 @@ fn corner_bad_ids_are_rejected_on_load_and_a_step_past_the_end_is_kept_and_warne
     // Past the last step: kept, not used, said in status and by render.
     let d = load(json!([{"step": 9, "id": "later"}])).unwrap();
     assert_eq!(d.steps.len(), 1);
-    let dir = scratch("t099-past");
+    let dir = scratch("past");
     let live = Live::open(d, dir.join("d.tiza"), dir.join("live.sock"));
     let st = live.api_ok("status", json!({}));
     assert!(
@@ -456,8 +456,8 @@ fn corner_bad_ids_are_rejected_on_load_and_a_step_past_the_end_is_kept_and_warne
 // ---- Rework of 2026-10-18 (QA 2's minor findings) ----
 
 #[test]
-fn rework1_mcp_goto_step_takes_a_step_number_too() {
-    let (live, _) = opened("t099-rw1");
+fn mcp_goto_step_takes_a_step_number_too() {
+    let (live, _) = opened("rw1");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("goto_step", json!({"id": 4}));
     assert!(
@@ -490,8 +490,8 @@ fn rework1_mcp_goto_step_takes_a_step_number_too() {
 }
 
 #[test]
-fn rework1_a_value_that_names_no_step_gets_a_plain_error_on_the_socket_and_mcp() {
-    let (live, _) = opened("t099-rw1-bad");
+fn a_value_that_names_no_step_gets_a_plain_error_on_the_socket_and_mcp() {
+    let (live, _) = opened("rw1-bad");
     live.api_ok("step.set", json!({"step": 2}));
     let mut mcp = McpClient::start(&live.socket);
     for bad in [json!(-1), json!(4.5), json!(null)] {
@@ -520,7 +520,7 @@ fn rework1_a_value_that_names_no_step_gets_a_plain_error_on_the_socket_and_mcp()
 }
 
 #[test]
-fn rework2_ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
+fn ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
     for id in ["-1", "-x", "--socket"] {
         let e = load(json!([{"step": 1, "id": id}])).unwrap_err();
         assert!(e.contains("starts with `-`"), "{id}: {e}");
@@ -529,7 +529,7 @@ fn rework2_ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
     // A dash inside an id is fine.
     let d = load(json!([{"step": 1, "id": "shared-borrow"}])).unwrap();
     assert_eq!(d.resolve_step("shared-borrow").unwrap(), 1);
-    let (live, _) = opened("t099-rw2");
+    let (live, _) = opened("rw2");
     let before = live.api_ok("scene.get", json!({}))["document"]["steps"].clone();
     let r = live.api("scene.patch", json!({"steps": [{"step": 1, "id": "-1"}]}));
     let e = r.error.expect("refused");
@@ -541,7 +541,7 @@ fn rework2_ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
         "nothing changed"
     );
     // `tiza check` reports it as an error.
-    let dir = scratch("t099-rw2-check");
+    let dir = scratch("rw2-check");
     let p = dir.join("d.tiza");
     std::fs::write(
         &p,
@@ -562,7 +562,7 @@ fn rework2_ids_starting_with_a_dash_are_rejected_on_load_and_by_scene_patch() {
 }
 
 #[test]
-fn rework3_an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
+fn an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
     let d = load(json!([
         {"step": 1, "id": "one", "title": "One", "timer_min": 5},
         {"step": 2, "id": "two", "auto_advance_ms": 1000, "notes": "x", "colour": "red"}
@@ -580,7 +580,7 @@ fn rework3_an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
     );
     assert!(w[1].contains("unknown keys `colour`, `notes`"), "{w:?}");
     // status.warnings, and the keys are kept on save.
-    let dir = scratch("t099-rw3");
+    let dir = scratch("rw3");
     let live = Live::open(d, dir.join("d.tiza"), dir.join("live.sock"));
     let st = live.api_ok("status", json!({}));
     assert!(
@@ -629,10 +629,13 @@ fn rework3_an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
     // A valid document has no such warning, and `null` known keys are fine.
     let ok = load(json!([{"step": 1, "id": "a", "title": null, "auto_advance_ms": null}])).unwrap();
     assert!(ok.step_warnings().is_empty(), "{:?}", ok.step_warnings());
-    let (live, _) = opened("t099-rw3-ok");
+    let (live, _) = opened("rw3-ok");
     let st = live.api_ok("status", json!({}));
     assert!(!st["warnings"].to_string().contains("steps:"), "{st}");
-    let out = tiza(&["check", fixture("t-099/steps.tiza").to_str().unwrap()]);
+    let out = tiza(&[
+        "check",
+        fixture("steps/named_steps/steps.tiza").to_str().unwrap(),
+    ]);
     let all = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),
@@ -654,8 +657,8 @@ fn rework3_an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
 }
 
 #[test]
-fn rework_optional_a_v_selection_defers_the_auto_advance() {
-    let (live, _) = opened("t099-visual");
+fn optional_a_v_selection_defers_the_auto_advance() {
+    let (live, _) = opened("visual");
     live.api_ok(
         "scene.patch",
         json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 100}]}),
@@ -671,12 +674,13 @@ fn rework_optional_a_v_selection_defers_the_auto_advance() {
 }
 
 #[test]
-fn ac11_the_gif_holds_a_step_for_its_auto_advance_ms() {
-    let dir = scratch("t099-gif");
+fn the_gif_holds_a_step_for_its_auto_advance_ms() {
+    let dir = scratch("gif");
     // The fixture without typing (steps 0..=5): one timed step, 3 s.
-    let mut v: serde_json::Value =
-        serde_json::from_str(&std::fs::read_to_string(fixture("t-099/steps.tiza")).unwrap())
-            .unwrap();
+    let mut v: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixture("steps/named_steps/steps.tiza")).unwrap(),
+    )
+    .unwrap();
     v.as_object_mut().unwrap().remove("moves");
     v["annotations"]
         .as_array_mut()
@@ -718,8 +722,8 @@ fn ac11_the_gif_holds_a_step_for_its_auto_advance_ms() {
 }
 
 #[test]
-fn ac11_typed_frames_come_before_the_timed_hold_and_the_tape_sends_no_extra_n() {
-    let mut doc = fs::open(fixture("t-099/steps.tiza").to_str().unwrap())
+fn typed_frames_come_before_the_timed_hold_and_the_tape_sends_no_extra_n() {
+    let mut doc = fs::open(fixture("steps/named_steps/steps.tiza").to_str().unwrap())
         .unwrap()
         .document;
     doc.steps[2].auto_advance_ms = Some(700);

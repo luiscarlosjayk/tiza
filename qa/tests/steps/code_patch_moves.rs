@@ -1,4 +1,4 @@
-//! t-098 — Moves: `code.patch` (insert/replace/delete, typing modes) so the
+//! Moves: `code.patch` (insert/replace/delete, typing modes) so the
 //! code evolves between steps, with deterministic re-anchoring (ADR 0007).
 //!
 //! Acceptance criteria:
@@ -90,8 +90,8 @@ fn insert_after_b(step: u32, typing: &str) -> Value {
 // ---------------------------------------------------------------- AC1 / AC4
 
 #[test]
-fn ac1_move_add_validates_against_the_code_at_its_step() {
-    let live = live("t098-ac1");
+fn move_add_validates_against_the_code_at_its_step() {
+    let live = live("ac1");
     // at_step 0 is the untouched code.
     let r = live.api(
         "move.add",
@@ -230,8 +230,8 @@ fn ac1_move_add_validates_against_the_code_at_its_step() {
 // ---------------------------------------------------------------- AC2
 
 #[test]
-fn ac2_pure_function_of_the_step_and_deterministic_shift() {
-    let live = live("t098-ac2");
+fn pure_function_of_the_step_and_deterministic_shift() {
+    let live = live("ac2");
     // Annotations of step 1 on the base code.
     live.api_ok(
         "annotation.add",
@@ -364,8 +364,8 @@ fn ac2_pure_function_of_the_step_and_deterministic_shift() {
 }
 
 #[test]
-fn ac2_annotations_are_authored_against_the_code_at_their_step() {
-    let live = live("t098-ac2b");
+fn annotations_are_authored_against_the_code_at_their_step() {
+    let live = live("ac2b");
     live.api_ok("move.add", insert_after_b(2, "instant"));
     // At step 2 the new lines exist: an annotation authored there points at them.
     live.api_ok("step.set", json!({"step": 2}));
@@ -442,8 +442,8 @@ fn ac2_annotations_are_authored_against_the_code_at_their_step() {
 // ---------------------------------------------------------------- AC3
 
 #[test]
-fn ac3_typing_animation_in_the_tui() {
-    let live = live("t098-ac3");
+fn typing_animation_in_the_tui() {
+    let live = live("ac3");
     live.api_ok(
         "annotation.add",
         json!({"type": "note", "line": 2, "text": "first", "step": 1}),
@@ -531,8 +531,8 @@ fn ac3_typing_animation_in_the_tui() {
 }
 
 #[test]
-fn ac3_render_and_export_apply_moves_instantly() {
-    let dir = scratch("t098-render");
+fn render_and_export_apply_moves_instantly() {
+    let dir = scratch("render");
     let path = dir.join("ex.tiza");
     std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
     let p = path.to_str().unwrap();
@@ -602,8 +602,8 @@ fn ac3_render_and_export_apply_moves_instantly() {
 // ---------------------------------------------------------------- AC4 (MCP) / AC5
 
 #[test]
-fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
-    let dir = scratch("t098-mcp");
+fn mcp_tools_and_saved_file_keep_the_base_code() {
+    let dir = scratch("mcp");
     let doc = tiza_core::Document::from_code(CODE, "rs", None);
     let save = dir.join("doc.tiza");
     let live = Live::open(doc, save.clone(), dir.join("live.sock"));
@@ -647,8 +647,8 @@ fn ac4_mcp_tools_and_saved_file_keep_the_base_code() {
 }
 
 #[test]
-fn ac5_paste_is_refused_and_follow_waits_while_moves_are_applied() {
-    let dir = scratch("t098-ac5");
+fn paste_is_refused_and_follow_waits_while_moves_are_applied() {
+    let dir = scratch("ac5");
     std::fs::write(dir.join("src.rs"), CODE).unwrap();
     let doc = tiza_core::fs::open(dir.join("src.rs").to_str().unwrap())
         .unwrap()
@@ -713,8 +713,8 @@ fn ac5_paste_is_refused_and_follow_waits_while_moves_are_applied() {
 }
 
 #[test]
-fn ac1_load_time_errors_name_the_move() {
-    let dir = scratch("t098-load");
+fn load_time_errors_name_the_move() {
+    let dir = scratch("load");
     let bad = dir.join("bad.tiza");
     std::fs::write(
         &bad,
@@ -743,7 +743,7 @@ fn ac1_load_time_errors_name_the_move() {
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("line 9 does not exist"), "{err}");
     // A range whose end marker comes before its start marker quotes the
-    // end marker as written (moved here from t-167).
+    // end marker as written (moved here from the tests of error values).
     std::fs::write(
         &bad,
         json!({
@@ -764,8 +764,8 @@ fn ac1_load_time_errors_name_the_move() {
 // ---------------------------------------------------------------- AC7 / AC8
 
 #[test]
-fn ac7_replaced_line_keeps_line_anchors_and_unanchors_column_anchors() {
-    let live = live("t098-ac7");
+fn replaced_line_keeps_line_anchors_and_unanchors_column_anchors() {
+    let live = live("ac7");
     // Line 3 `    let b = 2;` carries a note (line) and a highlight (columns); line 4 a mark.
     live.api_ok(
         "annotation.add",
@@ -853,11 +853,11 @@ fn ac7_replaced_line_keeps_line_anchors_and_unanchors_column_anchors() {
 }
 
 #[test]
-fn ac8_occurrence_over_the_whole_code_at_that_step() {
+fn occurrence_over_the_whole_code_at_that_step() {
     let live = Live::from_code(
         "fn main() {\n    let a = 1;\n    let a = a + 1;\n    let b = a;\n}\n",
         "rs",
-        "t098-ac8",
+        "ac8",
     );
     // Without occurrence: the AC1 error, counting every match (L3 has two).
     let r = live.api(
@@ -909,8 +909,8 @@ fn ac8_occurrence_over_the_whole_code_at_that_step() {
 }
 
 #[test]
-fn ac8_rebind_find_must_match_once_or_carry_occurrence() {
-    let live = Live::from_code("fn main() {\n    let b = 1;\n}\n", "rs", "t098-ac8b");
+fn rebind_find_must_match_once_or_carry_occurrence() {
+    let live = Live::from_code("fn main() {\n    let b = 1;\n}\n", "rs", "ac8b");
     live.api_ok(
         "annotation.add",
         json!({"id": "h", "type": "highlight", "at": {"find": "let b"}, "step": 1}),
@@ -957,8 +957,8 @@ fn ac8_rebind_find_must_match_once_or_carry_occurrence() {
 // ---------------------------------------------------------------- AC9
 
 #[test]
-fn ac9_paste_at_step_0_reanchors_each_annotation_on_its_own_step() {
-    let dir = scratch("t098-ac9");
+fn paste_at_step_0_reanchors_each_annotation_on_its_own_step() {
+    let dir = scratch("ac9");
     let path = dir.join("ex.tiza");
     std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
     let doc = tiza_core::fs::open(path.to_str().unwrap())
@@ -1024,8 +1024,8 @@ fn ac9_paste_at_step_0_reanchors_each_annotation_on_its_own_step() {
 // ---------------------------------------------------------------- AC10
 
 #[test]
-fn ac10_tape_sleeps_through_the_typing() {
-    let dir = scratch("t098-ac10");
+fn tape_sleeps_through_the_typing() {
+    let dir = scratch("ac10");
     let path = dir.join("long.tiza");
     let content = (0..20)
         .map(|i| format!("    let x{i} = {i};"))
@@ -1078,7 +1078,7 @@ fn ac10_tape_sleeps_through_the_typing() {
 
 #[test]
 fn rebind_with_no_target_or_an_unknown_key_is_a_load_error() {
-    let dir = scratch("t098-rebind-keys");
+    let dir = scratch("rebind-keys");
     let doc = |rebind: Value| {
         json!({
             "schema": 1, "source": {"language": "rs", "first_line": 1},
@@ -1116,7 +1116,7 @@ fn rebind_with_no_target_or_an_unknown_key_is_a_load_error() {
 
 #[test]
 fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_end_warns() {
-    let live = live("t098-minors");
+    let live = live("minors");
     // Move #1 at step 2 inserts at the end; move #2 at step 3 deletes line 9.
     live.api_ok("move.add", insert_after_b(2, "instant"));
     live.api_ok(
@@ -1126,7 +1126,7 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
     // A new step-1 move that removes the line move #2 deletes leaves move #2
     // without its target: the error names move #2 and its step, not just
     // the line. A move that only shortens the code carries the later moves'
-    // positions instead (qa/tests/t-188.rs).
+    // positions instead (the scene round trip tests).
     let r = live.api(
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "5"}),
@@ -1136,7 +1136,7 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
         err.contains("move #2, step 3") && err.contains("removes line 7, the line it changes"),
         "{err}"
     );
-    let dir = scratch("t098-render-step");
+    let dir = scratch("render-step");
     let path = dir.join("ex.tiza");
     std::fs::copy(example("ownership-moves.rs.tiza"), &path).unwrap();
     let out = tiza(&[

@@ -1,4 +1,4 @@
-//! t-105 — Moves: `cursor`, `select`, `wait` and `code.link` (the non-patch
+//! Moves: `cursor`, `select`, `wait` and `code.link` (the non-patch
 //! actions), with one view per FILE (ADR 0007 §3f as rewritten in this card).
 //!
 //! Acceptance criteria:
@@ -74,8 +74,8 @@ fn list(live: &Live) -> Vec<String> {
 // ---------------------------------------------------------------- AC1
 
 #[test]
-fn ac1_the_four_actions_load_apply_and_revert() {
-    let (_dir, live) = open_demo("t105-ac1");
+fn the_four_actions_load_apply_and_revert() {
+    let (_dir, live) = open_demo("ac1");
     let moves = live.api_ok("move.list", json!({}));
     let summaries: Vec<&str> = moves["moves"]
         .as_array()
@@ -164,8 +164,8 @@ fn ac1_the_four_actions_load_apply_and_revert() {
 }
 
 #[test]
-fn ac1_cast_and_tape_sleep_through_the_wait() {
-    let dir = demo("t105-cast");
+fn cast_and_tape_sleep_through_the_wait() {
+    let dir = demo("cast");
     let path = dir.join("stack-and-queue.tiza");
     let cast = dir.join("demo.cast");
     tiza_ok(&[
@@ -232,8 +232,8 @@ fn ac1_cast_and_tape_sleep_through_the_wait() {
 // ---------------------------------------------------------------- AC2 / AC3
 
 #[test]
-fn ac2_ac3_link_forward_and_back_keeps_each_files_annotations() {
-    let (_dir, live) = open_demo("t105-ac2");
+fn link_forward_and_back_keeps_each_files_annotations() {
+    let (_dir, live) = open_demo("ac2");
     let path = live.with(|a| a.save_path.clone());
     let s1 = render(&path, "1");
     assert!(
@@ -321,8 +321,8 @@ fn ac2_ac3_link_forward_and_back_keeps_each_files_annotations() {
 }
 
 #[test]
-fn ac2_window_crops_but_keeps_and_the_same_file_shares_annotations() {
-    let (_dir, live) = open_demo("t105-window");
+fn window_crops_but_keeps_and_the_same_file_shares_annotations() {
+    let (_dir, live) = open_demo("window");
     let path = live.with(|a| a.save_path.clone());
     // a5 (queue.rs L4) is outside the 10-36 window: not drawn, not unanchored.
     let s2 = render(&path, "2");
@@ -354,8 +354,8 @@ fn ac2_window_crops_but_keeps_and_the_same_file_shares_annotations() {
 }
 
 #[test]
-fn ac2_annotations_added_at_a_step_belong_to_the_file_shown_there() {
-    let (_dir, live) = open_demo("t105-belong");
+fn annotations_added_at_a_step_belong_to_the_file_shown_there() {
+    let (_dir, live) = open_demo("belong");
     // Added via the API at step 2 (queue shown), with no `file`: it is queue's.
     live.api_ok("step.set", json!({"step": 2}));
     live.api_ok(
@@ -412,8 +412,8 @@ fn ac2_annotations_added_at_a_step_belong_to_the_file_shown_there() {
 // ---------------------------------------------------------------- AC4
 
 #[test]
-fn ac4_patches_target_the_file_shown_at_their_step() {
-    let (_dir, live) = open_demo("t105-patch");
+fn patches_target_the_file_shown_at_their_step() {
+    let (_dir, live) = open_demo("patch");
     // At step 2 queue.rs is shown: a find that exists only in stack.rs fails.
     let r = live.api(
         "move.add",
@@ -449,7 +449,7 @@ fn ac4_patches_target_the_file_shown_at_their_step() {
         "{text}"
     );
     // A `select` whose text is gone at its step is a load-time error naming the move.
-    let dir = scratch("t105-select-missing");
+    let dir = scratch("select-missing");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::copy(example("src/queue.rs"), dir.join("src/queue.rs")).unwrap();
     let bad = dir.join("bad.tiza");
@@ -498,8 +498,8 @@ fn ac4_patches_target_the_file_shown_at_their_step() {
 // ---------------------------------------------------------------- AC5
 
 #[test]
-fn ac5_embed_stores_every_view_and_a_missing_file_names_the_move() {
-    let (dir, live) = open_demo("t105-embed");
+fn embed_stores_every_view_and_a_missing_file_names_the_move() {
+    let (dir, live) = open_demo("embed");
     live.api_ok("step.set", json!({"step": 3}));
     let before = render(&live.with(|a| a.save_path.clone()), "2");
     live.command("embed");
@@ -520,7 +520,7 @@ fn ac5_embed_stores_every_view_and_a_missing_file_names_the_move() {
         "the windows stay in the moves"
     );
     // Portable: the same demo from a directory with no sources.
-    let alone = scratch("t105-embed-alone").join("demo.tiza");
+    let alone = scratch("embed-alone").join("demo.tiza");
     std::fs::copy(&path, &alone).unwrap();
     assert_eq!(render(&alone, "2"), before);
     assert!(render(&alone, "5").contains("the window crops"));
@@ -530,7 +530,7 @@ fn ac5_embed_stores_every_view_and_a_missing_file_names_the_move() {
     assert_eq!(scene["document"]["source"]["first_line"], 7);
     // A link to a file that is not there: the load fails naming move and path.
     std::fs::remove_file(dir.join("src/queue.rs")).unwrap();
-    let original = demo("t105-embed-missing");
+    let original = demo("embed-missing");
     std::fs::remove_file(original.join("src/queue.rs")).unwrap();
     let out = tiza(&[
         "render",
@@ -551,8 +551,8 @@ fn ac5_embed_stores_every_view_and_a_missing_file_names_the_move() {
 // ---------------------------------------------------------------- AC6 / AC7
 
 #[test]
-fn ac6_link_command_socket_and_mcp_record_the_moves() {
-    let dir = scratch("t105-ac6");
+fn link_command_socket_and_mcp_record_the_moves() {
+    let dir = scratch("ac6");
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::copy(example("src/stack.rs"), dir.join("src/stack.rs")).unwrap();
     std::fs::copy(example("src/queue.rs"), dir.join("src/queue.rs")).unwrap();
@@ -679,8 +679,8 @@ fn ac6_link_command_socket_and_mcp_record_the_moves() {
 }
 
 #[test]
-fn ac7_paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
-    let (_dir, live) = open_demo("t105-ac7");
+fn paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
+    let (_dir, live) = open_demo("ac7");
     live.api_ok("step.set", json!({"step": 2}));
     let err = live.with(|a| a.replace_code("fn other() {}\n").unwrap_err().to_string());
     assert!(
@@ -714,8 +714,8 @@ fn ac7_paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
 // ---------------------------------------------------------------- corner cases
 
 #[test]
-fn corner_linking_the_main_file_is_a_view_change_and_relative_paths_resolve_from_the_document() {
-    let dir = scratch("t105-main");
+fn linking_the_main_file_is_a_view_change_and_relative_paths_resolve_from_the_document() {
+    let dir = scratch("main");
     std::fs::create_dir_all(dir.join("docs")).unwrap();
     std::fs::create_dir_all(dir.join("src")).unwrap();
     std::fs::copy(example("src/stack.rs"), dir.join("src/stack.rs")).unwrap();
@@ -751,8 +751,8 @@ fn corner_linking_the_main_file_is_a_view_change_and_relative_paths_resolve_from
 }
 
 #[test]
-fn corner_rebind_only_on_patches_and_bad_windows_name_the_move() {
-    let dir = scratch("t105-corner");
+fn rebind_only_on_patches_and_bad_windows_name_the_move() {
+    let dir = scratch("corner");
     let bad = dir.join("bad.tiza");
     std::fs::write(
         &bad,
