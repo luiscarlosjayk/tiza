@@ -244,7 +244,7 @@ Known caveats (not tested here):
 - **tmux.** What happens to the colour query depends on the tmux version (checked in Docker on Linux, under a light outer terminal): **tmux 3.5a** asks the outer terminal itself and answers Tiza's query with its colours, so auto appearance works with no configuration; **tmux 3.3a** neither lets the query out nor answers it, so Tiza stays dark — pick the theme by hand there (`--theme light`, `t`) or upgrade tmux. Versions between 3.3a and 3.5a are not tested. Tiza sends the query as plain OSC, not wrapped for tmux's passthrough, so `set -g allow-passthrough on` changes neither case. tmux does not resize when the outer terminal changes theme, so `kill -WINCH $(pgrep tiza)` asks again. tmux's own `set -g mouse on|off` decides, together with Tiza's `--mouse`, who gets clicks, drags and the wheel. tmux passes 24-bit colour through only when it knows the outer terminal has it (`set -as terminal-features ',*:RGB'`).
 - **Zed** needs `line_height: "standard"` in the terminal settings for box drawing without gaps ([docs/zed.md](docs/zed.md)).
 
-A terminal issue? [Open an issue](https://github.com/luiscarlosjayk/tiza/issues) with the terminal's name and version, the output of `echo "$TERM $COLORTERM"`, whether tmux or Herdr sits in between, and a screenshot.
+A problem with a terminal? Report it in [Discussions](https://github.com/luiscarlosjayk/tiza/discussions). Give the name and the version of the terminal, the output of `echo "$TERM $COLORTERM"`, whether tmux or Herdr is between them, and a screenshot. If you have steps that reproduce the problem, use the [bug report form](https://github.com/luiscarlosjayk/tiza/issues/new/choose).
 
 ## Themes
 

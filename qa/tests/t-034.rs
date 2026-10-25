@@ -11,7 +11,8 @@
 //!   `line_height: standard` for box drawing; no essential shortcut depends
 //!   on the kitty keyboard protocol.
 //! - AC3 One line on how to report a terminal issue (terminal name, version,
-//!   `TERM`, `COLORTERM`, a screenshot).
+//!   `TERM`, `COLORTERM`, a screenshot). Since 2026-10-24 (Luis) the report
+//!   goes to Discussions, and to the bug report form when steps reproduce it.
 //!
 //! The section describes what the code does, so besides the text these tests
 //! pin the claims it makes about the code: a plain (not tmux-wrapped) OSC
@@ -216,11 +217,12 @@ fn ac3_the_report_line_asks_for_what_we_need() {
     let s = section();
     let line = s
         .lines()
-        .find(|l| l.starts_with("A terminal issue?"))
+        .find(|l| l.starts_with("A problem with a terminal?"))
         .expect("report line");
     for needle in [
-        "issues",
-        "name and version",
+        "/discussions)",
+        "/issues/new/choose)",
+        "name and the version",
         "$TERM $COLORTERM",
         "tmux or Herdr",
         "screenshot",

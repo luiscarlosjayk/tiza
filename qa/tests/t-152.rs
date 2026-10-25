@@ -1199,6 +1199,20 @@ fn ac7_security_and_contributing_say_how_to_report_and_link_well() {
     }
     // Links in angle brackets too.
     assert!(security.contains(&format!("<{REPO}/security/advisories/new>")));
+    // Feedback, ideas and terminal reports go to Discussions; Issues take a
+    // reproducible bug through the form only (Luis, 2026-10-24).
+    let notes = read("docs/release-notes/v0.1.0.md");
+    for (name, md) in [("the release notes", &notes), ("the README", &readme)] {
+        assert!(md.contains(&format!("({REPO}/discussions)")), "{name}");
+        assert!(
+            md.contains(&format!("({REPO}/issues/new/choose)")),
+            "{name}"
+        );
+        assert!(
+            !md.contains(&format!("({REPO}/issues)")),
+            "{name} sends people to Issues without the form"
+        );
+    }
 }
 
 #[test]
