@@ -13,8 +13,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The release binary does not have the test command `:panic` now.
 - An empty `HOME` counts as not set. Before, Tiza read `.config/tiza/config.toml` in the current folder.
 - Without `HOME`, or with an empty `HOME`, a path that starts with `~/` in `:w`, `:saveas`, `:wq` or `:export` gives an error. Before, Tiza wrote the file in the current folder.
+- With `--no-save`, `--theme-file` does not write the `.tiza` document at start now.
 
 ### Changed
+- `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.
 - The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
 
 ### Added

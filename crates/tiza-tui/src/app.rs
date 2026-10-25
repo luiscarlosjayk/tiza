@@ -759,10 +759,17 @@ impl App {
     }
 
     /// Applies a theme file (`--theme-file`, `:theme file PATH`) as the
-    /// document's overrides.
-    pub fn load_theme_file(&mut self, path: &std::path::Path) -> Result<String, Error> {
+    /// document's overrides. `undoable`: `u` takes it back (`:theme file`);
+    /// `--theme-file` is not, as `--theme` is not.
+    pub fn load_theme_file(
+        &mut self,
+        path: &std::path::Path,
+        undoable: bool,
+    ) -> Result<String, Error> {
         let ov = tiza_core::theme::load_theme_file(path).map_err(Error::Invalid)?;
-        self.history.record(&self.doc, "theme file");
+        if undoable {
+            self.history.record(&self.doc, "theme file");
+        }
         self.doc.theme_overrides = Some(ov);
         self.rebuild_theme();
         self.touch();
@@ -4781,7 +4788,7 @@ impl App {
                         .map(|_| arg[5..].trim())
                         .filter(|p| !p.is_empty())
                     {
-                        return self.load_theme_file(std::path::Path::new(path));
+                        return self.load_theme_file(std::path::Path::new(path), true);
                     }
                     match lower.as_str() {
                         "" | "toggle" => {

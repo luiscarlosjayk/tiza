@@ -65,10 +65,15 @@ pub struct RunOptions {
 /// Starts the TUI with an opened document. Returns when it closes.
 pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let mut app = App::new(opened.document, opened.save_path);
+    // Before any start-up step that could save (`--theme-file` does):
+    // with `--no-save`, nothing is written.
+    app.autosave = !opts.no_save;
+    app.no_save = opts.no_save;
     app.config_overrides = opts.config_overrides;
     app.rebuild_theme();
     if let Some(path) = &opts.theme_file {
-        match app.load_theme_file(path) {
+        // Not an edit that `u` takes back, as for `--theme`.
+        match app.load_theme_file(path, false) {
             Ok(m) => app.info(m),
             Err(e) => app.error(e.to_string()),
         }
@@ -99,8 +104,6 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.padding_override = opts.padding;
     app.image_exporter = opts.image_exporter;
     app.mouse = opts.mouse;
-    app.autosave = !opts.no_save;
-    app.no_save = opts.no_save;
     if let Some(n) = &opened.notice {
         app.info(n.clone());
     }

@@ -58,7 +58,8 @@ Each color of a theme has a name: its token. You can give a token a new value in
 
 - A theme file replaces all the tokens that the document had. It does not add to them.
 - Press `u` to undo `:theme file`. Press `U` or Ctrl-R to do it again.
-- `--theme-file` writes the tokens in the document when Tiza starts, also with `--no-save`. To keep a document as it is, use `tiza render --theme-file`.
+- `u` does not undo `--theme-file`, as for `--theme`.
+- `--theme-file` writes the tokens in the document when Tiza starts. With `--no-save`, Tiza does not write them to the `.tiza` file.
 - To use the same tokens in each document, put them in the `[theme]` table of the config file. See [Where the tokens go](#where-the-tokens-go).
 - `tiza render FILE --theme-file PATH` uses the file for one export, in place of the tokens of the document. It does not change the document.
 - The [Catppuccin Mocha example](../../examples/themes/catppuccin-mocha.toml) is the file to copy. It sets the tokens of Tiza to the published Catppuccin Mocha colors. It passes the legibility check. See [Legibility](#legibility).
@@ -242,7 +243,7 @@ An export cannot use the palette of the terminal. Each export picks its theme as
 - With autosave on, these save the document at once: `:theme` with or without a name, `:theme file`, `theme.set`, `set_theme`, and a `scene patch` with `theme`. See [Saving](../concepts/saving.md).
 - `t`, `--theme NAME` and `--theme auto` change the theme of the document, but do not save it. The next save writes the change.
 - When you quit after `t` with no other change, the document keeps its old theme.
-- `--theme-file` saves the document when Tiza starts. It does this also with `--no-save`.
+- `--theme-file` saves the document when Tiza starts, except with `--no-save`.
 - The document keeps a theme only when the theme is fixed. A document that follows the terminal has no `theme` field.
 
 ## Agents and themes
