@@ -131,6 +131,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | instance | the running TUI that agents talk to | server, app |
 | color | the color of an annotation or a theme token | colour |
 | 24-bit color | the terminal feature that shows any RGB color | truecolor, RGB |
+| color query | the question that Tiza sends to the terminal for its background and text colors (OSC 11, OSC 10) | question |
 | status bar | the bottom row of normal mode, with the state and the last message | status line, the bar, message line |
 | message | the text that a command shows in the status bar | notice, toast |
 | badge | the `!` sign and its text on the status bar that tells what the step on screen loses (`! 3 labels cut`, `! code needs N cols`) | warning sign, alert |
