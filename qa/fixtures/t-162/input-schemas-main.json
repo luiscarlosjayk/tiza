@@ -1271,7 +1271,7 @@
         "type": "string"
       },
       "label": {
-        "description": "New label (or new text if it is a note, new title if it is a callout). An empty string removes it.",
+        "description": "New label: the text of a note, the title of a callout. An empty string removes a label or a title. A note keeps its text.",
         "type": [
           "string",
           "null"

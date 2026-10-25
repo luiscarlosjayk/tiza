@@ -2814,7 +2814,7 @@
         },
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
-        "description": "Parameters of `annotation.update`. Tiza refuses a key that it does not\nknow (`invalid_argument`). To change the text of a note or a callout,\nsend `label`.",
+        "description": "Parameters of `annotation.update`. Tiza refuses a key that it does not\nknow (`invalid_argument`). To change the text of a note or the title of a\ncallout, send `label`. To change the text of a callout, send the whole\ncallout as a new `shape`.",
         "properties": {
           "border": {
             "anyOf": [

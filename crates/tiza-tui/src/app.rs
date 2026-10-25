@@ -7538,8 +7538,8 @@ fn nearest_commands(typed: &str) -> Vec<&'static str> {
 }
 
 /// An unknown key of `annotation.update`, with what to send instead: `text`
-/// is the `label` of a note or a callout (no alias: on a callout it could
-/// mean the title too); a key one or two letters from an accepted one
+/// is the `label` of a note, and a new `shape` for a callout, whose `label`
+/// is its title (no alias); a key one or two letters from an accepted one
 /// (`colour`) names that one. serde's message already names the key and
 /// lists the accepted ones.
 fn update_key_hint(e: Error) -> Error {
@@ -7554,7 +7554,7 @@ fn update_key_hint(e: Error) -> Error {
         return e;
     };
     let hint = if key == "text" {
-        "Use `label` to change the text of a note or a callout.".to_string()
+        "Use `label` to change the text of a note or the title of a callout. To change the text of a callout, send the whole callout as a new `shape`.".to_string()
     } else {
         let accepted = msg.split("expected one of ").nth(1).unwrap_or("");
         let near = accepted

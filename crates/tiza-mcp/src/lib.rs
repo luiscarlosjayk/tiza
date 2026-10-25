@@ -291,7 +291,7 @@ pub struct UpdateParams {
     )]
     pub color: Option<String>,
     #[schemars(
-        description = "New label (or new text if it is a note, new title if it is a callout). An empty string removes it."
+        description = "New label: the text of a note, the title of a callout. An empty string removes a label or a title. A note keeps its text."
     )]
     pub label: Option<String>,
     #[schemars(
@@ -334,8 +334,8 @@ pub struct UpdateParams {
         description = "The file the annotation goes to, as a `code.link` names it. `null` is the main file. Leave it out to keep the file of the annotation."
     )]
     pub file: Option<Option<String>>,
-    /// Not a parameter (not in the schema): sent on to `annotation.update`
-    /// as it came, so its refusal says to use `label`, as the socket says.
+    /// Not a parameter (not in the schema): refused here, with what to give
+    /// instead, as the tool has no `shape`.
     #[serde(default)]
     #[schemars(skip)]
     pub text: Option<Value>,
@@ -941,8 +941,11 @@ impl TizaServer {
         if let Some(file) = &p.file {
             params["file"] = json!(file);
         }
-        if let Some(text) = p.text {
-            params["text"] = text;
+        if p.text.is_some() {
+            return Err(McpError::invalid_params(
+                "update_annotation has no `text`. Use `label` to change the text of a note or the title of a callout. To change the text of a callout, remove it and add it again (invalid_argument)",
+                None,
+            ));
         }
         let v = self.call("annotation.update", params).await?;
         Ok(annotation_reply(&v, "updated"))

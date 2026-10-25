@@ -397,8 +397,9 @@ pub struct AddParams {
 }
 
 /// Parameters of `annotation.update`. Tiza refuses a key that it does not
-/// know (`invalid_argument`). To change the text of a note or a callout,
-/// send `label`.
+/// know (`invalid_argument`). To change the text of a note or the title of a
+/// callout, send `label`. To change the text of a callout, send the whole
+/// callout as a new `shape`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct UpdateParams {

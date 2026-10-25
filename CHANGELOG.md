@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Fixed
+- `annotation.update` with `text` says what to send. Send `label` for the text of a note or the title of a callout. Send the whole callout as a new `shape` for the text of a callout. Before, it said that `label` changes the text of a callout.
+- The MCP tool `update_annotation` refuses `text` itself. It says to remove the callout and add it again, and it no longer names fields that only the socket takes.
 - The footer of the review shows `a accept all` and `d reject all`. Before, it showed `d none`, but `d` rejects every change that the review shows.
 - Release archives include the licenses of the embedded fonts: `LICENSE-JetBrainsMono-OFL.txt` and `LICENSE-TizaSymbols-DejaVu.txt`, next to `LICENSE-MIT` and `LICENSE-APACHE`.
 - Tiza does not remove a file at the socket path now. When `--socket` or `TIZA_SOCKET` names a file, a folder or a link, Tiza does not start the local API, and the status bar tells why. Tiza replaces only a socket that no instance listens on.

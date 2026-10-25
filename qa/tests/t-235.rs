@@ -6,8 +6,9 @@
 //! - AC1 An unknown key fails with `invalid_argument`, names the key and
 //!   lists the accepted ones.
 //! - AC2 `text` is refused like any unknown key, with one more sentence:
-//!   use `label` to change the text of a note or a callout (no alias: on a
-//!   callout `text` and `title` would be ambiguous).
+//!   use `label` to change the text of a note or the title of a callout,
+//!   and a new `shape` for the text of a callout (no alias: on a callout
+//!   `text` and `title` would be ambiguous).
 //! - AC3 What the docs name keeps working: the agent guide's examples, the
 //!   MCP tool `update_annotation`, the TUI commands that edit an annotation
 //!   and `file`.
@@ -63,7 +64,7 @@ fn step2_ac2_text_says_to_use_label() {
     assert_eq!(code, "invalid_argument", "{msg}");
     assert!(msg.contains("unknown field `text`"), "{msg}");
     assert!(
-        msg.contains("Use `label` to change the text of a note or a callout."),
+        msg.contains("Use `label` to change the text of a note or the title of a callout."),
         "{msg}"
     );
     assert_eq!(note_text(&live), "one", "nothing changed");

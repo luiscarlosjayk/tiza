@@ -118,7 +118,7 @@ fn ac3_text_says_to_use_label() {
     let (err, text, _) = mcp.call("update_annotation", json!({"id": "n0", "text": "x"}));
     assert!(err, "{text}");
     assert!(
-        text.contains("Use `label` to change the text of a note or a callout."),
+        text.contains("Use `label` to change the text of a note or the title of a callout."),
         "{text}"
     );
     assert_eq!(std::fs::read_to_string(&tiza).unwrap(), before);
