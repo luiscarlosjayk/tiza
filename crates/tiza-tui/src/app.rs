@@ -1376,17 +1376,26 @@ impl App {
         real(path).is_some_and(|p| Some(p) == real(&self.save_path))
     }
 
-    /// A path typed in `:w`, `:saveas` or `:export`: as typed, which starts
-    /// at the folder where Tiza started when it is relative; a leading `~`
-    /// is the home folder, as in Vim.
-    fn typed_path(rest: &str) -> PathBuf {
-        let home = || std::env::var_os("HOME").map(PathBuf::from);
+    /// A path typed in `:w`, `:saveas`, `:wq` or `:export`: as typed, which
+    /// starts at the folder where Tiza started when it is relative; a
+    /// leading `~` is the home folder, as in Vim. Without `HOME` (not set or
+    /// empty) a `~` is an error, so that the file never goes to the current
+    /// folder instead.
+    fn typed_path(rest: &str) -> Result<PathBuf, Error> {
+        let home = || {
+            std::env::var_os("HOME")
+                .filter(|h| !h.is_empty())
+                .map(PathBuf::from)
+                .ok_or_else(|| {
+                    Error::Invalid(format!(
+                        "{rest}: ~ needs HOME, and HOME is empty or not set. Give the full path"
+                    ))
+                })
+        };
         match rest.strip_prefix('~') {
-            Some("") => home().unwrap_or_else(|| PathBuf::from(rest)),
-            Some(tail) if tail.starts_with('/') => home()
-                .map(|h| h.join(&tail[1..]))
-                .unwrap_or_else(|| PathBuf::from(rest)),
-            _ => PathBuf::from(rest),
+            Some("") => home(),
+            Some(tail) if tail.starts_with('/') => home().map(|h| h.join(&tail[1..])),
+            _ => Ok(PathBuf::from(rest)),
         }
     }
 
@@ -1456,7 +1465,7 @@ impl App {
                     .into(),
             ));
         }
-        let path = Self::typed_path(rest);
+        let path = Self::typed_path(rest)?;
         if self.is_save_path(&path) {
             self.save()?;
             return Ok(format!("saved to {}", self.save_path.display()));
@@ -4321,7 +4330,7 @@ impl App {
                 // the one saved to; `:saveas PATH` moves to PATH. An existing
                 // file needs `!`.
                 "w" | "write" | "w!" | "write!" if !rest.is_empty() => {
-                    self.write_copy(&Self::typed_path(rest), cmd.ends_with('!'))
+                    Self::typed_path(rest).and_then(|p| self.write_copy(&p, cmd.ends_with('!')))
                 }
                 "w" | "write" | "w!" | "write!" => self
                     .save()
@@ -4364,7 +4373,7 @@ impl App {
                         return Ok(String::new());
                     }
                     // The copy holds the changes: quit as if they were saved.
-                    self.write_copy(&Self::typed_path(rest), force)?;
+                    self.write_copy(&Self::typed_path(rest)?, force)?;
                     self.quit = true;
                     Ok(String::new())
                 }
@@ -5039,8 +5048,10 @@ impl App {
                     }
                     _ => Err(Error::Invalid("usage: :autosave [on|off]".into())),
                 },
-                // Only with TIZA_TEST_PANIC set: lets the crash hook be
-                // exercised from a test.
+                // Test hook, only with the `test-hooks` feature and
+                // TIZA_TEST_PANIC set: lets the crash hook be exercised from
+                // a test. A release build has no `:panic`.
+                #[cfg(feature = "test-hooks")]
                 "panic" if std::env::var_os("TIZA_TEST_PANIC").is_some() => {
                     panic!("forced by :panic (TIZA_TEST_PANIC)")
                 }
@@ -5398,7 +5409,7 @@ impl App {
             self.save_path
                 .with_file_name(format!("{stem}-step{step}.txt"))
         } else {
-            Self::typed_path(path)
+            Self::typed_path(path)?
         };
         let format = ExportFormat::from_path(&path).ok_or_else(|| {
             let ext = path

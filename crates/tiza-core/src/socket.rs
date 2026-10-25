@@ -45,19 +45,6 @@ fn sanitize(s: &str) -> String {
         .collect()
 }
 
-/// Creates the socket directory with 0700 permissions (owner only).
-pub fn prepare_dir(path: &Path) -> std::io::Result<()> {
-    if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

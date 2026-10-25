@@ -48,8 +48,9 @@ An agent sends documents, code and commands through the socket.
 
 Tiza asks the terminal for its colors only when the theme is `auto`, the default, or `terminal`.
 
-- At start, Tiza asks through `/dev/tty` when standard input is not a terminal. `TIZA_NO_OSC` stops this question. Any value works, even an empty one.
-- At each resize, Tiza asks again through standard output. `TIZA_NO_OSC` does not stop this question.
+- At start, Tiza asks through `/dev/tty` when standard input is not a terminal.
+- At each resize, Tiza asks again through the same terminal as at start.
+- `TIZA_NO_OSC` stops the color query at start and at each resize. Any value works, even an empty one.
 - When standard input is a pipe, Tiza reads its keys from `/dev/tty`.
 
 ### The config file
@@ -60,8 +61,7 @@ Tiza looks for the config file in this order:
 2. `$XDG_CONFIG_HOME/tiza/config.toml`.
 3. `~/.config/tiza/config.toml`.
 
-- An empty `TIZA_CONFIG` or `XDG_CONFIG_HOME` counts as not set.
-- An empty `HOME` counts as set. Then Tiza looks for `.config/tiza/config.toml` in the current folder.
+- An empty `TIZA_CONFIG`, `XDG_CONFIG_HOME` or `HOME` counts as not set.
 - Without `HOME` and without `XDG_CONFIG_HOME`, Tiza reads no config file.
 - When the file does not exist, Tiza uses its defaults.
 - When Tiza cannot read or parse the file, it shows a warning and uses its defaults.
@@ -137,8 +137,10 @@ When a write stops before its end, the temporary file stays:
 The runtime folder holds the socket and `panics.log`.
 
 - It is `$XDG_RUNTIME_DIR/tiza/`. When that variable is empty or not set, it is `$TMPDIR/tiza/`, or else `/tmp/tiza/`.
-- Tiza makes the missing folders up to the folder of the socket or of `panics.log`. It sets only the last folder to `0700`. The others get the permissions of your umask.
-- Tiza does not check the result of that change, or the owner of the folder.
+- Tiza makes the `tiza/` folder with `0700`. When `tiza/` has wider permissions, Tiza sets it to `0700`.
+- Tiza makes each missing folder above `tiza/` with `0700`.
+- Tiza refuses a `tiza/` that is a symbolic link, that another user owns, or that it cannot set to `0700`.
+- When Tiza refuses the folder and the socket is in it, Tiza starts with no socket. The status bar tells why.
 - At start, Tiza makes the folder of the socket only when the socket is on. With `--socket PATH`, that is the folder of `PATH`.
 - With `--no-socket`, Tiza makes no folder at start.
 - Before each line of `panics.log`, Tiza makes the runtime folder. It does this also with `--socket PATH` or `--no-socket`.
@@ -150,8 +152,9 @@ The runtime folder holds the socket and `panics.log`.
 
 `--socket PATH` and `$TIZA_SOCKET` also change what Tiza does on disk:
 
-- Tiza sets the folder of `PATH` to `0700`.
-- When a file is at `PATH` and no instance listens there, Tiza removes that file.
+- Tiza makes each missing folder of `PATH` with `0700`. It does not change a folder that exists.
+- When a socket is at `PATH` and no instance listens there, Tiza removes it.
+- When a regular file, a folder or a link is at `PATH`, Tiza does not remove it. Tiza starts with no socket, and the status bar tells why.
 
 ### Removal of the socket
 
@@ -164,6 +167,7 @@ The runtime folder holds the socket and `panics.log`.
 - Each line has the time, the version, the commit, the process id and a line of text.
 - The text can quote a line of your document or name your files.
 - The file gets the permissions of your umask. The `0700` folder protects it.
+- When Tiza refuses the runtime folder, it writes the line on standard error when it quits, not in `panics.log`.
 
 ## Processes
 
@@ -183,8 +187,7 @@ Tiza reads these variables:
 | `TIZA_SESSION` | The name of the session. |
 | `TIZA_SOCKET` | The path of the socket. |
 | `TIZA_FFMPEG` | The path of `ffmpeg`. |
-| `TIZA_NO_OSC` | Stops the question about the colors of the terminal at start. |
-| `TIZA_TEST_PANIC` | Turns on the hidden command `:panic`, which stops Tiza on purpose for the tests. |
+| `TIZA_NO_OSC` | Stops the color query. |
 | `HOME` | The config file, and `~` at the start of a path in `:w`, `:saveas`, `:wq` and `:export`. |
 | `XDG_CONFIG_HOME` | The folder of the config file. |
 | `XDG_RUNTIME_DIR` | The runtime folder. |
@@ -192,6 +195,7 @@ Tiza reads these variables:
 | `PATH` | Where to find `ffmpeg`, and `tput` for the terminal library. |
 
 - A video export also uses `TMPDIR` for its temporary folder.
+- Without `HOME`, or with an empty `HOME`, the path `~` or a path that starts with `~/` gives an error.
 - `~` does not work in `:theme file` or in `:link`. On the command line, your shell expands `~`.
 - The libraries that Tiza uses also read some variables. Examples are `TERM`, `COLORTERM`, `NO_COLOR`, `CLICOLOR` and `RUST_BACKTRACE`.
 - `tiza mcp` also reads `TOKIO_WORKER_THREADS`.

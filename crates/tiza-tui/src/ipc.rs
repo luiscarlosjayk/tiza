@@ -3,6 +3,7 @@
 //! thread over a channel; the response comes back over a one-shot channel.
 
 use std::io::{BufRead, BufReader, Write};
+use std::os::unix::fs::{FileTypeExt, MetadataExt, PermissionsExt};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -10,7 +11,6 @@ use std::thread;
 
 use serde_json::Value;
 use tiza_core::protocol::{Request, Response};
-use tiza_core::socket;
 
 pub struct IpcRequest {
     pub req: Request,
@@ -21,36 +21,84 @@ pub struct IpcRequest {
 pub struct IpcServer {
     pub path: PathBuf,
     pub rx: Receiver<IpcRequest>,
+    /// The device and inode of the socket that this server made: on drop,
+    /// only that socket is removed, never a file that took its path since.
+    made: (u64, u64),
 }
 
 impl Drop for IpcServer {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
+        let ours = std::fs::symlink_metadata(&self.path)
+            .is_ok_and(|m| m.file_type().is_socket() && (m.dev(), m.ino()) == self.made);
+        if ours {
+            let _ = std::fs::remove_file(&self.path);
+        }
     }
 }
 
 pub fn start(path: &Path) -> std::io::Result<IpcServer> {
-    socket::prepare_dir(path)?;
-    if path.exists() {
-        // Is anyone listening? If not, it is an orphaned socket.
-        if UnixStream::connect(path).is_ok() {
+    crate::runtime::prepare_parent(path)?;
+    match std::fs::symlink_metadata(path) {
+        // Is anyone listening? A refused connection is an orphaned socket;
+        // any other error (another user's socket) leaves it there.
+        Ok(meta) if meta.file_type().is_socket() => match UnixStream::connect(path) {
+            Ok(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    format!(
+                        "an instance is already listening on {} (use --session for another one)",
+                        path.display()
+                    ),
+                ));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+                std::fs::remove_file(path)?;
+            }
+            Err(e) => {
+                return Err(std::io::Error::new(
+                    e.kind(),
+                    format!("cannot check the socket {}: {e}", path.display()),
+                ));
+            }
+        },
+        // A file, a folder or a link that a mistyped `--socket` or a stray
+        // TIZA_SOCKET names: never removed.
+        Ok(_) => {
             return Err(std::io::Error::new(
-                std::io::ErrorKind::AddrInUse,
+                std::io::ErrorKind::AlreadyExists,
                 format!(
-                    "an instance is already listening on {} (use --session for another one)",
+                    "{} is there and is not a socket: Tiza does not remove it. Give another socket path with --socket or TIZA_SOCKET",
                     path.display()
                 ),
             ));
         }
-        std::fs::remove_file(path)?;
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e),
     }
     let listener = UnixListener::bind(path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
-    }
+    let made = match std::fs::symlink_metadata(path) {
+        Ok(m) => (m.dev(), m.ino()),
+        Err(e) => {
+            let _ = std::fs::remove_file(path);
+            return Err(e);
+        }
+    };
     let (tx, rx) = channel::<IpcRequest>();
+    // From here on, an error drops `server`, which removes the socket.
+    let server = IpcServer {
+        path: path.to_path_buf(),
+        rx,
+        made,
+    };
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).map_err(|e| {
+        std::io::Error::new(
+            e.kind(),
+            format!(
+                "cannot make the socket {} private (0600): {e}",
+                path.display()
+            ),
+        )
+    })?;
     thread::Builder::new()
         .name("tiza-ipc".into())
         .spawn(move || {
@@ -62,10 +110,7 @@ pub fn start(path: &Path) -> std::io::Result<IpcServer> {
                 });
             }
         })?;
-    Ok(IpcServer {
-        path: path.to_path_buf(),
-        rx,
-    })
+    Ok(server)
 }
 
 fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {

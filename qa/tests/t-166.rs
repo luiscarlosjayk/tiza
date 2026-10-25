@@ -1376,44 +1376,69 @@ fn v1_a_dropped_request_leaves_no_animation_drawing_the_value() {
 }
 
 /// V2: the hooks are only in a build with the test-only `test-hooks`
-/// feature (the tests' binary): every place that reads one of their
-/// environment variables is behind `#[cfg(feature = "test-hooks")]`, no
-/// crate turns it on by default, and the old unguarded names are gone.
+/// feature (the tests' binary): in every source file of every crate, each
+/// read of a hook's environment variable (`TIZA_TEST_*`, `TIZA_MCP_TEST_*`,
+/// `TIZA_MCP_EXPORT_TIMEOUT_MS`) is behind `#[cfg(feature = "test-hooks")]`,
+/// no crate turns it on by default, and the old unguarded names are gone.
 #[test]
 fn v2_the_test_hooks_are_never_in_a_release_build() {
+    fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                sources(&p, out);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                out.push(p);
+            }
+        }
+    }
+    let is_hook = |name: &str| {
+        name.starts_with("TIZA_TEST_")
+            || name.starts_with("TIZA_MCP_TEST_")
+            || name == "TIZA_MCP_EXPORT_TIMEOUT_MS"
+    };
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let mut seen = 0;
-    for file in [
-        "crates/tiza-tui/src/app.rs",
-        "crates/tiza-mcp/src/lib.rs",
-        "crates/tiza-cli/src/main.rs",
-        "crates/tiza-core/src/model.rs",
-    ] {
-        let text = std::fs::read_to_string(root.join(file)).unwrap();
+    let mut files = Vec::new();
+    for e in std::fs::read_dir(root.join("crates")).unwrap() {
+        let src = e.unwrap().path().join("src");
+        if src.is_dir() {
+            sources(&src, &mut files);
+        }
+    }
+    files.sort();
+    let mut seen = Vec::new();
+    for path in &files {
+        let file = path.strip_prefix(&root).unwrap().display().to_string();
+        let text = std::fs::read_to_string(path).unwrap();
         assert!(
             !text.contains("TIZA_PANIC_FOR_TESTS") && !text.contains("TIZA_MCP_PANIC_FOR_TESTS"),
             "{file} still reads an unguarded hook"
         );
         let lines: Vec<&str> = text.lines().collect();
         for (i, l) in lines.iter().enumerate() {
-            if !l.contains("std::env::var(\"TIZA_TEST_HOOK\")")
-                && !l.contains("std::env::var(\"TIZA_MCP_TEST_HOOK\")")
-                && !l.contains("std::env::var(\"TIZA_MCP_EXPORT_TIMEOUT_MS\")")
-            {
-                continue;
+            for read in ["env::var(\"", "env::var_os(\""] {
+                for (at, _) in l.match_indices(read) {
+                    let rest = &l[at + read.len()..];
+                    let name = &rest[..rest.find('"').unwrap_or(0)];
+                    if !is_hook(name) {
+                        continue;
+                    }
+                    seen.push(format!("{file}:{}: {name}", i + 1));
+                    let guarded = lines[i.saturating_sub(3)..i]
+                        .iter()
+                        .any(|p| p.contains("#[cfg(feature = \"test-hooks\")]"));
+                    assert!(
+                        guarded,
+                        "{file}:{}: {name} is read outside #[cfg(feature = \"test-hooks\")]",
+                        i + 1
+                    );
+                }
             }
-            seen += 1;
-            let guarded = lines[i.saturating_sub(3)..i]
-                .iter()
-                .any(|p| p.contains("#[cfg(feature = \"test-hooks\")]"));
-            assert!(
-                guarded,
-                "{file}:{}: a hook outside #[cfg(feature = \"test-hooks\")]",
-                i + 1
-            );
         }
     }
-    assert_eq!(seen, 3, "the three hooks");
+    // The hooks of today: the request and check panics of the TUI, its
+    // follow hook and `:panic`, and the two of the MCP server.
+    assert_eq!(seen.len(), 6, "{seen:#?}");
     for manifest in [
         "crates/tiza-tui/Cargo.toml",
         "crates/tiza-mcp/Cargo.toml",

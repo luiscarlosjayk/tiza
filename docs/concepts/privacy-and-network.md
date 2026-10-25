@@ -18,7 +18,8 @@ All of this stays on your computer:
 
 - Tiza reads the files that you open, the files that a document names, its config file and a theme file that you give.
 - Tiza writes the `.tiza` document, the copies of the document and the exports that you ask for.
-- By default, Tiza keeps its socket and its log, `panics.log`, in a runtime folder. Tiza tries to set that folder to `0700`, so that only your user can open it.
+- By default, Tiza keeps its socket and its log, `panics.log`, in a runtime folder. That folder is `0700`, so that only your user can open it.
+- Tiza refuses a runtime folder that another user owns.
 - Tiza starts `ffmpeg` for an MP4 or a WebM export. When the terminal does not give its size, the terminal library can run `tput`.
 
 The full list is in [Files and environment](../reference/files-and-environment.md).

@@ -14,6 +14,7 @@ pub mod keys;
 pub mod list;
 pub mod panel;
 pub mod reanchor;
+pub mod runtime;
 pub mod ui;
 
 use std::io;
@@ -189,6 +190,15 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let gone = silence_dead_stderr();
     let _ = execute!(io::stdout(), DisableBracketedPaste, DisableMouseCapture);
     ratatui::restore();
+    // Lines that panics.log could not take, now that nothing draws over
+    // them. They can quote the document: shown, never sent raw. With the
+    // terminal gone they have nowhere to go.
+    let held = std::mem::take(&mut *HELD_LOG_LINES.lock().unwrap_or_else(|p| p.into_inner()));
+    if !gone {
+        for line in held {
+            eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
+        }
+    }
     // Quit over stale moves (`:q!`, Ctrl-C): their marks are lost, so say
     // what the next load does with them where it will be read.
     if let Some(s) = tiza_core::stale::close_summary(&app.doc) {
@@ -233,12 +243,25 @@ fn say_on_exit(gone: bool, msg: &str) {
     }
 }
 
+/// Lines for `panics.log` that Tiza could not write there (it refused its
+/// runtime folder): said on stderr once the terminal is restored, never
+/// over the screen.
+static HELD_LOG_LINES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 /// Appends one line to `panics.log` in Tiza's runtime directory (owner
 /// only, like the sockets): the time, the version, the process and `what`.
-/// Returns the log's path when it was written.
+/// Returns the log's path when it was written. When Tiza refuses that
+/// folder (another user's, see [`runtime`]), the line waits in
+/// `HELD_LOG_LINES`, with why, so that it is not lost.
 pub(crate) fn log_line(what: &str) -> Option<PathBuf> {
     let path = tiza_core::socket::runtime_dir().join("panics.log");
-    tiza_core::socket::prepare_dir(&path).ok()?;
+    if let Err(e) = runtime::prepare_parent(&path) {
+        HELD_LOG_LINES
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .push(format!("{what} (not written to panics.log: {e})"));
+        return None;
+    }
     let stamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())

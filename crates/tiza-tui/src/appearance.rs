@@ -106,29 +106,11 @@ pub fn parse_answers(input: &str) -> Host {
 /// where an answer was taken out (so an ESC that ends one is Esc, not Alt
 /// with the next key).
 pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>) {
-    if std::env::var_os("TIZA_NO_OSC").is_some() {
+    if osc_disabled() {
         return (None, Vec::new());
     }
-    // The terminal crossterm reads keys from: stdin when it is one, else
-    // the controlling terminal.
-    let mut tty = {
-        use std::os::fd::AsFd;
-        let stdin = std::io::stdin();
-        if rustix::termios::isatty(stdin.as_fd()) {
-            let Ok(dup) = rustix::io::dup(stdin.as_fd()) else {
-                return (None, Vec::new());
-            };
-            std::fs::File::from(dup)
-        } else {
-            match std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open("/dev/tty")
-            {
-                Ok(f) => f,
-                Err(_) => return (None, Vec::new()),
-            }
-        }
+    let Some(mut tty) = input_terminal() else {
+        return (None, Vec::new());
     };
     let Ok(saved) = rustix::termios::tcgetattr(&tty) else {
         return (None, Vec::new());
@@ -212,12 +194,39 @@ pub fn without_answers(buf: &[u8], reads: &[usize]) -> Vec<Vec<u8>> {
     out
 }
 
-/// Sends the query while the TUI runs; the answer comes back through the
-/// key stream (`OscCapture`).
+/// `TIZA_NO_OSC` is set (tests, pipelines): Tiza never asks the terminal.
+fn osc_disabled() -> bool {
+    std::env::var_os("TIZA_NO_OSC").is_some()
+}
+
+/// The terminal crossterm reads keys from: stdin when it is one, else the
+/// controlling terminal. The query goes there, so the answer comes back
+/// with the keys.
+fn input_terminal() -> Option<std::fs::File> {
+    use std::os::fd::AsFd;
+    let stdin = std::io::stdin();
+    if rustix::termios::isatty(stdin.as_fd()) {
+        rustix::io::dup(stdin.as_fd()).ok().map(std::fs::File::from)
+    } else {
+        std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open("/dev/tty")
+            .ok()
+    }
+}
+
+/// Sends the query while the TUI runs (after a resize), to the same
+/// terminal as at start and only when `TIZA_NO_OSC` is not set; the answer
+/// comes back through the key stream (`OscCapture`).
 pub fn request_host() {
-    let mut out = std::io::stdout();
-    let _ = out.write_all(QUERY.as_bytes());
-    let _ = out.flush();
+    if osc_disabled() {
+        return;
+    }
+    if let Some(mut tty) = input_terminal() {
+        let _ = tty.write_all(QUERY.as_bytes());
+        let _ = tty.flush();
+    }
 }
 
 /// Collects an OSC answer that crossterm hands us as key presses: `Alt+]`

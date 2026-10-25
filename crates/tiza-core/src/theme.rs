@@ -683,7 +683,11 @@ pub fn config_path() -> Option<std::path::PathBuf> {
         .map(std::path::PathBuf::from)
         .filter(|p| !p.as_os_str().is_empty())
         .or_else(|| {
-            std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(".config"))
+            // An empty HOME counts as not set (a cwd-relative `.config/`
+            // would be a surprise).
+            std::env::var_os("HOME")
+                .filter(|h| !h.is_empty())
+                .map(|h| std::path::PathBuf::from(h).join(".config"))
         })?;
     Some(base.join("tiza").join("config.toml"))
 }

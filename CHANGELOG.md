@@ -6,6 +6,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ### Fixed
 - Release archives include the licenses of the embedded fonts: `LICENSE-JetBrainsMono-OFL.txt` and `LICENSE-TizaSymbols-DejaVu.txt`, next to `LICENSE-MIT` and `LICENSE-APACHE`.
+- Tiza does not remove a file at the socket path now. When `--socket` or `TIZA_SOCKET` names a file, a folder or a link, Tiza does not start the local API, and the status bar tells why. Tiza replaces only a socket that no instance listens on.
+- Tiza changes permissions only of its own runtime folder, `tiza/` in `$XDG_RUNTIME_DIR`, `$TMPDIR` or `/tmp`. It makes that folder with 0700. It refuses the folder when it is a link or when it belongs to another user. For a socket path that you give, Tiza makes only the missing folders, and it does not change a folder that is there. Before, it made the folder of any socket private (0700), also your home folder or the current folder.
+- When Tiza cannot use its runtime folder, it writes the line for `panics.log` to stderr when it quits.
+- After a resize, Tiza asks the terminal for its colors only when `TIZA_NO_OSC` is not set. It asks the terminal that it reads the keys from, as it does at start. Before, it wrote the question to stdout.
+- The release binary does not have the test command `:panic` now.
+- An empty `HOME` counts as not set. Before, Tiza read `.config/tiza/config.toml` in the current folder.
+- Without `HOME`, or with an empty `HOME`, a path that starts with `~/` in `:w`, `:saveas`, `:wq` or `:export` gives an error. Before, Tiza wrote the file in the current folder.
 
 ### Changed
 - The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.

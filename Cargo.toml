@@ -55,7 +55,7 @@ resvg = { version = "0.48.1", default-features = false, features = ["text", "sys
 skrifa = { version = "0.44.0", default-features = false, features = ["std"] }
 # Host appearance query: raw mode + timed read on /dev/tty before crossterm starts; already in the tree through crossterm:
 # version tied to crossterm's; never bumped alone.
-rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio"] }
+rustix = { version = "1.1", default-features = false, features = ["std", "termios", "fs", "stdio", "process"] }
 # SIGHUP as a flag the event loop reads: the terminal went away, exit in order. Already in the tree through crossterm:
 # version tied to crossterm's; never bumped alone.
 signal-hook = "0.3.18"
