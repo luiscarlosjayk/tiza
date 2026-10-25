@@ -1,9 +1,15 @@
 # Supervised mode
 
-Use supervised mode to accept or reject each change that an agent asks for.
+Use this page when the presenter turns on supervised mode and your calls wait. How the presenter reviews your changes is in [Supervise an agent](../guides/supervise-an-agent.md).
 
-**Supervised mode** (`:supervise on`, socket `supervise.set`): while you present, each change that an agent asks for waits as a proposal. The status bar shows `⏸ N to review · :review`, and presentation mode shows the same chip at the bottom left. Nothing opens over the code by itself. `:review` shows the agent changes in a panel: `j`/`k` select a change, `y` or Enter accepts it, and `n` rejects it (the agent gets the error `rejected`). `a` and `d` decide all of them. The agent's call returns only after your decision. Esc hides the panel, and `:review` shows it again. `:` hides it and opens the command line. A proposal that nobody decides in 60 s is rejected. Reads (`status`, `get_code`, `render_text`, the resources) never wait.
+Tiza is a terminal tool that draws annotations on code. To connect your client, see [Connect an agent](setup.md).
 
-**What an agent adds where you cannot see it**: when an agent (socket or MCP) adds or changes an annotation the view does not show — a later step, a file a `code.link` hides, lines outside the window — the status bar says so the way your own commands do, with ` by agent`: `a17: box 3-5 added by agent (step 1, press n)`, `a4: note L13 updated by agent (step 3, :step 3 shows it)`, `a9: note L17 added by agent (src/queue.rs, not shown at step 2)`. Several within a second share one message (`3 agent annotations not shown (step 1, press n)`); in supervised mode the acceptance carries the tail (`accepted p1: add box L3-5 (step 1, press n)`). Presentation mode never draws it on the take: it reaches the bar when you leave (`P` or Esc), leaving out what you have reached meanwhile.
+## For the agent
 
-The presenter may turn on `:supervise`: then every mutating call (add, update, delete, clear, step, theme, focus, pointer, follow, scene put/patch) waits until they press `y` or `n` in the TUI. Nothing opens over the code: the presenter sees the chip `⏸ N to review · :review` and decides when they choose. Accepted calls return their normal result (for an annotation, `visible` and `shown_step` as of the acceptance); rejected ones fail with code `rejected` ("the presenter rejected this change"), and so does a proposal left undecided for 60 s. `status` tells you (`supervised`, `pending`). Do not retry a rejected change in a loop; say what you wanted to draw and let the presenter answer. Reads never wait.
+- Read `supervised` and `pending` in `status`. `supervised` is absent when supervised mode is off, and `pending` is absent when no change waits.
+- Each call that changes the document or the screen waits for the decision of the presenter. The list is in [Supervised mode in the Socket API](../reference/socket-api.md#supervised-mode).
+- Reads never wait for the presenter: `status`, `get_code`, `render_text`, `check` and the resources. A `check` can wait for another `check`.
+- Some requests fail at once and do not wait, for example an unknown method. The list is in [Supervised mode in the Socket API](../reference/socket-api.md#supervised-mode). Other bad parameters fail only when the presenter accepts the change.
+- An accepted call gives its usual result. For an annotation, `visible` and `shown_step` are as at the time of the acceptance.
+- A rejected call fails with the code `rejected`. The message tells if the presenter rejected the change or if 60 s passed. See [Error codes](../reference/socket-api.md#error-codes).
+- Do not send a rejected change again in a loop. Tell the presenter what you want to draw. Wait for the answer.

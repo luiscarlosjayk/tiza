@@ -91,3 +91,4 @@ xattr -d com.apple.quarantine PATH
 
 - [Follow the editor](follow-the-editor.md)
 - [Check before you record](check-before-you-record.md)
+- [Supervise an agent](supervise-an-agent.md)

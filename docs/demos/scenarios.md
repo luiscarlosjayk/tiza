@@ -110,7 +110,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 
 - **Sample:** Copy `examples/src/stack.rs` alone, so that it opens with no annotations: `mkdir -p /tmp/stack && cp examples/src/stack.rs /tmp/stack/`. Run `tiza /tmp/stack/stack.rs` and type `:supervise on`. `examples/stack-impl.tiza` is a finished document of the same lesson.
 - **Script:** Ask the agent: `Explain why push and pop take &mut self and peek takes &self: one mark per method, a note on Option<&T>.` Each change of the agent waits 60 s for you, then Tiza rejects it. Type `:review`. Press `y` to accept a change, `n` to reject one and `a` to accept all the changes that are left.
-- **The audience sees:** `⏸ N to review · :review` on the status bar, the review panel with one row for each change, and the accepted changes on the code. For each change that you reject, the agent gets the error `rejected`. See [Supervised mode](../agents/supervised-mode.md).
+- **The audience sees:** `⏸ N to review · :review` on the status bar, the review panel with one row for each change, and the accepted changes on the code. For each change that you reject, the agent gets the error `rejected`. See [Supervise an agent](../guides/supervise-an-agent.md).
 - **Recording:** Use normal mode. The review panel is the subject of this scenario. The screen recording takes 1 to 2 minutes. Only the changes that you accept go to `/tmp/stack/stack.rs.tiza`.
 
 ## 9. One concept, step by step
@@ -147,4 +147,4 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 
 - **The audience sees:** The tour plays by itself: step 0 for 2 s, steps 1 to 4 for 4 s each and the recap for 6 s. Then it starts again at step 0, without end. One loop takes 24 s.
 - **Recording:** The booth needs no recording. Tiza saves the times in the copy, so the tour also plays by itself when you open it again. For a recording, `tiza render /tmp/tally-tour.tiza --out loop.gif` holds each step for its `auto_advance_ms`.
-  - To step the tour from your editor, bind `tiza next`, `tiza prev` and `tiza goto recap` to keys. See [Tiza from Zed](../zed.md) and [Named steps, auto-advance and loop](../agents/moves-and-steps.md#named-steps-auto-advance-and-loop).
+  - To step the tour from your editor, bind `tiza next`, `tiza prev` and `tiza goto recap` to keys. See [Tiza from Zed](../zed.md) and [Name the steps](../agents/moves-and-steps.md#name-the-steps).

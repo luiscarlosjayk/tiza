@@ -117,6 +117,8 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | presentation mode | the mode that hides the interface (`P`, `--present`) | take mode |
 | normal mode | the mode where you write annotations | authoring screen |
 | move | a change that a step makes to the code or the view (`code.patch`, `code.link`, `cursor`, `select`, `wait`) | patch (except `code.patch`) |
+| stale move | a move that Tiza skips on `n` and `p` after a reload or a paste, because the place of its lines is not certain or its target does not match | outdated move, broken move |
+| unanchored | the state of an annotation whose text or line a move took, or that a stale move holds; Tiza keeps it and does not draw it | orphan, detached, lost |
 | view | one file that a `code.link` shows, with its own annotations | pane (Herdr panes keep their name) |
 | mark | the annotation that puts a glyph and a legend on a span | badge (that word is for the status bar sign), tag |
 | kind | the name of a mark, built in or custom (`warn`, `read`, `io`) | type |
@@ -135,8 +137,11 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | command line | the `:` prompt of the TUI, where you type a command | prompt, command bar |
 | status bar | the bottom row of normal mode, with the state and the last message | status line, the bar, message line |
 | message | the text that a command shows in the status bar | notice, toast |
+| text reply | the text of `get_code`, `list_annotations`, `tiza scene list` and `tiza://code`, the error messages of the MCP tools, and the errors that the `tiza` commands print | plain output |
+| JSON reply | the JSON part of an MCP tool result, and the JSON that `tiza://scene`, `tiza api` and `tiza scene` give | JSON output (except in `--json`) |
 | badge | the `!` sign and its text on the status bar that tells what the step on screen loses (`! 3 labels cut`, `! code needs N cols`) | warning sign, alert |
 | presenter | the person who shows the code; only in agent pages | user |
+| review | the feature that lists the agent changes that wait in supervised mode (`:review`); it shows in a panel, as the help and the annotation list do | chip, queue |
 | code reference | code that the document reads from a file (`"code": {"file": …}`) | file link, pointer |
 | embedded code | code that the document holds as a copy (`:embed`) | inline code, frozen code |
 | mouse capture | the state in which Tiza gets the mouse events of the terminal (`--mouse`, `:mouse`) | mouse mode, mouse reporting |

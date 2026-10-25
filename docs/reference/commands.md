@@ -237,7 +237,7 @@ The fields are in [Document format](document-format.md#annotations).
 
 - The options and the messages of `:export` are in [`:export`](exports.md#export).
 - In supervised mode, each change of an agent waits for your decision.
-- Supervised mode is in [Supervised mode](../agents/supervised-mode.md). The keys of the review are in [Agent review](keys.md#agent-review).
+- Supervised mode is in [Supervise an agent](../guides/supervise-an-agent.md). The keys of the review are in [Agent review](keys.md#agent-review).
 
 ## Save and quit
 

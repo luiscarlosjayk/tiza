@@ -70,7 +70,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 
 11. Present the tour. Press `P` for presentation mode, then `n` for each step. See [Keys](../reference/keys.md). From another terminal, `tiza next` and `tiza goto recap` also change the step.
 
-The reply of each tool that adds an annotation tells if the annotation is on screen. It starts with `ID added at step N; visible now`, or it says `not visible now` and gives the reason. After you name the steps, the title of the step comes after `step N`. A hidden annotation is not an error. See [Is it on screen?](../agents/draw-for-a-presenter.md#is-it-on-screen).
+The reply of each tool that adds an annotation tells if the annotation is on screen. It starts with `ID added at step N; visible now`, or it says `not visible now` and gives the reason. After you name the steps, the title of the step comes after `step N`. A hidden annotation is not an error. See [Check that the annotation shows](../agents/draw-for-a-presenter.md#check-that-the-annotation-shows).
 
 ## Check and export the tour
 

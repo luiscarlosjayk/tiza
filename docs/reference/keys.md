@@ -290,7 +290,7 @@ The help (`?`), the annotation list (`L`) and the agent review (`:review`) are p
 - With a filter, `a` and `d` decide only the changes that the filter shows. The other changes wait.
 - When the review shows no change, `Enter` closes it.
 
-See [Supervised mode](../agents/supervised-mode.md).
+See [Supervise an agent](../guides/supervise-an-agent.md).
 
 ### Filter
 

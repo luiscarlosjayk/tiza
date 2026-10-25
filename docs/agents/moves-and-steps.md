@@ -1,26 +1,149 @@
 # Change the code between steps
 
-## Code that changes between steps (moves)
+Use this page to change the code at a step, show another file or name the steps of a document. The fields of each move are in [Moves](../reference/document-format.md#moves).
 
-When the lesson adds or rewrites code as it goes, do not open a second document: add a **move**. `add_move {at_step, op: insert|replace|delete, …, content, typing?, speed_ms?, rebind?}` registers a `code.patch` the TUI applies when the presenter reaches `at_step` and reverts when they go back; `render --step N` and the exports apply it instantly. Targets are matched on the code **as shown at that step** (after the moves of earlier steps and the earlier moves of the same step) and must match exactly once: `after`/`before` the text of a line or `position` (the line the content goes before; last+1 appends) for an insert; `find`, `find_start`/`find_end` or `position: "7-9"` for a replace or delete. When the text appears more than once, say which one with `occurrence: N` — 1-based, counted in reading order over the **whole** code at that step, a line holding the text twice counting twice (`end_occurrence` for `find_end`); an N past the last match is an error naming the move, and so is an ambiguous target without it. `get_code` at that step shows you the matches. `typing: "line"` or `"char"` types the content in place (`speed_ms` per unit, 120 / 25 by default).
+Tiza is a terminal tool that draws annotations on code. To install it, see [Install](../guides/install.md). To draw the annotations, see [Draw for a presenter](draw-for-a-presenter.md).
 
-Annotate the new code **at the step where it exists**: after `add_move {at_step: 2, …}`, an `add_note {step: 2, line: 7}` is validated on the step-2 code, whatever step the TUI is showing. Annotations of earlier steps are shifted through the patch by the patch itself (lines after an insert or delete move, a range shrinks to its surviving lines). On a line a `replace` overwrites, notes, boxes, callouts and spotlights keep the line at the same offset, but **highlights, marks and arrow ends lose their anchor** (the text under their columns is gone) and are hidden as `(unanchored)` in `list_annotations` — never deleted — unless your move names where they go: `rebind: {"a4": {"at": {"find": "t.len()", "occurrence": 1}}}` (the same fields as `update_annotation`, resolved on the code after the patch; a `find` there must match exactly once or carry `occurrence`, checked when the move is added; a spec with none of `at`, `from`/`to` or `from_line`/`to_line`, or with an unknown key, is rejected; so is an id no annotation has). An entry whose annotation goes away later (deleted, or dropped by a paste or a follow reload) is kept as written and ignored: the move applies as if it were not there, `check` warns `rebind names a4, which is not in the document; the entry is ignored`, and the entry works again when an annotation with that id comes back (`u`, or one you add with that `id`, refused when the entry would not work with it, such as a `find` that no longer matches; Tiza never gives that id to a new annotation itself). `scene.put` keeps such an entry only where the open document has it: the same code and the same move. The same goes for any annotation that loses every line. A move added after the annotations does not leave them behind: the annotations of its file **at its step or later** and the line numbers of the moves that run after it (`position`, a cursor, a `select` by line, a `code.link` window) are carried through the new patch, so they stay on the same text — insert two lines above it at step 1 and a step-3 note on line 7 moves to line 9, and lines inserted inside a later move's range (a later delete of the whole function) go with that move. `delete_move` carries them back, so deleting a move always gives back the document from before it was added. A change that cannot be undone that way is refused and says what it would lose and what to do (`annotation a4, step 3: move #8 (step 3), the one being added, removes line 15, its first line (lines 15-17); delete or move a4 first`): removing the line an annotation (or an arrow end, or the first or last line of a box, callout or spotlight) is on, rewriting the text under a mark or an arrow end (one on a rewritten line stays when the line is unchanged up to it), removing the line a later insert goes after or an end of a later move's range or window, moving a `rebind` line, or making a later move's text target match another line with the same text. There is no `move.update`: to change a later move, delete it and add it again. `delete_move` is refused the same way while an annotation is on a line that move wrote, when a later move would stop applying (a deleted `code.link` sends the later patches to another file) and when it is the only `code.link` to a file with annotations (delete them first: they would belong to no view, and the saved `.tiza` could not load them). When the move, or the deletion, leaves annotations unseen at a step where they were seen before, the reply carries a `warning` naming only those, and the change is made: outside a `code.link` window (`a3, a4: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`), or of a file their own step no longer shows (`k2, b4, n3: their file tally/src/report.rs is not shown at step 4 (tally/src/count.rs is): kept, not drawn there`, after a link to `count.rs` at step 4, or after deleting the step-4 link when another link still shows `report.rs`); several parts are joined with `; `. Files are named the same way in the warning, in the bar's message and in `check`, live or on the saved file: a linked file by its path as the `code.link` names it, the main file as `code.file` names it (`src/stack.rs:20-30`), or by its file name when the code is embedded. `list_moves` shows every move with its index and the ids currently unanchored; `delete_move {index}` removes one. A paste is refused while a move is applied (step 0 first); a follow reload waits for step 0 (see `set_follow`).
+## Add a move
 
-## Showing another file (views)
+When the lesson adds or changes code between steps, add a move. Do not open a second document.
 
-To move between **files** during the demo, each with its own annotations, add a `code.link` move: `add_move {at_step: 2, action: "code.link", file: "src/queue.rs", lines: "10-36"}` shows `src/queue.rs` (a path as `code.file` would name it, relative to the `.tiza`; the TUI reads it next to the document) from step 2 on, until a later link shows another file or the main one again (`file` naming the document's own file links back; nothing else is needed). `lines` is **only a window**: it crops what is shown, every annotation keeps the file's real line numbers, and the same file with another window is the same view. A patch carries the window like any later line number (insert two lines above it at an earlier step and `17-23` becomes `19-25`), except that an insert at the window's first line **at the link's own step** grows it to start at the new lines (`17-23` → `17-24` for one line), so what that step adds is on screen (typed there with `typing`); a patch at a later step leaves the window as it is, and deleting the insert gives the window back. Annotations belong to a file: an `add_box {step: 2, …}` at a step that shows `queue.rs` is a box **of `queue.rs`** (it gets `"file": "src/queue.rs"`; you may also pass `file` to `annotation.add` yourself), it is validated on that file's code at that step, and `list_annotations` ends its line with the file in parentheses (`a4 [step 2] box L17-23 «FIFO» (src/queue.rs)`; the main file's annotations carry no suffix). While a file is shown the others' annotations are not drawn — they are not `(unanchored)`, and they come back untouched when the demo links back. A link that leaves a step showing another file than its annotations' is accepted and its reply says so (see the `warning` of `add_move`), and `check` keeps saying it (`not_shown`) until a link of that step shows their file again. Likewise a note outside the window is kept, not drawn. `get_code` returns the file shown at the current step, cropped to its window, with a first line `# src/queue.rs:10-36` naming it; `status` carries `file`, `view`, `first_line` and `last_line`. A `code.patch` edits the file shown at its step (its targets are matched there). The saved `.tiza` references the linked files by path; `:embed` (or `scene.get`, which always embeds) stores a copy of each under `views`. A link to a file that cannot be read is an error naming the move and the path.
+1. Call `add_move` with `at_step`, `op` (`insert`, `replace` or `delete`), one target and `content`. A `delete` takes no `content`.
+2. To type the content on the screen, add `"typing": "line"` or `"typing": "char"`.
+3. Add the annotations of the new code with the same `step` as the `at_step` of the move.
+4. Call `check`.
 
-Three small moves complete the set: `add_move {action: "cursor", line, col?}` puts the cursor on a line of the shown file, `{action: "select", from: {find: "&mut u"}, to: {find: "u);"}}` highlights from the start of the first text to the end of the second (each `find` must match exactly once at that step, or carry `occurrence`; `{line, col}` works too), and `{action: "wait", ms}` pauses before the step's annotations appear (TUI, GIF and tape; a still render ignores it). A `code.link` clears the cursor and the selection; `render --step N` draws both.
+For example, at step 2 of `examples/ownership.rs`, this move types a new line 8. The note is on that new line:
 
-## Named steps, auto-advance and loop
+```json
+{"name":"add_move","arguments":{"at_step":2,"op":"insert","after":"let n = len(&t);","content":"    let first = t.chars().next();","typing":"line"}}
+{"name":"add_note","arguments":{"line":8,"text":"a second shared borrow","step":2}}
+```
 
-**Limits**: steps run from 0 to 999 (an annotation's `step`, a move's `at_step`, a `steps` entry), a hold is at most one hour (`wait` `ms`, `speed_ms`, `auto_advance_ms`, 3,600,000 ms) and `source.first_line` at most 1,000,000,000; past them `annotation.add`/`update`, `add_move`, `scene.patch`, `scene.put` and opening a `.tiza` fail with `invalid_argument` (`move #1: step 4294967295 is past the last step a document can have (999)`), and `tiza check` reports a `bounds` error. A request that hits a bug in Tiza (a panic) answers `internal` (`annotation.add: a bug in Tiza stopped this request (a panic), and nothing of it was kept; please report it (details in …/tiza/panics.log)`): the TUI keeps running and the request is dropped whole — the document, the view, a typing animation it started and its undo entry all go back to what they were — and the panic's place goes to `panics.log` in Tiza's runtime directory; the MCP answers its own panics the same way (`internal error: the tool … call failed with a bug in Tiza …`). Tell the presenter; do not retry in a loop. `status.document` is the `.tiza` the instance saves to, once it exists on disk (what a `.tape` of the live instance opens).
+- Tiza checks an anchor on the code of the step of the annotation, at any step on the screen.
+- `n` applies the move, and `p` reverts it. `tiza render --step N` and the exports apply it at once.
+- `get_code` gives the code of the step on the screen. To read the code of another step, go to that step first. This changes the step on the screen of the presenter. Ask the presenter before you do this.
+- `list_moves` gives each move with its index, and the ids of the annotations that are unanchored at the step on the screen.
 
-A `.tiza` may name steps (ADR 0007 §4): `"steps": [{"step": 3, "id": "borrow", "title": "Shared borrow", "auto_advance_ms": 3000}]`, plus `"loop": true`. The number, not the place in the list, binds an entry to its step, so moving annotations between steps never shifts a title; entries are sparse and saved sorted by `step`; ids are unique, one word, never all digits (a number always means a step number) and never start with `-`; a bad id fails with `invalid_argument`. Only `step`, `id`, `title` and `auto_advance_ms` are known: any other key in an entry is kept but warned about in `status.warnings`. Set them with `scene.patch {"steps": [...], "loop": true}` (the whole list is replaced; `[]` clears it) or in the document you `scene.put`; `scene.get` returns them.
+## Targets
 
-- `goto_step {"id": "borrow"}` (socket `step.goto`; both also take a step number, `{"id": 3}` or `{"id": "3"}`) lands on that step exactly as `next_step` would after walking from step 0: the code recomputed with every move up to it, linked files included, and a typed step complete (no animation). An unknown id fails with `not_found` and the message lists the named ones; a value that is neither (`-1`, `4.5`, `null`) is `invalid_argument` ("`id` must be a step id or a step number from 0 to N"). The reply of every `step.*` call carries `id`, `title` and `label` (`step 3/7 · Shared borrow`).
-- `status` reports `step_id`, `step_title`, `step_label`, the current step's `auto_advance_ms` and `loop`; `list_annotations` starts with a `# step 3/7 · Shared borrow` line. An entry for a step past the last one is kept and listed in `status.warnings`.
-- With `auto_advance_ms` the TUI goes to the next step on its own that long after the step is ready (typing finished, `wait` moves elapsed); it waits while the presenter has the `:` line, a `v`/`V` selection or an overlay open. With `loop: true`, `next_step` (and an auto-advance) past the last step is step 0. The native GIF/MP4 hold such a step for its `auto_advance_ms` instead of `--interval`.
-- Scripts and editor tasks use the CLI, no JSON: `tiza next`, `tiza prev`, `tiza goto borrow` (session socket, or `--socket`/`--session`); they print the step reached and exit non-zero when no instance listens.
+- Give a target that matches exactly once. When the text occurs more than once, give `occurrence`. See [Where a `code.patch` move goes](../reference/document-format.md#where-a-codepatch-move-goes).
+- An `occurrence` after the last match is an error that names the move. A target that matches more than once without `occurrence` is an error too.
 
-This is automation (recordings, a looping booth screen, an editor task), not speaker tooling: there are no presenter notes and no timer.
+## Annotations on changed lines
+
+A move takes the annotations of earlier steps with their lines. The rules are in [Annotations after a `code.patch` move](../reference/document-format.md#annotations-after-a-codepatch-move).
+
+- A `replace` can take away the text under a highlight, a mark or an arrow end. Then Tiza hides the annotation as `(unanchored)`. To keep it, give its new place in `rebind`.
+- Tiza finds the place of a `rebind` entry on the code after the move. It checks the entry when you add the move.
+- Tiza refuses a `rebind` entry for an id that is not in the document.
+
+An entry can lose its annotation later: a delete, a paste or a reload. Then Tiza keeps the entry and ignores it.
+
+- `check` gives `rebind names ID, which is not in the document; the entry is ignored`.
+- The entry works again when an annotation with that id comes back, with `u` or with your own `id`.
+- Tiza refuses an annotation with that id when the entry does not work with it. Tiza never gives that id to a new annotation itself.
+- A `scene.put` keeps an ignored entry only on the same move with the same code. Otherwise Tiza refuses the put with `move #N, step S: rebind names ID, which was dropped earlier: the entry is ignored and stays only on the same move with the same code; remove it from the rebind to change this move or the code`.
+
+## Add a move to a document with annotations
+
+A new move keeps the annotations and the later moves in place. Tiza carries them through the new move.
+
+- Tiza carries the annotations of the file of the move, at its step or later.
+- Tiza carries the line numbers of the moves that run after it: `position`, a `cursor`, a `select` by line and a `code.link` window.
+- For example, insert two lines above line 8 at step 1. A note of step 2 on line 8 goes to line 10.
+- `delete_move` carries them back. Thus a delete gives back the document from before the move.
+- There is no tool to change a move. To change a move, delete it and add it again.
+
+Tiza refuses a change that a delete cannot undo. The error tells what the change loses and what to do. For example:
+
+```
+annotation a2, step 1: move #3 (step 1), the one being added, removes line 17, where its end is; delete or move a2 first
+```
+
+Tiza refuses a move that does one of these:
+
+- It removes the line of an annotation or of an arrow end, or the first or the last line of a range.
+- It changes the text under a mark or an arrow end. On a changed line, an anchor stays when the line is the same up to it.
+- It removes the line after which a later insert goes, or an end of the range or the window of a later move.
+- It moves the line of a `rebind` entry.
+- It makes the text target of a later move match another line with the same text.
+
+Tiza refuses `delete_move` in the same way in these cases:
+
+- An annotation is on a line that the move wrote.
+- A later move stops to apply. For example, a deleted `code.link` sends the later moves to another file.
+- The move is the only `code.link` to a file with annotations. Delete those annotations first.
+
+## Show another file
+
+A `code.link` move shows another file from its step, until a later link shows another file. A link to the main file of the document goes back to it. See [Several files](../reference/document-format.md#several-files).
+
+```json
+{"name":"add_move","arguments":{"at_step":2,"action":"code.link","file":"src/queue.rs","lines":"10-36"}}
+```
+
+- `get_code` gives the file on the screen, in its window. When a `code.link` shows the file, the first line names it, for example `# src/queue.rs:10-36`.
+- `status` gives the file on the screen. See [Fields of `status`](../reference/socket-api.md#fields-of-status).
+- A move carries a window as it carries a line number. An insert at the first line of the window, at the step of the link, makes the window start at the new lines.
+- When a move hides annotations that were on the screen at a step, its reply has a `warning` with their ids. `check` gives the same as `outside_window` or `not_shown`.
+- The `warning`, the status bar and `check` name a linked file as its `code.link` names it, and the main file as `code.file` names it. With embedded code, they give the file name, or `the main file` when the document has no file name.
+
+For example, the `warning` can be:
+
+```
+a3, a4: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there
+```
+
+A `cursor`, `select` or `wait` move puts the cursor, selects a span or waits before the annotations of the step. See [Cursor, select and wait](../reference/document-format.md#cursor-select-and-wait).
+
+## Name the steps
+
+Named steps, auto-advance and loop are for automation: a recording, a screen that loops, an editor task. They add no speaker notes and no timer. The fields are in [Named steps](../reference/document-format.md#named-steps).
+
+- No MCP tool sets them. Send `scene.patch` with `steps` and `loop` on the socket, or `tiza scene patch`. `scene.put` also sets them.
+- `steps` in `scene.patch` replaces the whole list. `[]` clears it. `scene.get` gives the list.
+- `goto_step` with `{"id": "borrow"}` goes to that step as `next_step` does from step 0. It also takes a step number.
+- `status` gives the named step on the screen. See [Fields of `status`](../reference/socket-api.md#fields-of-status). `list_annotations` starts with the step label.
+- Scripts and editor tasks use `tiza next`, `tiza prev` and `tiza goto ID`. See [Go to a named step](../reference/document-format.md#go-to-a-named-step).
+- For the limits of the steps and the times, see [Rules the schema does not check](../reference/document-format.md#rules-the-schema-does-not-check).
+
+## When the presenter edits the file
+
+A reload or a paste changes the code of step 0. See [Special cases](../reference/document-format.md#special-cases).
+
+Tiza did not write the change of a reload or a paste. Thus a move goes with the change only when the new place of its lines is certain.
+
+- The rule: when the place of a line is not certain, the move is stale.
+- The place is certain when the line is in the same start or the same end of the old and the new code, and the change is one block.
+- A line next to the change whose text the change repeats has no certain place. A line inside a one-block change has a certain place only when the block kept its size.
+- After several edits, each move on the lines from the change to the end of the code is stale, even when the text looks the same.
+- A text target is stale when it matches nothing, or matches more than once.
+- A move whose target a stale move wrote is stale too.
+
+Tiza skips a stale move on `n` and `p`. The steps keep their numbers. The file keeps the move as you wrote it, but its line numbers follow a change with a certain shift.
+
+- Tiza hides an annotation as `(unanchored)` when it is on the lines that a stale move writes.
+- `list_moves` gives `stale: true` and `stale_reason`. `list_annotations` lists the stale moves last. `status` gives `stale_moves`, and `check` gives a `stale` error.
+- A later change that makes the move match again clears the mark, and so does `u`. Code put back as it was gives back the move.
+- A `scene.put` of the copy that `scene.get` gave keeps the same moves stale.
+- `add_move`, `delete_move` and `scene.put` check again only the text targets. A stale move by line numbers stays stale until a change gives the place of its lines.
+- `scene.get` gives the marks next to the document, in `stale` and `held`. Thus `export_image` skips the same moves as the screen.
+- To fix a stale move, delete it with `delete_move`. Then add it again on the code as it is now.
+- While a move is stale, `:q` refuses. See [Quitting](../concepts/saving.md#quitting).
+
+The status bar of the presenter shows these messages:
+
+| Message | When |
+|---|---|
+| `stale move skipped (u undoes or re-add): #N (WHY)` | A move became stale, or the reason of its mark changed. |
+| `N stale moves skipped (u undoes or re-add): LIST` | The same, with more than one stale move. |
+| `move #N matches the code again` | A change cleared the mark of a move. |
+| `moves LIST match the code again` | A change cleared the marks of more than one move. |
+
+- The message lists all the stale moves, not only the new one.
+- One change can give both parts. Then ` · ` joins them, and the stale moves come first.
+
+> **Warning:** After the instance closes, nothing marks a move. At the next open, a move by line numbers applies on the line that its number gives, with no message. A move whose text target still matches nothing stops the document from opening. Run `check` before the instance closes.
+
+In a document that reads its code from a file, use `find`, not `position`. Then a change of the lines gives an error, not a move in the wrong place.
