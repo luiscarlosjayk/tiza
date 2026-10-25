@@ -16,6 +16,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - With `--no-save`, `--theme-file` does not write the `.tiza` document at start now.
 - The socket method `scene.clear` refuses parameters that it cannot read, with `invalid_argument`: a `step` that is not a whole number from 0, parameters that are not an object, and an unknown key. Before, such a request deleted every annotation. Supervised mode refuses it at once. The MCP tool `clear_annotations` refuses an unknown key and a `null` step too.
 - The socket method `scene.put` refuses a document with a `schema` newer than this version (`unsupported_schema`), before the document changes. Before, Tiza saved that document, and then it could not open the file.
+- In supervised mode, a socket request for a method that does not exist gets its error at once. Before, it waited as a change to review.
+- `scene.patch {}` and an `annotation.update` that changes nothing leave `revision` as it is.
+- The API schema names every field of the replies of `scene.clear`, `code.get`, `style.set` and `theme.set`.
+- The help of `tiza scene patch` and the description of `scene.patch` name `steps`, `loop`, `numbers` and `margin`.
 - In a theme table, the `[dark]`, `[light]` or `[terminal]` table of the theme in use wins over the flat tokens now. Before, the result depended on the names of the keys.
 
 ### Changed

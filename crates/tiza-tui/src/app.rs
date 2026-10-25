@@ -1844,6 +1844,10 @@ impl App {
                 Shape::Spotlight { .. } => {}
             }
         }
+        // Nothing to change: no undo entry, no new revision, no save.
+        if self.doc.find_annotation(&p.id) == Some(&ann) {
+            return Ok(());
+        }
         self.history.record(&self.doc, format!("update {}", p.id));
         match self.doc.update(ann) {
             Ok(()) => {
@@ -2254,6 +2258,10 @@ impl App {
             d.step = step.min(d.max_step().max(1));
         } else if d.step > d.max_step() {
             d.step = d.max_step();
+        }
+        // Nothing to change: no undo entry, no new revision, no save.
+        if self.same_document(&d) {
+            return Ok(self.scene_changed(added, replaced, deleted));
         }
         self.history.record_with_step(&self.doc, "scene.patch");
         // A new `auto_advance_ms` counts from now, not from the arrival.
@@ -6015,7 +6023,8 @@ impl App {
 
     /// Entry point of the event loop: answers now, or (supervised mode and a
     /// mutating method) parks the request as a proposal until the presenter
-    /// decides. `supervise.*` and read-only methods are never parked.
+    /// decides. `supervise.*`, read-only methods and a method that is not in
+    /// `METHODS` are never parked.
     pub fn handle_ipc(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
         self.handle_ipc_at(req, reply, std::time::Instant::now());
     }
@@ -6033,9 +6042,12 @@ impl App {
             self.ask_check(req, reply);
             return;
         }
+        // An unknown method is answered at once: there is nothing to
+        // review.
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
-            && !req.method.starts_with("supervise.");
+            && !req.method.starts_with("supervise.")
+            && METHODS.iter().any(|m| m.0 == req.method);
         // A `scene.clear` with parameters that it cannot read and a
         // `scene.put` with a newer schema are refused now, not parked as a
         // change that would not happen. Other bad parameters still fail

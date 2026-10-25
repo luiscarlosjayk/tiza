@@ -17,6 +17,17 @@
 //!   `unsupported_schema`, before the document changes or is saved. An
 //!   older `schema` is saved as the current one. A file and a `scene.put`
 //!   give the same error, with the schema as it was written.
+//! - AC3 In supervised mode, a method that does not exist is answered at
+//!   once (`invalid_argument`), not parked as a change to review.
+//!   Parking follows `METHODS`: each method there is one that the instance
+//!   knows, and a name that is not there gets `unknown method`.
+//! - AC4 A request that changes nothing (`scene.patch {}`, an
+//!   `annotation.update` with only its `id`) leaves `revision` as it is. A
+//!   request that changes something makes it grow (by 1 or more).
+//! - AC5 The result schema of `scene.clear`, `code.get`, `style.set` and
+//!   `theme.set` names every field of the reply.
+//! - AC6 The help of `tiza scene patch` and the `scene.patch` description
+//!   name every field that `scene.patch` takes.
 
 use std::path::PathBuf;
 use std::sync::mpsc;
@@ -24,7 +35,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 use tiza_core::protocol::Response;
-use tiza_qa::{Live, McpClient};
+use tiza_qa::{Live, McpClient, tiza_ok};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n}\n";
 
@@ -221,4 +232,111 @@ fn ac2_a_file_and_a_put_give_the_same_error_for_a_newer_schema() {
             ("unsupported_schema", file.to_string())
         );
     }
+}
+
+#[test]
+fn ac3_supervised_mode_answers_an_unknown_method_at_once() {
+    let live = three_notes("t258-unknown");
+    live.api_ok("supervise.set", json!({"enabled": true}));
+    let r = api_within(&live, "nope.method", json!({}));
+    let e = r
+        .error
+        .unwrap_or_else(|| panic!("accepted: {:?}", r.result));
+    assert_eq!(e.code, "invalid_argument", "{}", e.message);
+    let pending = live.api_ok("supervise.status", json!({}));
+    assert_eq!(pending["pending"], json!([]), "{pending}");
+}
+
+#[test]
+fn ac4_a_request_that_changes_nothing_keeps_the_revision() {
+    let live = three_notes("t258-revision");
+    let id = live.api_ok("scene.get", json!({}))["document"]["annotations"][0]["id"].clone();
+    let (_, before) = state(&live);
+    live.api_ok("scene.patch", json!({}));
+    assert_eq!(state(&live).1, before, "scene.patch {{}}");
+    live.api_ok("annotation.update", json!({"id": id}));
+    assert_eq!(state(&live).1, before, "annotation.update with only its id");
+    // A change still makes it grow.
+    live.api_ok("scene.patch", json!({"title": "changed"}));
+    let (_, after) = state(&live);
+    assert!(after > before, "{before} -> {after}");
+    live.api_ok("annotation.update", json!({"id": id, "label": "x"}));
+    assert!(state(&live).1 > after);
+}
+
+#[test]
+fn ac5_the_result_schemas_name_every_field_of_the_reply() {
+    let live = three_notes("t258-results");
+    let api = live.api_ok("api.schema", json!({}));
+    for (method, params) in [
+        ("scene.clear", json!({"step": 2})),
+        ("code.get", json!({})),
+        (
+            "style.set",
+            json!({"name": "hot", "glyph": "*", "legend": "hot"}),
+        ),
+        ("theme.set", json!({"theme": "light"})),
+    ] {
+        let reply = live.api_ok(method, params);
+        let schema = api["methods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["method"] == method)
+            .unwrap_or_else(|| panic!("{method} not in api.schema"));
+        let known = schema["result"]["properties"].as_object().unwrap();
+        for key in reply.as_object().unwrap().keys() {
+            assert!(
+                known.contains_key(key),
+                "{method}: `{key}` is not in its result schema"
+            );
+        }
+    }
+}
+
+#[test]
+fn ac6_the_patch_help_and_description_name_every_field() {
+    let api: Value = serde_json::from_str(&tiza_ok(&["schema", "api"])).unwrap();
+    let patch = api["methods"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["method"] == "scene.patch")
+        .unwrap();
+    let description = patch["description"].as_str().unwrap();
+    let help = tiza_ok(&["scene", "patch", "--help"]);
+    let fields: Vec<&String> = patch["params"]["properties"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .collect();
+    assert!(fields.len() >= 10, "{fields:?}");
+    for f in fields {
+        assert!(
+            description.contains(f.as_str()),
+            "the description lacks `{f}`"
+        );
+        assert!(
+            help.contains(f.as_str()),
+            "`tiza scene patch --help` lacks `{f}`"
+        );
+    }
+}
+
+#[test]
+fn ac3_every_method_in_methods_is_one_the_instance_knows() {
+    let live = Live::from_code(CODE, "rs", "t258-methods");
+    let unknown = |r: &Response| {
+        r.error
+            .as_ref()
+            .is_some_and(|e| e.message.starts_with("unknown method"))
+    };
+    for (method, _) in tiza_core::protocol::METHODS {
+        let r = live.api(method, json!({}));
+        assert!(
+            !unknown(&r),
+            "{method} is in METHODS, and the instance does not know it"
+        );
+    }
+    assert!(unknown(&live.api("nope.method", json!({}))));
 }

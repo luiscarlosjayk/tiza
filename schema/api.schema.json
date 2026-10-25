@@ -348,6 +348,12 @@
       },
       "result": {
         "properties": {
+          "file": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "first_line": {
             "type": "integer"
           },
@@ -359,6 +365,12 @@
           },
           "text": {
             "type": "string"
+          },
+          "view": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "type": "object"
@@ -3084,6 +3096,9 @@
           },
           "revision": {
             "type": "integer"
+          },
+          "style": {
+            "type": "object"
           }
         },
         "type": "object"
@@ -3133,6 +3148,9 @@
       },
       "result": {
         "properties": {
+          "remaining": {
+            "type": "integer"
+          },
           "removed": {
             "type": "integer"
           },
@@ -4373,7 +4391,7 @@
       }
     },
     {
-      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
+      "description": "Partial change: step, theme, padding, title, steps (the whole named-steps list), loop, numbers, margin, styles (merged by name) and annotations merged by id (last write wins; `{\"id\": …, \"deleted\": true}` removes one); unknown keys are rejected. An annotation that exists keeps the `step` it is sent with, and without `step` or `file` it keeps its step or its file. `file: null` is the main file for an id that exists, and the file shown at its step for a new id",
       "method": "scene.patch",
       "params": {
         "$defs": {
@@ -6035,6 +6053,9 @@
       },
       "result": {
         "properties": {
+          "auto": {
+            "type": "boolean"
+          },
           "revision": {
             "type": "integer"
           },
