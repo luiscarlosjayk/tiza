@@ -81,6 +81,8 @@
     a.href = href;
     a.setAttribute("aria-label", "Copy the link to this section");
     a.textContent = "#";
+    // When the text is a link, the keyboard stops on the text only, once.
+    if (text) a.tabIndex = -1;
     h.appendChild(document.createTextNode(" "));
     h.appendChild(a);
     a.addEventListener("click", function () { copyLink(h, a); });
