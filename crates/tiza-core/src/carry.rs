@@ -1,5 +1,5 @@
 //! Keeping a document consistent when one of its patches is added or
-//! deleted (ADR 0007 §3a, §3d).
+//! deleted.
 //!
 //! Annotations are written against the code as it is at their own step, and
 //! a move's line numbers (`position`, a cursor, a `select` by line) against

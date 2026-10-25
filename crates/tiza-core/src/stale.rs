@@ -1,4 +1,4 @@
-//! Moves the code changed under (ADR 0007 §7). A follow reload or a paste
+//! Moves whose code changed under them. A follow reload or a paste
 //! replaces the step-0 code with text the demo did not write. Unlike the
 //! author's own `move.add` ([`crate::carry`]), such a change does not say
 //! where each line went, so a move follows it only where that is certain:

@@ -214,7 +214,7 @@ fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
         live.with(|a| a.autosave = false);
         live
     };
-    let example = || tiza_qa::example("");
+    let example = || tiza_qa::fixture("ownership");
     let old = || tiza_qa::fixture("t-246");
     let wide = || {
         let code = std::fs::read_to_string(tiza_qa::fixture("t-173/wide.rs")).unwrap();
@@ -250,10 +250,27 @@ fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
         ("no line numbers", wide(), "numbers off"),
     ];
     for (what, live, command) in cases {
+        // A command that fails, or a step that the document does not have
+        // (`:step` one past the last opens an empty step without an error),
+        // must not pass as another case.
+        let run = |c: &str| {
+            live.command(c);
+            if let Some((m, true)) = live.message() {
+                panic!("{what}: `{c}` failed: {m}");
+            }
+            if let Some(n) = c.strip_prefix("step ") {
+                let n: u32 = n.parse().unwrap();
+                let (at, last) = live.with(|a| (a.doc.step, a.doc.max_step()));
+                assert!(
+                    at == n && n <= last,
+                    "{what}: `{c}` is at step {at} of {last}"
+                );
+            }
+        };
         if command == "pad 1 6" || command == "layout stable" {
-            live.command("step 7");
+            run("step 7");
         }
-        live.command(command);
+        run(command);
         live.with(|a| a.message = None);
         let n = code_needs(&bar(&live, 60, 30)).unwrap_or_else(|| panic!("{what}: no badge at 60"));
         println!("{what}: code needs {n} cols");

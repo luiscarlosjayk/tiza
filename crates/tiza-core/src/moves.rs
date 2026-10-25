@@ -1,4 +1,4 @@
-//! Moves (ADR 0007): the code changes between steps. A move is applied when
+//! Moves: the code changes between steps. A move is applied when
 //! the presenter reaches `at_step` and reverted when going back; the document
 //! is a pure function of the step, recomputed from the step-0 code.
 //! `code.patch` edits lines; `code.link` switches the shown file
@@ -256,7 +256,7 @@ pub struct LineMap {
     pub inserted: std::ops::Range<u32>,
     /// Old lines a `replace` overwrote: they map to a line (same offset in
     /// the new text) but their text is gone, so column anchors on them are
-    /// unanchored (ADR 0007 §3a).
+    /// unanchored.
     pub replaced: std::ops::Range<u32>,
     pub old_len: u32,
     pub new_len: u32,

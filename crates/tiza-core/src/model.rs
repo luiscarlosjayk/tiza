@@ -1254,7 +1254,7 @@ impl Document {
         }
     }
 
-    /// Validates every move against the code at its step (ADR 0007 §3). A
+    /// Validates every move against the code at its step. A
     /// `rebind` entry whose annotation is gone is ignored, not an error.
     pub fn validate_moves(&self) -> Result<(), Error> {
         moves::validate(self, &self.moves, &self.annotations)
@@ -1522,8 +1522,8 @@ impl Document {
 
     /// The document as shown at `step`: the shown file (cropped to its
     /// window) at that step and every annotation of that file with `step <=
-    /// step`, shifted deterministically through the patches of later steps
-    /// (ADR 0007 §3). Annotations of other files are left out (they come
+    /// step`, shifted deterministically through the patches of later steps.
+    /// Annotations of other files are left out (they come
     /// back untouched when their file is shown); those that lose their
     /// anchor are left out and listed in `unanchored`. When `step` is the
     /// current step the in-memory `code` is kept (it may be a typing
@@ -2023,7 +2023,7 @@ impl Document {
 
     /// Settles the file an annotation belongs to: the one it names
     /// (normalized; it must be the main file or a linked one), else the
-    /// view shown at its step (ADR 0007 §3d/§3f).
+    /// view shown at its step.
     fn resolve_file(&self, ann: &mut Annotation) -> Result<(), Error> {
         if ann.file.is_none() {
             if !self.moves.is_empty() {
