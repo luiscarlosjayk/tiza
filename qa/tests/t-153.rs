@@ -18,6 +18,8 @@
 //!   Bitstream Vera) and the brand serif (Libron, OFL, with its Reserved
 //!   Font Name). Moved here from t-068 and t-134, extended to the embedded
 //!   fonts.
+//! - AC7 The release archives (release.yml and scripts/release-local.sh)
+//!   carry the license of every font that the binary embeds.
 
 use std::path::{Path, PathBuf};
 
@@ -147,6 +149,47 @@ fn ac6_every_font_has_its_license_next_to_it() {
         }
         for f in covered {
             assert!(root().join(dir).join(f).is_file(), "{dir}/{f}");
+        }
+    }
+}
+
+/// AC7: both ways to build a release archive copy each license of
+/// `crates/tiza-export/assets/fonts` into it, so a font added there with
+/// its license is not shipped without it.
+#[test]
+fn ac7_the_release_archives_carry_the_licenses_of_the_embedded_fonts() {
+    let dir = "crates/tiza-export/assets/fonts";
+    let mut licenses: Vec<String> = std::fs::read_dir(root().join(dir))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with("LICENSE-"))
+        .collect();
+    licenses.sort();
+    assert!(licenses.len() >= 2, "{licenses:?}");
+    for (script, into) in [
+        (".github/workflows/release.yml", "\"dist/$name/\""),
+        ("scripts/release-local.sh", "\"$stage/\""),
+    ] {
+        // The copy command, joined across its `\` line breaks, before the
+        // `tar -czf` that packs the archive.
+        let text = read(script).replace("\\\n", " ");
+        let lines: Vec<&str> = text.lines().collect();
+        let tar = lines
+            .iter()
+            .position(|l| l.contains("tar ") && l.contains("-czf"))
+            .unwrap_or_else(|| panic!("{script} has no `tar -czf`"));
+        for license in &licenses {
+            let path = format!("{dir}/{license}");
+            let cp = lines
+                .iter()
+                .position(|l| {
+                    l.trim_start().starts_with("cp ") && l.contains(&path) && l.contains(into)
+                })
+                .unwrap_or_else(|| panic!("{script} does not copy {path} into the archive"));
+            assert!(
+                cp < tar,
+                "{script} copies {path} after it packs the archive"
+            );
         }
     }
 }

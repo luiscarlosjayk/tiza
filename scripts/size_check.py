@@ -49,7 +49,9 @@ def archive_size(binary, target):
         d = os.path.join(tmp, "dist", name)
         os.makedirs(d)
         shutil.copy2(binary, d)
-        for f in ("README.md", "LICENSE-MIT", "LICENSE-APACHE"):
+        for f in ("README.md", "LICENSE-MIT", "LICENSE-APACHE",
+                  "crates/tiza-export/assets/fonts/LICENSE-JetBrainsMono-OFL.txt",
+                  "crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt"):
             shutil.copy2(os.path.join(ROOT, f), d)
         shutil.copytree(os.path.join(ROOT, "examples"), os.path.join(d, "examples"))
         out = os.path.join(tmp, "dist", name + ".tar.gz")

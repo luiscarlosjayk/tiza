@@ -1224,8 +1224,8 @@ fn brand_the_files_stay_out_of_the_packages() {
             assert!(!s.contains(bad), "{f} has {bad}");
         }
     }
-    // Neither a crate nor the release tar (README, licences, examples and
-    // the binary) carries them.
+    // Neither a crate nor the release tar (README, licences, the font
+    // licences, examples and the binary) carries them.
     for name in ["tiza", "tiza-core", "tiza-tui", "tiza-mcp", "tiza-export"] {
         let files = packaged(name);
         assert!(
