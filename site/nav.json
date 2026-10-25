@@ -1,5 +1,5 @@
 {
-  "_comment": "The pages of the site and the order of the left navigation. Paths are relative to the repo root. A page that is not here is not on the site.",
+  "_comment": "The pages of the site and the order of the left navigation. Paths are relative to the repo root. A page that is not here is not on the site. The entry docs/release-notes/ lists the notes of every release vX.Y.Z, the newest first.",
   "repo_url": "https://github.com/luiscarlosjayk/tiza",
   "branch": "main",
   "home": "README.md",
@@ -10,7 +10,7 @@
       "title": "Start here",
       "pages": [
         "docs/guides/install.md",
-        "docs/release-notes/v0.1.0.md"
+        "docs/release-notes/"
       ]
     },
     {

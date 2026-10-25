@@ -17,6 +17,8 @@ This script copies the pages that nav.json lists into content/, and:
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
 - copies the images and the favicon into static/,
+- lists the release notes by itself: an entry "docs/release-notes/" in
+  nav.json becomes the notes of every release vX.Y.Z, the newest first,
 - writes release.toml: the version of the workspace Cargo.toml and the git
   ref that the site describes, for the header and the source links.
 
@@ -260,6 +262,26 @@ def plain_title(md):
     return re.sub(r"`", "", md)
 
 
+RELEASE_NOTE_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)\.md$")
+
+
+def expand_release_notes(repo, nav):
+    """Replace a "docs/release-notes/" entry of nav.json with the notes of
+    each release vX.Y.Z, the newest first. The notes of a prerelease
+    (vX.Y.Z-rc.N) are not on the site: the site shows releases only."""
+    folder = "docs/release-notes/"
+    for sec in nav["sections"]:
+        if folder not in sec["pages"]:
+            continue
+        names = os.listdir(os.path.join(repo, folder))
+        found = [(tuple(int(n) for n in m.groups()), name)
+                 for name in names for m in [RELEASE_NOTE_RE.match(name)] if m]
+        notes = [folder + name for _, name in sorted(found, reverse=True)]
+        i = sec["pages"].index(folder)
+        sec["pages"][i:i + 1] = notes
+        nav.setdefault("skip", []).append(folder)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo", default=os.path.dirname(HERE))
@@ -269,6 +291,7 @@ def main():
     with open(os.path.join(HERE, "nav.json"), encoding="utf-8") as f:
         nav = json.load(f)
     try:
+        expand_release_notes(repo, nav)
         version = workspace_version(repo)
         build(repo, nav, version, args.ref)
     except BuildError as e:
