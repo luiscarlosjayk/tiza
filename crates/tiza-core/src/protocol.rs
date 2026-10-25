@@ -1141,7 +1141,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.add",
-        "Adds a move (ADR 0007): `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it",
+        "Adds a move: `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it",
     ),
     (
         "move.delete",
@@ -1214,7 +1214,7 @@ pub struct MoveListed {
     pub index: usize,
     pub summary: String,
     /// The code changed under it (a follow reload, a paste) and it no longer
-    /// matches: it is skipped until it does again (ADR 0007 §7).
+    /// matches: it is skipped until it does again.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub stale: bool,
     /// Why it is stale (`line 2 changed`, `find «x» matches nothing in the

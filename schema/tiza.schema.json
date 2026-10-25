@@ -748,7 +748,7 @@
           ]
         },
         "occurrence": {
-          "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step (ADR 0007 §2). Without it,\nmore than one match is an error.",
+          "description": "Which match of `find` / `after` / `before` / `find_start` to use when\nthe text appears more than once: 1-based, counted in reading order\nover the whole code as it is at this step. Without it,\nmore than one match is an error.",
           "format": "uint32",
           "minimum": 0,
           "type": [
@@ -1045,7 +1045,7 @@
       ]
     },
     "moves": {
-      "description": "Code changes between steps (ADR 0007): applied when the presenter\nreaches `at_step`, reverted when going back. The embedded `code` is\nalways the step-0 code.",
+      "description": "Code changes between steps: applied when the presenter\nreaches `at_step`, reverted when going back. The embedded `code` is\nalways the step-0 code.",
       "items": {
         "$ref": "#/$defs/Move"
       },
@@ -1094,7 +1094,7 @@
       "type": "integer"
     },
     "steps": {
-      "description": "Named steps (ADR 0007 §4): a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
+      "description": "Named steps: a title, an id for `step.goto` and\nan optional `auto_advance_ms`, bound to a step by its explicit\n`step` number (never by the position in the list, so moving an\nannotation to another step shifts nothing). Sparse; saved sorted by\n`step`. Automation for recordings and booth loops, not speaker tools.",
       "items": {
         "$ref": "#/$defs/NamedStep"
       },

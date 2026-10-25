@@ -1,6 +1,6 @@
 //! The panel: a box that opens over the code, with the title and a close
 //! chip on its top border, a filter line, rows, and the panel's keys and a
-//! position on its bottom border (docs/ui-guidelines.md, section 1). The
+//! position on its bottom border (crates/tiza-tui/UI-GUIDELINES.md, section 1). The
 //! help, the annotation list and the agent review use it. Colors come from
 //! the theme's roles only.
 

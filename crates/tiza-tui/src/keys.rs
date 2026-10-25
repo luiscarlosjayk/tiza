@@ -1,7 +1,7 @@
 //! The keys and the `:` commands that the help (`?`) shows: one table. The
 //! help panel draws it, and the tests compare it with the key handler
 //! (`on_key`) and with `App::COMMANDS`, so the help cannot drift from the
-//! real bindings. Texts follow ASD-STE100 (see docs/ui-guidelines.md).
+//! real bindings. Texts follow ASD-STE100 (see crates/tiza-tui/UI-GUIDELINES.md).
 
 use crate::panel::{Panel, PanelRow};
 

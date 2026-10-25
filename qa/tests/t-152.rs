@@ -1,5 +1,5 @@
 //! t-152 (part A) — Before the repository goes public: the workflows build
-//! with the pinned toolchain, docs/contributing/releasing.md says how to
+//! with the pinned toolchain, CONTRIBUTING.md says how to
 //! publish to crates.io by hand, the crates.io pages say what each crate is, and a crate unpacked
 //! from crates.io does not take the commit of a git repository it happens to
 //! sit in.
@@ -11,8 +11,8 @@
 //!   command, and the release build adds its target to that toolchain, not
 //!   to `stable`.
 //! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
-//!   crates.io and no secret is needed; docs/contributing/releasing.md
-//!   (`# Releases (maintainers)`, the page release.yml names) gives every
+//!   crates.io and no secret is needed; CONTRIBUTING.md
+//!   (`## Releases (maintainers)`, the section release.yml names) gives every
 //!   manual step in order (version with
 //!   `scripts/bump-version.sh`, commit, workspace dry run before the tag,
 //!   tag, then one crate at a time in dependency order, checking the index
@@ -249,26 +249,28 @@ fn anchor(heading: &str) -> String {
         .collect()
 }
 
-/// The text of `docs/contributing/releasing.md`, the page release.yml
-/// names: its H1 is `# Releases (maintainers)`.
+/// The release section of CONTRIBUTING.md, the section release.yml
+/// names: from `## Releases (maintainers)` to the next H2.
 fn release_section() -> String {
-    let page = read("docs/contributing/releasing.md");
-    assert!(
-        page.starts_with("# Releases (maintainers)\n"),
-        "docs/contributing/releasing.md starts with `# Releases (maintainers)`"
-    );
-    page
+    let page = read("CONTRIBUTING.md");
+    let start = page
+        .find("\n## Releases (maintainers)\n")
+        .expect("CONTRIBUTING.md has `## Releases (maintainers)`")
+        + 1;
+    let rest = &page[start..];
+    let end = rest[3..].find("\n## ").map_or(rest.len(), |i| i + 4);
+    rest[..end].to_string()
 }
 
 /// QA P3-4: a real section, with the anchor release.yml points at.
 #[test]
 fn publish_release_section_has_an_anchor_release_yml_uses() {
     let section = release_section();
-    let heading = section.lines().next().unwrap().trim_start_matches("# ");
+    let heading = section.lines().next().unwrap().trim_start_matches("## ");
     assert_eq!(anchor(heading), "releases-maintainers");
     let yml = read(".github/workflows/release.yml");
     assert!(
-        yml.contains("docs/contributing/releasing.md#releases-maintainers"),
+        yml.contains("CONTRIBUTING.md#releases-maintainers"),
         "release.yml points at the section"
     );
     // QA P3-5: no blank line at the end of the workflow.

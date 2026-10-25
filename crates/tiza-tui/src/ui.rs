@@ -1089,7 +1089,7 @@ const SELECT_HINTS: [&str; 4] = [
 /// it is, its label, then its keys (`enter label · e set …`). The keys come
 /// first: when there is no room, the label gives way, then what it is (the
 /// id stays), then the keys from the right, so what the presenter can press
-/// stays (docs/ui-guidelines.md, section 5).
+/// stays (crates/tiza-tui/UI-GUIDELINES.md, section 5).
 fn tab_hint(described: &str, room: usize) -> String {
     let (head, label) = match described.find(" «") {
         Some(i) => (&described[..i], &described[i..]),

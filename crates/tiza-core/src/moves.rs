@@ -170,7 +170,7 @@ pub struct Patch {
     pub find_end: Option<String>,
     /// Which match of `find` / `after` / `before` / `find_start` to use when
     /// the text appears more than once: 1-based, counted in reading order
-    /// over the whole code as it is at this step (ADR 0007 §2). Without it,
+    /// over the whole code as it is at this step. Without it,
     /// more than one match is an error.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub occurrence: Option<u32>,

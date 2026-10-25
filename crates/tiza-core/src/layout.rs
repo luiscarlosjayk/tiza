@@ -1,6 +1,6 @@
 //! Turns document + theme + available width into a `Canvas`.
 //!
-//! Decisions of this first version (see docs/adr/0002):
+//! Decisions of this first version:
 //! - Boxes truly surround the lines: they insert virtual rows (without a
 //!   number) above and below, and vertical rails on the left and right.
 //! - Arrows between different lines run along a lane to the left of the

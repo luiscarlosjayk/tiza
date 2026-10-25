@@ -2,7 +2,7 @@
 //! columns, a long line broken under the key column, no way to find a key,
 //! and its keys could drift from the key handler.
 //!
-//! Acceptance criteria (option A «Marco», docs/ui-guidelines.md):
+//! Acceptance criteria (option A «Marco», crates/tiza-tui/UI-GUIDELINES.md):
 //! - AC1 Sections that follow the work: Move, Steps, Select and annotate,
 //!   Edit an annotation (Tab), View, Commands (:), Save and quit.
 //! - AC2 Two columns: the key or command and its description; a long

@@ -6093,7 +6093,7 @@ impl App {
             summary,
         });
         // It waits as a chip on the bar: nothing opens over the code while
-        // the presenter types (docs/ui-guidelines.md, section 11).
+        // the presenter types (crates/tiza-tui/UI-GUIDELINES.md, section 11).
         self.info(format!(
             "{} agent change{} to review: :review shows {}",
             self.proposals.len(),

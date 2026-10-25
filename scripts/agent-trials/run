@@ -30,7 +30,7 @@ Never part of `cargo test` or the gate: a real run calls a paid model. Each
 trial runs in a fresh directory under /tmp holding only its fixture (so the
 agent can read neither the repo nor the docs), with no CLAUDE.md, no auto
 memory, no user settings, no skills and no MCP server but this trial's
-`tiza mcp`. Results: docs/research/mcp-context.md. Stdlib only (python3 3.9+).
+`tiza mcp`. Results: the maintainer notes, outside the repository. Stdlib only (python3 3.9+).
 """
 
 import argparse

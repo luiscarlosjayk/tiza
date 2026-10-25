@@ -100,7 +100,7 @@ pub struct Document {
     /// Blank cells around the drawing: `[vertical, horizontal]`. Saved so each take looks the same.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding: Option<(u16, u16)>,
-    /// Code changes between steps (ADR 0007): applied when the presenter
+    /// Code changes between steps: applied when the presenter
     /// reaches `at_step`, reverted when going back. The embedded `code` is
     /// always the step-0 code.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -138,7 +138,7 @@ pub struct Document {
     /// config file's and under `:theme`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme_overrides: Option<crate::theme::ThemeOverrides>,
-    /// Named steps (ADR 0007 §4): a title, an id for `step.goto` and
+    /// Named steps: a title, an id for `step.goto` and
     /// an optional `auto_advance_ms`, bound to a step by its explicit
     /// `step` number (never by the position in the list, so moving an
     /// annotation to another step shifts nothing). Sparse; saved sorted by

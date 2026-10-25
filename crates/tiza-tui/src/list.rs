@@ -1,5 +1,5 @@
 //! The annotation list (`L`) and the agent review (`:review`) as panels
-//! (docs/ui-guidelines.md): rows grouped by step and file, in columns, one
+//! (crates/tiza-tui/UI-GUIDELINES.md): rows grouped by step and file, in columns, one
 //! of them selected. `App::list_lines` stays as it is: `:list` and the
 //! agents read its text.
 

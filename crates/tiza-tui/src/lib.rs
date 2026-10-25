@@ -820,7 +820,7 @@ fn open(app: &mut App, which: Overlay) {
     }
 }
 
-/// A key on the help panel (docs/ui-guidelines.md, section 1). While the
+/// A key on the help panel (crates/tiza-tui/UI-GUIDELINES.md, section 1). While the
 /// filter is typed, every printable key goes to it; otherwise the panel's
 /// keys scroll it, `/` types the filter, and Esc clears the filter, then
 /// closes. `←`/`→` do nothing, so a clicker cannot move the panel.
@@ -907,7 +907,7 @@ fn list_rows(app: &App) -> (Vec<crate::list::ListItem>, Vec<String>) {
     (items, keys)
 }
 
-/// A key on the annotation list (docs/ui-guidelines.md, section 2): `j/k`
+/// A key on the annotation list (crates/tiza-tui/UI-GUIDELINES.md, section 2): `j/k`
 /// select, Enter goes to the step of the selected row, `x` deletes it and
 /// `u`, `U` or Ctrl-R undo and redo with the list open. Esc clears the
 /// filter, then closes.

@@ -1,7 +1,7 @@
 //! The annotation list (`L`) was a block of text: one line per annotation
 //! that wrapped into the next, no columns and nothing to act on.
 //!
-//! Acceptance criteria (option A «Marco», docs/ui-guidelines.md):
+//! Acceptance criteria (option A «Marco», crates/tiza-tui/UI-GUIDELINES.md):
 //! - AC1 Grouped by step (with its title), and inside a step by file when
 //!   the document shows more than one.
 //! - AC2 Aligned columns: id, type, lines, label (cut with … in its own
