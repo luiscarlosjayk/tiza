@@ -367,8 +367,11 @@ fn ac3_overrides_built_in_then_config_then_document_then_command() {
     let live = Live::from_code("fn main() {}\n", "rs", "t119-live-ov");
     live.command("theme dark");
     live.with(|a| {
-        a.doc.theme_overrides =
-            Some(tiza_core::theme::parse_theme_file("note = \"#303030\"").unwrap());
+        a.doc.theme_overrides = Some(
+            tiza_core::theme::parse_theme_file("note = \"#303030\"")
+                .unwrap()
+                .0,
+        );
         a.rebuild_theme();
     });
     live.command("theme dark");
@@ -412,7 +415,7 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
     // Every text role of the file reads at 4.5:1 on its background before
     // compression (the script measures after; it runs only when ffmpeg and
     // python3 with Pillow + numpy are here, otherwise the test says what is missing).
-    let ov = tiza_core::theme::load_theme_file(&file).unwrap();
+    let (ov, _) = tiza_core::theme::load_theme_file(&file).unwrap();
     let (th, notes) = tiza_core::Theme::resolve(ThemeName::Dark, true, None, Some(&ov));
     assert!(notes.is_empty(), "nothing should be pushed: {notes:?}");
     for c in [th.fg, th.muted, th.accent, th.note, th.error] {

@@ -11,6 +11,12 @@
 //! - AC4 A text token that reads under 4.5:1 on the background moves toward
 //!   black or white, whichever contrasts more, until it reads at 4.5:1:
 //!   the notice that says so is always true.
+//! - AC5 A value that is not a color string leaves out only that token, in
+//!   the config file and in a theme file, with a note. The config file
+//!   names a key other than `theme`. A document with such a value does not
+//!   open, and the error says what a token must be. A theme file with no
+//!   color token to apply (empty, or no value is a string) is refused and
+//!   changes nothing: the tokens of the document stay.
 //!
 //! Corner cases: `:theme file PATH` keeps its undo entry; `--theme-file`
 //! still says how many tokens it applied.
@@ -129,7 +135,7 @@ fn ac3_the_subtable_of_the_theme_in_use_wins_over_the_flat_tokens() {
     // `box_bg` sorts before `dark`, `highlight_bg` between `dark` and
     // `light`, `status_bg` after `light`. None of them is pushed for
     // contrast.
-    let ov = parse_theme_file(
+    let (ov, _) = parse_theme_file(
         "box_bg = \"#010101\"\nhighlight_bg = \"#020202\"\nstatus_bg = \"#030303\"\n\
          [dark]\nbox_bg = \"#110000\"\nhighlight_bg = \"#120000\"\nstatus_bg = \"#130000\"\n\
          [light]\nbox_bg = \"#001100\"\nhighlight_bg = \"#001200\"\nstatus_bg = \"#001300\"\n",
@@ -155,7 +161,7 @@ fn ac4_a_faint_token_moves_toward_the_anchor_that_contrasts_more() {
     use tiza_core::canvas::Rgb;
     use tiza_core::theme::{MIN_CODE_CONTRAST, Theme, contrast, parse_theme_file};
     // #808080: black reads at 5.3:1, white at 3.9:1.
-    let ov = parse_theme_file("bg = \"#808080\"\nnote = \"#7a7a7a\"\n").unwrap();
+    let (ov, _) = parse_theme_file("bg = \"#808080\"\nnote = \"#7a7a7a\"\n").unwrap();
     let (th, notes) = Theme::resolve(ThemeName::Dark, true, None, Some(&ov));
     assert!(th.note.0 < 0x7a, "not toward black: {:?}", th.note);
     assert!(contrast(th.note, th.bg) >= MIN_CODE_CONTRAST, "{notes:?}");
@@ -163,7 +169,7 @@ fn ac4_a_faint_token_moves_toward_the_anchor_that_contrasts_more() {
     // ends at 4.5:1 or more, as the notice says.
     for g in (0..=255u8).step_by(5) {
         let hex = format!("#{g:02x}{g:02x}{g:02x}");
-        let ov = parse_theme_file(&format!("bg = \"{hex}\"\nnote = \"{hex}\"\n")).unwrap();
+        let (ov, _) = parse_theme_file(&format!("bg = \"{hex}\"\nnote = \"{hex}\"\n")).unwrap();
         for name in [ThemeName::Dark, ThemeName::Light] {
             let (th, notes) = Theme::resolve(name, true, None, Some(&ov));
             assert_eq!(th.bg, Rgb(g, g, g));
@@ -175,4 +181,152 @@ fn ac4_a_faint_token_moves_toward_the_anchor_that_contrasts_more() {
             );
         }
     }
+}
+
+/// `tiza render main.rs ARGS` in `dir`: (exit 0, stdout, stderr).
+fn render(dir: &Path, args: &[&str], config: &Path) -> (bool, String, String) {
+    let out = std::process::Command::new(bin())
+        .args(["render", "main.rs"])
+        .args(args)
+        .current_dir(dir)
+        .env("TIZA_CONFIG", config)
+        .output()
+        .unwrap();
+    (
+        out.status.success(),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Whether one line of `text` holds every part.
+fn line_with(text: &str, parts: &[&str]) -> bool {
+    text.lines().any(|l| parts.iter().all(|p| l.contains(p)))
+}
+
+#[test]
+fn ac5_a_value_that_is_not_a_color_leaves_out_only_that_token() {
+    let dir = scratch("t256-values");
+    std::fs::write(dir.join("main.rs"), CODE).unwrap();
+    let svg = ["--format", "svg", "--no-embed-fonts"];
+    // The config file: the good token applies, each problem has its line.
+    let cfg = dir.join("config.toml");
+    std::fs::write(
+        &cfg,
+        "[theme]\naccent = 3\nbg = \"#123456\"\n[theme.dark]\nfg = true\n[them]\nx = 1\n",
+    )
+    .unwrap();
+    let (ok, out, err) = render(&dir, &svg, &cfg);
+    assert!(ok, "{err}");
+    assert!(
+        out.contains("#123456"),
+        "the good token did not apply\n{err}"
+    );
+    assert!(!err.contains("config ignored"), "{err}");
+    assert!(
+        line_with(&err, &["tiza: config:", "accent", "integer"]),
+        "{err}"
+    );
+    assert!(
+        line_with(&err, &["tiza: config:", "[dark] fg", "boolean"]),
+        "{err}"
+    );
+    assert!(
+        line_with(&err, &["tiza: config:", "unknown key them "]),
+        "{err}"
+    );
+    // A theme file: the same rule, in `tiza render` and in `:theme file`.
+    std::fs::write(dir.join("m.toml"), "accent = 3\nbg = \"#654321\"\n").unwrap();
+    let none = dir.join("no-config.toml");
+    let mut args = svg.to_vec();
+    args.extend(["--theme-file", "m.toml"]);
+    let (ok, out, err) = render(&dir, &args, &none);
+    assert!(ok, "{err}");
+    assert!(out.contains("#654321"), "{err}");
+    assert!(line_with(&err, &["tiza:", "accent", "integer"]), "{err}");
+    let live = tiza_qa::Live::from_code(CODE, "rs", "t256-values-live");
+    live.command(&format!("theme file {}", dir.join("m.toml").display()));
+    let (msg, error) = live.message().unwrap();
+    assert!(!error, "{msg}");
+    assert!(msg.contains("accent") && msg.contains("integer"), "{msg}");
+    assert_eq!(
+        live.with(|a| a.theme.bg),
+        tiza_core::canvas::Rgb(0x65, 0x43, 0x21)
+    );
+}
+
+#[test]
+fn ac5_a_document_with_such_a_value_says_what_a_token_must_be() {
+    let dir = scratch("t256-doc-value");
+    let base = serde_json::to_value(tiza_core::Document::from_code(CODE, "rs", None)).unwrap();
+    // At the top and inside a subtable.
+    for (case, overrides) in [
+        ("top", serde_json::json!({"accent": 3})),
+        ("subtable", serde_json::json!({"dark": {"note": 1}})),
+    ] {
+        let mut doc = base.clone();
+        doc["theme_overrides"] = overrides;
+        let path = dir.join(format!("{case}.tiza"));
+        std::fs::write(&path, doc.to_string()).unwrap();
+        let out = std::process::Command::new(bin())
+            .args(["check", path.to_str().unwrap()])
+            .output()
+            .unwrap();
+        // `tiza check` reports on stdout.
+        let err = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(out.status.code(), Some(1), "{case}: {err}");
+        assert!(err.contains("expected a color string"), "{case}: {err}");
+        assert!(!err.contains("untagged"), "{case}: {err}");
+    }
+}
+
+#[test]
+fn ac5_a_theme_file_with_no_token_to_apply_changes_nothing() {
+    let dir = scratch("t256-no-token");
+    std::fs::write(dir.join("main.rs"), CODE).unwrap();
+    std::fs::write(dir.join("good.toml"), "note = \"#303030\"\n").unwrap();
+    std::fs::write(dir.join("bad.toml"), "accent = 3\n[dark]\nnote = true\n").unwrap();
+    std::fs::write(dir.join("empty.toml"), "").unwrap();
+    let live = tiza_qa::Live::from_code(CODE, "rs", "t256-no-token-live");
+    live.command(&format!("theme file {}", dir.join("good.toml").display()));
+    let path = live.with(|a| a.save_path.clone());
+    let tokens = live.with(|a| a.doc.theme_overrides.clone());
+    assert!(tokens.is_some());
+    let bytes = std::fs::read(&path).unwrap();
+    let time = std::fs::metadata(&path).unwrap().modified().unwrap();
+    for (name, notes) in [("bad.toml", true), ("empty.toml", false)] {
+        live.command(&format!("theme file {}", dir.join(name).display()));
+        let (msg, error) = live.message().unwrap();
+        assert!(
+            error && msg.contains("no color token to apply"),
+            "{name}: {msg}"
+        );
+        if notes {
+            assert!(
+                msg.contains("accent") && msg.contains("[dark] note"),
+                "{name}: {msg}"
+            );
+        }
+        assert_eq!(
+            live.with(|a| a.doc.theme_overrides.clone()),
+            tokens,
+            "{name}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), bytes, "{name}");
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            time,
+            "{name}"
+        );
+    }
+    let (ok, _, err) = render(
+        &dir,
+        &["--theme-file", "bad.toml"],
+        &dir.join("no-config.toml"),
+    );
+    assert!(!ok && err.contains("no color token to apply"), "{err}");
 }

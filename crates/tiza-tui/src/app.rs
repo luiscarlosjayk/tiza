@@ -766,7 +766,7 @@ impl App {
         path: &std::path::Path,
         undoable: bool,
     ) -> Result<String, Error> {
-        let ov = tiza_core::theme::load_theme_file(path).map_err(Error::Invalid)?;
+        let (ov, file_notes) = tiza_core::theme::load_theme_file(path).map_err(Error::Invalid)?;
         if undoable {
             self.history.record(&self.doc, "theme file");
         }
@@ -782,10 +782,21 @@ impl App {
                 .map(|o| o.0.len())
                 .unwrap_or(0),
             theme_label(self.theme.name),
-            if self.theme_notes.is_empty() {
-                String::new()
-            } else {
-                format!(" — {}", self.theme_notes.join("; "))
+            {
+                // What the file left out, then what the tokens did.
+                let notes: Vec<&String> = file_notes.iter().chain(&self.theme_notes).collect();
+                if notes.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        " — {}",
+                        notes
+                            .iter()
+                            .map(|n| n.as_str())
+                            .collect::<Vec<_>>()
+                            .join("; ")
+                    )
+                }
             }
         ))
     }

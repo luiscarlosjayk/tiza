@@ -22,6 +22,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The help of `tiza scene patch` and the description of `scene.patch` name `steps`, `loop`, `numbers` and `margin`.
 - In a theme table, the `[dark]`, `[light]` or `[terminal]` table of the theme in use wins over the flat tokens now. Before, the result depended on the names of the keys.
 - A text token of a theme (`fg`, `muted`, `accent`, `note` or `error`) that reads under 4.5:1 moves toward black or white, whichever contrasts more with the background. It moves until it reads at 4.5:1. Before, on a mid-gray background it could move toward the wrong one and stop under 4.5:1.
+- In the config file and in a theme file, a value that is not a color string leaves out only that token, with a report. Before, Tiza ignored the whole config file, and the theme file did not load. A theme file with no color token to apply, such as an empty file, does not load, and nothing changes.
+- The config file reports each key or table other than `[theme]` on stderr.
+- A document with a `theme_overrides` value that is not a string still does not open. The error now says that a token must be a color string or a table of color strings.
 
 ### Changed
 - `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.

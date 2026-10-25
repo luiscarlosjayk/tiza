@@ -423,7 +423,7 @@ impl Theme {
 
 /// One value of a `[theme]` table: a color, or the `dark`, `light` or
 /// `terminal` subtable that applies on top when that theme is in use.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum OverrideValue {
     /// `#rrggbb`, `#rgb`, `rgb(r, g, b)`, a palette or ANSI name, or
@@ -431,6 +431,53 @@ pub enum OverrideValue {
     Color(String),
     /// Overrides that apply only when this base theme is active.
     Table(BTreeMap<String, String>),
+}
+
+/// Read by hand: an untagged enum would say only "data did not match any
+/// variant" for a value that is neither.
+impl<'de> Deserialize<'de> for OverrideValue {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Value;
+        impl<'de> serde::de::Visitor<'de> for Value {
+            type Value = OverrideValue;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a color string or a table of color strings")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<OverrideValue, E> {
+                Ok(OverrideValue::Color(s.to_string()))
+            }
+            fn visit_map<A: serde::de::MapAccess<'de>>(
+                self,
+                mut map: A,
+            ) -> Result<OverrideValue, A::Error> {
+                let mut table = BTreeMap::new();
+                while let Some((k, ColorString(v))) = map.next_entry::<String, ColorString>()? {
+                    table.insert(k, v);
+                }
+                Ok(OverrideValue::Table(table))
+            }
+        }
+        d.deserialize_any(Value)
+    }
+}
+
+/// A value of a subtable: its error says what a token must be.
+struct ColorString(String);
+
+impl<'de> Deserialize<'de> for ColorString {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        struct Value;
+        impl serde::de::Visitor<'_> for Value {
+            type Value = ColorString;
+            fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+                f.write_str("a color string")
+            }
+            fn visit_str<E: serde::de::Error>(self, s: &str) -> Result<ColorString, E> {
+                Ok(ColorString(s.to_string()))
+            }
+        }
+        d.deserialize_any(Value)
+    }
 }
 
 /// The `[theme]` table of `~/.config/tiza/config.toml`, a `--theme-file`,
@@ -671,10 +718,12 @@ fn hex_of(c: Rgb) -> String {
 
 /// `~/.config/tiza/config.toml`: the file as a whole (only `[theme]` for
 /// now), plus a free-standing theme file for `--theme-file`.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default)]
 pub struct ConfigFile {
-    #[serde(default)]
     pub theme: Option<ThemeOverrides>,
+    /// What Tiza did not take from the file, one line each: a value that
+    /// is not a color string, a key other than `theme`.
+    pub notes: Vec<String>,
 }
 
 /// Where the config file is: `$TIZA_CONFIG`, else
@@ -709,19 +758,33 @@ pub fn load_config() -> Result<Option<(ConfigFile, std::path::PathBuf)>, String>
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(e) => return Err(format!("{}: {e}", path.display())),
     };
-    let cfg: ConfigFile = toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let table: toml::Table =
+        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut cfg = ConfigFile::default();
+    for (k, v) in table {
+        match v {
+            toml::Value::Table(t) if k == "theme" => {
+                let (ov, notes) = overrides_from_table(t);
+                cfg.theme = Some(ov);
+                cfg.notes.extend(notes);
+            }
+            other if k == "theme" => cfg
+                .notes
+                .push(format!("theme: expected a table, got {}", other.type_str())),
+            _ => cfg
+                .notes
+                .push(format!("unknown key {k} (Tiza reads only [theme])")),
+        }
+    }
     Ok(Some((cfg, path)))
 }
 
-/// Parses a theme file (`--theme-file`, `:theme file PATH`): either a
-/// `[theme]` table or the tokens at the top level.
-pub fn parse_theme_file(text: &str) -> Result<ThemeOverrides, String> {
-    let value: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
-    let table = match value.get("theme") {
-        Some(toml::Value::Table(t)) => t.clone(),
-        _ => value,
-    };
+/// The tokens of a `[theme]` table, from the config file or a theme file.
+/// A value that is not a color string is left out with a note, one line
+/// each, and the other tokens apply.
+fn overrides_from_table(table: toml::Table) -> (ThemeOverrides, Vec<String>) {
     let mut out = BTreeMap::new();
+    let mut notes = Vec::new();
     for (k, v) in table {
         match v {
             toml::Value::String(s) => {
@@ -734,29 +797,54 @@ pub fn parse_theme_file(text: &str) -> Result<ThemeOverrides, String> {
                         toml::Value::String(s) => {
                             sub.insert(k2, s);
                         }
-                        other => {
-                            return Err(format!(
-                                "[{k}] {k2}: expected a colour string, got {}",
-                                other.type_str()
-                            ));
-                        }
+                        other => notes.push(format!(
+                            "theme [{k}] {k2}: expected a color string, got {}",
+                            other.type_str()
+                        )),
                     }
                 }
                 out.insert(k, OverrideValue::Table(sub));
             }
-            other => {
-                return Err(format!(
-                    "{k}: expected a colour string, got {}",
-                    other.type_str()
-                ));
-            }
+            other => notes.push(format!(
+                "theme {k}: expected a color string, got {}",
+                other.type_str()
+            )),
         }
     }
-    Ok(ThemeOverrides(out))
+    (ThemeOverrides(out), notes)
+}
+
+/// Parses a theme file (`--theme-file`, `:theme file PATH`): either a
+/// `[theme]` table or the tokens at the top level. Returns the tokens and
+/// a note for each value that is not a color string (left out). A file
+/// with no color token at all is refused, as one that does not parse: its
+/// tokens would replace those of the document with nothing.
+pub fn parse_theme_file(text: &str) -> Result<(ThemeOverrides, Vec<String>), String> {
+    let value: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
+    let table = match value.get("theme") {
+        Some(toml::Value::Table(t)) => t.clone(),
+        _ => value,
+    };
+    let (ov, notes) = overrides_from_table(table);
+    let tokens: usize =
+        ov.0.values()
+            .map(|v| match v {
+                OverrideValue::Color(_) => 1,
+                OverrideValue::Table(t) => t.len(),
+            })
+            .sum();
+    if tokens == 0 {
+        return Err(if notes.is_empty() {
+            "no color token to apply".to_string()
+        } else {
+            format!("no color token to apply: {}", notes.join("; "))
+        });
+    }
+    Ok((ov, notes))
 }
 
 /// Reads and parses a theme file.
-pub fn load_theme_file(path: &std::path::Path) -> Result<ThemeOverrides, String> {
+pub fn load_theme_file(path: &std::path::Path) -> Result<(ThemeOverrides, Vec<String>), String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
     parse_theme_file(&text).map_err(|e| format!("{}: {e}", path.display()))
 }
@@ -786,7 +874,7 @@ mod tests {
         let file = parse_theme_file(
             "accent = \"#a6e3a1\"\nmuted = \"#333333\"\nmauve = \"#cba6f7\"\n[dark]\nnote = \"#f9e2af\"\n[light]\nnote = \"#000000\"\n",
         )
-        .unwrap();
+        .unwrap().0;
         let (th, notes) = Theme::resolve(ThemeName::Dark, true, Some(&file), None);
         assert_eq!(th.accent, Rgb::hex(0xA6E3A1));
         assert_eq!(th.note, Rgb::hex(0xF9E2AF), "the dark subtable applied");
@@ -805,7 +893,7 @@ mod tests {
             "{notes:?}"
         );
         // The document's table wins over the config's.
-        let doc = parse_theme_file("accent = \"#ffaa00\"").unwrap();
+        let doc = parse_theme_file("accent = \"#ffaa00\"").unwrap().0;
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&file), Some(&doc));
         assert_eq!(th.accent, Rgb::hex(0xFFAA00));
         // Light picks its own subtable; the flat tokens still apply.
@@ -820,7 +908,7 @@ mod tests {
         );
         // A `[theme]` wrapper is accepted too, and a named palette entry
         // changes what `named_color` gives.
-        let wrapped = parse_theme_file("[theme]\nblue = \"#0000ff\"").unwrap();
+        let wrapped = parse_theme_file("[theme]\nblue = \"#0000ff\"").unwrap().0;
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&wrapped), None);
         assert_eq!(th.named_color("azul"), Some(Rgb::hex(0x0000FF)));
     }
@@ -838,7 +926,7 @@ mod tests {
         assert!(notice.unwrap().contains("exported with dark"));
         assert_eq!(Theme::terminal(false).toggled().name, ThemeName::Light);
         // A `reset` token in a dark theme: fine in the TUI, replaced in exports.
-        let ov = parse_theme_file("bg = \"reset\"").unwrap();
+        let ov = parse_theme_file("bg = \"reset\"").unwrap().0;
         let (th, _) = Theme::resolve(ThemeName::Dark, true, Some(&ov), None);
         assert_eq!(th.bg, terminal_default());
         let (e, n) = th.for_export();

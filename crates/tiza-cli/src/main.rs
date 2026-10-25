@@ -92,10 +92,16 @@ impl ThemeArg {
 }
 
 /// The `[theme]` table of `~/.config/tiza/config.toml`, with a one-line
-/// warning on stderr when the file does not parse (never fatal).
+/// warning on stderr when the file does not parse (never fatal), and one
+/// for each thing that Tiza did not take from it.
 fn config_theme() -> Option<tiza_core::theme::ThemeOverrides> {
     match tiza_core::theme::load_config() {
-        Ok(Some((cfg, _))) => cfg.theme,
+        Ok(Some((cfg, _))) => {
+            for n in &cfg.notes {
+                eprintln!("tiza: config: {}", tiza_core::printable::printable_text(n));
+            }
+            cfg.theme
+        }
         Ok(None) => None,
         Err(e) => {
             let e = e.to_string();
@@ -121,7 +127,14 @@ fn export_theme(
         .or(doc.theme)
         .unwrap_or(ThemeName::Dark);
     let file = match theme_file {
-        Some(p) => Some(tiza_core::theme::load_theme_file(p).map_err(|e| anyhow::anyhow!("{e}"))?),
+        Some(p) => {
+            let (ov, notes) =
+                tiza_core::theme::load_theme_file(p).map_err(|e| anyhow::anyhow!("{e}"))?;
+            for n in notes {
+                eprintln!("tiza: {}", tiza_core::printable::printable_text(&n));
+            }
+            Some(ov)
+        }
         None => None,
     };
     let (theme, notes) = Theme::resolve(
