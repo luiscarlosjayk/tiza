@@ -10,6 +10,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Changed
 - The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
 
+### Added
+- The README and the agent setup page tell how to add the Tiza MCP server to Codex: `codex mcp add tiza -- tiza mcp`.
+
 ## [0.1.0] - 2026-10-25
 
 ### Added

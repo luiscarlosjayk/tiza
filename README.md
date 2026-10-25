@@ -106,10 +106,18 @@ Every image on this page is a real Tiza export. `scripts/readme-images.sh` makes
 
 ## For agents
 
-Tiza has an MCP server. Claude Code or another MCP client can use it to draw on the code that you show. Add the server to Claude Code one time:
+Tiza has an MCP server. An AI agent can use it to draw on the code that you show. Add the server one time.
+
+Claude Code:
 
 ```sh
 claude mcp add tiza -- tiza mcp
+```
+
+Codex:
+
+```sh
+codex mcp add tiza -- tiza mcp
 ```
 
 Then open your code in Tiza, and ask the agent to explain it. For another MCP client, use this configuration:
