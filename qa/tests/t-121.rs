@@ -18,7 +18,9 @@
 //!   `docs/img/src/hero.html` with the real `--step 1|4|7` frames; the back
 //!   windows dimmed with an overlay, never with opacity; English alt text.
 //! - AC7 The title in Libron (the brand font in docs/brand/fonts), the frames
-//!   real `tiza render` exports used as produced.
+//!   real `tiza render` exports used as produced. Since Luis chose the logo
+//!   (2026-10-24), the title is `docs/brand/logo.svg`, whose glyphs are
+//!   Libron outlines: its paths inline, without its slate background.
 //!
 //! The committed images are compared with fresh renders by size (pixels)
 //! and the README text block byte for byte, so a renderer change that skips
@@ -240,16 +242,28 @@ fn ac5_changelog_and_agents_rule() {
 }
 
 #[test]
-fn ac6_ac7_the_hero_is_built_from_real_frames_with_libron_for_the_title() {
+fn ac6_ac7_the_hero_is_built_from_real_frames_with_the_logo_for_the_title() {
     let hero = std::fs::read(root().join("docs/img/hero.png")).unwrap();
     assert_eq!(png_size(&hero), (2400, 1260), "1200×630 at device scale 2");
     assert!(hero.len() < 1_000_000, "hero {} bytes", hero.len());
     let html = read("docs/img/src/hero.html");
-    // Libron (as Tiza Serif, its renamed subset) for the title only.
-    assert!(html.contains("url(\"../../brand/fonts/TizaSerif-Bold.ttf\")"));
-    assert!(root().join("docs/brand/fonts/TizaSerif-Bold.ttf").is_file());
-    assert!(html.contains("font-family: \"Tiza Serif\""));
-    assert!(html.contains("<h1>TIZA</h1>"));
+    // The logo of docs/brand for the title: the same paths, inline, less
+    // its slate background (the page has its own). One mark, not two.
+    let logo = read("docs/brand/logo.svg");
+    let background = "<rect width=\"1200\" height=\"400\" rx=\"28\" fill=\"#22272b\"/>";
+    let paths = logo
+        .split_once(background)
+        .expect("the logo's background")
+        .1
+        .trim_end()
+        .trim_end_matches("</svg>");
+    assert!(
+        html.contains(paths),
+        "the hero's logo differs from docs/brand/logo.svg"
+    );
+    assert!(!html.contains(background));
+    assert!(html.contains("aria-label=\"Tiza\""));
+    assert!(!html.contains("<h1>TIZA</h1>") && !html.contains("@font-face"));
     assert!(html.contains("Step-by-step code annotations<br>for the terminal"));
     // The frames are the committed renders, with English alt text, and the
     // back windows dimmed by an overlay, not by opacity.
