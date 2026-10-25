@@ -114,7 +114,18 @@ pub fn outside_notice(doc: &Document) -> Option<String> {
 }
 
 pub fn open(spec: &str) -> Result<Opened, Error> {
-    let (path, range) = parse_target_checked(spec)?;
+    open_with(spec, true)
+}
+
+/// [`open`] where a range shows only its lines, without the document of
+/// that range: `tiza render` and `tiza scene put --as-code`.
+pub fn open_range_as_code(spec: &str) -> Result<Opened, Error> {
+    open_with(spec, false)
+}
+
+/// `range_document`: open the `FILE.A-B.tiza` of a range when it exists.
+fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
+    let (path, asked) = parse_target_checked(spec)?;
     if is_document_path(&path) {
         let document = load_document(&path)?;
         let notice = outside_notice(&document);
@@ -126,7 +137,7 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         });
     }
     let sidecar = sidecar_path(&path);
-    if range.is_none() && sidecar.exists() {
+    if asked.is_none() && sidecar.exists() {
         let document = load_document(&sidecar)?;
         let notice = outside_notice(&document);
         return Ok(Opened {
@@ -141,7 +152,7 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
     document.source.language =
         detect_language(Some(&path.to_string_lossy()), &document.code).language;
     let mut notice = None;
-    let range = range.map(|(a, b)| {
+    let range = asked.map(|(a, b)| {
         let last = document.code.len() as u32;
         if a > last || b > last {
             notice = Some(format!(
@@ -173,6 +184,24 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
         }
         None => sidecar,
     };
+    // The document of this range from an earlier session, found under the
+    // clamped lines: opened as the sidecar is without a range, never
+    // written over. One that does not load is an error, as a sidecar.
+    if range_document && range.is_some() && save_path.exists() {
+        let document = load_document(&save_path)?;
+        let opened = format!("opened the existing {}", save_path.display());
+        let notice = [notice, Some(opened), outside_notice(&document)]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join("; ");
+        return Ok(Opened {
+            document,
+            save_path,
+            existing: true,
+            notice: Some(notice),
+        });
+    }
     Ok(Opened {
         document,
         save_path,

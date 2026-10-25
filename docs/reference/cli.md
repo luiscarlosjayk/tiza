@@ -27,7 +27,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 - A range can also be `A..B`.
 - Without `FILE`, Tiza reads standard input when it is not a terminal.
 - Text on standard input that starts with `{` and contains `"schema"` is a document. Other text is code.
-- With a range, Tiza does not load an existing `.tiza` document. It saves to `FILE.A-B.tiza` and writes over that file. See [Where the document goes](files-and-environment.md#where-the-document-goes).
+- With a range, Tiza saves to `FILE.A-B.tiza`. When that file exists, Tiza opens it, as it opens `FILE.tiza` without a range, and says so on the status bar. Another range, such as `A-C`, is another document. See [Where the document goes](files-and-environment.md#where-the-document-goes).
 - A `.tiza` path with a range opens the document and ignores the range.
 - When Tiza clamps a range, it saves under the clamped lines. For example, `tiza three.txt:2..9` on a file of three lines saves to `three.txt.2-3.tiza`.
 - When a range goes past the end of the file, Tiza shows the lines that exist.
@@ -254,6 +254,7 @@ Tiza shows these messages in the status bar:
 | Message | When |
 |---|---|
 | `the file has N lines: range A-B clamped to C-D` | The range goes past the end of the file. |
+| `opened the existing PATH` | The range has a `FILE.A-B.tiza` document from an earlier session, and Tiza opened it. |
 | `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second instance starts in a session that already has an instance. |
 
 - For a file with one line, the first message says `line`, not `lines`.

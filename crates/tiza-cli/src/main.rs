@@ -414,7 +414,7 @@ fn real_main() -> anyhow::Result<()> {
                         fs::from_stdin(&text, None)
                             .context("could not read the document from stdin")?
                     } else {
-                        fs::open(f).with_context(|| format!("could not open {f}"))?
+                        fs::open_range_as_code(f).with_context(|| format!("could not open {f}"))?
                     };
                     if let Some(n) = &opened.notice {
                         eprintln!("tiza: {}", tiza_core::printable::printable_text(n));
@@ -1478,7 +1478,7 @@ fn document_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_core::Docu
     let opened = if file == "-" {
         fs::from_stdin(&text, None).context("could not read the code from stdin")?
     } else {
-        fs::open(file).with_context(|| format!("could not open {file}"))?
+        fs::open_range_as_code(file).with_context(|| format!("could not open {file}"))?
     };
     Ok(opened.document)
 }

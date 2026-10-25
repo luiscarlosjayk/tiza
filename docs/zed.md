@@ -84,6 +84,7 @@ When a step command succeeds, it prints the step that it reached, for example `s
 | Message | When |
 |---|---|
 | `the file has N lines: range A-B clamped to C-D` | The range of the 40-line task goes past the end of the file. |
+| `opened the existing PATH` | The lines of the 40-line task have a `FILE.A-B.tiza` document from an earlier session, and Tiza opened it. |
 | `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second Tiza starts in a session that already has an instance. |
 | `tiza: empty stdin` | The standard input of Tiza is empty or has only blank characters. |
 | `tiza: give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste \| tiza --lang rs)` | Tiza gets no file, and its standard input is a terminal. |
@@ -130,7 +131,7 @@ Autosave writes the document when you make your first change. The task decides t
 
 A range never shows the annotations of `FILE.tiza`.
 
-> **Warning:** A range does not open its old document. When you run the 40-line task again on the same line, Tiza starts with no annotations. At your first change, autosave writes over `FILE.A-B.tiza`. To continue that work, open the document itself: `tiza FILE.A-B.tiza`.
+When you run the 40-line task again on the same lines, Tiza opens `FILE.A-B.tiza` with its annotations.
 
 ### The language of the selected text
 
