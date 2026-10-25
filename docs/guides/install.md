@@ -6,8 +6,9 @@ Tiza is a terminal tool that draws annotations on code.
 
 ## What you need
 
-- macOS or Linux. Tiza does not support Windows in version 0.x.
-- On Linux, glibc 2.35 or later, for example Ubuntu 22.04, Debian 12 or Fedora 36.
+- macOS on Apple silicon or Intel, or Linux. Tiza does not support Windows in version 0.x.
+- For the script or an archive on Linux: an x86_64 processor and glibc 2.35 or later. Examples are Ubuntu 22.04, Debian 12 and Fedora 36.
+- On other Linux systems, for example arm64, musl or an older glibc, install with `cargo`.
 - To install with `cargo`, Rust 1.88 or later.
 
 ## Install with the script
@@ -19,6 +20,8 @@ curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh
 ```
 
 The script downloads the archive for your system. It checks the SHA-256 checksum of the archive. Then it puts `tiza` in `~/.local/bin`. It does not use `sudo`. If `~/.local/bin` is not in your `PATH`, the script shows the line to add.
+
+On Linux arm64, or with musl or a glibc older than 2.35, the script stops. It tells you to run `cargo install tiza`.
 
 To check the install, run `tiza --version`. It shows the version and the git commit of the build, for example:
 

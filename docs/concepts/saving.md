@@ -115,7 +115,7 @@ After a failed save, `:saveas PATH` shows `saved to PATH`, not `saved as PATH`.
 
 ## Agents and saving
 
-An agent can send a document with `scene put`. Autosave never writes that document over the open document. `:w` writes it over the open document on purpose.
+An agent can send a document with `scene put`. Autosave never writes a document from another source, or code that the agent changed, over the open document. `:w` writes it over the open document on purpose.
 
 | Case | Message |
 |---|---|
@@ -132,7 +132,13 @@ An agent can send a document with `scene put`. Autosave never writes that docume
 
 Tiza quits as with Ctrl-C when its terminal closes. A closed pane or tab and a lost SSH session are examples.
 
-Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime directory. Each line starts with `the terminal went away: `.
+Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime directory. Each line has this form:
+
+```
+TIME tiza VERSION (COMMIT) pid PID: the terminal went away: TEXT
+```
+
+`TIME` is in seconds since 1970. `TEXT` is the line that Tiza could not print.
 
 The runtime directory is `$XDG_RUNTIME_DIR/tiza/`. When that variable is empty or not set, it is `$TMPDIR/tiza/`, or else `/tmp/tiza/`.
 
