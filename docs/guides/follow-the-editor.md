@@ -25,7 +25,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 | `:follow` | Shows the state: the number of reloads and the time of the last one. |
 | `u` | Undoes the last reload, or the last change. |
 
-To use Tiza next to Zed, see [Tiza in Zed](../zed.md).
+To use Tiza next to Zed, see [Tiza from Zed](../zed.md).
 
 ## What happens to annotations
 

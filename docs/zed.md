@@ -1,62 +1,59 @@
 # Tiza from Zed
 
-Goal: share your screen with Zed, select code and send it to Tiza in the integrated terminal (or in Ghostty) with a shortcut.
+Use this page to send code from Zed to Tiza with one key, and to step a demo from Zed. Zed runs Tiza in its terminal through Zed tasks.
 
-## Zed tasks
+Tiza is a terminal tool that draws annotations on code. To install it, see [Install](guides/install.md).
 
-Put these tasks in `~/.config/zed/tasks.json`, or in the `.zed/tasks.json` of the project. These four were run in Zed 1.25.3 on macOS as written. Copy them as they are. Zed reads each `$ZED_…` variable itself. Do not use a shell expansion such as `${ZED_FILE##*.}` in a task. Zed then refuses the whole tasks file with «unknown variables», and no Tiza task shows.
+## Add the tasks
 
-```json
-[
-  {
-    "label": "Tiza: current file",
-    "command": "tiza",
-    "args": ["$ZED_FILE"],
-    "use_new_terminal": true,
-    "reveal": "always"
-  },
-  {
-    "label": "Tiza: current file, live (reload on save)",
-    "command": "tiza",
-    "args": ["$ZED_FILE", "--follow"],
-    "use_new_terminal": true,
-    "reveal": "always"
-  },
-  {
-    "label": "Tiza: selected text",
-    "command": "printf '%s' \"$SEL\" | tiza --lang \"$ZED_FILE\"",
-    "args": [],
-    "env": { "SEL": "$ZED_SELECTED_TEXT" },
-    "use_new_terminal": true,
-    "reveal": "always"
-  },
-  {
-    "label": "Tiza: 40 lines from the cursor",
-    "command": "tiza",
-    "args": ["$ZED_FILE:$ZED_ROW-$((ZED_ROW + 39))"],
-    "use_new_terminal": true,
-    "reveal": "always"
-  }
-]
-```
-
-Zed runs each task with your shell, as `$SHELL -i -c`, on one command line made of `command` and `args`. Your shell does the pipe of «selected text» and the arithmetic of «40 lines». Do not put `"command": "sh"` with `-c` in `args`. Zed 1.25.3 then runs `sh` alone, without its script, and the task stops with `tiza: empty stdin` or `tiza: give a file …`. The selected text goes in the variable `SEL`, so the shell does not read the quotes or the `$` signs in your code.
-
-`--lang` accepts a path: Tiza takes the language from the file name (`stack.rs` → Rust, `Makefile` → make), from a shebang or modeline in the text when the name says nothing, else plain text; `:lang sh` overrides it inside the TUI. A range past the end of the file is clamped with a notice, so the 40-line window is safe near the bottom.
-
-Shortcut in `~/.config/zed/keymap.json`:
+1. Open `~/.config/zed/tasks.json` for all your projects, or `.zed/tasks.json` for one project.
+2. Copy these tasks into the file as they are. They were tested in Zed 1.25.3 on macOS, 2026-10-24.
 
 ```json
 [
-  { "context": "Editor", "bindings": { "cmd-shift-d": ["task::Spawn", { "task_name": "Tiza: current file" }] } }
+  { "label": "Tiza: current file", "command": "tiza", "args": ["$ZED_FILE"], "use_new_terminal": true, "reveal": "always" },
+  { "label": "Tiza: current file, live (reload on save)", "command": "tiza", "args": ["$ZED_FILE", "--follow"], "use_new_terminal": true, "reveal": "always" },
+  { "label": "Tiza: selected text", "command": "printf '%s' \"$SEL\" | tiza --lang \"$ZED_FILE\"", "args": [], "env": { "SEL": "$ZED_SELECTED_TEXT" }, "use_new_terminal": true, "reveal": "always" },
+  { "label": "Tiza: 40 lines from the cursor", "command": "tiza", "args": ["$ZED_FILE:$ZED_ROW-$((ZED_ROW + 39))"], "use_new_terminal": true, "reveal": "always" }
 ]
 ```
 
-**Rust files need a Cargo workspace.** In a Rust buffer Zed resolves `$ZED_FILE` / `$ZED_ROW` through rust-analyzer, and when it fails to find a workspace («Failed to discover workspace») every task that uses them is hidden from the picker and the shortcut does nothing, with no error. Open a loose `.rs` file from a crate (a `Cargo.toml` next to it is enough); any other language works from anywhere.
+3. To give a task a key, add a binding to `~/.config/zed/keymap.json`. For example:
 
-## Driving the demo from Zed
+   ```json
+   [
+     { "context": "Editor", "bindings": { "cmd-shift-d": ["task::Spawn", { "task_name": "Tiza: current file" }] } }
+   ]
+   ```
 
-`tiza next`, `tiza prev` and `tiza goto ID` step the Tiza instance that is running (its session socket; add `--session NAME` for another), so a Zed task can advance the demo while Zed shows the code. These three were run in Zed 1.24.2 on macOS 27.0.1 on 2026-10-18, with Tiza in Zed's terminal dock (inside Herdr, which also ran there). `goto` takes a step id from your document, e.g. `count` in `examples/tally-tour.tiza`, whose steps are main, args, count, report and recap:
+4. In Zed, run the action `task: spawn` (Option-Shift-T on macOS) to open the task list. The command palette does not list the tasks themselves.
+5. Select a task. Tiza opens in a new tab of the Zed terminal.
+
+| Task | What Tiza shows |
+|---|---|
+| `Tiza: current file` | The file that is open in Zed. |
+| `Tiza: current file, live (reload on save)` | The same file in follow mode, which reloads the code each time that you save in Zed. |
+| `Tiza: selected text` | The selected text. |
+| `Tiza: 40 lines from the cursor` | 40 lines that start at the cursor line, with the line numbers of the file. |
+
+- Zed shows `Tiza: selected text` only while text is selected.
+- The selected text comes to Tiza through stdin. Thus its line numbers start at 1.
+- With the 40-line task, Tiza shows the real line numbers of the file. Thus "line 42" in Tiza is line 42 in Zed.
+- Near the end of the file, Tiza cuts the range at the last line and shows a message. See [Messages](#messages).
+
+## Write your own tasks
+
+- Zed replaces each `$ZED_…` variable itself. Do not use a shell expansion such as `${ZED_FILE##*.}` in a task. Zed then refuses the whole tasks file with the error "unknown variables", and shows no Tiza task.
+- Zed runs each task with your shell, as `$SHELL -i -c`. The command line is `command`, then `args`. Thus your shell runs the pipe of the selected-text task and the arithmetic of the 40-line task.
+- Do not set `"command": "sh"` with `-c` in `args`. Zed 1.25.3 then runs `sh` with no script. Tiza stops with `tiza: empty stdin` or `tiza: give a file …`.
+- Zed shows a task that uses `$ZED_SELECTED_TEXT` only while text is selected.
+- The selected-text task puts the selection in the variable `SEL`. Thus the shell does not read the quotes or the `$` signs in your code.
+
+## Step the demo from Zed
+
+`tiza next`, `tiza prev` and `tiza goto ID` change the step of the Tiza instance that runs. They find it through its session socket. Thus Tiza can run in the Zed terminal or in another terminal, such as Ghostty. Both terminals must have the same `$XDG_RUNTIME_DIR` or `$TMPDIR`. When Tiza runs with `--session NAME`, add `--session NAME` to the task too. `$TIZA_SOCKET` and `$TIZA_SESSION` also choose the instance.
+
+`ID` is the id of a named step or a step number. For example, `examples/tally-tour.tiza` names its steps `main`, `args`, `count`, `report` and `recap`. These tasks change the step of that document:
 
 ```json
 [
@@ -66,18 +63,93 @@ Shortcut in `~/.config/zed/keymap.json`:
 ]
 ```
 
-Why `"reveal_target": "center"`: Zed runs every task in a terminal tab, even with `"reveal": "never"`. By default that tab opens in the terminal dock and closes again, so whatever lives in the dock blinks on every step — Tiza, or all of Herdr (its bar and panes) when Herdr runs there. With `"center"` the task tab opens among the editor's tabs and leaves the dock untouched; `"hide": "on_success"` closes it as soon as the step has changed. (With the dock target, `"hide": "never"` is worse: the task tab stays in front and covers the dock.) Tiza itself does not flicker: a step from a task draws the same frame as pressing `n`.
+Give each task a key as in [Add the tasks](#add-the-tasks), for example `"cmd-alt-right": ["task::Spawn", {"task_name": "Tiza: next step"}]`. These three tasks were tested in Zed 1.24.2 on macOS 27.0.1 on 2026-10-18. Tiza ran in the terminal dock of Zed, inside Herdr, which also ran in the dock.
 
-The leftover is the editor's tab bar, which shows the task tab for an instant. To record, capture only Tiza's area (the Herdr pane or the dock), or step without a task — `n`/`p` in Tiza, `auto_advance_ms` on the steps, or an agent with the MCP `goto_step` — which never opens a tab.
+The options `reveal`, `reveal_target` and `hide` keep the dock still:
 
-When a task fails it exits 1 and, since `hide` is `on_success`, its terminal stays open with the message: `no Tiza instance is listening on …` with nothing running, and `no step is named "nope" (named steps: main, args, count, report, recap)` for a `goto` to an id the document does not have. Bind them like any task (`"cmd-alt-right": ["task::Spawn", {"task_name": "Tiza: next step"}]`); pairing one with an editor action of your own is the ADR 0007 §6 idea.
+- Zed runs every task in a terminal tab, even with `"reveal": "never"`. By default, that tab opens in the terminal dock and then closes. Thus the content of the dock blinks at each step: Tiza, or all of Herdr when Herdr runs there.
+- With `"reveal_target": "center"`, the task tab opens among the editor tabs. The dock does not change.
+- `"hide": "on_success"` closes the task tab when the step changes. With the default target, the dock, `"hide": "never"` leaves the task tab in front of the dock.
+- Tiza does not blink. `tiza next` shows the same screen as `n`. `tiza prev` shows the same screen as `p`.
+- The tab bar of the editor shows the task tab for a short time. To record without it, capture only the area of Tiza: the Herdr pane or the dock.
+- You can also step without a task. Press `n` and `p` in Tiza, give the steps an `auto_advance_ms`, or let an agent call the MCP tool `goto_step`. These ways open no tab.
+- In [supervised mode](agents/supervised-mode.md), Tiza holds `tiza next`, `tiza prev` and `tiza goto` for your review. Then a key in Zed does not change the step at once.
 
-## Gotchas
+Tiza does not run an action of the editor at a step. You can put a Tiza command and an editor action together in your own task. Decided in [ADR 0007](adr/0007-moves-y-pasos-con-nombre.md).
 
-- The task picker is `task: spawn` (option-shift-t on macOS); the command palette does not list tasks. Tasks that use `$ZED_SELECTED_TEXT` only appear while there is selected text.
-- After editing `tasks.json`, spawn the task from the list, not from a history entry (the clock icon): Zed re-runs the old definition ([zed#37720](https://github.com/zed-industries/zed/issues/37720)). Renaming the task is the reliable workaround.
-- `allow_concurrent_runs: false` does not stop a second spawn of the same task: you get two Tiza tabs. The second one shows `local API disabled: an instance is already listening on …/tiza/default.sock (use --session for another)` — fine for a human, but agents and the MCP server talk to the first one; close it or start the second with `--session NAME`.
-- The selected text arrives through stdin, so its numbering starts at 1; the 40-line task keeps the file's real numbers (`tiza file.rs:A-B`), so you can say "look at line 42" and match the editor.
-- `--follow` (or `:follow on` later) reloads the code every time you save in Zed (⌘S), keeping the annotations anchored to their text; the status line shows `⟳ following · last HH:MM:SSZ`. It works with ranges too (`file.rs:A-B --follow` keeps showing those lines). A `.tiza` with moves opens at its saved step (1 when it names none): there follow is on and waits, and a save loads when you go back to step 0 (the bar says `following main.rs (waiting: moves applied at step 1; loads at step 0)`). If a save drops an annotation (its text is gone) and you ⌘Z in Zed and save again, the text is back but the annotation is not: press `u` once in Tiza — the harmless second reload leaves no undo step, so `u` goes straight to the reload that dropped it (the message says which: `undone: reload #N`, or `undone: note a3` when the last thing before it was an annotation).
-- In Zed's terminal, use `line_height: "standard"` in the terminal settings so the box-drawing characters fit without gaps. A comment with a URL stays Cmd+clickable there.
-- Theme: `t` toggles dark/light so Tiza matches the Zed theme you are using in the video.
+When a step command succeeds, it prints the step that it reached, for example `step 3/5 · count.rs: one pass`. When it fails, it exits with code 1. Because `hide` is `on_success`, the task terminal stays open and shows the message. See [Messages](#messages).
+
+## Messages
+
+| Message | When |
+|---|---|
+| `the file has N lines: range A-B clamped to C-D` | The range of the 40-line task goes past the end of the file. |
+| `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second Tiza starts in a session that already has an instance. |
+| `tiza: empty stdin` | The stdin of Tiza is empty or has only blank characters. |
+| `tiza: give a file (tiza src/main.rs:12-48) or pipe code through stdin (pbpaste \| tiza --lang rs)` | Tiza gets no file, and its stdin is a terminal. |
+| `` tiza: no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | A step command finds no instance in the session. |
+| `tiza: no step is named "ID" (named steps: IDS)` | `tiza goto` gets an id that the document does not have. |
+| `tiza: no step is named "ID": the document has no named steps` | `tiza goto` gets an id, and the document names no step. |
+| `tiza: step N is beyond the last step (M)` | `tiza goto` gets a number after the last step. |
+
+Tiza shows the first two messages in the status bar. It writes the others on stderr. For a file with one line, the first message says `line`, not `lines`. The message `no Tiza instance is listening on …` ends with the error of the system. The messages of `tiza goto` end with an error code in parentheses. For example:
+
+```
+tiza: no step is named "nope" (named steps: main, args, count, report, recap) (not_found)
+```
+
+## Special cases
+
+### Rust files and Cargo
+
+In a Rust file, Zed gets `$ZED_FILE` and `$ZED_ROW` through rust-analyzer. When rust-analyzer finds no workspace, it shows "Failed to discover workspace". Zed then hides each task that uses these variables, and the key does nothing. Zed shows no error.
+
+Open the Rust file in a folder that has a crate. A `Cargo.toml` next to the file is enough. Files in other languages work from any folder.
+
+### Run a task again after an edit
+
+After you edit `tasks.json`, select the task from the list. Do not select it from the history (the clock icon). Zed runs the old definition from the history ([zed#37720](https://github.com/zed-industries/zed/issues/37720)). To avoid the problem, give the task a new name.
+
+### Two runs of the same task
+
+In Zed 1.25.3, `"allow_concurrent_runs": false` did not stop a second run of the same task. You get two Tiza tabs. The second Tiza shows `local API disabled: an instance is already listening on PATH (use --session for another one)`. Agents and the MCP server talk to the first Tiza. Both instances autosave the same `FILE.tiza` at each change, so each one writes over the other. Close the second one, or start it with `--session NAME`.
+
+### Where Tiza saves
+
+Autosave writes the document when you make your first change. The task decides the name of the document:
+
+| Task | Document |
+|---|---|
+| `Tiza: current file` and the follow-mode task | `FILE.tiza`, next to the file |
+| `Tiza: 40 lines from the cursor` | `FILE.A-B.tiza`, next to the file, for the lines `A-B` on screen |
+| `Tiza: selected text` | `tiza-TIME.tiza`, in the folder where the task runs |
+
+`TIME` is the time in seconds since 1970. Zed runs a task in the root of the project, unless the task sets `cwd`. When the selected text starts with `{` and contains `"schema"`, Tiza reads it as a `.tiza` document. Then it saves to `tiza-stdin.tiza`. See [Saving](concepts/saving.md).
+
+A range never shows the annotations of `FILE.tiza`.
+
+> **Warning:** A range does not open its old document. When you run the 40-line task again on the same line, Tiza starts with no annotations. At your first change, autosave writes over `FILE.A-B.tiza`. To continue that work, open the document itself: `tiza FILE.A-B.tiza`.
+
+### The language of the selected text
+
+When the value of `--lang` contains a `/` or a `\`, Tiza reads it as a path. `$ZED_FILE` is an absolute path, so the selected-text task always gives one. Tiza then finds the language as it does for a file: from an extension that has a grammar, or a well-known name such as `Makefile`. Next it looks for a `#!` line on the first line of the selected text, or a modeline in its first or last five lines. Otherwise it shows plain text. See [Command line](reference/cli.md).
+
+To change the language in Tiza, type `:lang LANG`, for example `:lang sh`. `:lang auto` finds the language from the selected text only.
+
+### Follow mode with Zed
+
+The follow-mode task, `--follow` and `:follow on` reload the code each time that you save in Zed (Cmd-S). Follow mode keeps each annotation on its text when the code changes. Follow mode also works with a range: `tiza FILE:A-B --follow` keeps the line numbers `A-B` on screen. [Follow the editor](guides/follow-the-editor.md) gives the status bar states and the messages. It also explains how a document with moves waits for step 0. To restore an annotation that a save dropped, see [Undo a reload](guides/follow-the-editor.md#undo-a-reload).
+
+### The Zed terminal
+
+- Set `"line_height": "standard"` in the `terminal` settings of Zed. Then the box-drawing characters join with no gaps.
+- In the Zed terminal, Cmd-click on a URL in a comment opens it. This also works while mouse capture is on.
+- Press `t` to change between the dark and the light theme. Use the theme that matches your Zed theme in a video. See [Themes](reference/themes.md).
+
+## See also
+
+- [Follow the editor](guides/follow-the-editor.md)
+- [Use the mouse](guides/present.md)
+- [Terminal support](reference/terminals.md)
+- [Keys](reference/keys.md)
+- [Check before you record](guides/check-before-you-record.md)
