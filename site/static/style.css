@@ -259,6 +259,22 @@ code, kbd, pre { font-family: var(--mono); }
   padding: 2px 8px; cursor: pointer; opacity: 0;
 }
 .doc pre:hover .copy-btn, .copy-btn:focus { opacity: 1; }
+/* A prompt block: text that the reader copies and gives to an agent. It is
+   prose, so it wraps and uses the text font. */
+.doc .prompt-block { margin: 0 0 1.4em; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--code-bg); }
+.doc .prompt-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 6px 8px 6px 14px; border-bottom: 1px solid var(--rule);
+  font-size: 0.85rem; font-weight: 600; color: var(--fg-muted);
+}
+.doc .prompt-copy {
+  font: 600 0.85rem var(--font); color: var(--fg);
+  background: var(--bg-elev); border: 1px solid var(--rule); border-radius: 4px;
+  min-height: 34px; padding: 4px 12px; cursor: pointer;
+}
+.doc .prompt-copy:hover { border-color: var(--fg-faint); }
+.doc pre.prompt { margin: 0; border: 0; border-radius: 0 0 var(--radius) var(--radius); }
+.doc pre.prompt code { font: 0.95rem/1.55 var(--font); white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* Tables: thin rules. build.py puts each table in .table-wrap: a wide table
    scrolls in that box, and the page does not scroll sideways. */

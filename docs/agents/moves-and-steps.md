@@ -4,6 +4,12 @@ Use this page to change the code at a step, show another file or name the steps 
 
 Tiza is a terminal tool that draws annotations on code. To install it, see [Install](../guides/install.md). To draw the annotations, see [Draw for a presenter](draw-for-a-presenter.md).
 
+A presenter can start with a prompt like this one:
+
+```text prompt
+Use Tiza to show a fix in the code that I have open. At step 1, mark the problem. At step 2, type the fix with a move, and explain it in a note.
+```
+
 ## Add a move
 
 When the lesson adds or changes code between steps, add a move. Do not open a second document.

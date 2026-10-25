@@ -107,8 +107,38 @@
     });
   });
 
+  // ---- Prompt blocks -------------------------------------------------------
+  // build.py writes a prompt block as <pre class="prompt">. It gets a title
+  // and a button that copies the prompt. The title and the button come from
+  // here, so the search index does not hold them.
+  document.querySelectorAll(".doc pre.prompt").forEach(function (pre) {
+    var box = document.createElement("div");
+    box.className = "prompt-block";
+    var head = document.createElement("div");
+    head.className = "prompt-head";
+    var title = document.createElement("span");
+    title.textContent = "Ask your agent";
+    head.appendChild(title);
+    if (navigator.clipboard) {
+      var b = document.createElement("button");
+      b.type = "button";
+      b.className = "prompt-copy";
+      b.textContent = "Copy prompt";
+      b.addEventListener("click", function () {
+        navigator.clipboard.writeText(pre.textContent).then(function () {
+          b.textContent = "Copied";
+          setTimeout(function () { b.textContent = "Copy prompt"; }, 1500);
+        }, function () {});
+      });
+      head.appendChild(b);
+    }
+    pre.parentNode.insertBefore(box, pre);
+    box.appendChild(head);
+    box.appendChild(pre);
+  });
+
   // ---- Copy buttons on code blocks ---------------------------------------
-  document.querySelectorAll(".doc pre").forEach(function (pre) {
+  document.querySelectorAll(".doc pre:not(.prompt)").forEach(function (pre) {
     if (!navigator.clipboard) return;
     var b = document.createElement("button");
     b.type = "button";

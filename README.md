@@ -106,7 +106,13 @@ Every image on this page is a real Tiza export. `scripts/readme-images.sh` makes
 
 ## For agents
 
-Tiza has an MCP server. An AI agent can use it to draw on the code that you show. Add the server one time.
+Tiza has an MCP server. An AI agent can use it to draw on the code that you show. Your agent can install Tiza and add the server. Give it this prompt:
+
+```text prompt
+Set up the Tiza MCP server for me. Follow https://tiza.luisk.dev/agents/setup/. If that page does not load, follow https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/agents/setup.md.
+```
+
+You can also add the server yourself, one time.
 
 Claude Code:
 

@@ -4,6 +4,12 @@ Use this page to draw annotations on the code that a presenter has open in Tiza.
 
 Tiza is a terminal tool that draws annotations on code. To install it, see [Install](../guides/install.md). To connect your client, see [Connect an agent](setup.md). Ask the presenter to run `tiza FILE` in a terminal. This starts the live instance that you need.
 
+A presenter can start with a prompt like this one:
+
+```text prompt
+Use Tiza to explain the code that I have open in it. Draw one step for each idea, with short labels. Then go back to step 0 and tell me how many steps there are.
+```
+
 ## Draw the annotations
 
 1. Call `status`. It tells you that an instance listens, and it gives `cols` and `rows`. It also gives `warnings` when there are some.

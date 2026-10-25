@@ -14,6 +14,9 @@ This script copies the pages that nav.json lists into content/, and:
   error,
 - serves a raw.githubusercontent.com file of this repo that is an asset from
   the site, so the site makes no request to another host,
+- turns a code block with the info string "text prompt" into a prompt
+  block (<pre class="prompt">); site.js gives it the title "Ask your agent"
+  and a "Copy prompt" button. On GitHub it stays a plain text block,
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
 - copies the images and the favicon into static/,
@@ -33,6 +36,7 @@ REF defaults to main.
 """
 
 import argparse
+import html
 import json
 import os
 import posixpath
@@ -47,6 +51,8 @@ HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 # The delimiter row under the header row of a table: | --- | :--: |
 TABLE_DELIM_RE = re.compile(r"^\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
 TABLE_OPEN = '<div class="table-wrap">'
+# The info string of a prompt block: the text that a reader gives an agent.
+PROMPT_INFO = "text prompt"
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
@@ -204,6 +210,7 @@ class Site:
         seen = {}
         out = []
         fence = None
+        prompt = None  # the lines of a prompt block, while inside one
         table = False  # inside a table that has its wrapper open
         for n, line in enumerate(lines, 1):
             self.where = "%s:%d" % (src, n)
@@ -212,13 +219,29 @@ class Site:
                 table = False
             m = FENCE_RE.match(line)
             if fence:
-                out.append(line)
-                if m and m.group(2)[0] == fence[0] and len(m.group(2)) >= len(fence) \
-                        and line.strip() == m.group(2):
+                closes = m and m.group(2)[0] == fence[0] and len(m.group(2)) >= len(fence) \
+                    and line.strip() == m.group(2)
+                if prompt is not None:
+                    if not closes:
+                        prompt.append(line)
+                        continue
+                    # One HTML block: <pre> ends only at </pre>, so blank
+                    # lines in the prompt do not end it.
+                    out.append('<pre class="prompt"><code>%s</code></pre>'
+                               % html.escape("\n".join(prompt), quote=False))
+                    prompt = None
+                else:
+                    out.append(line)
+                if closes:
                     fence = None
                 continue
             if m:
                 fence = m.group(2)
+                if line[m.end():].strip() == PROMPT_INFO:
+                    if m.group(1):
+                        raise BuildError("%s: a prompt block must not be indented" % self.where)
+                    prompt = []
+                    continue
                 out.append(line)
                 continue
             # A table starts at a header row with "|", followed by a delimiter row.

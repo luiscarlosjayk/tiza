@@ -2,6 +2,29 @@
 
 Add the Tiza MCP server to your MCP client. The client starts `tiza mcp`.
 
+Your agent can do the setup. Give it this prompt:
+
+```text prompt
+Set up the Tiza MCP server for me. Follow https://tiza.luisk.dev/agents/setup/. If that page does not load, follow https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/agents/setup.md.
+```
+
+To do the setup yourself, use the commands for your client below.
+
+## Steps for an agent
+
+Do these steps when the person asks you to set up Tiza.
+
+1. Run `tiza --version`. When the shell does not find `tiza`, install it with the command in [Install Tiza](../guides/install.md). On macOS and on Linux, this is the command:
+
+   ```sh
+   curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh
+   ```
+
+   The script tells you when `~/.local/bin` is not in the `PATH`. Then tell the person the line to add.
+2. Add the server for your client. The commands are in the next sections.
+3. Ask the person to connect the client again. In Claude Code, they type `/mcp`, select `tiza` and select *Reconnect*. In Codex, they restart the session.
+4. Call the `status` tool. When no Tiza is open, the call fails with `No Tiza instance is listening on PATH`. This error shows that the server works. Ask the person to run `tiza FILE` in a terminal, then call `status` again.
+
 ## Claude Code
 
 Add the server one time:
