@@ -64,7 +64,7 @@ sh install.sh
 
 - The notes of each release tell which archive is for which system.
 - An archive is about 7 MB. The [Releases](https://github.com/luiscarlosjayk/tiza/releases) page gives the exact size.
-- Each archive is under 8 MB, and the binary is under 16 MB. A script checks these limits before each release.
+- `scripts/size-check.sh` keeps the archive under 8 MB and the binary under 16 MB.
 
 ## Open Tiza on macOS
 
