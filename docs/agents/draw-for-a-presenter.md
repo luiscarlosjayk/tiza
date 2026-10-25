@@ -7,7 +7,9 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 A presenter can start with a prompt like this one:
 
 ```text prompt
-Use Tiza to explain the code that I have open in it. Draw one step for each idea, with short labels. Then go back to step 0 and tell me how many steps there are.
+Use Tiza to explain the code that I have open in it.
+Draw one step for each idea, with short labels.
+Then go back to step 0 and tell me how many steps there are.
 ```
 
 ## Draw the annotations

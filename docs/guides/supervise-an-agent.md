@@ -9,7 +9,9 @@ You need an agent that is connected to Tiza. See [Connect an agent](../agents/se
 For example, type `:supervise on`, then give your agent this prompt:
 
 ```text prompt
-Use Tiza to review the code that I have open, as in a pull request review. Make one step for each finding, with a note on each risk. I accept or reject each change that you make.
+Use Tiza to review the code that I have open, as in a pull request review.
+Make one step for each finding, with a note on each risk.
+I accept or reject each change that you make.
 ```
 
 ## Review the agent changes

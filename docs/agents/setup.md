@@ -5,7 +5,11 @@ Add the Tiza MCP server to your MCP client. The client starts `tiza mcp`.
 Your agent can do the setup. Give it this prompt:
 
 ```text prompt
-Set up the Tiza MCP server for me. Follow https://tiza.luisk.dev/agents/setup/. If that page does not load, follow https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/agents/setup.md.
+Set up the Tiza MCP server for me.
+Follow this page:
+https://tiza.luisk.dev/agents/setup/
+If that page does not load, follow this file:
+https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/docs/agents/setup.md
 ```
 
 To do the setup yourself, use the commands for your client below.
