@@ -103,49 +103,7 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 
 ## JSON output
 
-`tiza check --json` gives the same findings to a script.
-
-| Field | Meaning |
-|---|---|
-| `ok` | `true` when the check found no error. |
-| `errors` | The number of errors. |
-| `warnings` | The number of warnings. |
-| `width` | The width of the check. |
-| `max_step` | The last step of the document. It is not there when the document does not load. |
-| `min_clean_width` | The narrowest width from which no label is cut, or `null`. |
-| `narrower` | The narrower widths that are clean too: `clean`, `code_fits_from` and `margin_from`. |
-| `findings` | The list of findings. |
-
-- `min_clean_width` is `null` when the document does not load, or when no width up to 400 shows each label.
-- `narrower` is there only when `width` is under `min_clean_width` and no label is cut at `width`.
-- Each finding has `level`, `code` and `message`. It also has `id`, `step`, `file`, `line` and `text` when they apply.
-- `file` names a linked file. `text` is the full text of a cut label, in a `clipped_label` finding.
-
-The `code` of a finding is one of these:
-
-| Code | Level | What it reports |
-|---|---|---|
-| `schema` | Error | The document does not follow the `.tiza` format. |
-| `code` | Error | Tiza cannot read the code of the document. |
-| `bounds` | Error | A number is out of range, for example a step past the limit. |
-| `link` | Error | A linked file cannot be read. |
-| `duplicate_id` | Error | Two annotations have the same id. |
-| `steps` | Error | An entry of `steps` is not valid. |
-| `steps` | Warning | An entry of `steps` names a step past the last one, or has a key that Tiza does not know. |
-| `move` | Error | A move is not valid, or it does not apply at its step. |
-| `rebind` | Error | The `rebind` of a move is not valid, or its target does not match after the patch. |
-| `stale` | Error | In a live instance, a move does not match the code after a reload or a paste. |
-| `unknown_id` | Error | The `ids` of a spotlight name an annotation that does not exist. |
-| `unknown_id` | Warning | A `rebind` names an annotation that does not exist. Tiza ignores that `rebind`. |
-| `unknown_file` | Error | An annotation names a file that no `code.link` shows. |
-| `anchor` | Error | An anchor does not match at its step. |
-| `marker` | Error | A marker does not match, or the end marker is only before the start marker. |
-| `marker` | Warning | A marker matches more than one time. |
-| `unanchored` | Warning | A move removes the code that an annotation is on. |
-| `outside_window` | Warning | An annotation is outside the `code.link` window of its step, or a later patch pushes it out. |
-| `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
-| `empty_step` | Warning | A step changes nothing. |
-| `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
+`tiza check --json` gives the same findings to a script. Its fields and codes are in [Check report](../reference/cli.md#check-report).
 
 ## Check a live instance
 

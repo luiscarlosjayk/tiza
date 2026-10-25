@@ -203,6 +203,15 @@ For example:
 tiza scene patch '{"step":2,"theme":"light","annotations":[{"id":"a1","deleted":true}]}'
 ```
 
+Tiza refuses a `scene put` in these saving cases. The error code is `invalid_argument`. The document and the file on disk do not change.
+
+| Message | When |
+|---|---|
+| `scene.put: the code sent is not what FILE holds now, and follow is on (the screen shows the file as it is): scene.get again; to change the code, edit FILE` | Follow mode is on, and the code sent for the main file is not the text of the file now. |
+| `scene.put: FILE cannot be read (ERROR) and the document reads its code from it: put the file back, or :embed to keep the copy loaded` | The open document reads code from a file, the main file or a linked file that Tiza read before. Tiza cannot read that file now. |
+
+`ERROR` is the read error of Tiza. It ends with the error text of the system.
+
 ### Keys that Tiza does not know
 
 These methods refuse a key that they do not know: `annotation.update`, `scene.clear`, `scene.get`, `scene.patch` and `pointer.set`. The `move` object of `annotation.update` also refuses one. The error is `invalid_argument`, and its message names the keys that the method knows. `scene.get` knows no key.
@@ -248,7 +257,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 - `label` is the step label: the text of the status bar for the step, for example `step 3/7 · Shared borrow`.
 - `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number.
 - `shown` of `pointer.set` is `false` while the presenter has the command line open. The pointer shows when the command line closes.
-- The fields of the `check` report are in [JSON output](../guides/check-before-you-record.md#json-output).
+- The fields of the `check` report are in [Check report](cli.md#check-report).
 
 ### Fields of `status`
 
@@ -370,7 +379,7 @@ tiza render --out shot.png
 - `tiza render` without a file exports the live instance. See [The live instance](exports.md#the-live-instance).
 - The other commands print the result as indented JSON.
 
-`tiza check FILE --json` does not use the socket. It checks a `.tiza` file on disk and prints the report as JSON. It exits with 1 when the report has errors. See [JSON output](../guides/check-before-you-record.md#json-output).
+`tiza check FILE --json` does not use the socket. It checks a `.tiza` file on disk and prints the report as JSON. It exits with 1 when the report has errors. See [Check report](cli.md#check-report).
 
 ### Errors on the command line
 

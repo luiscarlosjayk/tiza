@@ -81,29 +81,7 @@ Follow mode also turns off in three more cases. The message gives the reason.
 
 ## Messages
 
-| Message | When |
-|---|---|
-| `following FILE` | `:follow on` started follow mode. |
-| `following FILE (waiting: moves applied at step N; loads at step 0)` | Follow mode started while a move is applied. See [Moves](#moves). |
-| `already following FILE` | Follow mode was on already. |
-| `FILE reloaded (#N): K annotations kept` | A reload kept all the annotations. |
-| `FILE reloaded (#N): K annotations kept, D dropped (text gone; u undoes)` | A reload dropped `D` annotations. |
-| `FILE changed on disk but moves are applied at step N: go back to step 0 to reload` | You saved the file while a move is applied. |
-| `FILE removed; waiting for it to come back` | The file is not on disk. |
-| `FILE is back; following it` | The file is on disk again. |
-| `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
-| `nothing to follow: the code is embedded (use :link path to reference a file)` | `:follow on` found embedded code. |
-| `the .tiza already references FILE` | `:link` with no path found the code reference. |
-| `the .tiza now references FILE` | `:link PATH` or `:ref PATH` found the same code in the file. |
-| `FILE is shown by a code.link at step N, with annotations of its own: delete that link first to reference it` | `:link PATH` or `:ref PATH` named a file that a `code.link` shows. |
-| `undone: reload #N` | `u` undid a reload. |
-| `follow is off: :follow on reloads FILE` | `u` brought back the code of the file. |
-| `follow off` | `:follow off` stopped follow mode. |
-| `follow off: cannot watch DIR: ERROR` | The file watcher could not start. |
-
-- When the first move is at step 2 or later, `loads at step 0` becomes `loads at step M or earlier`. `M` is the step before the first move.
-- `already following FILE` gets the same `(waiting: …)` end while a move is applied.
-- `DIR` is the folder of the file. `ERROR` is the error of the system, or `the watcher did not start`.
+The messages of follow mode are in [Messages of follow mode](../reference/commands.md#messages-of-follow-mode).
 
 ## Special cases
 

@@ -459,8 +459,52 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 - In the `move #N added` message, `FILE` ends with `:A-B` when you gave lines. A warning about the move can come before it.
 - In `already references FILE`, `FILE` ends with `:A-B` when the document references lines. The `now references` messages give the path alone.
 - A `references` message can end with `; following NAME` when follow mode watches the file.
-- The other messages of `:link`, `:ref` and `:embed` are in [Follow the editor](../guides/follow-the-editor.md#messages).
+- The other messages of `:link`, `:ref` and `:embed` are in [Messages of follow mode](#messages-of-follow-mode).
 - In presentation mode, `:layout` without a value adds `(presentation mode is always stable)`. `:layout stable` and `:layout dynamic` show their usual message.
+
+### Messages of the save commands
+
+| Message | When |
+|---|---|
+| `saved to FILE` | `:w` saved the open document. |
+| `wrote a copy to PATH (FILE is still the file open)` | `:w PATH` wrote a copy. |
+| `saved as PATH (autosave on)` or `saved as PATH (autosave off)` | `:saveas PATH` saved to the new file. |
+| `autosave on (saved to FILE)` | `:autosave on` saved the changes that were not saved. |
+| `PATH exists (add ! to overwrite)` | The file exists and the command has no `!`. |
+
+When `:q` refuses, the status bar shows one of these messages:
+
+| Case | Message |
+|---|---|
+| Autosave off | `unsaved changes (autosave off): :w saves to FILE, :saveas PATH saves elsewhere, :q! quits without saving` |
+| No-save mode | `unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them` |
+| After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — FILE` |
+
+### Messages of follow mode
+
+| Message | When |
+|---|---|
+| `following FILE` | `:follow on` started follow mode. |
+| `following FILE (waiting: moves applied at step N; loads at step 0)` | Follow mode started while a move is applied. See [Moves](../guides/follow-the-editor.md#moves). |
+| `already following FILE` | Follow mode was on already. |
+| `FILE reloaded (#N): K annotations kept` | A reload kept all the annotations. |
+| `FILE reloaded (#N): K annotations kept, D dropped (text gone; u undoes)` | A reload dropped `D` annotations. |
+| `FILE changed on disk but moves are applied at step N: go back to step 0 to reload` | You saved the file while a move is applied. |
+| `FILE removed; waiting for it to come back` | The file is not on disk. |
+| `FILE is back; following it` | The file is on disk again. |
+| `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
+| `nothing to follow: the code is embedded (use :link path to reference a file)` | `:follow on` found embedded code. |
+| `the .tiza already references FILE` | `:link` with no path found the code reference. |
+| `the .tiza now references FILE` | `:link PATH` or `:ref PATH` found the same code in the file. |
+| `FILE is shown by a code.link at step N, with annotations of its own: delete that link first to reference it` | `:link PATH` or `:ref PATH` named a file that a `code.link` shows. |
+| `undone: reload #N` | `u` undid a reload. |
+| `follow is off: :follow on reloads FILE` | `u` brought back the code of the file. |
+| `follow off` | `:follow off` stopped follow mode. |
+| `follow off: cannot watch DIR: ERROR` | The file watcher could not start. |
+
+- When the first move is at step 2 or later, `loads at step 0` becomes `loads at step M or earlier`. `M` is the step before the first move.
+- `already following FILE` gets the same `(waiting: …)` end while a move is applied.
+- `DIR` is the folder of the file. `ERROR` is the error of the system, or `the watcher did not start`.
 
 ### Usage messages
 

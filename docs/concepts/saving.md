@@ -46,15 +46,7 @@ The commands work as in Vim.
 - A command that takes a `PATH` does not write over an existing file without `!`.
 - When `PATH` is the open document, `:w PATH` and `:saveas PATH` save to it, as `:w` does.
 
-The status bar shows one of these messages:
-
-| Message | When |
-|---|---|
-| `saved to FILE` | `:w` saved the open document. |
-| `wrote a copy to PATH (FILE is still the file open)` | `:w PATH` wrote a copy. |
-| `saved as PATH (autosave on)` or `saved as PATH (autosave off)` | `:saveas PATH` saved to the new file. |
-| `autosave on (saved to FILE)` | `:autosave on` saved the changes that were not saved. |
-| `PATH exists (add ! to overwrite)` | The file exists and the command has no `!`. |
+The messages of these commands are in [Messages of the save commands](../reference/commands.md#messages-of-the-save-commands).
 
 ### Paths
 
@@ -86,13 +78,7 @@ A quit command does not save more than the current mode saves. With autosave on 
 - When the save fails again, Tiza prints `tiza: could not save FILE: ERROR` before the line of what it did not save.
 - When `:wq` cannot save a read-only `.tiza` file, it shows `FILE is read-only`. For other failures, such as a read-only folder, it shows the error of the system.
 
-When `:q` refuses, the status bar shows one of these messages:
-
-| Case | Message |
-|---|---|
-| Autosave off | `unsaved changes (autosave off): :w saves to FILE, :saveas PATH saves elsewhere, :q! quits without saving` |
-| No-save mode | `unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them` |
-| After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — FILE` |
+The messages of `:q` are in [Messages of the save commands](../reference/commands.md#messages-of-the-save-commands).
 
 When Tiza quits without saving, it prints a line on stderr. For example:
 
@@ -135,14 +121,7 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 - Tiza drops a `views` entry that no `code.link` names. It does not save it.
 - A `scene put` that changes nothing writes nothing.
 
-Tiza refuses a `scene put` in these saving cases. The error code is `invalid_argument`. The document and the file on disk do not change.
-
-| Message | When |
-|---|---|
-| `scene.put: the code sent is not what FILE holds now, and follow is on (the screen shows the file as it is): scene.get again; to change the code, edit FILE` | Follow mode is on, and the code sent for the main file is not the text of the file now. |
-| `scene.put: FILE cannot be read (ERROR) and the document reads its code from it: put the file back, or :embed to keep the copy loaded` | The open document reads code from a file, the main file or a linked file that Tiza read before. Tiza cannot read that file now. |
-
-`ERROR` is the read error of Tiza. It ends with the error text of the system. The other refusals are in [`scene.put` and `scene.patch`](../reference/socket-api.md#sceneput-and-scenepatch).
+Tiza refuses a `scene put` in some saving cases. See [`scene.put` and `scene.patch`](../reference/socket-api.md#sceneput-and-scenepatch).
 
 ## When the terminal closes
 
