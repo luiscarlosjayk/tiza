@@ -441,7 +441,7 @@ fn review_is_the_panel_and_y_accepts_the_selected_change() {
     assert!(s.contains("╭─ Agent changes · 2 waiting "), "{s}");
     assert!(s.contains(" esc hide ─╮"), "{s}");
     assert!(
-        s.contains("╰─ y accept · n reject · a all · d none · j/k select "),
+        s.contains("╰─ y accept · n reject · a accept all · d reject all · j/k select "),
         "{s}"
     );
     assert!(s.contains(" 1 of 2 ─╯"), "{s}");

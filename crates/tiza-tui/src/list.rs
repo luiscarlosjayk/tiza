@@ -425,8 +425,8 @@ pub fn review(app: &App) -> (Panel, Vec<usize>) {
             vec![
                 ("y", "accept"),
                 ("n", "reject"),
-                ("a", "all"),
-                ("d", "none"),
+                ("a", "accept all"),
+                ("d", "reject all"),
                 ("j/k", "select"),
             ]
         },
