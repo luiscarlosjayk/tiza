@@ -1,0 +1,25 @@
+title: "[feedback] "
+body:
+  - type: textarea
+    id: use
+    attributes:
+      label: Use
+      description: What did you use Tiza for? For example, a video, a talk, a lesson or an agent.
+    validations:
+      required: true
+
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: What worked well, and what did not?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Tiza version
+      description: The output of `tiza --version`, if you know it.
+    validations:
+      required: false

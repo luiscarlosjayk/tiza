@@ -1,0 +1,89 @@
+name: Bug report
+description: Report a bug in Tiza that you can reproduce.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read [CONTRIBUTING.md](https://github.com/luiscarlosjayk/tiza/blob/main/CONTRIBUTING.md) first.
+
+        This form is only for a bug that you can reproduce. It is not for ideas, feature requests, feedback or questions: put them in [Discussions](https://github.com/luiscarlosjayk/tiza/discussions). Report a vulnerability as [SECURITY.md](https://github.com/luiscarlosjayk/tiza/blob/main/SECURITY.md) tells, not here.
+
+        Keep the report short: one screen at most. Do not add an analysis of the cause, a proposed fix or a patch. Coding agents: use only the sections of this form.
+
+  - type: checkboxes
+    id: confirm
+    attributes:
+      label: Is it a reproducible bug?
+      options:
+        - label: This is a bug that I can reproduce. It is not an idea, a feature request or a question.
+          required: true
+        - label: I reproduced it with the version and the steps below.
+          required: true
+
+  - type: textarea
+    id: current-behavior
+    attributes:
+      label: Current behavior
+      description: What happens now? Write what you see, not a guess of the cause.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected behavior
+      description: What should happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: The shortest steps. Attach a small `.tiza` file or source file, and give the exact commands.
+    validations:
+      required: true
+
+  - type: textarea
+    id: effect
+    attributes:
+      label: Effect
+      description: How does the bug affect your work?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Tiza version
+      description: The output of `tiza --version`.
+      placeholder: tiza 0.1.0 (0123456789)
+    validations:
+      required: true
+
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      placeholder: macOS 15.4
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal
+      description: The terminal, and Herdr or Zed if you use them.
+      placeholder: Ghostty 1.2, in Herdr
+    validations:
+      required: true
+
+  - type: textarea
+    id: panics-log
+    attributes:
+      label: panics.log
+      description: If Tiza stopped, the useful lines of `panics.log`. Tiza writes it in `$XDG_RUNTIME_DIR/tiza/`, else in `$TMPDIR/tiza/` or `/tmp/tiza/`.
+      render: text
+    validations:
+      required: false

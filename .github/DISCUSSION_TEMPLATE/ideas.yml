@@ -1,0 +1,25 @@
+title: "[idea] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What do you want to do with Tiza? What is difficult today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: change
+    attributes:
+      label: Change
+      description: What should Tiza do?
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: How does it help you?
+    validations:
+      required: true

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ideas and feature requests
+    url: https://github.com/luiscarlosjayk/tiza/discussions
+    about: Start a discussion for an idea or a feature request.
+  - name: Feedback and questions
+    url: https://github.com/luiscarlosjayk/tiza/discussions
+    about: Start a discussion to give feedback or to ask a question.
+  - name: Security vulnerability
+    url: https://github.com/luiscarlosjayk/tiza/security/advisories/new
+    about: Report a vulnerability in private. Do not open a public issue.

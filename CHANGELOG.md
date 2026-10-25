@@ -16,6 +16,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `:margin N` limits the right margin so that long notes wrap earlier, and `:numbers on|off` shows or hides the line numbers. The document keeps both settings, and every export uses them.
 - With `--no-save` or `:autosave off`, Tiza does not write the sidecar, and `:q` refuses to quit with unsaved changes. Tiza treats a read-only sidecar the same way and shows one notice.
 - `:saveas PATH` (`:sav`) writes the document to PATH, and all later saves go to PATH. Like `:w PATH` and `:wq PATH`, it does not overwrite a file that exists unless you add `!`.
+- `SECURITY.md` tells how to report a vulnerability in private. `CONTRIBUTING.md` tells how to report a bug, and where to give ideas and feedback. Tiza does not accept pull requests for now.
 - `docs/demos/scenarios.md` describes twelve ways to use Tiza with an agent. The new examples are `examples/tally-tour.tiza`, a tour of several files in `examples/tally/`, and `examples/stack-and-queue.tiza`.
 - The new README section «Terminal support» tells what Tiza needs from a terminal, with known problems in Terminal.app, tmux and Zed. The new section «What Tiza reads and writes» tells that the binary never opens a network connection.
 

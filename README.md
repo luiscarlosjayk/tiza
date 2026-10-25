@@ -305,6 +305,10 @@ The crates go to crates.io once the GitHub Release is out, one at a time, in dep
 
 When Actions is not available, `scripts/release-local.sh vX.Y.Z` builds the same archives on a clean checkout of the tag: on macOS it builds arm64 and Intel (cross-compiled), on a Linux x86_64 machine or container the Linux x86_64 one, and it leaves in `dist/vX.Y.Z/` one tar.gz with its `.sha256` per target — the binary, README, licences and examples, as `release.yml` packs them — and `notes.md`, the release notes of `docs/release-notes/` (`scripts/release-notes.sh`, as `release.yml` writes them: a `vX.Y.Z` tag without its notes, or with notes not committed, stops before building; a `-rc.N` tag takes its own notes, `vX.Y.Z-rc.N.md`, or two lines pointing at the CHANGELOG, never the notes of `X.Y.Z`, whose archive names are not its own; the Linux archive is built with glibc 2.35 at most, in an `ubuntu:22.04` container), to attach to a release created by hand.
 
+## Feedback and bugs
+
+Report a bug that you can reproduce with the [bug report form](https://github.com/luiscarlosjayk/tiza/issues/new/choose). Put ideas, feature requests, feedback and questions in [Discussions](https://github.com/luiscarlosjayk/tiza/discussions). Tiza does not accept pull requests for now: [CONTRIBUTING.md](CONTRIBUTING.md) tells why and how to help. Report a vulnerability in private, as [SECURITY.md](SECURITY.md) tells.
+
 ## License
 
 MIT or Apache-2.0, at your option. See [LICENSE-MIT](LICENSE-MIT) and [LICENSE-APACHE](LICENSE-APACHE).
