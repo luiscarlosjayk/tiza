@@ -19,10 +19,12 @@
 //!   the README says what is needed to *play* them.
 
 use serde_json::Value;
-use tiza_qa::{Live, example, scratch, tiza, tiza_ok};
+use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
 
 fn ownership() -> String {
-    example("ownership.rs.tiza").to_string_lossy().into_owned()
+    fixture("ownership/ownership.rs.tiza")
+        .to_string_lossy()
+        .into_owned()
 }
 
 fn parse_cast(text: &str) -> (Value, Vec<Value>) {
@@ -227,7 +229,7 @@ fn ac2_tape_drives_the_real_binary() {
     // A path with a space is quoted for the shell.
     let spaced = dir.join("my demo.tiza");
     std::fs::copy(ownership(), &spaced).unwrap();
-    std::fs::copy(example("ownership.rs"), dir.join("ownership.rs")).unwrap();
+    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
     let t2 = tiza_ok(&[
         "render",
         spaced.to_str().unwrap(),

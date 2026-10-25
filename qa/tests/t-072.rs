@@ -21,7 +21,7 @@
 
 use tiza_core::theme::{Theme, contrast};
 use tiza_core::{ThemeName, canvas::Rgb};
-use tiza_qa::{example, scratch};
+use tiza_qa::{fixture, scratch};
 
 fn roles(t: &Theme) -> Vec<(&'static str, Rgb, Rgb)> {
     vec![
@@ -104,7 +104,7 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                example("ownership.rs.tiza").to_str().unwrap(),
+                fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
                 "--step",
                 "7",
                 "--theme",
@@ -136,7 +136,7 @@ fn ac2_ac3_pipeline_passes_both_themes() {
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
-                example("ownership.rs.tiza").to_str().unwrap(),
+                fixture("ownership/ownership.rs.tiza").to_str().unwrap(),
                 "--step",
                 "7",
                 "--theme",

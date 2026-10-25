@@ -7,7 +7,8 @@ target's entry in `qa/bench/baseline.json`, printing a WARN line for every
 scenario more than 20 % slower. It never fails on speed: machines differ and a
 laptop is noisy, so the numbers are a signal for a human, not a gate.
 
-Scenarios: `--version`; `render` of step 7 of examples/ownership.rs.tiza to
+Scenarios: `--version`; `render` of step 7 of the ownership demo as it was
+when the baseline was taken (qa/fixtures/ownership/ownership.rs.tiza) to
 .txt and .png; a generated 2,000-line Rust file and a generated large
 TypeScript file to .txt; the native GIF of the example; the TUI's first frame
 on a pseudo-terminal (qa/src/pty.py: non-blocking reads, a deadline, the
@@ -28,7 +29,7 @@ import argparse, datetime, json, os, platform, re, shutil, statistics, subproces
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BENCH = os.path.join(ROOT, "qa", "bench")
-EXAMPLE = os.path.join(ROOT, "examples", "ownership.rs.tiza")
+EXAMPLE = os.path.join(ROOT, "qa", "fixtures", "ownership", "ownership.rs.tiza")
 WARN_PCT = 20
 
 

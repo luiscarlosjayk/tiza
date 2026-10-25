@@ -28,7 +28,7 @@ use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
-use tiza_qa::{Live, scratch, tiza};
+use tiza_qa::{Live, fixture, scratch, tiza};
 
 const CODE: &str = "fn main() {\n    let s = String::new();\n    takes(s);\n}\n";
 const PASTED: &str = "fn other() {\n    let t = 1;\n    t + 1;\n    t\n}\n";
@@ -377,9 +377,9 @@ fn rev_an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
 #[test]
 fn rev_ref_with_moves_applied_is_refused_when_it_would_change_the_code() {
     let dir = scratch("t193-ref-step");
-    for f in ["ownership-moves.rs.tiza", "ownership.rs"] {
-        std::fs::copy(tiza_qa::example(f), dir.join(f)).unwrap();
-    }
+    let moves = "ownership-moves.rs.tiza";
+    std::fs::copy(tiza_qa::example(moves), dir.join(moves)).unwrap();
+    std::fs::copy(fixture("ownership/ownership.rs"), dir.join("ownership.rs")).unwrap();
     let path = dir.join("ownership-moves.rs.tiza");
     let doc = tiza_core::fs::load_document(&path).unwrap();
     let live = Live::open(doc, path.clone(), dir.join("live.sock"));

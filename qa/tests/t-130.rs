@@ -19,7 +19,7 @@
 //! when a character the run's JetBrains Mono face lacks needs it; a box or
 //! callout title brings the bold face.
 
-use tiza_qa::{example, fixture, scratch, tiza_ok};
+use tiza_qa::{fixture, scratch, tiza_ok};
 
 const REGULAR: &str =
     r#"@font-face{font-family:"JetBrains Mono";font-weight:400;font-style:normal"#;
@@ -90,7 +90,11 @@ fn ac1_the_symbols_face_comes_only_with_a_symbol_the_mono_lacks() {
 
 #[test]
 fn ac1_ac3_ownership_step_7_drops_the_unused_bold_italic() {
-    let s = svg("t130-own7", &example("ownership.rs.tiza"), &["--step", "7"]);
+    let s = svg(
+        "t130-own7",
+        &fixture("ownership/ownership.rs.tiza"),
+        &["--step", "7"],
+    );
     assert!(s.contains(r#"class="b""#) && s.contains(r#"class="i""#));
     assert!(!s.contains(r#"class="b i""#), "no bold italic text");
     assert_eq!(faces(&s), vec![REGULAR, BOLD, ITALIC, SYMBOLS]);

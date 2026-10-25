@@ -22,7 +22,7 @@
 //! - AC10 A rejected command never ends in a success message.
 
 use serde_json::json;
-use tiza_qa::{Live, example, scratch, tiza};
+use tiza_qa::{Live, fixture, scratch, tiza};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hi\");\n    takes(s);\n    // println!(\"{s}\");\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
 
@@ -171,7 +171,7 @@ fn ac1_export_sizes_are_bounded_in_the_tui_and_the_cli() {
     );
     assert!(!png.exists());
     // The CLI: same message, non-zero exit, no allocator text.
-    let ex = example("ownership.rs.tiza");
+    let ex = fixture("ownership/ownership.rs.tiza");
     let out = tiza(&[
         "render",
         ex.to_str().unwrap(),

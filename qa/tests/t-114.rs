@@ -13,7 +13,7 @@
 
 use crossterm::event::KeyCode;
 use serde_json::json;
-use tiza_qa::{Live, example, fixture, scratch, tiza_ok};
+use tiza_qa::{Live, fixture, scratch, tiza_ok};
 
 fn title_then_code(screen: &str, title: &str, first_code: &str) {
     let lines: Vec<&str> = screen.lines().collect();
@@ -59,7 +59,7 @@ fn ac1_ac4_a_box_on_line_1_has_its_title_row_in_the_tui_and_in_render() {
 fn ac2_a_box_on_the_first_line_of_a_range_or_focus_window() {
     let dir = scratch("t114-range");
     let src = dir.join("main.rs");
-    std::fs::copy(example("ownership.rs"), &src).unwrap();
+    std::fs::copy(fixture("ownership/ownership.rs"), &src).unwrap();
     let opened = tiza_core::fs::open(&format!("{}:15-17", src.display())).unwrap();
     let live = Live::open(
         opened.document,
@@ -80,7 +80,7 @@ fn ac2_a_box_on_the_first_line_of_a_range_or_focus_window() {
     );
     // A --focus window dims the rest but keeps every row: the box at the
     // top of the window still has its title.
-    let doc = tiza_core::fs::open(example("ownership.rs.tiza").to_str().unwrap())
+    let doc = tiza_core::fs::open(fixture("ownership/ownership.rs.tiza").to_str().unwrap())
         .unwrap()
         .document;
     let l = tiza_core::layout::layout(

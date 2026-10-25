@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tiza_qa::{example, fixture, scratch, tiza};
+use tiza_qa::{fixture, scratch, tiza};
 
 struct Ffmpeg {
     ffmpeg: PathBuf,
@@ -240,7 +240,7 @@ fn same_as_the_gif(ff: &Ffmpeg, dir: &Path, doc: &Path, ext: &str, flags: &[&str
 fn ac1_ac2_ac3_the_last_step_of_the_example_lasts_four_seconds_not_eight() {
     let Some(ff) = ffmpeg() else { return };
     let dir = scratch("t170-example");
-    let ex = example("ownership.rs.tiza");
+    let ex = fixture("ownership/ownership.rs.tiza");
     // 18 s: seven steps of 2 s and the last one twice as long, as the GIF.
     let delays = same_as_the_gif(&ff, &dir, &ex, "mp4", &[]);
     assert_eq!(delays, vec![2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0, 4.0]);
@@ -325,7 +325,13 @@ fn corner_webm_shares_the_frame_list_and_the_fix() {
     // `--scale 1`: VP9 takes its time on the 2048 px frames, and the
     // timing is the same at half the size.
     let flags = ["--scale", "1"];
-    let delays = same_as_the_gif(&ff, &dir, &example("ownership.rs.tiza"), "webm", &flags);
+    let delays = same_as_the_gif(
+        &ff,
+        &dir,
+        &fixture("ownership/ownership.rs.tiza"),
+        "webm",
+        &flags,
+    );
     assert_eq!(delays.iter().sum::<f64>(), 18.0);
     let delays = same_as_the_gif(&ff, &dir, &fixture("t-170/last-timed.tiza"), "webm", &flags);
     assert_eq!(delays.last(), Some(&1.5));

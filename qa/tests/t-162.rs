@@ -35,19 +35,11 @@
 //! compared with what the instance really answers.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const CORE: [&str; 4] = ["add_box", "get_code", "render_text", "status"];
-
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .into()
-}
 
 /// A server with no instance behind it: `initialize` and `tools/list`
 /// need none.
@@ -116,7 +108,7 @@ fn ac3_tool_names_and_input_schemas_are_the_ones_of_main() {
 /// the same width, at every step.
 #[test]
 fn ac3_render_text_is_the_export_in_presentation_mode() {
-    let src = repo_root().join("examples/ownership.rs.tiza");
+    let src = fixture("ownership/ownership.rs.tiza");
     let o = tiza_core::fs::open(src.to_str().unwrap()).unwrap();
     let last = o.document.max_step();
     let dir = scratch("t162-render-text");
