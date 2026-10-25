@@ -1,4 +1,4 @@
-//! t-064 (follow-up from the QA agent) — the status line never hides a message.
+//! The status line never hides a message.
 //!
 //! Acceptance criteria:
 //! - AC1 At 80, 100 and 120 columns an error message is still readable: the
@@ -16,8 +16,8 @@ fn bar(live: &Live, cols: u16) -> String {
 }
 
 #[test]
-fn ac1_messages_survive_narrow_bars() {
-    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "t064b-msg");
+fn messages_survive_narrow_bars() {
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "msg");
     for cols in [80u16, 100, 120, 160] {
         live.command("set a1 stroke=wavy");
         let b = bar(&live, cols);
@@ -43,13 +43,13 @@ fn ac1_messages_survive_narrow_bars() {
 }
 
 #[test]
-fn ac2_badge_and_message_coexist() {
+fn badge_and_message_coexist() {
     let live = Live::from_code(
         "fn main() {\n    let s = String::from(\"a long literal to shrink the margin\");\n}\n",
         "rs",
-        "t064b-badge",
+        "badge",
     );
-    // A box label too long for its border: the bar warns (t-246).
+    // A box label too long for its border: the bar warns.
     live.command("box 1-2 a box label far too long for the border of this box at eighty columns");
     live.command("mark warn 3:zzz");
     let b = bar(&live, 80);
@@ -61,11 +61,11 @@ fn ac2_badge_and_message_coexist() {
 }
 
 #[test]
-fn ac3_selection_is_visible_in_the_gutter() {
+fn selection_is_visible_in_the_gutter() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    let t = 2;\n}\n",
         "rs",
-        "t064b-sel",
+        "sel",
     );
     live.command("note 2 a");
     live.command("note 3 b");
@@ -88,8 +88,8 @@ fn ac3_selection_is_visible_in_the_gutter() {
 }
 
 #[test]
-fn qa_hints_shrink_in_tiers_instead_of_vanishing() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t064b-tiers");
+fn hints_shrink_in_tiers_instead_of_vanishing() {
+    let live = Live::from_code("fn main() {}\n", "rs", "tiers");
     let b = bar(&live, 160);
     assert!(
         b.contains("v select · : command · ? help · L list · q quit"),
@@ -103,8 +103,8 @@ fn qa_hints_shrink_in_tiers_instead_of_vanishing() {
 }
 
 #[test]
-fn qa_command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t064b-cands");
+fn command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
+    let live = Live::from_code("fn main() {}\n", "rs", "cands");
     live.keys(&[KeyCode::Char(':'), KeyCode::Tab]);
     let b = bar(&live, 100);
     assert!(b.contains("arrow  autosave"), "candidates listed: {b}");

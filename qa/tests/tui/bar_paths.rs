@@ -26,10 +26,10 @@ fn deep(name: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn step1_ac1_a_long_path_keeps_its_last_folder_and_file_name() {
+fn a_long_path_keeps_its_last_folder_and_file_name() {
     for cols in [80u16, 120] {
-        let live = Live::from_code("fn main() {}\n", "rs", &format!("t245-w-{cols}"));
-        let to = deep(&format!("t245-w-{cols}-to")).join("x.tiza");
+        let live = Live::from_code("fn main() {}\n", "rs", &format!("w-{cols}"));
+        let to = deep(&format!("w-{cols}-to")).join("x.tiza");
         live.command(&format!("w {}", to.display()));
         assert!(to.exists(), "{:?}", live.message());
         let b = bar(&live, cols);
@@ -39,14 +39,14 @@ fn step1_ac1_a_long_path_keeps_its_last_folder_and_file_name() {
 }
 
 #[test]
-fn ac1_saveas_and_export_keep_the_file_name_too() {
-    let live = Live::from_code("fn main() {\n    let a = 1;\n}\n", "rs", "t245-saveas");
+fn saveas_and_export_keep_the_file_name_too() {
+    let live = Live::from_code("fn main() {\n    let a = 1;\n}\n", "rs", "saveas");
     live.with(|a| a.autosave = false);
-    let to = deep("t245-saveas-to").join("y.tiza");
+    let to = deep("saveas-to").join("y.tiza");
     live.command(&format!("saveas {}", to.display()));
     let b = bar(&live, 80);
     assert!(b.contains("…/nuevo/y.tiza"), "{b}");
-    let shot = deep("t245-export-to").join("shot.txt");
+    let shot = deep("export-to").join("shot.txt");
     live.command(&format!("export {}", shot.display()));
     assert!(shot.exists(), "{:?}", live.message());
     // At 120 the last folder and the name; at 80, beside `! small terminal`,
@@ -58,8 +58,8 @@ fn ac1_saveas_and_export_keep_the_file_name_too() {
 }
 
 #[test]
-fn step2_ac2_the_not_found_message_is_whole_at_120() {
-    let dir = scratch("t245-nowhere");
+fn the_not_found_message_is_whole_at_120() {
+    let dir = scratch("nowhere");
     let examples = tiza_qa::example("");
     std::fs::copy(
         examples.join("stack-and-queue.tiza"),
@@ -83,7 +83,7 @@ fn step2_ac2_the_not_found_message_is_whole_at_120() {
 }
 
 #[test]
-fn corner_a_file_name_longer_than_the_room_keeps_its_extension() {
+fn a_file_name_longer_than_the_room_keeps_its_extension() {
     let m = "wrote a copy to /Users/me/notes/a-really-very-long-file-name-for-a-bar.tiza (main.rs.tiza is still the file open)";
     let cut = fit_message(m, 40);
     assert!(cut.starts_with("wrote a copy to …"), "{cut}");
@@ -92,7 +92,7 @@ fn corner_a_file_name_longer_than_the_room_keeps_its_extension() {
 }
 
 #[test]
-fn corner_wide_characters_in_the_path() {
+fn wide_characters_in_the_path() {
     let m = "wrote a copy to /Users/me/文書/プロジェクト/とても長いフォルダ/名前/x.tiza (main.rs.tiza is still the file open)";
     let cut = fit_message(m, 60);
     assert!(cut.contains("…/名前/x.tiza"), "{cut}");
@@ -100,7 +100,7 @@ fn corner_wide_characters_in_the_path() {
 }
 
 #[test]
-fn corner_a_short_path_and_a_message_without_one_are_as_before() {
+fn a_short_path_and_a_message_without_one_are_as_before() {
     let m = "saved to main.rs.tiza";
     assert_eq!(fit_message(m, 80), m);
     let long = "unknown kind «nope»: try :mark warn 3:zz or :style nope glyph=G and more words";
@@ -121,7 +121,7 @@ fn unicode_cells(s: &str) -> usize {
 }
 
 #[test]
-fn corner_a_shortened_path_cut_again_has_one_ellipsis() {
+fn a_shortened_path_cut_again_has_one_ellipsis() {
     let m = "wrote a copy to /Users/me/a/very/long/folder/nuevo/x.tiza (main.rs.tiza is still the file open)";
     let cut = fit_message(m, 33);
     assert!(!cut.contains("……"), "{cut}");

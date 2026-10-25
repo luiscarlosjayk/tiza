@@ -1,18 +1,18 @@
-//! t-132 — Step 0: the confirmation of a new annotation says it lands on step 1.
+//! Step 0: the confirmation of a new annotation says it lands on step 1.
 //!
 //! Acceptance criteria:
 //! - AC1 Adding an annotation (`:` command, selection keys, socket/MCP reply
 //!   message if any) while the view is at a step where it is not visible ends
 //!   the confirmation with `(step N, press n)` or similar; nothing changes
 //!   when it is visible.
-//! - AC2 Step logic of t-079 unchanged (new annotations at step 0 still go to
+//! - AC2 Step logic unchanged (new annotations at step 0 still go to
 //!   step 1, the view stays at 0).
 //! - AC3 qa test; CHANGELOG.
 //!
 //! Corner cases: `:step ID N` past the view gets the same hint; messages cut
 //! with `…` on narrow terminals keep the step hint visible when possible.
 //! The socket/MCP reply carries no message (`{id, revision}`), so it is
-//! unchanged here (t-155 later added `step`, `shown_step`, `visible`).
+//! unchanged here (the reply later gained `step`, `shown_step` and `visible`).
 
 use crossterm::event::KeyCode;
 use serde_json::json;
@@ -41,12 +41,12 @@ fn step(live: &Live) -> u32 {
 }
 
 #[test]
-fn ac1_command_at_step_0_names_step_1_and_ac2_view_stays() {
-    let live = at_step_0("t132-ac1-cmd");
+fn command_at_step_0_names_step_1_and_ac2_view_stays() {
+    let live = at_step_0("ac1-cmd");
     assert_eq!(step(&live), 0);
     live.command("box 2-3 hi");
     assert_eq!(info(&live), "a1: box 2-3 (step 1, press n)");
-    // AC2: t-079 unchanged — the box is at step 1, the view stays at 0.
+    // AC2: the step logic is unchanged: the box is at step 1, the view stays at 0.
     assert_eq!(step(&live), 0);
     assert_eq!(live.with(|a| a.doc.annotations[0].step), 1);
     assert!(!live.screen(70, 14).contains("hi"));
@@ -56,8 +56,8 @@ fn ac1_command_at_step_0_names_step_1_and_ac2_view_stays() {
 }
 
 #[test]
-fn ac1_visible_annotation_keeps_the_plain_confirmation() {
-    let live = at_step_0("t132-ac1-plain");
+fn visible_annotation_keeps_the_plain_confirmation() {
+    let live = at_step_0("ac1-plain");
     live.command("box 2-3 hi");
     live.command("next");
     live.command("note 6 takes ownership");
@@ -67,8 +67,8 @@ fn ac1_visible_annotation_keeps_the_plain_confirmation() {
 }
 
 #[test]
-fn ac1_each_kind_of_command_gets_the_hint() {
-    let live = at_step_0("t132-ac1-kinds");
+fn each_kind_of_command_gets_the_hint() {
+    let live = at_step_0("ac1-kinds");
     for cmd in [
         "note 6 takes ownership",
         "callout 2-3 moved",
@@ -93,8 +93,8 @@ fn ac1_each_kind_of_command_gets_the_hint() {
 }
 
 #[test]
-fn ac1_selection_keys_get_the_hint() {
-    let live = at_step_0("t132-ac1-keys");
+fn selection_keys_get_the_hint() {
+    let live = at_step_0("ac1-keys");
     // `takes` on line 3, highlighted with `h` from a selection.
     live.with(|a| {
         a.cursor_line = 3;
@@ -119,8 +119,8 @@ fn ac1_selection_keys_get_the_hint() {
 }
 
 #[test]
-fn corner_step_id_past_the_view_gets_the_hint() {
-    let live = at_step_0("t132-step-id");
+fn step_id_past_the_view_gets_the_hint() {
+    let live = at_step_0("step-id");
     live.command("box 2-3 hi");
     live.command("next");
     live.command("note 6 takes ownership");
@@ -145,8 +145,8 @@ fn corner_step_id_past_the_view_gets_the_hint() {
 }
 
 #[test]
-fn corner_errors_undo_and_unchanged_messages_get_no_hint() {
-    let live = at_step_0("t132-none");
+fn errors_undo_and_unchanged_messages_get_no_hint() {
+    let live = at_step_0("none");
     live.command("box 99-100 nope");
     let (m, err) = live.message().unwrap();
     assert!(err && !m.contains("press n"), "{m}");
@@ -159,13 +159,13 @@ fn corner_errors_undo_and_unchanged_messages_get_no_hint() {
 }
 
 #[test]
-fn corner_socket_reply_is_unchanged_and_ac2_holds() {
-    let live = at_step_0("t132-socket");
+fn socket_reply_is_unchanged_and_ac2_holds() {
+    let live = at_step_0("socket");
     let r = live.api_ok(
         "annotation.add",
         json!({"type": "box", "from_line": 2, "to_line": 3, "label": "hi"}),
     );
-    // No message on the wire; t-155 added where it stands against the view.
+    // No message on the wire; the reply says where it stands against the view.
     let keys: Vec<&String> = r.as_object().unwrap().keys().collect();
     assert_eq!(
         keys,

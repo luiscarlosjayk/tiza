@@ -1,6 +1,6 @@
-//! t-064 — Viewport warning in the status line and in `status`.
+//! Viewport warning in the status line and in `status`.
 //!
-//! Acceptance criteria, as t-246 left them (the size alone is no longer a
+//! Acceptance criteria, as the bar warnings left them (the size alone is no longer a
 //! warning; only what the step on screen loses is):
 //! - AC1 The status line shows cols×rows. Labels that go under the lines
 //!   for lack of a margin are a fact in `status.warnings`, with no badge.
@@ -23,12 +23,12 @@ fn status_line(screen: &str) -> String {
 }
 
 #[test]
-fn ac1_small_terminal_badge_and_label_placement() {
+fn small_terminal_badge_and_label_placement() {
     // A 60-col code line leaves no margin at 80 cols: labels go under the lines.
     let live = Live::from_code(
         "fn main() {\n    let s = String::from(\"a fairly long literal to fill the row\");\n}\n",
         "rs",
-        "t064-small",
+        "small",
     );
     live.command("note 2 a note");
     let s = live.screen(80, 24);
@@ -46,9 +46,9 @@ fn ac1_small_terminal_badge_and_label_placement() {
 }
 
 #[test]
-fn ac2_clipped_code_is_reported_with_its_width() {
+fn clipped_code_is_reported_with_its_width() {
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
-    let live = Live::from_code(&long, "rs", "t064-clip");
+    let live = Live::from_code(&long, "rs", "clip");
     // 175 cells of code; with the line numbers, the code column's margin
     // and the side padding, 183 columns show it whole.
     let bar = status_line(&live.screen(120, 40));
@@ -61,9 +61,9 @@ fn ac2_clipped_code_is_reported_with_its_width() {
 }
 
 #[test]
-fn ac3_badge_goes_away_when_the_terminal_grows_and_in_presentation_mode() {
+fn badge_goes_away_when_the_terminal_grows_and_in_presentation_mode() {
     // A 90-cell line: clipped at 80 columns, whole at 120.
-    let live = Live::from_code(&format!("{}\n", "z".repeat(90)), "rs", "t064-grow");
+    let live = Live::from_code(&format!("{}\n", "z".repeat(90)), "rs", "grow");
     assert!(status_line(&live.screen(80, 24)).contains("  ! "));
     let big = live.screen(120, 40);
     assert!(!big.contains("  ! "), "{big}");
@@ -78,8 +78,8 @@ fn ac3_badge_goes_away_when_the_terminal_grows_and_in_presentation_mode() {
 }
 
 #[test]
-fn ac4_status_warnings_match_and_corner_cases() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t064-status");
+fn status_warnings_match_and_corner_cases() {
+    let live = Live::from_code("fn main() {}\n", "rs", "status");
     // The size alone, small or not, is no warning.
     for (c, r) in [(100, 30), (99, 30), (60, 12)] {
         live.screen(c, r);
@@ -92,7 +92,7 @@ fn ac4_status_warnings_match_and_corner_cases() {
     assert!(s.is_empty());
     assert!(live.with(|app| app.viewport_warnings()).is_empty());
     // Padding eats width: a 100-col line fits at 120 cols with :pad 0 0 but not with :pad 0 20.
-    let live = Live::from_code(&format!("{}\n", "y".repeat(100)), "rs", "t064-pad");
+    let live = Live::from_code(&format!("{}\n", "y".repeat(100)), "rs", "pad");
     live.command("pad 0 0");
     assert!(!status_line(&live.screen(120, 40)).contains("code needs"));
     // The 40 columns of padding count: 40 more than with `:pad 0 0`.

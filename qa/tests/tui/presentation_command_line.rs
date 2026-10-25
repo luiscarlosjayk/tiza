@@ -1,4 +1,4 @@
-//! t-107 — Presentation mode: show the command line and its messages while typing `:`.
+//! Presentation mode: show the command line and its messages while typing `:`.
 //!
 //! Acceptance criteria:
 //! - AC1 In presentation mode, pressing `:` draws the command line on the
@@ -68,8 +68,8 @@ fn wait_until(live: &Live, what: &str, cond: impl Fn(&Live) -> bool) {
 }
 
 #[test]
-fn ac1_colon_shows_the_command_line_on_the_last_row() {
-    let live = presenting("t107-ac1");
+fn colon_shows_the_command_line_on_the_last_row() {
+    let live = presenting("ac1");
     let hidden = live.screen(70, 14);
     live.type_text(":box 2-3 hi");
     assert_eq!(
@@ -105,8 +105,8 @@ fn ac1_colon_shows_the_command_line_on_the_last_row() {
 }
 
 #[test]
-fn ac1_esc_hides_it_at_once_and_the_frame_is_back() {
-    let live = presenting("t107-esc");
+fn esc_hides_it_at_once_and_the_frame_is_back() {
+    let live = presenting("esc");
     let before = live.snapshot(70, 14);
     live.type_text(":box 2-3 hi");
     live.keys(&[KeyCode::Esc]);
@@ -123,8 +123,8 @@ fn ac1_esc_hides_it_at_once_and_the_frame_is_back() {
 }
 
 #[test]
-fn ac2_the_result_shows_for_two_seconds_then_goes() {
-    let live = presenting("t107-ac2");
+fn the_result_shows_for_two_seconds_then_goes() {
+    let live = presenting("ac2");
     let before = live.snapshot(70, 14);
     live.type_text(":box 2-3 hi");
     live.keys(&[KeyCode::Enter]);
@@ -147,14 +147,14 @@ fn ac2_the_result_shows_for_two_seconds_then_goes() {
 }
 
 #[test]
-fn ac2_unknown_command_tells_the_presenter_and_expires_by_itself() {
-    let live = presenting("t107-foo");
+fn unknown_command_tells_the_presenter_and_expires_by_itself() {
+    let live = presenting("foo");
     let before = live.snapshot(70, 14);
     let start = Instant::now();
     live.type_text(":foo");
     live.keys(&[KeyCode::Enter]);
     let row = last_row(&live, 70, 14);
-    // The name typed is not repeated (t-167 rework).
+    // The name typed is not repeated.
     assert!(row.starts_with(" unknown command"), "{row:?}");
     assert!(!row.contains("foo"), "{row:?}");
     // Drawn as an error (the theme's error color, bold).
@@ -176,8 +176,8 @@ fn ac2_unknown_command_tells_the_presenter_and_expires_by_itself() {
 }
 
 #[test]
-fn ac2_a_long_message_is_cut_with_an_ellipsis() {
-    let live = presenting("t107-long");
+fn a_long_message_is_cut_with_an_ellipsis() {
+    let live = presenting("long");
     live.type_text(":mark nope 2:s");
     live.keys(&[KeyCode::Enter]);
     let row = last_row(&live, 30, 10);
@@ -186,8 +186,8 @@ fn ac2_a_long_message_is_cut_with_an_ellipsis() {
 }
 
 #[test]
-fn ac2_the_next_key_hides_it_and_p_does_not_bring_it_back() {
-    let live = presenting("t107-next");
+fn the_next_key_hides_it_and_p_does_not_bring_it_back() {
+    let live = presenting("next");
     live.type_text(":foo");
     live.keys(&[KeyCode::Enter]);
     assert!(live.with(|a| a.present_message_shown()));
@@ -202,8 +202,8 @@ fn ac2_the_next_key_hides_it_and_p_does_not_bring_it_back() {
 }
 
 #[test]
-fn ac2_outside_presentation_mode_nothing_changes() {
-    let live = Live::from_code(CODE, "rs", "t107-normal");
+fn outside_presentation_mode_nothing_changes() {
+    let live = Live::from_code(CODE, "rs", "normal");
     live.type_text(":foo");
     live.keys(&[KeyCode::Enter]);
     assert_eq!(live.with(|a| a.present_message_until), None);
@@ -215,8 +215,8 @@ fn ac2_outside_presentation_mode_nothing_changes() {
 }
 
 #[test]
-fn ac3_nothing_else_of_the_status_bar() {
-    let live = presenting("t107-ac3");
+fn nothing_else_of_the_status_bar() {
+    let live = presenting("ac3");
     for (typed, enter) in [(":box 2-3 hi", false), (":foo", true)] {
         live.type_text(typed);
         if enter {
@@ -234,18 +234,19 @@ fn ac3_nothing_else_of_the_status_bar() {
 }
 
 #[test]
-fn ac4_hidden_command_line_frame_is_unchanged() {
-    // Snapshot recorded before t-107 changed the drawing code.
-    let live = presenting("t107-snap");
+fn hidden_command_line_frame_is_unchanged() {
+    // Snapshot recorded before the command line of presentation mode changed
+    // the drawing code.
+    let live = presenting("snap");
     let (symbols, styles) = live.snapshot(70, 14);
-    insta::assert_snapshot!("t107-present-symbols", symbols);
-    insta::assert_snapshot!("t107-present-styles", styles);
+    insta::assert_snapshot!("present-symbols", symbols);
+    insta::assert_snapshot!("present-styles", styles);
 }
 
 #[test]
-fn corner_short_terminals() {
+fn short_terminals() {
     for rows in [1u16, 2] {
-        let live = presenting(&format!("t107-rows{rows}"));
+        let live = presenting(&format!("rows{rows}"));
         live.type_text(":box 2-3 hi");
         assert_eq!(last_row(&live, 40, rows), ":box 2-3 hi", "{rows} rows");
         live.keys(&[KeyCode::Enter]);
@@ -253,7 +254,7 @@ fn corner_short_terminals() {
         assert!(last_row(&live, 40, rows).starts_with(" a3: box"));
     }
     // Narrow: input longer than the row, the cursor stays on it.
-    let live = presenting("t107-narrow");
+    let live = presenting("narrow");
     live.type_text(":note 2 a long label that does not fit");
     assert_eq!(cursor(&live, 12, 6), Some((11, 5)));
     assert_eq!(cursor(&live, 1, 6), Some((0, 5)));
@@ -261,8 +262,8 @@ fn corner_short_terminals() {
 }
 
 #[test]
-fn corner_supervised_proposal_while_presenting() {
-    let live = presenting("t107-supervised");
+fn supervised_proposal_while_presenting() {
+    let live = presenting("supervised");
     live.command("supervise on");
     live.type_text(":box 2-3");
     let socket = live.socket.clone();
@@ -292,8 +293,8 @@ fn corner_supervised_proposal_while_presenting() {
 }
 
 #[test]
-fn corner_colon_with_an_overlay_open_is_unchanged() {
-    let live = presenting("t107-overlay");
+fn colon_with_an_overlay_open_is_unchanged() {
+    let live = presenting("overlay");
     live.keys(&[KeyCode::Char('?')]);
     assert_eq!(live.with(|a| a.overlay), Overlay::Help);
     live.keys(&[KeyCode::Char(':')]);

@@ -1,4 +1,4 @@
-//! t-033 — Mouse support (opt-in): click selects, drag creates a selection
+//! Mouse support (opt-in): click selects, drag creates a selection
 //! for a box, an arrow or a highlight, wheel scrolls.
 //!
 //! Acceptance criteria:
@@ -51,8 +51,8 @@ fn screen_xy(live: &Live, line: u32, col: u32) -> (u16, u16) {
 }
 
 #[test]
-fn ac1_opt_in() {
-    let l = Live::from_code(CODE, "rs", "t033-optin");
+fn opt_in() {
+    let l = Live::from_code(CODE, "rs", "optin");
     let _ = l.screen(80, 20);
     assert!(!l.with(|a| a.mouse), "off by default");
     let (x, y) = screen_xy(&l, 4, 4);
@@ -77,8 +77,8 @@ fn ac1_opt_in() {
 }
 
 #[test]
-fn ac2_click_maps_to_line_and_column() {
-    let l = live("t033-click");
+fn click_maps_to_line_and_column() {
+    let l = live("click");
     // `takes(s)` on line 4: the `s` is grapheme 10.
     let (x, y) = screen_xy(&l, 4, 10);
     assert_eq!(
@@ -145,8 +145,8 @@ fn ac2_click_maps_to_line_and_column() {
 }
 
 #[test]
-fn ac3_drag_selects_and_actions_apply() {
-    let l = live("t033-drag");
+fn drag_selects_and_actions_apply() {
+    let l = live("drag");
     // Drag over `takes` on line 4 (cols 4..9), then `h` highlights it.
     let (x0, y) = screen_xy(&l, 4, 4);
     let (x1, _) = screen_xy(&l, 4, 8);
@@ -236,9 +236,9 @@ fn ac3_drag_selects_and_actions_apply() {
 }
 
 #[test]
-fn ac4_wheel_scrolls_and_overlays_block() {
+fn wheel_scrolls_and_overlays_block() {
     let code: String = (1..=60).map(|i| format!("line {i}\n")).collect();
-    let l = Live::from_code(&code, "txt", "t033-wheel");
+    let l = Live::from_code(&code, "txt", "wheel");
     l.command("mouse on");
     let _ = l.screen(80, 12);
     // The wheel moves the cursor three lines; the frame follows the cursor.
@@ -277,8 +277,8 @@ fn ac4_wheel_scrolls_and_overlays_block() {
 }
 
 #[test]
-fn ac6_presentation_mode_ignores_the_mouse() {
-    let l = live("t033-present");
+fn presentation_mode_ignores_the_mouse() {
+    let l = live("present");
     l.command("mouse on");
     let _ = l.screen(80, 20);
     let (x, y) = screen_xy(&l, 4, 4);
@@ -323,7 +323,7 @@ fn ac6_presentation_mode_ignores_the_mouse() {
 }
 
 #[test]
-fn ac5_the_help_names_the_flag() {
+fn the_help_names_the_flag() {
     let help = tiza_qa::tiza_ok(&["--help"]);
     assert!(help.contains("--mouse"), "{help}");
 }

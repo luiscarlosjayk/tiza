@@ -1,4 +1,4 @@
-//! t-203 — A selection that a `:` command did not use stayed stored after
+//! A selection that a `:` command did not use stayed stored after
 //! Enter, and a later `:mark` landed on it.
 //!
 //! Rule (accepted by Luis, 2026-10-21): a `:` command that does not take a
@@ -14,7 +14,7 @@
 //!   own text, so ↑ re-runs them on the same lines as before.)
 //! - AC3 A command that fails (bad arguments) leaves the selection as it
 //!   was, so the author can fix the line and retry.
-//! - AC4 Esc and Ctrl-C keep t-197's behaviour.
+//! - AC4 Esc and Ctrl-C keep their behaviour: they cancel first.
 //! - AC5 The list of which commands take a selection is one place in the
 //!   code (`selection_use` in app.rs); a test walks every `:` command name
 //!   (`App::COMMANDS`) and checks it is classified.
@@ -28,7 +28,7 @@ use tiza_qa::{fixture, scratch};
 use tiza_tui::app::{App, SelectionUse};
 
 #[test]
-fn ac5_every_command_name_is_classified() {
+fn every_command_name_is_classified() {
     for name in App::COMMANDS {
         assert!(
             App::selection_use(name).is_some(),
@@ -138,11 +138,11 @@ fn steps(parts: Vec<Vec<Value>>) -> Value {
 }
 
 #[test]
-fn ac1_a_note_from_a_selection_lets_it_go() {
+fn a_note_from_a_selection_lets_it_go() {
     // Test step 1: `v … n` → `:note 2 hello`; then `:mark drop` with no
     // anchor has no selection to land on: it says how to use it.
     let (out, _) = run(
-        "t203-ac1",
+        "ac1",
         steps(vec![
             select_let(),
             vec![
@@ -160,11 +160,11 @@ fn ac1_a_note_from_a_selection_lets_it_go() {
 }
 
 #[test]
-fn ac2_hl_and_mark_keep_the_selection_for_up_enter() {
+fn hl_and_mark_keep_the_selection_for_up_enter() {
     // Test step 2: `v … m` → `:mark drop` on the selection; `:` ↑ Enter
     // runs it again on the same text.
     let (out, _) = run(
-        "t203-ac2",
+        "ac2",
         steps(vec![
             select_let(),
             vec![
@@ -187,13 +187,13 @@ fn ac2_hl_and_mark_keep_the_selection_for_up_enter() {
 }
 
 #[test]
-fn ac3_a_failed_command_leaves_the_selection() {
+fn a_failed_command_leaves_the_selection() {
     // Test step 3: `v … m` → a kind that does not exist → an error, which
     // closes the command line; `:` opens it again (empty) and the fixed
     // command → the mark is on the selection. (Ctrl-U, which clears an open
     // line, is in corner_w.)
     let (out, _) = run(
-        "t203-ac3",
+        "ac3",
         steps(vec![
             select_let(),
             vec![
@@ -213,9 +213,9 @@ fn ac3_a_failed_command_leaves_the_selection() {
 }
 
 #[test]
-fn corner_w_clears_it_and_still_saves() {
+fn w_clears_it_and_still_saves() {
     let (out, dir) = run(
-        "t203-w",
+        "w",
         steps(vec![
             select_let(),
             vec![
@@ -231,11 +231,11 @@ fn corner_w_clears_it_and_still_saves() {
 }
 
 #[test]
-fn ac3_a_failed_command_that_does_not_take_it_leaves_it_too() {
+fn a_failed_command_that_does_not_take_it_leaves_it_too() {
     // `v … n` → Enter on `:note 2 ` with no text: an error; the selection is
     // still there for the `:mark` that follows.
     let (out, _) = run(
-        "t203-ac3-note",
+        "ac3-note",
         steps(vec![
             select_let(),
             vec![
@@ -252,11 +252,11 @@ fn ac3_a_failed_command_that_does_not_take_it_leaves_it_too() {
 }
 
 #[test]
-fn rev_a_kept_selection_goes_with_the_next_key() {
+fn a_kept_selection_goes_with_the_next_key() {
     // `:mark drop` kept the selection for ↑; a motion lets it go, so a
     // later `:mark read` with no anchor does not land on the old text.
     let (out, _) = run(
-        "t203-rev-motion",
+        "rev-motion",
         steps(vec![
             select_let(),
             vec![
@@ -273,10 +273,10 @@ fn rev_a_kept_selection_goes_with_the_next_key() {
 }
 
 #[test]
-fn rev_a_mark_with_its_own_anchor_lets_the_selection_go() {
+fn a_mark_with_its_own_anchor_lets_the_selection_go() {
     // `:mark` with a typed anchor did not use the selection: it is not kept.
     let (out, _) = run(
-        "t203-rev-anchor",
+        "rev-anchor",
         steps(vec![
             select_let(),
             vec![
@@ -294,9 +294,9 @@ fn rev_a_mark_with_its_own_anchor_lets_the_selection_go() {
 }
 
 #[test]
-fn rev_enter_on_an_empty_line_closes_it_as_esc() {
+fn enter_on_an_empty_line_closes_it_as_esc() {
     let (out, _) = run(
-        "t203-rev-empty",
+        "rev-empty",
         steps(vec![
             select_let(),
             vec![
@@ -311,12 +311,12 @@ fn rev_enter_on_an_empty_line_closes_it_as_esc() {
 }
 
 #[test]
-fn rev_undo_keeps_it_for_the_correction() {
+fn undo_keeps_it_for_the_correction() {
     // `:mark drop`, undone with `:u` or `u`, then `:` ↑ … Enter: the same
     // command on the same selection.
     for (name, undo, ups) in [
-        ("t203-rev-undo-cmd", ":u\r", "\x1b[A\x1b[A"),
-        ("t203-rev-undo-key", "u", "\x1b[A"),
+        ("rev-undo-cmd", ":u\r", "\x1b[A\x1b[A"),
+        ("rev-undo-key", "u", "\x1b[A"),
     ] {
         let (out, _) = run(
             name,

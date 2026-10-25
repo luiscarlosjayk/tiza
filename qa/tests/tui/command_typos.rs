@@ -1,4 +1,4 @@
-//! t-115 — Typos in `:` commands never close the app, never leave the
+//! Typos in `:` commands never close the app, never leave the
 //! terminal broken, and never create something other than what was typed.
 //!
 //! Acceptance criteria:
@@ -64,8 +64,8 @@ fn rejected(live: &Live, cmd: &str, expect: &str) {
 }
 
 #[test]
-fn ac4_ac5_ac6_ac8_table_of_typos_is_rejected_with_a_way_forward() {
-    let live = fresh("t115-table");
+fn table_of_typos_is_rejected_with_a_way_forward() {
+    let live = fresh("table");
     let n0 = count(&live);
     assert_eq!(n0, 3);
     for (cmd, expect) in [
@@ -121,8 +121,8 @@ fn ac4_ac5_ac6_ac8_table_of_typos_is_rejected_with_a_way_forward() {
 }
 
 #[test]
-fn ac10_valid_forms_still_work_and_report_what_they_did() {
-    let live = fresh("t115-valid");
+fn valid_forms_still_work_and_report_what_they_did() {
+    let live = fresh("valid");
     for (cmd, expect) in [
         ("box 7-9 takes", ": box 7-9"),
         ("hl 3:s x", ": highlight at L3"),
@@ -155,9 +155,9 @@ fn ac10_valid_forms_still_work_and_report_what_they_did() {
 }
 
 #[test]
-fn ac1_export_sizes_are_bounded_in_the_tui_and_the_cli() {
-    let live = fresh("t115-export");
-    let dir = scratch("t115-export-files");
+fn export_sizes_are_bounded_in_the_tui_and_the_cli() {
+    let live = fresh("export");
+    let dir = scratch("export-files");
     let png = dir.join("x.png");
     rejected(
         &live,
@@ -252,10 +252,10 @@ fn ac1_export_sizes_are_bounded_in_the_tui_and_the_cli() {
 }
 
 #[test]
-fn ac2_a_panic_restores_the_terminal_and_says_where_the_work_is() {
+fn a_panic_restores_the_terminal_and_says_where_the_work_is() {
     // A pty via Python (always on the runners), `TIZA_TEST_PANIC=1` enables
     // the hidden `:panic` command.
-    let dir = scratch("t115-panic");
+    let dir = scratch("panic");
     std::fs::write(dir.join("src.rs"), CODE).unwrap();
     let stdout = tiza_qa::pty_script(
         &dir,
@@ -294,6 +294,6 @@ print(text[text.find("EXIT="):].strip())
     );
     assert!(stdout.contains("EXIT=101"), "{stdout}");
     // Without the env var the command does not exist.
-    let live = fresh("t115-nopanic");
+    let live = fresh("nopanic");
     rejected(&live, "panic", "unknown command");
 }

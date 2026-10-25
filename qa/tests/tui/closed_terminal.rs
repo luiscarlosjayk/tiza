@@ -1,4 +1,4 @@
-//! t-205 — Closing the terminal without `:q` left `tiza` spinning at 100 %
+//! Closing the terminal without `:q` left `tiza` spinning at 100 %
 //! of a CPU.
 //!
 //! Where no SIGHUP came (a pty that is not the process's controlling
@@ -12,7 +12,7 @@
 //! - AC1 When the controlling terminal goes away (master side of the pty
 //!   closed, SIGHUP, read/poll on the tty returning EOF, EIO or hang-up),
 //!   Tiza exits within 1 s and CPU stays idle meanwhile.
-//! - AC2 What is saved follows t-195's rules for Ctrl-C (autosave on: the
+//! - AC2 What is saved follows the rules of Ctrl-C (autosave on: the
 //!   document is saved; `--no-save`/autosave off: nothing is written); the
 //!   socket file is removed.
 //! - AC3 No write to the gone terminal makes the exit hang or panic; any
@@ -257,12 +257,12 @@ fn note(text: &str) -> Value {
 }
 
 #[test]
-fn ac1_ac2_no_sighup_autosave_on_saves_and_exits() {
+fn no_sighup_autosave_on_saves_and_exits() {
     // Test step 2, the failed-autosave half: the sidecar is read-only when
     // the note is added, writable again when the terminal goes; the exit
-    // saves it, as Ctrl-C does (t-195).
+    // saves it, as Ctrl-C does.
     for close in [Close::NoSighup, Close::Sighup] {
-        let (dir, tiza) = project("t205-autosave");
+        let (dir, tiza) = project("autosave");
         let r = run(
             &dir,
             "autosave.py",
@@ -282,12 +282,12 @@ fn ac1_ac2_no_sighup_autosave_on_saves_and_exits() {
 }
 
 #[test]
-fn ac2_ac3_no_save_writes_nothing_and_says_so_in_the_log() {
+fn no_save_writes_nothing_and_says_so_in_the_log() {
     // `--no-save`: nothing written; what was not saved goes to the log, not
     // to the terminal that is gone.
     for (close, name) in [
-        (Close::NoSighup, "t205-no-save-tty"),
-        (Close::Sighup, "t205-no-save-hup"),
+        (Close::NoSighup, "no-save-tty"),
+        (Close::Sighup, "no-save-hup"),
     ] {
         let (dir, tiza) = project(name);
         let before = std::fs::read(&tiza).unwrap();
@@ -312,14 +312,14 @@ fn ac2_ac3_no_save_writes_nothing_and_says_so_in_the_log() {
 }
 
 #[test]
-fn ac3_presentation_while_a_step_types() {
+fn presentation_while_a_step_types() {
     // Test step 3: `--present`, `n` starts a step that types for 9 s, and
     // the terminal goes meanwhile — each way it can go. Before, without
     // SIGHUP the draw on the gone terminal ended in an abort.
     for (close, name) in [
-        (Close::Sighup, "t205-typing-hup"),
-        (Close::SighupIgnored, "t205-typing-nohup"),
-        (Close::NoSighup, "t205-typing-tty"),
+        (Close::Sighup, "typing-hup"),
+        (Close::SighupIgnored, "typing-nohup"),
+        (Close::NoSighup, "typing-tty"),
     ] {
         let (dir, path) = typing_project(name);
         let before = std::fs::read(&path).unwrap();
@@ -337,17 +337,17 @@ fn ac3_presentation_while_a_step_types() {
 }
 
 #[test]
-fn ac1_no_sighup_and_idle_does_not_spin() {
+fn no_sighup_and_idle_does_not_spin() {
     // The 100 % case: nothing to draw, no SIGHUP, the tty hung up.
-    let (dir, tiza) = project("t205-idle");
+    let (dir, tiza) = project("idle");
     let r = run(&dir, "idle.py", &["main.rs"], Close::NoSighup, json!([]));
     r.gone_cleanly();
     assert!(read(&tiza).contains("\"code\""));
 }
 
 #[test]
-fn ac2_autosave_off_live_writes_nothing() {
-    let (dir, tiza) = project("t205-autosave-off");
+fn autosave_off_live_writes_nothing() {
+    let (dir, tiza) = project("autosave-off");
     let before = std::fs::read(&tiza).unwrap();
     let r = run(
         &dir,
@@ -368,10 +368,10 @@ fn ac2_autosave_off_live_writes_nothing() {
 }
 
 #[test]
-fn ac2_ac3_a_retry_that_fails_again_goes_to_the_log() {
+fn a_retry_that_fails_again_goes_to_the_log() {
     // The sidecar stays read-only: the save tried on the way out fails
     // again, and says so in the log.
-    let (dir, tiza) = project("t205-retry-fails");
+    let (dir, tiza) = project("retry-fails");
     let r = run(
         &dir,
         "retry.py",
@@ -394,8 +394,8 @@ fn ac2_ac3_a_retry_that_fails_again_goes_to_the_log() {
 }
 
 #[test]
-fn corner_piped_stdin_only_the_tty_matters() {
-    let dir = scratch("t205-piped");
+fn piped_stdin_only_the_tty_matters() {
+    let dir = scratch("piped");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     let r = run(
         &dir,
@@ -409,10 +409,10 @@ fn corner_piped_stdin_only_the_tty_matters() {
 }
 
 #[test]
-fn ac3_kill_hup_on_a_live_terminal_still_prints_there() {
+fn kill_hup_on_a_live_terminal_still_prints_there() {
     // SIGHUP with the terminal still there (`kill -HUP`): it quits in
     // order, and stderr is that terminal, not the log.
-    let (dir, _) = project("t205-kill-hup");
+    let (dir, _) = project("kill-hup");
     let r = run(
         &dir,
         "kill.py",
@@ -432,8 +432,8 @@ fn ac3_kill_hup_on_a_live_terminal_still_prints_there() {
 }
 
 #[test]
-fn corner_mcp_client_gets_a_clean_disconnect() {
-    let (dir, _) = project("t205-mcp");
+fn mcp_client_gets_a_clean_disconnect() {
+    let (dir, _) = project("mcp");
     let sock = dir.join("s.sock");
     let script_dir = dir.clone();
     let tty = std::thread::spawn(move || {

@@ -115,21 +115,21 @@ fn step_of(out: &str) -> String {
 const LIGHT: &[u8] = b"\x1b]11;rgb:f7f7/f5f5/efef\x1b\\\x1b]10;rgb:1f1f/2323/2828\x1b\\";
 
 #[test]
-fn ac1_nn_before_the_start_moves_two_steps() {
+fn nn_before_the_start_moves_two_steps() {
     // Test step 1: in the input before Tiza reads it, so the query's read
     // takes it; the terminal never answers (the 100 ms timeout path).
-    let out = run("t204-seed", &["--present"], b"nn", b"", 0, b"");
+    let out = run("seed", &["--present"], b"nn", b"", 0, b"");
     assert_eq!(step_of(&out), "2", "{out}");
     // Without `--mouse`, the terminal keeps its own mouse (text selection):
-    // Tiza does not turn the capture on (moved here from t-034).
+    // Tiza does not turn the capture on (moved here from the terminal setup tests).
     assert!(out.contains("MOUSE_ON False"), "{out}");
 }
 
 #[test]
-fn ac1_nn_at_every_moment_of_the_first_100_ms() {
+fn nn_at_every_moment_of_the_first_100_ms() {
     for delay in [0, 20, 50, 100] {
         let out = run(
-            &format!("t204-at-{delay}"),
+            &format!("at-{delay}"),
             &["--present"],
             b"",
             b"nn",
@@ -141,31 +141,31 @@ fn ac1_nn_at_every_moment_of_the_first_100_ms() {
 }
 
 #[test]
-fn ac1_keys_on_both_sides_of_the_answer_and_the_answer_still_counts() {
+fn keys_on_both_sides_of_the_answer_and_the_answer_still_counts() {
     let mut seed = b"n".to_vec();
     seed.extend_from_slice(LIGHT);
     seed.push(b'n');
-    let out = run("t204-answer", &[], &seed, b"", 0, b"");
+    let out = run("answer", &[], &seed, b"", 0, b"");
     assert_eq!(step_of(&out), "2", "{out}");
     assert!(out.contains("LIGHT True"), "{out}");
 }
 
 #[test]
-fn corner_an_esc_typed_early_is_a_key() {
+fn an_esc_typed_early_is_a_key() {
     // `n`, a command line opened and closed with ESC, then `n` after the
     // first frame: two steps. Had the ESC been taken for an answer, the
     // second `n` would go into the command line.
-    let out = run("t204-esc", &[], b"n:abc\x1b", b"", 0, b"n");
+    let out = run("esc", &[], b"n:abc\x1b", b"", 0, b"n");
     assert_eq!(step_of(&out), "2", "{out}");
 }
 
 // ---------- AC2 ----------
 
 #[test]
-fn ac2_with_no_terminal_a_plain_error() {
+fn with_no_terminal_a_plain_error() {
     // Test step 2: a new session (no controlling terminal), stdin from
     // /dev/null, output to pipes.
-    let dir = scratch("t204-no-tty");
+    let dir = scratch("no-tty");
     std::fs::write(dir.join("main.rs"), "fn main() {}\n").unwrap();
     let runtime = dir.join("run");
     std::fs::create_dir_all(&runtime).unwrap();
@@ -248,11 +248,11 @@ print("STDERR", repr(out.decode(errors="replace")))
 // ---------- review ----------
 
 #[test]
-fn rev_an_early_key_that_quits_ends_them() {
+fn an_early_key_that_quits_ends_them() {
     // Ctrl-C (or `q`) first: the keys after it never run, and nothing is
     // saved (`x` would delete the selected annotation, autosaved).
     for (name, seed) in [("ctrl-c", b"\x03n\tx".as_slice()), ("q", b"qn\tx")] {
-        let dir = scratch(&format!("t204-quit-{name}"));
+        let dir = scratch(&format!("quit-{name}"));
         std::fs::copy(
             fixture("shared/ownership/ownership.rs.tiza"),
             dir.join("doc.tiza"),
@@ -289,7 +289,7 @@ print("EXIT", s.finish(10), flush=True)
 }
 
 #[test]
-fn rev_an_early_esc_stays_esc_when_the_next_key_comes_later() {
+fn an_early_esc_stays_esc_when_the_next_key_comes_later() {
     // The next key after the terminal's answer. (One in a later read of the
     // query is the same rule, `appearance::without_answers`, tested there:
     // in the same read, `ESC n` is Alt+n, as crossterm reads it too, so the
@@ -297,13 +297,13 @@ fn rev_an_early_esc_stays_esc_when_the_next_key_comes_later() {
     let mut seed = b"n:\x1b".to_vec();
     seed.extend_from_slice(LIGHT);
     seed.push(b'n');
-    let out = run("t204-esc-answer", &[], &seed, b"", 0, b"");
+    let out = run("esc-answer", &[], &seed, b"", 0, b"");
     assert_eq!(step_of(&out), "2", "{out}");
     assert!(out.contains("LIGHT True"), "{out}");
 }
 
 #[test]
-fn rev_an_early_mouse_on_turns_the_capture_on() {
-    let out = run("t204-mouse", &[], b":mouse on\r", b"", 0, b"nn");
+fn an_early_mouse_on_turns_the_capture_on() {
+    let out = run("mouse", &[], b":mouse on\r", b"", 0, b"nn");
     assert!(out.contains("MOUSE_ON True"), "{out}");
 }

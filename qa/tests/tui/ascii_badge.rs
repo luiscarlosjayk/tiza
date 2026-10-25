@@ -1,4 +1,4 @@
-//! t-209 — The status bar overflowed when the terminal drew `⚠` two cells
+//! The status bar overflowed when the terminal drew `⚠` two cells
 //! wide, and gave up the `↪ file` view indicator before the middle of a
 //! message.
 //!
@@ -18,8 +18,8 @@
 //!   `↪ file` view indicator, then the warning badge, before the subject;
 //!   (4) the subject; the tail never.
 //! - AC4 Monotonic: widening never removes an element (the middle may lose
-//!   a few letters). Narrow widths keep t-173's order on purpose (t-214,
-//!   won't do).
+//!   a few letters). Narrow widths keep the order of the 80-column bar on purpose (a
+//!   change was declined).
 //! - AC5 This file: the badge's bytes are ASCII; the `code.link` document
 //!   at 125 columns keeps `↪ src/b/mod.rs`; a width sweep for AC4.
 //!   CHANGELOG.
@@ -38,7 +38,7 @@ use tiza_qa::{Live, fixture, scratch};
 
 // ---------- AC3, AC4: the `↪ file` view indicator ----------
 
-/// A scratch copy of `qa/fixtures/t-173/mods`: `src/a/mod.rs`, and
+/// A scratch copy of `qa/fixtures/tui/bar_hint_at_80/mods`: `src/a/mod.rs`, and
 /// `src/b/mod.rs` linked at step 2; at step 2 the agent updates `a1`,
 /// which is not shown there. `no_save`: `:autosave off` first, so the
 /// change leaves `•  unsaved (:w)` on the bar too.
@@ -47,7 +47,7 @@ fn mods_with_a_message(name: &str, no_save: bool) -> Live {
     for f in ["src/a/mod.rs", "src/b/mod.rs", "doc.tiza"] {
         let to = dir.join(f);
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-        std::fs::copy(fixture(&format!("t-173/mods/{f}")), to).unwrap();
+        std::fs::copy(fixture(&format!("tui/bar_hint_at_80/mods/{f}")), to).unwrap();
     }
     let path = dir.join("doc.tiza");
     let doc = tiza_core::fs::load_document(&path).unwrap();
@@ -80,8 +80,8 @@ fn bar(live: &Live, cols: u16) -> String {
 }
 
 #[test]
-fn ac3_ac4_sweep_the_indicator_goes_only_after_the_middle() {
-    let live = mods_with_a_message("t209-sweep", false);
+fn sweep_the_indicator_goes_only_after_the_middle() {
+    let live = mods_with_a_message("sweep", false);
     let mut prev: Option<(u16, String)> = None;
     for cols in 30..=170u16 {
         let b = bar(&live, cols);
@@ -144,12 +144,12 @@ fn bar_and_badge(live: &Live, cols: u16, rows: u16) -> (String, String) {
 /// A box label too long for any width: the bar warns `! 1 label cut`.
 const LONG_LABEL: &str = "a box label far too long for the border of this box at any width the sweep tries, so it is cut";
 
-/// `qa/fixtures/t-173/wide.rs` at step 1 with autosave off, a box whose
-/// label is always cut (so the bar has its badge, t-246) and the agent's
+/// `qa/fixtures/tui/bar_hint_at_80/wide.rs` at step 1 with autosave off, a box whose
+/// label is always cut (so the bar has its badge) and the agent's
 /// box at step 2: the message ends in a step hint, so the badge goes
 /// through its forms in a sweep.
 fn wide_with_a_message(name: &str) -> Live {
-    let code = std::fs::read_to_string(fixture("t-173/wide.rs")).unwrap();
+    let code = std::fs::read_to_string(fixture("tui/bar_hint_at_80/wide.rs")).unwrap();
     let live = Live::from_code(&code, "rs", name);
     live.command("autosave off");
     live.command(&format!("box 2-4 {LONG_LABEL}"));
@@ -166,7 +166,7 @@ fn wide_with_a_message(name: &str) -> Live {
 }
 
 #[test]
-fn ac2_ac5_every_form_of_the_badge_is_ascii() {
+fn every_form_of_the_badge_is_ascii() {
     let mut seen: Vec<String> = Vec::new();
     let mut check = |live: &Live, cols: u16| {
         let (bar, badge) = bar_and_badge(live, cols, 30);
@@ -189,7 +189,7 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
         }
     };
     // `1 label cut` and its sign, with a message.
-    let live = wide_with_a_message("t209-ascii-labels");
+    let live = wide_with_a_message("ascii-labels");
     for cols in 30..=130 {
         check(&live, cols);
     }
@@ -197,7 +197,7 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
     live.with(|a| a.message = None);
     check(&live, 120);
     let long = format!("fn main() {{ let x = \"{}\"; }}\n", "x".repeat(150));
-    let clipped = Live::from_code(&long, "rs", "t209-ascii-clipped");
+    let clipped = Live::from_code(&long, "rs", "ascii-clipped");
     check(&clipped, 120);
     for form in ["  ! 1 label cut", "  !", "  ! code needs 183 cols"] {
         assert!(seen.iter().any(|b| b == form), "{form:?} not in {seen:?}");
@@ -205,13 +205,13 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
 }
 
 #[test]
-fn ac5_at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
+fn at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
     // Test step 3: the two-file document at 125 columns with the agent's
     // long message, with `unsaved (:w)` on the bar and, at step 2, a box of
     // src/b/mod.rs whose label is cut, so the bar carries `! 1 label cut`
     // too and the message no longer fits: `↪ src/b/mod.rs` and the badge
     // stay, and the middle of the message is cut.
-    let live = mods_with_a_message("t209-125-ascii", true);
+    let live = mods_with_a_message("125-ascii", true);
     live.with(|a| {
         let msg = a.message.clone();
         a.run_command(&format!("box 2-3 {LONG_LABEL}"));
@@ -240,10 +240,10 @@ fn ac5_at_125_columns_the_indicator_stays_beside_the_ascii_badge() {
 /// never takes away the subject, the tail or the badge, and while the
 /// message keeps its tail the badge never goes to a shorter form. The badge
 /// may go only where the terminal no longer warns at all (`status` has no
-/// `warnings` at that size: big enough, as t-064 says).
+/// `warnings` at that size: big enough, as the viewport warning says).
 #[test]
-fn ac4_sweep_with_the_badge_is_monotonic() {
-    let live = wide_with_a_message("t209-sweep-badge");
+fn sweep_with_the_badge_is_monotonic() {
+    let live = wide_with_a_message("sweep-badge");
     let rank = |badge: &str| match badge.trim() {
         "!" => 1,
         b if b.starts_with("! ") => 2,

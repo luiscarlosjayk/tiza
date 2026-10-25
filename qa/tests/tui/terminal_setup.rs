@@ -1,4 +1,4 @@
-//! t-034 — Terminal support: the claims that docs/reference/terminals.md
+//! Terminal support: the claims that docs/reference/terminals.md
 //! makes about the code stay true.
 //!
 //! The text of the page (what is verified, the caveats, the report line) is
@@ -7,7 +7,7 @@
 //! tmux-wrapped) OSC 11/10 query, no `COLORTERM` check, no kitty keyboard
 //! flags, and `--theme terminal` drawing without a single 24-bit colour.
 //! Bracketed paste on and mouse capture only with `--mouse` are checked on
-//! a real pty, in t-180 and t-204. If one of these changes,
+//! a real pty, in the resize-at-start and start-up keys tests. If one of these changes,
 //! docs/reference/terminals.md has to change with it.
 
 use std::path::{Path, PathBuf};
@@ -40,11 +40,11 @@ fn crate_sources() -> Vec<(PathBuf, String)> {
 }
 
 #[test]
-fn ac2_the_colour_query_is_plain_osc_not_wrapped_for_tmux() {
+fn the_colour_query_is_plain_osc_not_wrapped_for_tmux() {
     // docs/reference/terminals.md says `allow-passthrough` changes neither
     // tmux 3.3a nor 3.5a: that holds only while the query is not a
     // `ESC P tmux;` passthrough
-    // (t-139: wrapped, 3.5a loses the answer).
+    // (wrapped, tmux 3.5a loses the answer).
     assert_eq!(
         tiza_tui::appearance::QUERY,
         "\x1b]11;?\x1b\\\x1b]10;?\x1b\\"
@@ -59,7 +59,7 @@ fn ac2_the_colour_query_is_plain_osc_not_wrapped_for_tmux() {
 }
 
 #[test]
-fn ac2_no_colorterm_check_and_no_kitty_keyboard_flags() {
+fn no_colorterm_check_and_no_kitty_keyboard_flags() {
     for (path, src) in crate_sources() {
         assert!(
             !src.contains("\"COLORTERM\""),
@@ -75,11 +75,11 @@ fn ac2_no_colorterm_check_and_no_kitty_keyboard_flags() {
 }
 
 #[test]
-fn ac2_the_terminal_theme_sends_no_24_bit_colour() {
+fn the_terminal_theme_sends_no_24_bit_colour() {
     let live = Live::from_code(
         "fn main() {\n    let s = String::from(\"hi\");\n    println!(\"{s}\");\n}\n",
         "rs",
-        "t-034-terminal-theme",
+        "terminal-theme",
     );
     live.api_ok(
         "annotation.add",

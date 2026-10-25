@@ -1,4 +1,4 @@
-//! t-180 — A terminal resize in the first milliseconds after start was
+//! A terminal resize in the first milliseconds after start was
 //! lost: the first frame stayed laid out for the old size until the next
 //! key. crossterm sets up its input source (and starts catching SIGWINCH)
 //! on the first `event::poll`, and the event loop drew the first frame
@@ -392,7 +392,7 @@ fn normal_args(doc: &Path) -> Vec<String> {
 }
 
 fn ownership() -> std::path::PathBuf {
-    fixture("t-180/ownership.rs.tiza")
+    fixture("tui/resize_at_start/ownership.rs.tiza")
 }
 
 /// Runs the races of one case and asserts every one of them ended in the
@@ -401,7 +401,7 @@ fn race(case: &str, argv: Vec<String>, runs: Vec<Value>, extra: Value) {
     let _one = ONE_CASE_AT_A_TIME
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let dir = scratch(&format!("t180-{case}"));
+    let dir = scratch(case);
     let mut spec = json!({ "argv": argv, "runs": runs, "wait_s": WAIT_S });
     if let (Some(s), Some(e)) = (spec.as_object_mut(), extra.as_object()) {
         s.extend(e.clone());
@@ -440,7 +440,7 @@ fn race(case: &str, argv: Vec<String>, runs: Vec<Value>, extra: Value) {
 }
 
 #[test]
-fn ac1_a_wider_start_ends_at_the_final_width() {
+fn a_wider_start_ends_at_the_final_width() {
     race(
         "wider",
         present_args(&ownership()),
@@ -450,7 +450,7 @@ fn ac1_a_wider_start_ends_at_the_final_width() {
 }
 
 #[test]
-fn ac1_two_resizes_in_a_row_the_last_one_wins() {
+fn two_resizes_in_a_row_the_last_one_wins() {
     // Both sizes are set back to back (well within 1 ms): two SIGWINCH,
     // and the frame that stays is the last size's.
     race(
@@ -462,7 +462,7 @@ fn ac1_two_resizes_in_a_row_the_last_one_wins() {
 }
 
 #[test]
-fn ac1_delays_counted_from_the_spawn_as_the_card_measured() {
+fn delays_counted_from_the_spawn_as_the_card_measured() {
     // Includes resizes before the socket server is up and while the
     // document loads.
     race(
@@ -474,15 +474,15 @@ fn ac1_delays_counted_from_the_spawn_as_the_card_measured() {
 }
 
 #[test]
-fn ac3_rows_in_presentation_mode() {
+fn rows_in_presentation_mode() {
     let mut runs = at_every_delay("31to30", (H + 1, W), &[(H, W)], "setup");
     runs.extend(at_every_delay("29to30", (H - 1, W), &[(H, W)], "setup"));
     race("rows", present_args(&ownership()), runs, json!({}));
 }
 
 #[test]
-fn corner_piped_stdin_reads_the_resize_from_dev_tty() {
-    let src = fixture("t-180/ownership.rs");
+fn piped_stdin_reads_the_resize_from_dev_tty() {
+    let src = fixture("tui/resize_at_start/ownership.rs");
     let line = format!(
         "cat '{}' | exec {{bin}} --lang rs --no-save --socket {{sock}}",
         src.display()
@@ -496,7 +496,7 @@ fn corner_piped_stdin_reads_the_resize_from_dev_tty() {
 }
 
 #[test]
-fn corner_a_resize_while_the_host_query_reads_dev_tty() {
+fn a_resize_while_the_host_query_reads_dev_tty() {
     // `--theme auto` asks the terminal for its colours before crossterm
     // starts (up to 100 ms). The resize comes while that read waits, and the
     // answer (a light terminal) right after it: the frame must be the one a
@@ -533,10 +533,10 @@ fn corner_a_resize_while_the_host_query_reads_dev_tty() {
 }
 
 #[test]
-fn corner_a_resize_while_a_big_document_loads() {
+fn a_resize_while_a_big_document_loads() {
     // 1,000 lines: past the 800 from which highlighting runs on several
-    // threads (t-138), and still quick to open in a debug build.
-    let dir = scratch("t180-big-src");
+    // threads (chunked highlighting), and still quick to open in a debug build.
+    let dir = scratch("big-src");
     let mut code = String::from("fn main() {\n");
     for i in 0..1_000 {
         code.push_str(&format!("    let v{i} = String::from(\"line {i}\");\n"));
@@ -557,10 +557,10 @@ fn corner_a_resize_while_a_big_document_loads() {
 }
 
 #[test]
-fn corner_smoke_still_draws_one_frame() {
+fn smoke_still_draws_one_frame() {
     // `--smoke` does not go through the event loop: one frame (the code
     // once on the screen), one poll, exit 0.
-    let dir = scratch("t180-smoke");
+    let dir = scratch("smoke");
     let out = tiza_qa::pty_script(
         &dir,
         "smoke.py",

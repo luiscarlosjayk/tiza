@@ -1,4 +1,4 @@
-//! t-045 — Supervised mode: optional confirmation in the TUI before an
+//! Supervised mode: optional confirmation in the TUI before an
 //! agent's change is applied.
 //!
 //! Acceptance criteria:
@@ -49,8 +49,8 @@ fn wait_pending(live: &Live, n: usize) {
 }
 
 #[test]
-fn ac1_mutations_wait_and_reads_do_not() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t045-park");
+fn mutations_wait_and_reads_do_not() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "park");
     live.command("supervise on");
     let (msg, err) = live.message().unwrap();
     assert!(!err && msg.contains("supervised mode on"), "{msg}");
@@ -118,8 +118,8 @@ fn ac1_mutations_wait_and_reads_do_not() {
 }
 
 #[test]
-fn ac2_overlay_bar_and_keys() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "t045-keys");
+fn overlay_bar_and_keys() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\nfn c() {}\n", "rs", "keys");
     live.api_ok("supervise.set", json!({"enabled": true}));
     let h1 = send_async(
         &live.socket,
@@ -206,8 +206,8 @@ fn ac2_overlay_bar_and_keys() {
 }
 
 #[test]
-fn ac3_turning_off_rejects_pending_and_timeout_is_published() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t045-off");
+fn turning_off_rejects_pending_and_timeout_is_published() {
+    let live = Live::from_code("fn a() {}\n", "rs", "off");
     live.command("supervise on");
     let h = send_async(
         &live.socket,
@@ -254,8 +254,8 @@ fn ac3_turning_off_rejects_pending_and_timeout_is_published() {
 }
 
 #[test]
-fn ac4_presentation_mode_and_mcp_bridge() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t045-mcp");
+fn presentation_mode_and_mcp_bridge() {
+    let live = Live::from_code("fn a() {}\n", "rs", "mcp");
     live.command("supervise on");
     live.with(|a| a.present = true);
     let mut mcp = McpClient::start(&live.socket);
@@ -288,8 +288,8 @@ fn ac4_presentation_mode_and_mcp_bridge() {
 }
 
 #[test]
-fn rework_presentation_chip_no_pop_on_return_and_colon_from_the_overlay() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t045-chip");
+fn presentation_chip_no_pop_on_return_and_colon_from_the_overlay() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "chip");
     live.command("supervise on");
     live.keys(&[KeyCode::Char('P')]);
     assert!(live.with(|a| a.present));

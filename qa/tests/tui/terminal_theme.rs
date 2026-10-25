@@ -1,4 +1,4 @@
-//! t-119 — Themes: auto light/dark from the host terminal, a `terminal`
+//! Themes: auto light/dark from the host terminal, a `terminal`
 //! theme on the ANSI palette, per-token overrides, Catppuccin Mocha as the
 //! first override example.
 //!
@@ -14,7 +14,7 @@
 //! - AC4 `examples/themes/catppuccin-mocha.toml` loads with `--theme-file`
 //!   / `:theme file`, and passes the legibility gate.
 //! - AC5 Documents that name dark/light and users without a config file:
-//!   unchanged (t-053 snapshots); schema; README; CHANGELOG.
+//!   unchanged (the frame snapshots); schema; README; CHANGELOG.
 
 use serde_json::json;
 use tiza_core::ThemeName;
@@ -25,7 +25,7 @@ use tiza_qa::{Live, example, fixture, scratch, tiza, tiza_ok};
 // start-up answer is queued in the pty before Tiza starts, as if the
 // terminal had answered at once: the product's 100 ms window is real
 // behaviour, but whether a loaded test machine wakes this script inside it
-// is not what the test is about (t-131). The answer after a resize goes
+// is not what the test is about. The answer after a resize goes
 // through the key stream, which has no window, so it is sent on the query.
 const PTY: &str = r#"
 binary, doc, first, second = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
@@ -91,8 +91,8 @@ fn plain_source(dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 #[test]
-fn ac1_the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
-    let dir = scratch("t119-pty");
+fn the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
+    let dir = scratch("pty");
     let src = plain_source(&dir);
     // A light terminal: Tiza opens light and says `light·auto`.
     let out = pty_run(&dir, &src, "f7f7/f5f5/efef", "skip");
@@ -143,7 +143,7 @@ fn ac1_the_terminal_background_picks_light_or_dark_and_a_resize_asks_again() {
 }
 
 #[test]
-fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
+fn fixed_themes_do_not_follow_and_the_answers_parse() {
     // A document that names a theme is not asked about: no `·auto`, and a
     // host answer does not move it.
     let doc = tiza_core::fs::open(
@@ -154,7 +154,7 @@ fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
     .unwrap()
     .document;
     assert_eq!(doc.theme, Some(ThemeName::Dark));
-    let dir = scratch("t119-fixed");
+    let dir = scratch("fixed");
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     assert!(!live.with(|a| a.theme_auto));
     live.with(|a| {
@@ -190,7 +190,7 @@ fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
         (ThemeName::Dark, false, Some(ThemeName::Dark))
     );
     // A document with no theme follows from the start; saving keeps it so.
-    let live = Live::from_code("fn main() {}\n", "rs", "t119-auto");
+    let live = Live::from_code("fn main() {}\n", "rs", "auto");
     assert!(live.with(|a| a.theme_auto));
     live.command("note 1 x");
     live.command("w");
@@ -203,7 +203,7 @@ fn ac1_fixed_themes_do_not_follow_and_the_answers_parse() {
 }
 
 #[test]
-fn ac2_terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
+fn terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
     let doc = tiza_core::fs::open(
         fixture("shared/ownership/ownership.rs.tiza")
             .to_str()
@@ -211,7 +211,7 @@ fn ac2_terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
     )
     .unwrap()
     .document;
-    let dir = scratch("t119-terminal");
+    let dir = scratch("terminal");
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     live.api_ok("step.set", json!({"step": 7}));
     live.command("theme terminal");
@@ -268,8 +268,8 @@ fn ac2_terminal_theme_maps_roles_to_the_host_palette_and_exports_fall_back() {
 }
 
 #[test]
-fn ac3_overrides_built_in_then_config_then_document_then_command() {
-    let dir = scratch("t119-overrides");
+fn overrides_built_in_then_config_then_document_then_command() {
+    let dir = scratch("overrides");
     let cfg = dir.join("config.toml");
     std::fs::write(
         &cfg,
@@ -374,7 +374,7 @@ fn ac3_overrides_built_in_then_config_then_document_then_command() {
     assert!(String::from_utf8_lossy(&r.stderr).contains("config ignored"));
     // Live: scene.patch cannot set overrides, but the document field does
     // through scene.put, and `:theme` reports what it pushed.
-    let live = Live::from_code("fn main() {}\n", "rs", "t119-live-ov");
+    let live = Live::from_code("fn main() {}\n", "rs", "live-ov");
     live.command("theme dark");
     live.with(|a| {
         a.doc.theme_overrides = Some(
@@ -393,9 +393,9 @@ fn ac3_overrides_built_in_then_config_then_document_then_command() {
 }
 
 #[test]
-fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
+fn mocha_loads_live_and_passes_the_legibility_gate() {
     let file = example("themes/catppuccin-mocha.toml");
-    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "t119-mocha");
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "mocha");
     live.command(&format!("theme file {}", file.display()));
     let (m, err) = live.message().unwrap();
     assert!(!err && m.contains("token(s) applied"), "{m}");
@@ -455,7 +455,7 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
         );
     } else {
         eprintln!(
-            "t-119: SKIPPED the Mocha legibility check (scripts/legibility.py): it did not run here; missing: {}",
+            "terminal_theme: SKIPPED the Mocha legibility check (scripts/legibility.py): it did not run here; missing: {}",
             missing.join(", ")
         );
     }
@@ -476,5 +476,5 @@ fn ac4_mocha_loads_live_and_passes_the_legibility_gate() {
     assert!(txt.contains("#1e1e2e"));
 }
 
-// Moved here from qa/tests/t-157.rs (deleted): it tests the pty harness
+// Moved here from a test file that is gone: it tests the pty harness
 // (qa/src/pty.py).

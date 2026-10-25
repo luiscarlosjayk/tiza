@@ -1,4 +1,4 @@
-//! t-173 — At 80 columns the status bar loses the step hint.
+//! At 80 columns the status bar loses the step hint.
 //!
 //! Decisions by Luis (2026-10-21), after QA round 0. What gives way when the
 //! bar is short, in this order: (1) the middle of the message; (2) the
@@ -13,7 +13,7 @@
 //!   does not fit, the beginning of the message with `…` and no tail. A tail
 //!   is never shown cut, and a file name that contains ` (` is never taken
 //!   for the start of the tail.
-//! - AC2 File tails (t-155) and the grouped notice follow the same order.
+//! - AC2 File tails (the replies that say where) and the grouped notice follow the same order.
 //!   The directory is dropped only when that is what lets the subject and the
 //!   tail fit after cutting the middle, and only when no other file of the
 //!   document (`code.file` and every `code.link`, at any step) has the same
@@ -23,9 +23,9 @@
 //!   is back whole as soon as the message goes. `⚠` (U+26A0, East Asian
 //!   Width N, not Ambiguous) is laid out as one cell, as Herdr, macOS
 //!   Terminal and Zed draw it; a terminal that draws it two cells wide can
-//!   still push the bar one cell past the edge (t-209, left for later). A
+//!   still push the bar one cell past the edge (left for later). A
 //!   more serious badge (`code clipped (N cols)`) never gives way.
-//!   Since t-209 AC2 the bar writes the ASCII `!` instead of `⚠` in every
+//!   Since the ASCII badge, the bar writes the ASCII `!` instead of `⚠` in every
 //!   form (`! labels under the lines` → `! labels` → `!`); the checks
 //!   below read that sign.
 //! - AC4 Monotonic: widening the terminal by one column never removes an
@@ -51,7 +51,7 @@ use serde_json::{Value, json};
 use tiza_qa::{Live, example, fixture, scratch};
 
 const STEP_HINT: &str = "(step 1, press n)";
-/// Since t-246 the bar warns only of what the step loses: a box label too
+/// Now the bar warns only of what the step loses: a box label too
 /// long for its border gives the badge `! 1 label cut` at every width.
 const WHOLE_BADGE: &str = "! 1 label cut";
 const LONG_LABEL: &str =
@@ -222,11 +222,11 @@ fn at(bars: &[(u16, String)], cols: u16) -> &str {
 
 // ---------- documents ----------
 
-/// `t-173/FILE` at step 1 with a box whose label is always cut, so the bar
-/// carries `! 1 label cut` (t-246); the agent's box then goes to step 2
+/// `tui/bar_hint_at_80/FILE` at step 1 with a box whose label is always cut, so the bar
+/// carries `! 1 label cut`; the agent's box then goes to step 2
 /// ([`agent_box2`]). `no_save` as in [`open`].
 fn open_cut(file: &str, name: &str, no_save: bool) -> Live {
-    let code = std::fs::read_to_string(fixture(&format!("t-173/{file}"))).unwrap();
+    let code = std::fs::read_to_string(fixture(&format!("tui/bar_hint_at_80/{file}"))).unwrap();
     let live = Live::from_code(&code, "rs", name);
     live.command(&format!("box 1-2 {LONG_LABEL}"));
     if no_save {
@@ -236,10 +236,10 @@ fn open_cut(file: &str, name: &str, no_save: bool) -> Live {
     live
 }
 
-/// `t-173/FILE` at step 0 with an empty bar. `no_save` adds what QA 2 had
+/// `tui/bar_hint_at_80/FILE` at step 0 with an empty bar. `no_save` adds what QA 2 had
 /// on the bar (`:autosave off`, then the agent's change makes it dirty).
 fn open(file: &str, name: &str, no_save: bool) -> Live {
-    let code = std::fs::read_to_string(fixture(&format!("t-173/{file}"))).unwrap();
+    let code = std::fs::read_to_string(fixture(&format!("tui/bar_hint_at_80/{file}"))).unwrap();
     let live = Live::from_code(&code, "rs", name);
     live.command("step 0");
     if no_save {
@@ -269,14 +269,14 @@ fn open_demo(name: &str, stack_name: &str, no_save: bool) -> Live {
     live
 }
 
-/// A scratch copy of `qa/fixtures/t-173/mods`: `src/a/mod.rs`, and
+/// A scratch copy of `qa/fixtures/tui/bar_hint_at_80/mods`: `src/a/mod.rs`, and
 /// `src/b/mod.rs` linked at step 2.
 fn open_mods(name: &str) -> Live {
     let dir = scratch(name);
     for f in ["src/a/mod.rs", "src/b/mod.rs", "doc.tiza"] {
         let to = dir.join(f);
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
-        std::fs::copy(fixture(&format!("t-173/mods/{f}")), to).unwrap();
+        std::fs::copy(fixture(&format!("tui/bar_hint_at_80/mods/{f}")), to).unwrap();
     }
     let path = dir.join("doc.tiza");
     let doc = tiza_core::fs::load_document(&path).unwrap();
@@ -296,7 +296,7 @@ fn info(live: &Live) -> String {
 }
 
 /// The agent's `annotation.add` / `.update` at the injected clock `at`, so
-/// the 1 s grouping of t-155 is tested without sleeping.
+/// the 1 s grouping of agent notices is tested without sleeping.
 fn ipc_at(live: &Live, method: &str, params: Value, at: Instant) -> Value {
     let method = method.to_string();
     live.with(move |a| {
@@ -333,11 +333,11 @@ fn agent_box(live: &Live) {
 // ---------- AC1 ----------
 
 #[test]
-fn ac1_agent_box_at_80_and_60_keeps_subject_and_tail() {
+fn agent_box_at_80_and_60_keeps_subject_and_tail() {
     // Test step 1, as QA 2 saw it (16 cells left at 80) and without
     // `--no-save`.
     for no_save in [true, false] {
-        let live = open_cut("wide.rs", "t173-ac1", no_save);
+        let live = open_cut("wide.rs", "ac1", no_save);
         assert!(bar(&live, 80).contains(WHOLE_BADGE));
         agent_box2(&live);
         let bars = sweep(&live, &AGENT_BOX2, 30, 130);
@@ -353,7 +353,7 @@ fn ac1_agent_box_at_80_and_60_keeps_subject_and_tail() {
     }
     // 60 columns with the badge on: the tail whole.
     for no_save in [true, false] {
-        let live = open_cut("narrow.rs", "t173-ac1-60", no_save);
+        let live = open_cut("narrow.rs", "ac1-60", no_save);
         assert!(bar(&live, 60).contains(WHOLE_BADGE));
         agent_box2(&live);
         let bars = sweep(&live, &AGENT_BOX2, 30, 130);
@@ -363,9 +363,9 @@ fn ac1_agent_box_at_80_and_60_keeps_subject_and_tail() {
 }
 
 #[test]
-fn ac1_typed_box_at_80_keeps_the_whole_hint() {
+fn typed_box_at_80_keeps_the_whole_hint() {
     // Test step 2: `:box 3-5` typed by the presenter.
-    let live = open("wide.rs", "t173-ac1-typed", true);
+    let live = open("wide.rs", "ac1-typed", true);
     live.type_text(":box 3-5");
     live.keys(&[KeyCode::Enter]);
     assert_eq!(info(&live), "a1: box 3-5 (step 1, press n)");
@@ -375,9 +375,9 @@ fn ac1_typed_box_at_80_keeps_the_whole_hint() {
 }
 
 #[test]
-fn ac1_far_step_hint_keeps_subject_and_tail() {
+fn far_step_hint_keeps_subject_and_tail() {
     // `:set a1 step=3` (QA's 88-92 columns).
-    let live = open("wide.rs", "t173-ac1-far", true);
+    let live = open("wide.rs", "ac1-far", true);
     live.command("box 3-5");
     live.command("set a1 step=3");
     assert_eq!(info(&live), "a1: updated (step 3, :step 3 shows it)");
@@ -394,8 +394,8 @@ fn ac1_far_step_hint_keeps_subject_and_tail() {
 }
 
 #[test]
-fn ac1_the_tail_wins_and_then_the_beginning() {
-    let live = open("narrow.rs", "t173-ac1-narrow", true);
+fn the_tail_wins_and_then_the_beginning() {
+    let live = open("narrow.rs", "ac1-narrow", true);
     agent_box(&live);
     let bars = sweep(&live, &AGENT_BOX, 20, 130);
     // At some width the tail is alone, and narrower only the beginning.
@@ -413,14 +413,14 @@ fn ac1_the_tail_wins_and_then_the_beginning() {
 }
 
 #[test]
-fn ac1_a_file_name_with_a_parenthesis_is_not_the_tail() {
+fn a_file_name_with_a_parenthesis_is_not_the_tail() {
     let m = "a1: box 12-18 updated by agent (src/stack (v2).rs, not shown at step 2)";
     assert_eq!(
         tiza_tui::app::step_hint_start(m),
         m.find(" (src/stack"),
         "{m}"
     );
-    // The t-155 tails keep their start.
+    // The file tails keep their start.
     for m in [
         "a9: note L17 added by agent (src/queue.rs, not shown at step 2)",
         "a1: box 3-5 (step 1, press n)",
@@ -428,7 +428,7 @@ fn ac1_a_file_name_with_a_parenthesis_is_not_the_tail() {
         assert_eq!(tiza_tui::app::step_hint_start(m), m.rfind(" ("), "{m}");
     }
 
-    let live = open_demo("t173-paren", "stack (v2).rs", true);
+    let live = open_demo("paren", "stack (v2).rs", true);
     live.api_ok("step.set", json!({"step": 2}));
     live.api_ok("annotation.update", json!({"id": "a1", "label": "LIFO"}));
     assert_eq!(info(&live), m);
@@ -452,7 +452,7 @@ fn ac1_a_file_name_with_a_parenthesis_is_not_the_tail() {
 // ---------- AC2 ----------
 
 #[test]
-fn ac2_file_tail_drops_the_directory_only_when_needed() {
+fn file_tail_drops_the_directory_only_when_needed() {
     // Test step 3: step 2 shows src/queue.rs; a1 belongs to src/stack.rs.
     let msg = Msg {
         subject: "a1",
@@ -460,7 +460,7 @@ fn ac2_file_tail_drops_the_directory_only_when_needed() {
         short: Some("(stack.rs, not shown at step 2)"),
     };
     for no_save in [true, false] {
-        let live = open_demo("t173-ac2-file", "stack.rs", no_save);
+        let live = open_demo("ac2-file", "stack.rs", no_save);
         live.api_ok("step.set", json!({"step": 2}));
         // A cut label on the step shown, so the bar has its badge.
         live.command(&format!("box 12-13 {LONG_LABEL}"));
@@ -491,8 +491,8 @@ fn ac2_file_tail_drops_the_directory_only_when_needed() {
 }
 
 #[test]
-fn ac2_two_mod_rs_keep_their_directories() {
-    let live = open_mods("t173-ac2-mods");
+fn two_mod_rs_keep_their_directories() {
+    let live = open_mods("ac2-mods");
     live.api_ok("step.set", json!({"step": 2}));
     live.api_ok("annotation.update", json!({"id": "a1", "label": "LIFO"}));
     assert_eq!(
@@ -512,14 +512,14 @@ fn ac2_two_mod_rs_keep_their_directories() {
 }
 
 #[test]
-fn ac2_grouped_notice_keeps_what_it_counts() {
+fn grouped_notice_keeps_what_it_counts() {
     let msg = Msg {
         subject: "3 agent annotations",
         tail: STEP_HINT,
         short: None,
     };
     for no_save in [true, false] {
-        let live = open("wide.rs", "t173-ac2-group", no_save);
+        let live = open("wide.rs", "ac2-group", no_save);
         let t0 = Instant::now();
         for (i, line) in [2, 3, 4].into_iter().enumerate() {
             ipc_at(
@@ -543,7 +543,7 @@ fn ac2_grouped_notice_keeps_what_it_counts() {
         }
     }
     // 60 columns with `! labels under the lines` (wide.rs is clipped there).
-    let live = open("narrow.rs", "t173-ac2-group-60", true);
+    let live = open("narrow.rs", "ac2-group-60", true);
     let t0 = Instant::now();
     for (i, line) in [2, 3, 4].into_iter().enumerate() {
         ipc_at(
@@ -561,8 +561,8 @@ fn ac2_grouped_notice_keeps_what_it_counts() {
 // ---------- AC3 ----------
 
 #[test]
-fn ac3_the_badge_gives_way_in_steps_and_comes_back() {
-    let live = open_cut("wide.rs", "t173-ac3", true);
+fn the_badge_gives_way_in_steps_and_comes_back() {
+    let live = open_cut("wide.rs", "ac3", true);
     agent_box2(&live);
     let bars = sweep(&live, &AGENT_BOX2, 30, 130);
     let forms: Vec<Badge> = bars
@@ -582,9 +582,9 @@ fn ac3_the_badge_gives_way_in_steps_and_comes_back() {
 }
 
 #[test]
-fn ac3_code_clipped_never_gives_way() {
-    let code = std::fs::read_to_string(fixture("t-173/wide.rs")).unwrap();
-    let live = Live::from_code(&code, "rs", "t173-ac3-clipped");
+fn code_clipped_never_gives_way() {
+    let code = std::fs::read_to_string(fixture("tui/bar_hint_at_80/wide.rs")).unwrap();
+    let live = Live::from_code(&code, "rs", "ac3-clipped");
     live.command("step 0");
     live.command("autosave off");
     agent_box(&live);
@@ -616,8 +616,8 @@ fn ac3_code_clipped_never_gives_way() {
 // ---------- AC5 ----------
 
 #[test]
-fn ac5_a_message_that_fits_is_unchanged() {
-    let live = open("wide.rs", "t173-ac5", false);
+fn a_message_that_fits_is_unchanged() {
+    let live = open("wide.rs", "ac5", false);
     agent_box(&live);
     // The bars main drew (b56fd7e's AC3 test, checked against main's ui.rs):
     // the whole message at the end, no badge, nothing cut.
@@ -634,8 +634,8 @@ fn ac5_a_message_that_fits_is_unchanged() {
 // ---------- Corner cases ----------
 
 #[test]
-fn corner_pointer_row_at_the_same_time() {
-    let live = open("wide.rs", "t173-pointer", true);
+fn pointer_row_at_the_same_time() {
+    let live = open("wide.rs", "pointer", true);
     live.keys(&[KeyCode::Char('f')]);
     assert!(live.with(|a| a.pointer.is_some()));
     agent_box(&live);
@@ -645,7 +645,7 @@ fn corner_pointer_row_at_the_same_time() {
     assert!(at(&bars, 80).contains("POINTER"));
     assert!(live.with(|a| a.pointer.is_some()));
     // 60 columns with the badge on.
-    let live = open("narrow.rs", "t173-pointer-60", true);
+    let live = open("narrow.rs", "pointer-60", true);
     live.keys(&[KeyCode::Char('f')]);
     agent_box(&live);
     let bars = sweep(&live, &AGENT_BOX, 30, 130);
@@ -654,8 +654,8 @@ fn corner_pointer_row_at_the_same_time() {
 }
 
 #[test]
-fn corner_wide_characters_near_the_cut() {
-    let live = open("wide.rs", "t173-wide", true);
+fn wide_characters_near_the_cut() {
+    let live = open("wide.rs", "wide", true);
     // A named step 0 with CJK and an emoji on the left of the bar.
     live.with(|a| {
         a.doc.steps =
@@ -687,8 +687,8 @@ fn corner_wide_characters_near_the_cut() {
 }
 
 #[test]
-fn corner_presentation_line_is_not_worse() {
-    let live = open("wide.rs", "t173-present", false);
+fn presentation_line_is_not_worse() {
+    let live = open("wide.rs", "present", false);
     live.with(|a| a.set_present(true));
     live.type_text(":box 3-5 a long label that will not fit");
     live.keys(&[KeyCode::Enter]);

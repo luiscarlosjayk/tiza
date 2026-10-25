@@ -1,4 +1,4 @@
-//! t-197 — Ctrl-C cancels where there is something to cancel (command
+//! Ctrl-C cancels where there is something to cancel (command
 //! line, selection, overlays) and quits everywhere else.
 //!
 //! It only quit from normal and presentation mode: in the command line it
@@ -15,7 +15,7 @@
 //!   Esc; the next Ctrl-C quits.
 //! - AC4 Everywhere else (normal mode, presentation mode, the live pointer
 //!   `f`, a typing animation in progress, a Tab-selected annotation) Ctrl-C
-//!   quits exactly as `:q!` (t-195): nothing written beyond what the mode
+//!   quits exactly as `:q!`: nothing written beyond what the mode
 //!   already wrote, the stderr summaries (stale moves, unsaved changes), and
 //!   the retry of a failed autosave.
 //! - AC5 `:q!` typed in the command line is unchanged; Ctrl-U still clears
@@ -25,7 +25,7 @@
 //!
 //! Corner cases: text typed with the cursor moved is discarded whole;
 //! `:` in presentation mode closes and leaves the frame clean; an OSC answer
-//! arriving as key presses (t-119) is still swallowed before Ctrl-C is
+//! arriving as key presses is still swallowed before Ctrl-C is
 //! looked at; two Ctrl-C sent at once cancel, then quit; Ctrl-C over a
 //! follow reload notice or a stale notice quits.
 //!
@@ -49,7 +49,7 @@ use tiza_qa::scratch;
 const CODE: &str = "fn main() {\n    let a = 1;\n    let b = 2;\n}\n";
 
 const CTRL_C: &str = "\x03";
-/// An OSC 11 answer, as the terminal sends it (t-119).
+/// An OSC 11 answer, as the terminal sends it.
 const OSC_ANSWER: &str = "\x1b]11;rgb:f7f7/f5f5/efef\x1b\\";
 
 /// `main.rs` with a sidecar, as Tiza itself wrote it.
@@ -280,9 +280,9 @@ fn pointer(status: &Value) -> Option<(u64, u64)> {
 // ---------------------------------------------------------------- AC1
 
 #[test]
-fn ac1_ctrl_c_closes_the_command_line_runs_nothing_and_the_next_quits() {
+fn ctrl_c_closes_the_command_line_runs_nothing_and_the_next_quits() {
     // Test step 1: `tiza --no-save main.rs`, `:note 1 hel`, Ctrl-C.
-    let (dir, tiza) = project("t197-ac1");
+    let (dir, tiza) = project("ac1");
     let before = std::fs::read(&tiza).unwrap();
     let r = run(
         &dir,
@@ -308,8 +308,8 @@ fn ac1_ctrl_c_closes_the_command_line_runs_nothing_and_the_next_quits() {
 }
 
 #[test]
-fn ac1_ctrl_c_on_an_empty_command_line_closes_it() {
-    let (dir, _) = project("t197-ac1-empty");
+fn ctrl_c_on_an_empty_command_line_closes_it() {
+    let (dir, _) = project("ac1-empty");
     let r = run(
         &dir,
         "ac1e.py",
@@ -332,11 +332,11 @@ fn ac1_ctrl_c_on_an_empty_command_line_closes_it() {
 }
 
 #[test]
-fn ac1_corner_the_whole_line_is_dropped_and_no_c_is_typed() {
+fn the_whole_line_is_dropped_and_no_c_is_typed() {
     // Text typed, the cursor keys pressed in the middle of it: Ctrl-C drops
     // the line whole. A command typed after it runs alone, so nothing of
     // the dropped line (nor a `c`) was left behind.
-    let (dir, _) = project("t197-ac1-middle");
+    let (dir, _) = project("ac1-middle");
     let r = run(
         &dir,
         "ac1m.py",
@@ -367,10 +367,10 @@ fn ac1_corner_the_whole_line_is_dropped_and_no_c_is_typed() {
 // ---------------------------------------------------------------- AC2
 
 #[test]
-fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
+fn ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
     // Test step 2: `v`, `j`, Ctrl-C → NORMAL, no annotation; Ctrl-C quits.
     for (key, mode) in [("v", "SELECT"), ("V", "V-LINE")] {
-        let (dir, tiza) = project(&format!("t197-ac2-{mode}"));
+        let (dir, tiza) = project(&format!("ac2-{mode}"));
         let before = std::fs::read(&tiza).unwrap();
         let r = run(
             &dir,
@@ -398,12 +398,12 @@ fn ac2_ctrl_c_leaves_a_selection_without_an_annotation_and_the_next_quits() {
 }
 
 #[test]
-fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
+fn ctrl_c_cancels_an_arrow_being_drawn() {
     // `v a` chooses the source; Ctrl-C forgets it, so `v a` again chooses
     // a source (ARROW) instead of drawing the arrow. With the target
     // selected (`v a j v`), one Ctrl-C leaves the selection and the arrow,
     // like Esc.
-    let (dir, _) = project("t197-ac2-arrow");
+    let (dir, _) = project("ac2-arrow");
     let r = run(
         &dir,
         "arrow.py",
@@ -440,10 +440,10 @@ fn ac2_ctrl_c_cancels_an_arrow_being_drawn() {
 }
 
 #[test]
-fn review_ctrl_c_clears_the_hint_of_a_selection_as_esc_does() {
+fn ctrl_c_clears_the_hint_of_a_selection_as_esc_does() {
     // A mouse drag selects and puts its hint on the bar; Ctrl-C leaves the
     // selection and the hint goes with it.
-    let (dir, _) = project("t197-hint");
+    let (dir, _) = project("hint");
     let r = run(
         &dir,
         "hint.py",
@@ -466,12 +466,12 @@ fn review_ctrl_c_clears_the_hint_of_a_selection_as_esc_does() {
 }
 
 #[test]
-fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
+fn cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
     // `j v l l m` opens `:mark ` on the selected text of line 2. Closing
     // the line without running it (Ctrl-C, Esc, or Backspace past its
     // start) cancels that selection too: `:mark warn` typed right after, on
     // the same line, has no anchor and is refused, instead of marking the
-    // selected text. (No key between them: since t-203 any key in normal
+    // selected text. (No key between them: now any key in normal
     // mode but `:`, `u` and Ctrl-R drops a pending selection, and the test
     // would pass even if closing kept it.)
     let closers = [
@@ -480,7 +480,7 @@ fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
         ("backspace", "\x7f".repeat(6)),
     ];
     for (name, close) in closers {
-        let (dir, _) = project(&format!("t197-pending-{name}"));
+        let (dir, _) = project(&format!("pending-{name}"));
         let r = run(
             &dir,
             &format!("pending-{name}.py"),
@@ -505,11 +505,11 @@ fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
 // ---------------------------------------------------------------- AC3
 
 #[test]
-fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
+fn ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
     // Test step 3: `?`, Ctrl-C → help closes; Ctrl-C quits. Same with `L`.
     for (key, name) in [("?", "help"), ("L", "list")] {
         let open = "esc close";
-        let (dir, _) = project(&format!("t197-ac3-{name}"));
+        let (dir, _) = project(&format!("ac3-{name}"));
         let r = run(
             &dir,
             &format!("ac3-{name}.py"),
@@ -533,8 +533,8 @@ fn ac3_ctrl_c_closes_the_help_and_the_list_and_the_next_quits() {
 }
 
 #[test]
-fn ac3_ctrl_c_closes_the_review_and_the_proposal_stays_pending() {
-    let (dir, _) = project("t197-ac3-review");
+fn ctrl_c_closes_the_review_and_the_proposal_stays_pending() {
+    let (dir, _) = project("ac3-review");
     let r = run(
         &dir,
         "review.py",
@@ -562,10 +562,10 @@ fn ac3_ctrl_c_closes_the_review_and_the_proposal_stays_pending() {
 // ---------------------------------------------------------------- AC4
 
 #[test]
-fn ac4_ctrl_c_quits_from_normal_and_presentation_mode_as_q_bang() {
+fn ctrl_c_quits_from_normal_and_presentation_mode_as_q_bang() {
     // Test step 4: `P`, Ctrl-C → quits; under --no-save stderr names the
-    // note (t-195), and the sidecar is untouched.
-    let (dir, tiza) = project("t197-ac4-present");
+    // note, and the sidecar is untouched.
+    let (dir, tiza) = project("ac4-present");
     let before = std::fs::read(&tiza).unwrap();
     let r = run(
         &dir,
@@ -587,7 +587,7 @@ fn ac4_ctrl_c_quits_from_normal_and_presentation_mode_as_q_bang() {
     );
     assert_eq!(std::fs::read(&tiza).unwrap(), before);
     // Normal mode, nothing changed: quits, says nothing.
-    let (dir, _) = project("t197-ac4-normal");
+    let (dir, _) = project("ac4-normal");
     let r = run(
         &dir,
         "normal.py",
@@ -600,8 +600,8 @@ fn ac4_ctrl_c_quits_from_normal_and_presentation_mode_as_q_bang() {
 }
 
 #[test]
-fn ac4_corner_the_command_line_in_presentation_mode_closes_and_leaves_the_frame_clean() {
-    let (dir, _) = project("t197-ac4-present-cmd");
+fn the_command_line_in_presentation_mode_closes_and_leaves_the_frame_clean() {
+    let (dir, _) = project("ac4-present-cmd");
     let r = run(
         &dir,
         "present-cmd.py",
@@ -630,8 +630,8 @@ fn ac4_corner_the_command_line_in_presentation_mode_closes_and_leaves_the_frame_
 }
 
 #[test]
-fn ac4_ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
-    let (dir, _) = project("t197-ac4-pointer");
+fn ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
+    let (dir, _) = project("ac4-pointer");
     let r = run(
         &dir,
         "pointer.py",
@@ -645,7 +645,7 @@ fn ac4_ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
     );
     r.quit_cleanly();
     assert_eq!(pointer(r.api(0)), Some((1, 1)));
-    let (dir, _) = project("t197-ac4-tab");
+    let (dir, _) = project("ac4-tab");
     let r = run(
         &dir,
         "tab.py",
@@ -666,11 +666,11 @@ fn ac4_ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
 }
 
 #[test]
-fn ac4_ctrl_c_quits_while_a_step_types() {
+fn ctrl_c_quits_while_a_step_types() {
     // Test step 5: a `typing` move, `n` to its step, Ctrl-C while it types
     // (three lines at 3 s each) → quits, instead of only ending the
     // animation.
-    let dir = scratch("t197-ac4-typing");
+    let dir = scratch("ac4-typing");
     let doc = json!({
         "schema": 1,
         "source": {"language": "rs"},
@@ -727,9 +727,9 @@ fn followed(name: &str) -> PathBuf {
 }
 
 #[test]
-fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
+fn ctrl_c_over_a_follow_or_stale_notice_quits() {
     // A reload notice on the bar is not something to cancel.
-    let dir = followed("t197-ac4-reload");
+    let dir = followed("ac4-reload");
     let r = run(
         &dir,
         "reload.py",
@@ -742,8 +742,8 @@ fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
         ]),
     );
     r.quit_cleanly();
-    // Nor a stale notice; stderr gives the summary of stale moves (t-164).
-    let dir = followed("t197-ac4-stale");
+    // Nor a stale notice; stderr gives the summary of stale moves.
+    let dir = followed("ac4-stale");
     let before = std::fs::read(dir.join("config.ini.tiza")).unwrap();
     let r = run(
         &dir,
@@ -773,11 +773,11 @@ fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
 // ---------------------------------------------------------------- corners
 
 #[test]
-fn corner_an_osc_answer_is_swallowed_before_ctrl_c_is_looked_at() {
+fn an_osc_answer_is_swallowed_before_ctrl_c_is_looked_at() {
     // The answer arrives while the command line is open: none of it is
     // typed (the note says `a`), and a Ctrl-C right after it still closes
     // the line (the second note never runs) before the next one quits.
-    let (dir, _) = project("t197-osc");
+    let (dir, _) = project("osc");
     let r = run(
         &dir,
         "osc.py",
@@ -805,8 +805,8 @@ fn corner_an_osc_answer_is_swallowed_before_ctrl_c_is_looked_at() {
 }
 
 #[test]
-fn corner_two_ctrl_c_sent_at_once_cancel_then_quit() {
-    let (dir, _) = project("t197-two");
+fn two_ctrl_c_sent_at_once_cancel_then_quit() {
+    let (dir, _) = project("two");
     let r = run(
         &dir,
         "two.py",
@@ -824,8 +824,8 @@ fn corner_two_ctrl_c_sent_at_once_cancel_then_quit() {
 // ---------------------------------------------------------------- AC6
 
 #[test]
-fn ac6_the_help_says_ctrl_c_cancels_or_quits() {
-    let dir = scratch("t197-help");
+fn the_help_says_ctrl_c_cancels_or_quits() {
+    let dir = scratch("help");
     let doc = tiza_core::Document::from_code(CODE, "rs", None);
     let live = tiza_qa::Live::open(doc, dir.join("main.rs.tiza"), dir.join("s.sock"));
     live.command("help");

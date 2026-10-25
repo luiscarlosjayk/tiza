@@ -29,7 +29,7 @@ use tiza_qa::{Live, scratch};
 fn ownership(name: &str) -> Live {
     let dir = scratch(name);
     for f in ["ownership.rs.tiza", "ownership.rs"] {
-        std::fs::copy(tiza_qa::fixture("t-246").join(f), dir.join(f)).unwrap();
+        std::fs::copy(tiza_qa::fixture("tui/bar_warnings").join(f), dir.join(f)).unwrap();
     }
     let doc = tiza_core::fs::load_document(&dir.join("ownership.rs.tiza")).unwrap();
     let live = Live::open(doc, dir.join("ownership.rs.tiza"), dir.join("s.sock"));
@@ -49,8 +49,8 @@ fn warnings(live: &Live) -> Vec<String> {
 }
 
 #[test]
-fn step1_ac1_at_80_columns_with_nothing_cut_there_is_no_warning() {
-    let live = ownership("t246-step1");
+fn at_80_columns_with_nothing_cut_there_is_no_warning() {
+    let live = ownership("step1");
     live.command("step 1");
     let b = bar(&live, 80, 24);
     assert!(!b.contains("  ! "), "{b}");
@@ -63,8 +63,8 @@ fn step1_ac1_at_80_columns_with_nothing_cut_there_is_no_warning() {
 }
 
 #[test]
-fn step2_ac2_step_7_names_what_is_cut_and_the_code_it_needs() {
-    let live = ownership("t246-step7");
+fn step_7_names_what_is_cut_and_the_code_it_needs() {
+    let live = ownership("step7");
     live.command("step 7");
     // 100 columns: three labels end in `…`.
     let b = bar(&live, 100, 30);
@@ -94,8 +94,8 @@ fn step2_ac2_step_7_names_what_is_cut_and_the_code_it_needs() {
 }
 
 #[test]
-fn ac3_it_follows_the_step_and_the_size() {
-    let live = ownership("t246-follow");
+fn it_follows_the_step_and_the_size() {
+    let live = ownership("follow");
     live.command("step 7");
     assert!(bar(&live, 100, 30).contains("! 3 labels cut"));
     live.command("step 1");
@@ -113,8 +113,8 @@ fn ac3_it_follows_the_step_and_the_size() {
 }
 
 #[test]
-fn corner_presentation_mode_has_no_bar_and_the_warning_is_back_after() {
-    let live = ownership("t246-present");
+fn presentation_mode_has_no_bar_and_the_warning_is_back_after() {
+    let live = ownership("present");
     live.command("step 7");
     live.keys(&[KeyCode::Char('P')]);
     let s = live.screen(100, 30);
@@ -124,8 +124,8 @@ fn corner_presentation_mode_has_no_bar_and_the_warning_is_back_after() {
 }
 
 #[test]
-fn corner_labels_under_the_lines_are_a_fact_without_a_badge() {
-    let live = ownership("t246-under");
+fn labels_under_the_lines_are_a_fact_without_a_badge() {
+    let live = ownership("under");
     live.command("step 1");
     let b = bar(&live, 60, 30);
     let w = warnings(&live);
@@ -136,7 +136,7 @@ fn corner_labels_under_the_lines_are_a_fact_without_a_badge() {
     );
     assert!(!b.contains("under the lines"), "{b}");
     // A document with nothing to draw says nothing about labels.
-    let plain = Live::from_code("fn main() {}\n", "rs", "t246-plain");
+    let plain = Live::from_code("fn main() {}\n", "rs", "plain");
     plain.screen(40, 20);
     assert!(warnings(&plain).is_empty(), "{:?}", warnings(&plain));
 }
@@ -148,10 +148,10 @@ fn wide(n: usize) -> String {
 }
 
 #[test]
-fn corner_after_a_follow_reload_the_time_gives_way_and_the_badge_is_whole_or_its_sign() {
+fn after_a_follow_reload_the_time_gives_way_and_the_badge_is_whole_or_its_sign() {
     // As in Zed's terminal docked on the right (68 columns): code that needs
     // more columns, followed, after one reload.
-    let dir = scratch("t246-follow-reload");
+    let dir = scratch("follow-reload");
     let src = std::path::absolute(dir.join("lib.rs")).unwrap();
     std::fs::write(&src, wide(70)).unwrap();
     let mut doc = tiza_core::Document::from_code(&wide(70), "rs", Some(src.display().to_string()));
@@ -200,7 +200,7 @@ fn code_needs(bar: &str) -> Option<u16> {
 }
 
 #[test]
-fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
+fn code_needs_names_the_first_terminal_width_with_no_warning() {
     // N is the terminal width from which the step shows every code line
     // whole: at N there is no warning, at N - 1 it names N. Line numbers,
     // arrow lanes, box rails and the side padding count, not the code alone.
@@ -215,36 +215,20 @@ fn ac2_code_needs_names_the_first_terminal_width_with_no_warning() {
         live
     };
     let example = || tiza_qa::fixture("shared/ownership");
-    let old = || tiza_qa::fixture("t-246");
+    let old = || tiza_qa::fixture("tui/bar_warnings");
     let wide = || {
-        let code = std::fs::read_to_string(tiza_qa::fixture("t-173/wide.rs")).unwrap();
-        Live::from_code(&code, "rs", "t246-needs-wide")
+        let code = std::fs::read_to_string(tiza_qa::fixture("tui/bar_hint_at_80/wide.rs")).unwrap();
+        Live::from_code(&code, "rs", "needs-wide")
     };
     let cases: Vec<(&str, Live, &str)> = vec![
-        (
-            "example, step 7",
-            open("t246-needs-ex7", example()),
-            "step 7",
-        ),
-        (
-            "example, step 1",
-            open("t246-needs-ex1", example()),
-            "step 1",
-        ),
-        (
-            "old example, step 7",
-            open("t246-needs-old7", old()),
-            "step 7",
-        ),
-        (
-            "old example, step 3",
-            open("t246-needs-old3", old()),
-            "step 3",
-        ),
-        ("padding 1 6", open("t246-needs-pad", old()), "pad 1 6"),
+        ("example, step 7", open("needs-ex7", example()), "step 7"),
+        ("example, step 1", open("needs-ex1", example()), "step 1"),
+        ("old example, step 7", open("needs-old7", old()), "step 7"),
+        ("old example, step 3", open("needs-old3", old()), "step 3"),
+        ("padding 1 6", open("needs-pad", old()), "pad 1 6"),
         (
             "layout stable",
-            open("t246-needs-stable", old()),
+            open("needs-stable", old()),
             "layout stable",
         ),
         ("no line numbers", wide(), "numbers off"),

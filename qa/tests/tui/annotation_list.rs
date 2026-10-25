@@ -79,8 +79,8 @@ fn panel_rows(screen: &str, cols: u16, rows: u16) -> Vec<String> {
 }
 
 #[test]
-fn step1_ac1_ac4_ac5_steps_files_columns_and_moves() {
-    let live = stack_and_queue("t239-groups");
+fn steps_files_columns_and_moves() {
+    let live = stack_and_queue("groups");
     live.command("step 2");
     let s = open_list(&live, 120, 46);
     assert!(s.contains("╭─ Annotations · 7 · Moves · 6 "), "{s}");
@@ -149,8 +149,8 @@ fn step1_ac1_ac4_ac5_steps_files_columns_and_moves() {
 }
 
 #[test]
-fn ac2_a_long_label_is_cut_in_its_column_never_wrapped() {
-    let live = stack_and_queue("t239-cut");
+fn a_long_label_is_cut_in_its_column_never_wrapped() {
+    let live = stack_and_queue("cut");
     let s = open_list(&live, 80, 46);
     let rows = panel_rows(&s, 80, 46);
     let a6 = rows.iter().find(|r| r.contains("a6  note")).unwrap();
@@ -165,8 +165,8 @@ fn ac2_a_long_label_is_cut_in_its_column_never_wrapped() {
 }
 
 #[test]
-fn step2_ac3_j_k_and_enter_go_to_the_step_with_the_annotation_selected() {
-    let live = stack_and_queue("t239-enter");
+fn j_k_and_enter_go_to_the_step_with_the_annotation_selected() {
+    let live = stack_and_queue("enter");
     open_list(&live, 120, 46);
     live.keys(&[KeyCode::Char('j'), KeyCode::Char('j'), KeyCode::Char('j')]);
     let s = live.screen(120, 46);
@@ -189,8 +189,8 @@ fn step2_ac3_j_k_and_enter_go_to_the_step_with_the_annotation_selected() {
 }
 
 #[test]
-fn ac3_x_deletes_then_u_undoes_and_u_or_ctrl_r_redo_with_the_list_open() {
-    let live = stack_and_queue("t239-delete");
+fn x_deletes_then_u_undoes_and_u_or_ctrl_r_redo_with_the_list_open() {
+    let live = stack_and_queue("delete");
     open_list(&live, 120, 46);
     live.keys(&[KeyCode::Char('j'), KeyCode::Char('x')]);
     let count = || live.with(|a| a.doc.annotations.len());
@@ -226,8 +226,8 @@ fn ac3_x_deletes_then_u_undoes_and_u_or_ctrl_r_redo_with_the_list_open() {
 }
 
 #[test]
-fn step3_ac3_the_filter_keeps_the_queue_rows_then_esc_clears_then_closes() {
-    let live = stack_and_queue("t239-filter");
+fn the_filter_keeps_the_queue_rows_then_esc_clears_then_closes() {
+    let live = stack_and_queue("filter");
     open_list(&live, 120, 46);
     live.keys(&"/queue".chars().map(KeyCode::Char).collect::<Vec<_>>());
     let s = live.screen(120, 46);
@@ -259,7 +259,7 @@ fn step3_ac3_the_filter_keeps_the_queue_rows_then_esc_clears_then_closes() {
 
 #[test]
 fn corner_200_annotations_scroll_with_the_selected_row_in_view() {
-    let live = Live::from_code(&"let x = 1;\n".repeat(20), "rs", "t239-many");
+    let live = Live::from_code(&"let x = 1;\n".repeat(20), "rs", "many");
     for i in 0..200 {
         live.command(&format!("note {} n{i}", i % 20 + 1));
     }
@@ -287,8 +287,8 @@ fn corner_200_annotations_scroll_with_the_selected_row_in_view() {
 }
 
 #[test]
-fn corner_a_label_with_wide_characters_keeps_the_frame_and_the_columns() {
-    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "t239-wide");
+fn a_label_with_wide_characters_keeps_the_frame_and_the_columns() {
+    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "wide");
     live.command("note 2 名前名前名前名前名前名前名前名前名前名前名前名前名前名前名前名前名前名前");
     live.command("note 1 ascii");
     open_list(&live, 80, 24);
@@ -322,8 +322,8 @@ fn corner_a_label_with_wide_characters_keeps_the_frame_and_the_columns() {
 }
 
 #[test]
-fn corner_an_unanchored_annotation_and_a_stale_move_have_their_mark() {
-    let dir = tiza_qa::scratch("t239-marks");
+fn an_unanchored_annotation_and_a_stale_move_have_their_mark() {
+    let dir = tiza_qa::scratch("marks");
     let src = dir.join("main.rs");
     std::fs::write(&src, "fn main() {\n    let x = 1;\n    let y = 2;\n}\n").unwrap();
     let doc = json!({
@@ -378,8 +378,8 @@ fn corner_an_unanchored_annotation_and_a_stale_move_have_their_mark() {
 }
 
 #[test]
-fn corner_below_40x12_the_list_does_not_open() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t239-small");
+fn below_40x12_the_list_does_not_open() {
+    let live = Live::from_code("fn main() {}\n", "rs", "small");
     live.with(|a| a.size = (39, 11));
     live.keys(&[KeyCode::Char('L')]);
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
@@ -414,8 +414,8 @@ fn two_waiting(name: &str) -> (Live, Vec<std::thread::JoinHandle<serde_json::Val
 }
 
 #[test]
-fn review_does_not_open_by_itself_and_the_chip_says_review() {
-    let (live, agents) = two_waiting("t239-chip");
+fn does_not_open_by_itself_and_the_chip_says_review() {
+    let (live, agents) = two_waiting("chip");
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
     let bar = live.screen(120, 30).lines().last().unwrap().to_string();
     assert!(bar.contains("⏸ 2 to review · :review"), "{bar}");
@@ -433,8 +433,8 @@ fn review_does_not_open_by_itself_and_the_chip_says_review() {
 }
 
 #[test]
-fn review_is_the_panel_and_y_accepts_the_selected_change() {
-    let (live, agents) = two_waiting("t239-review");
+fn is_the_panel_and_y_accepts_the_selected_change() {
+    let (live, agents) = two_waiting("review");
     live.with(|a| a.size = (100, 30));
     live.command("review");
     let s = live.screen(100, 30);
@@ -481,8 +481,8 @@ fn review_is_the_panel_and_y_accepts_the_selected_change() {
 }
 
 #[test]
-fn ac3_the_list_opens_at_the_step_on_screen_and_enter_on_nothing_closes() {
-    let live = stack_and_queue("t239-start");
+fn the_list_opens_at_the_step_on_screen_and_enter_on_nothing_closes() {
+    let live = stack_and_queue("start");
     live.command("step 4");
     let s = open_list(&live, 120, 46);
     assert!(
@@ -493,15 +493,15 @@ fn ac3_the_list_opens_at_the_step_on_screen_and_enter_on_nothing_closes() {
     );
     live.keys(&[KeyCode::Esc]);
     // No row: Enter closes, as on the help.
-    let empty = Live::from_code("fn main() {}\n", "rs", "t239-enter-empty");
+    let empty = Live::from_code("fn main() {}\n", "rs", "enter-empty");
     open_list(&empty, 80, 30);
     empty.keys(&[KeyCode::Enter]);
     assert_eq!(empty.with(|a| a.overlay), Overlay::None);
 }
 
 #[test]
-fn ac3_the_selection_stays_on_its_row_when_an_agent_adds_one_above() {
-    let live = stack_and_queue("t239-identity");
+fn the_selection_stays_on_its_row_when_an_agent_adds_one_above() {
+    let live = stack_and_queue("identity");
     live.command("step 2");
     open_list(&live, 120, 46);
     // ▸ a3 at step 2; an agent adds a note at step 1, above it.
@@ -526,8 +526,8 @@ fn ac3_the_selection_stays_on_its_row_when_an_agent_adds_one_above() {
 }
 
 #[test]
-fn ac3_ctrl_with_a_letter_does_not_act_in_the_list() {
-    let live = stack_and_queue("t239-ctrl");
+fn ctrl_with_a_letter_does_not_act_in_the_list() {
+    let live = stack_and_queue("ctrl");
     open_list(&live, 120, 46);
     for c in ['x', 'd', 'u', 'j'] {
         live.with(move |a| tiza_tui::on_key(a, KeyCode::Char(c), KeyModifiers::CONTROL));
@@ -542,8 +542,8 @@ fn ac3_ctrl_with_a_letter_does_not_act_in_the_list() {
 }
 
 #[test]
-fn corner_the_step_on_screen_stays_after_its_last_annotation_goes() {
-    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "t239-last-step");
+fn the_step_on_screen_stays_after_its_last_annotation_goes() {
+    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "last-step");
     live.command("note 2 first");
     live.command("step 2");
     live.command("note 1 second");
@@ -564,8 +564,8 @@ fn corner_the_step_on_screen_stays_after_its_last_annotation_goes() {
 }
 
 #[test]
-fn corner_a_narrow_list_stacks_its_rows_inside_the_frame() {
-    let live = stack_and_queue("t239-narrow");
+fn a_narrow_list_stacks_its_rows_inside_the_frame() {
+    let live = stack_and_queue("narrow");
     open_list(&live, 44, 30);
     let panel = tiza_tui::panel::rect(ratatui::layout::Rect::new(0, 0, 44, 30)).unwrap();
     let edges = live.with(move |a| {
@@ -591,8 +591,8 @@ fn corner_a_narrow_list_stacks_its_rows_inside_the_frame() {
 }
 
 #[test]
-fn review_a_filter_decides_only_the_changes_shown() {
-    let (live, agents) = two_waiting("t239-review-filter");
+fn a_filter_decides_only_the_changes_shown() {
+    let (live, agents) = two_waiting("review-filter");
     live.with(|a| a.size = (100, 30));
     live.command("review");
     live.keys(&"/second".chars().map(KeyCode::Char).collect::<Vec<_>>());
@@ -609,8 +609,8 @@ fn review_a_filter_decides_only_the_changes_shown() {
 }
 
 #[test]
-fn ac2_an_id_too_long_for_its_column_is_cut_and_keeps_its_gap() {
-    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "t239-long-id");
+fn an_id_too_long_for_its_column_is_cut_and_keeps_its_gap() {
+    let live = Live::from_code("fn main() {\n    let x = 1;\n}\n", "rs", "long-id");
     live.api_ok(
         "annotation.add",
         json!({"id": "push-and-pop-long", "type": "note", "line": 2, "text": "long id"}),
@@ -623,7 +623,7 @@ fn ac2_an_id_too_long_for_its_column_is_cut_and_keeps_its_gap() {
 
 #[test]
 fn bar_the_tab_hint_keeps_its_keys_and_the_id_after_enter() {
-    let live = stack_and_queue("t239-tab-hint");
+    let live = stack_and_queue("tab-hint");
     live.command("step 2");
     open_list(&live, 80, 24);
     live.keys(&[KeyCode::Char('j'), KeyCode::Enter]);

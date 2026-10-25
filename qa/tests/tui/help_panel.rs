@@ -158,7 +158,7 @@ fn documented(when: When) -> Vec<(KeyCode, KeyModifiers)> {
 }
 
 #[test]
-fn ac7_every_command_is_in_the_table() {
+fn every_command_is_in_the_table() {
     let mut named: Vec<String> = Vec::new();
     for (_, rows) in HELP {
         for r in *rows {
@@ -177,14 +177,14 @@ fn ac7_every_command_is_in_the_table() {
 }
 
 #[test]
-fn ac7_every_key_of_the_table_does_something_where_it_says() {
+fn every_key_of_the_table_does_something_where_it_says() {
     for (_, rows) in HELP {
         for r in *rows {
             let Row::Key { keys, when, .. } = r else {
                 continue;
             };
             for (code, mods) in presses(keys) {
-                let live = fresh("t238-key");
+                let live = fresh("key");
                 enter(&live, *when);
                 // A redo needs a change undone first.
                 if code == KeyCode::Char('U') {
@@ -203,7 +203,7 @@ fn ac7_every_key_of_the_table_does_something_where_it_says() {
 }
 
 #[test]
-fn ac7_every_key_that_does_something_is_in_the_table() {
+fn every_key_that_does_something_is_in_the_table() {
     let mut keys: Vec<(KeyCode, KeyModifiers)> = (0x20u8..0x7f)
         .map(|b| (KeyCode::Char(b as char), KeyModifiers::NONE))
         .collect();
@@ -236,7 +236,7 @@ fn ac7_every_key_that_does_something_is_in_the_table() {
     ] {
         let docs = documented(when);
         for &(code, mods) in &keys {
-            let live = fresh("t238-reverse");
+            let live = fresh("reverse");
             enter(&live, when);
             let before = state(&live);
             live.with(move |a| tiza_tui::on_key(a, code, mods));
@@ -263,8 +263,8 @@ fn help_screen(live: &Live, cols: u16, rows: u16, keys: &[KeyCode]) -> String {
 }
 
 #[test]
-fn step1_ac2_ac4_two_columns_the_footer_and_the_position() {
-    let live = fresh("t238-columns");
+fn two_columns_the_footer_and_the_position() {
+    let live = fresh("columns");
     let s = help_screen(&live, 80, 24, &[]);
     assert!(s.contains("╭─ Keys and commands "), "{s}");
     assert!(s.contains("esc close ─╮"), "{s}");
@@ -284,8 +284,8 @@ fn step1_ac2_ac4_two_columns_the_footer_and_the_position() {
 }
 
 #[test]
-fn step2_ac3_the_filter_keeps_the_step_rows_then_esc_clears_then_closes() {
-    let live = fresh("t238-filter");
+fn the_filter_keeps_the_step_rows_then_esc_clears_then_closes() {
+    let live = fresh("filter");
     let mut keys = vec![KeyCode::Char('/')];
     keys.extend("step".chars().map(KeyCode::Char));
     let s = help_screen(&live, 80, 40, &keys);
@@ -307,8 +307,8 @@ fn step2_ac3_the_filter_keeps_the_step_rows_then_esc_clears_then_closes() {
 }
 
 #[test]
-fn corner_a_filter_that_matches_nothing_says_so() {
-    let live = fresh("t238-empty");
+fn a_filter_that_matches_nothing_says_so() {
+    let live = fresh("empty");
     let s = help_screen(
         &live,
         80,
@@ -330,8 +330,8 @@ fn corner_a_filter_that_matches_nothing_says_so() {
 }
 
 #[test]
-fn step3_j_k_and_page_down_scroll_and_the_footer_follows() {
-    let live = fresh("t238-scroll");
+fn j_k_and_page_down_scroll_and_the_footer_follows() {
+    let live = fresh("scroll");
     let s = help_screen(&live, 80, 24, &[KeyCode::PageDown]);
     assert!(s.contains(" 15-28 of "), "{s}");
     live.keys(&[KeyCode::Char('j')]);
@@ -347,9 +347,9 @@ fn step3_j_k_and_page_down_scroll_and_the_footer_follows() {
 }
 
 #[test]
-fn ac5_at_every_width_no_key_is_split_and_nothing_passes_the_screen() {
+fn at_every_width_no_key_is_split_and_nothing_passes_the_screen() {
     for cols in [40u16, 60, 80, 120, 200] {
-        let live = fresh(&format!("t238-width-{cols}"));
+        let live = fresh(&format!("width-{cols}"));
         let panel = tiza_tui::panel::rect(ratatui::layout::Rect::new(0, 0, cols, 30)).unwrap();
         let (left, right) = (panel.x as usize, (panel.x + panel.width - 1) as usize);
         // Every row of the panel has its frame at the panel's edges, on
@@ -395,8 +395,8 @@ fn ac5_at_every_width_no_key_is_split_and_nothing_passes_the_screen() {
 }
 
 #[test]
-fn ac5_a_narrow_panel_stacks_the_key_above_its_description() {
-    let live = fresh("t238-stacked");
+fn a_narrow_panel_stacks_the_key_above_its_description() {
+    let live = fresh("stacked");
     let s = help_screen(&live, 60, 30, &[]);
     assert!(s.contains("│ j/k  ↓/↑"), "{s}");
     assert!(
@@ -407,8 +407,8 @@ fn ac5_a_narrow_panel_stacks_the_key_above_its_description() {
 }
 
 #[test]
-fn ac5_below_40x12_the_help_does_not_open_and_says_why() {
-    let live = fresh("t238-small");
+fn below_40x12_the_help_does_not_open_and_says_why() {
+    let live = fresh("small");
     live.with(|a| a.size = (39, 11));
     live.keys(&[KeyCode::Char('?')]);
     assert_eq!(live.with(|a| a.overlay), Overlay::None);
@@ -432,8 +432,8 @@ fn ac5_below_40x12_the_help_does_not_open_and_says_why() {
 }
 
 #[test]
-fn ac5_a_resize_below_40x12_closes_the_help_and_says_why() {
-    let live = fresh("t238-resize");
+fn a_resize_below_40x12_closes_the_help_and_says_why() {
+    let live = fresh("resize");
     let mut keys = vec![KeyCode::Char('/')];
     keys.extend("ste".chars().map(KeyCode::Char));
     help_screen(&live, 80, 24, &keys);
@@ -446,8 +446,8 @@ fn ac5_a_resize_below_40x12_closes_the_help_and_says_why() {
 }
 
 #[test]
-fn corner_the_help_opens_in_presentation_mode_and_arrows_do_not_move_it() {
-    let live = fresh("t238-present");
+fn the_help_opens_in_presentation_mode_and_arrows_do_not_move_it() {
+    let live = fresh("present");
     live.keys(&[KeyCode::Char('P')]);
     let s = help_screen(&live, 80, 24, &[]);
     assert!(s.contains("╭─ Keys and commands "), "{s}");
@@ -462,7 +462,7 @@ fn corner_the_help_opens_in_presentation_mode_and_arrows_do_not_move_it() {
 
 #[test]
 fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
-    let live = Live::from_code(CODE, "rs", "t238-select-bar");
+    let live = Live::from_code(CODE, "rs", "select-bar");
     live.with(|a| a.autosave = false);
     live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
     let bar = |cols: u16| live.screen(cols, 40).lines().last().unwrap().to_string();
@@ -492,7 +492,7 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
         assert!(b.ends_with(form), "{cols}: {b}");
     }
     // A warning beside the hint keeps only its sign: a box label too long
-    // for its border is cut (t-246).
+    // for its border is cut.
     live.keys(&[KeyCode::Esc]);
     live.command("box 1-2 a box label far too long for the border of this box at eighty columns");
     live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
@@ -503,8 +503,8 @@ fn bar_the_selection_hint_takes_the_room_of_the_optional_segments() {
 }
 
 #[test]
-fn ac2_placeholders_are_in_the_note_color() {
-    let live = fresh("t238-colors");
+fn placeholders_are_in_the_note_color() {
+    let live = fresh("colors");
     live.with(|a| a.size = (120, 40));
     live.keys(&[KeyCode::Char('?'), KeyCode::Char('/')]);
     live.keys(&":mark".chars().map(KeyCode::Char).collect::<Vec<_>>());

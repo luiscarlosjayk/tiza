@@ -43,8 +43,8 @@ fn error(live: &Live, cmd: &str) -> String {
 }
 
 #[test]
-fn step1_ac1_a_text_nowhere_says_which_code_was_searched() {
-    let live = at_step("t240-nowhere", 3);
+fn a_text_nowhere_says_which_code_was_searched() {
+    let live = at_step("nowhere", 3);
     assert_eq!(
         error(&live, "hl 22:signature"),
         "«signature» is not in the code shown (src/queue.rs:10-36). \
@@ -53,8 +53,8 @@ fn step1_ac1_a_text_nowhere_says_which_code_was_searched() {
 }
 
 #[test]
-fn step2_a_text_on_another_line_says_which_line() {
-    let live = at_step("t240-other-line", 3);
+fn a_text_on_another_line_says_which_line() {
+    let live = at_step("other-line", 3);
     assert_eq!(
         error(&live, "hl 22:push_back"),
         "use 18:push_back («push_back» is on L18, not L22)"
@@ -62,8 +62,8 @@ fn step2_a_text_on_another_line_says_which_line() {
 }
 
 #[test]
-fn step3_ac3_the_suggested_command_is_readable_at_120_columns() {
-    let live = at_step("t240-bar", 3);
+fn the_suggested_command_is_readable_at_120_columns() {
+    let live = at_step("bar", 3);
     let msg = error(&live, "hl 22:VecDeque");
     assert!(msg.starts_with("use 13:VecDeque "), "{msg}");
     let screen = live.screen(120, 30);
@@ -72,9 +72,9 @@ fn step3_ac3_the_suggested_command_is_readable_at_120_columns() {
 }
 
 #[test]
-fn ac2_a_text_in_a_file_another_step_shows() {
+fn a_text_in_a_file_another_step_shows() {
     // `Vec::new` is in src/stack.rs (step 4), not in src/queue.rs.
-    let live = at_step("t240-other-file", 3);
+    let live = at_step("other-file", 3);
     assert_eq!(
         error(&live, "hl 22:Vec::new"),
         "«Vec::new» is in src/stack.rs at L9, shown at step 4."
@@ -82,9 +82,9 @@ fn ac2_a_text_in_a_file_another_step_shows() {
 }
 
 #[test]
-fn corner_a_text_outside_the_window() {
+fn a_text_outside_the_window() {
     // Step 5 shows src/queue.rs:17-23; `VecDeque::new` is on L13.
-    let live = at_step("t240-window", 5);
+    let live = at_step("window", 5);
     assert_eq!(
         error(&live, "hl 20:VecDeque::new"),
         "«VecDeque::new» is in src/queue.rs at L13, outside the lines shown at step 5 (17-23)."
@@ -92,8 +92,8 @@ fn corner_a_text_outside_the_window() {
 }
 
 #[test]
-fn corner_arrow_and_mark_give_the_same_messages() {
-    let live = at_step("t240-arrow-mark", 3);
+fn arrow_and_mark_give_the_same_messages() {
+    let live = at_step("arrow-mark", 3);
     let nowhere = "«signature» is not in the code shown (src/queue.rs:10-36). \
                    L:text skips notes and labels.";
     assert_eq!(error(&live, "arrow 18:push_back 22:signature x"), nowhere);

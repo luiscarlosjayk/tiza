@@ -1,4 +1,4 @@
-//! t-030 — Live pointer: `f` toggles a temporary focus on the cursor line
+//! Live pointer: `f` toggles a temporary focus on the cursor line
 //! (or the selection) that is never saved or exported; agents can point too.
 //!
 //! Acceptance criteria:
@@ -87,8 +87,8 @@ fn j(n: usize) -> Vec<KeyCode> {
 }
 
 #[test]
-fn ac1_f_toggles_the_pointer_on_the_cursor_line_and_esc_turns_it_off() {
-    let live = Live::from_code(&code20(), "rs", "t030-ac1");
+fn f_toggles_the_pointer_on_the_cursor_line_and_esc_turns_it_off() {
+    let live = Live::from_code(&code20(), "rs", "ac1");
     assert_eq!(lit(&live), all(1, 20), "nothing dimmed before");
     press(&live, &j(6));
     press(&live, &[KeyCode::Char('f')]);
@@ -111,8 +111,8 @@ fn ac1_f_toggles_the_pointer_on_the_cursor_line_and_esc_turns_it_off() {
 }
 
 #[test]
-fn ac1_the_dimming_is_the_one_a_spotlight_uses() {
-    let live = Live::from_code(&code20(), "rs", "t030-spot");
+fn the_dimming_is_the_one_a_spotlight_uses() {
+    let live = Live::from_code(&code20(), "rs", "spot");
     // A spotlight on 3-4 at step 1 vs the pointer on 3-4: same colors.
     live.command("spot 3-4");
     let spot = live.with(|app| {
@@ -133,8 +133,8 @@ fn ac1_the_dimming_is_the_one_a_spotlight_uses() {
 }
 
 #[test]
-fn ac1_with_a_selection_the_selection_stays_lit() {
-    let live = Live::from_code(&code20(), "rs", "t030-sel");
+fn with_a_selection_the_selection_stays_lit() {
+    let live = Live::from_code(&code20(), "rs", "sel");
     press(&live, &j(14));
     press(
         &live,
@@ -161,8 +161,8 @@ fn ac1_with_a_selection_the_selection_stays_lit() {
 }
 
 #[test]
-fn ac1_the_pointer_wins_over_a_focus_and_a_spotlight() {
-    let live = Live::from_code(&code20(), "rs", "t030-wins");
+fn the_pointer_wins_over_a_focus_and_a_spotlight() {
+    let live = Live::from_code(&code20(), "rs", "wins");
     live.command("focus 1-2");
     live.command("spot 1-2");
     press(&live, &j(9));
@@ -177,8 +177,8 @@ fn ac1_the_pointer_wins_over_a_focus_and_a_spotlight() {
 }
 
 #[test]
-fn ac2_follows_every_motion_and_the_mouse() {
-    let live = Live::from_code(&code20(), "rs", "t030-motions");
+fn follows_every_motion_and_the_mouse() {
+    let live = Live::from_code(&code20(), "rs", "motions");
     press(&live, &[KeyCode::Char('f')]);
     press(&live, &[KeyCode::Char('G')]);
     assert_eq!(pointer(&live), Some((20, 20)));
@@ -212,9 +212,9 @@ fn ac2_follows_every_motion_and_the_mouse() {
 }
 
 #[test]
-fn ac2_annotations_stay() {
+fn annotations_stay() {
     let code = "APP=prod\nPORT=8080\nKEY=demo-key-123\nLOG=info\n";
-    let live = Live::from_code(code, "sh", "t030-ann");
+    let live = Live::from_code(code, "sh", "ann");
     live.command("note 1 the app name");
     live.command("step 1");
     for present in [false, true] {
@@ -248,8 +248,8 @@ fn ac2_annotations_stay() {
 }
 
 #[test]
-fn ac3_presentation_mode_shows_only_the_pointer() {
-    let live = Live::from_code(&code20(), "rs", "t030-present");
+fn presentation_mode_shows_only_the_pointer() {
+    let live = Live::from_code(&code20(), "rs", "present");
     press(&live, &j(4));
     press(&live, &[KeyCode::Char('P'), KeyCode::Char('f')]);
     assert_eq!(pointer(&live), Some((5, 5)), "on the last cursor line");
@@ -273,8 +273,8 @@ fn ac3_presentation_mode_shows_only_the_pointer() {
 }
 
 #[test]
-fn ac4_never_part_of_the_document() {
-    let dir = scratch("t030-doc");
+fn never_part_of_the_document() {
+    let dir = scratch("doc");
     let src = dir.join("a.rs");
     std::fs::write(&src, code20()).unwrap();
     let doc = fs::open(src.to_str().unwrap()).unwrap().document;
@@ -363,9 +363,9 @@ fn exports(live: &Live, dir: &std::path::Path, tag: &str) -> Vec<(String, Vec<u8
 }
 
 #[test]
-fn ac5_no_export_draws_it() {
-    let dir = scratch("t030-export");
-    let live = Live::from_code(&code20(), "rs", "t030-export");
+fn no_export_draws_it() {
+    let dir = scratch("export");
+    let live = Live::from_code(&code20(), "rs", "export");
     live.with(|a| {
         a.image_exporter = Some(Box::new(|canvas, theme, format, title| {
             let svg = tiza_export::to_svg(
@@ -406,8 +406,8 @@ fn ac5_no_export_draws_it() {
 }
 
 #[test]
-fn ac6_agents_point_over_the_socket_and_status_reports_it() {
-    let live = Live::from_code(&code20(), "rs", "t030-socket");
+fn agents_point_over_the_socket_and_status_reports_it() {
+    let live = Live::from_code(&code20(), "rs", "socket");
     assert_eq!(live.api_ok("status", json!({}))["pointer"], Value::Null);
     let r = live.api_ok("pointer.set", json!({"line": 3}));
     assert_eq!(r["pointer"], json!({"line": 3, "to": 3, "by": "agent"}));
@@ -471,8 +471,8 @@ fn ac6_agents_point_over_the_socket_and_status_reports_it() {
 }
 
 #[test]
-fn ac6_mcp_point_at_and_clear_pointer() {
-    let live = Live::from_code(&code20(), "rs", "t030-mcp");
+fn mcp_point_at_and_clear_pointer() {
+    let live = Live::from_code(&code20(), "rs", "mcp");
     let mut mcp = McpClient::start(&live.socket);
     let names = mcp.tool_names();
     assert!(names.contains(&"point_at".to_string()), "{names:?}");
@@ -502,9 +502,9 @@ fn ac6_mcp_point_at_and_clear_pointer() {
 }
 
 #[test]
-fn corner_the_pointed_line_off_screen_scrolls_into_view() {
+fn the_pointed_line_off_screen_scrolls_into_view() {
     let code: String = (1..=80).map(|i| format!("let v{i} = {i};\n")).collect();
-    let live = Live::from_code(&code, "rs", "t030-scroll");
+    let live = Live::from_code(&code, "rs", "scroll");
     live.screen(100, 20);
     live.api_ok("pointer.set", json!({"line": 70}));
     let screen = live.screen(100, 20);
@@ -513,9 +513,9 @@ fn corner_the_pointed_line_off_screen_scrolls_into_view() {
 }
 
 #[test]
-fn corner_a_step_change_keeps_the_line_or_turns_it_off() {
+fn a_step_change_keeps_the_line_or_turns_it_off() {
     let code = "fn a() {\n    let x = 1;\n    let y = 2;\n    let z = 3;\n}\n";
-    let live = Live::from_code(code, "rs", "t030-steps");
+    let live = Live::from_code(code, "rs", "steps");
     live.api_ok(
         "move.add",
         json!({"at_step": 2, "action": "code.patch", "op": "insert", "after": "let x", "content": "    let w = 0;\n    let v = 0;"}),
@@ -552,7 +552,7 @@ fn corner_a_step_change_keeps_the_line_or_turns_it_off() {
     assert_eq!(live.with(|a| a.doc.step), 3);
     assert_eq!(pointer(&live), None, "its line disappeared");
     // Without moves: the same line across steps.
-    let live = Live::from_code(&code20(), "rs", "t030-steps2");
+    let live = Live::from_code(&code20(), "rs", "steps2");
     live.command("note 1 one");
     live.command("note 2 two");
     live.command("set a2 step=2");
@@ -563,8 +563,8 @@ fn corner_a_step_change_keeps_the_line_or_turns_it_off() {
 }
 
 #[test]
-fn corner_the_command_line_never_toggles_it_and_hides_an_agents_pointer() {
-    let live = Live::from_code(&code20(), "rs", "t030-cmd");
+fn the_command_line_never_toggles_it_and_hides_an_agents_pointer() {
+    let live = Live::from_code(&code20(), "rs", "cmd");
     press(&live, &[KeyCode::Char(':')]);
     live.type_text("ff");
     assert_eq!(pointer(&live), None, "f typed into the command line");
