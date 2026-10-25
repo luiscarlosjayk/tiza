@@ -11,5 +11,6 @@ Tiza is a terminal tool that draws annotations on code. To connect your client, 
 - Reads never wait for the presenter: `status`, `get_code`, `render_text`, `check` and the resources. A `check` can wait for another `check`.
 - Some requests fail at once and do not wait, for example an unknown method. The list is in [Supervised mode in the Socket API](../reference/socket-api.md#supervised-mode). Other bad parameters fail only when the presenter accepts the change.
 - An accepted call gives its usual result. For an annotation, `visible` and `shown_step` are as at the time of the acceptance.
-- A rejected call fails with the code `rejected`. The message tells if the presenter rejected the change or if 60 s passed. See [Error codes](../reference/socket-api.md#error-codes).
+- A rejected call fails with the code `rejected`. The message tells if the presenter rejected the change, if 60 s passed, or if supervised mode went off. See [Error codes](../reference/socket-api.md#error-codes).
+- Ask the presenter to turn supervised mode off. A `supervise.set` with `"enabled": false` waits for the presenter, as other changes do.
 - Do not send a rejected change again in a loop. Tell the presenter what you want to draw. Wait for the answer.

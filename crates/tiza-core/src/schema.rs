@@ -15,6 +15,7 @@ use crate::protocol::{
 
 /// Parameters of `supervise.set`.
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(deny_unknown_fields)]
 pub struct SuperviseParams {
     /// `true`: every mutating request waits for the presenter's y/n.
     pub enabled: bool,

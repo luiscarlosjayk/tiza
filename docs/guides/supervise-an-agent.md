@@ -19,10 +19,10 @@ Nothing opens over the code by itself. In presentation mode, `⏸ N to review ·
 - The call of the agent waits for your decision.
 - Tiza rejects a change that nobody decides in 60 s.
 - The agent can read at any time. `status`, `get_code`, `render_text`, `check` and the resources never wait.
-- Every request that changes the document or the screen waits, except `supervise.set`. The list is in [Supervised mode in the Socket API](../reference/socket-api.md#supervised-mode).
+- Every request that changes the document or the screen waits. The list is in [Supervised mode in the Socket API](../reference/socket-api.md#supervised-mode).
 - `tiza next`, `tiza prev` and `tiza goto` change the step, so they wait too.
-
-> **Warning:** An agent that uses the socket can turn supervised mode off with `supervise.set`. That request does not wait for your decision. Each change that waits then fails with `the presenter rejected this change (supervised mode)`. The status bar shows no message about it. Only `⏸` goes away. An agent that uses only the MCP tools cannot do this.
+- An agent or a script can ask to turn supervised mode off through the socket. That request waits for your decision too. The review shows it as `turn supervised mode off`.
+- Your own `:supervise off` does not wait.
 
 ## Keys of the review
 
@@ -78,7 +78,9 @@ a9: note L17 added by agent (src/queue.rs, not shown at step 2)
 - When `N` is 1, the message about the changes to review says `change` and `it`. The two messages with `proposals` say `proposal`.
 - `:supervise` with no word gives `off` in place of `on` when supervised mode is off.
 - When the terminal is narrower than 60 columns, the size message is only `needs 40×12`.
-- `SUMMARY` tells what the agent asked for, for example `add box L3-5`. `SHAPE` is the annotation and its lines, for example `box 3-5` or `note L13`.
+- `SUMMARY` tells what the agent asked for, for example `add box L3-5` or `turn supervised mode off`. `SHAPE` is the annotation and its lines, for example `box 3-5` or `note L13`.
+- When you accept `turn supervised mode off` and other changes still wait, Tiza rejects them. The message then ends with `; N waiting changes rejected`.
+- `a` accepts `turn supervised mode off` after the other changes in the review, so it does not reject them.
 
 The messages about annotations that you cannot see end with one of these:
 

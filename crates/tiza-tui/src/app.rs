@@ -6034,8 +6034,9 @@ impl App {
 
     /// Entry point of the event loop: answers now, or (supervised mode and a
     /// mutating method) parks the request as a proposal until the presenter
-    /// decides. `supervise.*`, read-only methods and a method that is not in
-    /// `METHODS` are never parked.
+    /// decides. Read-only methods, `supervise.status`, a `supervise.set` that
+    /// turns supervised mode on and a method that is not in `METHODS` are
+    /// never parked.
     pub fn handle_ipc(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
         self.handle_ipc_at(req, reply, std::time::Instant::now());
     }
@@ -6055,14 +6056,16 @@ impl App {
         }
         // An unknown method is answered at once: there is nothing to
         // review.
+        // `supervise.set` that turns supervised mode off waits too: an
+        // agent must not end the review on its own.
         let parked = self.supervised
             && !READ_ONLY_METHODS.contains(&req.method.as_str())
-            && !req.method.starts_with("supervise.")
+            && (!req.method.starts_with("supervise.") || turns_supervision_off(&req))
             && METHODS.iter().any(|m| m.0 == req.method);
-        // A `scene.clear` with parameters that it cannot read and a
-        // `scene.put` with a newer schema are refused now, not parked as a
-        // change that would not happen. Other bad parameters still fail
-        // when the presenter accepts the change.
+        // A `scene.clear` or a `supervise.set` with parameters that it
+        // cannot read, and a `scene.put` with a newer schema, are refused
+        // now, not parked as a change that would not happen. Other bad
+        // parameters still fail when the presenter accepts the change.
         if parked && let Some(e) = refused_before_review(&req) {
             let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
             return;
@@ -6258,6 +6261,8 @@ impl App {
         }
         let p = self.proposals.remove(i);
         let mutates_annotation = annotation_verb(&p.req.method).is_some();
+        let turns_off = turns_supervision_off(&p.req);
+        let rejected_before = self.decided.1;
         let resp = self.handle_request(p.req);
         let ok = resp.error.is_none();
         // Accepted but not on screen: the acceptance says where.
@@ -6267,6 +6272,16 @@ impl App {
                 .map(|why| self.hidden_tail(&why, &p.summary))
                 .unwrap_or_default(),
             _ => String::new(),
+        };
+        // A turn-off rejects what still waited: the presenter is told.
+        let rejected = self.decided.1 - rejected_before;
+        let tail = if turns_off && rejected > 0 {
+            format!(
+                "{tail}; {rejected} waiting change{} rejected",
+                if rejected == 1 { "" } else { "s" }
+            )
+        } else {
+            tail
         };
         let _ = p.reply.send(resp);
         self.decided.0 += 1;
@@ -6302,8 +6317,19 @@ impl App {
     /// Accepts (`accept`) or rejects the waiting proposals with these ids,
     /// in their order in the queue; how many it decided.
     pub fn decide_proposals(&mut self, ids: &[u64], accept: bool) -> usize {
+        // An accepted turn-off rejects what still waits: the presenter's
+        // other choices in the same decision go first.
+        let mut ids = ids.to_vec();
+        if accept {
+            ids.sort_by_key(|id| {
+                self.proposals
+                    .iter()
+                    .find(|p| p.id == *id)
+                    .is_some_and(|p| turns_supervision_off(&p.req))
+            });
+        }
         let mut n = 0;
-        for id in ids {
+        for id in &ids {
             let Some(i) = self.proposals.iter().position(|p| p.id == *id) else {
                 continue;
             };
@@ -6317,20 +6343,31 @@ impl App {
         n
     }
 
-    pub fn accept_all_proposals(&mut self) -> usize {
-        let mut n = 0;
-        while self.accept_proposal().is_some() {
-            n += 1;
+    /// Supervised mode just went off (`:supervise off`, or an agent's
+    /// `supervise.set` that the presenter accepted): each waiting change is
+    /// answered now. One that asked for this very thing gets the status, as
+    /// it happened; the others are rejected, as the presenter did not decide
+    /// them. Returns how many it rejected.
+    fn answer_proposals_when_off(&mut self) -> usize {
+        let mut rejected = 0;
+        for p in std::mem::take(&mut self.proposals) {
+            let resp = if turns_supervision_off(&p.req) {
+                let mut st = self.supervise_status();
+                st["message"] = json!("supervised mode off");
+                Response::ok(p.req.id.clone(), st)
+            } else {
+                rejected += 1;
+                self.decided.1 += 1;
+                Response::err(
+                    p.req.id.clone(),
+                    "rejected",
+                    "supervised mode went off before the presenter decided this change",
+                )
+            };
+            let _ = p.reply.send(resp);
         }
-        n
-    }
-
-    pub fn reject_all_proposals(&mut self) -> usize {
-        let mut n = 0;
-        while self.reject_proposal().is_some() {
-            n += 1;
-        }
-        n
+        self.close_review_if_empty();
+        rejected
     }
 
     fn close_review_if_empty(&mut self) {
@@ -6390,7 +6427,7 @@ impl App {
         if on {
             "supervised mode on: agent changes wait for y/n (:review lists them)".into()
         } else {
-            let n = self.reject_all_proposals();
+            let n = self.answer_proposals_when_off();
             if n > 0 {
                 format!(
                     "supervised mode off; {n} pending proposal{} rejected",
@@ -6579,11 +6616,8 @@ impl App {
                 })
             }
             "supervise.set" => {
-                let on = params
-                    .get("enabled")
-                    .and_then(|v| v.as_bool())
-                    .ok_or_else(|| Error::Invalid("`enabled` (true|false) is required".into()))?;
-                let msg = self.set_supervised(on);
+                let p = supervise_params(&params)?;
+                let msg = self.set_supervised(p.enabled);
                 let mut st = self.supervise_status();
                 st["message"] = json!(msg);
                 st
@@ -7255,6 +7289,7 @@ pub fn proposal_summary(req: &Request) -> String {
         },
         "scene.put" => "replace the whole document".into(),
         "scene.patch" => "patch the document".into(),
+        "supervise.set" => "turn supervised mode off".into(),
         "style.set" => format!("define style {}", s("name")),
         "move.add" => format!(
             "add a {} move at step {}",
@@ -7574,11 +7609,32 @@ fn clear_params(params: &Value) -> Result<tiza_core::schema::ClearParams, Error>
     parse(params.clone())
 }
 
+/// A `supervise.set` that may turn supervised mode off: the one setting
+/// change that waits for the presenter. Anything but a valid "on" counts,
+/// so that no form of the parameters gets past the review; wrong ones are
+/// then refused before it.
+fn turns_supervision_off(req: &Request) -> bool {
+    req.method == "supervise.set" && supervise_params(&req.params).map_or(true, |p| !p.enabled)
+}
+
+/// The parameters of `supervise.set`: a JSON object with `enabled`. serde
+/// would read an array (`[false]`) as the struct, past the review.
+fn supervise_params(params: &Value) -> Result<tiza_core::schema::SuperviseParams, Error> {
+    if !params.is_object() {
+        return Err(Error::Invalid(format!(
+            "{}send a JSON object, such as {{\"enabled\": false}}",
+            tiza_core::error::INVALID_PARAMETERS
+        )));
+    }
+    parse(params.clone())
+}
+
 /// What makes a request fail before it changes anything, checked before
 /// supervised mode parks it.
 fn refused_before_review(req: &Request) -> Option<Error> {
     match req.method.as_str() {
         "scene.clear" => clear_params(&req.params).err(),
+        "supervise.set" => supervise_params(&req.params).err(),
         "scene.put" => req
             .params
             .get("document")

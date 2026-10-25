@@ -1194,7 +1194,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "supervise.set",
-        "Turns supervised mode on or off (`enabled`): while on, every mutating request waits for the presenter's y/n in the TUI (60 s, then `rejected`); turning it off rejects what is pending",
+        "Turns supervised mode on or off (`enabled`): while on, every mutating request waits for the presenter's y/n in the TUI (60 s, then `rejected`). Turning it off waits too, while it is on; when it goes off, what is pending is rejected. Turning it on is at once",
     ),
     (
         "supervise.status",

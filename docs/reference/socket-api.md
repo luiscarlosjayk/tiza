@@ -214,7 +214,7 @@ Tiza refuses a `scene put` in these saving cases. The error code is `invalid_arg
 
 ### Keys that Tiza does not know
 
-These methods refuse a key that they do not know: `annotation.update`, `scene.clear`, `scene.get`, `scene.patch` and `pointer.set`. The `move` object of `annotation.update` also refuses one. The error is `invalid_argument`, and its message names the keys that the method knows. `scene.get` knows no key.
+These methods refuse a key that they do not know: `annotation.update`, `scene.clear`, `scene.get`, `scene.patch`, `pointer.set` and `supervise.set`. The `move` object of `annotation.update` also refuses one. The error is `invalid_argument`, and its message names the keys that the method knows. `scene.get` knows no key.
 
 ## Results
 
@@ -332,7 +332,8 @@ These messages come from the socket itself. The other messages come from each me
 | `` unknown method (`api.methods` lists them) `` | `invalid_argument` | The method does not exist. |
 | `invalid parameters:` | `invalid_argument` | The parameters do not have the form of the method. |
 | `check: replaced by a newer check (width N) before it ran; ask again` | `busy` | A newer `check` replaced this one. |
-| `the presenter rejected this change (supervised mode)` | `rejected` | The presenter rejected the change, or turned supervised mode off. |
+| `the presenter rejected this change (supervised mode)` | `rejected` | The presenter rejected the change. |
+| `supervised mode went off before the presenter decided this change` | `rejected` | Supervised mode went off while the change waited. |
 | `proposal pN expired after 60s without a decision (supervised mode)` | `rejected` | The presenter did not decide in 60 s. |
 | `check: could not start the check:` | `unavailable` | The instance could not start the thread of the `check`. |
 | `METHOD: a bug in Tiza stopped this request (a panic); please report it` | `internal` | A bug stopped the request. |
@@ -449,14 +450,16 @@ These methods wait:
 - Steps: `step.set`, `step.next`, `step.prev`, `step.goto`.
 - Focus and pointer: `focus.set`, `pointer.set`, `pointer.clear`.
 - Theme and follow mode: `theme.set`, `follow.set`.
+- Supervised mode: `supervise.set` with `"enabled": false`. Its summary in the review is `turn supervised mode off`.
 
-- The other methods never wait. They are the methods that read, and `supervise.set` and `supervise.status`.
+- The other methods never wait. They are the methods that read, `supervise.set` with `"enabled": true` and `supervise.status`.
 - An accepted request gives its usual result. A rejected request fails with `rejected`.
-- `supervise.set` with `false` rejects the changes that wait.
+- When supervised mode goes off, Tiza rejects each change that waits. A waiting `supervise.set` with `"enabled": false` gets its usual result, not `rejected`.
 - Some requests get their error at once and do not wait:
   - A method that does not exist. It gets `invalid_argument` with ``unknown method (`api.methods` lists them)``.
   - A `scene.clear` with wrong parameters.
   - A `scene.put` with a newer `schema`.
+  - A `supervise.set` with wrong parameters, for example an unknown key or no `enabled`.
 - Other wrong parameters still wait. They fail when the presenter accepts the change.
 
 ## How it works
