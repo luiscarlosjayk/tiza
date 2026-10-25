@@ -149,7 +149,7 @@ def time_tui(binary, runs, tmp):
     return samples
 
 
-def frame_median(test="t-054", name="ac1_a_frame_lays_out_once_and_does_not_highlight", label="median frame"):
+def frame_median(test="cache", name="one_layout_per_frame::a_frame_lays_out_once_and_does_not_highlight", label="median frame"):
     """A qa test's own measurement: median of 21 frames, release build of the
     qa crate (the authoring and the presentation frame tests)."""
     r = subprocess.run(
@@ -158,7 +158,7 @@ def frame_median(test="t-054", name="ac1_a_frame_lays_out_once_and_does_not_high
         cwd=ROOT, env=cargo_env(), capture_output=True, text=True, timeout=3600)
     m = re.search(label + r": ([\d.]+)(ns|µs|us|ms|s)\b", r.stderr + r.stdout)
     if r.returncode != 0 or not m:
-        raise RuntimeError(f"qa/tests/{test}.rs failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
+        raise RuntimeError(f"qa/tests/{test} ({name}) failed or printed no median:\n{(r.stderr + r.stdout)[-1500:]}")
     scale = {"ns": 1e-6, "µs": 1e-3, "us": 1e-3, "ms": 1.0, "s": 1000.0}[m.group(2)]
     return float(m.group(1)) * scale
 
@@ -237,10 +237,10 @@ def main():
         if wants("tui_first_frame"):
             results["tui_first_frame"] = summary(time_tui(binary, a.runs, tmp))
             print(f"{'tui_first_frame':<34} {results['tui_first_frame']['median_ms']:>9.1f} ms", flush=True)
-    if not a.skip_frame and wants("t054_frame_median"):
+    if not a.skip_frame and wants("frame_median"):
         ms = frame_median()
-        results["t054_frame_median"] = {"median_ms": round(ms, 2), "runs": 21}
-        print(f"{'t054_frame_median':<34} {ms:>9.2f} ms", flush=True)
+        results["frame_median"] = {"median_ms": round(ms, 2), "runs": 21}
+        print(f"{'frame_median':<34} {ms:>9.2f} ms", flush=True)
     # Presentation mode on a 2,000-line document with 10 moves over 20 steps:
     # the take's geometry is computed once, not once per frame.
     if not a.skip_frame and wants("present_moves_frame"):

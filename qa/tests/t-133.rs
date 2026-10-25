@@ -419,7 +419,7 @@ fn ac2_ac3_ac5_committed_bench_baseline_covers_every_scenario() {
             "render_txt_typescript_3000_lines",
             "render_gif_example",
             "tui_first_frame",
-            "t054_frame_median",
+            "frame_median",
         ] {
             assert!(
                 e["scenarios"][s]["median_ms"].as_f64().unwrap_or(0.0) > 0.0,

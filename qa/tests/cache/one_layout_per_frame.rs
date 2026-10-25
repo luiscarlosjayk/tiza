@@ -1,4 +1,4 @@
-//! t-054 — Render budget: a frame in under 16 ms with 2,000 lines and 200
+//! Render budget: a frame in under 16 ms with 2,000 lines and 200
 //! annotations (release build).
 //!
 //! Acceptance criteria:
@@ -90,7 +90,7 @@ fn median(mut v: Vec<Duration>) -> Duration {
 }
 
 #[test]
-fn ac1_a_frame_lays_out_once_and_does_not_highlight() {
+fn a_frame_lays_out_once_and_does_not_highlight() {
     // What made a frame slow is checked, not a time budget, which failed on
     // a loaded machine (the time is the bench's to judge: `scripts/bench.sh`
     // reads the median printed below). A frame lays the document out once
@@ -98,7 +98,7 @@ fn ac1_a_frame_lays_out_once_and_does_not_highlight() {
     // takes far less than highlighting the code: both are timed here, in
     // turns, so a load slows both alike.
     let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
-    let live = big_live("t054-budget");
+    let live = big_live("budget");
     let _ = live.screen(120, 40); // warm the caches (syntect grammars, highlight)
     let (code, language, theme) = live.with(|a| {
         (
@@ -149,7 +149,7 @@ fn ac1_a_frame_lays_out_once_and_does_not_highlight() {
 }
 
 #[test]
-fn ac2_highlight_is_memoized_and_invalidated() {
+fn highlight_is_memoized_and_invalidated() {
     let _alone = CACHE.write().unwrap_or_else(|e| e.into_inner());
     let code: Vec<String> = big_doc().lines().map(str::to_string).collect();
     let a = highlight_cached(&code, "rs", EmbeddedThemeName::OneHalfDark);
@@ -176,9 +176,9 @@ fn ac2_highlight_is_memoized_and_invalidated() {
 }
 
 #[test]
-fn ac3_status_bar_reuses_the_layout() {
+fn status_bar_reuses_the_layout() {
     let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
-    let live = big_live("t054-status");
+    let live = big_live("status");
     live.with(|a| a.size = (120, 40));
     // The warnings computed from a given layout equal the standalone ones.
     let (from_layout, standalone) = live.with(|a| {
@@ -204,7 +204,7 @@ fn ac3_status_bar_reuses_the_layout() {
 }
 
 #[test]
-fn ac4_cells_are_inline_and_long_clusters_still_work() {
+fn cells_are_inline_and_long_clusters_still_work() {
     let _shared = CACHE.read().unwrap_or_else(|e| e.into_inner());
     assert!(matches!(Sym::new("╭"), Sym::Inline { .. }));
     assert!(matches!(Sym::new("名"), Sym::Inline { .. }));

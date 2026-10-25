@@ -29,7 +29,7 @@
         "tui_first_frame": {
           "median_ms": 20.49
         },
-        "t054_frame_median": {
+        "frame_median": {
           "median_ms": 3.12,
           "runs": 21
         },
@@ -91,7 +91,7 @@
           "max_ms": 34.37,
           "runs": 7
         },
-        "t054_frame_median": {
+        "frame_median": {
           "median_ms": 6.54,
           "runs": 21
         }
