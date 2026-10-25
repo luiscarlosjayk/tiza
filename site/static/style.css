@@ -212,6 +212,14 @@ img { max-width: 100%; height: auto; }
 .doc hr { border: 0; border-top: 1px solid var(--rule); margin: 2em 0; }
 .doc blockquote { margin: 0 0 1em; padding: 4px 16px; border-left: 3px solid var(--accent); color: var(--fg-muted); background: var(--bg-side); border-radius: 0 var(--radius) var(--radius) 0; }
 .doc blockquote p { margin: 0.5em 0; }
+/* Options of a command: each option is a block with space around it, and
+   its text is indented under the option. */
+.doc dl { margin: 0 0 1.4em; }
+.doc dt { margin: 1.3em 0 0; font-weight: 600; }
+.doc dt:first-child { margin-top: 0.4em; }
+.doc dd { margin: 0.35em 0 0 1.25em; padding-left: 12px; border-left: 2px solid var(--rule); }
+.doc dd > p { margin: 0 0 0.4em; }
+.doc dd > p:last-child { margin-bottom: 0; }
 
 code, kbd, pre { font-family: var(--mono); }
 .doc :not(pre) > code {
