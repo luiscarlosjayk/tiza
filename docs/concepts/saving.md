@@ -4,29 +4,30 @@ Tiza saves each change to the document when you make it. This page tells when Ti
 
 ## Autosave
 
-Autosave is on when you open a file. Tiza writes each change to the `.tiza` document next to the source file. For example, `tiza src/main.rs` saves to `src/main.rs.tiza`.
+Autosave is on when you open a file, except with `--no-save`. Tiza writes each change to the `.tiza` document next to the source file. For example, `tiza src/main.rs` saves to `src/main.rs.tiza`.
 
 Type `:autosave` to see the state. The `status` reply of the API also has the field `autosave`.
 
-## When Tiza does not save
+## When changes are not saved
 
-Four cases stop autosave. One rule applies to all four: the changes stay in memory until you save them or quit.
+In these cases, a change stays in memory and is not on disk:
 
-| Case | How it starts | Status bar |
+| Case | How it starts | Status bar after a change |
 |---|---|---|
-| No-save mode | `tiza FILE --no-save` | `no-save`, and `unsaved (:saveas PATH · :q! discards)` after a change |
-| Autosave off | `:autosave off` | `autosave off`, and `• unsaved (:w)` after a change |
-| Read-only document | The `.tiza` file or its folder is read-only. | `read-only • unsaved (:w)` |
-| A document from an agent | A `scene put` of a document from another file, or with code that is not the same as the file on disk | `• unsaved (:w)` |
+| No-save mode | `tiza FILE --no-save` | `unsaved (:saveas PATH · :q! discards)` |
+| Autosave off | `:autosave off` | `unsaved (:w)` |
+| A document from an agent | A `scene put` that turns autosave off | `unsaved (:w)` |
+| A failed save | A save that cannot write the `.tiza` file | `read-only • unsaved (:w)` |
 
-- **No-save mode** keeps the document on disk as it is. Use it to annotate an example or a demo. `:w` writes over the open document, so the status bar tells you to use `:saveas PATH`. After `:saveas PATH`, Tiza saves each change to the new file.
+- Before a change, the status bar shows `no-save` in no-save mode and `autosave off` with autosave off. After a change, the status bar text in the table replaces it.
+- **No-save mode** keeps the document on disk as it is. Use it to annotate an example or a demo. `:w` and `:wq` write over the open document, so the status bar tells you to use `:saveas PATH`. After `:saveas PATH`, Tiza saves each change to the new file.
 - **Autosave off** keeps your changes until you save them. `:w` saves them. `:autosave on` starts autosave again.
-- **A read-only document** has its own sequence of messages. See [A read-only document](#a-read-only-document).
-- **A document from an agent** is on screen. Tiza never writes it over the open document. The message starts with `not saved — autosave off:` and gives the reason.
+- **A document from an agent** is on screen. See [Agents and saving](#agents-and-saving).
+- **A failed save** does not stop autosave. Tiza tries again at each change. See [A failed save](#a-failed-save).
 
 ## Save commands
 
-The commands work as in Vim. No command writes over an existing file without `!`.
+The commands work as in Vim.
 
 | Command | What it does |
 |---|---|
@@ -37,9 +38,13 @@ The commands work as in Vim. No command writes over an existing file without `!`
 | `:sav! PATH` | Does the same over an existing file. |
 | `:wq` | Saves, then quits. |
 | `:wq PATH` | Writes a copy to `PATH`, then quits. |
+| `:wq! PATH` | Writes the copy over an existing file, then quits. |
 | `:autosave on` | Starts autosave and saves the changes that are not saved. |
 | `:autosave off` | Stops autosave. |
 | `:autosave` | Shows the state of autosave. |
+
+- A command that takes a `PATH` does not write over an existing file without `!`.
+- When `PATH` is the open document, `:w PATH` and `:saveas PATH` save to it, as `:w` does.
 
 The status bar shows one of these messages:
 
@@ -56,24 +61,30 @@ The status bar shows one of these messages:
 - A relative path starts at the folder where you started Tiza.
 - `~` at the start of a path is your home folder.
 - Tiza makes the folders that are missing.
-- The message shows the full path. When the path is too long, Tiza shows its middle folders as `…`.
-- A copy writes its code reference relative to its own folder, for example `../main.rs`. Its linked files and `follows` use the same rule.
+- `wrote a copy to` and `saved as` show the full path. When the path is too long, Tiza shows its middle folders as `…`.
+- `saved to` shows the path of the open document as you opened it. `PATH exists` shows the path as you typed it.
+- A copy writes a relative code reference relative to its own folder, for example `../main.rs`. Its linked files and `follows` use the same rule. An absolute reference stays absolute.
 - When the folder of the copy and the folder of the code share only the root, the copy uses an absolute path. Thus the copy opens from any folder.
+- When the relative form of a linked file would name the main file, the copy uses an absolute path.
 
 The file that `:saveas` moves to uses the same path rules as a copy.
 
 ## Quitting
 
-A quit command does not save more than the current mode saves. With autosave on, each change is on disk when you make it, so quitting writes nothing more. `:wq` saves because it includes `:w`.
+A quit command does not save more than the current mode saves. With autosave on and no failed save, each change is on disk when you make it. Then quitting writes nothing more. `:wq` saves because it includes `:w`.
 
-| Command | Autosave on | Autosave off or no-save mode | Read-only document |
+| Command | Autosave on | Autosave off or no-save mode | After a failed save |
 |---|---|---|---|
 | `:q` | Quits. | Refuses while changes are not saved. | Refuses while changes are not saved. |
-| `:wq` | Saves, then quits. | Saves, then quits. | Refuses with `FILE is read-only`. |
+| `:wq` | Saves, then quits. | Saves, then quits. | Tries the save again, and quits only when it works. |
 | `:q!` | Quits. | Quits without saving and prints what it did not save. | Quits without saving and prints what it did not save. |
-| Ctrl-C | Quits. | Quits without saving and prints what it did not save. | Tries the save one more time, then quits. |
+| Ctrl-C | Quits. | Quits without saving and prints what it did not save. | With autosave on, tries the save one more time, then quits. |
 
-Only Ctrl-C tries a failed save again. `:q!` never does. When the save fails again, Ctrl-C quits as `:q!` does.
+- A move is stale when it does not match the code after a reload or a paste. While a move is stale, `:q` and `:wq` refuse in every mode.
+- When an overlay, the command line or a selection is open, Ctrl-C closes it and does not quit. Ctrl-C also cancels an arrow that you draw.
+- `:wq`, Ctrl-C and a closed terminal try a failed save again. Ctrl-C and a closed terminal do this only with autosave on. `:q!` never tries.
+- When the save fails again, Tiza prints `tiza: could not save FILE: ERROR` before the line of what it did not save.
+- When `:wq` cannot save a read-only `.tiza` file, it shows `FILE is read-only`. For other failures, such as a read-only folder, it shows the error of the system.
 
 When `:q` refuses, the status bar shows one of these messages:
 
@@ -81,9 +92,9 @@ When `:q` refuses, the status bar shows one of these messages:
 |---|---|
 | Autosave off | `unsaved changes (autosave off): :w saves to FILE, :saveas PATH saves elsewhere, :q! quits without saving` |
 | No-save mode | `unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them` |
-| Read-only document | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — FILE` |
+| After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — FILE` |
 
-When Tiza quits without saving, it prints a line on stderr:
+When Tiza quits without saving, it prints a line on stderr. For example:
 
 ```
 tiza: quit without saving main.rs.tiza: 1 change not saved (note a1)
@@ -91,18 +102,29 @@ tiza: quit without saving main.rs.tiza: 1 change not saved (note a1)
 
 With autosave off, `:wq PATH` writes the copy and prints the same line for the open document.
 
-## A read-only document
+## A failed save
 
-Tiza does not save a `.tiza` file that is read-only, or a file in a read-only folder.
+A save fails when the `.tiza` file or its folder is read-only. It also fails for other reasons, for example a full disk. Autosave stays on, and Tiza tries again at each change.
 
-1. The first autosave that fails shows `read-only: could not save FILE — :saveas PATH to save elsewhere`. Tiza shows this message one time.
+1. The first save that fails shows `read-only: could not save FILE — :saveas PATH to save elsewhere`. Tiza shows this message one time.
 2. After that, the status bar shows the message of each command again.
-3. The status bar keeps `read-only • unsaved (:w)` until a save works.
-4. When the file is writable again, the next autosave works. Tiza shows `saved to FILE` one time and removes `read-only • unsaved (:w)` from the status bar.
+3. The status bar keeps `read-only • unsaved (:w)` until a save works. With no unsaved change, it shows `read-only`.
+4. When the file is writable again, the next autosave works. With autosave off, the next `:w` that works does the same. Tiza shows `saved to FILE` one time and removes `read-only • unsaved (:w)` from the status bar.
+
+After a failed save, `:saveas PATH` shows `saved to PATH`, not `saved as PATH`.
 
 ## Agents and saving
 
-- A `scene put` of a document from another file stops autosave. See [When Tiza does not save](#when-tiza-does-not-save).
+An agent can send a document with `scene put`. Autosave never writes that document over the open document. `:w` writes it over the open document on purpose.
+
+| Case | Message |
+|---|---|
+| The code of the document comes from another source. | `another document loaded: autosave off (:w saves over FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
+| The code sent is not the same as the file on disk. | `not saved — autosave off: REASON (:w saves it embedded in FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
+| The code sent is not the same as the file on disk, and autosave is off already. | `not saved: REASON (shown embedded)` |
+
+- With follow mode on, a document from another source also turns follow mode off. The message says so.
+- When the code sent is the copy that Tiza loaded, and only the file changed on disk, the code stays a code reference. Autosave goes on.
 - After a `scene get` and a `scene put` of the open document, a document that reads its code from a file still reads it from the file. Tiza embeds nothing.
 - A `scene put` that changes nothing writes nothing.
 
@@ -110,7 +132,11 @@ Tiza does not save a `.tiza` file that is read-only, or a file in a read-only fo
 
 Tiza quits as with Ctrl-C when its terminal closes. A closed pane or tab and a lost SSH session are examples.
 
-Tiza cannot print to that terminal. It writes the stderr line to `panics.log` in its runtime directory. The directory is `$XDG_RUNTIME_DIR/tiza/`. When that variable is not set, it is `$TMPDIR/tiza/` or `/tmp/tiza/`.
+Tiza cannot print to that terminal. It writes its lines to `panics.log` in its runtime directory. Each line starts with `the terminal went away: `.
+
+The runtime directory is `$XDG_RUNTIME_DIR/tiza/`. When that variable is empty or not set, it is `$TMPDIR/tiza/`, or else `/tmp/tiza/`.
+
+When Tiza gets a hang-up signal and its terminal is still open, it prints on that terminal.
 
 ## What never writes
 

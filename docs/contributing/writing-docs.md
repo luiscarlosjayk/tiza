@@ -181,9 +181,10 @@ Do these steps before you send a rewrite for review:
 1. Make a fact map. List each claim of the old text, and write where it is in the new text.
 2. Do not lose a fact, and do not change one. A new fact needs a check in the binary or in the code. When the new text adds a count or drops a condition, check it against the tests too.
 3. Run each command of the page against the built binary, in a pseudo-terminal. Check each other claim against the code or a test.
-4. Write down the claims that you could not check.
-5. Find the links and the anchors to the page. Keep each anchor, or change each link in the same commit.
-6. Look at the page at desktop width and at 390 pixels, in a GitHub-like preview.
-7. Check the style: this guide, the glossary and the spelling "color".
+4. List each count, each absolute word (all, every, never, only, one rule) and each merged case in the new text. Check each one against the code or a test.
+5. Write down the claims that you could not check.
+6. Find the links and the anchors to the page. Keep each anchor, or change each link in the same commit.
+7. Look at the page at desktop width and at 390 pixels, in a GitHub-like preview.
+8. Check the style: this guide, the glossary and the spelling "color".
 
 Keep the fact map and the preview out of the repo. Send them with the change to the person who reviews it.
