@@ -1235,7 +1235,7 @@
           "OverrideValue": {
             "anyOf": [
               {
-                "description": "`#rrggbb`, `#rgb`, `rgb(r, g, b)`, a palette or ANSI name, or\n`reset` (the terminal's default colour; exports fall back).",
+                "description": "`#rrggbb`, `#rgb`, `rgb(r, g, b)`, an ANSI name (`red`,\n`bright-blue`…), `ansiN`, or `reset` (the terminal's default color;\nexports fall back). Not a palette name such as `orange`.",
                 "type": "string"
               },
               {
@@ -1494,7 +1494,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colors, syntax on the terminal's\ncolors. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]
@@ -3995,7 +3995,7 @@
           "OverrideValue": {
             "anyOf": [
               {
-                "description": "`#rrggbb`, `#rgb`, `rgb(r, g, b)`, a palette or ANSI name, or\n`reset` (the terminal's default colour; exports fall back).",
+                "description": "`#rrggbb`, `#rgb`, `rgb(r, g, b)`, an ANSI name (`red`,\n`bright-blue`…), `ansiN`, or `reset` (the terminal's default color;\nexports fall back). Not a palette name such as `orange`.",
                 "type": "string"
               },
               {
@@ -4236,7 +4236,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colors, syntax on the terminal's\ncolors. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]
@@ -4471,7 +4471,7 @@
               },
               {
                 "const": "terminal",
-                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colours, syntax on the terminal's\ncolours. Only meaningful in the TUI; exports fall back to dark/light.",
+                "description": "The host terminal's own palette: default background and\nforeground, roles on the 16 ANSI colors, syntax on the terminal's\ncolors. Only meaningful in the TUI; exports fall back to dark/light.",
                 "type": "string"
               }
             ]

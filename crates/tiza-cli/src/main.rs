@@ -73,9 +73,9 @@ struct Cli {
 enum ThemeArg {
     Dark,
     Light,
-    /// The host terminal's own palette (TUI only; exports fall back to dark/light)
+    /// The palette of the terminal. A file has no such palette, so an export uses dark or light
     Terminal,
-    /// Follow the terminal's background: light or dark by luminance (TUI only)
+    /// Follow the background of the terminal. `tiza render` exports the theme of the document, else dark
     Auto,
 }
 
@@ -196,7 +196,7 @@ enum Cmd {
         width: Option<usize>,
         #[arg(long, value_enum)]
         format: Option<Format>,
-        /// dark or light (terminal/auto have no palette outside the terminal: dark is used)
+        /// Dark or light. With auto, Tiza exports the theme of the document, else dark. With terminal, it exports dark
         #[arg(long, value_enum)]
         theme: Option<ThemeArg>,
         /// Per-token theme overrides from a TOML file for this export (instead of the document's)
@@ -624,7 +624,7 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the GIF")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colours{}{timed_note}",
+                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colors{}{timed_note}",
                             bytes.len(),
                             report.frames,
                             if report.frames == 1 { "" } else { "s" },

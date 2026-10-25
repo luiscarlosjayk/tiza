@@ -130,7 +130,7 @@ impl Theme {
     }
 
     /// The host terminal's palette: default background and text,
-    /// the roles on the 16 ANSI colours, syntax on the terminal's colours
+    /// the roles on the 16 ANSI colors, syntax on the terminal's colors
     /// (bat's `ansi` theme), so Tiza looks like the rest of the terminal.
     /// `host_dark` picks the tint behind highlights and the status bar
     /// (bright black on a dark terminal, white on a light one).
@@ -273,7 +273,7 @@ impl Theme {
         out.palette.retain(|_, c| host_color(*c).is_none());
         let notice = (!replaced.is_empty()).then(|| {
             format!(
-                "theme tokens set to a terminal colour have no value in an export ({}): the {} theme's are used",
+                "theme tokens set to a terminal color have no value in an export ({}): the {} theme's are used",
                 replaced.join(", "),
                 if base.name == ThemeName::Light { "light" } else { "dark" }
             )
@@ -426,8 +426,9 @@ impl Theme {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, schemars::JsonSchema)]
 #[serde(untagged)]
 pub enum OverrideValue {
-    /// `#rrggbb`, `#rgb`, `rgb(r, g, b)`, a palette or ANSI name, or
-    /// `reset` (the terminal's default colour; exports fall back).
+    /// `#rrggbb`, `#rgb`, `rgb(r, g, b)`, an ANSI name (`red`,
+    /// `bright-blue`…), `ansiN`, or `reset` (the terminal's default color;
+    /// exports fall back). Not a palette name such as `orange`.
     Color(String),
     /// Overrides that apply only when this base theme is active.
     Table(BTreeMap<String, String>),
@@ -519,10 +520,10 @@ pub fn parse_color(text: &str) -> Result<Rgb, String> {
         return match hex.len() {
             6 => u32::from_str_radix(hex, 16)
                 .map(Rgb::hex)
-                .map_err(|_| format!("{text}: not a hex colour")),
+                .map_err(|_| format!("{text}: not a hex color")),
             3 => {
-                let v = u32::from_str_radix(hex, 16)
-                    .map_err(|_| format!("{text}: not a hex colour"))?;
+                let v =
+                    u32::from_str_radix(hex, 16).map_err(|_| format!("{text}: not a hex color"))?;
                 let (r, g, b) = ((v >> 8) & 0xF, (v >> 4) & 0xF, v & 0xF);
                 Ok(Rgb((r * 17) as u8, (g * 17) as u8, (b * 17) as u8))
             }

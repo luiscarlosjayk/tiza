@@ -200,7 +200,7 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 | `theme KEY: VALUE: use #rrggbb, rgb(r, g, b), an ANSI name (red, bright-blue…), ansiN or reset` | A token has a value that Tiza cannot read. |
 | `theme KEY: OLD reads at R:1 on the background, pushed to NEW for 4.5:1` | A text token was too faint, and Tiza changed it. |
 | `the terminal theme has no palette outside the terminal: exported with NAME` | An export of the terminal theme used `dark` or `light`. |
-| `theme tokens set to a terminal colour have no value in an export (KEYS): the NAME theme's are used` | An export replaced the ANSI and `reset` tokens. |
+| `theme tokens set to a terminal color have no value in an export (KEYS): the NAME theme's are used` | An export replaced the ANSI and `reset` tokens. |
 | `theme= must be dark or light` | `:export` got `theme=terminal` or another name. |
 | `tiza: config ignored: PATH` | Tiza cannot read or parse the config file. |
 | `tiza: could not open FILE` | A value in `theme_overrides` of the document is not a string. |

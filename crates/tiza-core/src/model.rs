@@ -243,8 +243,8 @@ pub enum ThemeName {
     Dark,
     Light,
     /// The host terminal's own palette: default background and
-    /// foreground, roles on the 16 ANSI colours, syntax on the terminal's
-    /// colours. Only meaningful in the TUI; exports fall back to dark/light.
+    /// foreground, roles on the 16 ANSI colors, syntax on the terminal's
+    /// colors. Only meaningful in the TUI; exports fall back to dark/light.
     Terminal,
 }
 

@@ -248,7 +248,7 @@ The reply has these fields:
 | Message | When |
 |---|---|
 | `wrote PATH (N bytes)` | Tiza writes a file. |
-| `wrote PATH (N bytes): N frames, W×H px, S s per loop, N colours, loops forever` | Tiza writes a GIF. |
+| `wrote PATH (N bytes): N frames, W×H px, S s per loop, N colors, loops forever` | Tiza writes a GIF. |
 | `wrote N files to FOLDER (steps A-B, W×H px each)` | Tiza writes the files of `--all-steps`. |
 | `step N does not exist (the document has steps 0 to L); showing step L` | `--step` is after the last step, and Tiza exports step `L`. |
 | `refusing to write PNG bytes to the terminal; pass --out file.png` | `--out -` with a PNG, when standard output is a terminal. |
@@ -296,7 +296,7 @@ The other messages of `tiza` are in [Messages](cli.md#messages).
 | Message | When |
 |---|---|
 | `the terminal theme has no palette outside the terminal: exported with dark` | The theme is `terminal`. |
-| `theme tokens set to a terminal colour have no value in an export (TOKENS): the dark theme's are used` | A theme override sets a token to a color of the terminal. |
+| `theme tokens set to a terminal color have no value in an export (TOKENS): the dark theme's are used` | A theme override sets a token to a color of the terminal. |
 | `config ignored` | Tiza cannot read or parse your config file. |
 | `` no grammar for `LANG`; the code is shown as plain text `` | `--lang` names a language that Tiza cannot color. |
 | `N annotations outside the code and not drawn: IDS` | Annotations of the document point at lines that the code does not have. |

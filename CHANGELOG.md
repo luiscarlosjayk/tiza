@@ -28,6 +28,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - MCP `export_image` applies the config file, as `tiza render` does. It says in `warning` what the config file left out, or that the config file does not parse. The export goes on.
 
 ### Changed
+- `tiza render --help` says what `--theme auto` and `--theme terminal` export: the theme of the document or `dark`, and `dark`.
+- Messages, help and the schemas say "color", not "colour".
+- The schema of a theme token no longer offers a palette name such as `orange`: Tiza does not take one there.
 - `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.
 - The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
 
