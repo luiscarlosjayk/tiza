@@ -1,4 +1,4 @@
-//! t-044 — MCP resources with the current code and annotations, and the
+//! MCP resources with the current code and annotations, and the
 //! render tool so an agent sees the result.
 //!
 //! Acceptance criteria:
@@ -20,8 +20,8 @@ use serde_json::{Value, json};
 use tiza_qa::{Live, McpClient};
 
 #[test]
-fn ac1_resources_are_listed_with_types() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t044-list");
+fn resources_are_listed_with_types() {
+    let live = Live::from_code("fn a() {}\n", "rs", "list");
     let mut mcp = McpClient::start(&live.socket);
     let init = mcp.initialize_result();
     assert!(
@@ -61,11 +61,11 @@ fn ac1_resources_are_listed_with_types() {
 }
 
 #[test]
-fn ac2_reads_return_the_live_content() {
+fn reads_return_the_live_content() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    takes(s);\n}\n",
         "rs",
-        "t044-read",
+        "read",
     );
     live.command("note 2 born");
     let mut mcp = McpClient::start(&live.socket);
@@ -121,7 +121,7 @@ fn ac2_reads_return_the_live_content() {
     )
     .unwrap()
     .document;
-    let dir = tiza_qa::scratch("t044-file");
+    let dir = tiza_qa::scratch("file");
     let live2 = Live::open(doc, dir.join("repeated.rs.tiza"), dir.join("live.sock"));
     let mut mcp2 = McpClient::start(&live2.socket);
     let (_, md) = read(&mut mcp2, "tiza://render.md");
@@ -132,12 +132,12 @@ fn ac2_reads_return_the_live_content() {
 }
 
 #[test]
-fn ac3_unknown_uri_and_no_instance_are_errors() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t044-errors");
+fn unknown_uri_and_no_instance_are_errors() {
+    let live = Live::from_code("fn a() {}\n", "rs", "errors");
     let mut mcp = McpClient::start(&live.socket);
     let v = mcp.request("resources/read", json!({"uri": "tiza://nope"}));
     let msg = v["error"]["message"].as_str().unwrap_or("");
-    // The URI asked is not repeated (t-167 rework: an unknown name among a
+    // The URI asked is not repeated (an unknown name among a
     // fixed set is answered with the valid ones only).
     assert!(
         msg.contains("unknown resource") && !msg.contains("nope") && msg.contains("tiza://scene"),

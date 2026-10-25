@@ -1,8 +1,8 @@
-//! t-162 — MCP discovery: server `instructions` written as a searchable
+//! MCP discovery: server `instructions` written as a searchable
 //! description of Tiza, and four core tools that always load.
 //!
-//! Acceptance criteria (v0.1 lane: AC1–AC3 and AC5; AC4, the t-161 matrix
-//! with variant C, runs on Luis's Mac):
+//! Acceptance criteria (v0.1 lane: AC1–AC3 and AC5; AC4, the matrix of
+//! instructions with variant C, runs on Luis's Mac):
 //! - AC1 `initialize` → `instructions` describe Tiza (the README's
 //!   positioning sentence), when to use it (explain code to a person or
 //!   another agent, live or recorded, step by step) and the words people
@@ -19,7 +19,7 @@
 //!   card (fixtures); the first sentence of each core tool uses the words
 //!   of AC1, and says only what is true (`render_text` is the screen as the
 //!   presenter sees it, which is the export in presentation mode).
-//! - Added by Worker after t-194: `add_move` says its reply's `warning`
+//! - Added later: `add_move` says its reply's `warning`
 //!   also names annotations of a file their step no longer shows, and that
 //!   `delete_move` answers the same; `check` names `outside_window` and
 //!   `not_shown`.
@@ -63,8 +63,8 @@ fn description(tools: &BTreeMap<String, Value>, name: &str) -> String {
 // ---------------------------------------------------------------- AC2
 
 #[test]
-fn ac2_the_core_tools_always_load_and_no_other_does() {
-    let mut mcp = mcp("t162-always-load");
+fn the_core_tools_always_load_and_no_other_does() {
+    let mut mcp = mcp("always-load");
     let tools = by_name(&mcp.tools());
     let marked: Vec<&str> = tools
         .iter()
@@ -88,14 +88,14 @@ fn ac2_the_core_tools_always_load_and_no_other_does() {
 // ---------------------------------------------------------------- AC3
 
 #[test]
-fn ac3_tool_names_and_input_schemas_are_the_ones_of_main() {
-    let mut mcp = mcp("t162-names");
+fn tool_names_and_input_schemas_are_the_ones_of_main() {
+    let mut mcp = mcp("names");
     let tools = by_name(&mcp.tools());
     let names: Vec<&str> = tools.keys().map(String::as_str).collect();
-    let main = std::fs::read_to_string(fixture("t-162/tool-names-main.txt")).unwrap();
+    let main = std::fs::read_to_string(fixture("mcp/discovery/tool-names-main.txt")).unwrap();
     assert_eq!(names, main.lines().collect::<Vec<_>>());
     let schemas: BTreeMap<String, Value> = serde_json::from_str(
-        &std::fs::read_to_string(fixture("t-162/input-schemas-main.json")).unwrap(),
+        &std::fs::read_to_string(fixture("mcp/discovery/input-schemas-main.json")).unwrap(),
     )
     .unwrap();
     for (name, schema) in &schemas {
@@ -107,11 +107,11 @@ fn ac3_tool_names_and_input_schemas_are_the_ones_of_main() {
 /// with `:layout stable` it is what `export_image` writes for that step at
 /// the same width, at every step.
 #[test]
-fn ac3_render_text_is_the_export_in_presentation_mode() {
+fn render_text_is_the_export_in_presentation_mode() {
     let src = fixture("shared/ownership/ownership.rs.tiza");
     let o = tiza_core::fs::open(src.to_str().unwrap()).unwrap();
     let last = o.document.max_step();
-    let dir = scratch("t162-render-text");
+    let dir = scratch("render-text");
     for (mode, setup) in [("present", 0), ("stable", 1)] {
         let live = Live::open(
             o.document.clone(),

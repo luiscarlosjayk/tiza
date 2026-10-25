@@ -1,4 +1,4 @@
-//! t-070 — MCP integration tests with a real client: stdio + socket, errors,
+//! MCP integration tests with a real client: stdio + socket, errors,
 //! reconnection and validation against the published schemas.
 //!
 //! Acceptance criteria:
@@ -30,11 +30,11 @@ fn validator(path: &str) -> jsonschema::Validator {
 }
 
 #[test]
-fn ac1_handshake_tools_and_calls() {
+fn handshake_tools_and_calls() {
     let live = Live::from_code(
         "fn main() {\n    let s = 1;\n    takes(s);\n}\nfn takes(s: i32) {}\n",
         "rs",
-        "t070-ac1",
+        "ac1",
     );
     let mut mcp = McpClient::start(&live.socket);
     let tools = mcp.tools();
@@ -44,7 +44,7 @@ fn ac1_handshake_tools_and_calls() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    assert_eq!(names.len(), 30, "{names:?}"); // + goto_step (t-099), check (t-101), point_at/clear_pointer (t-030)
+    assert_eq!(names.len(), 30, "{names:?}"); // with goto_step, check, point_at and clear_pointer
     for t in tools.as_array().unwrap() {
         assert!(
             !t["description"].as_str().unwrap_or("").is_empty(),
@@ -100,7 +100,7 @@ fn ac1_handshake_tools_and_calls() {
         json!({"id": "m", "label": "renamed", "color": "blue"}),
     );
     assert!(!err);
-    // A move through `at` is applied (moved here from t-093: no other test
+    // A move through `at` is applied (moved here from the API tests: no other test
     // moves an annotation over the MCP with success).
     let (err, text, _) = mcp.call(
         "update_annotation",
@@ -133,7 +133,7 @@ fn ac1_handshake_tools_and_calls() {
         !err && text.contains("m ") && text.contains("callout"),
         "{text}"
     );
-    let dir = scratch("t070-export");
+    let dir = scratch("export");
     let png = dir.join("x.png");
     let (err, _, _) = mcp.call(
         "export_image",
@@ -150,8 +150,8 @@ fn ac1_handshake_tools_and_calls() {
 }
 
 #[test]
-fn ac2_no_instance_then_reconnection() {
-    let dir = scratch("t070-ac2");
+fn no_instance_then_reconnection() {
+    let dir = scratch("ac2");
     let sock = dir.join("later.sock");
     let mut mcp = McpClient::start(&sock);
     let (err, text, _) = mcp.call("status", json!({}));
@@ -184,8 +184,8 @@ fn ac2_no_instance_then_reconnection() {
 }
 
 #[test]
-fn ac3_errors_carry_the_socket_code() {
-    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "t070-ac3");
+fn errors_carry_the_socket_code() {
+    let live = Live::from_code("fn main() {\n    let s = 1;\n}\n", "rs", "ac3");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call(
         "add_mark",
@@ -222,11 +222,11 @@ fn ac3_errors_carry_the_socket_code() {
 }
 
 #[test]
-fn ac4_replies_validate_against_the_published_schemas() {
+fn replies_validate_against_the_published_schemas() {
     let live = Live::from_code(
         "fn main() {\n    let s = String::from(\"x\");\n    takes(s);\n}\nfn takes(s: String) {}\n",
         "rs",
-        "t070-ac4",
+        "ac4",
     );
     let mut mcp = McpClient::start(&live.socket);
     mcp.call("add_arrow", json!({"from": {"find": "let s"}, "to": {"find": "s: String"}, "label": "move", "stroke": "thick"}));
@@ -295,8 +295,8 @@ fn ac4_replies_validate_against_the_published_schemas() {
 }
 
 #[test]
-fn ac5_two_clients_interleave() {
-    let live = Live::from_code("a\nb\nc\nd\n", "rs", "t070-ac5");
+fn two_clients_interleave() {
+    let live = Live::from_code("a\nb\nc\nd\n", "rs", "ac5");
     let mut one = McpClient::start(&live.socket);
     let mut two = McpClient::start(&live.socket);
     for i in 0..10 {

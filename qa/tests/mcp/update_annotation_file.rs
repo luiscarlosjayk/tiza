@@ -21,10 +21,10 @@ use tiza_qa::{Live, McpClient, fixture, scratch};
 
 const QUEUE: &str = "src/queue.rs";
 
-/// t-231's demo (main.rs, `code.link` to src/queue.rs at steps 3 and 5)
+/// The demo of the API update tests (main.rs, `code.link` to src/queue.rs at steps 3 and 5)
 /// opened from a scratch copy, and an MCP client on it.
 fn open(name: &str) -> (Live, PathBuf, McpClient) {
-    let dir = scratch(&format!("t-236-{name}"));
+    let dir = scratch(name);
     std::fs::create_dir_all(dir.join("src")).unwrap();
     for f in ["main.rs", QUEUE, "demo.tiza"] {
         std::fs::copy(
@@ -65,7 +65,7 @@ fn file_of(live: &Live, tiza: &std::path::Path, id: &str) -> Option<String> {
 }
 
 #[test]
-fn step2_ac1_file_null_puts_it_on_the_main_file() {
+fn file_null_puts_it_on_the_main_file() {
     let (live, tiza, mut mcp) = open("null");
     assert_eq!(file_of(&live, &tiza, "q3").as_deref(), Some(QUEUE));
     live.api_ok("step.set", json!({"step": 3}));
@@ -80,7 +80,7 @@ fn step2_ac1_file_null_puts_it_on_the_main_file() {
 }
 
 #[test]
-fn step3_ac1_a_string_puts_it_on_that_file() {
+fn a_string_puts_it_on_that_file() {
     let (live, tiza, mut mcp) = open("string");
     assert_eq!(file_of(&live, &tiza, "n0"), None);
     let (err, text, v) = mcp.call("update_annotation", json!({"id": "n0", "file": QUEUE}));
@@ -89,7 +89,7 @@ fn step3_ac1_a_string_puts_it_on_that_file() {
 }
 
 #[test]
-fn step4_ac1_absent_keeps_the_file() {
+fn absent_keeps_the_file() {
     let (live, tiza, mut mcp) = open("absent");
     let (err, text, v) = mcp.call("update_annotation", json!({"id": "q3", "color": "red"}));
     assert!(!err, "{text} {v}");
@@ -100,7 +100,7 @@ fn step4_ac1_absent_keeps_the_file() {
 }
 
 #[test]
-fn corner_a_file_that_is_no_view_is_refused() {
+fn a_file_that_is_no_view_is_refused() {
     let (_live, tiza, mut mcp) = open("nope");
     let before = std::fs::read_to_string(&tiza).unwrap();
     let (err, text, _) = mcp.call(
@@ -116,7 +116,7 @@ fn corner_a_file_that_is_no_view_is_refused() {
 }
 
 #[test]
-fn ac3_text_says_to_use_label() {
+fn text_says_to_use_label() {
     let (_live, tiza, mut mcp) = open("text");
     let before = std::fs::read_to_string(&tiza).unwrap();
     let (err, text, _) = mcp.call("update_annotation", json!({"id": "n0", "text": "x"}));
@@ -129,7 +129,7 @@ fn ac3_text_says_to_use_label() {
 }
 
 #[test]
-fn ac2_the_tool_names_file_and_not_text() {
+fn the_tool_names_file_and_not_text() {
     let (_live, _tiza, mut mcp) = open("schema");
     let tools = mcp.request("tools/list", json!({}));
     let tool = tools["result"]["tools"]

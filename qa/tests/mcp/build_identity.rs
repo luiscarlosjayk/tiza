@@ -1,4 +1,4 @@
-//! t-082 — MCP tool list after a rebuild: build identity and the reconnect hint.
+//! MCP tool list after a rebuild: build identity and the reconnect hint.
 //!
 //! Acceptance criteria:
 //! - AC1 `tiza --version` prints `<semver> (<git sha>)`; the sha is also
@@ -14,7 +14,7 @@ use serde_json::json;
 use tiza_qa::{Live, McpClient, tiza_ok};
 
 #[test]
-fn ac1_version_and_status_carry_the_build() {
+fn version_and_status_carry_the_build() {
     let v = tiza_ok(&["--version"]);
     let sha = tiza_core::GIT_SHA;
     assert!(
@@ -22,14 +22,14 @@ fn ac1_version_and_status_carry_the_build() {
         "{v}"
     );
     assert!(sha == "unknown" || sha.len() >= 7, "{sha}");
-    let live = Live::from_code("fn a() {}\n", "rs", "t082-status");
+    let live = Live::from_code("fn a() {}\n", "rs", "status");
     let st = live.api_ok("status", json!({}));
     assert_eq!(st["build"], json!(sha));
 }
 
 #[test]
-fn ac2_mcp_status_reports_the_bridge_and_a_rebuild() {
-    let live = Live::from_code("fn a() {}\n", "rs", "t082-mcp");
+fn mcp_status_reports_the_bridge_and_a_rebuild() {
+    let live = Live::from_code("fn a() {}\n", "rs", "mcp");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("status", json!({}));
     assert!(!err, "{text}");
