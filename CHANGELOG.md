@@ -21,6 +21,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The API schema names every field of the replies of `scene.clear`, `code.get`, `style.set` and `theme.set`.
 - The help of `tiza scene patch` and the description of `scene.patch` name `steps`, `loop`, `numbers` and `margin`.
 - In a theme table, the `[dark]`, `[light]` or `[terminal]` table of the theme in use wins over the flat tokens now. Before, the result depended on the names of the keys.
+- A text token of a theme (`fg`, `muted`, `accent`, `note` or `error`) that reads under 4.5:1 moves toward black or white, whichever contrasts more with the background. It moves until it reads at 4.5:1. Before, on a mid-gray background it could move toward the wrong one and stop under 4.5:1.
 
 ### Changed
 - `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.

@@ -608,14 +608,14 @@ impl Theme {
                 let bg = self.bg;
                 if contrast(*slot, bg) < MIN_CODE_CONTRAST {
                     let before = *slot;
-                    let mut t = 0.1;
                     let mut fixed = before;
-                    while t < 1.0 {
-                        fixed = blend(contrast_anchor(bg), before, t);
+                    // Tenths up to the anchor itself, which always reads
+                    // at 4.5:1 or more (at worst √21 ≈ 4.58:1).
+                    for tenth in 1..=10 {
+                        fixed = blend(contrast_anchor(bg), before, tenth as f32 / 10.0);
                         if contrast(fixed, bg) >= MIN_CODE_CONTRAST {
                             break;
                         }
-                        t += 0.1;
                     }
                     *slot = fixed;
                     notes.push(format!(
@@ -657,10 +657,11 @@ impl Theme {
 /// White or black, whichever contrasts more with `bg`: what a faint token
 /// is pushed toward.
 fn contrast_anchor(bg: Rgb) -> Rgb {
-    if luminance(bg) > 0.5 {
-        Rgb(0, 0, 0)
+    let (black, white) = (Rgb(0, 0, 0), Rgb(255, 255, 255));
+    if contrast(black, bg) > contrast(white, bg) {
+        black
     } else {
-        Rgb(255, 255, 255)
+        white
     }
 }
 

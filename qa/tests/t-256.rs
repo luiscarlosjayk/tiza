@@ -8,6 +8,9 @@
 //!   takes back, as for `--theme`: after `u` the tokens stay.
 //! - AC3 The `[dark]`, `[light]` or `[terminal]` subtable of the theme in
 //!   use wins over the flat tokens, whatever the names of the keys.
+//! - AC4 A text token that reads under 4.5:1 on the background moves toward
+//!   black or white, whichever contrasts more, until it reads at 4.5:1:
+//!   the notice that says so is always true.
 //!
 //! Corner cases: `:theme file PATH` keeps its undo entry; `--theme-file`
 //! still says how many tokens it applied.
@@ -144,4 +147,32 @@ fn ac3_the_subtable_of_the_theme_in_use_wins_over_the_flat_tokens() {
         tokens(&light),
         (Rgb(0, 0x11, 0), Rgb(0, 0x12, 0), Rgb(0, 0x13, 0))
     );
+}
+
+#[test]
+fn ac4_a_faint_token_moves_toward_the_anchor_that_contrasts_more() {
+    use tiza_core::ThemeName;
+    use tiza_core::canvas::Rgb;
+    use tiza_core::theme::{MIN_CODE_CONTRAST, Theme, contrast, parse_theme_file};
+    // #808080: black reads at 5.3:1, white at 3.9:1.
+    let ov = parse_theme_file("bg = \"#808080\"\nnote = \"#7a7a7a\"\n").unwrap();
+    let (th, notes) = Theme::resolve(ThemeName::Dark, true, None, Some(&ov));
+    assert!(th.note.0 < 0x7a, "not toward black: {:?}", th.note);
+    assert!(contrast(th.note, th.bg) >= MIN_CODE_CONTRAST, "{notes:?}");
+    // Every gray background, a token of the same gray: the token always
+    // ends at 4.5:1 or more, as the notice says.
+    for g in (0..=255u8).step_by(5) {
+        let hex = format!("#{g:02x}{g:02x}{g:02x}");
+        let ov = parse_theme_file(&format!("bg = \"{hex}\"\nnote = \"{hex}\"\n")).unwrap();
+        for name in [ThemeName::Dark, ThemeName::Light] {
+            let (th, notes) = Theme::resolve(name, true, None, Some(&ov));
+            assert_eq!(th.bg, Rgb(g, g, g));
+            let c = contrast(th.note, th.bg);
+            assert!(c >= MIN_CODE_CONTRAST, "{hex}: {c:.2}:1 {notes:?}");
+            assert!(
+                notes.iter().any(|n| n.contains("for 4.5:1")),
+                "{hex}: {notes:?}"
+            );
+        }
+    }
 }

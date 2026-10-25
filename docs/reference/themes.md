@@ -285,10 +285,8 @@ The script needs Python with Pillow and numpy, and ffmpeg. It runs `target/debug
 Tiza also keeps text legible when it applies tokens:
 
 - It checks `fg`, `muted`, `accent`, `note` and `error` against `bg`. Tiza reports each token that it changes.
-- A token under 4.5:1 moves toward black when the WCAG relative luminance of `bg` is more than 0.5. Otherwise it moves toward white.
-- This rule is not the dark rule of [How it works](#how-it-works). For example, `#a0a0a0` is a light background, but a faint token on it moves toward white.
-- On a mid-gray `bg`, such as `#808080`, white reads at less than 4.5:1. Tiza still moves the token toward white, so the token stays under 4.5:1.
-- The move also stops at 90 % of the way. Thus a token can stay under 4.5:1 on another `bg` too.
-- In these cases, the message still ends with `for 4.5:1`.
+- A token under 4.5:1 moves toward black or white, whichever contrasts more with `bg`.
+- This rule is not the dark rule of [How it works](#how-it-works). For example, `#7a7a7a` is a dark background by that rule, but a faint token on it moves toward black.
+- The move can go all the way to black or white. Thus the token always reaches 4.5:1, as the message says.
 - When it draws the code, Tiza moves a syntax color under 4.5:1 toward `fg`.
 - Tiza does not check a color of the terminal palette. It checks no token when `bg` is a color of the terminal palette. It moves no syntax color when `bg` or `fg` is a color of the terminal palette.
