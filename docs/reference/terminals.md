@@ -10,7 +10,7 @@ What Tiza asks of the terminal, and what happens without it:
 - **Unicode box drawing** (`─ │ ╭ ╯ ┆ ━ ▶`) in a monospace font whose box glyphs fill the cell, so lines join without gaps. Emoji in your own styles need a font that has them.
 - **Invisible characters.** Tiza shows each invisible character in the code as `⬚` (U+2B1A), one cell in the error color of the theme. Examples are a bidi control, a zero-width space and a joiner that joins nothing. Thus `ad⬚min` does not look like `admin`. Tiza draws a joiner inside an emoji sequence or a Persian word as it is. `⬚` is one cell wide in Herdr, Terminal.app and Zed.
 - **Bracketed paste.** Tiza turns it on: pasting code into the window replaces the code shown (into the `:` line, it pastes the first line). A terminal without bracketed paste delivers a paste as typed keys, which Tiza runs as commands — pipe the code in instead (`pbpaste | tiza`).
-- **Mouse, only if you ask.** Without `--mouse` / `:mouse on` Tiza never requests mouse reporting and the terminal keeps its own selection; with it, see **Mouse** above.
+- **Mouse, only if you ask.** Without `--mouse` / `:mouse on` Tiza never requests mouse reporting and the terminal keeps its own selection; with it, see [Use the mouse](../guides/present.md).
 - **The OSC 11 / OSC 10 colour query** (auto appearance, see [Themes](themes.md)): sent at start and on every resize, only when the document names no theme or with `--theme terminal`; Tiza waits 100 ms at most and falls back to dark in silence when nothing answers.
 - **Plain keys.** Tiza does not enable the kitty keyboard protocol and no shortcut depends on it (`Shift-Tab` is the classic back-tab every terminal sends).
 
