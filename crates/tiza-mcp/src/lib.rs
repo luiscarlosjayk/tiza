@@ -1449,10 +1449,24 @@ impl ExportJob {
         let theme_name = self
             .theme_name
             .unwrap_or(doc.theme.unwrap_or(tiza_core::ThemeName::Dark));
-        // The document's overrides apply; a terminal theme or `reset`
-        // tokens have no palette in a file and fall back.
-        let (theme, _) =
-            tiza_core::Theme::resolve(theme_name, true, None, doc.theme_overrides.as_ref());
+        // The config file and the document's overrides apply, as in `tiza
+        // render`; a terminal theme or `reset` tokens have no palette in a
+        // file and fall back. What the config file left out, or a config
+        // file that does not parse, is said in the reply, never fatal.
+        let (config, mut said) = match tiza_core::theme::load_config() {
+            Ok(Some((cfg, _))) => (
+                cfg.theme,
+                cfg.notes.iter().map(|n| format!("config: {n}")).collect(),
+            ),
+            Ok(None) => (None, Vec::new()),
+            Err(e) => (None, vec![format!("config ignored: {e}")]),
+        };
+        let (theme, _) = tiza_core::Theme::resolve(
+            theme_name,
+            true,
+            config.as_ref(),
+            doc.theme_overrides.as_ref(),
+        );
         let (theme, _notice) = theme.for_export();
         let layout = tiza_core::layout::layout(
             doc,
@@ -1573,8 +1587,9 @@ impl ExportJob {
             "format": format,
             "step": step,
         });
-        if let Some(w) = warning {
-            reply["warning"] = json!(w);
+        said.extend(warning);
+        if !said.is_empty() {
+            reply["warning"] = json!(said.join("; "));
         }
         if is_gif {
             reply["frames"] = json!(gif_frames);

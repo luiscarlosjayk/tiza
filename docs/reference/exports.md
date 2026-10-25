@@ -193,7 +193,8 @@ The MCP tool `export_image` exports the live document. It does not change the TU
 - `theme` also takes `oscuro` and `claro`.
 - A relative `path` starts at the current folder of `tiza mcp`. The tool does not make missing folders.
 - A GIF from `export_image` plays without end.
-- `export_image` does not apply the `[theme]` overrides of your config file. `tiza render` and `:export` apply them.
+- `export_image`, `tiza render` and `:export` apply the `[theme]` overrides of your config file. `export_image` reads the config file of the `tiza mcp` process.
+- In `warning`, `export_image` says what the config file left out, or that the config file does not parse. The export goes on.
 - When the theme has no colors outside the terminal, `export_image` uses `dark`. Its reply does not say so.
 - `export_image` checks `scale`, `font_size` and `interval` for each format. A bad `scale` also stops a `.txt` export.
 - An export that takes more than 120 s stops. The tool writes nothing and replies with an error.
@@ -206,7 +207,7 @@ The reply has these fields:
 | `bytes` | The size of the file. |
 | `format` | The format: `png`, `svg`, `txt`, `ansi`, `md` or `gif`. |
 | `step` | The step in the file, except in a GIF reply. |
-| `warning` | The text that says the step does not exist, when you ask for a step after the last one, except in a GIF reply. |
+| `warning` | What the config file left out, or that the config file does not parse. Then, except in a GIF reply, that the step you asked for does not exist. The parts are separated by `; `. |
 | `frames` | The number of frames, only in a GIF reply. |
 | `steps` | The steps of the document, for example `0-7`, only in a GIF reply. |
 

@@ -440,6 +440,9 @@ impl McpClient {
         use std::io::{BufRead, Write};
         let mut child = Command::new(bin())
             .args(["mcp", "--socket", socket.to_str().unwrap()])
+            // No config file unless the test gives one: `export_image`
+            // reads it, and the developer's own must not change a test.
+            .env("TIZA_CONFIG", "/nonexistent/tiza-qa/config.toml")
             .envs(env.iter().copied())
             .stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())

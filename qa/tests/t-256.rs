@@ -17,6 +17,10 @@
 //!   open, and the error says what a token must be. A theme file with no
 //!   color token to apply (empty, or no value is a string) is refused and
 //!   changes nothing: the tokens of the document stay.
+//!   open, and the error says what a token must be.
+//! - AC6 MCP `export_image` applies the config file, as `tiza render`
+//!   does. A config file that does not parse is said in the reply, and the
+//!   export goes on.
 //!
 //! Corner cases: `:theme file PATH` keeps its undo entry; `--theme-file`
 //! still says how many tokens it applied.
@@ -329,4 +333,33 @@ fn ac5_a_theme_file_with_no_token_to_apply_changes_nothing() {
         &dir.join("no-config.toml"),
     );
     assert!(!ok && err.contains("no color token to apply"), "{err}");
+}
+
+#[test]
+fn ac6_export_image_uses_the_config_file_and_a_broken_one_does_not_stop_it() {
+    let dir = scratch("t256-export-config");
+    let cfg = dir.join("config.toml");
+    std::fs::write(&cfg, "[theme]\nbg = \"#123456\"\n").unwrap();
+    let live = tiza_qa::Live::from_code(CODE, "rs", "t256-export-live");
+    let mut mcp =
+        tiza_qa::McpClient::start_with_env(&live.socket, &[("TIZA_CONFIG", cfg.to_str().unwrap())]);
+    let export = |mcp: &mut tiza_qa::McpClient, name: &str| {
+        let out = dir.join(name);
+        let (err, text, _) = mcp.call(
+            "export_image",
+            serde_json::json!({"path": out.to_str().unwrap()}),
+        );
+        assert!(!err, "{text}");
+        let reply: serde_json::Value = serde_json::from_str(&text).unwrap();
+        (std::fs::read_to_string(&out).unwrap(), reply)
+    };
+    let (svg, reply) = export(&mut mcp, "a.svg");
+    assert!(svg.contains("#123456"), "the config bg did not apply");
+    assert!(reply.get("warning").is_none(), "{reply}");
+    // A config that does not parse: the export goes on, and says so.
+    std::fs::write(&cfg, "[theme\n").unwrap();
+    let (svg, reply) = export(&mut mcp, "b.svg");
+    assert!(!svg.contains("#123456"));
+    let warning = reply["warning"].as_str().unwrap_or_default();
+    assert!(warning.contains("config ignored"), "{reply}");
 }

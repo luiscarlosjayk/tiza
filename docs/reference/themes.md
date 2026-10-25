@@ -168,7 +168,7 @@ accent = "#b7410e"
 
 ### The config file
 
-Tiza reads the config file when it starts. `tiza render` reads it at each export. Tiza takes the path of the file from the first item of this list that applies:
+Tiza reads the config file when it starts. `tiza render` and `export_image` read it at each export. `export_image` reads the config file of the `tiza mcp` process. Tiza takes the path of the file from the first item of this list that applies:
 
 1. `$TIZA_CONFIG`, when it is set.
 2. `$XDG_CONFIG_HOME/tiza/config.toml`, when that variable is set.
@@ -224,7 +224,7 @@ The token reports are the messages about an unknown token, an unknown table, a w
 - The TUI does not show the reports of the config file or of the document at start. Only `--theme-file` shows reports at start.
 - The TUI shows no reports after `t`, after `:theme auto` or after a change from an agent.
 - `tiza render` writes each report on its own line on stderr, after `tiza: `.
-- `export_image` shows no report.
+- `export_image` shows no token report. In `warning`, it says what the config file left out, or that the config file does not parse.
 
 ## Exports
 
@@ -234,7 +234,7 @@ An export cannot use the palette of the terminal. Each export picks its theme as
 |---|---|---|
 | `:export` | The theme on screen, or `theme=dark` or `theme=light`. | The config file and the document. |
 | `tiza render` | The `--theme` flag, else the theme of the document, else `dark`. | The config file, and the document or `--theme-file`. |
-| `export_image` | Its `theme`, `dark` or `light`, else the theme of the document, else `dark`. | The document only. |
+| `export_image` | Its `theme`, `dark` or `light`, else the theme of the document, else `dark`. | The config file, and the document. |
 
 - `:export` exports `light` when the auto theme shows `light`. `tiza render` and `export_image` cannot ask the terminal. They export a document that follows the terminal as `dark`.
 - `tiza render --theme auto` uses the theme of the document, else `dark`.

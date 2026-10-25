@@ -25,6 +25,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - In the config file and in a theme file, a value that is not a color string leaves out only that token, with a report. Before, Tiza ignored the whole config file, and the theme file did not load. A theme file with no color token to apply, such as an empty file, does not load, and nothing changes.
 - The config file reports each key or table other than `[theme]` on stderr.
 - A document with a `theme_overrides` value that is not a string still does not open. The error now says that a token must be a color string or a table of color strings.
+- MCP `export_image` applies the config file, as `tiza render` does. It says in `warning` what the config file left out, or that the config file does not parse. The export goes on.
 
 ### Changed
 - `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.
