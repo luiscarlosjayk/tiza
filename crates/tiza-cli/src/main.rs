@@ -164,8 +164,8 @@ enum Format {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Render a document without opening the TUI: text, ANSI, SVG or PNG.
-    /// Without FILE it exports what the live instance is showing.
+    /// Render a document without opening the TUI: text, Markdown, ANSI, SVG, PNG, GIF, MP4, WebM,
+    /// asciicast or VHS. Without FILE it exports what the live instance shows.
     Render {
         /// `.tiza` document (or source file) to draw; omit it to use the live instance
         file: Option<String>,
