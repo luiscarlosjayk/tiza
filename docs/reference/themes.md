@@ -17,16 +17,16 @@ When you pick a theme, Tiza stops following the terminal. Tiza keeps the theme i
 
 ## The auto theme
 
-A document that names no theme follows the terminal. This is the auto theme. When Tiza starts, it asks the terminal for its background color. A light background gives the `light` theme, and a dark background gives `dark`. The status bar shows `light·auto` or `dark·auto`.
+A document that names no theme follows the terminal. This is the auto theme. When Tiza starts, it sends the color query to ask the terminal for its background color. A light background gives the `light` theme, and a dark background gives `dark`. The status bar shows `light·auto` or `dark·auto`.
 
 - When the terminal sends no answer for 100 ms, Tiza stops waiting. It shows no message. A document that names no theme then gets `dark`.
 - A pseudo-terminal with no terminal program behind it is an example of a terminal that sends no answer.
-- When the variable `TIZA_NO_OSC` is set, also to an empty value, Tiza does not send the query at start. A resize still sends it.
+- When the variable `TIZA_NO_OSC` is set, also to an empty value, Tiza does not send the color query. This applies at start and at each resize.
 - With `--theme auto`, a document that names a theme keeps that theme until the terminal answers.
-- `:theme auto` sends no query. It uses the last answer of the terminal. With no answer yet, it keeps the theme on screen until an answer comes.
+- `:theme auto` sends no color query. It uses the last answer of the terminal. With no answer yet, it keeps the theme on screen until an answer comes.
 - Tiza keeps the keys that you type while it waits. For example, `nn` right after `tiza FILE --present` moves two steps.
-- Tiza asks again at each resize of the terminal.
-- When the theme of your terminal changes with no resize, type `kill -WINCH $(pgrep tiza)` in another shell. Tiza then asks again. [Terminal support](terminals.md) tells what each tmux version does with the query.
+- Tiza sends the color query again at each resize of the terminal.
+- When the theme of your terminal changes with no resize, type `kill -WINCH $(pgrep tiza)` in another shell. Tiza then sends the color query again. [Terminal support](terminals.md#tmux) tells what each tmux version does with the color query.
 - These stop the auto theme: `t`, `:theme NAME`, `--theme NAME`, a document that names a theme, and an agent that sets a fixed theme.
 - `:theme auto` starts the auto theme again. Then the document names no theme.
 
@@ -257,9 +257,9 @@ An export cannot use the palette of the terminal. Each export picks its theme as
 
 ## How it works
 
-Tiza asks the terminal with OSC 11 for the background and OSC 10 for the text. It sends them as plain OSC, not wrapped for tmux. A background is dark when 0.299 R + 0.587 G + 0.114 B is less than half of 255.
+The color query asks the terminal with OSC 11 for the background and with OSC 10 for the text. It sends them as plain OSC, not wrapped for tmux. A background is dark when 0.299 R + 0.587 G + 0.114 B is less than half of 255.
 
-- Tiza sends the query only with the auto theme or the terminal theme. It sends it at start and at each resize.
+- Tiza sends the color query only with the auto theme or the terminal theme. It sends it at start and at each resize.
 - Tiza uses the answer to OSC 10 only to stop waiting early. No color of Tiza comes from it.
 - At start, Tiza reads the answer before its input library reads the terminal. It gives the other keys that it read to the editor, in order.
 - After start, the answer comes in as key presses. Tiza takes it out of the keys.

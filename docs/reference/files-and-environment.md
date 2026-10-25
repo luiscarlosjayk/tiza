@@ -46,10 +46,10 @@ An agent sends documents, code and commands through the socket.
 
 ### The terminal
 
-Tiza asks the terminal for its colors only when the theme is `auto`, the default, or `terminal`.
+Tiza sends the color query to the terminal only when the theme is `auto`, the default, or `terminal`. [Terminal support](terminals.md#the-color-query) gives the rules of the wait.
 
-- At start, Tiza asks through `/dev/tty` when standard input is not a terminal.
-- At each resize, Tiza asks again through the same terminal as at start.
+- At start, Tiza sends the color query through `/dev/tty` when standard input is not a terminal.
+- At each resize, Tiza sends it again through the same terminal as at start.
 - `TIZA_NO_OSC` stops the color query at start and at each resize. Any value works, even an empty one.
 - When standard input is a pipe, Tiza reads its keys from `/dev/tty`.
 
@@ -156,6 +156,22 @@ The runtime folder holds the socket and `panics.log`.
 - When a socket is at `PATH` and no instance listens there, Tiza removes it.
 - When a regular file, a folder or a link is at `PATH`, Tiza does not remove it. Tiza starts with no socket, and the status bar tells why.
 
+### Messages
+
+| Message | When |
+|---|---|
+| `local API disabled: Tiza does not use DIR: it belongs to another user. Set XDG_RUNTIME_DIR or TMPDIR to a folder of yours, or give a socket path with --socket` | Another user owns the `tiza/` folder. |
+| `local API disabled: Tiza does not use DIR: it is not a folder. Set XDG_RUNTIME_DIR or TMPDIR to a folder of yours, or give a socket path with --socket` | The `tiza/` folder is a symbolic link or a file. |
+| `local API disabled: cannot make DIR private (0700)` | Tiza cannot set the `tiza/` folder to `0700`. |
+| `local API disabled: PATH is there and is not a socket: Tiza does not remove it. Give another socket path with --socket or TIZA_SOCKET` | A regular file, a folder or a link is at the path of the socket. |
+| `local API disabled: an instance is already listening on PATH (use --session for another one)` | Another Tiza listens on the path of the socket. |
+| `local API disabled: cannot make the socket PATH private (0600)` | Tiza cannot set the socket to `0600`. |
+| `PATH: ~ needs HOME, and HOME is empty or not set. Give the full path` | You type a path that starts with `~` in `:w`, `:saveas`, `:wq` or `:export`, and `HOME` is empty or not set. |
+
+- The messages show in the status bar.
+- `DIR` is the runtime folder. `PATH` is the path of the socket, or the path that you typed.
+- The two `cannot make` messages end with the error of the system.
+
 ### Removal of the socket
 
 - Tiza removes the socket when it quits, when its terminal closes and after an internal error.
@@ -195,7 +211,7 @@ Tiza reads these variables:
 | `PATH` | Where to find `ffmpeg`, and `tput` for the terminal library. |
 
 - A video export also uses `TMPDIR` for its temporary folder.
-- Without `HOME`, or with an empty `HOME`, the path `~` or a path that starts with `~/` gives an error.
+- Without `HOME`, or with an empty `HOME`, the path `~` or a path that starts with `~/` gives an error. See [Messages](#messages).
 - `~` does not work in `:theme file` or in `:link`. On the command line, your shell expands `~`.
 - The libraries that Tiza uses also read some variables. Examples are `TERM`, `COLORTERM`, `NO_COLOR`, `CLICOLOR` and `RUST_BACKTRACE`.
 - `tiza mcp` also reads `TOKIO_WORKER_THREADS`.
