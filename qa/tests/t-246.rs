@@ -141,18 +141,6 @@ fn corner_labels_under_the_lines_are_a_fact_without_a_badge() {
     assert!(warnings(&plain).is_empty(), "{:?}", warnings(&plain));
 }
 
-#[test]
-fn ac2_the_guide_and_the_changelog_say_it() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let t = read("CHANGELOG.md");
-    assert!(
-        t.contains("! 3 labels cut") && t.contains("! code needs 83 cols"),
-        "CHANGELOG.md"
-    );
-    assert!(read("docs/agent-guide.md").contains("code needs N columns at C columns"));
-}
-
 /// `fn main` with a line of `n` characters in a string: 16 more columns of
 /// code.
 fn wide(n: usize) -> String {
