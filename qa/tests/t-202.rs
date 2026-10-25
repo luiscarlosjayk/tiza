@@ -255,6 +255,12 @@ fn ac1_u_of_a_note_from_before_a_harmless_reload_turns_follow_off() {
     assert_eq!(message(&live), format!("{NOTICE} · undone: note a1"));
     assert_eq!(status(&live)["enabled"], false);
     same_as_fresh(&live, &tiza, "after u of the note");
+    // `u` names what it undid for a `:clear` too (moved here from t-011).
+    live.command("note 1 one");
+    live.command("note 2 two");
+    live.command("clear");
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(message(&live), "undone: 2 annotations cleared");
 }
 
 #[test]
@@ -468,33 +474,6 @@ fn corner_a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
 }
 
 #[test]
-fn corner_after_a_paste_a_file_that_comes_back_reloads() {
-    // QA 1's P3-b of t-193: a paste turns follow off, the file is removed,
-    // `:follow on` waits for it; when it comes back it must reload.
-    let (live, src, tiza) = followed("t202-paste-removed", CODE);
-    live.with(|app| app.replace_code("fn other() {}\n").unwrap());
-    assert_eq!(status(&live)["enabled"], false);
-    std::fs::remove_file(&src).unwrap();
-    live.command("follow on");
-    wait_for("the file reported missing", || {
-        status(&live)["missing"] == true
-    });
-    save(&src, SEVEN);
-    wait_reloads(&live, 1);
-    assert_eq!(code(&live), lines(SEVEN));
-    assert_eq!(status(&live)["missing"], false);
-    same_as_fresh(&live, &tiza, "after the file came back");
-    // One undo step: the paste comes back.
-    live.keys(&[crossterm::event::KeyCode::Char('u')]);
-    assert_eq!(code(&live), vec!["fn other() {}"]);
-    assert!(
-        message(&live).contains("the code is the paste again"),
-        "{}",
-        message(&live)
-    );
-}
-
-#[test]
 fn corner_u_of_a_paste_after_the_file_changed_is_embedded() {
     let (live, src, tiza) = followed("t202-paste-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
@@ -579,17 +558,6 @@ fn rev_get_put_after_a_paste_keeps_the_code_embedded() {
 }
 
 #[test]
-fn rev_get_put_after_u_without_moves_keeps_the_code_embedded() {
-    let (live, _src, tiza) = reloaded_over_a_highlight("t202-put-u");
-    live.keys(&[crossterm::event::KeyCode::Char('u')]);
-    get_put_keeps_the_screen(&live, &tiza, "after u of the reload");
-    // A fresh load draws the highlight on the `1` it was made on.
-    let fresh = tiza_core::fs::load_document(&tiza).expect("the autosave opens");
-    assert_eq!(fresh.code[1], "    let x = 1;");
-    assert_eq!(fresh.annotations.len(), 1);
-}
-
-#[test]
 fn rev_u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
     let (live, src, tiza) = followed("t202-wait-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
@@ -623,7 +591,17 @@ fn rev_u_while_waiting_for_a_missing_file_keeps_the_file_to_follow() {
     save(&src, SEVEN);
     wait_reloads(&live, 1);
     assert_eq!(code(&live), lines(SEVEN));
+    assert_eq!(status(&live)["missing"], false);
     same_as_fresh(&live, &tiza, "after the file came back");
+    // One undo step: the paste comes back (moved here from the corner of a
+    // paste and a file that comes back).
+    live.keys(&[crossterm::event::KeyCode::Char('u')]);
+    assert_eq!(code(&live), vec!["fn other() {}"]);
+    assert!(
+        message(&live).contains("the code is the paste again"),
+        "{}",
+        message(&live)
+    );
 }
 
 #[test]

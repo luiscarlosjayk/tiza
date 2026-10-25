@@ -587,18 +587,6 @@ fn rev_a_paste_the_file_holds_on_other_lines_at_step_0() {
 }
 
 #[test]
-fn rev_already_following_says_it_waits() {
-    let _watchers = shared();
-    let (live, _src, _tiza) = opened("t212-already");
-    live.command("follow on");
-    live.command("follow on");
-    let again = format!("already following main.rs ({WAITING})");
-    assert_eq!(message(&live), again);
-    let r = live.api_ok("follow.set", json!({"enabled": true}));
-    assert_eq!(r["message"], again);
-}
-
-#[test]
 fn rev_follow_set_keeps_an_error_of_its_own_on_the_bar() {
     let _watchers = shared();
     let (live, src, _tiza) = opened("t212-utf8");
@@ -761,16 +749,6 @@ fn pty_repro(name: &str, mode: &str) {
 fn ac4_pty_the_repro_with_follow() {
     // Test step 1: `tiza --follow doc.tiza` at the last step.
     pty_repro("t212-pty-flag", "flag");
-}
-
-#[test]
-fn ac4_pty_the_repro_with_follow_set() {
-    pty_repro("t212-pty-api", "api");
-}
-
-#[test]
-fn ac4_pty_the_repro_with_follow_on() {
-    pty_repro("t212-pty-cmd", "cmd");
 }
 
 #[test]

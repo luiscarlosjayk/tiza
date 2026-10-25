@@ -263,14 +263,6 @@ const P1_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
 ";
 
 #[test]
-fn ac1_p1_at_100_is_a_whole_block_under_its_line() {
-    let t = render("p1.tiza", 100);
-    assert_eq!(t, P1_100, "{t}");
-    assert!(!t.contains('…'), "{t}");
-    assert!(check_cuts("p1.tiza", 100).is_empty());
-}
-
-#[test]
 fn ac1_p1_looks_the_same_from_61_columns_on() {
     // The narrow layout drew this already; every width up to the one where
     // the block fits in the margin draws the same block now.

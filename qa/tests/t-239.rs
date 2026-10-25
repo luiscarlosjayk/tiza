@@ -258,35 +258,6 @@ fn step3_ac3_the_filter_keeps_the_queue_rows_then_esc_clears_then_closes() {
 }
 
 #[test]
-fn corner_a_filter_that_matches_nothing_says_so() {
-    let live = stack_and_queue("t239-nothing");
-    open_list(&live, 80, 30);
-    live.keys(&"/zzz".chars().map(KeyCode::Char).collect::<Vec<_>>());
-    let rows = panel_rows(&live.screen(80, 30), 80, 30);
-    assert!(
-        rows.iter()
-            .any(|r| r == "no annotation or move matches «zzz»"),
-        "{rows:?}"
-    );
-    assert!(
-        rows.iter().any(|r| r == "Press Esc to clear the filter."),
-        "{rows:?}"
-    );
-}
-
-#[test]
-fn corner_an_empty_list_tells_how_to_add_one() {
-    let live = Live::from_code("fn main() {}\n", "rs", "t239-empty");
-    let rows = panel_rows(&open_list(&live, 80, 30), 80, 30);
-    assert!(rows.iter().any(|r| r == "no annotations yet"), "{rows:?}");
-    assert!(
-        rows.iter()
-            .any(|r| r == "Select text with v, then press m, n, b or a."),
-        "{rows:?}"
-    );
-}
-
-#[test]
 fn corner_200_annotations_scroll_with_the_selected_row_in_view() {
     let live = Live::from_code(&"let x = 1;\n".repeat(20), "rs", "t239-many");
     for i in 0..200 {

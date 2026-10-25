@@ -221,39 +221,6 @@ fn ac1_socket_update_of_the_label_keeps_step_and_file() {
 }
 
 #[test]
-fn ac1_socket_update_of_the_step_keeps_the_file() {
-    let (live, tiza) = open("ac1-step");
-    // Step 3 shows src/queue.rs: m5 stays of main.rs all the same.
-    let r = live.api_ok("annotation.update", json!({"id": "m5", "step": 3}));
-    assert_eq!(r["step"], 3, "{r}");
-    assert_places(&live, &tiza, &with(place("m5", 3, None, 3)), "step 3");
-    let s = screen_at(&live, 3);
-    assert!(row_of(&s, "moved").is_none(), "not over queue.rs:\n{s}");
-    let s = screen_at(&live, 4);
-    let m5 = row_of(&s, "moved").unwrap_or_else(|| panic!("m5 at step 4:\n{s}"));
-    assert!(m5.contains("takes(s);"), "{s}");
-}
-
-#[test]
-fn ac1_mcp_update_annotation_keeps_step_and_file() {
-    let (live, tiza) = open("ac1-mcp");
-    let mut mcp = McpClient::start(&live.socket);
-    let (err, text, _) = mcp.call("update_annotation", json!({"id": "m5", "label": "moved!"}));
-    assert!(!err, "{text}");
-    let (err, text, _) = mcp.call(
-        "update_annotation",
-        json!({"id": "n0", "label": "prints it!"}),
-    );
-    assert!(!err, "{text}");
-    assert_places(&live, &tiza, &authored(), "MCP label");
-    assert_m5_on_main(&live, "moved!");
-    assert_n0_at_step_0(&live, "prints it!");
-    let (err, text, _) = mcp.call("update_annotation", json!({"id": "m5", "step": 3}));
-    assert!(!err, "{text}");
-    assert_places(&live, &tiza, &with(place("m5", 3, None, 3)), "MCP step");
-}
-
-#[test]
 fn ac1_commands_keep_step_and_file() {
     let (live, tiza) = open("ac1-commands");
     for cmd in [

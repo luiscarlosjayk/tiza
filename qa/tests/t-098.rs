@@ -742,6 +742,23 @@ fn ac1_load_time_errors_name_the_move() {
     let out = tiza(&["render", bad.to_str().unwrap(), "--out", "-"]);
     let err = String::from_utf8_lossy(&out.stderr);
     assert!(err.contains("line 9 does not exist"), "{err}");
+    // A range whose end marker comes before its start marker quotes the
+    // end marker as written (moved here from t-167).
+    std::fs::write(
+        &bad,
+        json!({
+            "schema": 1, "source": {"language": "ini", "first_line": 1},
+            "code": ["[api]", "token=abc123Q7valueXyz789", "region=eu-west-1", "port=8080"],
+            "moves": [{"at_step": 2, "action": "code.patch", "op": "replace",
+                       "find_start": "region", "find_end": "Q7valueXyz789", "content": "x"}]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let out = tiza(&["render", bad.to_str().unwrap(), "--out", "-"]);
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("find_end «Q7valueXyz789»"), "{err}");
 }
 
 // ---------------------------------------------------------------- AC7 / AC8

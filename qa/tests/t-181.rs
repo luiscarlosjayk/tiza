@@ -129,7 +129,11 @@ fn stamp(dir: &Path, env: &[(&str, &str)]) -> String {
         dir.display(),
         String::from_utf8_lossy(&out.stderr)
     );
-    String::from_utf8_lossy(&out.stdout).trim().to_owned()
+    // Only the line end: a stamp with spaces must show (the override is
+    // trimmed by build.rs, not here).
+    String::from_utf8_lossy(&out.stdout)
+        .trim_end_matches(['\n', '\r'])
+        .to_owned()
 }
 
 /// A repository with the tiny crate committed on `main`, and a worktree of
@@ -323,7 +327,11 @@ fn corner_reftable_repository() {
 #[test]
 fn ac3_override_outside_git_and_failing_git() {
     let (_main, wt) = repo_and_worktree("t181-override");
-    assert_eq!(stamp(&wt, &[("TIZA_GIT_SHA_OVERRIDE", "v9.9.9")]), "v9.9.9");
+    // The override is trimmed (moved here from t-152).
+    assert_eq!(
+        stamp(&wt, &[("TIZA_GIT_SHA_OVERRIDE", " v9.9.9 ")]),
+        "v9.9.9"
+    );
     assert_eq!(stamp(&wt, &[]), head(&wt), "back to git without it");
 
     let loose = scratch("t181-nogit");
@@ -349,24 +357,4 @@ fn ac3_override_outside_git_and_failing_git() {
     let broken = scratch("t181-brokengit");
     write_crate(&broken.join(CRATE));
     assert_eq!(stamp(&broken, &[("PATH", &path)]), "unknown");
-}
-
-/// AC1: the project's own build script watches the files git names for this
-/// checkout (a worktree here or the main checkout), never `../../.git/…`.
-#[test]
-fn ac1_project_build_script_watches_git_paths() {
-    let src = build_rs();
-    assert!(!src.contains("../../.git"), "the old fixed paths are gone");
-    for needle in [
-        "--git-path",
-        "--symbolic-full-name",
-        "packed-refs",
-        "logs/",
-        "reftable",
-        "index",
-        "GIT_OPTIONAL_LOCKS",
-        "TIZA_GIT_SHA_OVERRIDE",
-    ] {
-        assert!(src.contains(needle), "build.rs lacks {needle}");
-    }
 }

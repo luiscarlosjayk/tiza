@@ -13,6 +13,11 @@
 //!   both license files and carries the Rust contribution clause verbatim.
 //! - AC5 the name only appears in its full form, never without «Jayk»
 //!   (CHANGELOG history may stay as written).
+//! - AC6 Every font of the repository has its license next to it: the two
+//!   that the binary embeds (JetBrains Mono, OFL; the DejaVu symbols,
+//!   Bitstream Vera) and the brand serif (Libron, OFL, with its Reserved
+//!   Font Name). Moved here from t-068 and t-134, extended to the embedded
+//!   fonts.
 
 use std::path::{Path, PathBuf};
 
@@ -40,49 +45,6 @@ fn license_section() -> String {
     let rest = &readme[start + 1..];
     let end = rest[3..].find("\n## ").map(|i| i + 3).unwrap_or(rest.len());
     rest[..end].to_string()
-}
-
-#[test]
-fn ac3_workspace_authors_is_only_luis_with_the_full_name() {
-    let cargo = read("Cargo.toml");
-    let pkg_start = cargo
-        .find("[workspace.package]")
-        .expect("[workspace.package]");
-    let pkg = &cargo[pkg_start..];
-    let pkg = &pkg[..pkg[1..].find("\n[").map(|i| i + 1).unwrap_or(pkg.len())];
-    let line = pkg
-        .lines()
-        .find(|l| l.trim_start().starts_with("authors"))
-        .expect("[workspace.package] has authors");
-    assert_eq!(
-        line.trim(),
-        r#"authors = ["Luis Carlos Osorio Jayk <luiscarlosjayk@gmail.com>"]"#
-    );
-    assert!(!cargo.contains("Claude <"), "Claude is not a Cargo author");
-
-    // Every member inherits it, so cargo metadata shows only Luis.
-    for member in [
-        "crates/tiza-core",
-        "crates/tiza-tui",
-        "crates/tiza-mcp",
-        "crates/tiza-cli",
-        "crates/tiza-export",
-        "qa",
-    ] {
-        let manifest = read(&format!("{member}/Cargo.toml"));
-        assert!(
-            manifest
-                .lines()
-                .any(|l| l.trim() == "authors.workspace = true"),
-            "{member} keeps authors.workspace = true"
-        );
-        assert!(
-            !manifest
-                .lines()
-                .any(|l| l.trim_start().starts_with("authors =")),
-            "{member} does not set its own authors"
-        );
-    }
 }
 
 #[test]
@@ -139,4 +101,52 @@ fn ac5_the_name_only_appears_in_its_full_form() {
         }
     }
     assert!(bad.is_empty(), "short form of the name in: {bad:?}");
+}
+
+/// AC6: each license file says its license, and its folder holds the fonts
+/// that it covers.
+#[test]
+fn ac6_every_font_has_its_license_next_to_it() {
+    let fonts: [(&str, &str, &[&str], &[&str]); 3] = [
+        (
+            "crates/tiza-export/assets/fonts",
+            "LICENSE-JetBrainsMono-OFL.txt",
+            &["SIL OPEN FONT LICENSE Version 1.1", "JetBrains Mono"],
+            &[
+                "JetBrainsMono-Regular.ttf",
+                "JetBrainsMono-Bold.ttf",
+                "JetBrainsMono-Italic.ttf",
+                "JetBrainsMono-BoldItalic.ttf",
+            ],
+        ),
+        (
+            "crates/tiza-export/assets/fonts",
+            "LICENSE-TizaSymbols-DejaVu.txt",
+            &["License: bitstream-vera", "Permission is hereby granted"],
+            &["TizaSymbols.ttf"],
+        ),
+        (
+            "docs/brand/fonts",
+            "LICENSE-TizaSerif-Libron-OFL.txt",
+            &[
+                "SIL OPEN FONT LICENSE Version 1.1",
+                "Reserved Font Name Libron",
+            ],
+            &[
+                "TizaSerif-Regular.ttf",
+                "TizaSerif-Bold.ttf",
+                "TizaSerif-Italic.ttf",
+                "TizaSerif-BoldItalic.ttf",
+            ],
+        ),
+    ];
+    for (dir, license, phrases, covered) in fonts {
+        let text = read(&format!("{dir}/{license}"));
+        for p in phrases {
+            assert!(text.contains(p), "{dir}/{license}: «{p}»");
+        }
+        for f in covered {
+            assert!(root().join(dir).join(f).is_file(), "{dir}/{f}");
+        }
+    }
 }

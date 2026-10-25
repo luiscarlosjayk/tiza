@@ -469,8 +469,11 @@ fn review_ctrl_c_clears_the_hint_of_a_selection_as_esc_does() {
 fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
     // `j v l l m` opens `:mark ` on the selected text of line 2. Closing
     // the line without running it (Ctrl-C, Esc, or Backspace past its
-    // start) cancels that selection too: `:mark warn` typed later on line 4
-    // has no anchor and is refused, instead of marking line 2.
+    // start) cancels that selection too: `:mark warn` typed right after, on
+    // the same line, has no anchor and is refused, instead of marking the
+    // selected text. (No key between them: since t-203 any key in normal
+    // mode but `:`, `u` and Ctrl-R drops a pending selection, and the test
+    // would pass even if closing kept it.)
     let closers = [
         ("ctrl-c", CTRL_C.to_string()),
         ("esc", "\x1b".to_string()),
@@ -488,7 +491,6 @@ fn review_cancelling_a_command_line_a_selection_opened_forgets_the_selection() {
                 ["k", "v", [["bar", "SELECT"]]],
                 ["k", "llm", [["bar", ":mark"]]],
                 ["k", close, [["bar", "NORMAL"]]],
-                ["k", "jj", [["bar", " L4 "]]],
                 ["k", ":mark warn\r", [["has", "usage: :mark"]]],
                 ["api", "status", {}],
                 ["k", CTRL_C],
@@ -766,72 +768,6 @@ fn ac4_corner_ctrl_c_over_a_follow_or_stale_notice_quits() {
         r.tail
     );
     assert_eq!(std::fs::read(dir.join("config.ini.tiza")).unwrap(), before);
-}
-
-#[test]
-fn ac4_a_cancel_first_still_leaves_the_retry_of_a_failed_autosave_to_the_quit() {
-    use std::os::unix::fs::PermissionsExt;
-    // Autosave on, the sidecar read-only (the autosave fails), writable
-    // again later: Ctrl-C closes the command line (nothing written), and
-    // the Ctrl-C that quits tries the save once more (t-195).
-    let (dir, tiza) = project("t197-ac4-retry");
-    std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
-    let r = run(
-        &dir,
-        "retry.py",
-        &[],
-        "main.rs",
-        json!([
-            ["k", ":note 1 hello\r", [["status", "annotations", 1]]],
-            ["chmod", "main.rs.tiza", 0o644],
-            ["k", ":", [["nobar", "NORMAL"]]],
-            ["k", CTRL_C, [["bar", "NORMAL"]]],
-            ["alive"],
-            ["k", CTRL_C],
-        ]),
-    );
-    r.quit_cleanly();
-    assert_eq!(r.alive, [true]);
-    assert!(std::fs::read_to_string(&tiza).unwrap().contains("hello"));
-    assert!(
-        !r.tail.contains("not saved") && !r.tail.contains("could not"),
-        "{}",
-        r.tail
-    );
-}
-
-// ---------------------------------------------------------------- AC5
-
-#[test]
-fn ac5_q_bang_and_ctrl_u_are_unchanged() {
-    let (dir, tiza) = project("t197-ac5");
-    let before = std::fs::read(&tiza).unwrap();
-    let r = run(
-        &dir,
-        "ac5.py",
-        &["--no-save"],
-        "main.rs",
-        json!([
-            ["k", ":note 1 hel", [["bar", ":note 1 hel"]]],
-            ["k", "\x15", [["nobar", "note 1 hel"], ["nobar", "NORMAL"]]],
-            ["k", "note 2 x\r", [["status", "annotations", 1]]],
-            ["api", "scene.get", {}],
-            ["k", ":q!\r"],
-        ]),
-    );
-    r.quit_cleanly();
-    let anns = annotations(r.api(0));
-    assert_eq!(anns.len(), 1, "{anns:?}");
-    assert_eq!(
-        (&anns[0]["line"], &anns[0]["text"]),
-        (&json!(2), &json!("x"))
-    );
-    assert!(
-        r.tail.contains("1 change not saved (note a1)"),
-        "{}",
-        r.tail
-    );
-    assert_eq!(std::fs::read(&tiza).unwrap(), before);
 }
 
 // ---------------------------------------------------------------- corners

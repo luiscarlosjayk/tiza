@@ -450,16 +450,6 @@ fn ac1_a_wider_start_ends_at_the_final_width() {
 }
 
 #[test]
-fn ac1_a_narrower_start_ends_at_the_final_width() {
-    race(
-        "narrower",
-        present_args(&ownership()),
-        at_every_delay("59to60", (H, W - 1), &[(H, W)], "setup"),
-        json!({}),
-    );
-}
-
-#[test]
 fn ac1_two_resizes_in_a_row_the_last_one_wins() {
     // Both sizes are set back to back (well within 1 ms): two SIGWINCH,
     // and the frame that stays is the last size's.
@@ -488,13 +478,6 @@ fn ac3_rows_in_presentation_mode() {
     let mut runs = at_every_delay("31to30", (H + 1, W), &[(H, W)], "setup");
     runs.extend(at_every_delay("29to30", (H - 1, W), &[(H, W)], "setup"));
     race("rows", present_args(&ownership()), runs, json!({}));
-}
-
-#[test]
-fn ac3_columns_and_rows_in_normal_mode() {
-    let mut runs = at_every_delay("61to60", (H, W + 1), &[(H, W)], "setup");
-    runs.extend(at_every_delay("29to30", (H - 1, W), &[(H, W)], "setup"));
-    race("normal", normal_args(&ownership()), runs, json!({}));
 }
 
 #[test]

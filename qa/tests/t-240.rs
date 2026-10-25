@@ -103,13 +103,3 @@ fn corner_arrow_and_mark_give_the_same_messages() {
         "use 18:push_back («push_back» is on L18, not L22)"
     );
 }
-
-#[test]
-fn ac4_changelog() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(
-        changelog.contains("L:text skips notes and labels"),
-        "CHANGELOG"
-    );
-}

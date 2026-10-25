@@ -12,6 +12,9 @@
 //! - AC5 PNG bytes are refused on a terminal stdout but written to a pipe.
 //! - AC6 The MCP `export_image` tool writes .png/.svg (and, since t-049, .txt/.ansi/.md) and rejects other extensions.
 //! - AC7 Dark and light themes both export; `--theme` overrides the document's.
+//! - AC8 (from t-068, with the grid checks of t-134) A mark label's glyphs
+//!   keep their own run, the words start on the next cell, and every text
+//!   run sits on the grid.
 
 use serde_json::json;
 use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
@@ -297,4 +300,90 @@ fn ac7_both_themes_export_and_flag_overrides_document() {
             "{theme} background"
         );
     }
+}
+
+// ---------- From t-068 (with the grid checks of t-134) ----------
+
+fn svg(args: &[&str]) -> String {
+    let f = fixture("t-068/ownership.rs.tiza");
+    let mut full = vec![
+        "render",
+        f.to_str().unwrap(),
+        "--out",
+        "-",
+        "--format",
+        "svg",
+        "--step",
+        "7",
+        "--width",
+        "100",
+    ];
+    full.extend_from_slice(args);
+    tiza_ok(&full)
+}
+
+fn texts(svg: &str) -> Vec<&str> {
+    svg.match_indices("<text ")
+        .map(|(i, _)| &svg[i..svg[i..].find("</text>").map(|e| i + e + 7).unwrap()])
+        .collect()
+}
+
+/// A mark label's glyphs (`━▶`, `╳`) stay their own run on the grid and the
+/// words start on the next cell; every run has its `textLength`.
+#[test]
+fn mark_glyphs_keep_their_own_run_on_the_grid() {
+    let s = svg(&[]);
+    let runs = texts(&s);
+    let glyph = runs
+        .iter()
+        .find(|t| t.ends_with(">━▶</text>"))
+        .expect("glyph run");
+    assert!(
+        glyph.contains("textLength") && !glyph.contains("class=\"p"),
+        "{glyph}"
+    );
+    let words = runs
+        .iter()
+        .find(|t| t.contains("> move: s moves"))
+        .expect("words run");
+    assert!(
+        words.contains("textLength") && !words.contains("class=\"p"),
+        "{words}"
+    );
+    // The words start right after the glyph cells (2 cells = 2 × 9.6 px at 16 px).
+    let x = |t: &str| {
+        t.split("x=\"")
+            .nth(1)
+            .unwrap()
+            .split('"')
+            .next()
+            .unwrap()
+            .parse::<f32>()
+            .unwrap()
+    };
+    assert!(
+        (x(words) - x(glyph) - 2.0 * 9.6).abs() < 0.01,
+        "{} vs {}",
+        x(words),
+        x(glyph)
+    );
+    let drop = runs
+        .iter()
+        .find(|t| t.ends_with(">╳</text>"))
+        .expect("drop glyph");
+    assert!(!drop.contains("class=\"p"));
+    // Every text run sits on the grid (from t-134), and the glyph and the
+    // words of `move: s moves` are where step 7 at 100 columns puts them.
+    assert!(!s.contains("letter-spacing"));
+    let count = s.matches("<text ").count();
+    assert!(count > 50, "{count} text runs");
+    assert_eq!(s.matches("textLength=").count(), count);
+    assert!(
+        s.contains(r##"<text x="800.00" y="111.68" textLength="19.20" lengthAdjust="spacing" fill="#f08b5b" xml:space="preserve">━▶</text>"##),
+        "glyph run"
+    );
+    assert!(
+        s.contains(r#"<text x="819.20" y="111.68" textLength="163.20""#),
+        "words run"
+    );
 }

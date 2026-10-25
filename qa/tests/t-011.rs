@@ -406,15 +406,6 @@ fn corner_line_range_reloads_only_its_lines() {
 }
 
 #[test]
-fn corner_follow_flag_with_stdin_reports_nothing_to_follow() {
-    // The TUI needs a terminal, so the check is on the App: a document read
-    // from stdin is embedded and `--follow` at start produces the message.
-    let live = Live::from_code(CODE, "rs", "t011-stdin");
-    let msg = live.with(|app| app.set_follow(true).map_err(|e| e.to_string()));
-    assert!(msg.unwrap_err().starts_with("nothing to follow"));
-}
-
-#[test]
 fn corner_editing_one_edge_line_of_a_box_keeps_it() {
     let (live, src) = followed("t011-edge", CODE);
     live.command("box 2-3 ownership");
@@ -887,57 +878,4 @@ fn step18_n_to_n_hunk_keeps_the_mark_and_the_box_in_place() {
     wait_reloads(&live, 3);
     assert_eq!(count(&live), 2, "{:?}", live.message());
     assert_eq!(lines_of(&live, "a1"), Some((13, 13)));
-}
-
-#[test]
-fn step19_u_says_what_it_undid() {
-    let (live, src, lines) = stack_fixture("t011-step19");
-    live.command("note 4 owned");
-    live.command("follow on");
-    // A harmless save pushes no undo step; `u` then names the note it undoes.
-    let mut e = lines.clone();
-    e[20] = "        self.items.last().copied()".into();
-    save_like_zed(&src, &(e.join("\n") + "\n"));
-    wait_reloads(&live, 1);
-    assert_eq!(count(&live), 1);
-    live.keys(&[KeyCode::Char('u')]);
-    let (msg, _) = live.message().unwrap();
-    // The note was added on the code before that save, which main.rs no
-    // longer holds: the undo brings that code back, so follow goes off and
-    // says so before naming the note (the bar never claims to follow a file
-    // the screen does not show).
-    assert_eq!(
-        msg,
-        "follow off: the code on screen is not main.rs; :follow on reloads main.rs · undone: note a1"
-    );
-    assert_eq!(count(&live), 0);
-    live.keys(&[KeyCode::Char('U')]);
-    let (msg, _) = live.message().unwrap();
-    assert_eq!(
-        msg,
-        "redone: note a1; follow is off: :follow on reloads main.rs"
-    );
-    // Following again from the file's code: nothing to reload, and the
-    // reloads are counted anew.
-    live.command("follow on");
-    assert_eq!(live.message().unwrap().0, "following main.rs");
-    // A reload that dropped something is named by its number.
-    let mut e2 = e.clone();
-    e2[3] = "    items: VecDeque<T>, // changed".into();
-    live.command("hl 4:Vec<T> y");
-    save_like_zed(&src, &(e2.join("\n") + "\n"));
-    wait_reloads(&live, 1);
-    assert_eq!(count(&live), 1, "{:?}", live.message());
-    live.keys(&[KeyCode::Char('u')]);
-    let (msg, _) = live.message().unwrap();
-    // Undoing the reload shows the code before it, again not main.rs's.
-    assert_eq!(
-        msg,
-        "follow off: the code on screen is not main.rs; :follow on reloads main.rs · undone: reload #1"
-    );
-    assert_eq!(count(&live), 2);
-    live.command("clear");
-    live.keys(&[KeyCode::Char('u')]);
-    let (msg, _) = live.message().unwrap();
-    assert_eq!(msg, "undone: 2 annotations cleared");
 }

@@ -4,24 +4,21 @@
 //! The text of the page (what is verified, the caveats, the report line) is
 //! a manual check: since the test rule of AGENTS.md, no test pins prose.
 //! These tests pin the claims the page makes about the code: a plain (not
-//! tmux-wrapped) OSC 11/10 query, no `COLORTERM` check, bracketed paste on,
-//! mouse capture only with `--mouse`, no kitty keyboard flags, and
-//! `--theme terminal` drawing without a single 24-bit colour. If one of
-//! these changes, docs/reference/terminals.md has to change with it.
+//! tmux-wrapped) OSC 11/10 query, no `COLORTERM` check, no kitty keyboard
+//! flags, and `--theme terminal` drawing without a single 24-bit colour.
+//! Bracketed paste on and mouse capture only with `--mouse` are checked on
+//! a real pty, in t-180 and t-204. If one of these changes,
+//! docs/reference/terminals.md has to change with it.
 
 use std::path::{Path, PathBuf};
 
-use tiza_qa::{Live, tiza_ok};
+use tiza_qa::Live;
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
         .to_path_buf()
-}
-
-fn read(rel: &str) -> String {
-    std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
 /// Every `.rs` file under `crates/`, as (path, contents).
@@ -75,24 +72,6 @@ fn ac2_no_colorterm_check_and_no_kitty_keyboard_flags() {
             path.display()
         );
     }
-}
-
-#[test]
-fn ac2_bracketed_paste_is_on_and_the_mouse_only_with_the_flag() {
-    let tui = read("crates/tiza-tui/src/lib.rs");
-    assert!(tui.contains("execute!(io::stdout(), EnableBracketedPaste)?;"));
-    assert!(
-        tui.contains("if app.mouse {\n        let _ = execute!(io::stdout(), EnableMouseCapture);"),
-        "mouse capture at start must depend on --mouse"
-    );
-    assert_eq!(
-        tui.matches("EnableMouseCapture").count(),
-        3,
-        "import, start, :mouse on"
-    );
-    let help = tiza_ok(&["--help"]);
-    assert!(help.contains("--mouse"), "{help}");
-    assert!(help.contains("Off by default"), "{help}");
 }
 
 #[test]

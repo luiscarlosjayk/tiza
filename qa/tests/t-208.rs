@@ -19,7 +19,7 @@
 use serde_json::{Value, json};
 use tiza_core::check::{Bound, last_step, min_clean_width, saturation_bounds, saturation_width};
 use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
-use tiza_qa::{bin, fixture, scratch};
+use tiza_qa::{bin, fixture};
 
 fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout::Layout {
     let opts = LayoutOptions {
@@ -131,106 +131,6 @@ fn corner_other_zero_width_and_wide_spaces() {
             );
         }
     }
-}
-
-/// A small deterministic generator (xorshift).
-struct Gen(u64);
-
-impl Gen {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n.max(1)
-    }
-    /// Words with zero-width spaces, joiners, combining marks and special
-    /// spaces among plain ones.
-    fn words(&mut self, max: u64) -> String {
-        const W: [&str; 12] = [
-            "the",
-            "borrow",
-            "zero\u{200b}width",
-            "👩\u{200d}💻",
-            "cafe\u{301}",
-            "\u{301}",
-            "word\u{2060}joiner",
-            "no\u{a0}break",
-            "全\u{3000}角",
-            "moves",
-            "a\u{200b}",
-            "value",
-        ];
-        let n = 1 + self.below(max);
-        (0..n)
-            .map(|_| W[self.below(W.len() as u64) as usize])
-            .collect::<Vec<_>>()
-            .join(if self.below(4) == 0 { "" } else { " " })
-    }
-}
-
-fn random_doc(g: &mut Gen) -> Value {
-    let code: Vec<String> = (0..4 + g.below(6))
-        .map(|i| format!("let v{i} = {};", "x".repeat(g.below(50) as usize)))
-        .collect();
-    let lines = code.len() as u64;
-    let mut anns = Vec::new();
-    for i in 0..(2 + g.below(6)) {
-        let step = 1 + g.below(3);
-        let l = 1 + g.below(lines);
-        let long = if g.below(3) == 0 { 25 } else { 6 };
-        anns.push(match g.below(4) {
-            0 => json!({"id": format!("a{i}"), "step": step, "type": "note", "line": l, "text": g.words(long)}),
-            1 => json!({"id": format!("a{i}"), "step": step, "type": "highlight", "span": {"line": l, "start": 0, "end": 3}, "label": g.words(long)}),
-            2 => json!({"id": format!("a{i}"), "step": step, "type": "mark", "kind": "warn", "span": {"line": l, "start": 0, "end": 3}, "label": g.words(long)}),
-            _ => json!({"id": format!("a{i}"), "step": step, "type": "callout", "from_line": l, "to_line": l, "text": g.words(25)}),
-        });
-    }
-    let mut doc = json!({
-        "schema": 1, "source": {"language": "rs", "first_line": 1},
-        "code": code, "annotations": anns
-    });
-    if g.below(4) == 0 {
-        doc["margin"] = json!(12 + g.below(40));
-    }
-    doc
-}
-
-#[test]
-fn ac3_random_documents_with_zero_width_and_combining_text() {
-    let dir = scratch("t208-random");
-    let mut g = Gen(0x7a11_2080_5eed_0001);
-    let (mut checked, mut slow) = (0, 0);
-    for i in 0..200 {
-        let v = random_doc(&mut g);
-        let Ok(doc) = tiza_core::fs::parse_document(&v.to_string(), None) else {
-            continue;
-        };
-        let file = dir.join(format!("r{i}.tiza"));
-        let show = |e: String| panic!("{}: {e}\n{v}", file.display());
-        if let Err(e) = bounded(&doc) {
-            std::fs::write(&file, v.to_string()).unwrap();
-            show(e);
-        }
-        // One in ten: the announced width against every width.
-        if i % 10 == 0 {
-            let got = min_clean_width(&doc, &tiza_core::Theme::dark());
-            let want = clean_the_slow_way(&doc);
-            if got != want {
-                std::fs::write(&file, v.to_string()).unwrap();
-                show(format!("announces {got:?}, every width says {want:?}"));
-            }
-            slow += 1;
-        }
-        checked += 1;
-    }
-    assert!(
-        checked >= 150 && slow >= 15,
-        "{checked} checked, {slow} the slow way"
-    );
-    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]

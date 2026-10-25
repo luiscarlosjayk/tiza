@@ -252,23 +252,6 @@ fn ac7_every_key_that_does_something_is_in_the_table() {
     );
 }
 
-#[test]
-fn ac1_the_sections_follow_the_work() {
-    let titles: Vec<&str> = HELP.iter().map(|(s, _)| s.title()).collect();
-    assert_eq!(
-        titles,
-        [
-            "Move",
-            "Steps",
-            "Select and annotate",
-            "Edit an annotation (Tab)",
-            "View",
-            "Commands (:)",
-            "Save and quit",
-        ]
-    );
-}
-
 /// The screen with the help open, `keys` typed in it.
 fn help_screen(live: &Live, cols: u16, rows: u16, keys: &[KeyCode]) -> String {
     live.with(move |a| a.size = (cols, rows));

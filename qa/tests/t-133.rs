@@ -436,23 +436,3 @@ fn ac2_ac3_ac5_committed_bench_baseline_covers_every_scenario() {
         );
     }
 }
-
-#[test]
-fn ac4_docs_name_the_download_size_and_the_scripts() {
-    let agents = std::fs::read_to_string(root().join("AGENTS.md")).unwrap();
-    assert!(
-        agents.contains("scripts/size-check.sh") && agents.contains("scripts/bench.sh"),
-        "AGENTS.md does not mention the size and bench scripts"
-    );
-    for s in ["size-check.sh", "bench.sh"] {
-        let p = script(s);
-        let text = std::fs::read_to_string(&p).unwrap();
-        assert!(text.starts_with("#!/usr/bin/env bash"), "{s}");
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(&p).unwrap().permissions().mode();
-            assert!(mode & 0o111 != 0, "{s} is not executable");
-        }
-    }
-}

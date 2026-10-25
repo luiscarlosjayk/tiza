@@ -68,6 +68,22 @@ fn ac1_schemas_are_printed_and_committed() {
     ] {
         assert!(methods.contains(&m), "{m} missing from the API schema");
     }
+    // The replies of annotation.add/update say where the annotation is
+    // (moved here from t-155).
+    for name in ["annotation.add", "annotation.update"] {
+        let method = api["methods"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["method"] == name)
+            .unwrap_or_else(|| panic!("{name} missing from the API schema"));
+        for field in ["shown_step", "visible", "hidden", "step_title"] {
+            assert!(
+                !method["result"]["properties"][field].is_null(),
+                "the result of {name} lacks {field}"
+            );
+        }
+    }
     // Committed copies are byte-identical in content.
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../schema");
     let on_disk: serde_json::Value =

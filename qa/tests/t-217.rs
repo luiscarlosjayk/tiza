@@ -173,31 +173,6 @@ fn ac1_notes_that_name_a_card_are_refused() {
 }
 
 #[test]
-fn ac2_both_release_paths_publish_the_notes_file() {
-    let yml = read(".github/workflows/release.yml");
-    assert!(
-        yml.contains(
-            r#"scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" > notes.md"#
-        ),
-        "release.yml"
-    );
-    assert!(yml.contains("body_path: notes.md"));
-    assert!(!yml.contains("git log"), "no commit log in release.yml");
-    let local = read("scripts/release-local.sh");
-    assert!(
-        !local.contains("git log"),
-        "no commit log in release-local.sh"
-    );
-    // The notes are read before anything is built.
-    let notes_at = local
-        .find(r#"scripts/release-notes.sh "$tag" "$repo""#)
-        .unwrap();
-    let build_at = local.find("cargo build").unwrap();
-    assert!(notes_at < build_at, "the notes first");
-    assert!(local.contains(r#"printf '%s\n' "$notes" > "$out/notes.md""#));
-}
-
-#[test]
 fn ac1_the_v0_1_0_notes_match_what_the_release_builds() {
     let n = read("docs/release-notes/v0.1.0.md");
     assert!(!names_a_card(&n));
@@ -244,12 +219,6 @@ fn ac3_the_readme_status_and_the_gatekeeper_note() {
         "the status names v{version}"
     );
     assert!(read("scripts/bump-version.sh").contains("> Status: **v$new**"));
-}
-
-#[test]
-fn ac5_changelog() {
-    // (Condensed with the rest of the CHANGELOG of 0.1.0, AC4.)
-    assert!(read("CHANGELOG.md").contains("notes written by hand for that version"));
 }
 
 // ---------- Review ----------
@@ -345,28 +314,6 @@ fn rev_a_card_written_with_another_hyphen_is_refused() {
 }
 
 #[test]
-fn rev_the_workflow_checks_the_notes_before_building_in_a_22_04_container() {
-    let yml = read(".github/workflows/release.yml");
-    let notes_job = yml.find("\n  notes:\n").expect("a notes job");
-    let build_job = yml.find("\n  build:\n").unwrap();
-    assert!(notes_job < build_job);
-    assert!(yml[build_job..].contains("needs: notes"));
-    assert!(yml[notes_job..build_job].contains("scripts/release-notes.sh"));
-    assert!(yml.contains(r#"container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu"#));
-    assert!(yml.contains("container: ${{ matrix.container }}"));
-    assert!(
-        !yml.contains("os: ubuntu-22.04"),
-        "the retiring runner image"
-    );
-    assert!(!yml.contains("fetch-depth"), "no history needed any more");
-    // In the container, git before the checkout and rustup before the
-    // toolchain step.
-    let image = yml.find("build image (container only)").unwrap();
-    assert!(image < yml[build_job..].find("actions/checkout").unwrap() + build_job);
-    assert!(image < yml.find("rustup toolchain install").unwrap());
-}
-
-#[test]
 fn rev_a_local_linux_archive_needs_glibc_2_35_at_most() {
     let local = read("scripts/release-local.sh");
     let check = local.find("glibc 2.35 at most").expect("the check");
@@ -405,11 +352,4 @@ fn rev_bump_version_refuses_a_status_line_twice_and_writes_nothing() {
         std::fs::read_to_string(dir.join("README.md")).unwrap(),
         twice
     );
-}
-
-#[test]
-fn rev_the_install_steps_make_the_folder_first() {
-    let n = read("docs/release-notes/v0.1.0.md");
-    let mk = n.find("mkdir -p ~/.local/bin").expect("mkdir");
-    assert!(mk < n.find("cp tiza-v0.1.0-<target>/tiza").unwrap());
 }

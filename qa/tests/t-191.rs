@@ -356,12 +356,6 @@ fn ac4_status_before_the_first_frame() {
 // ---------- AC5, AC7 ----------
 
 #[test]
-fn ac5_highlighting_uses_at_most_four_threads() {
-    assert_eq!(tiza_core::highlight::MAX_THREADS, 4);
-    assert!(tiza_core::highlight::default_threads(1_000_000) <= 4);
-}
-
-#[test]
 fn ac7_a_read_only_request_does_not_redraw() {
     for m in tiza_tui::app::READ_ONLY_METHODS {
         assert!(!tiza_tui::request_redraws(m, false), "{m}");

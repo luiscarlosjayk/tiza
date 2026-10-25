@@ -17,7 +17,7 @@
 
 use crossterm::event::KeyCode;
 use serde_json::json;
-use tiza_qa::{Live, fixture, scratch, tiza_ok};
+use tiza_qa::{Live, fixture, tiza_ok};
 
 fn render() -> String {
     tiza_ok(&[
@@ -276,20 +276,4 @@ fn ac5_commands_socket_and_mcp_set_styles() {
         .unwrap();
     assert_eq!(m["stroke"], "dotted");
     assert_eq!(m["heads"], json!({"start": "dot", "end": "none"}));
-}
-
-#[test]
-fn ac6_old_files_unchanged_and_defaults_not_written() {
-    let dir = scratch("t094-compat");
-    let old = r#"{"schema":1,"source":{"language":"rs"},"code":["a","b"],"annotations":[{"id":"x","step":1,"type":"arrow","from":{"line":1,"col":0},"to":{"line":2,"col":0}}]}"#;
-    let path = dir.join("old.tiza");
-    std::fs::write(&path, old).unwrap();
-    let doc = tiza_core::fs::parse_document(old, None).unwrap();
-    let json = serde_json::to_string(&doc).unwrap();
-    assert!(
-        !json.contains("stroke") && !json.contains("heads") && !json.contains("route"),
-        "{json}"
-    );
-    let out = tiza_ok(&["render", path.to_str().unwrap(), "--out", "-"]);
-    assert!(out.contains("╭─") && out.contains("▶"), "{out}");
 }

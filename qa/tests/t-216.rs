@@ -99,22 +99,6 @@ fn step1_step2_ac1_ac2_render_text_agrees_with_visible_and_check_at_every_width(
 }
 
 #[test]
-fn ac2_with_a_width_the_reply_names_it() {
-    // (With a width it is the take at that width since t-224, which
-    // compares it with `tiza render`.)
-    let live = opened("t216-width", 117, false);
-    live.api_ok(
-        "annotation.add",
-        json!({"type": "note", "line": 2, "text": NOTE, "step": 1}),
-    );
-    for w in [60, 117, 140] {
-        let r = live.api_ok("render.text", json!({"width": w}));
-        assert!(!r["text"].as_str().unwrap().is_empty(), "{w}");
-        assert_eq!(r["width"], json!(w));
-    }
-}
-
-#[test]
 fn corner_a_terminal_narrower_than_checks_narrowest_width() {
     let live = opened("t216-narrow", 12, false);
     let r = live.api_ok("render.text", json!({}));
@@ -137,24 +121,6 @@ fn corner_no_terminal_size_yet() {
         tiza_core::check::DEFAULT_WIDTH as u64,
         "{r}"
     );
-}
-
-#[test]
-fn ac3_docs_schema_and_changelog() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let schema: Value = serde_json::from_str(&read("schema/api.schema.json")).unwrap();
-    let text = schema.to_string();
-    let at = text
-        .find("\"render.text\"")
-        .expect("render.text in the schema");
-    assert!(text[at..].contains("\"width\""), "the reply's width");
-    assert!(
-        read("docs/agent-guide.md")
-            .contains("without a `width`, at the width of the screen's code area")
-    );
-    // (The CHANGELOG of 0.1.0 was condensed in t-217.)
-    assert!(read("CHANGELOG.md").contains("Without a width, `render.text`"));
 }
 
 // ---------- Review ----------

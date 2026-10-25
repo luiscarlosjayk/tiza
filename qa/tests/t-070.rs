@@ -100,6 +100,22 @@ fn ac1_handshake_tools_and_calls() {
         json!({"id": "m", "label": "renamed", "color": "blue"}),
     );
     assert!(!err);
+    // A move through `at` is applied (moved here from t-093: no other test
+    // moves an annotation over the MCP with success).
+    let (err, text, _) = mcp.call(
+        "update_annotation",
+        json!({"id": "m", "at": {"line": 5, "find": "s: i32"}}),
+    );
+    assert!(!err, "{text}");
+    let list = live.api_ok("scene.list", json!({}));
+    let m = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|e| e.as_str())
+        .find(|e| e.starts_with("m "))
+        .unwrap_or_else(|| panic!("{list}"));
+    assert!(m.contains("mark move L5 9..15"), "{m}");
     let (err, _, _) = mcp.call("set_step", json!({"step": 2}));
     assert!(!err);
     let (err, _, _) = mcp.call("prev_step", json!({}));

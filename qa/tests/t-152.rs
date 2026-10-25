@@ -152,6 +152,14 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
         }
         assert_eq!(with_cargo, cargo_jobs, "{wf}: the jobs that run cargo");
     }
+    // CI runs deny.toml (licenses, the network policy, duplicates) with
+    // cargo-deny-action, which installs the toolchain of
+    // rust-toolchain.toml itself (moved here from
+    // toolchain_cargo_deny_reads_rust_toolchain_toml).
+    let yml = read(".github/workflows/ci.yml");
+    let jobs = jobs(&yml);
+    let deny = job(&jobs, "deny").join("\n");
+    assert!(deny.contains("EmbarkStudios/cargo-deny-action@v2"));
 }
 
 #[test]
@@ -168,18 +176,6 @@ fn toolchain_release_targets_go_to_the_pinned_toolchain() {
         "install → target → build"
     );
     assert!(yml.contains("target: x86_64-apple-darwin"));
-}
-
-#[test]
-fn toolchain_cargo_deny_reads_rust_toolchain_toml() {
-    let yml = read(".github/workflows/ci.yml");
-    let jobs = jobs(&yml);
-    let deny = job(&jobs, "deny").join("\n");
-    assert!(deny.contains("EmbarkStudios/cargo-deny-action@v2"));
-    assert!(
-        !deny.contains("rust-version:"),
-        "cargo-deny-action installs the toolchain of rust-toolchain.toml itself"
-    );
 }
 
 /// The workflows are valid YAML (when python3 has PyYAML; CI's runners do).
@@ -647,6 +643,15 @@ fn packages_carry_the_licences_and_tiza_not_its_tests() {
                 "{name}: the repository's {licence}"
             );
         }
+        // The fonts that the binary embeds go with their licenses.
+        if name == "tiza-export" {
+            for licence in [
+                "assets/fonts/LICENSE-JetBrainsMono-OFL.txt",
+                "assets/fonts/LICENSE-TizaSymbols-DejaVu.txt",
+            ] {
+                assert!(files.iter().any(|f| f == licence), "{name}: {licence}");
+            }
+        }
         if name == "tiza" {
             assert!(
                 !files.iter().any(|f| f.starts_with("tests/")),
@@ -654,60 +659,6 @@ fn packages_carry_the_licences_and_tiza_not_its_tests() {
             );
             assert!(files.iter().any(|f| f == "src/main.rs"));
         }
-    }
-}
-
-// --- Internal crates -----------------------------------------------------
-
-const INTERNAL: &[(&str, &str)] = &[
-    ("tiza-core", "crates/tiza-core"),
-    ("tiza-tui", "crates/tiza-tui"),
-    ("tiza-mcp", "crates/tiza-mcp"),
-    ("tiza-export", "crates/tiza-export"),
-];
-
-#[test]
-fn ac3_internal_crates_say_so() {
-    let meta = metadata();
-    for (name, dir) in INTERNAL {
-        let p = package(&meta, name);
-        let description = p["description"].as_str().unwrap();
-        assert!(
-            description.starts_with("Internal crate of Tiza")
-                && description.contains("cargo install tiza")
-                && description.contains("no stable API"),
-            "{name}: {description}"
-        );
-        let lib = read(&format!("{dir}/src/lib.rs"));
-        let first = lib.lines().next().unwrap();
-        assert!(
-            first.starts_with(&format!("//! Internal crate of [Tiza]({REPO})")),
-            "{name}: {first}"
-        );
-        let head: String = lib
-            .lines()
-            .take_while(|l| l.starts_with("//!") && *l != "//!")
-            .map(|l| l.trim_start_matches("//!").trim())
-            .collect::<Vec<_>>()
-            .join(" ");
-        assert!(
-            head.contains("`cargo install tiza`") && head.contains("no stable API"),
-            "{name}: {head}"
-        );
-        let readme = readme_of(p);
-        assert!(
-            readme.starts_with(root().join(dir)),
-            "{name}: its own README"
-        );
-        let md = std::fs::read_to_string(&readme).unwrap();
-        assert!(md.starts_with(&format!("# {name}\n")), "{name}");
-        assert!(
-            md.contains(REPO) && md.contains("cargo install tiza"),
-            "{name}"
-        );
-        assert!(md.contains("no stable API"), "{name}");
-        assert!(md.lines().count() <= 15, "{name}: a short README");
-        assert!(packaged(name).iter().any(|f| f == "README.md"), "{name}");
     }
 }
 
@@ -832,17 +783,6 @@ fn stamp_crate_from_crates_io_in_a_home_kept_in_git_is_unknown() {
         &["commit", "-q", "--allow-empty", "-m", "more dotfiles"],
     );
     assert_eq!(stamp(&krate, &target, &[]), "unknown");
-}
-
-#[test]
-fn stamp_override_still_wins() {
-    let (home, krate) = home_in_git("t152-override");
-    let target = home.parent().unwrap().join("target");
-    assert_eq!(
-        stamp(&krate, &target, &[("TIZA_GIT_SHA_OVERRIDE", " v0.1.0 ")]),
-        "v0.1.0"
-    );
-    assert_eq!(stamp(&krate, &target, &[]), "unknown", "back without it");
 }
 
 /// The rule is "the repository tracks this package": once the same files
@@ -1085,26 +1025,6 @@ fn ids_matcher_and_bench_exception() {
     assert!(!allowed("scripts/bench.py", none, ticket_ids(none)[0]));
 }
 
-/// Without git, the walk still finds the sources and leaves out `target/`
-/// and `.git`.
-#[test]
-fn ids_walk_without_git() {
-    let root = root();
-    let mut v = Vec::new();
-    walk(&root, &root, &mut v);
-    assert!(v.iter().any(|f| f == "README.md"));
-    assert!(v.iter().any(|f| f == "crates/tiza-tui/src/app.rs"));
-    assert!(
-        !v.iter()
-            .any(|f| f.split('/').any(|p| p == "target" || p == ".git")),
-        "{:?}",
-        v.iter()
-            .filter(|f| f.split('/').any(|p| p == "target" || p == ".git"))
-            .take(5)
-            .collect::<Vec<_>>()
-    );
-}
-
 // --- How to help, and security (AC7) ----------------------------------
 
 /// A YAML file of the repository as JSON, through PyYAML or the Ruby of
@@ -1147,47 +1067,14 @@ fn yaml(rel: &str) -> Option<serde_json::Value> {
     None
 }
 
+/// The links of SECURITY.md, CONTRIBUTING.md, the README and the release
+/// notes: a relative one names a file of the repository, an absolute one
+/// this repository, and the reports go where Luis decided (2026-10-24):
+/// Discussions, the bug form, the private vulnerability report.
 #[test]
-fn ac7_security_and_contributing_say_how_to_report_and_link_well() {
+fn ac7_the_reporting_links_resolve_and_go_to_the_right_place() {
     let security = read("SECURITY.md");
-    assert!(security.contains("| 0.1.x   | Yes       |"), "{security}");
-    assert!(security.contains(&format!("{REPO}/security/advisories/new")));
-    assert!(security.contains("Do not report a vulnerability in a public issue"));
-    for part in [
-        "local socket",
-        "MCP server",
-        "files that Tiza writes",
-        "network policy",
-        "Untrusted content",
-        "no bug bounty",
-    ] {
-        assert!(security.contains(part), "SECURITY.md lacks «{part}»");
-    }
-    let contributing = read("CONTRIBUTING.md");
-    for part in [
-        "## Tiza does not accept pull requests for now",
-        "### Report a reproducible bug",
-        "### Start a discussion",
-        "## Instructions for coding agents",
-        "`tiza --version`",
-        "`panics.log`",
-        "Do not open a pull request.",
-    ] {
-        assert!(
-            contributing.contains(part),
-            "CONTRIBUTING.md lacks «{part}»"
-        );
-    }
-    let readme = read("README.md");
-    for link in [
-        "(CONTRIBUTING.md)".to_string(),
-        "(SECURITY.md)".to_string(),
-        format!("({REPO}/discussions)"),
-    ] {
-        assert!(readme.contains(&link), "the README does not link {link}");
-    }
-    // A relative link names a file of the repository; an absolute one, this
-    // repository on GitHub.
+    assert!(security.contains(&format!("<{REPO}/security/advisories/new>")));
     for name in ["SECURITY.md", "CONTRIBUTING.md"] {
         for t in link_targets(&read(name)) {
             if t.starts_with("https://") {
@@ -1198,10 +1085,14 @@ fn ac7_security_and_contributing_say_how_to_report_and_link_well() {
             }
         }
     }
-    // Links in angle brackets too.
-    assert!(security.contains(&format!("<{REPO}/security/advisories/new>")));
-    // Feedback, ideas and terminal reports go to Discussions; Issues take a
-    // reproducible bug through the form only (Luis, 2026-10-24).
+    let readme = read("README.md");
+    for link in [
+        "(CONTRIBUTING.md)".to_string(),
+        "(SECURITY.md)".to_string(),
+        format!("({REPO}/discussions)"),
+    ] {
+        assert!(readme.contains(&link), "the README does not link {link}");
+    }
     let notes = read("docs/release-notes/v0.1.0.md");
     for (name, md) in [("the release notes", &notes), ("the README", &readme)] {
         assert!(md.contains(&format!("({REPO}/discussions)")), "{name}");
@@ -1386,54 +1277,5 @@ fn render_help_names_every_format_that_out_writes() {
             summary.contains(name),
             "the summary does not name {name}: {summary}"
         );
-    }
-}
-
-// --- Positioning (Luis, 2026-10-24) ------------------------------------
-
-/// The one sentence that says what Tiza is: not only tutorials and video,
-/// also learning with an LLM, reviewing and debugging.
-const POSITIONING: &str = "Draw on top of code in your terminal to explain, debug and teach";
-
-#[test]
-fn positioning_is_the_same_sentence_everywhere() {
-    let bold = format!("**{POSITIONING}.**");
-    for f in ["crates/tiza-cli/README.md", "docs/release-notes/v0.1.0.md"] {
-        assert!(read(f).lines().any(|l| l == bold), "{f} lacks {bold}");
-    }
-    let meta = metadata();
-    let description = package(&meta, "tiza")["description"].as_str().unwrap();
-    assert_eq!(
-        description,
-        format!("{POSITIONING}: a TUI, a CLI and an MCP server")
-    );
-    let help = Command::new(bin()).arg("--help").output().unwrap();
-    let help = String::from_utf8_lossy(&help.stdout);
-    assert_eq!(
-        help.lines().next(),
-        Some(format!("{POSITIONING}.").as_str())
-    );
-    let mcp = tiza_qa::McpClient::start(&scratch("t152-mcp").join("none.sock"));
-    let instructions = mcp.initialize_result()["instructions"]
-        .as_str()
-        .unwrap()
-        .to_string();
-    let lower = POSITIONING.replacen("Draw", "draw", 1);
-    assert!(
-        instructions.starts_with(&format!("Tiza: {lower}.")),
-        "{instructions}"
-    );
-    // The old positioning is gone from what people read.
-    for f in [
-        "crates/tiza-cli/README.md",
-        "crates/tiza-cli/Cargo.toml",
-        "crates/tiza-cli/src/main.rs",
-        "crates/tiza-mcp/src/lib.rs",
-        "docs/release-notes/v0.1.0.md",
-        "CHANGELOG.md",
-    ] {
-        let t = read(f);
-        assert!(!t.contains("built for tutorials"), "{f}");
-        assert!(!t.contains("explain it on video"), "{f}");
     }
 }

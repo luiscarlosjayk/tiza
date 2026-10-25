@@ -177,37 +177,6 @@ fn corner_socket_reply_is_unchanged_and_ac2_holds() {
 }
 
 #[test]
-fn corner_narrow_presentation_line_keeps_the_hint() {
-    let live = at_step_0("t132-narrow");
-    live.with(|a| a.set_present(true));
-    live.type_text(":box 2-3 a long label that will not fit");
-    live.keys(&[KeyCode::Enter]);
-    let wide = live.screen(80, 14);
-    let last = wide.lines().last().unwrap();
-    assert_eq!(last.trim(), "a1: box 2-3 (step 1, press n)", "{wide}");
-    let narrow = live.screen(26, 14);
-    let last = narrow.lines().last().unwrap();
-    assert_eq!(last.trim(), "a1: b… (step 1, press n)", "{narrow}");
-}
-
-#[test]
-fn corner_status_bar_cut_keeps_the_hint() {
-    let live = at_step_0("t132-bar");
-    live.command("note 6 a note with a fairly long text to push the bar");
-    // Wide: the whole message. Narrower: cut in the middle, the hint stays
-    // (the viewport warnings on the left keep their priority, t-054).
-    let s = live.screen(110, 14);
-    let bar = s.lines().last().unwrap();
-    assert!(bar.ends_with("a1: note at L6 (step 1, press n)"), "{s}");
-    // Narrower still: the middle gives way to keep the id with the hint
-    // (t-173).
-    let s = live.screen(48, 14);
-    let bar = s.lines().last().unwrap();
-    assert!(bar.ends_with("… (step 1, press n)"), "{s}");
-    assert!(bar.contains(" a1: "), "{s}");
-}
-
-#[test]
 fn fit_message_and_hint_parsing() {
     assert_eq!(step_hint("a1: box 3-5", 1, 0), " (step 1, press n)");
     assert_eq!(

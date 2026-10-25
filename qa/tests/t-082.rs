@@ -58,12 +58,3 @@ fn ac2_mcp_status_reports_the_bridge_and_a_rebuild() {
     assert!(bridge["hint"].as_str().unwrap().contains("restart the TUI"));
     assert!(bridge.get("binary_rebuilt").is_none());
 }
-
-#[test]
-fn ac3_docs_explain_the_reconnect() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
-    assert!(guide.contains("## After a rebuild") && guide.contains("binary_rebuilt"));
-}

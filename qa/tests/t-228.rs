@@ -139,35 +139,6 @@ fn assert_next_within_1s(out: &str) {
 }
 
 #[test]
-fn step1_ac2_follow_on_off_and_a_put_answer_at_once() {
-    let dir = setup("t228-quick");
-    let out = run(
-        &dir,
-        "quick.py",
-        "follow:slow",
-        r##"
-s, ok = start()
-if ok:
-    for enabled in [True, False, True]:
-        rc, _, t = api("follow.set", {"enabled": enabled})
-        print("SET", rc, "%.2f" % t, flush=True)
-    doc = json.loads(api("scene.get")[1])["document"]
-    other = dict(doc, source=dict(doc["source"], path="elsewhere.rs"), code=["fn elsewhere() {}"], annotations=[])
-    rc, _, t = api("scene.put", {"document": other})
-    print("PUT", rc, "%.2f" % t, flush=True)
-    print("STATUS", json.dumps(status()), flush=True)
-    quit(s)
-"##,
-    );
-    assert_quick(&out, "SET");
-    assert_quick(&out, "PUT");
-    assert_eq!(line_json(&out, "STATUS")["enabled"], false, "{out}");
-    let (code, secs) = timed(&out, "EXIT")[0];
-    assert_eq!(code, 0, "{out}");
-    assert!(secs < 2.0, "quit took {secs} s\n{out}");
-}
-
-#[test]
 fn ac2_a_save_while_the_watch_starts_is_reloaded() {
     let dir = setup("t228-save");
     let out = run(

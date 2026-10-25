@@ -61,28 +61,6 @@ fn scenarios() -> Vec<(String, String)> {
 }
 
 #[test]
-fn ac1_between_10_and_15_scenarios_each_with_every_field() {
-    let s = scenarios();
-    assert!((10..=15).contains(&s.len()), "{} scenarios", s.len());
-    for (i, (title, body)) in s.iter().enumerate() {
-        assert!(
-            title.starts_with(&format!("{}. ", i + 1)),
-            "scenarios are numbered in order: {title}"
-        );
-        for field in [
-            "**For:**",
-            "**Setup:**",
-            "**Script:**",
-            "**What the audience sees:**",
-            "**Features:**",
-            "**Recording:**",
-        ] {
-            assert!(body.contains(field), "«{title}» has no {field}");
-        }
-    }
-}
-
-#[test]
 fn ac1_every_path_it_names_exists() {
     let text = doc();
     let mut n = 0;
@@ -100,87 +78,6 @@ fn ac1_every_path_it_names_exists() {
         }
     }
     assert!(n >= 8, "{n} paths checked");
-}
-
-#[test]
-fn ac2_the_two_scenarios_luis_named_are_there() {
-    let s = scenarios();
-    let titles: Vec<String> = s.iter().map(|(t, _)| t.to_lowercase()).collect();
-    assert!(
-        titles.iter().any(|t| t.contains("tour")),
-        "a codebase tour: {titles:?}"
-    );
-    assert!(
-        titles
-            .iter()
-            .any(|t| t.contains("agent") && (t.contains("review") || t.contains("another"))),
-        "an agent explaining code to another: {titles:?}"
-    );
-}
-
-#[test]
-fn ac4_the_closing_list_names_only_what_will_be_built() {
-    let text = doc();
-    let start = text
-        .find("\n## Planned changes that touch these scenarios\n")
-        .expect("the closing section");
-    let items: Vec<&str> = text[start..]
-        .lines()
-        .filter(|l| l.starts_with("- "))
-        .collect();
-    assert_eq!(items.len(), 1, "{items:?}");
-    assert!(
-        items[0].contains("Exporting the live instance of a multi-file document"),
-        "{items:?}"
-    );
-    assert!(scenarios().iter().all(|(t, _)| !t.starts_with("Planned")));
-}
-
-#[test]
-fn ac4_no_scenario_depends_on_a_discarded_feature() {
-    let text = doc();
-    let lower = text.to_lowercase();
-    for gone in [
-        "--no-save",
-        "split view",
-        "two files on screen",
-        "arrows between files",
-        "subscription",
-        "notification",
-        "import of a diff",
-        "scene get >",
-        "t-169",
-    ] {
-        assert!(
-            !lower.contains(gone),
-            "the catalogue still mentions «{gone}»"
-        );
-    }
-    let s = scenarios();
-    let body = |n: usize| &s[n - 1].1;
-    // Scenario 2: each agent signs its own labels and notes.
-    assert!(body(2).contains("author:") && body(2).contains("review:"));
-    // Scenario 4: the agent writes the moves from the diff.
-    assert!(body(4).contains("git diff") && body(4).contains("writes the moves"));
-    // Scenario 6: a throwaway file with demo values, never a real one.
-    assert!(body(6).contains("demo.env") && body(6).contains("fake values"));
-    // Every scenario that opens a sample opens a working copy.
-    for (title, b) in &s {
-        for line in b.lines() {
-            assert!(
-                !line.contains("`tiza examples/"),
-                "«{title}» opens examples/ itself: {line}"
-            );
-        }
-    }
-}
-
-#[test]
-fn ac5_no_channel_tasks() {
-    let text = doc().to_lowercase();
-    for word in ["thumbnail", "devlog", "subscribe", "upload to youtube"] {
-        assert!(!text.contains(word), "the catalogue mentions «{word}»");
-    }
 }
 
 #[test]
@@ -221,30 +118,6 @@ fn render_step(path: &Path, step: u32) -> String {
         "--width",
         "130",
     ])
-}
-
-#[test]
-fn ac3_each_step_shows_its_file() {
-    let ex = example("tally-tour.tiza");
-    let expect = [
-        (1, "fn main()", "flow: 1 parse the flags"),
-        (
-            2,
-            "pub fn parse(",
-            "every argument is a path, except the flag",
-        ),
-        (3, "split_whitespace()", "bytes come free"),
-        (4, "pub fn table(", "--by-words: most words first"),
-        (5, "fn main()", "the whole flow"),
-    ];
-    for (step, code, label) in expect {
-        let text = render_step(&ex, step);
-        assert!(text.contains(code), "step {step}:\n{text}");
-        assert!(text.contains(label), "step {step}:\n{text}");
-    }
-    assert!(!render_step(&ex, 2).contains("fn main()"));
-    // Step 5's window starts at `fn main` (line 9), not at the module docs.
-    assert!(!render_step(&ex, 5).contains("mod args;"));
 }
 
 /// The MCP tool calls the worked example's prompts lead to, in order.
@@ -529,110 +402,4 @@ fn scenario_12_starts_by_itself_and_loops_round_again() {
         summary.contains("steps 0, 1, 2, 3, 4, 5 timed by their auto_advance_ms"),
         "{summary}"
     );
-}
-
-#[test]
-fn scenario_4_makes_the_review_folder_before_writing_into_it() {
-    let s = scenarios();
-    let body = &s[3].1;
-    let show = body
-        .find("git show HEAD~1:src/lib.rs > /tmp/review/")
-        .expect("scenario 4 writes the old version into /tmp/review");
-    let mkdir = body
-        .find("mkdir -p /tmp/review &&")
-        .expect("mkdir -p /tmp/review");
-    assert!(mkdir < show, "the folder is made first");
-}
-
-#[test]
-fn every_copy_of_tally_starts_fresh() {
-    // `cp -r` onto a folder that exists copies into /tmp/tally/tally, and
-    // the next scenario would open the previous one's sidecar.
-    let text = doc();
-    let cp = "cp -r examples/tally /tmp/tally";
-    let mut n = 0;
-    for (at, _) in text.match_indices(cp) {
-        n += 1;
-        assert!(
-            text[..at].ends_with("rm -rf /tmp/tally && "),
-            "a copy of tally without rm -rf first: …{}",
-            &text[at.saturating_sub(40)..at + cp.len()]
-        );
-    }
-    assert!(n >= 7, "{n} copies");
-}
-
-#[test]
-fn scenario_3_reads_the_take_where_its_setup_leaves_it() {
-    let s = scenarios();
-    let body = &s[2].1;
-    // Two sources, one variable: the sidecar of scenario 1, or the finished
-    // take next to the copied folder (it names tally/src/main.rs relative
-    // to itself, so it cannot become main.rs's sidecar).
-    assert!(body.contains("`W=/tmp/tally/src/main.rs.tiza`"), "{body}");
-    assert!(
-        body.contains("cp examples/tally-tour.tiza /tmp/` and `W=/tmp/tally-tour.tiza`"),
-        "{body}"
-    );
-    let agent_b = body
-        .lines()
-        .find(|l| l.starts_with("- Agent B"))
-        .expect("agent B's lines");
-    for cmd in [
-        "tiza check \"$W\"",
-        "tiza render \"$W\"",
-        "tiza \"$W\" --session b",
-    ] {
-        assert!(agent_b.contains(cmd), "{agent_b}");
-    }
-    assert!(!agent_b.contains("main.rs.tiza"), "{agent_b}");
-}
-
-#[test]
-fn the_t166_list_names_exactly_the_scenarios_that_use_code_link() {
-    let s = scenarios();
-    let using: Vec<usize> = s
-        .iter()
-        .enumerate()
-        .filter(|(_, (_, body))| {
-            body.lines()
-                .find(|l| l.starts_with("**Features:**"))
-                .is_some_and(|l| l.contains("code.link"))
-        })
-        .map(|(i, _)| i + 1)
-        .collect();
-    let text = doc();
-    let item = text
-        .lines()
-        .find(|l| l.starts_with("- **Exporting the live instance"))
-        .expect("the live-export item");
-    let listed: Vec<usize> = item[item.find("** (").unwrap() + 4..item.find(").").unwrap()]
-        .split(", ")
-        .map(|n| n.parse().unwrap())
-        .collect();
-    assert_eq!(listed, using, "{item}");
-}
-
-#[test]
-fn scenario_10_ends_as_the_example_does() {
-    let s = scenarios();
-    let body = &s[9].1;
-    let d: Value =
-        serde_json::from_str(&std::fs::read_to_string(example("stack-and-queue.tiza")).unwrap())
-            .unwrap();
-    // The comparing note on stack.rs's peek is quoted as the example has it.
-    let peek = d["annotations"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|a| a["step"] == 4 && a["type"] == "note")
-        .expect("the note on peek");
-    assert!(body.contains(peek["text"].as_str().unwrap()), "{body}");
-    // The last move is the narrower window of queue.rs, in the script too.
-    let last = d["moves"].as_array().unwrap().last().unwrap();
-    assert_eq!(last["file"], "src/queue.rs");
-    let lines = last["lines"].as_str().unwrap();
-    assert!(body.contains(&format!("(lines {lines})")), "{body}");
-    let script = body.lines().find(|l| l.starts_with("**Script:**")).unwrap();
-    assert!(script.contains("last, link queue.rs again"), "{script}");
 }

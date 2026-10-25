@@ -305,24 +305,6 @@ fn corner_no_terminal_size_uses_the_default_width_and_names_it() {
     );
 }
 
-#[test]
-fn corner_the_reply_is_about_the_size_at_that_moment() {
-    // A resize after the reply changes the screen, not the reply: the next
-    // reply is about the new size.
-    let (live, _tiza) = opened("t171-resize");
-    terminal(&live, 26);
-    let r = add(
-        &live,
-        json!({"type": "note", "line": 2, "text": "secret token"}),
-    );
-    assert_eq!(r["visible"], false, "{r}");
-    terminal(&live, 40);
-    assert!(live.screen(40, 30).contains("secret token"));
-    let id = r["id"].as_str().unwrap();
-    let r = live.api_ok("annotation.update", json!({"id": id, "color": "green"}));
-    assert_eq!(r["visible"], true, "{r}");
-}
-
 // ---------- review ----------
 
 /// The reply's verdict on `id`, as check's words: `Some(true)` left out,

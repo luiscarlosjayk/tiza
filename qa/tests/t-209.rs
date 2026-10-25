@@ -30,13 +30,11 @@
 //! help, the messages, the presentation line and the agent guide never
 //! had one.
 
-use std::path::Path;
-
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::style::{Color, Modifier};
 use serde_json::json;
-use tiza_qa::{Live, bin, fixture, scratch};
+use tiza_qa::{Live, fixture, scratch};
 
 // ---------- AC3, AC4: the `↪ file` view indicator ----------
 
@@ -79,23 +77,6 @@ fn bar(live: &Live, cols: u16) -> String {
         .last()
         .unwrap_or_default()
         .to_string()
-}
-
-#[test]
-fn ac3_where_the_message_first_needs_cutting_the_indicator_stays() {
-    // Test step 3: at 125 columns (the card's width, with its badge) and
-    // at the widest width where this message no longer fits whole, `↪
-    // src/b/mod.rs` stays and the middle of the message is cut instead.
-    let live = mods_with_a_message("t209-125", false);
-    let b = bar(&live, 125);
-    assert!(b.contains(VIEW) && b.ends_with(TAIL), "{b}");
-    let (cols, b) = (40..=125u16)
-        .rev()
-        .map(|c| (c, bar(&live, c)))
-        .find(|(_, b)| b.contains('…'))
-        .expect("some width cuts the message");
-    assert!(b.contains(VIEW), "{cols}: {b}");
-    assert!(b.contains("a1") && b.ends_with(TAIL), "{cols}: {b}");
 }
 
 #[test]
@@ -190,6 +171,10 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
     let mut check = |live: &Live, cols: u16| {
         let (bar, badge) = bar_and_badge(live, cols, 30);
         assert!(!bar.contains('⚠'), "{cols}: {bar}");
+        // Nowhere on the screen either, not only on the bar (moved here from
+        // the binary's test: the binary writes the same buffer).
+        let screen = live.screen(cols, 30);
+        assert!(!screen.contains('⚠'), "{cols}: {screen}");
         if !badge.is_empty() {
             assert!(badge.is_ascii(), "{cols}: {badge:?} in {bar}");
             // At the narrowest widths the edge may cut the badge to its
@@ -217,45 +202,6 @@ fn ac2_ac5_every_form_of_the_badge_is_ascii() {
     for form in ["  ! 1 label cut", "  !", "  ! code needs 183 cols"] {
         assert!(seen.iter().any(|b| b == form), "{form:?} not in {seen:?}");
     }
-}
-
-/// The bytes the real binary writes to its terminal: the badge is there as
-/// ASCII and no `⚠` (E2 9A A0) is ever written, with the message on the bar
-/// and without it, at 80 columns.
-#[test]
-fn ac2_ac5_the_binary_writes_the_badge_in_ascii() {
-    let dir = scratch("t209-raw");
-    let doc = dir.join("wide.rs");
-    std::fs::copy(fixture("t-173/wide.rs"), &doc).unwrap();
-    let body = r##"
-binary, doc = sys.argv[1], sys.argv[2]
-os.chdir(os.path.dirname(doc))
-sock = "r.sock"
-def api(*args):
-    return subprocess.run([binary, "api", *args, "--socket", sock], capture_output=True, text=True, timeout=60)
-s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 80)
-if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
-    # A box whose label cannot fit: the bar warns `! 1 label cut`.
-    api("annotation.add", '{"type": "box", "from_line": 2, "to_line": 4, "label": "a box label far too long for the border of this box at eighty columns"}')
-    s.wait_for(lambda out: b"label cut" in out, 20, "the badge")
-    print("FIRST_BADGE", b"! 1 label cut" in s.out, flush=True)
-    api("step.set", '{"step": 0}')
-    api("annotation.add", '{"type": "box", "from_line": 3, "to_line": 5}')
-    if s.wait_for(lambda out: b"(step 1, press n)" in out, 20, "the message"):
-        print("MESSAGE", True, flush=True)
-    print("WIDE_SIGN", "\u26a0".encode() in s.out, flush=True)
-s.send(b"\x1b:q!\r")
-s.finish(10)
-"##;
-    let out = tiza_qa::pty_script(
-        &dir,
-        "raw.py",
-        body,
-        &[bin().to_str().unwrap(), doc.to_str().unwrap()],
-    );
-    assert!(out.contains("FIRST_BADGE True"), "{out}");
-    assert!(out.contains("MESSAGE True"), "{out}");
-    assert!(out.contains("WIDE_SIGN False"), "{out}");
 }
 
 #[test]
@@ -336,13 +282,3 @@ fn ac4_sweep_with_the_badge_is_monotonic() {
 }
 
 const STEP_HINT: &str = "(step 2, press n)";
-
-#[test]
-fn ac5_changelog_names_the_sign() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(
-        // (The CHANGELOG of 0.1.0 was condensed in t-217.)
-        changelog.contains("The warning badge of the status bar is an ASCII `!`, not `⚠`")
-    );
-}

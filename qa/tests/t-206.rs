@@ -212,6 +212,15 @@ fn the_repro(name: &str, rebind: bool) {
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
     same_as_fresh(&live, &tiza, "the reload waits at step 2");
     assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
+    // A paste there is refused, and follow stays on with its reload waiting
+    // (moved here from t-193 and from the paste corner of this file).
+    let err = live
+        .with(|app| app.replace_code("fn g() {}\n"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("go back to step 0 first"), "{err}");
+    assert_eq!(status(&live)["enabled"], true);
+    same_as_fresh(&live, &tiza, "paste refused");
 
     // Test step 2: back at step 0 the change is reloaded at once, as a
     // normal reload: `a1` is dropped (its text is gone) and `u` gives it back.
@@ -319,19 +328,6 @@ fn corner_the_file_removed_at_step_2_and_back_with_other_code() {
     live.command("step 0");
     assert_eq!(base(&live), lines(NEW));
     same_as_fresh(&live, &tiza, "back at step 0");
-}
-
-#[test]
-fn corner_a_paste_at_step_2_is_refused() {
-    let (live, src, tiza) = followed("t206-paste", true);
-    live.command("step 2");
-    save_at_step_2(&live, &src, NEW);
-    let err = live
-        .with(|app| app.replace_code("fn g() {}\n"))
-        .unwrap_err()
-        .to_string();
-    assert!(err.contains("go back to step 0 first"), "{err}");
-    same_as_fresh(&live, &tiza, "paste refused");
 }
 
 #[test]

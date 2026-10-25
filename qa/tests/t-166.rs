@@ -507,6 +507,13 @@ fn corner_a_linked_file_deleted_with_the_tui_open() {
         err.contains("tally/src/count.rs") && err.contains("could not read"),
         "{err}"
     );
+    // It names the move and the link as the document writes it (moved here
+    // from ac3).
+    assert!(
+        err.contains("move #")
+            && err.contains(": code.link «tally/src/count.rs»: could not read «"),
+        "{err}"
+    );
     assert!(!err.contains("panicked"), "{err}");
 }
 
@@ -569,26 +576,6 @@ fn corner_an_annotation_in_a_linked_file_is_drawn_in_the_live_export() {
     assert!(!err, "{text}");
     let got = std::fs::read_to_string(&out).unwrap();
     assert_eq!(got, md);
-}
-
-#[test]
-fn ac3_a_missing_linked_file_is_named() {
-    let render_missing = |path: &Path, linked: &str| {
-        std::fs::remove_file(path.parent().unwrap().join(linked)).unwrap();
-        let out = tiza_in(
-            path.parent().unwrap(),
-            &["render", path.to_str().unwrap(), "--out", "-"],
-        );
-        assert_eq!(out.status.code(), Some(1), "an error, never a panic");
-        String::from_utf8_lossy(&out.stderr).into_owned()
-    };
-    let path = vault_demo_linking("missing", "notes.sh");
-    let err = render_missing(&path, "notes.sh");
-    assert!(
-        err.contains("move #1, step 2: code.link «notes.sh»: could not read «")
-            && err.contains("/notes.sh»"),
-        "{err}"
-    );
 }
 
 #[test]
@@ -702,17 +689,6 @@ fn corner_a_live_document_with_no_tiza_and_a_move_add_code_link() {
         json!({"path": cwd.join("u.gif").to_str().unwrap(), "width": 100, "scale": 1}),
     );
     assert!(!err, "{text}");
-}
-
-#[test]
-fn ac5_changelog_names_the_card() {
-    // The CHANGELOG of 0.1.0 was condensed in t-217: `code.link` is new in
-    // it, described in its final state, so this fix has no entry of its own.
-    let log = std::fs::read_to_string(example("../CHANGELOG.md")).unwrap();
-    assert!(
-        log.contains("A `code.link` move shows another file"),
-        "CHANGELOG"
-    );
 }
 
 // ---------- Review round 1 (adversarial review of 2f653ce) ----------

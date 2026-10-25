@@ -66,15 +66,6 @@ fn ac4_one_version_of_each_tied_crate_in_the_lock() {
 }
 
 #[test]
-fn ac4_deny_toml_fails_on_a_second_version() {
-    let deny = read("deny.toml");
-    for (name, _) in TIED {
-        let entry = format!("{{ crate = \"{name}\", deny-multiple-versions = true");
-        assert!(deny.contains(&entry), "deny.toml lacks {entry}");
-    }
-}
-
-#[test]
 fn ac2_dependabot_never_bumps_them_alone_nor_groups_minor() {
     let cfg = read(".github/dependabot.yml");
     for name in ["skrifa", "read-fonts", "rustix", "signal-hook"] {
@@ -86,23 +77,5 @@ fn ac2_dependabot_never_bumps_them_alone_nor_groups_minor() {
     assert!(
         !cfg.contains("update-types: [minor, patch]"),
         "the group still takes minor bumps (breaking for 0.x crates)"
-    );
-}
-
-#[test]
-fn ac3_the_adr_row_and_cargo_toml_say_it() {
-    let adr = read("docs/adr/0004-dependencias.md");
-    let row = adr
-        .lines()
-        .find(|l| l.starts_with("| skrifa / read-fonts"))
-        .unwrap();
-    assert!(
-        row.contains("version tied to usvg's (resvg); never bumped alone"),
-        "{row}"
-    );
-    let cargo = read("Cargo.toml");
-    assert!(
-        cargo.contains("version tied to usvg's (resvg); never bumped alone"),
-        "Cargo.toml's comment on skrifa"
     );
 }

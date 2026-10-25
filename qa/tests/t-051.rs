@@ -206,6 +206,18 @@ fn ac2_tape_drives_the_real_binary() {
     );
     assert!(!tape.contains("Catppuccin"));
     assert!(tape.trim_end().ends_with("Type \"q\""));
+    // The tape types only the start command, `n` and `q`, never a `:`
+    // command (moved here from t-107).
+    let start = format!(
+        "Type \"tiza {} --present --no-socket --step 0\"",
+        ownership()
+    );
+    for l in tape.lines().filter(|l| l.starts_with("Type ")) {
+        assert!(
+            l == start || l == "Type \"n\"" || l == "Type \"q\"",
+            "{l}\n{tape}"
+        );
+    }
     let hold = tape.lines().rev().nth(3).unwrap_or("");
     assert_eq!(
         hold, "Sleep 1s",

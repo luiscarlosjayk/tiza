@@ -49,6 +49,22 @@ fn stamp(p: &Path) -> (Vec<u8>, SystemTime) {
 /// last key), and returns what the terminal shows after Tiza left the
 /// alternate screen: what it printed on stderr on the way out.
 fn run(dir: &Path, name: &str, args: &[&str], keys: &[&str], before_last: Option<&str>) -> String {
+    run_out(dir, name, args, keys, before_last)
+        .lines()
+        .find_map(|l| l.strip_prefix("TAIL "))
+        .unwrap_or("")
+        .to_string()
+}
+
+/// [`run`], all of the script's output. The key `BAR` (with `--socket
+/// s.sock` in `args`) prints `BAR <the bar>` once the bar says `unsaved`.
+fn run_out(
+    dir: &Path,
+    name: &str,
+    args: &[&str],
+    keys: &[&str],
+    before_last: Option<&str>,
+) -> String {
     let body = r##"
 import json
 binary, cwd = sys.argv[1], sys.argv[2]
@@ -61,6 +77,18 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
     s.settle(0.5)
     mark = 0
     for k in keys[:-1]:
+        if k == "BAR":
+            end = time.monotonic() + 10
+            said = None
+            while time.monotonic() < end:
+                r = subprocess.run([binary, "--socket", "s.sock", "api", "follow.status", "{}"],
+                                   capture_output=True, text=True, timeout=10)
+                said = json.loads(r.stdout).get("bar") if r.returncode == 0 else None
+                if said and said.startswith("unsaved"):
+                    break
+                time.sleep(0.05)
+            print("BAR", json.dumps(said), flush=True)
+            continue
         if k == "CHMOD644":
             # The key before failed to autosave over the read-only file:
             # only then is it writable again (a condition, not the settle).
@@ -93,10 +121,7 @@ print("TAIL", plain(tail).replace("\n", " ").strip())
         ],
     );
     assert!(out.contains("EXIT 0"), "{out}");
-    out.lines()
-        .find_map(|l| l.strip_prefix("TAIL "))
-        .unwrap_or("")
-        .to_string()
+    out
 }
 
 #[test]
@@ -125,28 +150,25 @@ fn ac2_no_save_and_ctrl_c_writes_nothing_and_says_what_was_not_saved() {
 fn ac1_no_save_and_q_bang_writes_nothing() {
     let (dir, tiza) = project("t195-q-bang");
     let before = stamp(&tiza);
-    let tail = run(
+    // `:q` with changes is refused and names both ways out (moved here from
+    // t-247: the binary's `--no-save`, not a flag set in the test).
+    let out = run_out(
         &dir,
         "q.py",
-        &["--no-save"],
-        &[":note 1 hello\r", ":q!\r"],
+        &["--no-save", "--socket", "s.sock"],
+        &[":note 1 hello\r", ":q\r", "BAR", ":q!\r"],
         None,
     );
-    assert_eq!(stamp(&tiza), before);
-    assert!(tail.contains("1 change not saved (note a1)"), "{tail}");
-}
-
-#[test]
-fn ac2_autosave_off_live_and_ctrl_c_writes_nothing() {
-    let (dir, tiza) = project("t195-autosave-off");
-    let before = stamp(&tiza);
-    let tail = run(
-        &dir,
-        "off.py",
-        &[],
-        &[":autosave off\r", ":note 1 hello\r", "\x03"],
-        None,
+    assert!(
+        out.contains(
+            r#"BAR "unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them""#
+        ),
+        "{out}"
     );
+    let tail = out
+        .lines()
+        .find_map(|l| l.strip_prefix("TAIL "))
+        .unwrap_or("");
     assert_eq!(stamp(&tiza), before);
     assert!(tail.contains("1 change not saved (note a1)"), "{tail}");
 }
@@ -183,14 +205,18 @@ fn corner_a_read_only_sidecar_writes_nothing_on_the_way_out() {
 #[test]
 fn review_ctrl_c_retries_a_failed_autosave_once_and_q_bang_never_writes() {
     use std::os::unix::fs::PermissionsExt;
-    // Writable again by the time of the Ctrl-C: the note gets to disk.
+    // Writable again by the time of the Ctrl-C: the note gets to disk. A
+    // Ctrl-C that first closes a command line does not use up that one
+    // retry (moved here from t-197): the Ctrl-C that quits still saves.
+    // That this first Ctrl-C closes the line and does not quit is t-197's
+    // ac1 (`alive`).
     let (dir, tiza) = project("t195-retry");
     std::fs::set_permissions(&tiza, std::fs::Permissions::from_mode(0o444)).unwrap();
     let tail = run(
         &dir,
         "retry.py",
         &[],
-        &[":note 1 hello\r", "CHMOD644", "\x03"],
+        &[":note 1 hello\r", "CHMOD644", ":", "\x03", "\x03"],
         None,
     );
     assert!(std::fs::read_to_string(&tiza).unwrap().contains("hello"));

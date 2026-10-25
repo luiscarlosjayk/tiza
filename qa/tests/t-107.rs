@@ -22,7 +22,7 @@ use std::time::{Duration, Instant};
 use crossterm::event::KeyCode;
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::json;
-use tiza_qa::{Live, fixture, scratch, tiza_ok};
+use tiza_qa::Live;
 use tiza_tui::app::{Mode, Overlay, PRESENT_MESSAGE_TTL};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
@@ -240,29 +240,6 @@ fn ac4_hidden_command_line_frame_is_unchanged() {
     let (symbols, styles) = live.snapshot(70, 14);
     insta::assert_snapshot!("t107-present-symbols", symbols);
     insta::assert_snapshot!("t107-present-styles", styles);
-}
-
-#[test]
-fn ac4_exports_do_not_depend_on_the_command_line() {
-    // `render` and `--out` never draw the TUI frame: same output with a
-    // live instance in presentation mode typing a command or not.
-    let out = scratch("t107-render");
-    let doc = out.join("doc.tiza");
-    std::fs::copy(fixture("t-107/present.rs.tiza"), &doc).unwrap();
-    let a = tiza_ok(&["render", doc.to_str().unwrap(), "--format", "txt"]);
-    let live = presenting("t107-render-live");
-    live.type_text(":box 2-3 hi");
-    let b = tiza_ok(&["render", doc.to_str().unwrap(), "--format", "txt"]);
-    assert_eq!(a, b);
-    let tape = out.join("a.tape");
-    tiza_ok(&[
-        "render",
-        doc.to_str().unwrap(),
-        "--out",
-        tape.to_str().unwrap(),
-    ]);
-    let t = std::fs::read_to_string(&tape).unwrap();
-    assert!(!t.contains("Type \":\""), "the tape types no command: {t}");
 }
 
 #[test]

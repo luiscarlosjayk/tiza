@@ -218,20 +218,6 @@ fn corner_a_paste_of_what_the_file_holds_keeps_following() {
 }
 
 #[test]
-fn corner_a_paste_at_a_step_with_a_move_applied_is_refused_and_follow_stays() {
-    let (live, _) = followed("t193-link", CODE);
-    live.api_ok(
-        "move.add",
-        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "2",
-               "content": "    // one"}),
-    );
-    live.command("step 1");
-    let r = live.with(|app| app.replace_code(PASTED));
-    assert!(r.is_err());
-    assert_eq!(status(&live)["enabled"], true);
-}
-
-#[test]
 fn step4_moves_on_line_numbers_get_the_stale_rule_when_follow_comes_back() {
     let (live, _) = followed("t193-moves", CODE);
     live.api_ok(

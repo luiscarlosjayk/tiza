@@ -397,30 +397,6 @@ fn ac4_step7_json_holds_the_same_findings_as_the_text() {
 }
 
 #[test]
-fn ac4_the_mcp_check_tool_checks_the_live_document() {
-    let dir = scratch("t101-mcp");
-    let doc = fs::open(fixture("t-101/ownership.rs.tiza").to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
-    let mut mcp = McpClient::start(&live.socket);
-    assert!(mcp.tool_names().contains(&"check".to_string()));
-    let (err, out, _) = mcp.call("check", json!({}));
-    assert!(!err, "{out}");
-    let v: Value = serde_json::from_str(&out).unwrap();
-    assert_eq!(v["ok"], true);
-    assert_eq!(v["width"], 100);
-    assert_eq!(v["min_clean_width"], 108);
-    assert_eq!(with_code(&findings(&v), "clipped_label").len(), 2, "{v}");
-    let (err, out, _) = mcp.call("check", json!({"width": 108}));
-    assert!(!err, "{out}");
-    let v: Value = serde_json::from_str(&out).unwrap();
-    assert!(with_code(&findings(&v), "clipped_label").is_empty(), "{v}");
-    let (err, out, _) = mcp.call("check", json!({"width": 3}));
-    assert!(err && out.contains("width=3"), "{out}");
-}
-
-#[test]
 fn ac5_step3_render_all_steps_writes_one_png_per_step_of_one_size() {
     let dir = scratch("t101-steps");
     let out = dir.join("steps");
@@ -611,6 +587,14 @@ fn rework1_mcp_check_is_the_cli_check() {
         let got = mcp_check(&format!("t101-mcp-{name}"), &file, args);
         assert_eq!(got, want, "{name} {cli:?}: MCP\n{got}\nCLI\n{want}");
     }
+    // A width that the MCP refuses on its own: the error names it.
+    let dir = scratch("t101-mcp-width3");
+    let file = fixture("t-101/w-label-under.tiza");
+    let doc = fs::open(file.to_str().unwrap()).unwrap().document;
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
+    let mut mcp = McpClient::start(&live.socket);
+    let (err, out, _) = mcp.call("check", json!({"width": 3}));
+    assert!(err && out.contains("width=3"), "{out}");
 }
 
 #[test]

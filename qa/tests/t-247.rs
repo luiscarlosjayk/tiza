@@ -156,55 +156,6 @@ fn corner_autosave_on_ends_no_save() {
 }
 
 #[test]
-fn ac3_the_binary_with_no_save_refuses_q_and_names_both_ways_out() {
-    let dir = scratch("t247-pty");
-    std::fs::write(dir.join("main.rs"), CODE).unwrap();
-    let body = r##"
-import json
-binary, work = sys.argv[1], sys.argv[2]
-os.chdir(work)
-env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
-env.pop("TIZA_TEST_HOOK", None)
-s = Pty([binary, "--no-save", "--socket", "s.sock", "main.rs"], 30, 120, env=env)
-
-def bar():
-    r = subprocess.run([binary, "--socket", "s.sock", "api", "follow.status", "{}"],
-                       capture_output=True, text=True, timeout=10)
-    return json.loads(r.stdout).get("bar")
-
-if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
-    s.send(b"\x1b:note 2 hi\r")
-    s.wait_for(lambda out: b"a1" in out, 10, "the note")
-    s.send(b"\x1b:q\r")
-    end = time.monotonic() + 10
-    said = None
-    while time.monotonic() < end:
-        said = bar()
-        if said and said.startswith("unsaved"):
-            break
-        time.sleep(0.05)
-    print("BAR", json.dumps(said), flush=True)
-    print("SIDECAR", os.path.exists("main.rs.tiza"), flush=True)
-    s.send(b"\x1b:q!\r")
-print("EXIT", s.finish(10))
-"##;
-    let out = tiza_qa::pty_script(
-        &dir,
-        "no_save.py",
-        body,
-        &[bin().to_str().unwrap(), dir.to_str().unwrap()],
-    );
-    assert!(
-        out.contains(
-            r#"BAR "unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them""#
-        ),
-        "{out}"
-    );
-    assert!(out.contains("SIDECAR False"), "{out}");
-    assert!(out.contains("EXIT 0"), "{out}");
-}
-
-#[test]
 fn ac4_the_help_and_the_changelog_say_it() {
     let help: Vec<String> = tiza_tui::keys::HELP
         .iter()
@@ -242,35 +193,6 @@ fn corner_read_only_then_saveas_saves_every_change_there_already() {
     let saved = std::fs::read_to_string(&to).unwrap();
     assert!(saved.contains("third"), "{saved}");
     std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-}
-
-#[test]
-fn corner_a_foreign_scene_put_then_saveas_keeps_autosave_off() {
-    // As the README says («`:saveas PATH` saves elsewhere and keeps saving
-    // there» with autosave off): `:w` saves to the new file; autosave
-    // stays off until `:autosave on`.
-    let dir = scratch("t247-put");
-    let path = dir.join("ownership.rs.tiza");
-    std::fs::copy(tiza_qa::example("ownership.rs.tiza"), &path).unwrap();
-    std::fs::copy(tiza_qa::example("ownership.rs"), dir.join("ownership.rs")).unwrap();
-    let doc = tiza_core::fs::open(path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let live = Live::open(doc, path, dir.join("s.sock"));
-    let other = tiza_core::fs::load_document(&tiza_qa::fixture("t-050/export.tiza")).unwrap();
-    live.api_ok("scene.put", serde_json::json!({"document": other}));
-    assert!(!live.with(|a| a.autosave));
-    let to = scratch("t247-put-to").join("mine.tiza");
-    live.command(&format!("saveas {}", to.display()));
-    assert!(live.with(|a| !a.autosave));
-    let (msg, _) = live.message().unwrap();
-    assert!(msg.ends_with("mine.tiza (autosave off)"), "{msg}");
-    live.with(|a| a.message = None);
-    let b = bar(&live, 120);
-    assert!(
-        b.contains("  autosave off") && !b.contains("no-save"),
-        "{b}"
-    );
 }
 
 /// The copy of `examples/ownership.rs.tiza` in `qa/fixtures/t-246/` (labels

@@ -66,59 +66,6 @@ fn run(socket: &Path, args: &[&str]) -> (Option<i32>, String, String) {
     )
 }
 
-#[test]
-fn ac1_says_what_was_checked() {
-    let md = guide();
-    assert!(
-        !md.contains("Not yet run"),
-        "the old warning is still there"
-    );
-    let section = md.split("## Driving the demo from Zed").nth(1).unwrap();
-    for needle in ["Zed 1.24.2", "macOS 27.0.1", "2026-10-18", "Herdr"] {
-        assert!(
-            section.contains(needle),
-            "the step tasks section lacks {needle}"
-        );
-    }
-}
-
-#[test]
-fn ac2_the_three_step_tasks_carry_the_tested_settings() {
-    let md = guide();
-    let tasks = step_tasks(&md);
-    let kinds: Vec<&str> = tasks
-        .iter()
-        .map(|t| t["args"][0].as_str().unwrap())
-        .collect();
-    assert_eq!(kinds, ["next", "prev", "goto"]);
-    for t in &tasks {
-        assert_eq!(t["reveal"], "never", "{t}");
-        assert_eq!(t["reveal_target"], "center", "{t}");
-        assert_eq!(t["hide"], "on_success", "{t}");
-    }
-    // The why, and the worse alternative.
-    for needle in [
-        "Zed runs every task in a terminal tab",
-        "terminal dock",
-        "`\"hide\": \"never\"` is worse",
-    ] {
-        assert!(md.contains(needle), "docs/zed.md lacks {needle}");
-    }
-}
-
-#[test]
-fn ac3_the_leftover_and_how_to_record_around_it() {
-    let md = guide();
-    for needle in [
-        "tab bar",
-        "for an instant",
-        "`auto_advance_ms`",
-        "`goto_step`",
-    ] {
-        assert!(md.contains(needle), "docs/zed.md lacks {needle}");
-    }
-}
-
 /// The tasks' commands against the example the `goto` task names: they step
 /// it, and an unknown id or no instance exits 1 with the message the guide
 /// quotes (AC4; `hide: on_success` keeps it on screen).

@@ -398,24 +398,6 @@ fn corner_a_put_of_another_document_takes_its_own() {
     }
 }
 
-// ---------- AC5 ----------
-
-#[test]
-fn ac5_schema_and_changelog() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let schema = std::fs::read_to_string(root.join("schema/tiza.schema.json")).unwrap();
-    let v: Value = serde_json::from_str(&schema).unwrap();
-    assert!(
-        v["properties"]["follows"].is_object(),
-        "{}",
-        v["properties"]
-    );
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("`follows`"), "CHANGELOG");
-    let guide = std::fs::read_to_string(root.join("docs/agent-guide.md")).unwrap();
-    assert!(guide.contains("`follows`"), "agent guide");
-}
-
 // ---------- Review: undo, a failed request, bad values ----------
 
 #[test]

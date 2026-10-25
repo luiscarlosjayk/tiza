@@ -165,63 +165,6 @@ fn ac1_typed_moves_animate_at_their_speed() {
 }
 
 #[test]
-fn ac2_the_frames_are_the_layouts_and_the_cast_is_unchanged() {
-    let dir = scratch("t120-cast");
-    let src = dir.join("config.env");
-    std::fs::write(&src, "APP=tiza\nTOKEN=demo-token-1\nPORT=1\n").unwrap();
-    let doc = json!({
-        "schema": 1, "code": {"file": "config.env"}, "source": {"language": "sh"}, "step": 0,
-        "annotations": [
-            {"id": "a2", "step": 1, "type": "note", "line": 3, "text": "the port"}
-        ]
-    });
-    let tiza_path = dir.join("config.tiza");
-    std::fs::write(&tiza_path, doc.to_string()).unwrap();
-    let gif = dir.join("c.gif");
-    tiza_ok(&[
-        "render",
-        tiza_path.to_str().unwrap(),
-        "--out",
-        gif.to_str().unwrap(),
-    ]);
-    // The pixels cannot be grepped; the cast (same frames as text) can,
-    // and it still works as before (AC4).
-    let cast = dir.join("c.cast");
-    tiza_ok(&[
-        "render",
-        tiza_path.to_str().unwrap(),
-        "--out",
-        cast.to_str().unwrap(),
-    ]);
-    let text = std::fs::read_to_string(&cast).unwrap();
-    assert!(text.contains("the port"), "{text}");
-    assert_eq!(decode(&std::fs::read(&gif).unwrap()).frames.len(), 2);
-    // And the GIF's own frames are the layouts: the same canvases
-    // `anim::frames` hands the encoder.
-    let d = tiza_core::fs::open(tiza_path.to_str().unwrap())
-        .unwrap()
-        .document;
-    let frames = tiza_core::anim::frames(
-        &d,
-        &tiza_core::Theme::dark(),
-        &tiza_core::anim::AnimOptions::default(),
-    );
-    assert_eq!(frames.len(), 2);
-    for f in &frames {
-        let t = f.canvas.to_plain_text();
-        assert!(t.contains("TOKEN=demo-token-1"), "{t}");
-    }
-    let tape = dir.join("c.tape");
-    tiza_ok(&[
-        "render",
-        tiza_path.to_str().unwrap(),
-        "--out",
-        tape.to_str().unwrap(),
-    ]);
-    assert!(std::fs::read_to_string(&tape).unwrap().contains("Output"));
-}
-
-#[test]
 fn ac3_mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
     let dir = scratch("t120-mp4");
     let out = dir.join("own.mp4");

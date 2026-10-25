@@ -184,9 +184,10 @@ fn ac2_hl_and_mark_keep_the_selection_for_up_enter() {
 
 #[test]
 fn ac3_a_failed_command_leaves_the_selection() {
-    // Test step 3: `v … m` → a kind that does not exist → an error; the
-    // line fixed (Ctrl-U, retyped) and Enter → the mark is on the
-    // selection.
+    // Test step 3: `v … m` → a kind that does not exist → an error, which
+    // closes the command line; `:` opens it again (empty) and the fixed
+    // command → the mark is on the selection. (Ctrl-U, which clears an open
+    // line, is in corner_w.)
     let (out, _) = run(
         "t203-ac3",
         steps(vec![
@@ -208,27 +209,6 @@ fn ac3_a_failed_command_leaves_the_selection() {
 }
 
 #[test]
-fn ac4_esc_and_ctrl_c_still_drop_it() {
-    // Test step 4 (t-197): a command line opened from a selection and
-    // closed with Esc or Ctrl-C forgets the selection.
-    for (name, close) in [("t203-ac4-esc", "\x1b"), ("t203-ac4-ctrl-c", "\x03")] {
-        let (out, _) = run(
-            name,
-            steps(vec![
-                select_let(),
-                vec![
-                    json!(["k", "m", ":mark"]),
-                    json!(["k", close, "NORMAL"]),
-                    json!(["k", ":mark drop\r", "usage: :mark"]),
-                    json!(["dump"]),
-                ],
-            ]),
-        );
-        assert!(dumps(&out)[0].is_empty(), "{name}: {out}");
-    }
-}
-
-#[test]
 fn corner_w_clears_it_and_still_saves() {
     let (out, dir) = run(
         "t203-w",
@@ -244,20 +224,6 @@ fn corner_w_clears_it_and_still_saves() {
     );
     assert!(dumps(&out)[0].is_empty(), "{out}");
     assert!(dir.join("main.rs.tiza").exists());
-}
-
-#[test]
-fn corner_no_selection_is_unchanged() {
-    let (out, _) = run(
-        "t203-none",
-        json!([
-            ["k", ":mark drop\r", "usage: :mark"],
-            ["k", ":mark drop 2:let\r"],
-            ["anns", 1],
-            ["dump"]
-        ]),
-    );
-    assert_eq!(dumps(&out)[0][0]["type"], "mark", "{out}");
 }
 
 #[test]

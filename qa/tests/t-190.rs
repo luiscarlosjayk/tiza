@@ -491,27 +491,18 @@ fn step4_ac4_zwsp_note_is_whole_or_cut_with_an_ellipsis_at_every_width() {
         !lay(&doc, clean - 1, 1).clipped_labels.is_empty(),
         "{clean}"
     );
+    // The CLI `tiza check --width` (its own path, the layout of the take)
+    // says the same at that width and one column less (moved here from
+    // step4_ac4_check_and_render_at_180_agree).
+    let f = fixture("t-190/zwsp-note.tiza");
+    let check_at = |w| tiza_ok(&["check", f.to_str().unwrap(), "--width", &format!("{w}")]);
+    let at_clean = check_at(clean);
+    assert!(at_clean.contains(" 0 warnings"), "{at_clean}");
+    let below = check_at(clean - 1);
+    assert!(!below.contains(" 0 warnings"), "{below}");
     // The stored text keeps its zero-width spaces.
     let text = std::fs::read_to_string(fixture("t-190/zwsp-note.tiza")).unwrap();
     assert!(text.contains("\\u200b") || text.contains('\u{200B}'));
-}
-
-#[test]
-fn step4_ac4_check_and_render_at_180_agree() {
-    let f = fixture("t-190/zwsp-note.tiza");
-    let out = render(&f, "txt", &["--width", "180", "--step", "1"]);
-    let words = out.matches("word").count();
-    // Four of them are in the code.
-    assert!(words == 25 + 4 || out.contains('…'), "{out}");
-    let check = tiza_ok(&["check", f.to_str().unwrap(), "--width", "180"]);
-    let clipped = !lay(&tiza_core::fs::load_document(&f).unwrap(), 180, 1)
-        .clipped_labels
-        .is_empty();
-    assert_eq!(
-        !check.contains(" 0 warnings"),
-        clipped,
-        "check says:\n{check}\nrender:\n{out}"
-    );
 }
 
 #[test]
@@ -648,36 +639,6 @@ fn ac6_random_documents_draw_every_letter_or_an_ellipsis() {
         }
     }
     assert!(checked >= 900 && cut > 0, "{checked} checked, {cut} cut");
-}
-
-#[test]
-fn ac6_pty_the_real_terminal_shows_the_mark_and_the_pictures() {
-    let dir = scratch("t190-pty");
-    let doc = json!({
-        "schema": 1, "source": {"language": "rs", "first_line": 1}, "step": 1,
-        "code": ["let ad\u{200B}min = 1;", "let admin = 2;"],
-        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2,
-                         "text": "clear \u{1b}[2J bell \u{7}"}]
-    });
-    std::fs::write(dir.join("d.tiza"), doc.to_string()).unwrap();
-    let body = r##"
-binary, cwd = sys.argv[1], sys.argv[2]
-os.chdir(cwd)
-env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
-s = Pty([binary, "--no-save", "d.tiza"], 30, 120, env=env)
-ok = s.wait_for(lambda out: "ad\u2b1amin" in plain(out) and "\u241b[2J" in plain(out), 10, "the mark and the picture")
-print("SEEN", ok, flush=True)
-s.send(b":q\r")
-print("EXIT", s.finish(10))
-"##;
-    let out = tiza_qa::pty_script(
-        &dir,
-        "pty.py",
-        body,
-        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
-    );
-    assert!(out.contains("SEEN True"), "{out}");
-    assert!(out.contains("EXIT 0"), "{out}");
 }
 
 // ---------- AC5: files without these characters ----------

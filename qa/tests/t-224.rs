@@ -107,28 +107,3 @@ fn ac1_during_a_typing_animation() {
         assert_eq!(text, exported(&path, 1, width), "{width}");
     }
 }
-
-#[test]
-fn ac2_the_texts_say_so() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let guide = read("docs/agent-guide.md");
-    assert!(
-        guide.contains("with a `width`, at that width"),
-        "agent guide"
-    );
-    assert!(
-        !guide.contains("presenter's layout at that width"),
-        "agent guide"
-    );
-    let mcp = read("crates/tiza-mcp/src/lib.rs");
-    assert!(!mcp.contains("presenter's layout"), "MCP texts");
-    // The API schema and the CLI help.
-    assert!(
-        read("schema/api.schema.json").contains("Columns of the take"),
-        "schema"
-    );
-    let help = tiza_ok(&["scene", "text", "--help"]);
-    assert!(help.contains("Columns of the take"), "{help}");
-    assert!(read("CHANGELOG.md").contains("`render.text` with a width"));
-}

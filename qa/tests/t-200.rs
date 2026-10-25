@@ -380,10 +380,12 @@ impl Gen {
         self.next() % n.max(1)
     }
     /// Words of a label: plain ones, and some with a zero-width space, a
-    /// ZWJ sequence, a combining mark or a no-break space, which take more
-    /// (or other) cells once drawn than their display width says.
+    /// ZWJ sequence, a combining mark (also alone, after a space), a word
+    /// joiner, a no-break or an ideographic space, which take more (or
+    /// other) cells once drawn than their display width says. One label in
+    /// four glues its words with no space (the words of t-208).
     fn words(&mut self, max: u64) -> String {
-        const W: [&str; 12] = [
+        const W: [&str; 16] = [
             "the",
             "borrow",
             "checker",
@@ -396,12 +398,16 @@ impl Gen {
             "👩\u{200d}💻",
             "cafe\u{301}",
             "no\u{a0}break",
+            "\u{301}",
+            "word\u{2060}joiner",
+            "全\u{3000}角",
+            "a\u{200b}",
         ];
         let n = 1 + self.below(max);
         (0..n)
             .map(|_| W[self.below(W.len() as u64) as usize])
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(if self.below(4) == 0 { "" } else { " " })
     }
 }
 

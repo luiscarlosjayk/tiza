@@ -28,11 +28,7 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, example, scratch, tiza_ok};
-
-fn repo_root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..")
-}
+use tiza_qa::{Live, McpClient, example, scratch};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
 
@@ -78,26 +74,6 @@ fn ac1_add_at_step_0_is_not_visible_and_at_step_1_it_is() {
         (json!(3), json!(false))
     );
     assert_eq!(r["hidden"], json!("it appears at step 3"));
-}
-
-#[test]
-fn ac1_cli_api_reply_carries_the_fields() {
-    let live = at_step_0("t155-cli");
-    let out = tiza_ok(&[
-        "api",
-        "annotation.add",
-        r#"{"type":"note","line":4,"text":"hello"}"#,
-        "--socket",
-        live.socket.to_str().unwrap(),
-    ]);
-    let v: Value = serde_json::from_str(out.trim()).unwrap_or_else(|e| panic!("{e}: {out}"));
-    let r = if v.get("result").is_some() {
-        v["result"].clone()
-    } else {
-        v
-    };
-    assert_eq!(r["step"], json!(1), "{r}");
-    assert_eq!(r["visible"], json!(false), "{r}");
 }
 
 #[test]
@@ -301,33 +277,6 @@ fn ac1_mcp_tools_say_it_in_words() {
     );
     let instructions = mcp.initialize_result()["instructions"].as_str().unwrap();
     assert!(instructions.contains("whether it shows at the step on screen"));
-}
-
-#[test]
-fn ac3_schema_guide_and_changelog() {
-    let schema = tiza_ok(&["schema", "api"]);
-    let committed = std::fs::read_to_string(repo_root().join("schema/api.schema.json")).unwrap();
-    assert_eq!(
-        schema.trim(),
-        committed.trim(),
-        "schema/api.schema.json regenerated"
-    );
-    let v: Value = serde_json::from_str(&schema).unwrap();
-    let text = v.to_string();
-    for field in ["shown_step", "visible", "hidden", "step_title"] {
-        assert!(
-            text.contains(&format!("\"{field}\"")),
-            "schema lacks {field}"
-        );
-    }
-    let guide = std::fs::read_to_string(repo_root().join("docs/agent-guide.md")).unwrap();
-    assert!(guide.contains("## Is it on screen?"));
-    assert!(guide.contains("\"visible\": false"));
-    let changelog = std::fs::read_to_string(repo_root().join("CHANGELOG.md")).unwrap();
-    // (The CHANGELOG of 0.1.0 was condensed in t-217.)
-    assert!(changelog.contains(
-        "The replies of `annotation.add` and `annotation.update` tell if the annotation is on screen"
-    ));
 }
 
 // ---------- AC2: the presenter is told on the status bar ----------

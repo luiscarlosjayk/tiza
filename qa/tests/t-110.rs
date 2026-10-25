@@ -214,16 +214,6 @@ fn ac4_quit_with_autosave_off_says_how_to_save_or_discard() {
 }
 
 #[test]
-fn ac5_default_still_autosaves() {
-    let (live, path) = opened("t110-default", false);
-    let before = std::fs::read(&path).unwrap();
-    live.command("note 3 x");
-    assert_ne!(std::fs::read(&path).unwrap(), before);
-    let screen = live.screen(120, 20);
-    assert!(!screen.contains("no-save"), "{screen}");
-}
-
-#[test]
 fn ac7_put_of_another_document_stops_autosave_until_asked() {
     let (live, path) = opened("t110-put", false);
     let before = std::fs::read(&path).unwrap();

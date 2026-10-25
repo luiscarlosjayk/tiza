@@ -152,16 +152,3 @@ fn ac2_ac3_pipeline_passes_both_themes() {
         assert!(String::from_utf8_lossy(&out.stdout).contains("<-- under"));
     }
 }
-
-#[test]
-fn ac4_ci_runs_the_pipeline() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap();
-    let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).unwrap();
-    assert!(
-        ci.contains("scripts/legibility.py")
-            && ci.contains("--theme light")
-            && ci.contains("legibility-report")
-    );
-}

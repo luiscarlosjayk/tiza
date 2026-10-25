@@ -71,25 +71,6 @@ fn render(args: &[&str], out: &std::path::Path) {
 }
 
 #[test]
-fn ac0_the_gif_defaults_to_scale_2_and_video_stays_at_1() {
-    let help = tiza_ok(&["render", "--help"]);
-    assert!(
-        help.contains("default 2 for PNG and GIF, 1 for MP4/WebM"),
-        "{help}"
-    );
-    let dir = scratch("t121-scale");
-    let (two, one) = (dir.join("two.gif"), dir.join("one.gif"));
-    render(&[], &two);
-    render(&["--scale", "1"], &one);
-    let (w2, h2, _) = gif_info(&std::fs::read(&two).unwrap());
-    let (w1, h1, _) = gif_info(&std::fs::read(&one).unwrap());
-    assert!(
-        w2.abs_diff(w1 * 2) <= 1 && h2.abs_diff(h1 * 2) <= 1,
-        "{w2}×{h2} vs {w1}×{h1}"
-    );
-}
-
-#[test]
 fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
     let path = root().join("scripts/readme-images.sh");
     let s = read("scripts/readme-images.sh");
@@ -232,15 +213,4 @@ fn ac4_the_examples_are_untouched_by_rendering() {
     let before = std::fs::read(&ex).unwrap();
     render(&["--step", "3"], &scratch("t121-ex").join("x.png"));
     assert_eq!(std::fs::read(&ex).unwrap(), before);
-}
-
-#[test]
-fn ac5_changelog_and_agents_rule() {
-    // The condensed CHANGELOG of 0.1.0 (t-217) lists what changes for a
-    // user: the README images script is the maintainers'.
-    let agents = read("AGENTS.md");
-    assert!(
-        agents.contains("any visual change to the renderer re-runs `scripts/readme-images.sh` in the same commit"),
-        "AGENTS.md bullet missing"
-    );
 }

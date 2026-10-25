@@ -112,6 +112,9 @@ fn ac1_nn_before_the_start_moves_two_steps() {
     // takes it; the terminal never answers (the 100 ms timeout path).
     let out = run("t204-seed", &["--present"], b"nn", b"", 0, b"");
     assert_eq!(step_of(&out), "2", "{out}");
+    // Without `--mouse`, the terminal keeps its own mouse (text selection):
+    // Tiza does not turn the capture on (moved here from t-034).
+    assert!(out.contains("MOUSE_ON False"), "{out}");
 }
 
 #[test]
@@ -146,13 +149,6 @@ fn corner_an_esc_typed_early_is_a_key() {
     // second `n` would go into the command line.
     let out = run("t204-esc", &[], b"n:abc\x1b", b"", 0, b"n");
     assert_eq!(step_of(&out), "2", "{out}");
-}
-
-#[test]
-fn ac3_nothing_typed_early_changes_nothing() {
-    let out = run("t204-quiet", &[], b"", b"", 0, b"nn");
-    assert_eq!(step_of(&out), "2", "{out}");
-    assert!(out.contains("LIGHT False"), "{out}");
 }
 
 // ---------- AC2 ----------

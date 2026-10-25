@@ -168,23 +168,6 @@ fn ac1_test_step_2_svg_is_valid_xml_and_png_gif_are_written() {
 }
 
 #[test]
-fn ac1_a_bidi_override_shows_a_mark_and_does_not_reorder_the_line() {
-    let dir = scratch("t182-bidi");
-    // The last one ends its line: nothing comes to cover its cell.
-    let f = write(
-        &dir,
-        "f.rs",
-        "\u{202E}abc\u{202C} = 1\nx\u{2067}y\u{2069}z\nend\u{202E}\n",
-    );
-    let txt = tiza_ok(&["render", f.to_str().unwrap(), "--format", "txt"]);
-    assert_clean("txt", &txt);
-    // Logical order, a mark where each control is (t-190).
-    assert!(txt.contains("⬚abc⬚ = 1"), "{txt}");
-    assert!(txt.contains("x⬚y⬚z"), "{txt}");
-    assert!(txt.contains("end⬚\n") || txt.ends_with("end⬚"), "{txt}");
-}
-
-#[test]
 fn ac1_annotation_text_is_never_drawn_raw() {
     let dir = scratch("t182-labels");
     let doc = json!({

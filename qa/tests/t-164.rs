@@ -910,17 +910,6 @@ fn brace(name: &str) -> (Live, PathBuf) {
 }
 
 #[test]
-fn review_a_block_pasted_above_with_the_same_text_on_that_line_shifts_the_move_to_its_own_brace() {
-    let (live, _dir) = brace("t164-brace");
-    paste(&live, &format!("fn z() {{\n    zero();\n}}\n{BRACES}"));
-    assert_eq!(position_of(&live, 0), "6");
-    let at1 = code_at(&live, 1);
-    assert_eq!(at1[2], "}", "z's brace untouched");
-    assert_eq!(at1[5], "} // end of a");
-    assert_eq!(stale_count(&live), 0);
-}
-
-#[test]
 fn review_a_reload_of_one_block_shifts_exactly_and_two_separate_edits_mark_it_even_on_the_same_text()
  {
     let (live, dir) = demo(

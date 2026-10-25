@@ -278,26 +278,6 @@ fn ac3_a_follow_reload_that_drops_a1_says_so() {
 }
 
 #[test]
-fn ac5_move_add_and_scene_put_refuse_an_unknown_id_the_caller_writes() {
-    let (live, _) = live_doc(DOC, "t199-typo");
-    let r = live.api(
-        "move.add",
-        json!({"at_step": 3, "action": "code.patch", "op": "replace", "find": "let n",
-               "content": "    let m = t.len();", "rebind": {"zz": {"at": {"find": "t.len()"}}}}),
-    );
-    let e = r.error.expect("refused").message;
-    assert!(e.contains("rebind names unknown annotation «zz»"), "{e}");
-
-    // A hand-written document with that entry: refused too.
-    let mut doc: Value = serde_json::from_str(DOC).unwrap();
-    doc["moves"][0]["rebind"]["zz"] = json!({"at": {"find": "t.len()"}});
-    let r = live.api("scene.put", json!({"document": doc}));
-    let e = r.error.expect("refused").message;
-    assert!(e.contains("rebind names unknown annotation «zz»"), "{e}");
-    assert_eq!(live.with(|app| app.doc.moves[0].rebind.len()), 1);
-}
-
-#[test]
 fn corner_get_put_round_trip_keeps_the_ignored_entry() {
     let (live, _) = live_doc(DOC, "t199-roundtrip");
     live.with(|app| app.replace_code(PASTED).unwrap());

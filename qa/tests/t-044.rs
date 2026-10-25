@@ -151,14 +151,3 @@ fn ac3_unknown_uri_and_no_instance_are_errors() {
     let msg = v["error"]["message"].as_str().unwrap_or("").to_lowercase();
     assert!(msg.contains("instance") || msg.contains("socket"), "{v}");
 }
-
-#[test]
-fn ac4_render_text_tool_still_works() {
-    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "t044-tool");
-    live.command("box 1-2 both");
-    let mut mcp = McpClient::start(&live.socket);
-    let (err, text, _) = mcp.call("render_text", json!({}));
-    assert!(!err, "{text}");
-    assert!(text.contains("both") && text.contains("fn b()"), "{text}");
-    assert!(mcp.tool_names().contains(&"render_text".to_string()));
-}

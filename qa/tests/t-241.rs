@@ -115,28 +115,3 @@ print("EXIT", s.finish(10))
     );
     assert!(out.contains("EXIT 0"), "{out}");
 }
-
-#[test]
-fn ac1_ac4_the_texts_say_where_a_relative_path_starts() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let sentence = "A relative path starts at the folder where you started Tiza";
-    assert!(
-        read("docs/agent-guide.md").contains(sentence),
-        "agent guide"
-    );
-    let help: Vec<String> = tiza_tui::keys::HELP
-        .iter()
-        .flat_map(|(_, rows)| rows.iter().map(|r| r.key_text()))
-        .collect();
-    for note in [
-        "A relative PATH starts at the folder where you started Tiza.",
-        "Tiza creates the folders that are missing.",
-    ] {
-        assert!(help.iter().any(|t| t == note), "help: {note}");
-    }
-    assert!(
-        read("CHANGELOG.md").contains("shows the full path"),
-        "CHANGELOG"
-    );
-}
