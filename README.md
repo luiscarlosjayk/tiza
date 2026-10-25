@@ -1,4 +1,4 @@
-![Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 4 and 7](docs/img/hero.png)
+<p align="center"><img src="docs/img/hero.png" alt="Tiza: draw on top of code in your terminal to explain, debug and teach. Three real Tiza frames of the ownership example: steps 1, 4 and 7" width="480"></p>
 
 **Draw on top of code in your terminal to explain, debug and teach.**
 

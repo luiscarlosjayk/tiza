@@ -14,19 +14,14 @@
 //!   the new look makes them read worse.
 //! - AC5 CHANGELOG line; AGENTS.md bullet (a visual renderer change re-runs
 //!   the script in the same commit).
-//! - AC6 Hero `docs/img/hero.png` (1200×630 at device scale 2) from
-//!   `docs/img/src/hero.html` with the real `--step 1|4|7` frames; the back
-//!   windows dimmed with an overlay, never with opacity; English alt text.
-//! - AC7 The title in Libron (the brand font in docs/brand/fonts), the frames
-//!   real `tiza render` exports used as produced. Since Luis chose the logo
-//!   (2026-10-24), the title is `docs/brand/logo.svg`, whose glyphs are
-//!   Libron outlines: its paths inline, without its slate background.
+//! - AC6 and AC7 (the hero image, its title and its layout) are manual
+//!   checks since Luis's decision of 2026-10-25: no test checks the hero.
+//!   Its three frames are still compared with fresh renders below.
 //!
 //! The committed images are compared with fresh renders by size (pixels)
 //! and the README text block byte for byte, so a renderer change that skips
 //! the script fails here. PNG bytes are not compared: the rasteriser may
-//! differ in the last bit between CPUs, and the hero depends on the system
-//! sans of the machine that took the screenshot.
+//! differ in the last bit between CPUs.
 
 use tiza_qa::{example, scratch, tiza_ok};
 
@@ -108,8 +103,6 @@ fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
         "docs/img/ownership.gif",
         "docs/img/ownership-step7.png",
         "docs/img/src/step$s.png",
-        "docs/img/hero.png",
-        "docs/img/src/hero.html",
         "readme-images:ownership-txt",
     ] {
         assert!(s.contains(out), "script does not write {out}");
@@ -144,7 +137,7 @@ fn ac1_the_script_uses_tiza_alone_and_writes_every_readme_image() {
             }
         }
     }
-    assert!(shown >= 3, "the hero, the GIF and the step-7 PNG: {shown}");
+    assert!(shown >= 2, "the GIF and the step-7 PNG: {shown}");
 }
 
 fn images(md: &str) -> Vec<(String, String)> {
@@ -250,49 +243,4 @@ fn ac5_changelog_and_agents_rule() {
         agents.contains("any visual change to the renderer re-runs `scripts/readme-images.sh` in the same commit"),
         "AGENTS.md bullet missing"
     );
-}
-
-#[test]
-fn ac6_ac7_the_hero_is_built_from_real_frames_with_the_logo_for_the_title() {
-    let hero = std::fs::read(root().join("docs/img/hero.png")).unwrap();
-    assert_eq!(png_size(&hero), (2400, 1260), "1200×630 at device scale 2");
-    assert!(hero.len() < 1_000_000, "hero {} bytes", hero.len());
-    let html = read("docs/img/src/hero.html");
-    // The logo of docs/brand for the title: the same paths, inline, less
-    // its slate background (the page has its own). One mark, not two.
-    let logo = read("docs/brand/logo.svg");
-    let background = "<rect width=\"1200\" height=\"400\" rx=\"28\" fill=\"#22272b\"/>";
-    let paths = logo
-        .split_once(background)
-        .expect("the logo's background")
-        .1
-        .trim_end()
-        .trim_end_matches("</svg>");
-    assert!(
-        html.contains(paths),
-        "the hero's logo differs from docs/brand/logo.svg"
-    );
-    assert!(!html.contains(background));
-    assert!(html.contains("aria-label=\"Tiza\""));
-    assert!(!html.contains("<h1>TIZA</h1>") && !html.contains("@font-face"));
-    // The frames are the committed renders, with English alt text, and the
-    // back windows dimmed by an overlay, not by opacity.
-    for s in ["1", "4", "7"] {
-        assert!(
-            html.contains(&format!(
-                "<img src=\"step{s}.png\" alt=\"Tiza frame, step {s}"
-            )),
-            "step {s}"
-        );
-    }
-    assert!(html.contains(".dim::after") && html.contains("rgba(13, 17, 23, .55)"));
-    assert!(
-        !html.contains("opacity"),
-        "dim with an overlay, never opacity"
-    );
-    assert_eq!(html.matches("class=\"win z").count(), 3);
-    assert_eq!(html.matches(" dim\"").count(), 2);
-    // No image inside a frame is anything but a `tiza render` export: the
-    // template only references the three step files.
-    assert_eq!(html.matches("<img ").count(), 3);
 }
