@@ -43,13 +43,35 @@ It is also **for agents**: it exposes a local socket API and an **MCP server**, 
 
 Tiza is written in Rust with [ratatui](https://ratatui.rs).
 
-Binaries for macOS (Apple Silicon and Intel) and Linux in [Releases](https://github.com/luiscarlosjayk/tiza/releases). Download size: about 6 MB (tar.gz: 6.3 MB for Linux x86_64, 5.7 MB for macOS arm64; the binary inside is 11-13 MB), kept under 8 MB — and the binary under 16 MB — by `scripts/size-check.sh`. Windows: not supported in v0.x. Each release's description is its notes (`docs/release-notes/vX.Y.Z.md`): what is new, which archive is for which platform (the Linux one needs glibc 2.35 or newer: Ubuntu 22.04, Debian 12, Fedora 36 or later).
+On macOS and Linux, run this command to install the latest release:
 
-**macOS:** the binaries are not signed with an Apple Developer ID. A tar.gz downloaded with a browser is quarantined, and the first run of `tiza` is refused (*"tiza" Not Opened*); clear the flag once with `xattr -d com.apple.quarantine /path/to/tiza`. A download with `curl` is not quarantined.
+```sh
+curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh
+```
 
-To get a notice of new versions, watch the repository on GitHub (**Watch** → **Custom** → **Releases**). Tiza itself does not check for updates.
+The script downloads the archive for your system from [Releases](https://github.com/luiscarlosjayk/tiza/releases) and checks its SHA-256 checksum. Then it puts `tiza` in `~/.local/bin`. It does not use `sudo`. If that folder is not in your `PATH`, the script shows the line to add.
 
-Or from source (Rust ≥ 1.88), from crates.io or from the repository's `main`:
+Two environment variables change the install. `TIZA_VERSION` sets the release, for example `v0.1.0`. `TIZA_INSTALL_DIR` sets the folder for the binary:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | TIZA_VERSION=v0.1.0 TIZA_INSTALL_DIR="$HOME/bin" sh
+```
+
+To read the script before you run it, download it first:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh -o install.sh
+less install.sh
+sh install.sh
+```
+
+To update Tiza, run the install command again. To get a notice of new versions, watch the repository on GitHub (**Watch** → **Custom** → **Releases**). Tiza itself does not check for updates.
+
+**By hand:** download the archive for your system from [Releases](https://github.com/luiscarlosjayk/tiza/releases). The notes of each release tell which archive is for which system. The Linux archive needs glibc 2.35 or later, for example Ubuntu 22.04, Debian 12 or Fedora 36. The download size of an archive is 6 to 7 MB. `scripts/size-check.sh` keeps the archive under 8 MB and the binary under 16 MB. Tiza does not support Windows in version 0.x.
+
+**macOS:** the binaries do not have an Apple Developer ID signature. If you download an archive with a web browser, macOS stops `tiza` the first time and shows *"tiza" Not Opened*. To fix this, run `xattr -d com.apple.quarantine /path/to/tiza` one time. A download with `curl` or with the install script does not have this problem.
+
+**From source:** with Rust 1.88 or later, install from crates.io or from `main` of the repository:
 
 ```sh
 cargo install tiza

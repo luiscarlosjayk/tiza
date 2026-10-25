@@ -30,6 +30,9 @@
 //!   `tiza --version` of the installed binary and a next step; `--help`
 //!   and `-h` list the variables. A macOS quarantine flag is removed. No
 //!   command reads the rest of a script that comes through a pipe.
+//! - AC9 The README gives the command of `--help` as the first way to
+//!   install, with what it does and its two variables; the archives and
+//!   `cargo install tiza` come after it.
 //!
 //! The releases come from a local HTTP server (`TIZA_DOWNLOAD_BASE`, for
 //! tests only), and the platform from fake `uname`, `getconf`, `ldd`,
@@ -1525,4 +1528,41 @@ fn ac8_help_lists_the_variables() {
     assert!(run.stderr.contains("TIZA_INSTALL_DIR"), "{run}");
     assert_eq!(run.stdout, "");
     assert_eq!(m.server.take_hits(), Vec::<String>::new());
+}
+
+// --- AC9 ------------------------------------------------------------------
+
+#[test]
+fn ac9_the_readme_gives_the_command_first() {
+    let command =
+        "curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh";
+    let script = read("install.sh");
+    assert!(
+        script.contains("SCRIPT_URL=https://raw.githubusercontent.com/$REPO/main/install.sh\n")
+    );
+    let readme = read("README.md");
+    let install = readme
+        .split("\n## Installation\n")
+        .nth(1)
+        .and_then(|rest| rest.split("\n## ").next())
+        .expect("an Installation section");
+    let first = install
+        .find(&format!("```sh\n{command}\n```"))
+        .expect("the command");
+    for after in ["**By hand:**", "**From source:**", "cargo install tiza"] {
+        let at = install.find(after).unwrap_or_else(|| panic!("{after}"));
+        assert!(first < at, "the command comes before {after}");
+    }
+    for word in [
+        "SHA-256",
+        "`~/.local/bin`",
+        "`sudo`",
+        "`TIZA_VERSION`",
+        "`TIZA_INSTALL_DIR`",
+        "To read the script before you run it",
+        "xattr -d com.apple.quarantine",
+    ] {
+        assert!(install.contains(word), "{word}");
+    }
+    assert!(!install.contains("TIZA_DOWNLOAD_BASE"), "for tests only");
 }
