@@ -38,7 +38,7 @@ Each page has one form (Diataxis calls them the four forms of documentation). Do
 - Reference: one sentence on what the page covers, then a table or a list. One row per item. No story.
 - Explanation: the problem, the decision, the effect on the reader, a link to the ADR.
 - Every page starts with one sentence that says what the page is for. A guide also says what Tiza is and links to install.
-- Budgets: a guide or a concept page has 150 lines or fewer, and the tutorial 250. Split a reference page when one table covers two topics.
+- Budgets: a guide or a concept page has 150 lines or fewer, and the tutorial 250. A reference page has no line budget. Split a reference page when one table covers two topics.
 - Do not write "above" or "below" for another section: link to its heading. Link an ADR as "Decided in ADR 0007".
 
 ### Page order
@@ -137,6 +137,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | embedded code | code that the document holds as a copy (`:embed`) | inline code, frozen code |
 | mouse capture | the state in which Tiza gets the mouse events of the terminal (`--mouse`, `:mouse`) | mouse mode, mouse reporting |
 | follow mode | the mode that reloads the code when the file changes on disk (`--follow`, `:follow`) | watch mode, live reload |
+| config file | the TOML file of the user settings | configuration file, settings file |
 | autosave | the save of each change to the document when you make it (`:autosave`) | auto-save, autosaving |
 | no-save mode | the mode that never saves the document by itself (`--no-save`) | dry run, read-only mode |
 | read-only document | a `.tiza` file that Tiza cannot write: the file or its folder is read-only | locked file |
@@ -178,6 +179,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 - A commit that changes behavior also changes its page. The structure note has the change-to-page map.
 - Run every command that you write against the built binary. List the commands in the commit message.
 - Check every claim against the code or a test. Never write a flag, a key or a number from memory.
+- When a user meets a bug in normal use, the page tells the current behavior. Report the bug. Leave an edge-case bug out of the page. The fix commit changes the page.
 - QA tests check behavior, contracts with scripts, generated images, links and repo policies. A test can compare a doc with the code. A test never checks the prose of a doc. [AGENTS.md](https://github.com/luiscarlosjayk/tiza/blob/main/AGENTS.md) gives the full rule.
 - Before you move text, find the tests that read it: an anchor, a link or a line that a script writes. Change them in the same commit. A change to what a test checks needs the owner.
 - Move text verbatim in one commit and edit it in the next. Then `git log --follow` and the review stay simple.
