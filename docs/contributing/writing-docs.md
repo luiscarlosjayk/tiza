@@ -1,6 +1,6 @@
 # Writing the Tiza docs
 
-Read this page before you write or change a doc. It applies to the README, `docs/`, release notes, the CHANGELOG, help text, TUI and CLI messages, and MCP descriptions. The three roles that use it are in [doc-roles.md](doc-roles.md). The reasons for the rules are in [the documentation structure note](../research/documentation-structure.md).
+Read this page before you write or change a doc. It applies to the README, `docs/`, release notes, the CHANGELOG, help text, TUI and CLI messages, and MCP descriptions. The three roles that use it are in [Doc roles](doc-roles.md). The reasons for the rules are in [the documentation structure note](../research/documentation-structure.md).
 
 ## 1. Readers and forms
 
@@ -11,7 +11,7 @@ Tiza has four readers, in this order of priority:
 3. A person or an agent that connects an AI agent through MCP or the socket.
 4. A contributor, person or agent, who works on the repo.
 
-Each page has one form (Diataxis calls them the four forms of documentation). Do not mix two forms on one page. Link to the other form.
+Each page has one form (Diataxis calls them the four forms of documentation). Do not mix two forms on one page, except on a feature page that follows [Page order](#page-order). Link to the other form.
 
 | Form | The reader wants to | Lives in |
 |---|---|---|
@@ -38,9 +38,43 @@ Each page has one form (Diataxis calls them the four forms of documentation). Do
 - Reference: one sentence on what the page covers, then a table or a list. One row per item. No story.
 - Explanation: the problem, the decision, the effect on the reader, a link to the ADR.
 - Every page starts with one sentence that says what the page is for. A guide also says what Tiza is and links to install.
-- Budgets: a guide has 150 lines or fewer, a concept page 80 and the tutorial 250.
-- Keep a paragraph to five sentences or fewer. Keep a table cell to one sentence.
+- Budgets: a guide or a concept page has 150 lines or fewer, and the tutorial 250. Split a reference page when one table covers two topics.
 - Do not write "above" or "below" for another section: link to its heading. Link an ADR as "Decided in ADR 0007".
+
+### Page order
+
+A page about one feature uses this order. For that page, it replaces the template of its form. Put what the reader does first and how Tiza does it last. Leave out a part that the page does not need:
+
+1. The H1, then one sentence on what the page is for. A second sentence can say what the page covers.
+2. How to use it: the usual case, in short paragraphs or numbered steps.
+3. The reference tables: commands, flags, messages and status bar states.
+4. The special cases: what changes in each one. Give each case its own section or list item.
+5. "How it works": the internals, in a short section at the end. When only a contributor needs them, move them to `docs/contributing/`.
+
+[Saving](../concepts/saving.md) is the model page for this order.
+
+### Limits
+
+- Keep a paragraph to five sentences or fewer.
+- Keep a list item to 60 words or fewer.
+- Keep a table cell to one sentence.
+- Use a table when you list more than three commands, flags, messages or states.
+
+These limits are rules for the writer. A QA test does not check them.
+
+### Tables, lists, code blocks and callouts
+
+| Use | For |
+|---|---|
+| A table | items that have the same fields: a command and what it does, a message and when it shows |
+| A numbered list | steps that the reader does in order, or events in the order that they occur |
+| A bullet list | facts that do not have the same fields |
+| A code block | text that the reader types, or sees exactly: a command, a file, a line on stderr |
+| Backticks | a name in a sentence: a command, a key, a flag, a field, a message |
+| A callout | a warning about lost work, at most one on a page |
+
+- Write a callout as a quote with a bold label: `> **Warning:** …`. GitHub and mdBook both show it.
+- Copy each message and each status bar state exactly as the code writes it. Write a placeholder in capitals: `FILE`, `PATH`.
 
 ## 4. Voice and glossary
 
@@ -62,7 +96,9 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | annotation | anything Tiza draws on the code: mark, highlight, box, arrow, note, callout, spotlight | drawing, overlay |
 | document | the `.tiza` file (JSON) that holds the code reference, the annotations and the steps | sidecar, scene (except in `tiza scene`, `scene.get`, `tiza://scene`) |
 | step | one numbered state of a document; step 0 shows only the code | slide, frame |
+| take | the layout that presentation mode and the exports use for all the steps of a document | recording, sequence |
 | frame | one image of one step in an export | step |
+| export | a file that `tiza render` or `export_image` writes: text, Markdown, SVG, PNG, GIF and the others | snapshot |
 | presentation mode | the mode that hides the interface (`P`, `--present`) | take mode |
 | normal mode | the mode where you write annotations | authoring screen |
 | move | a change that a step makes to the code or the view (`code.patch`, `code.link`, `cursor`, `select`, `wait`) | patch (except `code.patch`) |
@@ -74,8 +110,15 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 | instance | the running TUI that agents talk to | server, app |
 | color | the color of an annotation or a theme token | colour |
 | 24-bit color | the terminal feature that shows any RGB color | truecolor, RGB |
-| status bar | the bottom row of normal mode | status line, the bar |
+| status bar | the bottom row of normal mode, with the state and the last message | status line, the bar, message line |
+| message | the text that a command shows in the status bar | notice, toast |
 | presenter | the person who shows the code; only in agent pages | user |
+| code reference | code that the document reads from a file (`"code": {"file": …}`) | file link, pointer |
+| embedded code | code that the document holds as a copy (`:embed`) | inline code, frozen code |
+| follow mode | the mode that reloads the code when the file changes on disk (`--follow`, `:follow`) | watch mode, live reload |
+| autosave | the save of each change to the document when you make it (`:autosave`) | auto-save, autosaving |
+| no-save mode | the mode that never saves the document by itself (`--no-save`) | dry run, read-only mode |
+| read-only document | a `.tiza` file that Tiza cannot write: the file or its folder is read-only | locked file |
 
 ## 5. Numbers
 
@@ -103,6 +146,7 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 - Inside `docs/`, use relative links. They work on GitHub and in mdBook.
 - In README.md, link to a page outside `examples/` with an absolute URL. The release archive holds the binary, the README, the two licenses and `examples/`.
 - The docs site is https://tiza.luisk.dev. Until it exists, link to the page on GitHub.
+- The text of a link names the page or the section: `[Saving](../concepts/saving.md)`, not the file name.
 - A link to a section names the section: `see [Moves](reference/document-format.md#moves)`, not "see here".
 - Do not link to the board, to a session or to anything private. The repo is public.
 - Do not write a ticket id in a public file. A QA test fails on it.
@@ -118,3 +162,17 @@ Write all public text in English, in ASD-STE100 Simplified Technical English. Ch
 - Text that you edit changes to this style. Do not change other text in the same commit.
 - Put the notice "Not released yet" on a page about a feature that is in no release. The version bump commit removes it.
 - Write commit messages in English, in the imperative, with a subject of 72 characters or fewer.
+
+## 9. Rewriting a page
+
+Do these steps before you send a rewrite for review:
+
+1. Make a fact map. List each claim of the old text, and write where it is in the new text.
+2. Do not lose a fact, and do not change one. A new fact needs a check in the binary or in the code.
+3. Run each command of the page against the built binary, in a pseudo-terminal. Check each other claim against the code or a test.
+4. Write down the claims that you could not check.
+5. Find the links and the anchors to the page. Keep each anchor, or change each link in the same commit.
+6. Look at the page at desktop width and at 390 pixels, in a GitHub-like preview.
+7. Check the style: this guide, the glossary and the spelling "color".
+
+Keep the fact map and the preview out of the repo. Send them with the change to the person who reviews it.
