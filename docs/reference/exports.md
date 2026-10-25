@@ -408,7 +408,7 @@ An MP4 or a WebM export starts `ffmpeg`. Tiza uses `$TIZA_FFMPEG`, or else the f
 - Without `ffmpeg`, the export stops with exit code 2. It writes no file.
 - The video has 30 frames each second. Tiza makes its width and its height even numbers.
 - An MP4 uses H.264 and `yuv420p`. A WebM uses VP9 and `yuv420p`.
-- The temporary files are in [Video exports](files-and-environment.md#video-exports).
+- The temporary files are in [Video exports](../concepts/privacy-and-network.md#video-exports).
 
 ### Files of `--all-steps`
 
@@ -466,4 +466,4 @@ Tiza writes the frames as PNG files to a temporary folder, with a list of their 
 
 ### Writing the file
 
-A GIF, an MP4, a WebM, the files of `--all-steps` and the file of `export_image` go to a temporary file first. Then Tiza renames it. Thus a stopped export does not leave a part of a file at the final name. [How Tiza writes a file](files-and-environment.md#how-tiza-writes-a-file) gives the names of the temporary files.
+A GIF, an MP4, a WebM, the files of `--all-steps` and the file of `export_image` go to a temporary file first. Then Tiza renames it. Thus a stopped export does not leave a part of a file at the final name. [How Tiza writes a file](../concepts/privacy-and-network.md#how-tiza-writes-a-file) gives the names of the temporary files.

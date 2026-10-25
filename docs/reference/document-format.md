@@ -308,7 +308,7 @@ A color name of an annotation, such as `orange`, is not a color value. `red`, `b
 
 ## Moves
 
-A move changes the code or the view at a step. The `moves` list of a document holds them. Decided in [ADR 0007](../adr/0007-moves-y-pasos-con-nombre.md).
+A move changes the code or the view at a step. The `moves` list of a document holds them.
 
 - `n` applies the moves of the next step. `p` reverts them.
 - Tiza always computes the document again from the code of step 0. Thus the document returns to the same state after any number of steps forward and back.
@@ -486,7 +486,7 @@ a4 [step 3] box L15-17 (src/queue.rs)
 
 ## Named steps
 
-Named steps, auto-advance and loop are automation. Use them for an unattended export, a screen that loops or an editor task that goes to the next step. They do not add speaker notes, a timer or a remote control. Decided in [ADR 0007](../adr/0007-moves-y-pasos-con-nombre.md).
+Named steps, auto-advance and loop are automation. Use them for an unattended export, a screen that loops or an editor task that goes to the next step. They do not add speaker notes, a timer or a remote control.
 
 For example:
 

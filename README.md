@@ -102,7 +102,7 @@ Every image on this page is a real Tiza export. `scripts/readme-images.sh` makes
 - **Present and record:** [follow the editor](https://github.com/luiscarlosjayk/tiza/blob/main/docs/guides/follow-the-editor.md), [Tiza in Zed](https://github.com/luiscarlosjayk/tiza/blob/main/docs/zed.md), [the mouse](https://github.com/luiscarlosjayk/tiza/blob/main/docs/guides/present.md), [check before you record](https://github.com/luiscarlosjayk/tiza/blob/main/docs/guides/check-before-you-record.md), [export to PNG, SVG, GIF, MP4 or text](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/exports.md).
 - **Connect an agent:** [setup](https://github.com/luiscarlosjayk/tiza/blob/main/docs/agents/setup.md), [MCP tools](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/mcp-tools.md), [agent guide](https://github.com/luiscarlosjayk/tiza/blob/main/docs/agent-guide.md), [supervised mode](https://github.com/luiscarlosjayk/tiza/blob/main/docs/guides/supervise-an-agent.md), [socket API](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/socket-api.md), [demo scenarios](https://github.com/luiscarlosjayk/tiza/blob/main/docs/demos/scenarios.md).
 - **Examples:** [the bundled demos](examples/README.md).
-- **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md), [development](https://github.com/luiscarlosjayk/tiza/blob/main/docs/contributing/development.md), [releases](https://github.com/luiscarlosjayk/tiza/blob/main/docs/contributing/releasing.md), [writing the docs](https://github.com/luiscarlosjayk/tiza/blob/main/docs/contributing/writing-docs.md), [design decisions](https://github.com/luiscarlosjayk/tiza/tree/main/docs/adr).
+- **Contribute:** [CONTRIBUTING.md](CONTRIBUTING.md), and [build and test Tiza](https://github.com/luiscarlosjayk/tiza/blob/main/CONTRIBUTING.md#development).
 
 ## For agents
 
@@ -130,7 +130,7 @@ The same API is also on a local Unix socket and on the command line. Read [Conne
 
 ## What Tiza reads and writes
 
-The `tiza` binary has no network dependencies and never opens a network connection. Agents connect through a local Unix socket, never through TCP. There is no telemetry and no update check. [Privacy and network](https://github.com/luiscarlosjayk/tiza/blob/main/docs/concepts/privacy-and-network.md) tells what stays on your computer. [Files and environment](https://github.com/luiscarlosjayk/tiza/blob/main/docs/reference/files-and-environment.md) lists each file, environment variable and process that Tiza uses.
+The `tiza` binary has no network dependencies and never opens a network connection. Agents connect through a local Unix socket, never through TCP. There is no telemetry and no update check. [Privacy and network](https://github.com/luiscarlosjayk/tiza/blob/main/docs/concepts/privacy-and-network.md) tells what stays on your computer. It also lists each file, environment variable and process that Tiza uses.
 
 ## Feedback and bugs
 

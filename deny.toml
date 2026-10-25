@@ -1,5 +1,5 @@
 # cargo-deny: allowed licenses, security advisories and duplicates.
-# Dependency policy: docs/adr/0004-dependencias.md
+# Dependency policy: maintained crates with an allowed license (see [licenses]).
 
 [graph]
 all-features = true
@@ -31,9 +31,9 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
-# Network policy (docs/adr/0009-politica-de-red.md): the `tiza` binary and
-# the core crates never open a connection, so no crate that speaks HTTP/TLS
-# may enter the workspace. When `tiza-net` exists, exempt it here with
+# Network policy (ADR 0009): the `tiza` binary and the core crates never
+# open a connection, so no crate that speaks HTTP/TLS may enter the
+# workspace. When `tiza-net` exists, exempt it here with
 # `wrappers = ["tiza-net"]` on each entry — the core crates stay banned.
 deny = [
   # Direct only because they were already in the tree (ADR 0004): one copy,

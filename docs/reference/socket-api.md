@@ -12,7 +12,7 @@ Tiza selects the socket in this order:
 2. `$TIZA_SOCKET`.
 3. `SESSION.sock` in the runtime folder. `SESSION` is `--session NAME`, else `$TIZA_SESSION`, else `default`.
 
-- For the runtime folder, the permissions and what `--socket` changes on disk, see [The runtime folder](files-and-environment.md#the-runtime-folder).
+- For the runtime folder, the permissions and what `--socket` changes on disk, see [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).
 - An empty variable is the same as a variable that is not set.
 - An empty `--session` is not the same as no session. It gives the socket `.sock`.
 - In a session name, each character that is not an ASCII letter, a digit, `-` or `_` becomes `_`.
@@ -27,7 +27,7 @@ When the socket cannot start, the instance starts without a socket. The status b
 | `local API disabled:` | The socket cannot start for another reason. |
 
 - After `local API disabled: ` comes a message of Tiza or an error of the system.
-- The messages of Tiza are in [Messages](files-and-environment.md#messages).
+- The messages of Tiza are in [Messages](../concepts/privacy-and-network.md#messages).
 
 ## Requests and responses
 

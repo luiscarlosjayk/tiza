@@ -122,7 +122,7 @@ To change an annotation and keep its id, call `update_annotation`. See [`update_
 > **Warning:** The audience sees the same code as `get_code` gives, in every export. Only control and invisible characters look different. When the code holds a real secret, tell the presenter before the recording starts. Do not put the secret in a label. See [Checklist](../guides/check-before-you-record.md#checklist).
 
 - An error does not repeat a wrong value of `color`, `border` or another field with a fixed set of values. An error repeats a value of the wrong type, cut at 40 characters. See [Errors](../reference/mcp-tools.md#errors).
-- No tool publishes or uploads a file. See [Agents](../concepts/privacy-and-network.md#agents).
+- No tool publishes or uploads a file. See [Agents](../concepts/privacy-and-network.md#what-agents-send).
 - Tiza saves each change to the `.tiza` file at once. In no-save mode, with autosave off or with a read-only document, the changes stay in memory. See [When changes are not saved](../concepts/saving.md#when-changes-are-not-saved).
 - `status.autosave` is `false` in no-save mode and with autosave off. With a read-only document, it stays `true` while the saves fail.
 - A `scene.put` of another document, or of changed code of the open document, stops autosave. See [Agents and saving](../concepts/saving.md#agents-and-saving).

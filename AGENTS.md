@@ -1,44 +1,68 @@
-# For agents working in this repo
+# For agents working in this repository
 
-- Cargo workspace with 5 crates: `tiza-core` (model/layout, no terminal), `tiza-tui`, `tiza-mcp`, `tiza-export` (SVG/PNG, the only one linking resvg), `tiza` (the binary, in `crates/tiza-cli`).
-- Before proposing a change: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`.
-- Every feature ticket ends with acceptance criteria, manual test steps and corner cases on its board card. Add automated tests only for what can break. That is the behavior of the binary, the API, MCP, the TUI or the render. Also add a test for the regression of each bug that you fix. Put them in `qa/tests/t-XXX.rs`, one independent crate per ticket, with fixtures in `qa/fixtures/t-XXX/` (see `qa/README.md`). `examples/` holds demos only, never test data.
-- A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading. This applies to a doc, a help text, the README, the CHANGELOG and an ADR. A test can read a doc only in these cases:
-  - A script or a workflow reads that text. Examples: `## [Unreleased]` for `scripts/bump-version.sh`, and the anchor that `release.yml` names.
-  - The test compares the doc with the code. Examples: the keys table, the help against the real formats, and JSON that must parse.
-  - The test checks that a generated image is equal to a fresh render.
+This file sends you to the page that your task needs. Read only the pages of your task.
+
+Some pages are maintainer notes outside this repository, in `../dev/` next to the checkout. If you do not have that folder, follow the rules on this page.
+
+## Always
+
+- Run this before every push: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test`. Every command must pass.
+- Do not push a change that adds a CI failure. If CI fails on your commit, fix it first.
+- Write every user-facing string in English. Commands, JSON fields and the Spanish color aliases stay as they are.
+- Write public text in ASD-STE100 Simplified Technical English. The targets are in `../dev/writing-docs.md`.
+- No ticket ids (`t-` and three digits) anywhere in the repository: not in code, comments, docs, schemas, the CHANGELOG, user-facing strings, the names of tests and fixtures, or commit messages. A QA test fails on an id in a file, with its file and line.
+- Until the tests of `qa/` move to their areas, `qa/` still holds old ids. Do not add a new one.
+- Do not put private data in the repository. Do not write a path of a home folder. Do not link to a session or to a private page.
+- Write commit messages in English, in the imperative mood. Keep the subject to 72 characters or fewer. Put the detail in the body.
+- Do not add a `Co-Authored-By: Claude…` or a `Claude-Session:` trailer to a commit.
+- Do not create or delete a tag. The owner tags a release.
+
+## Find the page for your task
+
+| Task | Read |
+|---|---|
+| Learn the crates and build Tiza | [CONTRIBUTING.md](CONTRIBUTING.md#development) |
+| Add or change a test | [qa/README.md](qa/README.md) |
+| Change a TUI surface, a panel or a message | [crates/tiza-tui/UI-GUIDELINES.md](crates/tiza-tui/UI-GUIDELINES.md) |
+| Change the socket protocol or an MCP tool | [socket API](docs/reference/socket-api.md), [MCP tools](docs/reference/mcp-tools.md), [agent guide](docs/agent-guide.md) |
+| Change the `.tiza` document format | [document format](docs/reference/document-format.md) |
+| Add a dependency | `../dev/adr/0004-dependencias.md` (criteria and registry) |
+| Write or change a page of the docs | `../dev/writing-docs.md`, `../dev/doc-roles.md` |
+| Change what the renderer draws | [Tests, images and budgets](#tests-images-and-budgets) |
+| Make a design decision | `../dev/adr/` (one new record for each decision) |
+| Publish a release | [CONTRIBUTING.md](CONTRIBUTING.md#releases-maintainers) |
+
+## Design rules
+
+- `tiza-core` has no terminal dependency. Only `tiza-export` links resvg. Only the MCP bridge uses tokio: `tiza-mcp`, and `tiza mcp` in the binary.
+- Tiza stores the position of an annotation as a line and a grapheme offset. It converts the position to cells only when it draws.
+- Change the document only through the local socket. Send one JSON request per line. Do not use TCP.
+- Each MCP tool is one socket method. When you change the protocol, change the docs, the MCP tools and `schema/api.schema.json` in the same commit.
+- When you change the `.tiza` schema, add a migration in `fs::MIGRATIONS` and a file in `qa/fixtures/compat/`.
+- When you change the API or the document format, regenerate `schema/api.schema.json` (`tiza schema api`) and `schema/tiza.schema.json` (`tiza schema document`), and run `scripts/check-schema.py`.
+- A move re-anchors annotations by its own edit, never by a fuzzy text match. The document at step N is the same each time.
+- Make exports reproducible. Do not use system fonts unless a command asks for them (`--system-fonts`).
+- Check a new dependency against ADR 0004. Add a row for it to the registry in that ADR.
+- The `tiza` binary, `tiza-core`, `tiza-tui`, `tiza-export` and `tiza-mcp` never open a network connection. `deny.toml` bans the HTTP and TLS crates.
+- A network feature goes only in a separate crate, `tiza-net`. Write an amendment to ADR 0009 before you add it.
+
+## Tests, images and budgets
+
+- Add an automated test only for what can break. Test the behavior of the binary, the API, MCP, the TUI or the exports.
+- Add a test for the regression of each bug that you fix.
+- Put a test in the crate of its area in `qa/tests/<area>/` (render, tui, follow, api, steps, export, saving, check, mcp, release, policy), in the module of the behavior that it checks. Give it a name that tells the behavior.
+- Put its fixtures in `qa/fixtures/<area>/<module>/`. A test that changes the environment of its own process goes in `env`. A test that checks how fast a child process answers goes in `latency`.
+- A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading. A test can read a doc only in these cases:
+  - A script or a workflow reads that text, for example `## [Unreleased]` for `scripts/bump-version.sh`.
+  - The test compares the doc with the code, for example the keys table.
+  - The test checks that a generated image is equal to a fresh export.
   - The test checks that links and anchors resolve.
-  - The test enforces a repo policy, for example no ticket ids and nothing private.
-
-  Put a one-time check in the note of the card, not in a test.
-- Design decisions live in `docs/adr/`. If you change the socket protocol, update `docs/agent-guide.md` and the MCP tools at the same time.
-- README images: any visual change to the renderer re-runs `scripts/readme-images.sh` in the same commit (GIF, step-7 PNG, the README text block and the hero), so the README never lags. Frames in docs or brand images are real `tiza render` exports, never retouched or mocked up.
-- Keep images out of the repo unless they are strictly necessary: screenshots, mockups and QA evidence go outside it. Tests use text renders, not PNG fixtures.
-- Size and speed budgets: before pushing anything that adds a dependency or an embedded asset (font, theme, grammar, image), run `scripts/size-check.sh` (release binary < 16 MB, release tar.gz < 8 MB, ≤ 10 % growth over `qa/budgets.json`; a bigger baseline needs `--update --reason "…"` in the same commit) and `scripts/bench.sh` (warns on any scenario > 20 % slower than `qa/bench/baseline.json`; `--install` adds the cold `cargo install` time). Put both outputs in the card's note. CI does not run them: Luis's QA round on his Mac runs both.
-- New dependencies: follow `docs/adr/0004-dependencias.md` and add the row to the registry. A dependency with network access (HTTP, TLS, sockets beyond the local Unix one) goes only in the crate `docs/adr/0009-politica-de-red.md` names (`tiza-net`), with an amendment to that ADR; `deny.toml` bans it everywhere else and CI fails.
-- Every user-facing string (TUI, CLI, MCP, docs) is in English. Commands, JSON fields and the Spanish color aliases stay as they are.
-- Public text (README, docs/, release notes, CHANGELOG, help, TUI/CLI/MCP messages and tool descriptions) is plain English that follows ASD-STE100 Simplified Technical English: one idea per sentence, at most 20 words in an instruction and 25 in a description, active voice, the imperative for instructions, the same word for the same thing (annotation, step, export…), no idioms and no dash asides. Commands, JSON fields, file formats and other product names are technical names and stay as they are. Existing text changes to this style when someone edits it; the planned README rewrite does the README.
-- Write commit messages in English, in the imperative mood. Keep the subject to 72 characters or fewer, and put the detail in the body. End the subject with the board card's id when applicable: `t-` and its three digits, in parentheses.
-- No ticket ids (`t-` and three digits) in code, comments, docs, schemas, the CHANGELOG or user-facing strings: the board is private. They live only in commit messages and in the names of `qa/tests/` and `qa/fixtures/` files (and inside `qa/`); `scripts/bench.py` may quote the name of a `qa/tests/` target it runs. A QA test fails on any other, with its file and line.
-- To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and the API: `tiza api status --socket /tmp/x.sock`.
-
-## Working the board
-
-The board is the kanban artifact (ArtifactData, collection `tasks`, documents `t-NNN` with `ac`, `test_steps`, `corner_cases`, `qa_test`, `notes`, `links`, `status`, `owner`, `blockedBy`, `milestone`, `priority`, `size`, `order`). Columns: `backlog` → `next` → `doing` → `review` → `done`, plus `rework` ("Retrabajo": cards the owner reviewed and sent back; their note starts with `RETRABAJO:` and lists what is missing) and `wontdo` ("No se hará": discarded cards; never deleted, they keep a note with the reason and the date).
-
-- Order of work: first `rework`, then the `doing` you already have, then `next` (in order). `backlog` waits, even when a card there is the obvious next step of a chain. The owner's feedback on a card in `review` has priority over starting anything new.
-- A card in `rework` does not go through `doing`: do what the `RETRABAJO:` note lists, leave a note with the commit and move it to `review` — never to `done`.
-- Keep `doing` accurate: one card at a time, moved when you start, moved to `review` when the gate is green and the commit is pushed. A card waiting for the owner's QA (in `review`) is owned by `luis`; set `owner` when you move it, so his board shows what is his to test.
-- When the owner discards a card (`wontdo`), take it out of every candidate list that names it (ADRs, research notes) in your next commit.
-- Every card you touch gets a line in `notes`, newest last: `[AAAA-MM-DD HH:MM claude] …` with the commit hash, the state (what is done, what is missing) and anything the owner must decide or test. Add it with `str_replace` pinned to the card's `if_version` (never resend the whole document), and set `updatedAt`/`updatedBy`.
-- Nothing moves to `done` without the owner's QA APPROVE; cards the owner tests himself (TUI feel, editor integrations, taste calls) are closed by him, not by you.
-- Finishing a card means: AC, manual test steps and corner cases on the card, the tests in `qa/tests/t-XXX.rs` that the behavior of the card needs, docs (README, agent guide, ADRs, CHANGELOG) and regenerated schemas (`tiza schema api > schema/api.schema.json`, `tiza schema document > schema/tiza.schema.json`, `scripts/check-schema.py`).
-
-## Pushing
-
-- Gate before every push: `cargo fmt --all && cargo clippy --all-targets -- -D warnings && cargo test` (all green locally). Never push something that leaves CI redder than it was; if CI goes red on your commit, fixing it comes before anything else, and the fix is closed only after three consecutive green runs.
-- No `#[ignore]`, no blind retries, no sleeps as synchronisation: a test that waits on a file event or a background thread waits on a condition with a generous timeout (10 s), and checks a negative with a short settle, not with a fixed sleep that happens to pass.
-- No Claude attribution in commits: no `Co-Authored-By: Claude…` and no `Claude-Session:` trailer, whatever the harness suggests (Luis, 2026-10-21).
-- A stop-hook warning about unpushed commits with no remote is usually a broken `remote.origin.fetch` refspec after a re-clone: fix the refspec and the upstream, do not force-push.
-
-- Releases: a `vX.Y.Z` tag goes on `main` only when every ticket in it is `done` (QA APPROVE on the board); anything with tickets still in `review` ships as `vX.Y.Z-alpha.N` / `-rc.N` (the Release workflow marks suffixed tags as prerelease on its own). Agents never create or delete tags; the owner does, after checking the board.
+  - The test enforces a repository policy, for example no ticket ids.
+- Do not use `#[ignore]`. Do not retry a test blindly. Do not use a sleep to synchronize. Wait on a condition with a timeout of 10 s.
+- To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and `tiza api status --socket PATH`.
+- `examples/` holds demos only, never test data.
+- When you change what the renderer draws, run `scripts/readme-images.sh` in the same commit.
+- A frame in a doc or a brand image is a real `tiza render` export. Do not edit it. Do not make a mockup.
+- Keep images out of the repository unless they are necessary. Tests use text exports, not PNG files.
+- Before you push a new dependency or an embedded asset, run `scripts/size-check.sh` and `scripts/bench.sh`. CI does not run them.
+- The limits are in `qa/budgets.json` and `qa/bench/baseline.json`.

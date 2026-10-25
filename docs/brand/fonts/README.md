@@ -1,6 +1,6 @@
 # Brand fonts
 
-Brand material only: these files are **not compiled into `tiza` and not shipped in any crate** (they live outside every crate directory, so `cargo package` never sees them). They are here for the brand work — the README wordmark, thumbnails and video titles — and for anyone who needs the brand serif outside the app. Every export of the binary (SVG, PNG, GIF, video) is set in JetBrains Mono, as in the terminal; the serif was taken out of the binary on 2026-10-18 ([ADR 0006](../../adr/0006-exportacion-svg-png.md)).
+Brand material only: these files are **not compiled into `tiza` and not shipped in any crate** (they live outside every crate directory, so `cargo package` never sees them). They are here for the brand work — the README wordmark, thumbnails and video titles — and for anyone who needs the brand serif outside the app. Every export of the binary (SVG, PNG, GIF, video) is set in JetBrains Mono, as in the terminal; the serif was taken out of the binary on 2026-10-18.
 
 | Files | Family | License |
 |---|---|---|

@@ -75,7 +75,7 @@ The options `reveal`, `reveal_target` and `hide` keep the dock still:
 - You can also step without a task. Press `n` and `p` in Tiza, give the steps an `auto_advance_ms`, or let an agent call the MCP tool `goto_step`. These ways open no tab.
 - In [supervised mode](guides/supervise-an-agent.md), Tiza holds `tiza next`, `tiza prev` and `tiza goto` for your review. Then a key in Zed does not change the step at once.
 
-Tiza does not run an action of the editor at a step. You can put a Tiza command and an editor action together in your own task. Decided in [ADR 0007](adr/0007-moves-y-pasos-con-nombre.md).
+Tiza does not run an action of the editor at a step. You can put a Tiza command and an editor action together in your own task.
 
 When a step command succeeds, it prints the step that it reached, for example `step 3/5 · count.rs: one pass`. When it fails, it exits with code 1. Because `hide` is `on_success`, the task terminal stays open and shows the message. See [Messages](#messages).
 

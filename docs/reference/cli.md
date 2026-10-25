@@ -27,7 +27,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 - A range can also be `A..B`.
 - Without `FILE`, Tiza reads standard input when it is not a terminal.
 - Text on standard input that starts with `{` and contains `"schema"` is a document. Other text is code.
-- With a range, Tiza saves to `FILE.A-B.tiza`. When that file exists, Tiza opens it, as it opens `FILE.tiza` without a range, and says so on the status bar. Another range, such as `A-C`, is another document. See [Where the document goes](files-and-environment.md#where-the-document-goes).
+- With a range, Tiza saves to `FILE.A-B.tiza`. When that file exists, Tiza opens it, as it opens `FILE.tiza` without a range, and says so on the status bar. Another range, such as `A-C`, is another document. See [Where the document goes](../concepts/privacy-and-network.md#where-the-document-goes).
 - A `.tiza` path with a range opens the document and ignores the range.
 - When Tiza clamps a range, it saves under the clamped lines. For example, `tiza three.txt:2..9` on a file of three lines saves to `three.txt.2-3.tiza`.
 - When a range goes past the end of the file, Tiza shows the lines that exist.
@@ -143,8 +143,8 @@ Tiza picks the socket from the first of these that is set:
 - In a session name, Tiza changes each character to `_`, except ASCII letters, digits, `-` and `_`.
 - An empty `TIZA_SOCKET` or `TIZA_SESSION` counts as not set. An empty `--session` gives the socket `.sock`.
 - `tiza render` uses the socket only without `FILE`. `tiza check` and `tiza schema` do not use it.
-- The folder of the socket is in [The runtime folder](files-and-environment.md#the-runtime-folder).
-- The variables are in [Environment variables](files-and-environment.md#environment-variables).
+- The folder of the socket is in [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).
+- The variables are in [Environment variables](../concepts/privacy-and-network.md#environment-variables).
 
 ## How Tiza finds the language
 
@@ -259,4 +259,4 @@ Tiza shows these messages in the status bar:
 
 - For a file with one line, the first message says `line`, not `lines`.
 - After `local API disabled`, agents and the step commands talk to the first instance.
-- The other causes of `local API disabled` are in [The runtime folder](files-and-environment.md#the-runtime-folder).
+- The other causes of `local API disabled` are in [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).

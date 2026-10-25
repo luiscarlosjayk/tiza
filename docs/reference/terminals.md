@@ -46,7 +46,7 @@ Tiza has no test record for other terminals. To report a result, see [Report a t
 - Tiza shows the cursor again when it quits.
 - After a crash, Tiza leaves the alternate screen and turns off raw mode. Then it turns off mouse capture and bracketed paste.
 - An error in an agent request does not stop Tiza. Tiza answers the request with an error and writes a line to `panics.log`.
-- Tiza does not read `COLORTERM` in its own code. For one theme, it sends the same colors to each terminal. See [Environment variables](files-and-environment.md#environment-variables).
+- Tiza does not read `COLORTERM` in its own code. For one theme, it sends the same colors to each terminal. See [Environment variables](../concepts/privacy-and-network.md#environment-variables).
 - No key needs the kitty keyboard protocol. See [Keys](#keys).
 
 ## Messages
@@ -150,7 +150,7 @@ If you have steps that reproduce the problem, use the [bug report form](https://
 
 ### The color query
 
-The color query asks the terminal for its background color with OSC 11, and for its text color with OSC 10. [Themes](themes.md#how-it-works) and [Files and environment](files-and-environment.md#the-terminal) give the other rules of the color query.
+The color query asks the terminal for its background color with OSC 11, and for its text color with OSC 10. [Themes](themes.md#how-it-works) and [Privacy and network](../concepts/privacy-and-network.md#the-terminal) give the other rules of the color query.
 
 - The auto theme uses the background answer to pick `light` or `dark`.
 - `:theme auto` sends no color query. It uses the last answer.
@@ -187,5 +187,5 @@ With no answer to OSC 11, Tiza shows no message. It keeps the theme that it star
 ### Keys
 
 - No key needs the kitty keyboard protocol. Tiza reads the keys as a plain terminal sends them.
-- Tiza reads keys from `/dev/tty` when standard input is not a terminal, for example a pipe or a file. See [Files and environment](files-and-environment.md#the-terminal).
+- Tiza reads keys from `/dev/tty` when standard input is not a terminal, for example a pipe or a file. See [Privacy and network](../concepts/privacy-and-network.md#the-terminal).
 - Tiza reads `Shift-Tab` as the back-tab sequence `ESC [ Z`.
