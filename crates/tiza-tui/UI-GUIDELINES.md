@@ -40,6 +40,7 @@ A panel is a box that opens over the code and closes again. The help, the annota
 - At the left, it shows the keys of this panel: `key word`, with ` · ` between them. Show at most five keys, the most useful first.
 - At the right, it shows the position: `1-30 of 124` (rows) or `3 of 13` (selected row) or `14 matches` (filter).
 - When the footer does not fit, remove keys from the right. The close key stays because the chip shows it.
+- A panel whose keys all matter gives shorter forms of its footer, for example `y/n one · a/d all · j/k` in the review. The first form that fits shows, so that the keys stay at every width that a panel takes.
 
 ### 1.4 Filter line
 

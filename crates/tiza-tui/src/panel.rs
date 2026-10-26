@@ -70,8 +70,13 @@ pub struct Panel {
     pub rows: Vec<PanelRow>,
     /// The selected `Item`, by its `item`: the scroll keeps it in view.
     pub selected: Option<usize>,
-    /// The panel's keys: (key, word); a key of `""` is a word alone.
+    /// The panel's keys: (key, word); a key of `""` is a word alone, and a
+    /// word of `""` a key alone.
     pub footer: Vec<(&'static str, &'static str)>,
+    /// Shorter forms of `footer`, tried in order when it does not fit
+    /// whole, so that a narrow panel keeps every key that matters (the
+    /// review's `a` and `d`).
+    pub footer_short: Vec<Vec<(&'static str, &'static str)>>,
     /// The right of the footer (`14 matches`); `None`: the rows shown,
     /// `1-30 of 124`.
     pub position: Option<String>,
@@ -387,12 +392,36 @@ pub struct Drawn {
     pub scroll: usize,
 }
 
+/// The cells of one key of a footer: the key, a space and the word.
+fn item_width(k: &str, w: &str) -> usize {
+    cells(k) + usize::from(!k.is_empty() && !w.is_empty()) + cells(w)
+}
+
+/// The cells of a footer, keys and separators.
+fn footer_width(items: &[(&str, &str)]) -> usize {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, (k, w))| usize::from(i > 0) * 3 + item_width(k, w))
+        .sum()
+}
+
+/// The footer for `room` cells: the whole one, else the first shorter
+/// form that fits, else the shortest form (which `footer_spans` then cuts).
+fn footer_for(p: &Panel, room: usize) -> &[(&'static str, &'static str)] {
+    std::iter::once(&p.footer)
+        .chain(&p.footer_short)
+        .find(|f| footer_width(f) <= room)
+        .or(p.footer_short.last())
+        .unwrap_or(&p.footer)
+}
+
 /// The footer's keys that fit in `room` cells, from the left.
 fn footer_spans(items: &[(&str, &str)], room: usize, st: &Styles) -> Vec<Span<'static>> {
     let mut out: Vec<Span<'static>> = Vec::new();
     let mut used = 0;
     for (k, w) in items {
-        let item_w = cells(k) + usize::from(!k.is_empty()) + cells(w);
+        let item_w = item_width(k, w);
         let sep = if out.is_empty() { 0 } else { 3 };
         if used + sep + item_w > room {
             break;
@@ -402,9 +431,13 @@ fn footer_spans(items: &[(&str, &str)], room: usize, st: &Styles) -> Vec<Span<'s
         }
         if !k.is_empty() {
             out.push(Span::styled(k.to_string(), st.key));
-            out.push(Span::styled(" ", st.muted));
+            if !w.is_empty() {
+                out.push(Span::styled(" ", st.muted));
+            }
         }
-        out.push(Span::styled(w.to_string(), st.muted));
+        if !w.is_empty() {
+            out.push(Span::styled(w.to_string(), st.muted));
+        }
         used += sep + item_w;
     }
     out
@@ -532,7 +565,9 @@ pub fn draw(frame: &mut Frame, rect: Rect, th: &Theme, p: &Panel, scroll: usize)
     });
     let pos = fit(&position, w.saturating_sub(8));
     let room = w.saturating_sub(3 + 1 + 1 + cells(&pos) + 3);
-    let keys = footer_spans(&p.footer, room, &st);
+    // The whole footer, else the first shorter form that fits, else the
+    // shortest one, cut.
+    let keys = footer_spans(footer_for(p, room), room, &st);
     let fill = w.saturating_sub(3 + width_of(&keys) + 1 + 1 + cells(&pos) + 3);
     let mut bottom = vec![Span::styled("╰─ ", st.accent)];
     bottom.extend(keys);
@@ -551,6 +586,38 @@ pub fn draw(frame: &mut Frame, rect: Rect, th: &Theme, p: &Panel, scroll: usize)
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_footer_takes_the_first_form_that_fits() {
+        let p = Panel {
+            title: String::new(),
+            chip: ("esc", "close"),
+            filter: String::new(),
+            typing: false,
+            placeholder: "",
+            rows: Vec::new(),
+            selected: None,
+            footer: vec![("a", "accept all"), ("d", "reject all")],
+            footer_short: vec![
+                vec![("y/n", "one"), ("a/d", "all"), ("j/k", "")],
+                vec![("y/n", ""), ("a/d", "all")],
+            ],
+            position: None,
+        };
+        let text = |f: &[(&str, &str)]| {
+            f.iter()
+                .map(|(k, w)| format!("{k}{w}"))
+                .collect::<Vec<_>>()
+                .join("|")
+        };
+        assert_eq!(text(footer_for(&p, 40)), "aaccept all|dreject all");
+        assert_eq!(text(footer_for(&p, 23)), "y/none|a/dall|j/k");
+        // A long position (`12 matches`) leaves less room.
+        assert_eq!(text(footer_for(&p, 15)), "y/n|a/dall");
+        // No room even for that: the shortest form, cut by footer_spans.
+        assert_eq!(text(footer_for(&p, 5)), "y/n|a/dall");
+        assert_eq!(footer_width(&p.footer_short[1]), 13);
+    }
 
     #[test]
     fn wrap_keeps_words_and_breaks_long_ones() {

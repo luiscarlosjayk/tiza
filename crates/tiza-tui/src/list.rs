@@ -360,6 +360,7 @@ pub fn list(app: &App) -> (Panel, Vec<ListItem>) {
                 ("U", "redo"),
             ]
         },
+        footer_short: Vec::new(),
         position: Some(position(app, selected, items.len())),
     };
     (panel, items)
@@ -428,6 +429,15 @@ pub fn review(app: &App) -> (Panel, Vec<usize>) {
                 ("a", "accept all"),
                 ("d", "reject all"),
                 ("j/k", "select"),
+            ]
+        },
+        // Narrower: never without `a` and `d`, which act on every change.
+        footer_short: if app.overlay_typing {
+            Vec::new()
+        } else {
+            vec![
+                vec![("y/n", "one"), ("a/d", "all"), ("j/k", "")],
+                vec![("y/n", ""), ("a/d", "all")],
             ]
         },
         position: Some(position(app, selected, items.len())),

@@ -640,6 +640,7 @@ pub fn help_panel(filter: &str, typing: bool, content_w: usize) -> Panel {
         rows,
         selected: None,
         footer,
+        footer_short: Vec::new(),
         position: filtered.then(|| match matches {
             1 => "1 match".to_string(),
             n => format!("{n} matches"),

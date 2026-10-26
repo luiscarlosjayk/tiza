@@ -647,3 +647,37 @@ fn bar_the_tab_hint_keeps_its_keys_and_the_id_after_enter() {
         "{b120}"
     );
 }
+
+/// The review's footer gets shorter on a narrow terminal, but it never
+/// drops `a` (accept all) or `d` (reject all): they act on every change.
+#[test]
+fn a_narrow_review_footer_keeps_a_and_d() {
+    let (live, agents) = two_waiting("review-narrow");
+    live.command("review");
+    let footer = |cols: u16| {
+        live.screen(cols, 30)
+            .lines()
+            .find(|l| l.contains("╰─ ") && (l.contains("accept") || l.contains("a/d")))
+            .unwrap_or_else(|| panic!("{cols}: no footer"))
+            .to_string()
+    };
+    let wide = footer(120);
+    assert!(
+        wide.contains("y accept · n reject · a accept all · d reject all · j/k select"),
+        "{wide}"
+    );
+    // The short form for a narrow terminal: both keys of each pair.
+    let narrow = footer(60);
+    assert!(narrow.contains("y/n one · a/d all · j/k"), "{narrow}");
+    for cols in [70, 60, 50, 40] {
+        let f = footer(cols);
+        assert!(
+            (f.contains("a accept all") && f.contains("d reject all")) || f.contains("a/d all"),
+            "{cols} columns: {f}"
+        );
+    }
+    live.keys(&[KeyCode::Char('d')]);
+    for a in agents {
+        a.join().unwrap();
+    }
+}
