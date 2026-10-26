@@ -464,7 +464,9 @@ fn real_main() -> anyhow::Result<()> {
                         fs::from_stdin(&text, None)
                             .context("could not read the document from stdin")?
                     } else {
-                        fs::open_range_as_code(f).with_context(|| format!("could not open {f}"))?
+                        // A range draws the annotations of its own
+                        // `FILE.A-B.tiza` when it has one, as the TUI opens it.
+                        fs::open(f).with_context(|| format!("could not open {f}"))?
                     };
                     if let Some(n) = &opened.notice {
                         eprintln!("tiza: {}", tiza_core::printable::printable_text(n));

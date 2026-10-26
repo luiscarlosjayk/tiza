@@ -114,7 +114,7 @@ pub fn open(spec: &str) -> Result<Opened, Error> {
 }
 
 /// [`open`] where a range shows only its lines, without the document of
-/// that range: `tiza render` and `tiza scene put --as-code`.
+/// that range: `tiza scene put --as-code`.
 pub fn open_range_as_code(spec: &str) -> Result<Opened, Error> {
     open_with(spec, false)
 }
@@ -202,7 +202,11 @@ fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
     // clamped lines: opened as the sidecar is without a range, never
     // written over. One that does not load is an error, as a sidecar.
     if range_document && range.is_some() && save_path.exists() {
-        let document = load_document(&save_path)?;
+        // The error names that document: the user gave only `FILE:A-B`.
+        let document = load_document(&save_path).map_err(|e| Error::Within {
+            what: save_path.display().to_string(),
+            inner: Box::new(e),
+        })?;
         let opened = format!("opened the existing {}", save_path.display());
         let notice = [notice, Some(opened), outside_notice(&document)]
             .into_iter()

@@ -47,16 +47,23 @@ fn a_range_opens_its_document_from_an_earlier_session() {
         let live = Live::open(o.document, o.save_path, dir.join(format!("b{n}.sock")));
         assert_eq!(state(&live).0, 1, "{r}");
     }
-    // `tiza render` shows only the lines of a range, without its document.
-    let out = std::process::Command::new(tiza_qa::bin())
-        .args(["render", &spec("2-3"), "--format", "txt"])
-        .output()
-        .unwrap();
-    let (text, err) = (
-        String::from_utf8_lossy(&out.stdout),
-        String::from_utf8_lossy(&out.stderr),
-    );
-    assert!(out.status.success(), "{err}");
+    // `tiza render` of the range draws its document too, and says so; it
+    // only reads it. Another range shows only its lines.
+    let render = |r: &str| {
+        let out = std::process::Command::new(tiza_qa::bin())
+            .args(["render", &spec(r), "--format", "txt"])
+            .output()
+            .unwrap();
+        let err = String::from_utf8_lossy(&out.stderr).into_owned();
+        assert!(out.status.success(), "{err}");
+        (String::from_utf8_lossy(&out.stdout).into_owned(), err)
+    };
+    let saved = std::fs::read(&save).unwrap();
+    let (text, err) = render("2-3");
+    assert!(text.contains("two") && text.contains("kept"), "{text}");
+    assert!(err.contains("opened the existing"), "{err}");
+    assert_eq!(std::fs::read(&save).unwrap(), saved);
+    let (text, err) = render("1-3");
     assert!(text.contains("two") && !text.contains("kept"), "{text}");
     assert!(!err.contains("opened the existing"), "{err}");
     // Another range is another document.
@@ -65,6 +72,7 @@ fn a_range_opens_its_document_from_an_earlier_session() {
     assert_eq!(o.save_path, dir.join("three.txt.1-2.tiza"));
     // A document there that does not load: an error, and the file stays.
     std::fs::write(&save, "not json").unwrap();
-    assert!(fs::open(&spec("2-3")).is_err());
+    let e = fs::open(&spec("2-3")).unwrap_err().to_string();
+    assert!(e.contains("three.txt.2-3.tiza"), "{e}");
     assert_eq!(std::fs::read_to_string(&save).unwrap(), "not json");
 }

@@ -15,7 +15,7 @@ tiza render --out shot.png
 ```
 
 - `tiza render` takes a `.tiza` document, a source file, a range of a source file (`FILE:A-B`) or `-` for standard input.
-- For a source file without a range, Tiza uses its `.tiza` document when it has one. `FILE:A-B` shows only lines A to B, without the `.tiza` document.
+- For a source file without a range, Tiza uses its `.tiza` document when it has one. `FILE:A-B` shows lines A to B. When `FILE.A-B.tiza` exists, Tiza also draws its annotations and says so on stderr, as the TUI opens that document.
 - The extension of `--out` selects the format. `--format` overrides the extension.
 - `--out -` writes to standard output.
 - `tiza render` does not make a missing folder for `--out`, except with `--all-steps`.
