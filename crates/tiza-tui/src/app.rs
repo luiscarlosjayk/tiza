@@ -4958,7 +4958,7 @@ impl App {
                 "margin" => match rest.trim() {
                     "" => Ok(match self.doc.margin {
                         Some(n) => format!(
-                            "margin {n} (notes wrap at {n} cells; :margin auto removes the cap)"
+                            "margin {n} (notes wrap at {n} cells, and labels, legends and long notes are cut there; :margin auto removes the cap)"
                         ),
                         None => "margin auto (the right margin takes what the width leaves)".into(),
                     }),
@@ -4984,7 +4984,7 @@ impl App {
                         self.doc.margin = Some(cap as u16);
                         self.touch();
                         Ok(format!(
-                            "margin {cap}: notes, labels and legends wrap at {cap} cells (saved in the document)"
+                            "margin {cap}: notes wrap at {cap} cells, and labels, legends and long notes are cut there (saved in the document)"
                         ))
                     }
                 },

@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Changed
+- `:margin N`, `:margin` and `--margin-cols` say that notes wrap at the margin, and that labels, legends and long notes are cut there. Before, they said only that notes wrap.
 - An MP4 or a WebM export writes the `ffmpeg` command on stderr only when `ffmpeg` fails. Before, it wrote the command each time.
 - A paste while the help, the list or the review is open, also while you type a filter, changes nothing. A paste in presentation mode changes nothing too. The status bar tells you what to do. Before, the paste replaced the code under the panel.
 

@@ -120,12 +120,12 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `padding V H (default)` | `:pad default` set the default padding. |
 | `padding V H (shown as CV CH: the terminal is too small for more)` | The terminal is too small for the padding. |
 | `padding V H (from --padding, not saved)` | `:pad` shows a padding from `--padding`. |
-| `margin N: notes, labels and legends wrap at N cells (saved in the document)` | `:margin N` set the margin. |
+| `margin N: notes wrap at N cells, and labels, legends and long notes are cut there (saved in the document)` | `:margin N` set the margin. |
 | `margin=N: use a number between 12 and 200, or auto` | `:margin N` got a number out of the range. |
 | `margin auto` | `:margin auto` removed the limit. |
 | `margin already auto` | The margin had no limit already. |
 | `margin auto (the right margin takes what the width leaves)` | `:margin` shows that the margin has no limit. |
-| `margin N (notes wrap at N cells; :margin auto removes the cap)` | `:margin` shows the limit. |
+| `margin N (notes wrap at N cells, and labels, legends and long notes are cut there; :margin auto removes the cap)` | `:margin` shows the limit. |
 | `layout stable: lanes and margin sized for every step, as in presentation mode and exports` | `:layout stable` set the take as the layout. |
 | `layout dynamic: the authoring screen grows lanes as steps add arrows (exports stay stable)` | `:layout dynamic` set the layout that grows. |
 | `layout stable` or `layout dynamic` | `:layout` shows the layout. |

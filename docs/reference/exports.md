@@ -122,7 +122,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--theme-file` | A TOML file | The overrides of the document | Theme overrides for this export, instead of the overrides of the document. |
 | `--numbers` | None | The `numbers` field of the document | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |
 | `--no-numbers` | None | The `numbers` field of the document | Tiza hides the line numbers. |
-| `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`, where notes wrap. |
+| `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`. Notes wrap at this width. Tiza cuts labels, legends and long notes there. |
 | `--lang` | A language id | The `--lang` before `render`, or the detected language | The language of the code. |
 | `--font-size` | 4 to 96 px | 16 | The size of the font in an image or a video. |
 | `--margin` | 0 to 20 cells | 1.5 | The blank margin around the drawing in an image or a video. |
