@@ -42,12 +42,16 @@ jobs:
         # is printed in full.
         if: failure()
         shell: bash
+        # `head` reads files, not pipes: this shell has pipefail, and a writer
+        # that `head` leaves behind fails with SIGPIPE and stops the step.
         run: |
-          grep -E '^test .* FAILED$|panicked at' test.log | sort -u | head -40 | while IFS= read -r line; do
+          grep -E '^test .* FAILED$|panicked at' test.log | sort -u >failing.txt || true
+          head -40 failing.txt | while IFS= read -r line; do
             echo "::error title=cargo test (${{ matrix.os }})::${line}"
           done
           echo "::group::failures (${{ matrix.os }})"
-          awk '/^failures:$/{p=1} p{print} /^test result:/{p=0}' test.log | head -400
+          awk '/^failures:$/{p=1} p{print} /^test result:/{p=0}' test.log >failures.txt
+          head -400 failures.txt
           echo "::endgroup::"
       - name: Upload test log
         if: failure()

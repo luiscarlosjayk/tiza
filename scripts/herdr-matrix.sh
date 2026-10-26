@@ -748,8 +748,12 @@ walk(json.load(sys.stdin))' | sort -u
 }
 
 # new_pane_since BEFORE → the first pane id in `pane list` not in BEFORE.
+# (`head` reads a variable, not a pipe: under pipefail a reader that stops
+# early makes the writer fail with SIGPIPE.)
 new_pane_since() {
-    comm -13 <(printf '%s\n' "$1") <(pane_ids) | head -n 1
+    local new
+    new="$(comm -13 <(printf '%s\n' "$1") <(pane_ids))"
+    head -n 1 <<<"$new"
 }
 
 # split PARENT DIRECTION RATIO → sets NEW_PANE to the new pane's id (from
@@ -760,7 +764,7 @@ split() {
     before="$(pane_ids)"
     herdr pane split "$parent" --direction "$dir" --ratio "$ratio" --cwd "$ROOT" >"$WORK/split.json"
     new="$(python3 -c "$IDS_PY" <"$WORK/split.json" | awk '$1 == "pane" { print $2 }')"
-    if [ -z "$new" ] || ! printf '%s\n' "$(pane_ids)" | grep -qxF "$new"; then
+    if [ -z "$new" ] || ! grep -qxF "$new" <<<"$(pane_ids)"; then
         new="$(new_pane_since "$before")"
     fi
     [ -n "$new" ] || die "herdr pane split did not create a pane: $(head -c 300 "$WORK/split.json")"
@@ -886,7 +890,7 @@ if [ -z "$BASE" ]; then
     python3 -c "$IDS_PY" <"$WORK/tab.json" >"$WORK/tab.txt"
     TAB="$(field tab "$WORK/tab.txt")"
     BASE="$(field pane "$WORK/tab.txt")"
-    if [ -z "$BASE" ] || ! printf '%s\n' "$(pane_ids)" | grep -qxF "$BASE"; then
+    if [ -z "$BASE" ] || ! grep -qxF "$BASE" <<<"$(pane_ids)"; then
         BASE="$(new_pane_since "$before")"
     fi
     if [ -z "$BASE" ]; then

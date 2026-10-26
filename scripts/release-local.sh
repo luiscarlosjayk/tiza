@@ -115,7 +115,10 @@ mkdir -p "$out"
 
 for target in "${targets[@]}"; do
   echo "== $target"
-  if command -v rustup >/dev/null 2>&1 && ! rustup target list --installed | grep -qx "$target"; then
+  # The list first, then the search: under pipefail, `grep -q` that stops
+  # at its match can make rustup fail with SIGPIPE.
+  if command -v rustup >/dev/null 2>&1 &&
+    ! grep -qx "$target" <<<"$(rustup target list --installed)"; then
     rustup target add "$target"
   fi
   # Into ./target whatever CARGO_TARGET_DIR says: the copy below reads it.

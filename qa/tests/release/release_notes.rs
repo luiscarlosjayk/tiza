@@ -97,6 +97,27 @@ fn a_plain_tag_gives_its_notes_as_written() {
     assert!(!names_a_card(&out(&o)));
 }
 
+/// Notes longer than a pipe buffer come out whole. Under `pipefail`, a
+/// reader that stops early (`grep -q` at its first match) made the writer
+/// before it fail, and the script said the notes had no text: always with
+/// long notes, now and then with short ones on a busy machine.
+#[test]
+fn long_notes_are_given_whole() {
+    let mut long = b"# Tiza v9.9.9\n\n".to_vec();
+    for i in 0..4000 {
+        long.extend(format!("- Line {i}, to fill more than one pipe buffer.\n").as_bytes());
+    }
+    let dir = workspace("long", &[("v9.9.9.md", &long)]);
+    let o = notes(&dir, "v9.9.9");
+    assert!(o.status.success(), "{}", err(&o));
+    assert!(
+        o.stdout == long,
+        "{} of {} bytes",
+        o.stdout.len(),
+        long.len()
+    );
+}
+
 #[test]
 fn a_plain_tag_without_notes_is_refused_naming_the_path() {
     let dir = workspace("none", &[]);

@@ -61,14 +61,16 @@ if [ -f "$notes" ]; then
   fi
   # Bytes, whatever PERL_UNICODE says: the mark is three bytes.
   body="$(perl -C0 -pe 's/^\xEF\xBB\xBF// if $. == 1; s/\r$//' "$notes")"
-  if ! printf '%s' "$body" | grep -q '[^[:space:]]'; then
+  # No pipe into a reader that can stop early (`grep -q` at its first
+  # match): under pipefail the writer then fails with SIGPIPE, and long
+  # notes, or short ones on a busy machine, looked empty.
+  if ! [[ $body =~ [^[:space:]] ]]; then
     echo "$notes has no text" >&2
     exit 1
   fi
   # A board card (`t-` and three digits), also with a Unicode hyphen or a
   # minus sign.
-  if ! printf '%s\n' "$body" |
-    perl -C0 -ne 'exit 1 if /(?<![A-Za-z0-9])t(?:-|\xE2\x80[\x90-\x95]|\xE2\x88\x92)[0-9]{3}(?![0-9])/'; then
+  if ! perl -C0 -ne 'exit 1 if /(?<![A-Za-z0-9])t(?:-|\xE2\x80[\x90-\x95]|\xE2\x88\x92)[0-9]{3}(?![0-9])/' <<<"$body"; then
     echo "$notes names a board card (t- and three digits): the release notes are public" >&2
     exit 1
   fi

@@ -54,7 +54,9 @@ done
 # The text block in the README: the last step as plain text, from the first
 # row to the bottom border of the first box (lines 1-17).
 txt="$(render --step "$LAST" --out - --format txt)"
-block="$(printf '%s\n' "$txt" | awk '{ print } $1 == "17" { want = 1; next } want && /╰/ { exit }')"
+# A here-string, not a pipe: awk stops at the border, and under pipefail
+# a writer that it leaves behind fails with SIGPIPE.
+block="$(awk '{ print } $1 == "17" { want = 1; next } want && /╰/ { exit }' <<<"$txt")"
 python3 - "$block" <<'EOF'
 import sys, pathlib
 p = pathlib.Path("README.md")
