@@ -32,6 +32,13 @@ fn all_steps_refuses_a_file_name_for_out() {
             Some("svg"),
             "is a file name. Pass a folder, for example --out steps/ --format svg",
         ),
+        // An extension that is no format of Tiza is a file name too.
+        (
+            "deck.jpg",
+            None,
+            "is a file name. Pass a folder, for example --out steps/ --format png",
+        ),
+        ("talk.pdf", Some("webp"), "--format webp"),
     ] {
         let o = run(out, format);
         let err = String::from_utf8_lossy(&o.stderr);

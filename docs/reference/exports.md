@@ -53,7 +53,7 @@ Give `--all-steps` and a folder:
 tiza render demo.tiza --all-steps --out steps/
 ```
 
-Tiza writes `step-00.png`, `step-01.png` and the next numbers up to the last step. To get another format, give `--format`, for example `--format md`. An `--out` such as `answer.md` is refused, because it is a file name. With a slash at the end, `answer.md/` is a folder. All the files use the layout of the take. All the images have the same pixel size, so they align in a video editor or a slide deck.
+Tiza writes `step-00.png`, `step-01.png` and the next numbers up to the last step. To get another format, give `--format`, for example `--format md`. An `--out` with an extension, such as `answer.md` or `deck.jpg`, is refused, because it is a file name. With a slash at the end, `answer.md/` is a folder. All the files use the layout of the take. All the images have the same pixel size, so they align in a video editor or a slide deck.
 
 - The format is PNG. `--format svg`, `webp`, `txt`, `ansi` or `md` changes it. The extension of `--out` does not change it.
 - `--skip-zero` starts at `step-01`.
@@ -263,7 +263,7 @@ An animation is a GIF, or a WebP without `step`.
 | `an animated .webp needs a file: pass --out demo.webp, or --step N for a still` | `--out -` with a WebP and no `--step`. |
 | `--all-steps writes one file per step: pass a directory, --out steps/` | `--all-steps` with `--out -`. |
 | `` --all-steps writes still images (png, webp, svg, txt, ansi, md); a .EXT already holds every step: `--out demo.EXT` without --all-steps `` | `--all-steps` with a recording format, or with an `--out` that ends in the extension of one and no image or text `--format`. |
-| `--all-steps writes one file for each step into a folder, and OUT is a file name. Pass a folder, for example --out steps/ --format FORMAT` | `--all-steps` with an `--out` that ends in the extension of a format, such as `answer.md`, and is not a folder. `FORMAT` is the `--format` that you give, else the format of the extension. |
+| `--all-steps writes one file for each step into a folder, and OUT is a file name. Pass a folder, for example --out steps/ --format FORMAT` | `--all-steps` with an `--out` that has an extension, such as `answer.md` or `deck.jpg`, and is not a folder. `FORMAT` is the `--format` that you give, else the format of the extension, else `png`. |
 | `--all-steps needs a directory, and PATH is a file` | `--out` of `--all-steps` is a file. |
 | `--skip-zero leaves nothing to write: this document only has step 0 (no annotations or moves)` | `--all-steps --skip-zero` with a document that has no annotations and no moves. |
 | `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): use a smaller width, scale, font size or margin, or export fewer lines (FILE:A-B)` | The image is too large. |

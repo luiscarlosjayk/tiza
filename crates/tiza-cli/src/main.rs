@@ -382,10 +382,11 @@ fn real_main() -> anyhow::Result<()> {
             if all_steps && out == "-" {
                 bail!("--all-steps writes one file per step: pass a directory, --out steps/");
             }
-            // With --all-steps, --out is a folder: a name with the extension
-            // of a format would become a folder of that name, with PNG steps
-            // inside. Refused, unless that folder is there already or the
-            // name ends in a slash (`answer.md/` asks for a folder).
+            // With --all-steps, --out is a folder: a name with an extension
+            // (`answer.md`, `deck.jpg`) would become a folder of that name,
+            // with PNG steps inside. Refused, unless that folder is there
+            // already or the name ends in a slash (`answer.md/` asks for a
+            // folder).
             if all_steps
                 && !out.ends_with(std::path::MAIN_SEPARATOR)
                 && !out.ends_with('/')
@@ -416,16 +417,22 @@ fn real_main() -> anyhow::Result<()> {
                     ext.as_deref(),
                     Some("gif" | "mp4" | "m4v" | "mov" | "webm" | "cast" | "tape")
                 );
-                match (given.or(still), recording) {
-                    (Some(f), _) if still.is_some() || recording => bail!(
+                let file_name = |f: &str| {
+                    anyhow::anyhow!(
                         "--all-steps writes one file for each step into a folder, and {out} is a file name. Pass a folder, for example --out steps/ --format {f}"
-                    ),
+                    )
+                };
+                match (given.or(still), recording) {
+                    (Some(f), _) if still.is_some() || recording => return Err(file_name(f)),
                     (None, true) => {
                         let e = ext.as_deref().unwrap_or_default();
                         bail!(
                             "--all-steps writes still images (png, webp, svg, txt, ansi, md); a .{e} already holds every step: `--out demo.{e}` without --all-steps"
                         );
                     }
+                    // Another extension (`deck.jpg`, `talk.pdf`): a file name
+                    // too; PNG is the format of --all-steps.
+                    (f, false) if ext.is_some() => return Err(file_name(f.unwrap_or("png"))),
                     _ => {}
                 }
             }
