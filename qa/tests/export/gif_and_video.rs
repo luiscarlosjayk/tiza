@@ -9,8 +9,8 @@
 //!   rectangle diffs; pure Rust.
 //! - AC2 Every frame shares the take's geometry (stable geometry).
 //! - AC3 `--out demo.mp4`: frames to a temp dir, `ffmpeg` from PATH or
-//!   `$TIZA_FFMPEG` with a printed command; without ffmpeg a clear message,
-//!   exit 2, no partial file.
+//!   `$TIZA_FFMPEG`, its command printed only when it fails; without ffmpeg
+//!   a clear message, exit 2, no partial file.
 //! - AC4 `.cast` and `.tape` unchanged.
 //! - AC5 The live instance can be recorded (`tiza render --out demo.gif`
 //!   without FILE) and MCP `export_image` accepts `.gif`.
@@ -194,8 +194,29 @@ fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
             .contains("tiza-tmp")),
         "no temp file left behind"
     );
-    // With ffmpeg (when the machine has it): the command is printed and
-    // the file plays.
+    // An ffmpeg that fails: the command goes to stderr, with the codec and
+    // the options that it got.
+    let fake = dir.join("ffmpeg-fails");
+    std::fs::write(&fake, "#!/bin/sh\nexit 1\n").unwrap();
+    std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    let r = std::process::Command::new(tiza_qa::bin())
+        .args([
+            "render",
+            ex.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .env("TIZA_FFMPEG", &fake)
+        .output()
+        .unwrap();
+    let err = String::from_utf8_lossy(&r.stderr);
+    assert!(!r.status.success() && !out.exists(), "{err}");
+    assert!(
+        err.contains("ffmpeg -y") && err.contains("yuv420p") && err.contains("ffmpeg failed"),
+        "{err}"
+    );
+    // With ffmpeg (when the machine has it): the file plays, and stderr
+    // has only the `wrote` line, not the command.
     if let Some(ffmpeg) = std::env::var_os("PATH").and_then(|p| {
         std::env::split_paths(&p)
             .map(|d| d.join("ffmpeg"))
@@ -216,7 +237,7 @@ fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
         let err = String::from_utf8_lossy(&r.stderr);
         assert!(r.status.success(), "{err}");
         assert!(
-            err.contains("ffmpeg -y") && err.contains("yuv420p") && err.contains("fps=30"),
+            err.contains("wrote ") && !err.contains("ffmpeg -y"),
             "{err}"
         );
         let bytes = std::fs::read(&out).unwrap();

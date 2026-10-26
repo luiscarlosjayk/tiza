@@ -359,7 +359,7 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `a .tape drives the TUI, which takes the margin from the document: set it with :margin in Tiza, or export a .gif` | `--margin-cols` would change the margin of the document. |
 
 - After the `ffmpeg not found` message, Tiza shows how to install `ffmpeg`. It also says that `.gif` and `.cast` need no other program.
-- Before it starts `ffmpeg`, Tiza writes the full `ffmpeg` command on stderr.
+- When `ffmpeg` fails, Tiza writes the full `ffmpeg` command on stderr, before the `ffmpeg failed` message. The command shows the codec and the options that `ffmpeg` got.
 - `could not run PATH` and `could not create PATH` end with the error of the system.
 - The tape message says `output path` instead of `document path` when the path of `--out` has the problem.
 

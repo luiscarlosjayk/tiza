@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tiza_qa::{fixture, scratch, tiza};
+use tiza_qa::{fixture, scratch};
 
 struct Ffmpeg {
     ffmpeg: PathBuf,
@@ -170,10 +170,11 @@ fn gif_delays(gif: &Path) -> Vec<f64> {
 }
 
 /// Renders `doc` as a GIF and as `ext` with the same flags, and checks the
-/// video's total against the GIF's and its `-t` on the printed command
-/// (AC2: the sum of the durations goes to ffmpeg, so the length is not left
-/// to how this ffmpeg treats the repeated concat entry). Returns the GIF
-/// delays and the video's path.
+/// video's total against the GIF's and the `-t` that ffmpeg gets (AC2: the
+/// sum of the durations goes to ffmpeg, so the length is not left to how
+/// this ffmpeg treats the repeated concat entry). Tiza prints the command
+/// only when ffmpeg fails, so a wrapper of the real ffmpeg notes its
+/// arguments. Returns the GIF delays and the video's path.
 fn total_as_the_gif(
     ff: &Ffmpeg,
     dir: &Path,
@@ -183,7 +184,22 @@ fn total_as_the_gif(
 ) -> (Vec<f64>, PathBuf) {
     let gif = dir.join(format!("{ext}.gif"));
     let video = dir.join(format!("out.{ext}"));
-    let mut printed = String::new();
+    let noted = dir.join(format!("{ext}-ffmpeg-args.txt"));
+    let wrapper = dir.join(format!("{ext}-ffmpeg"));
+    std::fs::write(
+        &wrapper,
+        format!(
+            "#!/bin/sh\nprintf ' %s' \"$@\" > '{}'\nexec '{}' \"$@\"\n",
+            noted.display(),
+            ff.ffmpeg.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(
+        &wrapper,
+        std::os::unix::fs::PermissionsExt::from_mode(0o755),
+    )
+    .unwrap();
     for out in [&gif, &video] {
         let mut args = vec![
             "render",
@@ -192,10 +208,15 @@ fn total_as_the_gif(
             out.to_str().unwrap(),
         ];
         args.extend_from_slice(flags);
-        let r = tiza(&args);
-        printed = String::from_utf8_lossy(&r.stderr).into_owned();
-        assert!(r.status.success(), "tiza {args:?}:\n{printed}");
+        let r = Command::new(tiza_qa::bin())
+            .args(&args)
+            .env("TIZA_FFMPEG", &wrapper)
+            .output()
+            .unwrap();
+        let said = String::from_utf8_lossy(&r.stderr);
+        assert!(r.status.success(), "tiza {args:?}:\n{said}");
     }
+    let printed = std::fs::read_to_string(&noted).unwrap_or_default();
     let delays = gif_delays(&gif);
     let total: f64 = delays.iter().sum();
     assert_eq!(
@@ -212,7 +233,7 @@ fn total_as_the_gif(
     );
     assert!(
         printed.contains(&format!(" -t {total:.3} ")),
-        "the printed command should carry `-t {total:.3}`:\n{printed}"
+        "the ffmpeg command should carry `-t {total:.3}`:\n{printed}"
     );
     (delays, video)
 }

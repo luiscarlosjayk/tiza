@@ -1662,7 +1662,10 @@ fn encode_video(
         ]),
     }
     args.push(tmp.to_string_lossy().into_owned());
-    eprintln!(
+    // The command goes to stderr only when ffmpeg fails: it shows the codec
+    // and the options that ffmpeg got. A good run prints only the `wrote`
+    // line.
+    let command = format!(
         "ffmpeg {}",
         args.iter()
             .map(|a| if a.contains(' ') || a.contains('(') {
@@ -1678,6 +1681,7 @@ fn encode_video(
         .status()
         .with_context(|| format!("could not run {}", ffmpeg.display()))?;
     if !status.success() {
+        eprintln!("{}", tiza_core::printable::printable_text(&command));
         let _ = std::fs::remove_file(&tmp);
         bail!(
             "ffmpeg failed ({status}). The frames are correct: make sure that your ffmpeg build has the codec of this format"
