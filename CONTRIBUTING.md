@@ -56,7 +56,7 @@ scripts/bench.sh                             # timings vs qa/bench/baseline.json
 
 Build the docs site locally with `site/build.sh` and Zola 0.23.6.
 
-Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with `rmcp`), `tiza-export` (SVG/PNG with `resvg` and embedded fonts), `tiza` (the binary, in `crates/tiza-cli`). `cargo-deny` checks the licenses and the advisories of the dependencies in CI.
+Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with `rmcp`), `tiza-export` (SVG, PNG and GIF with `resvg` and embedded fonts; lossless WebP with libwebp, a C library that `libwebp-sys` compiles, so a build needs a C compiler), `tiza` (the binary, in `crates/tiza-cli`). `cargo-deny` checks the licenses and the advisories of the dependencies in CI.
 
 `tiza-core`, `tiza-tui`, `tiza-mcp` and `tiza-export` are on crates.io only so that `cargo install tiza` works: they have no stable API.
 

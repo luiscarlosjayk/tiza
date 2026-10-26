@@ -66,11 +66,13 @@ fn packages_carry_the_licences_and_tiza_not_its_tests() {
                 "{name}: the repository's {licence}"
             );
         }
-        // The fonts that the binary embeds go with their licenses.
+        // The fonts and the C library that the binary embeds go with their
+        // licenses.
         if name == "tiza-export" {
             for licence in [
                 "assets/fonts/LICENSE-JetBrainsMono-OFL.txt",
                 "assets/fonts/LICENSE-TizaSymbols-DejaVu.txt",
+                "LICENSE-libwebp.txt",
             ] {
                 assert!(files.iter().any(|f| f == licence), "{name}: {licence}");
             }

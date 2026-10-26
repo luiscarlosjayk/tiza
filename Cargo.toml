@@ -63,7 +63,22 @@ signal-hook = "0.3.18"
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
 # Animated GIF: encoder only, LZW through weezl; our own palette, no color_quant.
 gif = { version = "0.14", default-features = false, features = ["std"] }
+# Lossless WebP, still and animated: libwebp 1.6 in C, built from source by its build script (a C compiler is
+# needed). A pure Rust encoder makes code frames 2.9 times larger (no palette transform, no LZ77). Only in
+# `tiza-export`, behind the safe API of `webp/mod.rs`; the license goes into the release archives.
+# Exact version: a `cargo install` without --locked builds the same libwebp, so the same pixels give the same bytes.
+# `std` is needed (it is a default, with `parallel`, which only speeds up the build): it builds libwebp with
+# WEBP_USE_THREAD, so a lock guards its CPU setup when two exports run at once (`export_image` calls).
+libwebp-sys = { version = "=0.14.4", features = ["std"] }
+# Tests only: an independent WebP decoder, in Rust, that checks what libwebp writes.
+image-webp = "0.2.4"
 
+
+# Every crate opts in with `[lints] workspace = true`. Only two places allow
+# unsafe code: the libwebp module of tiza-export (`webp/ffi.rs`) and the
+# `set_var` test of tiza-qa (`qa/tests/env/socket_dir_env.rs`).
+[workspace.lints.rust]
+unsafe_code = "deny"
 
 [profile.release]
 # Fat LTO: -0.9 MB on macOS arm64 at the same speed. Keep the default

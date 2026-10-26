@@ -22,3 +22,6 @@ two-face.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+
+[lints]
+workspace = true

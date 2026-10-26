@@ -13,6 +13,7 @@ pub mod fonts;
 pub mod gif;
 pub mod png;
 pub mod svg;
+pub mod webp;
 
 pub use gif::{GifOptions, GifReport, to_gif};
 pub use png::{PngOptions, to_png};
@@ -37,4 +38,6 @@ pub enum Error {
     Png(String),
     #[error("GIF encoding failed: {0}")]
     Gif(String),
+    #[error("WebP encoding failed: {0}")]
+    Webp(#[from] webp::WebpError),
 }

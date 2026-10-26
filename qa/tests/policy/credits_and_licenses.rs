@@ -19,7 +19,8 @@
 //!   Font Name). Moved here from the SVG export tests, extended to the embedded
 //!   fonts.
 //! - AC7 The release archives (release.yml and scripts/release-local.sh)
-//!   carry the license of every font that the binary embeds.
+//!   carry the license of every font that the binary embeds, and the
+//!   license and patent grant of libwebp, which it links.
 
 use std::path::{Path, PathBuf};
 
@@ -154,18 +155,31 @@ fn every_font_has_its_license_next_to_it() {
 }
 
 /// AC7: both ways to build a release archive copy each license of
-/// `crates/tiza-export/assets/fonts` into it, so a font added there with
-/// its license is not shipped without it.
+/// `crates/tiza-export/assets/fonts` and of `crates/tiza-export` into it,
+/// so a font or a library added there with its license is not shipped
+/// without it. (`LICENSE-MIT` and `LICENSE-APACHE` of the crate are
+/// Tiza's own, copied from the top of the repository.)
 #[test]
-fn the_release_archives_carry_the_licenses_of_the_embedded_fonts() {
-    let dir = "crates/tiza-export/assets/fonts";
-    let mut licenses: Vec<String> = std::fs::read_dir(root().join(dir))
-        .unwrap()
-        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|n| n.starts_with("LICENSE-"))
-        .collect();
+fn the_release_archives_carry_the_licenses_of_what_the_binary_embeds() {
+    let mut licenses = Vec::new();
+    for dir in ["crates/tiza-export/assets/fonts", "crates/tiza-export"] {
+        for e in std::fs::read_dir(root().join(dir)).unwrap() {
+            let n = e.unwrap().file_name().to_string_lossy().into_owned();
+            if n.starts_with("LICENSE-") && n != "LICENSE-MIT" && n != "LICENSE-APACHE" {
+                licenses.push(format!("{dir}/{n}"));
+            }
+        }
+    }
     licenses.sort();
-    assert!(licenses.len() >= 2, "{licenses:?}");
+    assert_eq!(licenses.len(), 3, "{licenses:?}");
+    let webp = read("crates/tiza-export/LICENSE-libwebp.txt");
+    for p in [
+        "Copyright (c) 2010, Google Inc.",
+        "Redistribution and use in source and binary forms",
+        "Additional IP Rights Grant (Patents)",
+    ] {
+        assert!(webp.contains(p), "LICENSE-libwebp.txt: «{p}»");
+    }
     for (script, into) in [
         (".github/workflows/release.yml", "\"dist/$name/\""),
         ("scripts/release-local.sh", "\"$stage/\""),
@@ -178,12 +192,13 @@ fn the_release_archives_carry_the_licenses_of_the_embedded_fonts() {
             .iter()
             .position(|l| l.contains("tar ") && l.contains("-czf"))
             .unwrap_or_else(|| panic!("{script} has no `tar -czf`"));
-        for license in &licenses {
-            let path = format!("{dir}/{license}");
+        for path in &licenses {
             let cp = lines
                 .iter()
                 .position(|l| {
-                    l.trim_start().starts_with("cp ") && l.contains(&path) && l.contains(into)
+                    l.trim_start().starts_with("cp ")
+                        && l.contains(path.as_str())
+                        && l.contains(into)
                 })
                 .unwrap_or_else(|| panic!("{script} does not copy {path} into the archive"));
             assert!(

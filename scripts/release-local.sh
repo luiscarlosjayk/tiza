@@ -125,9 +125,10 @@ for target in "${targets[@]}"; do
   mkdir -p "$stage"
   cp "target/$target/release/tiza" "$stage/"
   cp README.md LICENSE-MIT LICENSE-APACHE "$stage/"
-  # The binary embeds these fonts: their licenses go with every copy.
+  # The binary embeds these fonts and libwebp: their licenses go with every copy.
   cp crates/tiza-export/assets/fonts/LICENSE-JetBrainsMono-OFL.txt \
-    crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt "$stage/"
+    crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt \
+    crates/tiza-export/LICENSE-libwebp.txt "$stage/"
   # Only what the tag has: release.yml packs a fresh checkout, and a local
   # tree may hold build output or scratch files under examples/.
   git archive HEAD examples | tar -x -C "$stage"

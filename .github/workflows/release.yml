@@ -49,7 +49,7 @@ jobs:
     steps:
       # The container has what the runner image would: git before the
       # checkout (a real clone, for the build stamp), a C toolchain for the
-      # linker, perl for shasum, and rustup for the step after.
+      # linker and libwebp, perl for shasum, and rustup for the step after.
       - name: build image (container only)
         if: matrix.container
         run: |
@@ -78,9 +78,10 @@ jobs:
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/tiza" "dist/$name/"
           cp README.md LICENSE-MIT LICENSE-APACHE "dist/$name/"
-          # The binary embeds these fonts: their licenses go with every copy.
+          # The binary embeds these fonts and libwebp: their licenses go with every copy.
           cp crates/tiza-export/assets/fonts/LICENSE-JetBrainsMono-OFL.txt \
-            crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt "dist/$name/"
+            crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt \
+            crates/tiza-export/LICENSE-libwebp.txt "dist/$name/"
           cp -r examples "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")

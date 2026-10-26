@@ -65,6 +65,7 @@ sh install.sh
 | `main` of the repository | `cargo install --git https://github.com/luiscarlosjayk/tiza tiza` |
 | An archive | Download it from [Releases](https://github.com/luiscarlosjayk/tiza/releases). |
 
+- `cargo install` also compiles libwebp, a C library that writes the WebP exports. Thus it needs a C compiler: on macOS, the Xcode Command Line Tools; on Debian and Ubuntu, the `build-essential` package.
 - The notes of each release tell which archive is for which system.
 - An archive is about 7 MB. The [Releases](https://github.com/luiscarlosjayk/tiza/releases) page gives the exact size.
 - `scripts/size-check.sh` keeps the archive under 8 MB and the binary under 16 MB.
