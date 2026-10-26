@@ -213,7 +213,7 @@ A command with wrong arguments shows its usage:
 | `usage: :style NAME glyph=G legend="text" color=C   (:style NAME removes it)` | `:style` |
 | `usage: :label ID text` | `:label` |
 | `usage: :color ID name\|#rrggbb\|auto   (names: NAMES)` | `:color` |
-| `usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)` | `:set` |
+| `usage: :set ID key=value…   (label, color, step; callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)` | `:set` |
 | `usage: :del ID [ID…]` | `:del` |
 | `usage: :clear  \|  :clear N  \|  :clear .  (all, one step, the current step)` | `:clear` |
 | `usage: :step N  \|  :step ID N` | `:step` |

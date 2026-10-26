@@ -1749,6 +1749,17 @@ impl App {
     /// Changes what the request gives and keeps the rest. Without `file`
     /// the annotation keeps its file, and without `step` its step.
     pub fn update_annotation(&mut self, p: &UpdateParams) -> Result<(), Error> {
+        self.update_annotation_and_text(p, None)
+    }
+
+    /// [`App::update_annotation`], and with `callout_text` (`:set ID
+    /// text=…` on a callout) the paragraph of that callout too, in the same
+    /// change: one undo step. `label` is the title of a callout.
+    fn update_annotation_and_text(
+        &mut self,
+        p: &UpdateParams,
+        callout_text: Option<&str>,
+    ) -> Result<(), Error> {
         let mut ann = self
             .doc
             .find_annotation(&p.id)
@@ -1864,6 +1875,14 @@ impl App {
                 Shape::Callout { title, .. } => *title = l,
                 Shape::Spotlight { .. } => {}
             }
+        }
+        if let Some(t) = callout_text {
+            // `:set` gives it only for a callout, and refuses an empty value.
+            let Shape::Callout { text, .. } = &mut ann.shape else {
+                unreachable!("a paragraph for {}, which is not a callout", p.id);
+            };
+            // Trimmed, as `:callout` takes it.
+            *text = t.trim().to_string();
         }
         // Nothing to change: no undo entry, no new revision, no save.
         if self.doc.find_annotation(&p.id) == Some(&ann) {
@@ -5629,14 +5648,15 @@ impl App {
     }
 
     /// `:set ID key=value…` — changes properties of an existing annotation:
-    /// `label`, `color`, `step` for any; `stroke`, `route`, `heads`, `start`,
+    /// `label`, `color`, `step` for any (`text` is the paragraph of a
+    /// callout, the label of the rest); `stroke`, `route`, `heads`, `start`,
     /// `end` for arrows.
     fn cmd_set(&mut self, rest: &str) -> Result<String, Error> {
         let (id, rest) = split_first(rest);
         let kv = parse_kv(rest);
         if id.is_empty() || kv.is_empty() {
             return Err(Error::Invalid(
-                "usage: :set ID key=value…   (label, color, step; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
+                "usage: :set ID key=value…   (label, color, step; callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
                     .into(),
             ));
         }
@@ -5657,6 +5677,13 @@ impl App {
             self.doc.find_annotation(id).map(|a| &a.shape),
             Some(Shape::Mark { .. })
         );
+        let is_callout = matches!(
+            self.doc.find_annotation(id).map(|a| &a.shape),
+            Some(Shape::Callout { .. })
+        );
+        // On a callout, `text` is its paragraph and `label` or `title` its
+        // title; on the rest, `text` is the label (the text of a note).
+        let mut callout_text: Option<String> = None;
         let mut p = UpdateParams {
             id: id.to_string(),
             step: None,
@@ -5676,6 +5703,7 @@ impl App {
         let mut heads = tiza_core::protocol::HeadsPatch::default();
         for (k, v) in &kv {
             match k.as_str() {
+                "text" if is_callout => callout_text = Some(v.clone()),
                 "label" | "text" | "title" => p.label = Some(v.clone()),
                 "color" => p.color = Some(v.clone()),
                 "step" => {
@@ -5730,7 +5758,7 @@ impl App {
         if heads.start.is_some() || heads.end.is_some() {
             p.heads = Some(heads);
         }
-        self.update_annotation(&p)?;
+        self.update_annotation_and_text(&p, callout_text.as_deref())?;
         Ok(format!("{id}: updated"))
     }
 

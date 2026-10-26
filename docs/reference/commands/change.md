@@ -71,7 +71,9 @@ For example, make an arrow thick and give it a bar head:
 
 | Property | Annotations |
 |---|---|
-| `label`, `color` and `step` | All the annotations. |
+| `label`, `color` and `step` | All the annotations. `label` is the text of a note and the title of a callout. |
+| `text` | A callout: its paragraph. All the other annotations: the same as `label`. |
+| `title` | The same as `label`. |
 | `stroke`, `route`, `heads`, `start` and `end` | Arrows. |
 | `border`, `corners` and `fill` | Boxes and callouts. |
 | `emphasis` | Highlights and marks. |
@@ -80,7 +82,7 @@ The values are the same as in [Annotation commands](annotate.md). The fields are
 
 ### Notes on `:set`
 
-- `label` also has the names `text` and `title`.
+- `label` also has the name `title`. On all the annotations except a callout, it also has the name `text`.
 - On a highlight, `emphasis` also has the name `style`.
 
 ## `:step ID N`

@@ -132,10 +132,10 @@ Some keys also have another name:
 
 | Key | Also accepted | Commands |
 |---|---|---|
-| `border=` | `stroke=` | `:box`, `:callout`, and `:set` on a box or a callout |
-| `corners=` | `route=` | `:box`, `:callout`, and `:set` on a box or a callout |
+| `border=` | `stroke=` | `:box` and `:callout` |
+| `corners=` | `route=` | `:box` and `:callout` |
 | `emphasis=` | `style=` | `:hl`, and `:set` on a highlight |
-| `label=` | `text=` or `title=` | `:set` |
+| `label=` | `title=`, and `text=` except on a callout (there `text=` is its paragraph) | `:set` |
 | `glyph=` | `g=` | `:style` |
 | `legend=` | `l=` or `text=` | `:style` |
 | `color=` | `c=` | `:style` |

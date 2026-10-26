@@ -19,6 +19,7 @@ mod paste_in_each_mode;
 mod presentation_command_line;
 mod resize_at_start;
 mod selection_after_a_command;
+mod set_text_and_title;
 mod startup_keys;
 mod step_keys;
 mod step_zero_hint;
