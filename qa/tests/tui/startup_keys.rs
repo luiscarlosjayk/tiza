@@ -21,6 +21,9 @@
 //! runs, nothing is saved); an early ESC stays Esc when the next key comes
 //! in a later read or after the answer; an early `:mouse on` turns the
 //! mouse capture on.
+//!
+//! An answer that the end of the wait cuts short: its rest comes as keys
+//! later, and the event loop takes it as the rest of the answer.
 
 use std::path::Path;
 
@@ -77,7 +80,14 @@ while ok and time.monotonic() < end:
         break
     s.settle(0.05)
 print("STEP", step, flush=True)
-print("LIGHT", "light·auto" in plain(s.out), flush=True)
+# The light theme can come after the step: an answer that the start-up
+# read cut short is taken with the keys, and its frame follows. Waited
+# for, when the light answer was sent.
+if b"]11;rgb:f7f7" in seed + typed + after:
+    light = s.wait_for(lambda out: "light·auto" in plain(out), 10, "light theme")
+else:
+    light = "light·auto" in plain(s.out)
+print("LIGHT", light, flush=True)
 print("MOUSE_ON", b"\x1b[?1000h" in s.out, flush=True)
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
@@ -306,4 +316,76 @@ fn an_early_esc_stays_esc_when_the_next_key_comes_later() {
 fn an_early_mouse_on_turns_the_capture_on() {
     let out = run("mouse", &[], b":mouse on\r", b"", 0, b"nn");
     assert!(out.contains("MOUSE_ON True"), "{out}");
+}
+
+#[test]
+fn the_rest_of_an_answer_cut_by_the_wait_is_not_keys() {
+    // A slow terminal, or a busy machine: the answer comes in two parts,
+    // 500 ms apart, so the wait (200 ms at most) ends inside an answer and
+    // its rest comes as keys. Cut inside the background answer, the theme
+    // stayed dark (CI on Linux saw it once in some hundred runs). Cut
+    // inside the text answer, the `:` of `rgb:` opened the command line,
+    // and the `nn` after it went there.
+    for (cut, place) in [(9, "the background answer"), (33, "the text answer")] {
+        let out = cut_answer_run(cut);
+        assert_eq!(step_of(&out), "2", "{place}: {out}");
+        assert!(out.contains("LIGHT True"), "{place}: {out}");
+    }
+}
+
+/// [`LIGHT`] in two parts, `cut` bytes, then the rest 500 ms later, after
+/// the colour query; then `nn` after the first frame.
+fn cut_answer_run(cut: usize) -> String {
+    let dir = scratch("cut-answer");
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs.tiza"),
+        dir.join("doc.tiza"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
+    let body = r##"
+import json
+binary, cwd, light, cut = sys.argv[1], sys.argv[2], bytes.fromhex(sys.argv[3]), int(sys.argv[4])
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color")
+env.pop("TIZA_NO_OSC", None)
+argv = [binary, "--theme", "auto", "--step", "0", "--no-save", "--socket", "s.sock", "doc.tiza"]
+s = Pty(argv, 30, 120, env=env, ctty=True, raw=True)
+def status():
+    r = subprocess.run([binary, "--socket", "s.sock", "api", "status"], capture_output=True, text=True, timeout=10)
+    return json.loads(r.stdout) if r.returncode == 0 else {}
+step = None
+if s.wait_for(lambda out: b"\x1b]10;?" in out, 10, "colour query"):
+    s.send(light[:cut])
+    time.sleep(0.5)  # the delay under test, not a synchronisation
+    s.send(light[cut:])
+    if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+        s.send(b"nn")
+        end = time.monotonic() + 10
+        while time.monotonic() < end:
+            step = status().get("step")
+            if step == 2:
+                break
+            s.settle(0.05)
+print("STEP", step, flush=True)
+# The frame of the light theme follows the rest of the answer: waited for.
+print("LIGHT", s.wait_for(lambda out: "light·auto" in plain(out), 10, "light theme"), flush=True)
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    tiza_qa::pty_script(
+        &dir,
+        "cut-answer.py",
+        body,
+        &[
+            bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &hex(LIGHT),
+            &cut.to_string(),
+        ],
+    )
 }

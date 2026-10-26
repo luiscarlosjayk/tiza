@@ -104,16 +104,17 @@ pub fn parse_answers(input: &str) -> Host {
 /// event loop ([`crate::early_keys`]); they are not the query's to eat. They
 /// come in pieces, as crossterm would have read them: one per read, cut
 /// where an answer was taken out (so an ESC that ends one is Esc, not Alt
-/// with the next key).
-pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>) {
+/// with the next key). Last, the answer that the end of the wait cut short
+/// ([`cut_answer`]): its rest comes later, with the keys.
+pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>, Option<String>) {
     if osc_disabled() {
-        return (None, Vec::new());
+        return (None, Vec::new(), None);
     }
     let Some(mut tty) = input_terminal() else {
-        return (None, Vec::new());
+        return (None, Vec::new(), None);
     };
     let Ok(saved) = rustix::termios::tcgetattr(&tty) else {
-        return (None, Vec::new());
+        return (None, Vec::new(), None);
     };
     let mut raw = saved.clone();
     raw.make_raw();
@@ -122,7 +123,7 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>) {
     raw.special_codes[rustix::termios::SpecialCodeIndex::VMIN] = 0;
     raw.special_codes[rustix::termios::SpecialCodeIndex::VTIME] = deciseconds;
     if rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &raw).is_err() {
-        return (None, Vec::new());
+        return (None, Vec::new(), None);
     }
     let mut buf = Vec::new();
     // Where each read began in `buf`.
@@ -152,7 +153,54 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>) {
         (host.bg.is_some()).then_some(host)
     })();
     let _ = rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &saved);
-    (host, without_answers(&buf, &reads))
+    let (typed, cut) = start_up_rest(&buf, &reads, host.as_ref());
+    (host, typed, cut)
+}
+
+/// What the start-up read gives the event loop besides `host`: the keys
+/// ([`without_answers`]) and the answer cut short ([`cut_answer`]). When
+/// the background answer came but the text answer did not, an ESC at the
+/// very end is the start of that answer, not a key: its `]` and the rest
+/// come later, and the capture takes them.
+pub fn start_up_rest(
+    buf: &[u8],
+    reads: &[usize],
+    host: Option<&Host>,
+) -> (Vec<Vec<u8>>, Option<String>) {
+    let answer_due = host.is_some_and(|h| h.bg.is_some() && h.fg.is_none());
+    if answer_due && buf.last() == Some(&0x1b) && cut_answer(buf).is_none() {
+        let keys = &buf[..buf.len() - 1];
+        return (without_answers(keys, reads), Some("\x1b".to_string()));
+    }
+    (without_answers(buf, reads), cut_answer(buf))
+}
+
+/// The length of an answer's body up to and with its `ESC \` or BEL, or
+/// `None` when the body has no end yet.
+fn answer_len(body: &[u8]) -> Option<usize> {
+    (0..body.len()).find_map(|k| match body[k] {
+        0x07 => Some(k + 1),
+        0x1b if body.get(k + 1) == Some(&b'\\') => Some(k + 2),
+        _ => None,
+    })
+}
+
+/// The answer that the start-up read cut short at its end: an `ESC ]`
+/// with no `ESC \` or BEL after it. The terminal sends the rest later,
+/// through the key stream, where [`OscCapture::resume`] takes it.
+pub fn cut_answer(buf: &[u8]) -> Option<String> {
+    let mut i = 0;
+    while i + 1 < buf.len() {
+        if buf[i] == 0x1b && buf[i + 1] == b']' {
+            match answer_len(&buf[i + 2..]) {
+                Some(n) => i += 2 + n,
+                None => return Some(String::from_utf8_lossy(&buf[i..]).into_owned()),
+            }
+        } else {
+            i += 1;
+        }
+    }
+    None
 }
 
 /// What the start-up read took from the terminal besides the answers, in
@@ -172,13 +220,7 @@ pub fn without_answers(buf: &[u8], reads: &[usize]) -> Vec<Vec<u8>> {
             cut(&mut out);
         }
         if buf[i] == 0x1b && buf.get(i + 1) == Some(&b']') {
-            let body = &buf[i + 2..];
-            let end = (0..body.len()).find_map(|k| match body[k] {
-                0x07 => Some(k + 1),
-                0x1b if body.get(k + 1) == Some(&b'\\') => Some(k + 2),
-                _ => None,
-            });
-            match end {
+            match answer_len(&buf[i + 2..]) {
                 Some(n) => i += 2 + n,
                 None => break,
             }
@@ -238,6 +280,14 @@ pub struct OscCapture {
 }
 
 impl OscCapture {
+    /// Starts the capture with the beginning of an answer that the start-up
+    /// read cut short ([`cut_answer`]), so that its rest, which comes as
+    /// keys, is taken too. The usual limit of a second applies.
+    pub fn resume(&mut self, cut: String) {
+        self.buf = Some(cut);
+        self.started = Some(Instant::now());
+    }
+
     /// Feeds one key. Returns `Some(host)` when an answer closed and said
     /// something, `None` otherwise; `swallowed` tells whether the key was
     /// part of an answer (and must not reach the editor).
@@ -291,6 +341,17 @@ impl OscCapture {
             }
             (Some(b), KeyCode::Char(c)) if !ctrl && !alt => {
                 b.push(c);
+                // The start-up read cut the answer between the `ESC` and
+                // the `\` of its end: the `\` comes alone.
+                if c == '\\' && b.ends_with("\x1b\\") {
+                    let host = parse_answers(b);
+                    self.buf = None;
+                    self.started = None;
+                    return (
+                        true,
+                        (host.bg.is_some() || host.fg.is_some()).then_some(host),
+                    );
+                }
                 (true, None)
             }
             (Some(_), _) => {
@@ -366,5 +427,50 @@ mod tests {
         c.feed(KeyCode::Char(']'), KeyModifiers::ALT);
         let (sw, _) = c.feed(KeyCode::Down, KeyModifiers::NONE);
         assert!(!sw && !c.active());
+    }
+
+    #[test]
+    fn an_answer_cut_by_the_wait_is_taken_with_its_rest() {
+        let full = b"\x1b]11;rgb:1e1e/2020/2626\x1b\\";
+        assert_eq!(cut_answer(full), None);
+        assert_eq!(cut_answer(b"j\x1b]11;rgb:1/2/3\x07k"), None);
+        assert_eq!(cut_answer(b":\x1b"), None);
+        let cut = [&full[..], b"x\x1b]10;rgb:e8e8/"].concat();
+        assert_eq!(cut_answer(&cut).as_deref(), Some("\x1b]10;rgb:e8e8/"));
+        // The rest comes as keys: the capture takes it, then gives the next
+        // key back.
+        let mut c = OscCapture::default();
+        c.resume("\x1b]11;rgb:1e1e/".into());
+        for ch in "2020/2626".chars() {
+            assert!(c.feed(KeyCode::Char(ch), KeyModifiers::NONE).0);
+        }
+        let (sw, h) = c.feed(KeyCode::Char('\\'), KeyModifiers::ALT);
+        assert!(sw);
+        assert_eq!(h.unwrap().dark(), Some(true));
+        assert!(!c.feed(KeyCode::Char('e'), KeyModifiers::NONE).0);
+        // Cut inside the end, `ESC` then `\`: the `\` comes alone.
+        let mut c = OscCapture::default();
+        c.resume("\x1b]10;rgb:1f1f/2323/2828\x1b".into());
+        let (sw, h) = c.feed(KeyCode::Char('\\'), KeyModifiers::NONE);
+        assert!(sw && h.is_some_and(|h| h.fg.is_some()) && !c.active());
+        // Cut after the `ESC` of the text answer: the `ESC` is no key, and
+        // the plain `]` and the rest join it.
+        let light = b"\x1b]11;rgb:f7f7/f5f5/efef\x1b\\";
+        let buf = [&light[..], b"j\x1b"].concat();
+        let host = parse_answers(&String::from_utf8_lossy(&buf));
+        let (typed, cut) = start_up_rest(&buf, &[0], Some(&host));
+        assert_eq!((typed, cut.as_deref()), (vec![b"j".to_vec()], Some("\x1b")));
+        let mut c = OscCapture::default();
+        c.resume(cut.unwrap());
+        for ch in "]10;rgb:1f1f/2323/2828".chars() {
+            assert!(c.feed(KeyCode::Char(ch), KeyModifiers::NONE).0);
+        }
+        let (sw, h) = c.feed(KeyCode::Char('\\'), KeyModifiers::ALT);
+        assert!(sw && h.is_some_and(|h| h.fg.is_some()));
+        // With both answers in, a last ESC is a key, as before.
+        let both = [&light[..], b"\x1b]10;rgb:1/2/3\x07\x1b"].concat();
+        let host = parse_answers(&String::from_utf8_lossy(&both));
+        let (typed, cut) = start_up_rest(&both, &[0], Some(&host));
+        assert_eq!((typed, cut), (vec![b"\x1b".to_vec()], None));
     }
 }

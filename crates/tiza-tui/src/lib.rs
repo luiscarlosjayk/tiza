@@ -89,12 +89,14 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     // input, 100 ms at most, silent fallback to dark. Keys typed meanwhile
     // were read with the answer: handled before the first frame.
     let mut early = Vec::new();
+    let mut cut_answer = None;
     if app.theme_auto || app.theme.is_terminal() {
-        let (host, typed) = appearance::query_host(Duration::from_millis(100));
+        let (host, typed, cut) = appearance::query_host(Duration::from_millis(100));
         if let Some(host) = host {
             app.set_host(host);
         }
         early = typed.iter().flat_map(|p| early_keys::keys(p)).collect();
+        cut_answer = cut;
     }
     if let Some(s) = opts.step {
         app.set_step(s);
@@ -168,6 +170,11 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
                 break;
             }
         }
+    }
+    // The rest of an answer that the wait cut short comes as keys, after
+    // the keys typed before it: the capture takes it, not the editor.
+    if let Some(cut) = cut_answer {
+        app.osc.resume(cut);
     }
     execute!(io::stdout(), EnableBracketedPaste)?;
     if app.mouse {

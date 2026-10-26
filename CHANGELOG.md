@@ -24,6 +24,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
 
 ### Fixed
+- When the start-up wait for the colors of the terminal stops in the middle of an answer, Tiza takes the rest of the answer, which comes as key presses. Before, the theme could stay dark, or the rest acted as keys: it could move the cursor or open the command line.
 - An image export of a very long document stops with a clear message, before it makes the SVG. When the lines of code alone make the image too large, `tiza render` and `export_image` stop before the layout too. Before, Tiza used gigabytes of memory and then failed with `invalid SVG`. This is true for PNG, WebP, GIF and video, and for SVG, which has a higher limit.
 - `tiza render` refuses a `--margin` that is not 0 to 20 cells and a `--radius` that is not 0 to 100 px. Before, `NaN` or `inf` gave an empty image or a wrong error.
 - `annotation.update` with `text` says what to send. Send `label` for the text of a note or the title of a callout. Send the whole callout as a new `shape` for the text of a callout. Before, it said that `label` changes the text of a callout.
