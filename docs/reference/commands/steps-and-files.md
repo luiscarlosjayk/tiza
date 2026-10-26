@@ -32,6 +32,7 @@ Goes to a named step or to a step number. Tiza applies the steps from step 0 up 
 
 ```
 :goto ID
+:goto N
 ```
 
 For example, `:goto borrow` goes to the step with the name `borrow`. Named steps are in [Go to a named step](../document-format.md#go-to-a-named-step).

@@ -92,13 +92,13 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("set a1 =", "expected key=value, got «=»"),
         ("set a1 color=", "expected key=value, got «color=»"),
         ("style io glyph=", "expected key=value, got «glyph=»"),
-        ("lang rs rs rs", "usage: :lang ID"),
+        ("lang rs rs rs", "usage: :lang LANG"),
         (
             "callout 7-9 @bogus txt",
             "unknown placement: use @below, @margin or @auto",
         ),
         // AC7: nearest command
-        ("bx 3-5", "unknown command — did you mean :box?"),
+        ("bx 3-5", "unknown command: did you mean :box?"),
         ("stpe 2", "did you mean :step, :style?"),
         ("colr a1 red", "did you mean :color?"),
         ("zzzzzz", "unknown command (try :help)"),

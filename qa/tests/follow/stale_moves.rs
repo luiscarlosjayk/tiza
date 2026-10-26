@@ -1220,7 +1220,7 @@ fn quitting_with_stale_moves_is_refused_until_q_bang() {
     let (msg, loud) = live.message().unwrap();
     assert_eq!(
         msg,
-        "1 stale move (#1) — :q! quits anyway: next time it applies on line 2 as written"
+        "1 stale move (#1): :q! quits anyway; next time it applies on line 2 as written"
     );
     assert!(loud);
     assert!(!live.with(|app| app.quit));
@@ -1235,7 +1235,7 @@ fn quitting_with_stale_moves_is_refused_until_q_bang() {
     live.command("q");
     assert_eq!(
         message(&live),
-        "2 stale moves (#1, #2) — :q! quits anyway: next time #1 applies on line 2 as written, #2 stops the document from opening"
+        "2 stale moves (#1, #2): :q! quits anyway; next time #1 applies on line 2 as written, #2 stops the document from opening"
     );
     live.command("q!");
     assert!(live.with(|app| app.quit));
@@ -1270,7 +1270,7 @@ fn the_refusal_to_quit_keeps_the_way_out_at_120_columns_with_follow() {
     live.command("q");
     let bar = live.screen(120, 30).lines().last().unwrap().to_string();
     assert!(
-        bar.contains("3 stale moves (#1, #2, #3) — :q! quits anyway: next time #1"),
+        bar.contains("3 stale moves (#1, #2, #3): :q! quits anyway; next time #1"),
         "{bar}"
     );
     assert!(!bar.contains("last "), "{bar}");

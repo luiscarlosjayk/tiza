@@ -220,7 +220,7 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 
 The token reports are the messages about an unknown token, an unknown table, a wrong value and a faint token.
 
-- The TUI shows them after `:theme`, `:theme NAME`, `:theme toggle`, `:theme file` and `--theme-file`. It adds them after ` — `, separated by `; `.
+- The TUI shows them after `:theme`, `:theme NAME`, `:theme toggle`, `:theme file` and `--theme-file`. It adds each one after the message, after `; `.
 - The TUI does not show the reports of the config file or of the document at start. Only `--theme-file` shows reports at start.
 - The TUI shows no reports after `t`, after `:theme auto` or after a change from an agent.
 - `tiza render` writes each report on its own line on stderr, after `tiza: `.

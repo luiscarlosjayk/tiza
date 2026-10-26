@@ -29,6 +29,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - A command or an MCP tool that reaches the live instance, but gets no reply, says why: the instance did not answer within 75 s, or it closed the connection. Before, the message was `no Tiza instance is listening` for these cases too.
 - The message about a `.tiza` document from a newer Tiza fits both a file and `scene.put`: `.tiza document with schema N: this version of Tiza reads schema 1 at most`.
 - The `theme.set` schema and its error name all its values: `dark`, `light`, `terminal`, `auto` and `toggle`. The `add_mark` kinds and the help of `:mark` list `note` too. The descriptions of the MCP tools `check` and `add_move` and of the resource `tiza://scene` are in clear English.
+- The help says what `0` does: it goes to the first character of the line that is not a space. For a selection, the help names `0`, `$`, `Home` and `End`, and says that `g`, `G`, `r` and `Ctrl-R` do nothing there. The help of `:goto` names a step number, and the help of `:link` says that at step 0 it is `:ref`. The help of `--session` says that `--socket` and `TIZA_SOCKET` win over it.
+- `accepted 1 agent change` and `rejected 1 agent change` are in the singular. The messages of supervised mode say `agent change`, not `proposal`.
+- On the new empty step after the last one, the status bar and `step_label` say `step 2/2`. Before, they said `step 2/1`.
+- `pointer on` in a selection names only `f`, because there `Esc` closes the selection first.
+- An `annotation.update` of an agent that changes nothing shows no `updated by agent` message.
+- A move target that matches more than five times lists five lines and then `…`.
+- Messages of the TUI have no dash asides: a failed save, `:q` with stale moves, a command name with a typo and the theme notes. `:lang` writes the language as `LANG` in its messages, as its help does.
 - The help of `--interval` and `--system-fonts`, the `ffmpeg` messages, the `:export` message for a recording, the `skip_zero` description and the time-limit message of `export_image` are in clear English, without asides. The `ffmpeg` message no longer names Windows, which Tiza does not support.
 
 ## [0.1.1] - 2026-10-26

@@ -789,7 +789,7 @@ impl App {
                     String::new()
                 } else {
                     format!(
-                        " — {}",
+                        "; {}",
                         notes
                             .iter()
                             .map(|n| n.as_str())
@@ -1165,7 +1165,12 @@ impl App {
             self.info("pointer off");
         } else {
             self.point_at_cursor();
-            self.info("pointer on (f or Esc turns it off; never saved nor exported)");
+            self.info(if matches!(self.mode, Mode::Select { .. }) {
+                // Esc closes the selection here, not the pointer.
+                "pointer on (f turns it off; never saved nor exported)"
+            } else {
+                "pointer on (f or Esc turns it off; never saved nor exported)"
+            });
         }
     }
 
@@ -1362,7 +1367,7 @@ impl App {
             Err(e) => {
                 if self.save_error.is_none() {
                     self.error(format!(
-                        "read-only: could not save {} — :saveas PATH to save elsewhere",
+                        "read-only: could not save {}; :saveas PATH saves elsewhere",
                         self.save_path.display()
                     ));
                     self.save_warning_pending = true;
@@ -1590,7 +1595,7 @@ impl App {
         if !force && self.dirty {
             if self.save_error.is_some() {
                 self.error(format!(
-                    "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — {}",
+                    "unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere ({})",
                     self.save_path.display()
                 ));
                 return;
@@ -2017,7 +2022,7 @@ impl App {
                 msg = if self.autosave {
                     self.autosave = false;
                     format!(
-                        "not saved — autosave off: {} (:w saves it embedded in {}, :saveas PATH saves elsewhere, :autosave on resumes)",
+                        "not saved, and autosave is off: {} (:w saves it embedded in {}, :saveas PATH saves elsewhere, :autosave on resumes)",
                         sent.edited.join("; "),
                         self.save_path.display()
                     )
@@ -2026,10 +2031,17 @@ impl App {
                 };
             }
             if !sent.stale.is_empty() {
-                let stale = format!(
-                    "{} changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)",
-                    sent.stale.join(", ")
-                );
+                let stale = if sent.stale.len() == 1 {
+                    format!(
+                        "{} changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)",
+                        sent.stale[0]
+                    )
+                } else {
+                    format!(
+                        "{} changed on disk since they were loaded: still read from them; the screen keeps the copies loaded (:follow on reloads them)",
+                        sent.stale.join(", ")
+                    )
+                };
                 msg = if msg.is_empty() {
                     stale
                 } else {
@@ -4738,9 +4750,7 @@ impl App {
                             if n == max + 1 && n != self.doc.step {
                                 self.doc.step = n;
                                 self.revision += 1;
-                                return Ok(format!(
-                                    "step {n}/{max}: empty, new annotations go here"
-                                ));
+                                return Ok(format!("step {n}/{n}: empty, new annotations go here"));
                             }
                             Ok(self.step_message(n))
                         }
@@ -4873,7 +4883,7 @@ impl App {
                         if self.theme_notes.is_empty() {
                             String::new()
                         } else {
-                            format!(" — {}", self.theme_notes.join("; "))
+                            format!("; {}", self.theme_notes.join("; "))
                         }
                     ))
                 }
@@ -4890,9 +4900,11 @@ impl App {
                     if rest.is_empty() {
                         let l = &self.doc.source.language;
                         return Ok(if has_grammar(l) {
-                            format!("language: {l} (:lang auto re-detects, :lang <id> overrides)")
+                            format!(
+                                "language: {l} (:lang auto detects it again, :lang LANG sets another)"
+                            )
                         } else {
-                            format!("language: {l} (plain text; :lang <id> to set one)")
+                            format!("language: {l} (plain text; :lang LANG sets one)")
                         });
                     }
                     if rest == "auto" {
@@ -4907,7 +4919,7 @@ impl App {
                     }
                     if rest.split_whitespace().count() != 1 {
                         return Err(Error::Invalid(
-                            "usage: :lang ID  |  :lang auto  |  :lang   (one language id, e.g. rs, ts, py)".into(),
+                            "usage: :lang LANG  |  :lang auto  |  :lang   (one language, such as rs, ts or py)".into(),
                         ));
                     }
                     let lang = normalize_language(rest);
@@ -5117,10 +5129,10 @@ impl App {
                 other => Err(Error::Invalid(match nearest_commands(other) {
                     v if v.is_empty() => "unknown command (try :help)".to_string(),
                     v if v.len() == 1 => {
-                        format!("unknown command — did you mean :{}?", v[0])
+                        format!("unknown command: did you mean :{}?", v[0])
                     }
                     v => format!(
-                        "unknown command — did you mean {}?",
+                        "unknown command: did you mean {}?",
                         v.iter()
                             .map(|c| format!(":{c}"))
                             .collect::<Vec<_>>()
@@ -6107,8 +6119,13 @@ impl App {
         if !parked {
             let verb = annotation_verb(&req.method);
             let before = self.message.clone();
+            let revision = self.revision;
             let resp = self.handle_request(req);
-            if let (Some(verb), Some(r)) = (verb, &resp.result) {
+            // An update that changed nothing (the revision stays) is no
+            // change to tell.
+            if let (Some(verb), Some(r)) = (verb, &resp.result)
+                && self.revision != revision
+            {
                 self.agent_changed(r, verb, before.as_ref(), now);
             }
             let _ = reply.send(resp);
@@ -6435,7 +6452,7 @@ impl App {
                 rid.clone(),
                 "rejected",
                 format!(
-                    "proposal p{pid} expired after {}s without a decision (supervised mode)",
+                    "agent change p{pid} expired after {}s without a decision (supervised mode)",
                     PROPOSAL_TIMEOUT.as_secs()
                 ),
             ));
@@ -6443,7 +6460,7 @@ impl App {
         }
         self.close_review_if_empty();
         self.info(format!(
-            "{} proposal{} expired without a decision",
+            "{} agent change{} expired without a decision",
             expired.len(),
             if expired.len() == 1 { "" } else { "s" }
         ));
@@ -6464,7 +6481,7 @@ impl App {
             let n = self.answer_proposals_when_off();
             if n > 0 {
                 format!(
-                    "supervised mode off; {n} pending proposal{} rejected",
+                    "supervised mode off; {n} waiting agent change{} rejected",
                     if n == 1 { "" } else { "s" }
                 )
             } else {

@@ -29,7 +29,7 @@ struct Cli {
     #[arg(long, hide = true)]
     smoke: bool,
     /// Start with mouse capture on: click moves the cursor, drag selects, wheel scrolls (`:mouse on|off` live).
-    /// Off by default because it takes the terminal's own text selection (Shift/Option-drag keeps it).
+    /// Off by default, so that the terminal keeps its own text selection (with the capture on, Shift-drag or Option-drag selects text).
     #[arg(long)]
     mouse: bool,
     /// Initial presentation step
@@ -56,7 +56,7 @@ struct Cli {
     /// Path of the local API socket (defaults to $TIZA_SOCKET or the session)
     #[arg(long, global = true)]
     socket: Option<PathBuf>,
-    /// Session name: allows several instances (defaults to "default")
+    /// Session name: allows several instances (defaults to "default"). --socket and $TIZA_SOCKET win over it
     #[arg(long, global = true)]
     session: Option<String>,
     /// Do not expose the local API

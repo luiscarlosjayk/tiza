@@ -85,8 +85,8 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if opts.theme_auto {
         app.theme_follow_host();
     }
-    // The host's appearance: asked before crossterm owns the
-    // input, 100 ms at most, silent fallback to dark. Keys typed meanwhile
+    // The host's appearance: asked before crossterm owns the input, 100 ms
+    // with no answer and about 300 ms at most, silent fallback to dark. Keys typed meanwhile
     // were read with the answer: handled before the first frame.
     let mut early = Vec::new();
     let mut cut_answer = None;
@@ -1020,14 +1020,15 @@ fn review_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
         KeyCode::Char('y') | KeyCode::Enter => chosen.and_then(|i| app.accept_proposal_at(i)),
         KeyCode::Char('n') | KeyCode::Char('x') => chosen.and_then(|i| app.reject_proposal_at(i)),
-        KeyCode::Char('a') => Some(format!(
-            "accepted {} agent changes",
-            app.decide_proposals(&shown, true)
-        )),
-        KeyCode::Char('d') => Some(format!(
-            "rejected {} agent changes",
-            app.decide_proposals(&shown, false)
-        )),
+        KeyCode::Char(c @ ('a' | 'd')) => {
+            let accept = c == 'a';
+            let n = app.decide_proposals(&shown, accept);
+            Some(format!(
+                "{} {n} agent change{}",
+                if accept { "accepted" } else { "rejected" },
+                if n == 1 { "" } else { "s" }
+            ))
+        }
         KeyCode::Esc if !app.overlay_filter.is_empty() => {
             app.overlay_filter.clear();
             app.overlay_sel = 0;

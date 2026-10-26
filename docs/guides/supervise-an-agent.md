@@ -65,7 +65,7 @@ a9: note L17 added by agent (src/queue.rs, not shown at step 2)
 |---|---|
 | `supervised mode on: agent changes wait for y/n (:review lists them)` | `:supervise on` turned supervised mode on. |
 | `supervised mode off` | `:supervise off` turned supervised mode off, and no change waited. |
-| `supervised mode off; N pending proposals rejected` | `:supervise off` rejected the changes that waited. |
+| `supervised mode off; N waiting agent changes rejected` | `:supervise off` rejected the changes that waited. |
 | `supervised mode already on` | Supervised mode was on already. |
 | `supervised mode already off` | Supervised mode was off already. |
 | `supervised mode on (N pending)` | `:supervise` with no word gives the state. |
@@ -78,12 +78,12 @@ a9: note L17 added by agent (src/queue.rs, not shown at step 2)
 | `rejected pN: SUMMARY` | You rejected a change. |
 | `accepted N agent changes` | `a` accepted the changes in the review. |
 | `rejected N agent changes` | `d` rejected the changes in the review. |
-| `N proposals expired without a decision` | Changes waited for 60 s, and Tiza rejected them. |
+| `N agent changes expired without a decision` | Changes waited for 60 s, and Tiza rejected them. |
 | `ID: SHAPE added by agent` | An agent added an annotation that the screen does not show. |
 | `ID: SHAPE updated by agent` | An agent changed an annotation that the screen does not show. |
 | `N agent annotations not shown` | An agent added or changed several annotations within one second. |
 
-- When `N` is 1, the message about the changes to review says `change` and `it`. The two messages with `proposals` say `proposal`.
+- When `N` is 1, the messages say `agent change` and `change`, and the message about the changes to review says `it`.
 - `:supervise` with no word gives `off` in place of `on` when supervised mode is off.
 - When the terminal is narrower than 60 columns, the size message is only `needs 40×12`.
 - `SUMMARY` tells what the agent asked for, for example `add box L3-5` or `turn supervised mode off`. `SHAPE` is the annotation and its lines, for example `box 3-5` or `note L13`.

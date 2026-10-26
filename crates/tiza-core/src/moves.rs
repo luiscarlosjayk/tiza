@@ -330,13 +330,14 @@ fn find_unique(
         None => match hits.as_slice() {
             [one] => Ok(*one),
             many => Err(Error::Invalid(format!(
-                "{what} «{text}» matches {} times ({}); a move target must match exactly once (add occurrence: N)",
+                "{what} «{text}» matches {} times ({}{}); a move target must match exactly once (add occurrence: N)",
                 many.len(),
                 many.iter()
                     .take(5)
                     .map(|l| format!("L{l}"))
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(", "),
+                if many.len() > 5 { ", …" } else { "" }
             ))),
         },
     }

@@ -335,7 +335,7 @@ These messages come from the socket itself. The other messages come from each me
 | `check: replaced by a newer check (width N) before it ran; ask again` | `busy` | A newer `check` replaced this one. |
 | `the presenter rejected this change (supervised mode)` | `rejected` | The presenter rejected the change. |
 | `supervised mode went off before the presenter decided this change` | `rejected` | Supervised mode went off while the change waited. |
-| `proposal pN expired after 60s without a decision (supervised mode)` | `rejected` | The presenter did not decide in 60 s. |
+| `agent change pN expired after 60s without a decision (supervised mode)` | `rejected` | The presenter did not decide in 60 s. |
 | `check: could not start the check:` | `unavailable` | The instance could not start the thread of the `check`. |
 | `METHOD: a bug in Tiza stopped this request (a panic); please report it` | `internal` | A bug stopped the request. |
 

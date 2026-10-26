@@ -738,11 +738,11 @@ pub fn close_summary(doc: &Document) -> Option<String> {
 }
 
 /// [`close_summary`] as `:q` refuses with it, the way out first so the bar
-/// keeps it: `1 stale move (#1) — :q! quits anyway: next time it applies on
+/// keeps it: `1 stale move (#1): :q! quits anyway; next time it applies on
 /// line 2 as written`.
 pub fn on_close(doc: &Document) -> Option<String> {
     let (count, next) = close_parts(doc)?;
-    Some(format!("{count} — :q! quits anyway: {next}"))
+    Some(format!("{count}: :q! quits anyway; {next}"))
 }
 
 fn close_parts(doc: &Document) -> Option<(String, String)> {

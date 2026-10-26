@@ -337,6 +337,7 @@ The rest of the status bar shows the first of these that applies:
 | Message | When |
 |---|---|
 | `pointer on (f or Esc turns it off; never saved nor exported)` | `f` turned the live pointer on. |
+| `pointer on (f turns it off; never saved nor exported)` | `f` turned the live pointer on in a selection. In a selection, `Esc` closes only the selection. |
 | `pointer off` | `f` turned the live pointer off. |
 | `ID deleted (u to undo)` | `x` deleted an annotation. |
 | `ID → step N` | `+` or `-` moved an annotation. |
@@ -363,8 +364,7 @@ The rest of the status bar shows the first of these that applies:
 | `pN accepted but failed: SUMMARY` | `y` or `Enter` accepted a change, and the change failed. |
 | `rejected pN: SUMMARY` | `n` or `x` rejected a change. |
 
-- With one line or one annotation, the paste messages say `line` and `annotation`.
-- `pointer on` says that `Esc` turns the pointer off. In a selection, `Esc` closes only the selection.
+- With one line or one annotation, the paste messages say `line` and `annotation`. With one change, `accepted` and `rejected` say `agent change`.
 - The messages of `h`, `s` and `a` in a selection are in [Messages](../guides/present.md#messages). That table also has `arrow cancelled`.
 - A message about a new annotation, or after `+` or `-`, can end with a step hint. Examples are `(step N, press n)`, `(press n)`, `(step N, :step N shows it)` and `(FILE, not shown at step N)`. See [Messages of the annotation commands](commands/messages.md#messages-of-the-annotation-commands).
 

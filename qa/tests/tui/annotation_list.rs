@@ -597,7 +597,7 @@ fn a_filter_decides_only_the_changes_shown() {
     live.command("review");
     live.keys(&"/second".chars().map(KeyCode::Char).collect::<Vec<_>>());
     live.keys(&[KeyCode::Enter, KeyCode::Char('a')]);
-    assert_eq!(live.message().unwrap().0, "accepted 1 agent changes");
+    assert_eq!(live.message().unwrap().0, "accepted 1 agent change");
     assert_eq!(
         live.with(|a| a.proposals.iter().map(|p| p.id).collect::<Vec<_>>()),
         [1]

@@ -40,7 +40,12 @@ fn step_one_past_the_last_opens_an_empty_step() {
     live.command("step 2");
     let (msg, is_err) = live.with(|app| app.message.clone()).unwrap();
     assert!(!is_err, "{msg}");
-    assert_eq!(msg, "step 2/1: empty, new annotations go here");
+    assert_eq!(msg, "step 2/2: empty, new annotations go here");
+    // The bar and `status` count the new step too: never `step 2/1`.
+    let bar = live.screen(120, 20).lines().last().unwrap().to_string();
+    assert!(bar.contains("step 2/2") && !bar.contains("2/1"), "{bar}");
+    let label = live.api_ok("status", serde_json::json!({}))["step_label"].clone();
+    assert_eq!(label, "step 2/2", "{label}");
     live.command("note 2 second");
     assert_eq!(live.with(|app| (app.doc.step, app.doc.max_step())), (2, 2));
     live.command("step 9");

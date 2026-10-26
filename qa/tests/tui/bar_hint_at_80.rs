@@ -718,3 +718,23 @@ fn presentation_line_is_not_worse() {
     assert_eq!(last(20), STEP_HINT);
     assert_eq!(last(18), "a1: box 3-5…");
 }
+
+/// An agent's `annotation.update` that changes nothing (the revision
+/// stays) tells nothing on the bar: no `updated by agent`.
+#[test]
+fn an_update_that_changes_nothing_says_nothing() {
+    let live = open("wide.rs", "noop-update", true);
+    agent_box(&live);
+    live.with(|a| a.message = None);
+    let revision = live.api_ok("status", json!({}))["revision"].clone();
+    live.api_ok("annotation.update", json!({"id": "a1", "step": 1}));
+    assert_eq!(live.api_ok("status", json!({}))["revision"], revision);
+    assert_eq!(live.message(), None);
+    // A real change still says so.
+    live.api_ok("annotation.update", json!({"id": "a1", "color": "red"}));
+    assert!(
+        info(&live).starts_with("a1: box 3-5 updated by agent"),
+        "{}",
+        info(&live)
+    );
+}

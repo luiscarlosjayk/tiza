@@ -217,7 +217,7 @@ fn turning_off_rejects_pending_and_timeout_is_published() {
     wait_pending(&live, 1);
     live.command("supervise off");
     let (msg, _) = live.message().unwrap();
-    assert!(msg.contains("1 pending proposal rejected"), "{msg}");
+    assert!(msg.contains("1 waiting agent change rejected"), "{msg}");
     let r = h.join().unwrap();
     assert_eq!(r.error.unwrap().code, "rejected");
     assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
@@ -246,7 +246,7 @@ fn turning_off_rejects_pending_and_timeout_is_published() {
     assert!(e.message.contains("expired after 60s"), "{}", e.message);
     assert_eq!(live.with(|a| a.proposals.len()), 0);
     let (msg, _) = live.message().unwrap();
-    assert!(msg.contains("1 proposal expired"), "{msg}");
+    assert!(msg.contains("1 agent change expired"), "{msg}");
     // :supervise with a bad argument.
     live.command("supervise maybe");
     let (msg, err) = live.message().unwrap();

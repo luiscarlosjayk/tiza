@@ -92,7 +92,7 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | Message | When |
 |---|---|
 | `step N/M` or `step N/M · TITLE` | `:step`, `:next`, `:prev` or `:goto` reached a step. |
-| `step N/M: empty, new annotations go here` | `:step N` opened the empty step after the last step. |
+| `step N/N: empty, new annotations go here` | `:step N` opened the empty step after the last step. The status bar also counts that step. |
 | `step N is beyond the last step (M); :step K opens a new one` | `:step N` got a step number past `K`, the first empty step. |
 | `move #N added: step S shows FILE (:ref path to change the document's own file)` | `:link PATH` at step 1 or later added a `code.link` move. |
 | `the .tiza now references FILE and shows its code (N annotations kept; u undoes)` | `:ref` or `:link` loaded the code of another file. |
@@ -109,8 +109,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `language: LANG` | `:lang LANG` set a language. |
 | `language: LANG (no grammar: shown as plain text; try rs, ts, py, go, toml…)` | `:lang LANG` set a language that has no grammar. |
 | `language: LANG (HOW)` | `:lang auto` found the language. |
-| `language: LANG (:lang auto re-detects, :lang <id> overrides)` | `:lang` shows the language. |
-| `language: LANG (plain text; :lang <id> to set one)` | `:lang` shows a language that has no grammar. |
+| `language: LANG (:lang auto detects it again, :lang LANG sets another)` | `:lang` shows the language. |
+| `language: LANG (plain text; :lang LANG sets one)` | `:lang` shows a language that has no grammar. |
 | `title updated` | `:title` set or removed the title. |
 | `numbers on (saved in the document)` | `:numbers on` showed the line numbers. |
 | `numbers off: the gutter is hidden here, in exports and for agents (saved in the document; :numbers on restores it)` | `:numbers off` hid the line numbers. |
@@ -163,7 +163,7 @@ When `:q` refuses, the status bar shows one of these messages:
 |---|---|
 | Autosave off | `unsaved changes (autosave off): :w saves to FILE, :saveas PATH saves elsewhere, :q! quits without saving` |
 | No-save mode | `unsaved changes (--no-save): :saveas PATH saves them elsewhere, :q! discards them` |
-| After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere — FILE` |
+| After a failed save | `unsaved (read-only): :q! quits without saving, :saveas PATH saves elsewhere (FILE)` |
 
 ## Messages of follow mode
 
@@ -220,7 +220,7 @@ A command with wrong arguments shows its usage:
 | `usage: :step ID N` | `:step`, when `N` in `:step ID N` is not a number |
 | `usage: :goto ID  (a named step, or a step number)` | `:goto` |
 | `usage: :focus A-B  \|  :focus   (clear)` | `:focus` |
-| `usage: :lang ID  \|  :lang auto  \|  :lang   (one language id, e.g. rs, ts, py)` | `:lang` |
+| `usage: :lang LANG  \|  :lang auto  \|  :lang   (one language, such as rs, ts or py)` | `:lang` |
 | `usage: :pad V [H] \| :pad default   (blank cells around the drawing; :pad 0 0 removes it)` | `:pad` |
 | `` margin X: use `:margin N` (12-200 cells) or `:margin auto` `` | `:margin` |
 | `` numbers X: use `:numbers on` or `:numbers off` `` | `:numbers` |
@@ -240,8 +240,8 @@ A command with wrong arguments shows its usage:
 
 | Message | When |
 |---|---|
-| `unknown command — did you mean :NAME?` | No command has this name, and one command name is near it. |
-| `unknown command — did you mean :NAME, :NAME?` | Two or three commands are equally near it. |
+| `unknown command: did you mean :NAME?` | No command has this name, and one command name is near it. |
+| `unknown command: did you mean :NAME, :NAME?` | Two or three commands are equally near it. |
 | `unknown command (try :help)` | No command is near it. |
 
 A name is near when at most two changes make it the name that you typed. A change adds, removes or replaces one letter.

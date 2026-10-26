@@ -1203,7 +1203,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "supervise.status",
-        "Supervised mode state: enabled, pending proposals, accepted/rejected counts",
+        "Supervised mode state: enabled, waiting agent changes, accepted/rejected counts",
     ),
 ];
 

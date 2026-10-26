@@ -777,13 +777,19 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             // `step 3/7 · Shared borrow` on a named step; a long
             // title is cut so the rest of the bar keeps its room.
             match app.doc.step_title(app.doc.step) {
+                // The new empty step after the last one counts too: never
+                // `step 2/1`.
                 Some(t) => format!(
                     "  step {}/{} · {}",
                     app.doc.step,
-                    app.doc.max_step(),
+                    app.doc.max_step().max(app.doc.step),
                     fit_message(&tiza_core::printable::printable_line(&t), 32)
                 ),
-                None => format!("  step {}/{}", app.doc.step, app.doc.max_step()),
+                None => format!(
+                    "  step {}/{}",
+                    app.doc.step,
+                    app.doc.max_step().max(app.doc.step)
+                ),
             },
             bar,
         ),

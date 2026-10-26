@@ -133,7 +133,8 @@ impl Document {
 
     /// `step 3/7`, or `step 3/7 · Shared borrow` on a named step.
     pub fn step_label(&self, step: u32) -> String {
-        let base = format!("step {step}/{}", self.max_step());
+        // The new empty step after the last one counts too: never `2/1`.
+        let base = format!("step {step}/{}", self.max_step().max(step));
         match self.step_title(step) {
             Some(t) => format!("{base} · {t}"),
             None => base,

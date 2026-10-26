@@ -381,7 +381,7 @@ fn edited_code_is_shown_not_saved_and_the_bar_says_why() {
     let m = message(&live);
     assert!(
         m.contains("the code sent for main.rs differs from the file on disk")
-            && m.contains("autosave off"),
+            && m.contains("autosave is off"),
         "{m}"
     );
 
@@ -893,7 +893,7 @@ fn bar_messages() {
     let m = message(&live);
     assert!(
         m.starts_with(
-            "not saved — autosave off: the code sent for src/queue.rs differs from the file on disk"
+            "not saved, and autosave is off: the code sent for src/queue.rs differs from the file on disk"
         ),
         "{m}"
     );

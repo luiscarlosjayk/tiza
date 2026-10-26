@@ -1156,3 +1156,21 @@ fn move_add_rejected_by_a_later_move_names_that_move_and_render_step_past_the_en
     let shown = String::from_utf8_lossy(&out.stdout);
     assert!(shown.contains("The rule"), "step 5 is rendered:\n{shown}");
 }
+
+/// A target that matches more than five times lists five lines, and `…`
+/// says that the list goes on.
+#[test]
+fn a_long_list_of_matches_ends_with_an_ellipsis() {
+    let live = Live::from_code(&"x;\n".repeat(7), "rs", "many-matches");
+    let r = live.api(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "find": "x"}),
+    );
+    let e = r.error.unwrap();
+    assert!(
+        e.message
+            .contains("matches 7 times (L1, L2, L3, L4, L5, …)"),
+        "{}",
+        e.message
+    );
+}

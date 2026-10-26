@@ -120,7 +120,7 @@ fn read_only_sidecar_warns_once_and_keeps_going() {
     let (msg, err) = live.message().unwrap();
     assert!(
         err && msg.starts_with("read-only: could not save")
-            && msg.ends_with("— :saveas PATH to save elsewhere"),
+            && msg.ends_with("; :saveas PATH saves elsewhere"),
         "{msg}"
     );
     // (2) Then silence: the second annotation's own confirmation shows,

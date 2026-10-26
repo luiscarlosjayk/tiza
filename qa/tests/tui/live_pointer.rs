@@ -108,6 +108,16 @@ fn f_toggles_the_pointer_on_the_cursor_line_and_esc_turns_it_off() {
     // The bar names it while it is on.
     press(&live, &[KeyCode::Char('f')]);
     assert!(live.screen(100, 30).contains("POINTER"));
+    // In a selection, Esc closes the selection, not the pointer: the
+    // message names only `f`, and the pointer stays.
+    press(
+        &live,
+        &[KeyCode::Char('f'), KeyCode::Char('V'), KeyCode::Char('f')],
+    );
+    let said = live.message().unwrap_or_default().0;
+    assert!(said.starts_with("pointer on (f turns it off;"), "{said}");
+    press(&live, &[KeyCode::Esc]);
+    assert!(pointer(&live).is_some(), "Esc closed only the selection");
 }
 
 #[test]

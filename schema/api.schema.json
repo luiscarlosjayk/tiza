@@ -6554,7 +6554,7 @@
       }
     },
     {
-      "description": "Supervised mode state: enabled, pending proposals, accepted/rejected counts",
+      "description": "Supervised mode state: enabled, waiting agent changes, accepted/rejected counts",
       "method": "supervise.status",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

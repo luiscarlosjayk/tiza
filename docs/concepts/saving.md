@@ -92,7 +92,7 @@ With autosave off, `:wq PATH` writes the copy and prints the same line for the o
 
 A save fails when the `.tiza` file or its folder is read-only. It also fails for other reasons, for example a full disk. Autosave stays on, and Tiza tries again at each change.
 
-1. The first save that fails shows `read-only: could not save FILE — :saveas PATH to save elsewhere`. Tiza shows this message one time.
+1. The first save that fails shows `read-only: could not save FILE; :saveas PATH saves elsewhere`. Tiza shows this message one time.
 2. After that, the status bar shows the message of each command again.
 3. The status bar keeps `read-only • unsaved (:w)` until a save works. With no unsaved change, it shows `read-only`.
 4. When the file is writable again, the next autosave works. With autosave off, the next `:w` that works does the same. Tiza shows `saved to FILE` one time and removes `read-only • unsaved (:w)` from the status bar.
@@ -106,11 +106,12 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 | Case | Message |
 |---|---|
 | The code of the document comes from another source. | `another document loaded: autosave off (:w saves over FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
-| The code sent is not the same as the file on disk. | `not saved — autosave off: REASON (:w saves it embedded in FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
+| The code sent is not the same as the file on disk. | `not saved, and autosave is off: REASON (:w saves it embedded in FILE, :saveas PATH saves elsewhere, :autosave on resumes)` |
 | The code sent is not the same as the file on disk, and autosave is off already. | `not saved: REASON (shown embedded)` |
 | The code sent is the copy that Tiza loaded, and the file changed on disk after that. | `FILE changed on disk since it was loaded: still read from it; the screen keeps the copy loaded (:follow on reloads it)` |
 | Autosave is off, the code sent is the text of a file that the open document shows embedded, and no other message of the put shows. | `FILE is a reference again; autosave still off (:autosave on resumes)` |
 
+- When several files changed on disk, the message names them all and says `they`, `them` and `copies`.
 - `REASON` is `the code sent for FILE differs from the file on disk`. For a linked file that Tiza did not read before and cannot read now, it is `FILE is not a file on disk`. Tiza joins several reasons with `; `.
 - When the code sent is not the same as one file, and another file changed on disk, the status bar shows one message. The second part starts with ` · also `.
 - In the last two rows, `FILE` can be a list of files. With more than one file, the last message says `are` in place of `is`.

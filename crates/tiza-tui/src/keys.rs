@@ -115,7 +115,8 @@ pub const HELP: &[(Section, &[Row])] = &[
             },
             Key {
                 keys: "0  $",
-                desc: "Go to the start or the end of the line.",
+                desc: "Go to the first character of the line that is not a space, or to the \
+                       end of the line.",
                 when: Normal,
             },
             Key {
@@ -197,6 +198,13 @@ pub const HELP: &[(Section, &[Row])] = &[
             Key {
                 keys: "B",
                 desc: "Go to the previous word, as b does without a selection.",
+                when: Selection,
+            },
+            Key {
+                keys: "0  $",
+                desc: "Go to the first character of the line that is not a space, or to the \
+                       end of the line. Home and End do the same. g, G, r and Ctrl-R do \
+                       nothing in a selection.",
                 when: Selection,
             },
             Key {
@@ -375,12 +383,12 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Go to the next or the previous step.",
             },
             Command {
-                syntax: ":goto {ID}",
-                desc: "Go to a named step.",
+                syntax: ":goto {ID}|{N}",
+                desc: "Go to a named step, or to step N.",
             },
             Command {
                 syntax: ":link {path}[:{A-B}]",
-                desc: "Show another file from this step on.",
+                desc: "Show another file from this step on. At step 0, :link is :ref.",
             },
             Command {
                 syntax: ":ref {path}[:{A-B}]",

@@ -106,7 +106,7 @@ A typo must never close the app, leave the terminal broken or create something o
 | `:until s1 0`, `:step a1 99999`, `:step a1 0` | error naming the bound (the spotlight's step, `last step + 1`, `steps ≥ 1`) |
 | `:set a1 =`, `:set a1 color=`, `:style io glyph=` | `expected key=value, got «…»` |
 | `:lang rs rs rs`, `:callout 7-9 @bogus txt` | usage / `unknown placement @bogus: use @below, @margin or @auto` |
-| `:bx`, `:stpe`, `:colr` | `unknown command: bx — did you mean :box?` (ties list up to three) |
+| `:bx`, `:stpe`, `:colr` | `unknown command: did you mean :box?` (ties list up to three) |
 | `:export x.png width=99999`, `tiza render --width 99999`, `--scale 99` | `width=99999: use a number between 20 and 400`, `scale=99: use a number between 0.25 and 8`; a PNG over 16384 px per side or 100 MP is refused naming the limit |
 | any panic (`TIZA_TEST_PANIC=1` + `:panic` in a test) | the terminal is restored and one `tiza crashed: … Your work is in FILE.tiza … issues` line is printed |
 | valid but odd input: emoji, RTL marks, tabs, `%s%n`, quotes, `$(id)`, a 20 000-character label | keeps working |
