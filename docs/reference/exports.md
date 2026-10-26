@@ -43,7 +43,7 @@ tiza render demo.tiza --out demo.tape && vhs demo.tape
 - Play a `.cast` file with `asciinema play demo.cast`. [agg](https://github.com/asciinema/agg) changes it to a GIF.
 - A `.tape` file is a script for [VHS](https://github.com/charmbracelet/vhs). `vhs demo.tape` needs `vhs`, `ttyd` and `ffmpeg`. It writes a screen recording, `demo.gif`.
 
-A recording starts at step 0. In most documents, step 0 shows only the code. `--skip-zero` starts the recording at step 1, except in a `.tape`. See [A `.tape`](#a-tape). After it writes a `.cast` or a `.tape` file, Tiza prints a message that shows how to play it.
+A recording starts at step 0. In most documents, step 0 shows only the code. `--skip-zero` starts the recording at step 1. After it writes a `.cast` or a `.tape` file, Tiza prints a message that shows how to play it.
 
 ## Export one file for each step
 
@@ -117,7 +117,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--format` | A format | From the extension of `--out` | The format of the export, from [Formats](#formats). |
 | `--step` | A step number | The last step, or the step on screen of the live instance | The step to export, except in a recording. |
 | `--all-steps` | None | Off | Tiza writes one file for each step, and you cannot use it with `--step`. |
-| `--width` | 20 to 400 columns | 100, or the terminal width of the live instance minus 2, at least 40 | The width of the take. |
+| `--width` | 20 to 400 columns | 100, or the terminal width of the live instance minus 2, from 40 to 400 | The width of the take. |
 | `--theme` | A theme name | The theme of the document, or `dark` | The colors of the export. |
 | `--theme-file` | A TOML file | The overrides of the document | Theme overrides for this export, instead of the overrides of the document. |
 | `--numbers` | None | The `numbers` field of the document | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |
@@ -140,8 +140,8 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 - `auto` uses the theme of the document, or `dark`.
 - The theme overrides of your config file also apply. See [Themes](themes.md).
 - `--font-size`, `--margin` and `--radius` work for an SVG, a PNG, a WebP, a GIF, an MP4 and a WebM export.
-- A GIF, an animated WebP, an MP4, a WebM and a `.cast` use the `margin` field of the document. They do not use `--margin-cols`.
-- A `.tape` does not pass most flags to the TUI. See [A `.tape`](#a-tape).
+- `--margin-cols` also works for a GIF, an animated WebP, an MP4, a WebM and a `.cast`.
+- A `.tape` passes `--theme`, `--theme-file` and `--lang` to the TUI. It refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change the document. See [A `.tape`](#a-tape).
 
 ### Timing of a recording
 
@@ -180,7 +180,7 @@ The MCP tool `export_image` exports the live document. It does not change the TU
 |---|---|---|---|
 | `path` | string | Required | The file to write, with an extension that selects the format. |
 | `step` | integer | The current step | The step to export, except in an animation: a GIF, or a WebP without `step`. |
-| `width` | integer, 20 to 400 | The terminal width minus 2, at least 40 | The width of the take, in columns. |
+| `width` | integer, 20 to 400 | The terminal width minus 2, from 40 to 400 | The width of the take, in columns. |
 | `theme` | `dark` or `light` | The theme of the document, or `dark` | The colors of the export. |
 | `scale` | number, 0.25 to 8 | 2 | The device scale of a PNG, a WebP or a GIF. |
 | `font_size` | number, 4 to 96 | 16 | The size of the font in px. |
@@ -193,7 +193,7 @@ The MCP tool `export_image` exports the live document. It does not change the TU
 - `export_image`, `tiza render` and `:export` apply the `[theme]` overrides of your config file. `export_image` reads the config file of the `tiza mcp` process.
 - In `warning`, `export_image` says what the config file left out, or that the config file does not parse. The export goes on.
 - When the theme has no colors outside the terminal, `export_image` uses `dark`. Its reply does not say so.
-- `export_image` checks `scale`, `font_size` and `interval` for each format. A bad `scale` also stops a `.txt` export.
+- `export_image` checks `scale` for a PNG, a WebP and a GIF, and `font_size` for these and an SVG, as `tiza render` does. It checks `interval` for each format.
 - An export that takes more than 120 s stops. The tool writes nothing and replies with an error.
 
 The reply has these fields:
@@ -274,7 +274,7 @@ An animation is a GIF, or a WebP without `step`.
 - A single file of `--all-steps` gives `wrote 1 file to FOLDER (step N, W×H px)`. Only a PNG or a WebP run gives the size.
 - For a GIF, the message about a large image starts with `could not encode the GIF:`. For a WebP, it starts with `could not encode the WebP:`. For a video, it starts with `could not rasterize a frame:`.
 - When Tiza cannot write a step, a `.cast` or a `.tape`, the message is `could not write PATH`.
-- For a GIF, an animated WebP or a file of `--all-steps`, a failed write of the temporary file gives `could not write FOLDER/.NAME.tiza-tmp`. A failed rename gives `could not write PATH`.
+- A GIF, an animated WebP and a file of `--all-steps` go to a temporary file next to `PATH` first. When the write fails, the message is `could not write PATH` too, and Tiza removes the temporary file.
 - For an MP4 or a WebM, `ffmpeg` writes the file. When it cannot, the message is `ffmpeg failed`.
 - The `could not write` messages end with the error of the system.
 
@@ -289,7 +289,7 @@ An animation is a GIF, or a WebP without `step`.
 | `unexpected scene.get response` or `unexpected status response` | The live instance sends a reply that Tiza cannot read. |
 | `the live document cannot be rendered` | Tiza cannot load a view of the live document. |
 | `could not create FOLDER` | Tiza cannot make the folder of `--all-steps`. |
-| `width=N: use a number between 20 and 400` | `--width` is out of the range, or the live terminal is wider than 402 columns without `--width`. |
+| `width=N: use a number between 20 and 400` | `--width` is out of the range. |
 | `margin=N: use a number between 12 and 200, or auto` | `--margin-cols` is out of the range. |
 | `font-size=N: use a number between 4 and 96` | `--font-size` is out of the range for an image or a video. |
 | `scale=N: use a number between 0.25 and 8` | `--scale` is out of the range for a PNG, a GIF or a video. |
@@ -352,6 +352,9 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `the live document has no .tiza on disk yet for the tape to open: save it in Tiza (:w) or render a .tiza file` | A `.tape` of the live instance, when its document is not on disk. |
 | `the tape opens PATH, which this instance does not autosave: save it (:w) first so it holds what is on screen` | A `.tape` of the live instance, with autosave off. |
 | `` cannot write a .tape for the document path «PATH»: it holds a control character, a newline or a `"`, which VHS would read as commands of its own; rename the file `` | A path in the tape has a control character, a newline or `"`. |
+| `` cannot write a .tape for the value «VALUE»: it holds a control character, a newline or a `"`, which VHS would read as commands of its own `` | The value of `--theme-file` or `--lang` has a control character, a newline or `"`. |
+| `a .tape drives the TUI, which takes the line numbers from the document: set them with :numbers in Tiza, or export a .gif` | `--numbers` or `--no-numbers` would change the line numbers of the document. |
+| `a .tape drives the TUI, which takes the margin from the document: set it with :margin in Tiza, or export a .gif` | `--margin-cols` would change the margin of the document. |
 
 - After the `ffmpeg not found` message, Tiza shows how to install `ffmpeg`. It also says that `.gif` and `.cast` need no other program.
 - Before it starts `ffmpeg`, Tiza writes the full `ffmpeg` command on stderr.
@@ -402,15 +405,14 @@ Without a document, `tiza render` exports the document of the live instance. Giv
 
 ### A `.tape`
 
-A `.tape` starts the real TUI with `tiza DOCUMENT --present --no-socket --step 0`. VHS then makes a screen recording of the TUI.
+A `.tape` starts the real TUI with `tiza DOCUMENT --present --no-socket --step N --no-save`. `N` is 0, or 1 with `--skip-zero`. VHS then makes a screen recording of the TUI.
 
-- The TUI opens the document as `tiza DOCUMENT --present` does. Thus it uses the line numbers, the language and the margin of the document.
-- A document that names a theme shows that theme. A document that names no theme follows the terminal, and that terminal is the VHS window.
+- `--no-save`: the recording never writes the document.
+- `--theme`, `--theme-file` and `--lang` also go to the TUI. `--theme auto` does not go, because the TUI then shows the theme of the document, as the export does. `--theme` and `--theme-file` also set the colors of the VHS window.
+- Without `--theme`, a document that names a theme shows that theme. A document that names no theme follows the terminal, and that terminal is the VHS window.
 - The `[theme]` overrides of the config file on the computer that runs `vhs` also apply to the TUI.
-- `--theme`, `--theme-file`, `--numbers`, `--no-numbers`, `--lang` and `--margin-cols` do not go to the TUI.
-- `--theme` and `--theme-file` set the colors of the VHS window. Thus `--theme light` on a document that names `dark` gives a light window around a dark TUI.
+- The TUI takes the line numbers and the margin only from the document. Tiza refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change the document. Set them with `:numbers` and `:margin` in Tiza, or export a GIF.
 - `--width` sets the size of the window. `--title` is only a comment in the tape.
-- With `--skip-zero`, the tape does not give `--step 0`, and no other step. The TUI then opens at the step that the document saved, not always at step 1.
 
 ### A step after the last one
 

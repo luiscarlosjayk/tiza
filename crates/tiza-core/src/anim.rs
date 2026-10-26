@@ -20,6 +20,9 @@ pub struct AnimOptions {
     pub line_numbers: bool,
     /// Start at step 0 (code only) before the first annotated step.
     pub from_zero: bool,
+    /// Columns of the right margin (`--margin-cols`); `None` takes the
+    /// document's `margin`.
+    pub margin_cap: Option<usize>,
 }
 
 impl Default for AnimOptions {
@@ -29,6 +32,7 @@ impl Default for AnimOptions {
             width: 100,
             line_numbers: true,
             from_zero: true,
+            margin_cap: None,
         }
     }
 }
@@ -86,7 +90,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
         tab_width: 4,
         typing,
         stable: true,
-        margin_cap: d.margin.map(usize::from),
+        margin_cap: opts.margin_cap.or(d.margin.map(usize::from)),
     };
     // The take's geometry, once for every step's own frame. A typed frame
     // shows other code at its step, so it sizes its own.

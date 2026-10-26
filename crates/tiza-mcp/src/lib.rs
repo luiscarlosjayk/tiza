@@ -1270,11 +1270,19 @@ impl TizaServer {
                 ));
             }
         };
-        // Every number is checked before anything is drawn.
+        // Every number is checked before anything is drawn, as `tiza
+        // render` checks it: the font size of an image, the scale of the
+        // pixels. A text export uses neither.
         let bad = |e: tiza_core::Error| invalid_argument(e.to_string());
-        let scale = tiza_core::layout::check_scale(p.scale.unwrap_or(2.0)).map_err(bad)?;
-        let font_size =
-            tiza_core::layout::check_font_size(p.font_size.unwrap_or(16.0)).map_err(bad)?;
+        let pixels = matches!(format, "png" | "webp" | "gif");
+        let scale = p.scale.unwrap_or(2.0);
+        if pixels {
+            tiza_core::layout::check_scale(scale).map_err(bad)?;
+        }
+        let font_size = p.font_size.unwrap_or(16.0);
+        if pixels || format == "svg" {
+            tiza_core::layout::check_font_size(font_size).map_err(bad)?;
+        }
         let interval = tiza_core::anim::check_interval(p.interval.unwrap_or(2.0)).map_err(bad)?;
         let width = match p.width {
             Some(w) => Some(tiza_core::layout::check_width(w).map_err(bad)?),
@@ -1309,7 +1317,7 @@ impl TizaServer {
             // A .webp without `step` is every step, as a .gif.
             animated: format == "gif" || (format == "webp" && p.step.is_none()),
             asked_step: p.step.unwrap_or(scene.step),
-            width: width.unwrap_or((status.cols as usize).saturating_sub(2).max(40)),
+            width: width.unwrap_or(tiza_core::layout::width_for_terminal(status.cols)),
             theme_name,
             scale,
             font_size,
@@ -1573,6 +1581,7 @@ impl ExportJob {
                         width: layout.canvas.width,
                         line_numbers: doc.numbers,
                         from_zero: !self.skip_zero,
+                        margin_cap: None,
                     },
                 )
                 .into_iter()

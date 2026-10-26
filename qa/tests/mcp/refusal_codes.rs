@@ -60,3 +60,23 @@ fn every_refusal_of_the_mcp_tools_has_its_code() {
     }
     assert_eq!(live.with(|a| a.doc.annotations.len()), 0);
 }
+
+/// `export_image` checks a number only for the formats that use it, as
+/// `tiza render` does: the scale of the pixels, the font size of an image.
+#[test]
+fn export_image_checks_the_scale_only_for_pixels() {
+    let live = Live::from_code(CODE, "rs", "scale-txt");
+    let mut mcp = McpClient::start(&live.socket);
+    let out = tiza_qa::scratch("scale-txt-out");
+    for file in ["a.txt", "a.md", "a.ansi"] {
+        let path = out.join(file);
+        let args = json!({"path": path.to_str().unwrap(), "scale": 99, "font_size": 0});
+        let (err, text, _) = mcp.call("export_image", args);
+        assert!(!err && path.exists(), "{file}: {text}");
+    }
+    let (err, text, _) = mcp.call(
+        "export_image",
+        json!({"path": out.join("a.svg").to_str().unwrap(), "font_size": 0}),
+    );
+    assert!(err && text.ends_with("(invalid_argument)"), "svg: {text}");
+}

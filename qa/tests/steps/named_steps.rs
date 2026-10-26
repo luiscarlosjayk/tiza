@@ -743,6 +743,8 @@ fn typed_frames_come_before_the_timed_hold_and_the_tape_sends_no_extra_n() {
         &theme,
         "d.tiza",
         "d.gif",
+        "d.tape",
+        &[],
         &tiza_core::cast::CastOptions::default(),
     );
     let lines: Vec<&str> = tape.lines().collect();

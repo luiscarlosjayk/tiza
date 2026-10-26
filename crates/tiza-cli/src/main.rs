@@ -499,7 +499,7 @@ fn real_main() -> anyhow::Result<()> {
                         serde_json::json!({}),
                     )?)
                     .context("unexpected status response")?;
-                    let live_w = (status.cols as usize).saturating_sub(2).max(40);
+                    let live_w = tiza_core::layout::width_for_terminal(status.cols);
                     live_document = Some((status.document.clone(), status.autosave));
                     (
                         scene.document,
@@ -588,6 +588,8 @@ fn real_main() -> anyhow::Result<()> {
                 let line = format!("{}: {}", r.place(), r.message());
                 eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
             }
+            // The flag as given, for the command that a .tape types.
+            let theme_flag = theme;
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
             // The code alone can make a raster image too large: refused
             // before the layout, which a huge document fills the memory
@@ -735,6 +737,7 @@ fn real_main() -> anyhow::Result<()> {
                         width,
                         line_numbers,
                         from_zero: !skip_zero,
+                        margin_cap,
                     };
                     let frames = tiza_core::anim::frames(&doc, &theme, &anim_opts);
                     // Which steps the document timed itself.
@@ -829,11 +832,15 @@ fn real_main() -> anyhow::Result<()> {
                         line_numbers,
                         title: title.clone(),
                         from_zero: !skip_zero,
+                        margin_cap,
                     };
                     if format == Format::Cast {
                         tiza_core::cast::to_asciicast(&doc, &theme, &opts).into_bytes()
                     } else {
                         let mut tape_note: Option<String> = None;
+                        // The tape's folder, when the paths of the tape are
+                        // relative to it (the live instance's document).
+                        let mut tape_base: Option<std::path::PathBuf> = None;
                         let document_path = match (&file, &live_document) {
                             (Some(f), _) => f.clone(),
                             // The instance's own `.tiza` (the tape typed
@@ -851,6 +858,7 @@ fn real_main() -> anyhow::Result<()> {
                                 let rel = relative_to(Path::new(d), &base)
                                     .to_string_lossy()
                                     .into_owned();
+                                tape_base = Some(base);
                                 if !autosave {
                                     eprintln!(
                                         "tiza: the tape opens {rel}, which this instance does not autosave: save it (:w) first so it holds what is on screen"
@@ -886,8 +894,71 @@ fn real_main() -> anyhow::Result<()> {
                                 );
                             }
                         }
-                        let mut tape =
-                            tiza_core::cast::to_vhs_tape(&doc, &theme, &document_path, &gif, &opts);
+                        // The tape types the command that opens the real
+                        // TUI: the flags that the TUI takes go there, and
+                        // `--no-save`, so that a recording never writes the
+                        // document. The TUI takes the line numbers and the
+                        // margin only from the document: a flag that
+                        // changes them is refused, never dropped in silence.
+                        if (numbers && !doc.numbers) || (no_numbers && doc.numbers) {
+                            bail!(
+                                "a .tape drives the TUI, which takes the line numbers from the document: set them with :numbers in Tiza, or export a .gif"
+                            );
+                        }
+                        if margin_cols.is_some() && margin_cap != doc.margin.map(usize::from) {
+                            bail!(
+                                "a .tape drives the TUI, which takes the margin from the document: set it with :margin in Tiza, or export a .gif"
+                            );
+                        }
+                        let mut tui_args = Vec::new();
+                        // `auto` here is the document's theme, else dark (the
+                        // window's colors); in the TUI it would follow the
+                        // terminal instead. Without the flag, the TUI shows
+                        // the document's theme too.
+                        if let Some(t) = theme_flag
+                            .filter(|t| *t != ThemeArg::Auto)
+                            .and_then(|t| t.to_possible_value())
+                        {
+                            tui_args.extend(["--theme".to_string(), t.get_name().to_string()]);
+                        }
+                        if let Some(p) = &theme_file {
+                            let p = match &tape_base {
+                                Some(base) => relative_to(&std::path::absolute(p)?, base),
+                                None => p.clone(),
+                            };
+                            tui_args.extend([
+                                "--theme-file".to_string(),
+                                p.to_string_lossy().into_owned(),
+                            ]);
+                        }
+                        // The language that this render used: its own --lang,
+                        // else the global one.
+                        if let Some(l) = lang.as_ref().or(cli.lang.as_ref()) {
+                            tui_args.extend(["--lang".to_string(), l.clone()]);
+                        }
+                        tui_args.push("--no-save".to_string());
+                        for a in &tui_args {
+                            if !tiza_core::cast::tape_safe_path(a) {
+                                bail!(
+                                    "cannot write a .tape for the value «{}»: it holds a control character, a newline or a `\"`, which VHS would read as commands of its own",
+                                    tiza_core::printable::printable_line(a)
+                                );
+                            }
+                        }
+                        let tape_name = if out == "-" {
+                            "demo.tape"
+                        } else {
+                            out.as_str()
+                        };
+                        let mut tape = tiza_core::cast::to_vhs_tape(
+                            &doc,
+                            &theme,
+                            &document_path,
+                            &gif,
+                            tape_name,
+                            &tui_args,
+                            &opts,
+                        );
                         if let Some(note) = tape_note
                             && let Some(nl) = tape.find('\n')
                         {
@@ -1427,7 +1498,8 @@ fn format_ext(f: Format) -> &'static str {
 }
 
 /// Writes next to the target and renames, so an interrupted render never
-/// leaves a half-written file behind.
+/// leaves a half-written file behind. An error names the target, which the
+/// user gave, not the temporary file, and leaves no temporary file.
 fn write_atomically(out: &str, bytes: &[u8]) -> anyhow::Result<()> {
     let path = std::path::Path::new(out);
     let tmp = path.with_file_name(format!(
@@ -1436,8 +1508,16 @@ fn write_atomically(out: &str, bytes: &[u8]) -> anyhow::Result<()> {
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_else(|| "out".into())
     ));
-    std::fs::write(&tmp, bytes).with_context(|| format!("could not write {}", tmp.display()))?;
-    std::fs::rename(&tmp, path).with_context(|| format!("could not write {out}"))
+    let written = std::fs::write(&tmp, bytes).and_then(|()| std::fs::rename(&tmp, path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    written.with_context(|| {
+        format!(
+            "could not write {}",
+            tiza_core::printable::printable_text(out)
+        )
+    })
 }
 
 /// Where `ffmpeg` is: `$TIZA_FFMPEG`, or the first one on PATH. Tiza never

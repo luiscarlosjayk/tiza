@@ -10,6 +10,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Fixed
 - A line range that starts with a digit but is not `A`, `A-B` or `A..B`, such as `main.rs:3-x`, gives the error of the range. Before, Tiza read `main.rs:3-x` as a file name and said `could not open`. `:link` and `:ref` at step 0 also refuse a bad range now. Before, they kept the range as a part of the file name.
 - A paste on the command line adds only the first line of the pasted text, also when the terminal ends each pasted line with a carriage return. Before, the next lines went into the command too, for example as the title of a box.
+- `--margin-cols` also changes a GIF, an animated WebP, an MP4, a WebM and a `.cast`. Before, only a still used it.
+- A `.tape` with `--skip-zero` starts the TUI at step 1. Before, the TUI started at the step that the document saved. A `.tape` also passes `--theme`, `--theme-file` and `--lang` to the TUI, with `--no-save`. It refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change the document, because the TUI takes these only from the document. Before, the tape dropped all these flags. Its `# Run:` line names the tape file.
+- In a terminal wider than 402 columns, `tiza render` of the live instance exports 400 columns. Before, it failed with `width=N`. `:export` and `export_image` also export 400 columns at most.
+- When Tiza cannot write a GIF, an animated WebP or a file of `--all-steps`, the message names the file that you gave. Before, it named a temporary file, and that file stayed.
+- `export_image` checks `scale` only for a PNG, a WebP and a GIF, and `font_size` only for these and an SVG. Before, a bad `scale` also stopped a text export.
 
 ## [0.1.1] - 2026-10-26
 

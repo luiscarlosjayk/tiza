@@ -174,7 +174,7 @@ fn tape_drives_the_real_binary() {
     );
     assert!(
         tape.contains(&format!(
-            "Type \"tiza {} --present --no-socket --step 0\"",
+            "Type \"tiza {} --present --no-socket --step 0 --no-save\"",
             ownership()
         )),
         "{tape}"
@@ -211,7 +211,7 @@ fn tape_drives_the_real_binary() {
     // The tape types only the start command, `n` and `q`, never a `:`
     // command (moved here from the presentation command line tests).
     let start = format!(
-        "Type \"tiza {} --present --no-socket --step 0\"",
+        "Type \"tiza {} --present --no-socket --step 0 --no-save\"",
         ownership()
     );
     for l in tape.lines().filter(|l| l.starts_with("Type ")) {
@@ -328,4 +328,116 @@ fn format_flag_stdout_and_live_instance() {
     let frames: Vec<&Value> = events.iter().filter(|e| e[1] == "o").collect();
     assert_eq!(frames.len(), 3, "steps 0, 1, 2 of the live document");
     assert!(frames[2][2].as_str().unwrap().contains("two"));
+}
+
+/// `--margin-cols` reaches the frames of a `.cast`, as it reaches a still.
+#[test]
+fn a_cast_takes_the_margin_of_the_command_line() {
+    let dir = scratch("cast-margin");
+    let doc = ownership();
+    let frames = |name: &str, extra: &[&str]| {
+        let out = dir.join(name);
+        let args = [&["render", &doc, "--out", out.to_str().unwrap()][..], extra].concat();
+        tiza_ok(&args);
+        let (_, events) = parse_cast(&std::fs::read_to_string(&out).unwrap());
+        events
+            .into_iter()
+            .filter(|e| e[1] == "o")
+            .map(|e| e[2].to_string())
+            .collect::<Vec<_>>()
+    };
+    let wide = frames("wide.cast", &[]);
+    let narrow = frames("narrow.cast", &["--margin-cols", "12"]);
+    assert_eq!(wide.len(), narrow.len());
+    assert_ne!(wide, narrow, "--margin-cols 12 did not change the frames");
+}
+
+/// A `.tape` types the command that opens the real TUI: it starts at the
+/// first step of the take, and it passes the flags that the TUI takes. A
+/// recording never writes the document. The flags that the TUI takes only
+/// from the document are refused.
+#[test]
+fn a_tape_opens_the_tui_as_the_export_asks() {
+    let dir = scratch("tape-flags");
+    let theme_file = dir.join("t.toml");
+    std::fs::write(&theme_file, "[tokens]\nkeyword = \"#ff0000\"\n").unwrap();
+    // A folder with `.gif` in its name: only the extension of the file
+    // changes in the `# Run:` line.
+    let sub = dir.join("my.gifs");
+    std::fs::create_dir_all(&sub).unwrap();
+    let out = sub.join("demo.tape");
+    tiza_ok(&[
+        "render",
+        &ownership(),
+        "--out",
+        out.to_str().unwrap(),
+        "--skip-zero",
+        "--theme",
+        "light",
+        "--theme-file",
+        theme_file.to_str().unwrap(),
+        "--lang",
+        "rs",
+    ]);
+    let tape = std::fs::read_to_string(&out).unwrap();
+    let start = format!(
+        "Type \"tiza {} --present --no-socket --step 1 --theme light --theme-file {} --lang rs --no-save\"",
+        ownership(),
+        theme_file.display()
+    );
+    assert!(tape.lines().any(|l| l == start), "{start}\n{tape}");
+    assert!(
+        tape.contains(&format!("# Run: vhs {}", out.display())),
+        "{tape}"
+    );
+    let doc = ownership();
+    for (flag, says) in [
+        (
+            &["--no-numbers"][..],
+            "takes the line numbers from the document",
+        ),
+        (
+            &["--margin-cols", "12"][..],
+            "takes the margin from the document",
+        ),
+    ] {
+        let args = [&["render", &doc, "--out", out.to_str().unwrap()][..], flag].concat();
+        let o = tiza(&args);
+        let err = String::from_utf8_lossy(&o.stderr);
+        assert!(!o.status.success() && err.contains(says), "{flag:?}: {err}");
+    }
+    // A flag that changes nothing is no error.
+    tiza_ok(&[
+        "render",
+        &ownership(),
+        "--out",
+        out.to_str().unwrap(),
+        "--numbers",
+    ]);
+    // `--theme auto` is the document's theme in the export and stays out
+    // of the TUI command; the global `--lang` goes in; `# Run:` names the
+    // tape that was written, whatever its extension.
+    let vhs = dir.join("talk.vhs");
+    tiza_ok(&[
+        "--lang",
+        "rs",
+        "render",
+        &ownership(),
+        "--format",
+        "tape",
+        "--out",
+        vhs.to_str().unwrap(),
+        "--theme",
+        "auto",
+    ]);
+    let tape = std::fs::read_to_string(&vhs).unwrap();
+    let start = format!(
+        "Type \"tiza {} --present --no-socket --step 0 --lang rs --no-save\"",
+        ownership()
+    );
+    assert!(tape.lines().any(|l| l == start), "{start}\n{tape}");
+    assert!(
+        tape.contains(&format!("# Run: vhs {}", vhs.display())),
+        "{tape}"
+    );
 }

@@ -642,6 +642,7 @@ fn layout_never_indexes_out_of_bounds_on_a_view_with_no_loaded_lines() {
                 width: 100,
                 line_numbers: true,
                 from_zero: true,
+                margin_cap: None,
             },
         );
     }
@@ -1021,7 +1022,7 @@ fn the_arithmetic_of_holds_saturates() {
         interval: 1e308,
         ..Default::default()
     };
-    let _ = tiza_core::cast::to_vhs_tape(&doc, &theme, "x.tiza", "x.gif", &opts);
+    let _ = tiza_core::cast::to_vhs_tape(&doc, &theme, "x.tiza", "x.gif", "x.tape", &[], &opts);
     let _ = tiza_core::cast::to_asciicast(&doc, &theme, &opts);
     let frames = tiza_core::anim::frames(
         &doc,
@@ -1031,6 +1032,7 @@ fn the_arithmetic_of_holds_saturates() {
             width: 40,
             line_numbers: true,
             from_zero: true,
+            margin_cap: None,
         },
     );
     assert!(
@@ -1578,4 +1580,59 @@ fn a_bounds_error_never_shows_an_empty_id() {
         msg.starts_with("annotation: step 1000 is past the last step"),
         "{msg}"
     );
+}
+
+/// A terminal wider than 402 columns exports at the widest width, 400,
+/// when no width is given: `tiza render` of the live instance, `:export`
+/// and `export_image` alike. Before, `tiza render` failed with
+/// `width=498: use a number between 20 and 400`.
+#[test]
+fn a_very_wide_terminal_exports_at_the_widest_width() {
+    let live = Live::from_code(
+        &"fn main() { let a_long_name = 1; }\n".repeat(3),
+        "rs",
+        "wide-term",
+    );
+    live.with(|app| app.size = (500, 40));
+    let dir = scratch("wide-term-out");
+    let svg = |name: &str| {
+        std::fs::read(dir.join(name))
+            .unwrap_or_else(|e| panic!("{name}: {e} ({:?})", live.message()))
+    };
+    let render = |name: &str, extra: &[&str]| {
+        let out = dir.join(name);
+        let args = [
+            &[
+                "render",
+                "--socket",
+                sock(&live),
+                "--out",
+                out.to_str().unwrap(),
+            ][..],
+            extra,
+        ]
+        .concat();
+        ok(&dir, &args);
+    };
+    render("render.svg", &[]);
+    render("render-400.svg", &["--width", "400"]);
+    assert_eq!(svg("render.svg"), svg("render-400.svg"), "tiza render");
+    // Here `:export` has no SVG writer (the binary gives it one): ANSI
+    // fills every cell of the width.
+    live.command(&format!("export {}", dir.join("export.ansi").display()));
+    live.command(&format!(
+        "export {} width=400",
+        dir.join("export-400.ansi").display()
+    ));
+    assert_eq!(svg("export.ansi"), svg("export-400.ansi"), ":export");
+    let mut mcp = McpClient::start(&live.socket);
+    for (name, width) in [("mcp.svg", None), ("mcp-400.svg", Some(400))] {
+        let mut args = json!({"path": dir.join(name).to_str().unwrap(), "step": 0});
+        if let Some(w) = width {
+            args["width"] = json!(w);
+        }
+        let (err, text, _) = mcp.call("export_image", args);
+        assert!(!err, "{name}: {text}");
+    }
+    assert_eq!(svg("mcp.svg"), svg("mcp-400.svg"), "export_image");
 }

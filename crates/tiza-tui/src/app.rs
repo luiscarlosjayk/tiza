@@ -5413,7 +5413,7 @@ impl App {
         // `step=`, when given; else the step on screen (a new empty step
         // after the last one too, see `:step`).
         let mut asked = None;
-        let mut width = (self.size.0 as usize).saturating_sub(2).max(40);
+        let mut width = tiza_core::layout::width_for_terminal(self.size.0);
         let mut theme = self.theme.clone();
         for (k, v) in kv {
             match k.as_str() {

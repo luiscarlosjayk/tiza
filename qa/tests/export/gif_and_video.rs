@@ -267,3 +267,79 @@ fn the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
     let (m, is_err) = live.message().unwrap();
     assert!(is_err && m.contains("tiza render --out"), "{m}");
 }
+
+/// `--margin-cols` reaches the frames of a GIF, as it reaches a still: the
+/// notes wrap at the margin, and the take changes its size.
+#[test]
+fn a_gif_takes_the_margin_of_the_command_line() {
+    let dir = scratch("gif-margin");
+    let size = |name: &str, extra: &[&str]| {
+        let out = dir.join(name);
+        let doc = fixture("shared/ownership/ownership.rs.tiza");
+        let args = [
+            &[
+                "render",
+                doc.to_str().unwrap(),
+                "--out",
+                out.to_str().unwrap(),
+            ][..],
+            &["--scale", "0.25"][..],
+            extra,
+        ]
+        .concat();
+        tiza_ok(&args);
+        let gif = decode(&std::fs::read(&out).unwrap());
+        (gif.width, gif.height)
+    };
+    let wide = size("wide.gif", &[]);
+    let narrow = size("narrow.gif", &["--margin-cols", "12"]);
+    assert!(narrow.0 < wide.0, "{wide:?} → {narrow:?}");
+}
+
+/// A write error names the file that the user gave, never the temporary
+/// file next to it, and leaves no temporary file.
+#[test]
+fn a_write_error_names_the_file_and_leaves_no_temporary_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = scratch("read-only");
+    let locked = dir.join("locked");
+    std::fs::create_dir_all(&locked).unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let doc = fixture("shared/ownership/ownership.rs.tiza");
+    let out = locked.join("a.gif");
+    let o = tiza(&[
+        "render",
+        doc.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--scale",
+        "0.25",
+    ]);
+    let left: Vec<_> = std::fs::read_dir(&locked).unwrap().collect();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(!o.status.success(), "{err}");
+    assert!(
+        err.contains(&format!("could not write {}", out.display())) && !err.contains("tiza-tmp"),
+        "{err}"
+    );
+    assert!(left.is_empty(), "{left:?}");
+    // The rename fails (a folder has the name): the temporary file, which
+    // Tiza wrote, goes too.
+    let taken = dir.join("taken.gif");
+    std::fs::create_dir_all(&taken).unwrap();
+    let o = tiza(&[
+        "render",
+        doc.to_str().unwrap(),
+        "--out",
+        taken.to_str().unwrap(),
+        "--scale",
+        "0.25",
+    ]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(
+        !o.status.success() && err.contains(&format!("could not write {}", taken.display())),
+        "{err}"
+    );
+    assert!(!dir.join(".taken.gif.tiza-tmp").exists(), "{err}");
+}

@@ -25,6 +25,9 @@ pub struct CastOptions {
     pub title: Option<String>,
     /// Start at step 0 (code only) before the first annotated step.
     pub from_zero: bool,
+    /// Columns of the right margin (`--margin-cols`); `None` takes the
+    /// document's `margin`.
+    pub margin_cap: Option<usize>,
 }
 
 impl Default for CastOptions {
@@ -36,6 +39,7 @@ impl Default for CastOptions {
             line_numbers: true,
             title: None,
             from_zero: true,
+            margin_cap: None,
         }
     }
 }
@@ -56,7 +60,7 @@ fn frames(doc: &Document, theme: &Theme, opts: &CastOptions) -> (Vec<(u32, Strin
         tab_width: 4,
         typing: false,
         stable: true,
-        margin_cap: doc.margin.map(usize::from),
+        margin_cap: opts.margin_cap.or(doc.margin.map(usize::from)),
     };
     // The take's geometry, once for every step.
     let geometry = stable_geometry(doc, &options(first));
@@ -146,11 +150,16 @@ pub const TAPE_PX_PER_ROW: usize = 24;
 /// step stays twice the interval so the GIF loop does not cut it short.
 /// The window takes the document theme's colours and is sized with slack
 /// for the real glyph advance, two more rows and the padding.
+/// `output` is the GIF that VHS writes and `tape` the name of this tape,
+/// for its `# Run:` line. `tui_args` are more words for the command that
+/// opens the TUI (`--theme light`, `--no-save`), one word each, quoted here.
 pub fn to_vhs_tape(
     doc: &Document,
     theme: &Theme,
     document_path: &str,
     output: &str,
+    tape: &str,
+    tui_args: &[String],
     opts: &CastOptions,
 ) -> String {
     let first = if opts.from_zero { 0 } else { 1 };
@@ -169,7 +178,7 @@ pub fn to_vhs_tape(
     if let Some(t) = title {
         let _ = writeln!(out, "# {}", printable_line(&t));
     }
-    let _ = writeln!(out, "# Run: vhs {}", output.replace(".gif", ".tape"));
+    let _ = writeln!(out, "# Run: vhs {tape}");
     let _ = writeln!(out);
     let _ = writeln!(out, "Output \"{}\"", output.replace('"', "\\\""));
     let _ = writeln!(out);
@@ -198,11 +207,16 @@ pub fn to_vhs_tape(
     let _ = writeln!(out, "Set TypingSpeed 0");
     let _ = writeln!(out);
     let _ = writeln!(out, "Hide");
+    // The step to start at, always: without it the TUI opens at the step
+    // the document was saved at.
+    let args: String = tui_args
+        .iter()
+        .map(|a| format!(" {}", shell_quote(a)))
+        .collect();
     let _ = writeln!(
         out,
-        "Type \"tiza {} --present --no-socket{}\"",
+        "Type \"tiza {} --present --no-socket --step {first}{args}\"",
         shell_quote(document_path),
-        if first == 0 { " --step 0" } else { "" }
     );
     let _ = writeln!(out, "Enter");
     let _ = writeln!(out, "Sleep 1s");
@@ -357,6 +371,8 @@ mod tests {
             &Theme::dark(),
             "examples/demo.tiza",
             "/tmp/my demo.gif",
+            "/tmp/my demo.tape",
+            &[],
             &CastOptions {
                 interval: 1.5,
                 ..Default::default()
@@ -384,6 +400,8 @@ mod tests {
             &Theme::dark(),
             "my demo's.tiza",
             "x.gif",
+            "x.tape",
+            &[],
             &CastOptions::default(),
         );
         assert!(quoted.contains("Type \"tiza 'my demo'\\''s.tiza'"));
@@ -411,6 +429,8 @@ mod tests {
             &Theme::dark(),
             "d.tiza",
             "d.gif",
+            "d.tape",
+            &[],
             &CastOptions::default(),
         );
         let lines: Vec<&str> = tape.lines().collect();

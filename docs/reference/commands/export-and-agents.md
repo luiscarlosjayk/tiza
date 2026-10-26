@@ -32,7 +32,7 @@ Default: the step on screen.
 
 The width of the take, from 20 to 400 columns.
 
-Default: the terminal width minus 2, at least 40.
+Default: the terminal width minus 2, from 40 to 400.
 
 </dd>
 <dt><code>theme=T</code></dt>
