@@ -438,7 +438,7 @@ pub const HELP: &[(Section, &[Row])] = &[
             Sub("Export and agents"),
             Command {
                 syntax: ":export [{FILE}] [step={N}] [width={N}] [theme={T}]",
-                desc: "Write the step to a file: .txt, .ansi, .md, .svg or .png.",
+                desc: "Write the step to a file: .txt, .ansi, .md, .svg, .png or .webp.",
             },
             Command {
                 syntax: ":supervise on|off",

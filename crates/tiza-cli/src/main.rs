@@ -17,7 +17,7 @@ use tiza_core::{Theme, ThemeName};
 #[derive(Parser)]
 #[command(name = "tiza", version = tiza_core::VERSION_LONG, about = "Draw on top of code in your terminal to explain, debug and teach.", long_about = None)]
 #[command(
-    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza check demo.tiza           preflight before a take (anchors, moves, clipped labels)\n  tiza render demo.tiza --all-steps --out steps/   one PNG per step\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
+    after_help = "Examples:\n  tiza src/main.rs:12-48        open a range of lines\n  pbpaste | tiza --lang rs       code from the clipboard\n  tiza demo.tiza --present   open in presentation mode\n  tiza render demo.tiza --out - --step 2\n  tiza render demo.tiza --out demo.png --step 3   PNG (or .svg) of a step\n  tiza render --out shot.png   PNG of what the live instance shows\n  tiza render demo.tiza --out demo.webp   lossless WebP of every step (with --step 3: a still)\n  tiza check demo.tiza           preflight before a take (anchors, moves, clipped labels)\n  tiza render demo.tiza --all-steps --out steps/   one PNG per step\n  tiza mcp                       MCP server for agents\n  tiza next | tiza goto borrow   drive the live instance from a script or an editor task\n  tiza schema api                JSON Schema of the local API (schema document = the .tiza format)\n  cat demo.tiza | tiza render - --out -   `-` is stdin everywhere"
 )]
 struct Cli {
     /// Source file (`main.rs`, `main.rs:12-48`), `.tiza` document, or `-` for stdin (code or a document). Without it, reads stdin when piped.
@@ -169,6 +169,8 @@ enum Format {
     Tape,
     /// Animated GIF of every step, drawn by Tiza itself (nothing to install)
     Gif,
+    /// Lossless WebP: every step animated as the GIF, or one step with --step (a still, as a PNG)
+    Webp,
     /// MP4 of every step through `ffmpeg` on your PATH (never bundled)
     Mp4,
     /// WebM of every step through `ffmpeg` on your PATH (never bundled)
@@ -177,18 +179,18 @@ enum Format {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Render a document without opening the TUI: text, Markdown, ANSI, SVG, PNG, GIF, MP4, WebM,
-    /// asciicast or VHS. Without FILE it exports what the live instance shows.
+    /// Render a document without opening the TUI: text, Markdown, ANSI, SVG, PNG, WebP, GIF, MP4,
+    /// WebM, asciicast or VHS. Without FILE it exports what the live instance shows.
     Render {
         /// `.tiza` document (or source file) to draw; omit it to use the live instance
         file: Option<String>,
-        /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`, `.gif`, `.mp4`, `.webm`, `.cast`, `.tape`) unless --format is given.
+        /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`, `.webp`, `.gif`, `.mp4`, `.webm`, `.cast`, `.tape`) unless --format is given.
         #[arg(long, default_value = "-")]
         out: String,
-        /// Step to show (default: the document's current step, or all of them for a file)
+        /// Step to show (default: the document's current step, or all of them for a file). A .webp with --step is a still of that step; without it, an animation of every step, as a .gif
         #[arg(long)]
         step: Option<u32>,
-        /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|txt|ansi|md` for others)
+        /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|webp|txt|ansi|md` for others)
         #[arg(long, conflicts_with = "step")]
         all_steps: bool,
         /// Width in columns (default: 100, or the live terminal's width)
@@ -223,7 +225,7 @@ enum Cmd {
         /// SVG/PNG: corner radius of the background in px (0 = square)
         #[arg(long, default_value_t = 12.0)]
         radius: f32,
-        /// PNG/GIF/MP4: device scale (default 2 for PNG and GIF, 1 for MP4/WebM)
+        /// PNG/WebP/GIF/MP4: device scale (default 2 for PNG, WebP and GIF, 1 for MP4/WebM)
         #[arg(long)]
         scale: Option<f32>,
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
@@ -232,16 +234,16 @@ enum Cmd {
         /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
-        /// .gif/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long). In a .gif/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
+        /// .gif/.webp/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long). In a .gif/.webp/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
         #[arg(long, default_value_t = 2.0)]
         interval: f64,
-        /// .gif/.mp4/.cast/.tape and --all-steps: start at step 1 instead of step 0 (the bare code)
+        /// .gif/.webp/.mp4/.cast/.tape and --all-steps: start at step 1 instead of step 0 (the bare code)
         #[arg(long)]
         skip_zero: bool,
         /// .cast/.tape: recording title (default: the document's)
         #[arg(long)]
         title: Option<String>,
-        /// .gif: how many times it plays (0 = forever, the default)
+        /// .gif and an animated .webp: how many times it plays (0 = forever, the default)
         #[arg(long = "loop", default_value_t = 0)]
         loop_count: u16,
     },
@@ -397,6 +399,7 @@ fn real_main() -> anyhow::Result<()> {
                 // extension's.
                 let given = match format {
                     Some(Format::Png) => Some("png"),
+                    Some(Format::Webp) => Some("webp"),
                     Some(Format::Svg) => Some("svg"),
                     Some(Format::Txt) => Some("txt"),
                     Some(Format::Ansi) => Some("ansi"),
@@ -404,7 +407,7 @@ fn real_main() -> anyhow::Result<()> {
                     _ => None,
                 };
                 let still = match ext.as_deref() {
-                    Some(e @ ("png" | "svg" | "txt" | "md")) => Some(e),
+                    Some(e @ ("png" | "webp" | "svg" | "txt" | "md")) => Some(e),
                     Some("ansi" | "ans") => Some("ansi"),
                     Some("markdown") => Some("md"),
                     _ => None,
@@ -420,7 +423,7 @@ fn real_main() -> anyhow::Result<()> {
                     (None, true) => {
                         let e = ext.as_deref().unwrap_or_default();
                         bail!(
-                            "--all-steps writes still images (png, svg, txt, ansi, md); a .{e} already holds every step: `--out demo.{e}` without --all-steps"
+                            "--all-steps writes still images (png, webp, svg, txt, ansi, md); a .{e} already holds every step: `--out demo.{e}` without --all-steps"
                         );
                     }
                     _ => {}
@@ -437,6 +440,7 @@ fn real_main() -> anyhow::Result<()> {
                     {
                         Some("svg") => Format::Svg,
                         Some("png") => Format::Png,
+                        Some("webp") => Format::Webp,
                         Some("ansi") | Some("ans") => Format::Ansi,
                         Some("md") | Some("markdown") => Format::Md,
                         Some("cast") => Format::Cast,
@@ -527,12 +531,15 @@ fn real_main() -> anyhow::Result<()> {
             // `1e308` overflowed and `1e7` hung the GIF encoder.
             let interval =
                 tiza_core::anim::check_interval(interval).map_err(|e| anyhow::anyhow!("{e}"))?;
-            let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm);
+            // A .webp is an animation without --step, as a .gif, and a still
+            // with it, as a .png.
+            let animated = matches!(format, Format::Gif | Format::Mp4 | Format::Webm)
+                || (format == Format::Webp && asked_step.is_none() && !all_steps);
             // Scale 2 for stills and the GIF (long italic notes are soft
             // at 1); video stays at 1, the player scales it.
             let video = matches!(format, Format::Mp4 | Format::Webm);
             let scale = scale.unwrap_or(if video { 1.0 } else { 2.0 });
-            if matches!(format, Format::Png | Format::Svg) || animated {
+            if matches!(format, Format::Png | Format::Webp | Format::Svg) || animated {
                 tiza_core::layout::check_font_size(font_size)
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
                 if format != Format::Svg {
@@ -540,6 +547,11 @@ fn real_main() -> anyhow::Result<()> {
                 }
             }
             if animated && out == "-" {
+                if format == Format::Webp {
+                    bail!(
+                        "an animated .webp needs a file: pass --out demo.webp, or --step N for a still"
+                    );
+                }
                 bail!(
                     "a .{0} needs a file: pass --out demo.{0}",
                     format_ext(format)
@@ -550,10 +562,7 @@ fn real_main() -> anyhow::Result<()> {
             // the last step, the same take as `--step L`. (Without
             // `--step`, a file shows every step's annotations; a recording
             // shows every step and takes no `--step`.)
-            let recording = matches!(
-                format,
-                Format::Gif | Format::Mp4 | Format::Webm | Format::Cast | Format::Tape
-            );
+            let recording = animated || matches!(format, Format::Cast | Format::Tape);
             if let Some(asked) = asked_step
                 && asked > doc.max_step()
                 && !recording
@@ -619,11 +628,37 @@ fn real_main() -> anyhow::Result<()> {
                     margin_cap,
                 },
             );
+            // A still of the step: an SVG, a PNG, or a WebP with --step.
+            let still = |format: Format| -> anyhow::Result<Vec<u8>> {
+                let svg_opts = tiza_export::SvgOptions {
+                    font_size,
+                    margin_cells: margin,
+                    radius,
+                    embed_fonts: format == Format::Svg && !no_embed_fonts,
+                    title: doc.title.clone(),
+                };
+                let svg = tiza_export::to_svg(&l.canvas, &theme, &svg_opts);
+                let png_opts = tiza_export::PngOptions {
+                    scale,
+                    system_fonts,
+                };
+                Ok(match format {
+                    Format::Svg => svg.into_bytes(),
+                    Format::Webp => {
+                        tiza_export::to_webp(&svg, &png_opts)
+                            .context("could not encode the WebP")?
+                            .bytes
+                    }
+                    _ => tiza_export::to_png(&svg, &png_opts)
+                        .context("could not rasterize the PNG")?,
+                })
+            };
             let bytes: Vec<u8> = match format {
                 Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
                 Format::Ansi => l.canvas.to_ansi().into_bytes(),
                 Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
-                Format::Gif | Format::Mp4 | Format::Webm => {
+                Format::Webp if !animated => still(format)?,
+                Format::Gif | Format::Mp4 | Format::Webm | Format::Webp => {
                     let anim_opts = tiza_core::anim::AnimOptions {
                         interval,
                         width,
@@ -655,6 +690,36 @@ fn real_main() -> anyhow::Result<()> {
                         scale,
                         system_fonts,
                     };
+                    let plays = if loop_count == 0 {
+                        ", loops forever".to_string()
+                    } else {
+                        format!(", plays {loop_count}×")
+                    };
+                    if format == Format::Webp {
+                        let webp_frames: Vec<(tiza_core::canvas::Canvas, u64)> =
+                            frames.into_iter().map(|f| (f.canvas, f.delay_ms)).collect();
+                        let (bytes, report) = tiza_export::to_webp_anim(
+                            &webp_frames,
+                            &theme,
+                            &tiza_export::WebpAnimOptions {
+                                svg: svg_opts,
+                                png: png_opts,
+                                plays: loop_count,
+                            },
+                        )
+                        .context("could not encode the WebP")?;
+                        write_atomically(&out, &bytes)?;
+                        eprintln!(
+                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop{plays}{timed_note}",
+                            bytes.len(),
+                            report.frames,
+                            if report.frames == 1 { "" } else { "s" },
+                            report.width,
+                            report.height,
+                            report.duration_ms as f64 / 1000.0,
+                        );
+                        return Ok(());
+                    }
                     if format == Format::Gif {
                         let gif_frames: Vec<(tiza_core::canvas::Canvas, u64)> =
                             frames.into_iter().map(|f| (f.canvas, f.delay_ms)).collect();
@@ -670,7 +735,7 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the GIF")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colors{}{timed_note}",
+                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colors{plays}{timed_note}",
                             bytes.len(),
                             report.frames,
                             if report.frames == 1 { "" } else { "s" },
@@ -678,11 +743,6 @@ fn real_main() -> anyhow::Result<()> {
                             report.height,
                             report.duration_ms as f64 / 1000.0,
                             report.colors,
-                            if loop_count == 0 {
-                                ", loops forever".to_string()
-                            } else {
-                                format!(", plays {loop_count}×")
-                            }
                         );
                         return Ok(());
                     }
@@ -765,32 +825,14 @@ fn real_main() -> anyhow::Result<()> {
                         tape.into_bytes()
                     }
                 }
-                Format::Svg | Format::Png => {
-                    let svg_opts = tiza_export::SvgOptions {
-                        font_size,
-                        margin_cells: margin,
-                        radius,
-                        embed_fonts: format == Format::Svg && !no_embed_fonts,
-                        title: doc.title.clone(),
-                    };
-                    let svg = tiza_export::to_svg(&l.canvas, &theme, &svg_opts);
-                    if format == Format::Svg {
-                        svg.into_bytes()
-                    } else {
-                        tiza_export::to_png(
-                            &svg,
-                            &tiza_export::PngOptions {
-                                scale,
-                                system_fonts,
-                            },
-                        )
-                        .context("could not rasterize the PNG")?
-                    }
-                }
+                Format::Svg | Format::Png => still(format)?,
             };
             if out == "-" {
                 if format == Format::Png && std::io::stdout().is_terminal() {
                     bail!("refusing to write PNG bytes to the terminal; pass --out file.png");
+                }
+                if format == Format::Webp && std::io::stdout().is_terminal() {
+                    bail!("refusing to write WebP bytes to the terminal; pass --out file.webp");
                 }
                 std::io::stdout().write_all(&bytes)?;
             } else {
@@ -1045,10 +1087,10 @@ fn render_all_steps(
 ) -> anyhow::Result<()> {
     if !matches!(
         format,
-        Format::Png | Format::Svg | Format::Txt | Format::Ansi | Format::Md
+        Format::Png | Format::Webp | Format::Svg | Format::Txt | Format::Ansi | Format::Md
     ) {
         bail!(
-            "--all-steps writes still images (png, svg, txt, ansi, md); a .{0} already holds every step: `--out demo.{0}` without --all-steps",
+            "--all-steps writes still images (png, webp, svg, txt, ansi, md); a .{0} already holds every step: `--out demo.{0}` without --all-steps",
             format_ext(format)
         );
     }
@@ -1100,6 +1142,13 @@ fn render_all_steps(
                 let svg = tiza_export::to_svg(canvas, theme, svg_opts);
                 if format == Format::Svg {
                     svg.into_bytes()
+                } else if format == Format::Webp {
+                    let webp = tiza_export::to_webp(&svg, png_opts)
+                        .context("could not encode the WebP")?;
+                    if size.is_empty() {
+                        size = format!(", {}×{} px", webp.width, webp.height);
+                    }
+                    webp.bytes
                 } else {
                     let png = tiza_export::to_png(&svg, png_opts)
                         .context("could not rasterize the PNG")?;
@@ -1229,7 +1278,7 @@ fn is_step_name(f: &str, digits: usize) -> bool {
     };
     num.len() == digits
         && num.bytes().all(|b| b.is_ascii_digit())
-        && ["png", "svg", "txt", "ansi", "md"].contains(&ext)
+        && ["png", "webp", "svg", "txt", "ansi", "md"].contains(&ext)
 }
 
 /// The entries of `dir` named like a step (any still format) that a run
@@ -1280,6 +1329,7 @@ fn format_ext(f: Format) -> &'static str {
         Format::Cast => "cast",
         Format::Tape => "tape",
         Format::Gif => "gif",
+        Format::Webp => "webp",
         Format::Mp4 => "mp4",
         Format::Webm => "webm",
     }
@@ -1456,7 +1506,7 @@ impl Drop for TempDir {
     }
 }
 
-/// `:export file.svg|png` inside the TUI: the image stack lives in this binary.
+/// `:export file.svg|png|webp` inside the TUI: the image stack lives in this binary.
 fn image_exporter(
     canvas: &tiza_core::canvas::Canvas,
     theme: &Theme,
@@ -1473,11 +1523,18 @@ fn image_exporter(
             ..Default::default()
         },
     );
-    if is_svg {
-        return Ok(svg.into_bytes());
+    match format {
+        tiza_tui::app::ImageFormat::Svg => Ok(svg.into_bytes()),
+        tiza_tui::app::ImageFormat::Webp => {
+            tiza_export::to_webp(&svg, &tiza_export::PngOptions::default())
+                .map(|s| s.bytes)
+                .map_err(|e| format!("could not encode the WebP: {e}"))
+        }
+        tiza_tui::app::ImageFormat::Png => {
+            tiza_export::to_png(&svg, &tiza_export::PngOptions::default())
+                .map_err(|e| format!("could not rasterize the PNG: {e}"))
+        }
     }
-    tiza_export::to_png(&svg, &tiza_export::PngOptions::default())
-        .map_err(|e| format!("could not rasterize the PNG: {e}"))
 }
 
 /// `--lang`: replaces the detected language; warns when no grammar exists.

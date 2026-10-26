@@ -824,7 +824,7 @@
         ]
       },
       "interval": {
-        "description": "GIF: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)",
+        "description": "GIF and animated WebP: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)",
         "format": "double",
         "type": [
           "number",
@@ -832,11 +832,11 @@
         ]
       },
       "path": {
-        "description": "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, or .gif (an animated GIF of every step, drawn by Tiza itself)",
+        "description": "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, .gif (an animated GIF of every step, drawn by Tiza itself), or .webp (lossless: with `step`, one step, as a .png; without it, every step, as a .gif)",
         "type": "string"
       },
       "scale": {
-        "description": "PNG/GIF device scale (default 2)",
+        "description": "PNG/WebP/GIF device scale (default 2)",
         "format": "float",
         "type": [
           "number",
@@ -844,7 +844,7 @@
         ]
       },
       "skip_zero": {
-        "description": "GIF: start at the first annotated step instead of step 0 (default false)",
+        "description": "GIF and animated WebP: start at the first annotated step instead of step 0 (default false)",
         "type": [
           "boolean",
           "null"

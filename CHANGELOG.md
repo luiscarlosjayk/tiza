@@ -4,6 +4,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Added
+- WebP export, lossless. `tiza render --out demo.webp` writes an animation of all the steps, with the frames and the times of the GIF. `tiza render --step 3 --out p3.webp` writes a still of step 3, with the pixels of the PNG. `--all-steps --format webp`, `:export x.webp` and the MCP tool `export_image` also write WebP. A WebP is usually smaller than the PNG or the GIF of the same steps.
+- The `tiza` binary contains libwebp, the WebP library of Google, in C. Thus `cargo install tiza` needs a C compiler. The release archives include the license of libwebp, `LICENSE-libwebp.txt`.
+
 ### Changed
 - `examples/ownership.rs.tiza` has 6 steps. A box with a label shows each way to pass a value: a move, a shared borrow and a mutable borrow. The callout at the end is gone. The README images show the new example.
 

@@ -72,6 +72,9 @@ gif = { version = "0.14", default-features = false, features = ["std"] }
 libwebp-sys = { version = "=0.14.4", features = ["std"] }
 # Tests only: an independent WebP decoder, in Rust, that checks what libwebp writes.
 image-webp = "0.2.4"
+# Tests only: decodes the PNG exports to compare them with the WebP ones. Already in the tree through tiny-skia
+# (resvg): version tied to it, never bumped alone.
+png = "0.18.1"
 
 
 # Every crate opts in with `[lints] workspace = true`. Only two places allow

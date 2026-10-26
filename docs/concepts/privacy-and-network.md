@@ -66,7 +66,7 @@ Connect only the agents that you trust with the code on your screen.
 ### Fonts
 
 - Without `--system-fonts`, Tiza uses only the fonts that it contains.
-- `--system-fonts` works for a PNG, a GIF, an MP4 and a WebM export.
+- `--system-fonts` works for a PNG, a WebP, a GIF, an MP4 and a WebM export.
 - `:export` and `export_image` never use the fonts of the system.
 
 ### The terminal
@@ -122,7 +122,7 @@ Tiza looks for the config file in this order:
 These files go to a temporary file in the same folder first. Then Tiza renames that file to the final name:
 
 - The `.tiza` document.
-- A GIF, an MP4 or a WebM export.
+- A GIF, an animated WebP, an MP4 or a WebM export.
 - The files of `--all-steps`.
 - The export of `export_image`.
 
@@ -138,7 +138,7 @@ When a write stops before its end, the temporary file stays:
 | Write | Temporary file |
 |---|---|
 | The `.tiza` document | `NAME.tiza.tmp`, where `NAME` is the name without its last extension |
-| A GIF or a file of `--all-steps` | `.NAME.tiza-tmp`, where `NAME` is the full name |
+| A GIF, an animated WebP or a file of `--all-steps` | `.NAME.tiza-tmp`, where `NAME` is the full name |
 | An `export_image` file | `.NAME.tiza-PID.tmp`, where `NAME` is the full name |
 | An MP4 or a WebM export | `.STEM.tiza-tmp.EXT`, where `STEM` is the name without its extension |
 
@@ -216,7 +216,7 @@ The runtime folder holds the socket and `panics.log`.
 Tiza itself starts one process: `ffmpeg`, for an MP4 or a WebM export.
 
 - Tiza uses `$TIZA_FFMPEG`. Otherwise, it uses the first `ffmpeg` in `PATH`.
-- Tiza does not include `ffmpeg` and does not download it. A GIF export does not need it.
+- Tiza does not include `ffmpeg` and does not download it. A GIF or a WebP export does not need it.
 - When the terminal does not give its size, the terminal library, not Tiza, can run `tput cols` and `tput lines`.
 
 ## Environment variables

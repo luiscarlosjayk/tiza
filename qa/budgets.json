@@ -6,11 +6,11 @@
   },
   "targets": {
     "aarch64-apple-darwin": {
-      "binary_bytes": 11209360,
-      "archive_bytes": 5745699,
-      "commit": "452c576",
-      "measured": "2026-10-17",
-      "reason": "First Mac baseline: 452c576, lto = \"fat\", measured with scripts/size-check.sh on Luis's Mac"
+      "binary_bytes": 12799824,
+      "archive_bytes": 6549249,
+      "commit": "61d56fe",
+      "measured": "2026-10-25",
+      "reason": "webp export for docs frames"
     },
     "x86_64-unknown-linux-gnu": {
       "binary_bytes": 13264232,

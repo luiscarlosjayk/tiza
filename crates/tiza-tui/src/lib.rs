@@ -50,7 +50,7 @@ pub struct RunOptions {
     pub padding: Option<(u16, u16)>,
     /// `--follow`: reload when the source file changes on disk.
     pub follow: bool,
-    /// Renders a canvas as SVG/PNG for `:export`; the TUI crate does not link
+    /// Renders a canvas as SVG/PNG/WebP for `:export`; the TUI crate does not link
     /// the image stack, so the binary provides it (`None`: text formats only).
     pub image_exporter: Option<app::ImageExporter>,
     /// `--smoke`: draw one frame and exit (CI check that the terminal setup,

@@ -1,6 +1,6 @@
 [package]
 name = "tiza-export"
-description = "Internal crate of Tiza (SVG, PNG and GIF export), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
+description = "Internal crate of Tiza (SVG, PNG, GIF and WebP export), published only so that `cargo install tiza` works; no stable API — use the `tiza` binary"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

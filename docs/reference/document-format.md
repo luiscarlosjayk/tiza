@@ -553,7 +553,7 @@ With `auto_advance_ms`, the TUI goes to the next step by itself. The time starts
 
 Exports use `auto_advance_ms` in different ways:
 
-- A GIF, MP4 or WebM export holds such a step for `auto_advance_ms` instead of `--interval`.
+- A GIF, animated WebP, MP4 or WebM export holds such a step for `auto_advance_ms` instead of `--interval`.
 - A `.tape` holds such a step for its typing plus `auto_advance_ms`, and sends no `n` for the next step.
 - A `.cast` ignores `auto_advance_ms`. It holds each step for `--interval` plus its `wait` moves. The last step holds for `--interval` only.
 

@@ -20,7 +20,7 @@ tiza render --out shot.png
 - `--out -` writes to standard output.
 - `tiza render` does not make a missing folder for `--out`, except with `--all-steps`.
 - Without a document, `tiza render` exports what the live instance shows. See [The live instance](#the-live-instance).
-- Without `--step`, an export of a document shows all its annotations, as at the last step.
+- Without `--step`, an export of a document shows all its annotations, as at the last step. A WebP is different: without `--step`, it is an animation of all the steps.
 
 For example, this is the last step of `examples/ownership.rs.tiza` as a PNG at 92 columns:
 
@@ -28,16 +28,17 @@ For example, this is the last step of `examples/ownership.rs.tiza` as a PNG at 9
 
 ## Record all the steps
 
-These formats hold all the steps of a document in one file: GIF, MP4, WebM, `.cast` and `.tape`.
+These formats hold all the steps of a document in one file: GIF, WebP without `--step`, MP4, WebM, `.cast` and `.tape`.
 
 ```sh
 tiza render demo.tiza --out demo.gif
+tiza render demo.tiza --out demo.webp
 tiza render demo.tiza --out demo.mp4 --interval 3
 tiza render demo.tiza --out demo.cast
 tiza render demo.tiza --out demo.tape && vhs demo.tape
 ```
 
-- A GIF needs no other program.
+- A GIF and a WebP need no other program.
 - An MP4 or a WebM export needs `ffmpeg`. See [Video exports](#video-exports).
 - Play a `.cast` file with `asciinema play demo.cast`. [agg](https://github.com/asciinema/agg) changes it to a GIF.
 - A `.tape` file is a script for [VHS](https://github.com/charmbracelet/vhs). `vhs demo.tape` needs `vhs`, `ttyd` and `ffmpeg`. It writes a screen recording, `demo.gif`.
@@ -54,7 +55,7 @@ tiza render demo.tiza --all-steps --out steps/
 
 Tiza writes `step-00.png`, `step-01.png` and the next numbers up to the last step. To get another format, give `--format`, for example `--format md`. An `--out` such as `answer.md` is refused, because it is a file name. With a slash at the end, `answer.md/` is a folder. All the files use the layout of the take. All the images have the same pixel size, so they align in a video editor or a slide deck.
 
-- The format is PNG. `--format svg`, `txt`, `ansi` or `md` changes it. The extension of `--out` does not change it.
+- The format is PNG. `--format svg`, `webp`, `txt`, `ansi` or `md` changes it. The extension of `--out` does not change it.
 - `--skip-zero` starts at `step-01`.
 - Tiza makes the folder when it does not exist.
 
@@ -81,6 +82,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `.md` or `.markdown` | `md` | The step as text in a `text` code block, for a README, an issue or a chat. |
 | `.svg` | `svg` | The step as an SVG image, with the fonts in the file. |
 | `.png` | `png` | The step as a PNG image. |
+| `.webp` | `webp` | A lossless WebP: the step with `--step`, or else an animation of all the steps. |
 | `.gif` | `gif` | An animated GIF of all the steps. |
 | `.mp4`, `.m4v` or `.mov` | `mp4` | An H.264 video of all the steps, made by `ffmpeg`. |
 | `.webm` | `webm` | A VP9 video of all the steps, made by `ffmpeg`. |
@@ -99,9 +101,13 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | Format | `tiza render` | `:export` | `export_image` |
 |---|---|---|---|
 | `txt`, `ansi`, `md`, `svg`, `png` | Yes | Yes | Yes |
+| `webp` | Yes | Yes, one step | Yes |
 | `gif` | Yes | No | Yes |
 | `mp4`, `webm` | Yes | No | No |
 | `cast`, `tape` | Yes | No | No |
+
+- `tiza render` and `export_image` write a WebP of one step when you give a step. Without a step, they write an animation, as a GIF.
+- `:export` writes a WebP of one step, as a PNG.
 
 ## Options of `tiza render`
 
@@ -121,33 +127,33 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--font-size` | 4 to 96 px | 16 | The size of the font in an image or a video. |
 | `--margin` | Cells | 1.5 | The blank margin around the drawing in an image or a video. |
 | `--radius` | px | 12 | The radius of the corners of the background, where `0` gives square corners. |
-| `--scale` | 0.25 to 8 | 2, or 1 for MP4 and WebM | The device scale of a PNG, a GIF or a video. |
+| `--scale` | 0.25 to 8 | 2, or 1 for MP4 and WebM | The device scale of a PNG, a WebP, a GIF or a video. |
 | `--no-embed-fonts` | None | Off | Tiza writes an SVG without fonts, so the viewer uses its own fonts. |
-| `--system-fonts` | None | Off | Tiza adds the fonts of the system to a PNG, a GIF, an MP4 or a WebM export, for emoji and CJK. |
+| `--system-fonts` | None | Off | Tiza adds the fonts of the system to a PNG, a WebP, a GIF, an MP4 or a WebM export, for emoji and CJK. |
 | `--interval` | 0 to 3600 seconds | 2 | How long each step stays in a recording. |
 | `--skip-zero` | None | Off | Tiza starts a recording or `--all-steps` at step 1. |
 | `--title` | A text | The title of the document, or `Tiza` in a `.cast` | The title of a `.cast` or a `.tape` file. |
-| `--loop` | 0 to 65535 | 0 | How many times a GIF plays, where `0` plays it without end. |
+| `--loop` | 0 to 65535 | 0 | How many times a GIF or an animated WebP plays, where `0` plays it without end. |
 
 - `--theme` takes `dark`, `light`, `terminal` or `auto`.
 - `terminal` has no colors outside the terminal. An export with `terminal` uses `dark`, and Tiza says so on stderr.
 - `auto` uses the theme of the document, or `dark`.
 - The theme overrides of your config file also apply. See [Themes](themes.md).
-- `--font-size`, `--margin` and `--radius` work for an SVG, a PNG, a GIF, an MP4 and a WebM export.
-- A GIF, an MP4, a WebM and a `.cast` use the `margin` field of the document. They do not use `--margin-cols`.
+- `--font-size`, `--margin` and `--radius` work for an SVG, a PNG, a WebP, a GIF, an MP4 and a WebM export.
+- A GIF, an animated WebP, an MP4, a WebM and a `.cast` use the `margin` field of the document. They do not use `--margin-cols`.
 - A `.tape` does not pass most flags to the TUI. See [A `.tape`](#a-tape).
 
 ### Timing of a recording
 
 | Format | Each step | The last step | Typed moves and `wait` moves |
 |---|---|---|---|
-| GIF, MP4, WebM | `--interval`, or the `auto_advance_ms` of the step | Two times `--interval`, or its `auto_advance_ms` | One frame for each typed unit, before the annotations of the step |
+| GIF, animated WebP, MP4, WebM | `--interval`, or the `auto_advance_ms` of the step | Two times `--interval`, or its `auto_advance_ms` | One frame for each typed unit, before the annotations of the step |
 | `.cast` | `--interval`, plus the `wait` moves of the step | `--interval` | No frames: each step shows its final code |
 | `.tape` | `--interval`, or the time of its typed moves and `wait` moves plus 0.5 s when that is longer | Its own time, plus one more `--interval` | The real TUI types them |
 
 - A GIF counts time in units of 10 ms. Tiza rounds each frame up to a full unit, and to at least 20 ms.
-- An MP4 or a WebM export times each frame as the GIF does. Thus a video lasts as long as the GIF.
-- In a GIF, an MP4 or a WebM, a step with `auto_advance_ms` stays that long after its typed frames. The message of the export names these steps.
+- An animated WebP, an MP4 or a WebM export times each frame as the GIF does. Thus it lasts as long as the GIF.
+- In a GIF, an animated WebP, an MP4 or a WebM, a step with `auto_advance_ms` stays that long after its typed frames. The message of the export names these steps.
 - A `.cast` does not use `auto_advance_ms`.
 - In a `.tape`, a step with `auto_advance_ms` stays for its typing time plus `auto_advance_ms`. The tape sends no `n` after it, because the TUI goes to the next step by itself.
 - A `.cast` file has one asciicast marker for each step. A player goes from one step to the next with these markers.
@@ -172,7 +178,8 @@ The fields `auto_advance_ms`, `code.patch` and `wait` are in [Document format](d
 - A relative `PATH` starts at the folder where you started Tiza. `~` at the start is your home folder.
 - Tiza makes the folders that are missing. It writes over a file that exists.
 - `:export` keeps the focus of the screen. It never draws the live pointer.
-- An SVG or a PNG from `:export` uses the default font size, margin, radius and scale of `tiza render`.
+- An SVG, a PNG or a WebP from `:export` uses the default font size, margin, radius and scale of `tiza render`.
+- A WebP from `:export` is one step, with the pixels of the PNG.
 - With a theme that has no colors outside the terminal, the message tells which theme the export uses.
 
 ## `export_image`
@@ -182,17 +189,17 @@ The MCP tool `export_image` exports the live document. It does not change the TU
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `path` | string | Required | The file to write, with an extension that selects the format. |
-| `step` | integer | The current step | The step to export, except in a GIF. |
+| `step` | integer | The current step | The step to export, except in an animation: a GIF, or a WebP without `step`. |
 | `width` | integer, 20 to 400 | The terminal width minus 2, at least 40 | The width of the take, in columns. |
 | `theme` | `dark` or `light` | The theme of the document, or `dark` | The colors of the export. |
-| `scale` | number, 0.25 to 8 | 2 | The device scale of a PNG or a GIF. |
+| `scale` | number, 0.25 to 8 | 2 | The device scale of a PNG, a WebP or a GIF. |
 | `font_size` | number, 4 to 96 | 16 | The size of the font in px. |
-| `interval` | number, 0 to 3600 | 2 | How long each step of a GIF stays, in seconds. |
-| `skip_zero` | boolean | `false` | Starts a GIF at step 1. |
+| `interval` | number, 0 to 3600 | 2 | How long each step of a GIF or an animated WebP stays, in seconds. |
+| `skip_zero` | boolean | `false` | Starts a GIF or an animated WebP at step 1. |
 
 - `theme` also takes `oscuro` and `claro`.
 - A relative `path` starts at the current folder of `tiza mcp`. The tool does not make missing folders.
-- A GIF from `export_image` plays without end.
+- A GIF or an animated WebP from `export_image` plays without end.
 - `export_image`, `tiza render` and `:export` apply the `[theme]` overrides of your config file. `export_image` reads the config file of the `tiza mcp` process.
 - In `warning`, `export_image` says what the config file left out, or that the config file does not parse. The export goes on.
 - When the theme has no colors outside the terminal, `export_image` uses `dark`. Its reply does not say so.
@@ -205,23 +212,26 @@ The reply has these fields:
 |---|---|
 | `path` | The path of the file. |
 | `bytes` | The size of the file. |
-| `format` | The format: `png`, `svg`, `txt`, `ansi`, `md` or `gif`. |
-| `step` | The step in the file, except in a GIF reply. |
-| `warning` | What the config file left out, or that the config file does not parse. Then, except in a GIF reply, that the step you asked for does not exist. The parts are separated by `; `. |
-| `frames` | The number of frames, only in a GIF reply. |
-| `steps` | The steps of the document, for example `0-7`, only in a GIF reply. |
+| `format` | The format: `png`, `svg`, `txt`, `ansi`, `md`, `gif` or `webp`. |
+| `step` | The step in the file, except in the reply for an animation. |
+| `warning` | What the config file left out, or that the config file does not parse. Then, except in the reply for an animation, that the step you asked for does not exist. The parts are separated by `; `. |
+| `frames` | The number of frames, only in the reply for an animation. |
+| `steps` | The steps of the document, for example `0-7`, only in the reply for an animation. |
+
+An animation is a GIF, or a WebP without `step`.
 
 ### Errors of `export_image`
 
 | Message | When |
 |---|---|
-| `path must end in .png, .svg, .txt, .ansi, .md or .gif (invalid_argument)` | The extension of `path` is not a format of `export_image`. |
+| `path must end in .png, .svg, .txt, .ansi, .md, .gif or .webp (invalid_argument)` | The extension of `path` is not a format of `export_image`. |
 | `unknown theme (dark, light) (invalid_argument)` | `theme` has another value. |
 | `width=N: use a number between 20 and 400 (invalid_argument)` | `width` is out of the range. |
 | `scale=N: use a number between 0.25 and 8 (invalid_argument)` | `scale` is out of the range. |
 | `font-size=N: use a number between 4 and 96 (invalid_argument)` | `font_size` is out of the range. |
 | `interval=N: use a number of seconds between 0 and 3600 (invalid_argument)` | `interval` is out of the range. |
-| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size (invalid_argument)` | The PNG or a GIF frame is too large. |
+| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size (invalid_argument)` | The PNG, the WebP or a frame of an animation is too large. |
+| `a W×H px image is not a WebP size (1 to 16383 px per side) (invalid_argument)` | The WebP has 16384 px on a side. |
 | `No Tiza instance is listening on SOCKET` | No live instance answers on the socket of the MCP server. |
 | `MESSAGE (CODE)` | The live instance refuses a request, and `export_image` passes on its error. |
 | `the live document cannot be exported` | Tiza cannot load a view of the live document. |
@@ -249,25 +259,29 @@ The reply has these fields:
 |---|---|
 | `wrote PATH (N bytes)` | Tiza writes a file. |
 | `wrote PATH (N bytes): N frames, W×H px, S s per loop, N colors, loops forever` | Tiza writes a GIF. |
+| `wrote PATH (N bytes): N frames, W×H px, S s per loop, loops forever` | Tiza writes an animated WebP. |
 | `wrote N files to FOLDER (steps A-B, W×H px each)` | Tiza writes the files of `--all-steps`. |
 | `step N does not exist (the document has steps 0 to L); showing step L` | `--step` is after the last step, and Tiza exports step `L`. |
 | `refusing to write PNG bytes to the terminal; pass --out file.png` | `--out -` with a PNG, when standard output is a terminal. |
+| `refusing to write WebP bytes to the terminal; pass --out file.webp` | `--out -` with a WebP of one step, when standard output is a terminal. |
 | `a .EXT needs a file: pass --out demo.EXT` | `--out -` with a GIF, an MP4 or a WebM. |
+| `an animated .webp needs a file: pass --out demo.webp, or --step N for a still` | `--out -` with a WebP and no `--step`. |
 | `--all-steps writes one file per step: pass a directory, --out steps/` | `--all-steps` with `--out -`. |
-| `` --all-steps writes still images (png, svg, txt, ansi, md); a .EXT already holds every step: `--out demo.EXT` without --all-steps `` | `--all-steps` with a recording format, or with an `--out` that ends in the extension of one and no image or text `--format`. |
+| `` --all-steps writes still images (png, webp, svg, txt, ansi, md); a .EXT already holds every step: `--out demo.EXT` without --all-steps `` | `--all-steps` with a recording format, or with an `--out` that ends in the extension of one and no image or text `--format`. |
 | `--all-steps writes one file for each step into a folder, and OUT is a file name. Pass a folder, for example --out steps/ --format FORMAT` | `--all-steps` with an `--out` that ends in the extension of a format, such as `answer.md`, and is not a folder. `FORMAT` is the `--format` that you give, else the format of the extension. |
 | `--all-steps needs a directory, and PATH is a file` | `--out` of `--all-steps` is a file. |
 | `--skip-zero leaves nothing to write: this document only has step 0 (no annotations or moves)` | `--all-steps --skip-zero` with a document that has no annotations and no moves. |
 | `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The image is too large. |
+| `could not encode the WebP: a W×H px image is not a WebP size (1 to 16383 px per side)` | The WebP has 16384 px on a side. |
 
-- A GIF that plays a fixed number of times says `plays N×` instead of `loops forever`.
-- A GIF with one frame says `1 frame`. `S` has one decimal.
+- A GIF or an animated WebP that plays a fixed number of times says `plays N×` instead of `loops forever`.
+- A GIF or an animated WebP with one frame says `1 frame`. `S` has one decimal.
 - For `.m4v` and `.mov`, the `needs a file` message says `.mp4`.
 - When steps have `auto_advance_ms`, the message ends with `, step N timed by its auto_advance_ms` or `, steps N, M timed by their auto_advance_ms`. The message of an MP4 or a WebM export ends the same way.
-- A single file of `--all-steps` gives `wrote 1 file to FOLDER (step N, W×H px)`. Only a PNG run gives the size.
-- For a GIF, the message about a large image starts with `could not encode the GIF:`. For a video, it starts with `could not rasterize a frame:`.
+- A single file of `--all-steps` gives `wrote 1 file to FOLDER (step N, W×H px)`. Only a PNG or a WebP run gives the size.
+- For a GIF, the message about a large image starts with `could not encode the GIF:`. For a WebP, it starts with `could not encode the WebP:`. For a video, it starts with `could not rasterize a frame:`.
 - When Tiza cannot write a step, a `.cast` or a `.tape`, the message is `could not write PATH`.
-- For a GIF or a file of `--all-steps`, a failed write of the temporary file gives `could not write FOLDER/.NAME.tiza-tmp`. A failed rename gives `could not write PATH`.
+- For a GIF, an animated WebP or a file of `--all-steps`, a failed write of the temporary file gives `could not write FOLDER/.NAME.tiza-tmp`. A failed rename gives `could not write PATH`.
 - For an MP4 or a WebM, `ffmpeg` writes the file. When it cannot, the message is `ffmpeg failed`.
 - The `could not write` messages end with the error of the system.
 
@@ -352,7 +366,7 @@ See [Files of `--all-steps`](#files-of---all-steps).
 |---|---|
 | `exported step N to PATH (N bytes)` | Tiza writes the file, and `PATH` is the full path. |
 | `step N does not exist (the document has steps 0 to L); exported step L to PATH (N bytes)` | `step=` is after the last step. |
-| `the path's extension picks the format (.txt .ansi .md .svg .png)` | The extension is not a format of `:export`. |
+| `the path's extension picks the format (.txt .ansi .md .svg .png .webp)` | The extension is not a format of `:export`. |
 | `` PATH: a recording of every step is made from the shell — `tiza render --out PATH` records this instance (no FILE needed) `` | The extension is `.gif`, `.mp4`, `.webm`, `.cast` or `.tape`. |
 | `step= must be a number` | `step=` is not a number. |
 | `width= must be a number between 20 and 400` | `width=` is not a number. |
@@ -362,6 +376,8 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `could not create the folder PATH` | Tiza cannot make a folder of the path. |
 | `could not write PATH` | Tiza cannot write the file. |
 | `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The PNG is too large. |
+| `could not encode the WebP: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The WebP is too large. |
+| `could not encode the WebP: a W×H px image is not a WebP size (1 to 16383 px per side)` | The WebP has 16384 px on a side. |
 
 The messages `could not create the folder PATH` and `could not write PATH` end with the error of the system.
 
@@ -381,8 +397,8 @@ Without a document, `tiza render` exports the document of the live instance. Giv
 ### Standard output
 
 - `--out -` writes a text format, an SVG, a `.cast` or a `.tape` to standard output.
-- A PNG goes to standard output only through a pipe or a redirect.
-- A GIF, an MP4 and a WebM need a file.
+- A PNG or a WebP of one step goes to standard output only through a pipe or a redirect.
+- A GIF, an animated WebP, an MP4 and a WebM need a file.
 - A `.tape` on standard output writes its video to `demo.gif`.
 
 ### A `.tape`
@@ -416,7 +432,7 @@ Each name is `step-`, the number of the step, a dot and the format. The number h
 
 A new run into the same folder removes the old step files of the same format that it did not write. Thus a `step-%02d.png` pattern, for example in `ffmpeg`, does not get an old frame. A file is an old step file only when all of these are true:
 
-1. Its name is `step-`, a number, a dot and a lowercase format: `png`, `svg`, `txt`, `ansi` or `md`.
+1. Its name is `step-`, a number, a dot and a lowercase format: `png`, `webp`, `svg`, `txt`, `ansi` or `md`.
 2. The number has the same count of digits as the names of this run.
 3. It is a regular file.
 
@@ -426,7 +442,7 @@ A new run into the same folder removes the old step files of the same format tha
 
 ### Large images
 
-A PNG, a GIF frame or a video frame can have at most 16384 px on each side. It can have at most 100000000 px in all. Use a smaller `--width`, `--scale`, `--font-size` or `--margin` for a larger document.
+A PNG, a GIF frame or a video frame can have at most 16384 px on each side. A WebP or a frame of a WebP can have at most 16383 px on each side. Each one can have at most 100000000 px in all. Use a smaller `--width`, `--scale`, `--font-size` or `--margin` for a larger document.
 
 ### Fonts
 
@@ -445,9 +461,9 @@ The fonts are in the `tiza` binary. Thus an image export does not depend on the 
 
 All exports use the layout of the take. Tiza sizes the arrow lanes, the box band and the code column once, for all the steps. Thus the code does not move from one step to the next. Each arrow keeps its lane. A label that fits at step 1 also fits at the last step.
 
-Tiza then makes all the frames of a GIF or a video, or all the files of `--all-steps`, the same size. It adds the background color to the smaller ones.
+Tiza then makes all the frames of a GIF, an animated WebP or a video, or all the files of `--all-steps`, the same size. It adds the background color to the smaller ones.
 
-A typed frame of a GIF or a video shows different code. Thus Tiza sizes its layout separately.
+A typed frame of a GIF, an animated WebP or a video shows different code. Thus Tiza sizes its layout separately.
 
 Normal mode grows the lanes as the steps add arrows. `:layout stable` shows the layout of the take in normal mode. The status bar then shows `⊞ stable`. `:layout dynamic` returns to the lanes that grow with the steps.
 
@@ -460,10 +476,20 @@ Tiza draws each frame as a PNG export does, then encodes the GIF itself.
 - Tiza does not dither. Thus the text stays sharp.
 - After the first frame, each frame holds only the rectangle that changed.
 
+### The WebP
+
+Tiza draws each frame as a PNG export does. Then libwebp, the WebP library of Google, encodes it without loss. The `tiza` binary contains libwebp, so a WebP export needs no other program.
+
+- A WebP has all the pixels of the PNG, also the transparent pixels of the round corners.
+- In an animation, each frame after the first holds only the rectangle that changed. When a frame is the same as the frame before it, Tiza keeps one frame for the two times. When all the frames are the same, the WebP is a still.
+- The same document gives the same bytes each time.
+- A WebP is usually smaller than the PNG or the GIF of the same steps.
+- The license of libwebp is the BSD 3-Clause License, with a patent grant. The release archives include it as `LICENSE-libwebp.txt`.
+
 ### The videos
 
 Tiza writes the frames as PNG files to a temporary folder, with a list of their durations. Then `ffmpeg` encodes the list. Tiza cuts the video at the sum of the durations, so it has the same length with each version of `ffmpeg`. Tiza removes the temporary folder at the end.
 
 ### Writing the file
 
-A GIF, an MP4, a WebM, the files of `--all-steps` and the file of `export_image` go to a temporary file first. Then Tiza renames it. Thus a stopped export does not leave a part of a file at the final name. [How Tiza writes a file](../concepts/privacy-and-network.md#how-tiza-writes-a-file) gives the names of the temporary files.
+A GIF, an animated WebP, an MP4, a WebM, the files of `--all-steps` and the file of `export_image` go to a temporary file first. Then Tiza renames it. Thus a stopped export does not leave a part of a file at the final name. [How Tiza writes a file](../concepts/privacy-and-network.md#how-tiza-writes-a-file) gives the names of the temporary files.

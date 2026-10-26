@@ -275,7 +275,10 @@ fn mcp_export_image_writes_text_formats() {
         "export_image",
         json!({"path": dir.join("out.bmp").to_str().unwrap()}),
     );
-    assert!(err && text.contains(".txt, .ansi, .md or .gif"), "{text}");
+    assert!(
+        err && text.contains(".txt, .ansi, .md, .gif or .webp"),
+        "{text}"
+    );
 }
 
 #[test]

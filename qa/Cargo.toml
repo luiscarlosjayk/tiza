@@ -27,6 +27,8 @@ jsonschema.workspace = true
 proptest.workspace = true
 two-face.workspace = true
 gif.workspace = true
+image-webp.workspace = true
+png.workspace = true
 
 [lints]
 workspace = true

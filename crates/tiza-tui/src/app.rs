@@ -496,7 +496,7 @@ pub struct App {
     /// `--padding` for this session only: shown instead of the document's
     /// value but never written to it (`:pad` sets the document and clears this).
     pub padding_override: Option<(u16, u16)>,
-    /// SVG/PNG renderer for `:export`, installed by the binary.
+    /// SVG/PNG/WebP renderer for `:export`, installed by the binary.
     pub image_exporter: Option<ImageExporter>,
     /// Mouse capture: opt-in, because capturing the mouse takes the
     /// terminal's native text selection away (Shift/Option-drag gets it back).
@@ -5373,7 +5373,7 @@ impl App {
 
     /// `:export [path] [step=N] [width=N] [theme=dark|light]` — writes what
     /// the current step shows as text (`.txt`), ANSI (`.ansi`), Markdown
-    /// (`.md`, fenced block), SVG or PNG. Without a path: `<doc>-stepN.txt`
+    /// (`.md`, fenced block), SVG, PNG or WebP. Without a path: `<doc>-stepN.txt`
     /// next to the document.
     fn export_command(&mut self, rest: &str) -> Result<String, Error> {
         let (path, kv) = split_trailing_kv(rest);
@@ -5450,7 +5450,7 @@ impl App {
                 ))
             } else {
                 Error::Invalid(
-                    "the path's extension picks the format (.txt .ansi .md .svg .png)".into(),
+                    "the path's extension picks the format (.txt .ansi .md .svg .png .webp)".into(),
                 )
             }
         })?;
@@ -5479,15 +5479,16 @@ impl App {
             ExportFormat::Ansi => l.canvas.to_ansi().into_bytes(),
             // The title goes in the md heading.
             ExportFormat::Md => l.canvas.to_markdown(title.as_deref()).into_bytes(),
-            ExportFormat::Svg | ExportFormat::Png => {
-                let f = if format == ExportFormat::Svg {
-                    ImageFormat::Svg
-                } else {
-                    ImageFormat::Png
+            ExportFormat::Svg | ExportFormat::Png | ExportFormat::Webp => {
+                let f = match format {
+                    ExportFormat::Svg => ImageFormat::Svg,
+                    ExportFormat::Webp => ImageFormat::Webp,
+                    _ => ImageFormat::Png,
                 };
                 let exporter = self.image_exporter.as_ref().ok_or_else(|| {
                     Error::Invalid(
-                        "SVG/PNG export is not available in this build; use `tiza render`".into(),
+                        "SVG/PNG/WebP export is not available in this build; use `tiza render`"
+                            .into(),
                     )
                 })?;
                 exporter(&l.canvas, &theme, f, title.as_deref()).map_err(Error::Invalid)?
@@ -7346,9 +7347,12 @@ const SHAPE_TYPES: &[&str] = &[
 pub enum ImageFormat {
     Svg,
     Png,
+    /// A lossless still, with the pixels of the PNG.
+    Webp,
 }
 
-/// Renders a canvas to SVG or PNG bytes (`title` goes into the SVG metadata).
+/// Renders a canvas to SVG, PNG or WebP bytes (`title` goes into the SVG
+/// metadata).
 pub type ImageExporter = Box<
     dyn Fn(&tiza_core::canvas::Canvas, &Theme, ImageFormat, Option<&str>) -> Result<Vec<u8>, String>
         + Send,
@@ -7362,6 +7366,7 @@ pub enum ExportFormat {
     Md,
     Svg,
     Png,
+    Webp,
 }
 
 impl ExportFormat {
@@ -7377,6 +7382,7 @@ impl ExportFormat {
             Some("md") | Some("markdown") => Some(ExportFormat::Md),
             Some("svg") => Some(ExportFormat::Svg),
             Some("png") => Some(ExportFormat::Png),
+            Some("webp") => Some(ExportFormat::Webp),
             _ => None,
         }
     }

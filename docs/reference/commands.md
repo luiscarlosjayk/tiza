@@ -229,7 +229,7 @@ The fields are in [Document format](document-format.md#annotations).
 
 | Command | What it does |
 |---|---|
-| `:export [PATH] [step=N] [width=N] [theme=dark\|light]` | Writes a step to a text, ANSI, Markdown, SVG or PNG file. |
+| `:export [PATH] [step=N] [width=N] [theme=dark\|light]` | Writes a step to a text, ANSI, Markdown, SVG, PNG or WebP file. |
 | `:supervise on` | Starts supervised mode. |
 | `:supervise off` | Stops supervised mode. |
 | `:supervise` | Shows the state of supervised mode and the number of changes that wait. |

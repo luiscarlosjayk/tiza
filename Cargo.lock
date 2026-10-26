@@ -2862,8 +2862,10 @@ version = "0.1.0"
 dependencies = [
  "crossterm",
  "gif",
+ "image-webp",
  "insta",
  "jsonschema",
+ "png",
  "proptest",
  "ratatui",
  "serde_json",

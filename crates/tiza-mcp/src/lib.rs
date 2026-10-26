@@ -336,7 +336,7 @@ pub struct UpdateParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct ExportParams {
     #[schemars(
-        description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, or .gif (an animated GIF of every step, drawn by Tiza itself)"
+        description = "Where to write the file. The extension picks the format: .png, .svg, .txt, .ansi, .md, .gif (an animated GIF of every step, drawn by Tiza itself), or .webp (lossless: with `step`, one step, as a .png; without it, every step, as a .gif)"
     )]
     pub path: String,
     #[schemars(
@@ -347,14 +347,14 @@ pub struct ExportParams {
     pub width: Option<usize>,
     #[schemars(description = "dark or light; defaults to the document's theme")]
     pub theme: Option<String>,
-    #[schemars(description = "PNG/GIF device scale (default 2)")]
+    #[schemars(description = "PNG/WebP/GIF device scale (default 2)")]
     pub scale: Option<f32>,
     #[schemars(
-        description = "GIF: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)"
+        description = "GIF and animated WebP: seconds each step stays on screen, 0 to 3600 (default 2; the last one twice as long)"
     )]
     pub interval: Option<f64>,
     #[schemars(
-        description = "GIF: start at the first annotated step instead of step 0 (default false)"
+        description = "GIF and animated WebP: start at the first annotated step instead of step 0 (default false)"
     )]
     pub skip_zero: Option<bool>,
     #[schemars(description = "Font size in px (default 16)")]
@@ -1246,7 +1246,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Exports the scene to a file: .png or .svg (embedded fonts) for thumbnails and posts, .txt (plain box-drawing text), .ansi (24-bit colors, for `cat`) or .md (fenced block for a README, an issue or a chat), or .gif (every step). Renders from the live document without touching the TUI, linked files included. Always answers: with the file written, or with an error (one that takes longer than 120 s is abandoned and nothing is written). A step past the last one exports the last and says so in `warning`."
+        description = "Exports the scene to a file: .png or .svg (embedded fonts) for thumbnails and posts, .txt (plain box-drawing text), .ansi (24-bit colors, for `cat`) or .md (fenced block for a README, an issue or a chat), .gif (every step), or .webp (lossless: one step with `step`, else every step). Renders from the live document without touching the TUI, linked files included. Always answers: with the file written, or with an error (one that takes longer than 120 s is abandoned and nothing is written). A step past the last one exports the last and says so in `warning`."
     )]
     async fn export_image(
         &self,
@@ -1263,9 +1263,10 @@ impl TizaServer {
             Some("ansi") | Some("ans") => "ansi",
             Some("md") | Some("markdown") => "md",
             Some("gif") => "gif",
+            Some("webp") => "webp",
             _ => {
                 return Err(invalid_argument(
-                    "path must end in .png, .svg, .txt, .ansi, .md or .gif",
+                    "path must end in .png, .svg, .txt, .ansi, .md, .gif or .webp",
                 ));
             }
         };
@@ -1305,6 +1306,8 @@ impl TizaServer {
         let job = ExportJob {
             path: p.path,
             format,
+            // A .webp without `step` is every step, as a .gif.
+            animated: format == "gif" || (format == "webp" && p.step.is_none()),
             asked_step: p.step.unwrap_or(scene.step),
             width: width.unwrap_or((status.cols as usize).saturating_sub(2).max(40)),
             theme_name,
@@ -1338,7 +1341,7 @@ impl TizaServer {
                 } else {
                     return Err(McpError::internal_error(
                         format!(
-                            "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif; `tiza render` in a terminal has no deadline",
+                            "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif or an animated .webp; `tiza render` in a terminal has no deadline",
                             deadline.as_secs_f64()
                         ),
                         None,
@@ -1404,6 +1407,8 @@ fn test_hook(place: &str) {
 struct ExportJob {
     path: String,
     format: &'static str,
+    /// Every step (a .gif, or a .webp without `step`).
+    animated: bool,
     asked_step: u32,
     width: usize,
     theme_name: Option<tiza_core::ThemeName>,
@@ -1421,13 +1426,12 @@ impl ExportJob {
         test_hook("export:render");
         let doc = &self.doc;
         let format = self.format;
-        let is_png = format == "png";
-        let is_gif = format == "gif";
+        let animated = self.animated;
         let last = doc.max_step();
         // A step past the last one: the last, said in the reply,
         // as `tiza render` says it on stderr.
         let step = self.asked_step.min(last);
-        let warning = (!is_gif && self.asked_step > last).then(|| {
+        let warning = (!animated && self.asked_step > last).then(|| {
             format!(
                 "step {} does not exist (the document has steps 0 to {last}); exported step {last}",
                 self.asked_step
@@ -1472,20 +1476,27 @@ impl ExportJob {
         );
         let svg_opts = tiza_export::SvgOptions {
             font_size: self.font_size,
-            embed_fonts: !is_png,
+            embed_fonts: format == "svg",
             title: doc.title.clone(),
             ..Default::default()
         };
+        let png_opts = tiza_export::PngOptions {
+            scale: self.scale,
+            system_fonts: false,
+        };
         let too_big = |e: tiza_export::Error| match e {
-            tiza_export::Error::TooBig(..) => invalid_argument(e.to_string()),
+            tiza_export::Error::TooBig(..)
+            | tiza_export::Error::Webp(tiza_export::webp::WebpError::Size(..)) => {
+                invalid_argument(e.to_string())
+            }
             other => McpError::internal_error(other.to_string(), None),
         };
-        let mut gif_frames = 0usize;
+        let mut anim_frames = 0usize;
         let bytes = match format {
             "txt" => (layout.canvas.to_plain_text() + "\n").into_bytes(),
             "ansi" => layout.canvas.to_ansi().into_bytes(),
             "md" => layout.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
-            "gif" => {
+            "gif" | "webp" if animated => {
                 // Every step, the typed moves between them, one geometry
                 // for the take.
                 let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
@@ -1501,36 +1512,47 @@ impl ExportJob {
                 .into_iter()
                 .map(|f| (f.canvas, f.delay_ms))
                 .collect();
-                gif_frames = frames.len();
-                tiza_export::to_gif(
-                    &frames,
-                    &theme,
-                    &tiza_export::GifOptions {
-                        svg: tiza_export::SvgOptions {
-                            embed_fonts: false,
-                            title: None,
-                            ..svg_opts.clone()
+                anim_frames = frames.len();
+                let svg = tiza_export::SvgOptions {
+                    embed_fonts: false,
+                    title: None,
+                    ..svg_opts.clone()
+                };
+                if format == "webp" {
+                    tiza_export::to_webp_anim(
+                        &frames,
+                        &theme,
+                        &tiza_export::WebpAnimOptions {
+                            svg,
+                            png: png_opts,
+                            plays: 0,
                         },
-                        png: tiza_export::PngOptions {
-                            scale: self.scale,
-                            system_fonts: false,
+                    )
+                    .map_err(too_big)?
+                    .0
+                } else {
+                    tiza_export::to_gif(
+                        &frames,
+                        &theme,
+                        &tiza_export::GifOptions {
+                            svg,
+                            png: png_opts,
+                            repeat: None,
                         },
-                        repeat: None,
-                    },
-                )
-                .map_err(too_big)?
-                .0
+                    )
+                    .map_err(too_big)?
+                    .0
+                }
             }
             "png" => {
                 let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
-                tiza_export::to_png(
-                    &svg,
-                    &tiza_export::PngOptions {
-                        scale: self.scale,
-                        system_fonts: false,
-                    },
-                )
-                .map_err(too_big)?
+                tiza_export::to_png(&svg, &png_opts).map_err(too_big)?
+            }
+            "webp" => {
+                let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
+                tiza_export::to_webp(&svg, &png_opts)
+                    .map_err(too_big)?
+                    .bytes
             }
             _ => tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes(),
         };
@@ -1578,8 +1600,8 @@ impl ExportJob {
         if !said.is_empty() {
             reply["warning"] = json!(said.join("; "));
         }
-        if is_gif {
-            reply["frames"] = json!(gif_frames);
+        if animated {
+            reply["frames"] = json!(anim_frames);
             reply["steps"] = json!(format!("0-{last}"));
             reply.as_object_mut().unwrap().remove("step");
         }

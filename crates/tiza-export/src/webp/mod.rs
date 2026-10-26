@@ -6,6 +6,9 @@
 //! length before libwebp sees them, and nothing of libwebp (pointer, handle,
 //! type) leaves it. All the `unsafe` code of Tiza is in [`ffi`], which is
 //! private.
+//!
+//! [`to_webp`] and [`to_webp_anim`] export Tiza's frames: the pixels of the
+//! PNG path, and for an animation the frame times of the GIF.
 
 #[allow(unsafe_code)]
 mod ffi;
@@ -13,6 +16,15 @@ mod rgba;
 
 pub use rgba::Rgba;
 use rgba::check_size;
+
+use resvg::tiny_skia::Pixmap;
+use tiza_core::canvas::Canvas;
+use tiza_core::theme::Theme;
+
+use crate::Error;
+use crate::gif::frame_delay_ms;
+use crate::png::{PngOptions, rasterize};
+use crate::svg::{SvgOptions, to_svg};
 
 /// Largest side of a WebP image, in pixels (`WEBP_MAX_DIMENSION`).
 pub const MAX_SIDE: u32 = 16_383;
@@ -187,16 +199,100 @@ impl AnimEncoder {
     }
 }
 
+/// The straight RGBA of a rasterized frame, the pixels that `to_png`
+/// writes: the buffer of the pixmap, changed in place (no copy of the
+/// frame).
+fn straight_rgba(mut pm: Pixmap) -> Vec<u8> {
+    for i in 0..pm.pixels().len() {
+        let c = pm.pixels()[i].demultiply();
+        pm.data_mut()[i * 4..i * 4 + 4].copy_from_slice(&[c.red(), c.green(), c.blue(), c.alpha()]);
+    }
+    pm.take()
+}
+
+/// A lossless WebP still and its size in pixels.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WebpStill {
+    pub bytes: Vec<u8>,
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Rasterizes an SVG made by [`crate::to_svg`] into a lossless WebP: the
+/// pixels of [`crate::to_png`] with the same options.
+pub fn to_webp(svg: &str, o: &PngOptions) -> Result<WebpStill, Error> {
+    let pm = rasterize(svg, o)?;
+    let (width, height) = (pm.width(), pm.height());
+    let img = straight_rgba(pm);
+    let bytes = encode_still(Rgba::new(&img, width, height)?, Level::DEFAULT)?;
+    Ok(WebpStill {
+        bytes,
+        width,
+        height,
+    })
+}
+
+#[derive(Debug, Clone)]
+pub struct WebpAnimOptions {
+    pub svg: SvgOptions,
+    pub png: PngOptions,
+    /// How many times the animation plays; 0 plays it forever.
+    pub plays: u16,
+}
+
+/// What [`to_webp_anim`] wrote, for the CLI's summary line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WebpReport {
+    pub frames: usize,
+    pub width: u32,
+    pub height: u32,
+    /// Milliseconds the animation lasts (one loop).
+    pub duration_ms: u64,
+}
+
+/// Encodes `frames` (canvas, delay in ms), as [`crate::to_gif`] takes them,
+/// into an animated lossless WebP. Each frame has the pixels of the PNG
+/// path and lasts as long as in the GIF ([`frame_delay_ms`]).
+pub fn to_webp_anim(
+    frames: &[(Canvas, u64)],
+    theme: &Theme,
+    o: &WebpAnimOptions,
+) -> Result<(Vec<u8>, WebpReport), Error> {
+    let mut enc = None;
+    let mut duration_ms = 0u64;
+    for (canvas, delay) in frames {
+        let pm = rasterize(&to_svg(canvas, theme, &o.svg), &o.png)?;
+        let (w, h) = (pm.width(), pm.height());
+        let enc = match enc {
+            Some(ref mut e) => e,
+            None => enc.insert(AnimEncoder::new(w, h, Level::DEFAULT, o.plays)?),
+        };
+        let ms = frame_delay_ms(*delay);
+        duration_ms = duration_ms.saturating_add(ms);
+        // At most two maximum holds (frame_delay_ms), far under MAX_FRAME_MS.
+        let ms = u32::try_from(ms).map_err(|_| WebpError::Duration(u32::MAX))?;
+        enc.add_frame(Rgba::new(&straight_rgba(pm), w, h)?, ms)?;
+    }
+    let enc = enc.ok_or(WebpError::NoFrames)?;
+    let (width, height) = (enc.width, enc.height);
+    Ok((
+        enc.finish()?,
+        WebpReport {
+            frames: frames.len(),
+            width,
+            height,
+            duration_ms,
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::png::{PngOptions, rasterize};
-    use crate::svg::{SvgOptions, to_svg};
-    use tiza_core::canvas::{Canvas, CellStyle, Rgb};
-    use tiza_core::theme::Theme;
+    use tiza_core::canvas::{CellStyle, Rgb};
 
-    /// A real frame: code and a box, through the PNG path, as straight RGBA.
-    fn frame(text: &str) -> (Vec<u8>, u32, u32) {
+    /// A canvas with code and a box.
+    fn canvas(text: &str) -> Canvas {
         let mut c = Canvas::new(24, 3);
         c.put_str(0, 0, text, CellStyle::new().fg(Rgb(255, 255, 255)));
         c.put_str(
@@ -205,20 +301,22 @@ mod tests {
             "╭─ ★ ✎ ─╮ é 中",
             CellStyle::new().fg(Rgb(255, 128, 0)),
         );
+        c
+    }
+
+    fn svg_of(c: &Canvas) -> String {
         let o = SvgOptions {
             embed_fonts: false,
             ..Default::default()
         };
-        let pm = rasterize(&to_svg(&c, &Theme::dark(), &o), &PngOptions::default()).unwrap();
-        let rgba = pm
-            .pixels()
-            .iter()
-            .flat_map(|p| {
-                let c = p.demultiply();
-                [c.red(), c.green(), c.blue(), c.alpha()]
-            })
-            .collect();
-        (rgba, pm.width(), pm.height())
+        to_svg(c, &Theme::dark(), &o)
+    }
+
+    /// A real frame through the PNG path, as straight RGBA.
+    fn frame(text: &str) -> (Vec<u8>, u32, u32) {
+        let pm = rasterize(&svg_of(&canvas(text)), &PngOptions::default()).unwrap();
+        let (w, h) = (pm.width(), pm.height());
+        (straight_rgba(pm), w, h)
     }
 
     /// A small image with every alpha, and colors under alpha 0.
@@ -311,6 +409,57 @@ mod tests {
             }
         }
         out
+    }
+
+    #[test]
+    fn to_webp_has_the_pixels_of_to_png() {
+        let svg = svg_of(&canvas("fn main() { println!(); }"));
+        let o = PngOptions::default();
+        let png = Pixmap::decode_png(&crate::to_png(&svg, &o).unwrap()).unwrap();
+        let (w, h) = (png.width(), png.height());
+        let still = to_webp(&svg, &o).unwrap();
+        assert_eq!((still.width, still.height), (w, h));
+        assert_eq!(decode_still(&still.bytes), (straight_rgba(png), w, h));
+    }
+
+    #[test]
+    fn to_webp_anim_has_the_frames_and_times_of_the_gif() {
+        let texts = ["let a;", "let a = 1;", "let a = 12;"];
+        let delays = [25, 400, 1234];
+        let frames: Vec<(Canvas, u64)> = texts.iter().map(|t| canvas(t)).zip(delays).collect();
+        let o = WebpAnimOptions {
+            svg: SvgOptions {
+                embed_fonts: false,
+                ..Default::default()
+            },
+            png: PngOptions::default(),
+            plays: 2,
+        };
+        let (webp, report) = to_webp_anim(&frames, &Theme::dark(), &o).unwrap();
+        let got = self::frames(&webp);
+        let times: Vec<u32> = got.iter().map(|f| f.1).collect();
+        assert_eq!(times, [30, 400, 1240], "frame_delay_ms, as in the GIF");
+        for ((px, ..), t) in got.iter().zip(texts) {
+            assert!(*px == frame(t).0, "{t}");
+        }
+        let (_, w, h) = frame(texts[0]);
+        assert_eq!(
+            report,
+            WebpReport {
+                frames: 3,
+                width: w,
+                height: h,
+                duration_ms: 1670
+            }
+        );
+        assert_eq!(
+            decode(&webp).loop_count(),
+            image_webp::LoopCount::Times(2.try_into().unwrap())
+        );
+        assert!(matches!(
+            to_webp_anim(&[], &Theme::dark(), &o),
+            Err(Error::Webp(WebpError::NoFrames))
+        ));
     }
 
     #[test]

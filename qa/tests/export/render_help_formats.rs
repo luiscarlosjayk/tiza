@@ -22,6 +22,7 @@ fn render_help_names_every_format_that_out_writes() {
         (".ansi", "ANSI"),
         (".svg", "SVG"),
         (".png", "PNG"),
+        (".webp", "WebP"),
         (".gif", "GIF"),
         (".mp4", "MP4"),
         (".webm", "WebM"),

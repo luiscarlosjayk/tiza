@@ -269,7 +269,7 @@ fn mcp_export_image_tool() {
         r3["error"]["message"]
             .as_str()
             .unwrap_or("")
-            .contains(".png, .svg, .txt, .ansi, .md or .gif"),
+            .contains(".png, .svg, .txt, .ansi, .md, .gif or .webp"),
         "{r3}"
     );
 }

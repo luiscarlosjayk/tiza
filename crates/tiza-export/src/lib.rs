@@ -2,7 +2,7 @@
 //! published only so that `cargo install tiza` works: it has no stable
 //! API. Use the `tiza` binary.
 //!
-//! Export of a rendered [`Canvas`] to SVG and PNG.
+//! Export of a rendered [`Canvas`] to SVG, PNG, GIF and lossless WebP.
 //!
 //! The SVG is a grid of monospace text runs with the theme's colors, so it
 //! looks exactly like the terminal. Fonts (JetBrains Mono, OFL, plus a small
@@ -18,6 +18,7 @@ pub mod webp;
 pub use gif::{GifOptions, GifReport, to_gif};
 pub use png::{PngOptions, to_png};
 pub use svg::{SvgOptions, to_svg};
+pub use webp::{WebpAnimOptions, WebpReport, WebpStill, to_webp, to_webp_anim};
 
 /// Largest PNG side, in pixels.
 pub const MAX_SIDE_PX: u32 = 16_384;
@@ -38,6 +39,8 @@ pub enum Error {
     Png(String),
     #[error("GIF encoding failed: {0}")]
     Gif(String),
-    #[error("WebP encoding failed: {0}")]
+    /// Says what is wrong itself: the CLI puts `could not encode the WebP`
+    /// before it.
+    #[error(transparent)]
     Webp(#[from] webp::WebpError),
 }

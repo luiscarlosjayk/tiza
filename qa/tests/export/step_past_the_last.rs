@@ -6,7 +6,7 @@
 //!
 //! Acceptance criteria:
 //! - AC1 `--step N` past the last step renders exactly what `--step L`
-//!   renders (byte-identical in txt, ansi, md, svg and png), as the message
+//!   renders (byte-identical in txt, ansi, md, svg, png and webp), as the message
 //!   says; the same for `:export step=N` and MCP `export_image`.
 //! - AC2 This file; CHANGELOG (Fixed).
 //!
@@ -54,7 +54,7 @@ fn rendered(dir: &std::path::Path, step: u32, format: &str) -> (Vec<u8>, String)
 #[test]
 fn render_past_the_last_step_is_the_last_step() {
     let dir = scratch("render");
-    for format in ["txt", "ansi", "md", "svg", "png"] {
+    for format in ["txt", "ansi", "md", "svg", "png", "webp"] {
         let (last, said) = rendered(&dir, LAST, format);
         assert!(!said.contains("does not exist"), "{format}: {said}");
         for step in PAST {
@@ -181,7 +181,8 @@ fn mcp_export_image_past_the_last_step_is_the_last_step() {
     let doc = tiza_core::fs::load_document(std::path::Path::new(&doc_path())).unwrap();
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("live.sock"));
     let mut mcp = McpClient::start(&live.socket);
-    for ext in ["txt", "svg"] {
+    // A .webp with `step` is a still of that step, as a .png.
+    for ext in ["txt", "svg", "webp"] {
         let last = dir.join(format!("last.{ext}"));
         let (err, _, v) = mcp.call(
             "export_image",

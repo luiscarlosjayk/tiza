@@ -1,5 +1,5 @@
 //! What `tiza render` and `:export` write: text, Markdown, ANSI, SVG, PNG,
-//! GIF, MP4, cast and tape, and the export of the live instance.
+//! WebP, GIF, MP4, cast and tape, and the export of the live instance.
 
 mod all_steps_out;
 mod cast_and_tape;
@@ -13,3 +13,4 @@ mod text_markdown_ansi;
 mod theme_auto;
 mod video_last_step;
 mod video_legibility;
+mod webp;
