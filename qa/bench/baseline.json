@@ -3,44 +3,64 @@
   "targets": {
     "aarch64-apple-darwin": {
       "target": "aarch64-apple-darwin",
-      "commit": "452c576",
-      "date": "2026-10-17",
+      "commit": "3cdd43c",
+      "date": "2026-10-26 03:10 UTC",
       "machine": "Darwin arm64, 18 CPUs",
-      "binary_bytes": 11209360,
+      "binary_bytes": 12783312,
       "scenarios": {
         "version": {
-          "median_ms": 5.24
+          "median_ms": 4.64,
+          "min_ms": 3.9,
+          "max_ms": 5.62,
+          "runs": 7
         },
         "render_txt_step7": {
-          "median_ms": 18.28
+          "median_ms": 18.12,
+          "min_ms": 17.79,
+          "max_ms": 19.55,
+          "runs": 7
         },
         "render_png_step7": {
-          "median_ms": 56.77
+          "median_ms": 57.17,
+          "min_ms": 56.66,
+          "max_ms": 60.2,
+          "runs": 7
         },
         "render_txt_rust_2000_lines": {
-          "median_ms": 105.18
+          "median_ms": 55.17,
+          "min_ms": 54.07,
+          "max_ms": 55.8,
+          "runs": 7
         },
         "render_txt_typescript_3000_lines": {
-          "median_ms": 866.27
+          "median_ms": 412.36,
+          "min_ms": 410.1,
+          "max_ms": 416.15,
+          "runs": 7
         },
         "render_gif_example": {
-          "median_ms": 163.16
+          "median_ms": 164.7,
+          "min_ms": 164.14,
+          "max_ms": 165.97,
+          "runs": 7
         },
         "tui_first_frame": {
-          "median_ms": 20.49
+          "median_ms": 19.15,
+          "min_ms": 18.89,
+          "max_ms": 19.28,
+          "runs": 7
         },
         "frame_median": {
-          "median_ms": 3.12,
+          "median_ms": 4.05,
           "runs": 21
         },
         "present_moves_frame": {
-          "median_ms": 4.78,
-          "runs": 21,
-          "note": "added with the scenario on 2026-10-22 (main 448bfb7 plus the cached geometry); 46.02 ms on 448bfb7 itself"
+          "median_ms": 5.16,
+          "runs": 21
         }
       },
-      "cargo_install_cold_s": 64.7,
-      "note": "First Mac baseline: 452c576, lto = \"fat\", generated scenario files, Luis's Mac (macOS arm64)"
+      "note": "code is painted by whole graphemes and invisible characters are marked (a40becd): median frame 3.1 -> ~3.9 ms; the other scenarios are this run's (long files about 2x faster)",
+      "cargo_install_cold_s": 64.7
     },
     "x86_64-unknown-linux-gnu": {
       "target": "x86_64-unknown-linux-gnu",
