@@ -7,9 +7,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Added
 - WebP export, lossless. `tiza render --out demo.webp` writes an animation of all the steps, with the frames and the times of the GIF. `tiza render --step 3 --out p3.webp` writes a still of step 3, with the pixels of the PNG. `--all-steps --format webp`, `:export x.webp` and the MCP tool `export_image` also write WebP. A WebP is usually smaller than the PNG or the GIF of the same steps.
 - The `tiza` binary contains libwebp, the WebP library of Google, in C. Thus `cargo install tiza` needs a C compiler. The release archives include the license of libwebp, `LICENSE-libwebp.txt`.
+- The docs are on a website, https://tiza.luisk.dev. The site shows the docs of the latest release. It has a search box, a dark and a light theme, and a link on each heading.
+- The agent pages have prompts to copy for your agent. One prompt sets up the Tiza MCP server. Three prompts show what to ask: explain the code, show a fix with a move, and review the code in supervised mode.
+- The README and the agent setup page tell how to add the Tiza MCP server to Codex: `codex mcp add tiza -- tiza mcp`.
 
 ### Changed
+- The reference of the `:` commands has a page for each group of commands. Each command has its own heading, which is the link to share, for example `#box`. A list after the syntax gives each option, its values and its default. Real Tiza frames show what the annotation commands draw.
+- The animation of the README is a lossless WebP, 152 KB. Before, it was a GIF of 252 KB.
 - `examples/ownership.rs.tiza` has 6 steps. A box with a label shows each way to pass a value: a move, a shared borrow and a mutable borrow. The callout at the end is gone. The README images show the new example.
+- `tiza render --help` says what `--theme auto` and `--theme terminal` export: the theme of the document or `dark`, and `dark`.
+- Messages, help and the schemas say "color", not "colour".
+- The schema of a theme token no longer offers a palette name such as `orange`: Tiza does not take one there.
+- `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.
+- The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
 
 ### Fixed
 - An image export of a very long document stops with a clear message, before it makes the SVG. When the lines of code alone make the image too large, `tiza render` and `export_image` stop before the layout too. Before, Tiza used gigabytes of memory and then failed with `invalid SVG`. This is true for PNG, WebP, GIF and video, and for SVG, which has a higher limit.
@@ -44,16 +54,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - The config file reports each key or table other than `[theme]` on stderr.
 - A document with a `theme_overrides` value that is not a string still does not open. The error now says that a token must be a color string or a table of color strings.
 - MCP `export_image` applies the config file, as `tiza render` does. It says in `warning` what the config file left out, or that the config file does not parse. The export goes on.
-
-### Changed
-- `tiza render --help` says what `--theme auto` and `--theme terminal` export: the theme of the document or `dark`, and `dark`.
-- Messages, help and the schemas say "color", not "colour".
-- The schema of a theme token no longer offers a palette name such as `orange`: Tiza does not take one there.
-- `u` does not undo `--theme-file` now, as it does not undo `--theme`. `u` still undoes `:theme file PATH`.
-- The README gives the install script first: `curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh`. The archives of Releases and `cargo install tiza` are the other ways to install.
-
-### Added
-- The README and the agent setup page tell how to add the Tiza MCP server to Codex: `codex mcp add tiza -- tiza mcp`.
 
 ## [0.1.0] - 2026-10-25
 
