@@ -1,6 +1,6 @@
 //! Animated GIF from Tiza's own frames: every frame is rasterized
 //! by the PNG path (same pixels as `render --out x.png`), the palette is
-//! built once for the whole animation (the colours that cover most pixels
+//! built once for the whole animation (the colors that cover most pixels
 //! — background, code, rails — are kept exactly; the anti-aliasing blends
 //! are median-cut into what is left of the 256 entries; no dithering, so
 //! text stays crisp), and every frame after the first is written as the
@@ -221,7 +221,7 @@ fn changed_rect(a: &[u8], b: &[u8], width: u32, height: u32) -> Option<(u32, u32
 
 /// The palette: every colour when there are at most `max`; otherwise the
 /// `max / 4` most frequent ones exactly (background, code, rails, labels —
-/// the colours that must not shift) and a median cut of the rest.
+/// the colors that must not shift) and a median cut of the rest.
 fn build_palette(histogram: &HashMap<[u8; 3], u64>, max: usize) -> Vec<[u8; 3]> {
     if histogram.len() <= max {
         let mut all: Vec<[u8; 3]> = histogram.keys().copied().collect();
@@ -303,7 +303,7 @@ fn widest_channel(g: &[([u8; 3], u64)]) -> (usize, u8) {
 }
 
 /// Nearest palette entry for every colour of the histogram (exact for the
-/// colours that are in the palette).
+/// colors that are in the palette).
 fn index_map(histogram: &HashMap<[u8; 3], u64>, palette: &[[u8; 3]]) -> HashMap<[u8; 3], u8> {
     let exact: HashMap<[u8; 3], u8> = palette
         .iter()
@@ -382,7 +382,7 @@ mod tests {
     }
 
     #[test]
-    fn the_palette_keeps_the_frequent_colours_exactly() {
+    fn the_palette_keeps_the_frequent_colors_exactly() {
         let mut h = HashMap::new();
         h.insert([10, 10, 10], 1_000_000);
         h.insert([250, 250, 250], 100_000);

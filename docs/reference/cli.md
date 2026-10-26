@@ -228,7 +228,7 @@ Tiza writes these messages on stderr:
 | `tiza: --padding expects V or V,H` | `--padding` got another value. |
 | `tiza: invalid range: R` | `--focus` got a value that is not a range. |
 | `tiza: width=N: use a number between 20 and 400` | `tiza check --width` got a number out of the range. |
-| `tiza: FILE is not a .tiza document and has no sidecar (SIDECAR): nothing to check` | `tiza check` got a source file without a document next to it. |
+| `tiza: FILE is not a .tiza document and has no .tiza document next to it (DOCUMENT): nothing to check` | `tiza check` got a source file without a document next to it. |
 | ``tiza: FILE is neither a .tiza document nor a `scene get` envelope; to show it as code, pass --as-code`` | `tiza scene put` got a file that is not a document. |
 | `tiza: could not read PATH` | `tiza check`, `tiza scene put` or `tiza scene patch @PATH` cannot read the file. |
 | `tiza: the patch is not valid JSON: ERROR` | The JSON of `tiza scene patch` does not parse. |

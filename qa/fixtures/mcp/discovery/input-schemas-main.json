@@ -844,7 +844,7 @@
         ]
       },
       "skip_zero": {
-        "description": "GIF and animated WebP: start at the first annotated step instead of step 0 (default false)",
+        "description": "GIF and animated WebP: start at step 1 instead of step 0, the bare code (default false)",
         "type": [
           "boolean",
           "null"

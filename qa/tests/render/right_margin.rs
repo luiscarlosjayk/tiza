@@ -166,7 +166,12 @@ fn render_honours_the_field_and_margin_cols_overrides_it() {
     assert!(wider.contains(note), "{wider}");
     let bad = tiza(&["render", p, "--margin-cols", "5"]);
     assert!(!bad.status.success());
-    assert!(String::from_utf8_lossy(&bad.stderr).contains("between 12 and 200"));
+    // The flag's own name, and no `auto`, which only `:margin` takes.
+    let err = String::from_utf8_lossy(&bad.stderr);
+    assert!(
+        err.contains("--margin-cols=5: use a number between 12 and 200") && !err.contains("auto"),
+        "{err}"
+    );
     // A PNG is no wider than the content: the capped one is narrower.
     let a = dir.join("a.png");
     let b = dir.join("b.png");

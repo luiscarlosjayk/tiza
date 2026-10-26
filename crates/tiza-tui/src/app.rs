@@ -5477,7 +5477,7 @@ impl App {
                 .map(str::to_ascii_lowercase);
             if matches!(ext.as_deref(), Some("gif" | "mp4" | "webm" | "cast" | "tape")) {
                 Error::Invalid(format!(
-                    "{}: a recording of every step is made from the shell — `tiza render --out {}` records this instance (no FILE needed)",
+                    "{}: record every step from the shell with `tiza render --out {}`, which records this instance with no FILE",
                     path.display(),
                     path.display()
                 ))
@@ -5535,7 +5535,7 @@ impl App {
             past.unwrap_or_default(),
             Self::full_path(&path),
             bytes.len(),
-            theme_notice.map(|n| format!(" — {n}")).unwrap_or_default()
+            theme_notice.map(|n| format!("; {n}")).unwrap_or_default()
         ))
     }
 

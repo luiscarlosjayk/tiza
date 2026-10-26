@@ -62,7 +62,7 @@ struct Cli {
     /// Do not expose the local API
     #[arg(long)]
     no_socket: bool,
-    /// Never write the sidecar on its own (annotate an example without touching it); `:w` saves explicitly, `:autosave on` resumes
+    /// Never write the .tiza document on its own (annotate an example without touching it); `:w` saves explicitly, `:autosave on` resumes
     #[arg(long)]
     no_save: bool,
     #[command(subcommand)]
@@ -231,10 +231,10 @@ enum Cmd {
         /// SVG: do not embed the fonts (smaller file; relies on the viewer's fonts)
         #[arg(long)]
         no_embed_fonts: bool,
-        /// PNG: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
+        /// PNG, WebP, GIF, MP4 and WebM: also use the system fonts as a fallback (emoji, CJK). Off by default so the output is reproducible.
         #[arg(long)]
         system_fonts: bool,
-        /// .gif/.webp/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long). In a .gif/.webp/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
+        /// .gif/.webp/.mp4/.cast/.tape: seconds each step stays on screen (the last one twice as long, but not in a .cast). In a .gif/.webp/.mp4/.webm (and the real TUI a .tape drives) a named step with `auto_advance_ms` stays that long instead
         #[arg(long, default_value_t = 2.0)]
         interval: f64,
         /// .gif/.webp/.mp4/.cast/.tape and --all-steps: start at step 1 instead of step 0 (the bare code)
@@ -252,7 +252,7 @@ enum Cmd {
     /// clipped with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
     /// Writes nothing.
     Check {
-        /// `.tiza` document, a source file with a `.tiza` sidecar, or `-` for stdin
+        /// `.tiza` document, a source file with a `.tiza` document next to it, or `-` for stdin
         file: String,
         /// Width to check the labels at (default: 100, as `render`)
         #[arg(long)]
@@ -522,9 +522,14 @@ fn real_main() -> anyhow::Result<()> {
             let width =
                 tiza_core::layout::check_width(width).map_err(|e| anyhow::anyhow!("{e}"))?;
             let margin_cap = match margin_cols {
-                Some(c) => Some(
-                    tiza_core::layout::check_margin_cap(c).map_err(|e| anyhow::anyhow!("{e}"))?,
-                ),
+                // `:margin` also takes `auto`; this flag takes a number.
+                Some(c) => Some(tiza_core::layout::check_margin_cap(c).map_err(|_| {
+                    anyhow::anyhow!(
+                        "--margin-cols={c}: use a number between {} and {}",
+                        tiza_core::layout::MIN_MARGIN_CAP,
+                        tiza_core::layout::MAX_MARGIN_CAP
+                    )
+                })?),
                 None => doc.margin.map(usize::from),
             };
             // A hold past one hour (or not a number) is refused:
@@ -784,7 +789,8 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the WebP")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop{plays}{timed_note}",
+                            "wrote {} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop{plays}{timed_note}",
+                            tiza_core::printable::printable_text(&out),
                             bytes.len(),
                             report.frames,
                             if report.frames == 1 { "" } else { "s" },
@@ -809,7 +815,8 @@ fn real_main() -> anyhow::Result<()> {
                         .context("could not encode the GIF")?;
                         write_atomically(&out, &bytes)?;
                         eprintln!(
-                            "wrote {out} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colors{plays}{timed_note}",
+                            "wrote {} ({} bytes): {} frame{}, {}×{} px, {:.1} s per loop, {} colors{plays}{timed_note}",
+                            tiza_core::printable::printable_text(&out),
                             bytes.len(),
                             report.frames,
                             if report.frames == 1 { "" } else { "s" },
@@ -821,7 +828,10 @@ fn real_main() -> anyhow::Result<()> {
                         return Ok(());
                     }
                     let bytes = encode_video(&frames, &theme, &svg_opts, &png_opts, format, &out)?;
-                    eprintln!("wrote {out} ({bytes} bytes){timed_note}");
+                    eprintln!(
+                        "wrote {} ({bytes} bytes){timed_note}",
+                        tiza_core::printable::printable_text(&out)
+                    );
                     return Ok(());
                 }
                 Format::Cast | Format::Tape => {
@@ -1057,7 +1067,7 @@ fn real_main() -> anyhow::Result<()> {
                     let sidecar = fs::sidecar_path(&path);
                     if !sidecar.exists() {
                         bail!(
-                            "{file} is not a .tiza document and has no sidecar ({}): nothing to check",
+                            "{file} is not a .tiza document and has no .tiza document next to it ({}): nothing to check",
                             sidecar.display()
                         );
                     }
@@ -1550,7 +1560,7 @@ fn encode_video(
     let Some(ffmpeg) = find_ffmpeg() else {
         eprintln!(
             "tiza: ffmpeg not found on PATH (or in $TIZA_FFMPEG), and Tiza never bundles it.\n\
-             Install it — macOS: `brew install ffmpeg`; Debian/Ubuntu: `sudo apt install ffmpeg`; Fedora: `sudo dnf install ffmpeg`; Windows: `winget install ffmpeg` — and run the same command again.\n\
+             Install it, then run the same command again. On macOS: `brew install ffmpeg`. On Debian or Ubuntu: `sudo apt install ffmpeg`. On Fedora: `sudo dnf install ffmpeg`.\n\
              `.gif` and `.cast` need nothing: `tiza render … --out {}.gif`",
             std::path::Path::new(out).with_extension("").display()
         );
@@ -1663,7 +1673,7 @@ fn encode_video(
     if !status.success() {
         let _ = std::fs::remove_file(&tmp);
         bail!(
-            "ffmpeg failed ({status}); the frames were fine, so check the codec above is in your ffmpeg build"
+            "ffmpeg failed ({status}). The frames are correct: make sure that your ffmpeg build has the codec of this format"
         );
     }
     std::fs::rename(&tmp, out_path).with_context(|| format!("could not write {out}"))?;

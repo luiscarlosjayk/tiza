@@ -1180,11 +1180,12 @@ impl Document {
             .fold(0u64, u64::saturating_add)
     }
 
-    /// Milliseconds the `wait` moves of `step` add up to.
+    /// Milliseconds the `wait` moves of `step` add up to; a stale move
+    /// waits for nothing, as in [`Document::typing_ms_at`].
     pub fn wait_ms_at(&self, step: u32) -> u64 {
         self.moves
             .iter()
-            .filter(|m| m.at_step == step)
+            .filter(|m| m.at_step == step && m.stale.is_none())
             .map(|m| match &m.action {
                 MoveAction::Wait(w) => w.ms,
                 _ => 0,

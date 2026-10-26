@@ -1839,6 +1839,10 @@ mod tests {
         assert!(typing_plan(&d, 2).is_none());
         assert_eq!(d.typing_ms_at(3), 50);
         assert_eq!(d.wait_ms_at(3), 50);
+        // A stale wait waits for nothing, in a `.cast` as on the screen.
+        let mut held = d.clone();
+        held.moves[3].stale = Some(crate::stale::Stale::named("held"));
+        assert_eq!((held.typing_ms_at(3), held.wait_ms_at(3)), (0, 0));
         // Errors name the move.
         let e = d
             .add_move(mv(serde_json::json!({"at_step": 1, "action": "select", "from": {"find": "let"}, "to": {"find": "u;"}})))

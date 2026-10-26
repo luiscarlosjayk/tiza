@@ -148,7 +148,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | Format | Each step | The last step | Typed moves and `wait` moves |
 |---|---|---|---|
 | GIF, animated WebP, MP4, WebM | `--interval`, or the `auto_advance_ms` of the step | Two times `--interval`, or its `auto_advance_ms` | One frame for each typed unit, before the annotations of the step |
-| `.cast` | `--interval`, plus the `wait` moves of the step | `--interval` | No frames: each step shows its final code |
+| `.cast` | `--interval`, plus the `wait` moves of the step that are not stale | `--interval` | No frames: each step shows its final code |
 | `.tape` | `--interval`, or the time of its typed moves and `wait` moves plus 0.5 s when that is longer | Its own time, plus one more `--interval` | The real TUI types them |
 
 - A GIF counts time in units of 10 ms. Tiza rounds each frame up to a full unit, and to at least 20 ms.
@@ -206,7 +206,7 @@ The reply has these fields:
 | `step` | The step in the file, except in the reply for an animation. |
 | `warning` | What the config file left out, or that the config file does not parse. Then, except in the reply for an animation, that the step you asked for does not exist. The parts are separated by `; `. |
 | `frames` | The number of frames, only in the reply for an animation. |
-| `steps` | The steps of the document, for example `0-7`, only in the reply for an animation. |
+| `steps` | The steps of the animation, for example `0-7`, or `1-7` with `skip_zero`. Only in the reply for an animation. |
 
 An animation is a GIF, or a WebP without `step`.
 
@@ -229,7 +229,7 @@ An animation is a GIF, or a WebP without `step`.
 | `MESSAGE (CODE)` | The live instance refuses a request, and `export_image` passes on its error. |
 | `the live document cannot be exported` | Tiza cannot load a view of the live document. |
 | `could not write PATH` | Tiza cannot write the file. |
-| `export_image did not finish within 120 s and was abandoned: nothing was written.` | The export takes more than 120 s. |
+| `export_image did not finish within 120 s, and Tiza stopped it: nothing was written.` | The export takes more than 120 s. |
 | `internal error: the tool export_image call failed with a bug in Tiza (a panic; its message is on the MCP server's stderr). Please report it; the live instance is unaffected` | A bug in Tiza stops the export. |
 
 - `the live document cannot be exported` ends with the reason. `could not write PATH` ends with the error of the system.
@@ -290,7 +290,7 @@ An animation is a GIF, or a WebP without `step`.
 | `the live document cannot be rendered` | Tiza cannot load a view of the live document. |
 | `could not create FOLDER` | Tiza cannot make the folder of `--all-steps`. |
 | `width=N: use a number between 20 and 400` | `--width` is out of the range. |
-| `margin=N: use a number between 12 and 200, or auto` | `--margin-cols` is out of the range. |
+| `--margin-cols=N: use a number between 12 and 200` | `--margin-cols` is out of the range. |
 | `font-size=N: use a number between 4 and 96` | `--font-size` is out of the range for an image or a video. |
 | `scale=N: use a number between 0.25 and 8` | `--scale` is out of the range for a PNG, a GIF or a video. |
 | `interval=N: use a number of seconds between 0 and 3600` | `--interval` is out of the range. |
@@ -344,7 +344,7 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | Message | When |
 |---|---|
 | `ffmpeg not found on PATH (or in $TIZA_FFMPEG), and Tiza never bundles it.` | An MP4 or a WebM export cannot find `ffmpeg`, and exits with code 2. |
-| `ffmpeg failed (STATUS); the frames were fine, so check the codec above is in your ffmpeg build` | `ffmpeg` gave an error. |
+| `ffmpeg failed (STATUS). The frames are correct: make sure that your ffmpeg build has the codec of this format` | `ffmpeg` gave an error. |
 | `could not run PATH` | Tiza cannot run the `ffmpeg` file that it found. |
 | `could not create PATH` | Tiza cannot make the temporary folder of the frames. |
 | `` play it with `vhs PATH` (needs vhs, ttyd, ffmpeg); `--out NAME.gif` needs nothing `` | Tiza writes a `.tape` file. |
@@ -368,7 +368,7 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `exported step N to PATH (N bytes)` | Tiza writes the file, and `PATH` is the full path. |
 | `step N does not exist (the document has steps 0 to L); exported step L to PATH (N bytes)` | `step=` is after the last step. |
 | `the path's extension picks the format (.txt .ansi .md .svg .png .webp)` | The extension is not a format of `:export`. |
-| `` PATH: a recording of every step is made from the shell — `tiza render --out PATH` records this instance (no FILE needed) `` | The extension is `.gif`, `.mp4`, `.webm`, `.cast` or `.tape`. |
+| `` PATH: record every step from the shell with `tiza render --out PATH`, which records this instance with no FILE `` | The extension is `.gif`, `.mp4`, `.webm`, `.cast` or `.tape`. |
 | `step= must be a number` | `step=` is not a number. |
 | `width= must be a number between 20 and 400` | `width=` is not a number. |
 | `width=N: use a number between 20 and 400` | `width=` is a number out of the range. |

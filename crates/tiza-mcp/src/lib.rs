@@ -354,7 +354,7 @@ pub struct ExportParams {
     )]
     pub interval: Option<f64>,
     #[schemars(
-        description = "GIF and animated WebP: start at the first annotated step instead of step 0 (default false)"
+        description = "GIF and animated WebP: start at step 1 instead of step 0, the bare code (default false)"
     )]
     pub skip_zero: Option<bool>,
     #[schemars(description = "Font size in px (default 16)")]
@@ -1349,7 +1349,7 @@ impl TizaServer {
                 } else {
                     return Err(McpError::internal_error(
                         format!(
-                            "export_image did not finish within {} s and was abandoned: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif or an animated .webp; `tiza render` in a terminal has no deadline",
+                            "export_image did not finish within {} s, and Tiza stopped it: nothing was written. Export fewer steps, a smaller width or scale, or a still (`step`) instead of a .gif or an animated .webp. `tiza render` in a terminal has no time limit",
                             deadline.as_secs_f64()
                         ),
                         None,
@@ -1683,7 +1683,7 @@ impl ExportJob {
         }
         if animated {
             reply["frames"] = json!(anim_frames);
-            reply["steps"] = json!(format!("0-{last}"));
+            reply["steps"] = json!(format!("{first}-{}", last.max(first)));
             reply.as_object_mut().unwrap().remove("step");
         }
         Ok(text(pretty(&reply)))

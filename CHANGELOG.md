@@ -15,6 +15,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - In a terminal wider than 402 columns, `tiza render` of the live instance exports 400 columns. Before, it failed with `width=N`. `:export` and `export_image` also export 400 columns at most.
 - When Tiza cannot write a GIF, an animated WebP or a file of `--all-steps`, the message names the file that you gave. Before, it named a temporary file, and that file stayed.
 - `export_image` checks `scale` only for a PNG, a WebP and a GIF, and `font_size` only for these and an SVG. Before, a bad `scale` also stopped a text export.
+- With `skip_zero`, the reply of `export_image` gives `steps` from step 1, for example `1-7`. Before, it gave `0-7`.
+- A `.cast` does not hold a step for a `wait` move that is stale, as the TUI does not. Before, it held the step for the time of the wait.
+- The `wrote` line of a GIF, a WebP or a video shows a control character of the path as text, as the other `wrote` lines do.
+- `--margin-cols` out of the range gives `--margin-cols=N: use a number between 12 and 200`. Before, the message offered `auto`, which only `:margin` takes.
+- The help of `--interval` and `--system-fonts`, the `ffmpeg` messages, the `:export` message for a recording, the `skip_zero` description and the time-limit message of `export_image` are in clear English, without asides. The `ffmpeg` message no longer names Windows, which Tiza does not support.
 
 ## [0.1.1] - 2026-10-26
 

@@ -253,8 +253,11 @@ fn the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
         json!({"path": path.to_str().unwrap(), "width": 90, "interval": 1, "skip_zero": true}),
     );
     assert!(!err, "{text}");
+    // `steps` names the steps of the animation: from 1 with `skip_zero`.
     assert!(
-        text.contains("\"format\": \"gif\"") && text.contains("\"frames\": 7"),
+        text.contains("\"format\": \"gif\"")
+            && text.contains("\"frames\": 7")
+            && text.contains("\"steps\": \"1-7\""),
         "{text}"
     );
     let g = decode(&std::fs::read(&path).unwrap());
@@ -342,4 +345,24 @@ fn a_write_error_names_the_file_and_leaves_no_temporary_file() {
         "{err}"
     );
     assert!(!dir.join(".taken.gif.tiza-tmp").exists(), "{err}");
+}
+
+/// The `wrote` line of a GIF shows a control character of the path as
+/// text, as the other `wrote` lines do: it never reaches the terminal.
+#[test]
+fn the_wrote_line_never_sends_a_control_character() {
+    let dir = scratch("wrote-ctrl");
+    let doc = fixture("shared/ownership/ownership.rs.tiza");
+    let out = dir.join("a\x1b[31mred.gif");
+    let o = tiza(&[
+        "render",
+        doc.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+        "--scale",
+        "0.25",
+    ]);
+    let err = String::from_utf8_lossy(&o.stderr);
+    assert!(o.status.success() && out.exists(), "{err}");
+    assert!(err.contains("wrote ") && !err.contains('\x1b'), "{err:?}");
 }
