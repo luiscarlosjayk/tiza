@@ -23,6 +23,7 @@ mod startup_keys;
 mod step_keys;
 mod step_zero_hint;
 mod supervised_mode;
+mod tab_selection;
 mod terminal_setup;
 mod terminal_theme;
 mod text_anchor_errors;

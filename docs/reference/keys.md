@@ -91,8 +91,8 @@ Press one of these keys while a selection is open:
 
 | Key | What it does |
 |---|---|
-| `Tab` | Selects the next annotation and moves the cursor to its first line. |
-| `Shift-Tab` | Selects the previous annotation and moves the cursor to its first line. |
+| `Tab` | Selects the next annotation on the screen and moves the cursor to its first line. |
+| `Shift-Tab` | Selects the previous annotation on the screen and moves the cursor to its first line. |
 | `Enter` | Opens `:label ID` with the current label of the selected annotation. |
 | `e` | Opens `:set ID` for the selected annotation. |
 | `c` | Opens `:color ID` for the selected annotation. |
@@ -101,10 +101,11 @@ Press one of these keys while a selection is open:
 | `-` | Moves the selected annotation to the previous step, but not before step 1. |
 | `Esc` | Clears the selection of the annotation. |
 
-- `Tab` goes through the annotations of the step on screen and of the earlier steps, in the order of their first line. After the last one, it goes back to the first one.
+- `Tab` goes through the annotations that the screen draws, in the order of their first line on the screen. After the last one, it goes back to the first one.
 - When two annotations start on the same line, `Tab` takes them in the order of their ids as text. Thus `a10` comes before `a2`.
-- `Tab` also selects an annotation that the step does not draw. Examples are a spotlight of an earlier step and an annotation of another file.
-- `Tab` moves the cursor only when the first line of the annotation is in the code on screen.
+- `Tab` does not select an annotation that the step does not draw. Examples are a spotlight of an earlier step and an annotation of another file. To select one of these, press `L`, go to its row and press `Enter`.
+- `Tab` moves the cursor to the line where the screen draws the annotation. A move of the step can put it on another line than the line that it was added on. A spotlight that names annotations takes the first line of these annotations.
+- `Tab` also leaves out a note or a callout that the screen has no room for, and the annotations of the step while its moves type.
 - With an annotation selected, `Enter`, `e`, `c`, `x`, `+` and `-` act on the annotation. The other keys do their usual action.
 - For a note, `Enter` opens the text of the note. For a callout, it opens the title.
 - Tiza refuses `+` on an annotation at step 999. It also refuses `+` and `-` when the lines of the annotation are not in the code of the new step. The status bar shows the error.
@@ -268,7 +269,7 @@ The help (`?`), the annotation list (`L`) and the agent review (`:review`) are p
 | `q` or `L` | Closes the help. | Closes the list. |
 | `Esc` | Clears the filter, or closes the help. | Clears the filter, or closes the list. |
 
-- In the list, `Enter` on an annotation also selects it, as `Tab` does.
+- In the list, `Enter` on an annotation also selects it, also when the step does not draw it. The cursor goes to its line when the step draws it.
 - In the list, `Enter` with no row only closes the list.
 - When the help closes, Tiza goes back to normal mode. It does not go back to the list.
 - When a motion key selects a stale move, the status bar shows `#N is stale: REASON. x deletes it`. The message does not show when the list opens or while you type a filter.
@@ -343,6 +344,7 @@ The rest of the status bar shows the first of these that applies:
 | `ID → step N` | `+` or `-` moved an annotation. |
 | `step 0 shows only the code: press n to see the annotations` | `Tab` at step 0, when no annotation is at step 0. |
 | `no annotations in this step` | `Tab` found no annotation. |
+| `no annotation on the screen at this step: L lists them all` | `Tab` found annotations of this step or of earlier steps, but the screen draws none of them. |
 | `undone: CHANGE` | `u` undid a change. |
 | `redone: CHANGE` | `U` or `Ctrl-R` redid a change. |
 | `nothing to undo` | `u` found no change. |

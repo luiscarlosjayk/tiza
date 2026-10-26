@@ -229,7 +229,7 @@ pub const HELP: &[(Section, &[Row])] = &[
         &[
             Key {
                 keys: "Tab/S-Tab",
-                desc: "Select the next or the previous annotation.",
+                desc: "Select the next or the previous annotation on the screen.",
                 when: Normal,
             },
             Key {

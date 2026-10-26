@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `status` has `save_error`: why the last save of the document failed, or `null` when the last save worked. An agent can see that its changes are not saved.
 
 ### Changed
+- `Tab` selects only the annotations that the screen draws, and moves the cursor to the line where it draws each one. An annotation of another file or a spotlight of an earlier step is in the list (`L`, `Enter`). Before, `Tab` also selected these, and the cursor went to their line number in the file on the screen.
 - `tiza render FILE:A-B` also draws the annotations of `FILE.A-B.tiza` when that document exists, as `tiza FILE:A-B` opens it, and says so on stderr. Before, it showed only the lines.
 - `tiza render FILE` without `--step` exports the last step of the document, the same as `--step LAST`. Thus a spotlight of the last step is on. Before, it showed all the annotations with no spotlight.
 - `:margin N`, `:margin` and `--margin-cols` say that notes wrap at the margin, and that labels, legends and long notes are cut there. Before, they said only that notes wrap.

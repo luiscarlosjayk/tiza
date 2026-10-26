@@ -527,6 +527,10 @@ pub struct App {
     /// How the panel was drawn last: the rows of one page and the largest
     /// scroll, for the keys that scroll it.
     pub overlay_drawn: std::cell::Cell<crate::panel::Drawn>,
+    /// The bar's text of the selected annotation where the moves of the
+    /// step put it, for (id, revision, step): drawn each frame, projected
+    /// once.
+    selected_shown: std::cell::RefCell<Option<(String, u64, u32, String)>>,
     /// Follow mode: the watched source file, when enabled.
     pub follow: Option<crate::follow::Follow>,
     /// Why follow went off by itself: the watcher of that file could not
@@ -655,6 +659,7 @@ impl App {
             overlay_sel: 0,
             overlay_pick: None,
             overlay_drawn: Default::default(),
+            selected_shown: Default::default(),
             follow: None,
             follow_failed: None,
             reload_waits: false,
@@ -4059,29 +4064,78 @@ impl App {
         true
     }
 
-    /// Visible annotations in reading order (first line, then id).
-    fn visible_ids(&self) -> Vec<String> {
-        let mut v: Vec<(u32, String)> = self
-            .doc
-            .annotations
-            .iter()
-            .filter(|a| a.step <= self.doc.step)
-            .map(|a| {
-                let first = a.shape.line_ranges().first().map(|r| r.0).unwrap_or(0);
-                (first, a.id.clone())
-            })
-            .collect();
+    /// The annotations that the screen draws at this step, in reading order
+    /// (the first line on the screen, then the id), each with that line.
+    /// The rules of the layout: the file shown, the step reached, a
+    /// spotlight within its `until`, the lines inside the view where the
+    /// moves of the step put them, a note or a callout with room, and not
+    /// the step's own while its moves type. A spotlight of ids only takes
+    /// the first line of what it names; with none of them drawn it has no
+    /// line, and comes last.
+    fn drawn_annotations(&self) -> Vec<(String, Option<u32>)> {
+        let step = self.doc.step;
+        let view;
+        let doc = if self.doc.moves.is_empty() {
+            &self.doc
+        } else {
+            view = self.doc.view_at(step);
+            &view.doc
+        };
+        let first_line = |a: &Annotation| match &a.shape {
+            Shape::Spotlight {
+                from_line: None,
+                ids,
+                ..
+            } => ids
+                .iter()
+                .filter_map(|id| doc.find_annotation(id))
+                .filter_map(|t| t.shape.line_ranges().first().map(|r| r.0))
+                .min(),
+            shape => shape.line_ranges().first().map(|r| r.0),
+        };
+        let mut cuts = None;
+        let mut v: Vec<(u32, String, Option<u32>)> = Vec::new();
+        for a in &doc.annotations {
+            let lines = a.shape.line_ranges();
+            let drawn = a.step <= step
+                && !(self.typing.is_some() && a.step == step)
+                && match &a.shape {
+                    Shape::Spotlight { until, .. } => step <= until.unwrap_or(a.step),
+                    _ => true,
+                }
+                && lines
+                    .iter()
+                    .all(|(f, t)| doc.has_line(*f) && doc.has_line(*t));
+            if !drawn {
+                continue;
+            }
+            // A note or a callout that the take has no room for.
+            if matches!(a.shape, Shape::Note { .. } | Shape::Callout { .. }) {
+                let (_, cut) = cuts.get_or_insert_with(|| self.screen_cuts());
+                if cut.iter().any(|c| c.id == a.id && c.dropped) {
+                    continue;
+                }
+            }
+            let line = first_line(a);
+            v.push((line.unwrap_or(u32::MAX), a.id.clone(), line));
+        }
         v.sort();
-        v.into_iter().map(|(_, id)| id).collect()
+        v.into_iter().map(|(_, id, line)| (id, line)).collect()
     }
 
-    /// Tab / Shift-Tab: select the next/previous visible annotation and move the cursor to it.
+    /// Tab / Shift-Tab: select the next or the previous annotation that the
+    /// screen draws, and move the cursor to its first line on the screen.
+    /// The others (another file's, a spotlight past its `until`) are in the
+    /// list (`L`, Enter).
     pub fn select_annotation(&mut self, dir: i32) {
-        let ids = self.visible_ids();
-        if ids.is_empty() {
+        let drawn = self.drawn_annotations();
+        if drawn.is_empty() {
             self.selected = None;
-            self.info(if self.doc.step == 0 {
+            let earlier = self.doc.annotations.iter().any(|a| a.step <= self.doc.step);
+            self.info(if self.doc.step == 0 && !earlier {
                 "step 0 shows only the code: press n to see the annotations"
+            } else if earlier {
+                "no annotation on the screen at this step: L lists them all"
             } else {
                 "no annotations in this step"
             });
@@ -4090,24 +4144,34 @@ impl App {
         let cur = self
             .selected
             .as_ref()
-            .and_then(|s| ids.iter().position(|i| i == s));
+            .and_then(|s| drawn.iter().position(|(i, _)| i == s));
         let next = match (cur, dir) {
             (None, d) if d >= 0 => 0,
-            (None, _) => ids.len() - 1,
-            (Some(i), d) => ((i as i64 + d as i64).rem_euclid(ids.len() as i64)) as usize,
+            (None, _) => drawn.len() - 1,
+            (Some(i), d) => ((i as i64 + d as i64).rem_euclid(drawn.len() as i64)) as usize,
         };
-        let id = ids[next].clone();
-        self.focus_annotation(id);
+        let (id, line) = drawn[next].clone();
+        self.move_cursor_to(line);
+        self.selected = Some(id);
     }
 
-    /// Selects annotation `id` as Tab does, the cursor on its first line.
-    fn focus_annotation(&mut self, id: String) {
-        if let Some(a) = self.doc.find_annotation(&id)
-            && let Some((line, _)) = a.shape.line_ranges().first()
-            && self.doc.has_line(*line)
-        {
-            self.cursor_line = *line;
+    /// The cursor on `line` of the screen, when it has one there.
+    fn move_cursor_to(&mut self, line: Option<u32>) {
+        if let Some(line) = line.filter(|l| self.doc.has_line(*l)) {
+            self.cursor_line = line;
         }
+    }
+
+    /// Selects annotation `id`, as Tab does. The cursor goes to its first
+    /// line on the screen when the step draws it; one that the step does
+    /// not draw is selected all the same, and the cursor stays.
+    fn focus_annotation(&mut self, id: String) {
+        let line = self
+            .drawn_annotations()
+            .into_iter()
+            .find(|(i, _)| *i == id)
+            .and_then(|(_, line)| line);
+        self.move_cursor_to(line);
         self.selected = Some(id);
     }
 
@@ -4155,7 +4219,20 @@ impl App {
     pub fn selected_text(&self) -> Option<String> {
         let id = self.selected.as_ref()?;
         let a = self.doc.find_annotation(id)?;
-        Some(tiza_core::protocol::describe(a))
+        if self.doc.moves.is_empty() {
+            return Some(tiza_core::protocol::describe(a));
+        }
+        // Where the moves of the step put it, as the list and Tab have it.
+        let key = (id.clone(), self.revision, self.doc.step);
+        if let Some((i, r, s, text)) = self.selected_shown.borrow().as_ref()
+            && (i, *r, *s) == (&key.0, key.1, key.2)
+        {
+            return Some(text.clone());
+        }
+        let view = self.doc.view_at(self.doc.step);
+        let text = tiza_core::protocol::describe(view.doc.find_annotation(id).unwrap_or(a));
+        *self.selected_shown.borrow_mut() = Some((key.0, key.1, key.2, text.clone()));
+        Some(text)
     }
 
     /// Quick edits on the selected annotation. Returns false if `key` is not one.
