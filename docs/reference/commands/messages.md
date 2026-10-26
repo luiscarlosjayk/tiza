@@ -98,9 +98,9 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `the .tiza now references FILE and shows its code (N annotations kept; u undoes)` | `:ref` or `:link` loaded the code of another file. |
 | `the .tiza now references FILE` | `:ref` or `:link` referenced a file that has the code on screen. |
 | `the .tiza already references FILE` | `:ref` or `:link` got no path, and the document references a file already. |
-| `line ranges start at 1` | `:link PATH:A-B` at step 1 or later got `A` = 0. |
-| `range A-B: the first line must not be after the last` | `:link PATH:A-B` at step 1 or later got `A` after `B`. |
-| `` malformed line range `R`: use A, A-B or A..B `` | `:link PATH:R` at step 1 or later got digits, `-` and `.` that are not a range. |
+| `line ranges start at 1` | `:link` or `:ref` got `PATH:A-B` with `A` = 0. |
+| `range A-B: the first line must not be after the last` | `:link` or `:ref` got `PATH:A-B` with `A` after `B`. |
+| `` malformed line range `R`: use A, A-B or A..B `` | `:link` or `:ref` got `PATH:R`. `R` starts with a digit, or it has only digits, `-` and `.`, but it is not a range. |
 | `code frozen inside the .tiza` | `:embed` copied the code into the document. |
 | `step N is not a valid number` | `:goto` got a number that is too large. |
 | `focus on A-B` | `:focus` set the focus. |

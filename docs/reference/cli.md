@@ -223,7 +223,7 @@ Tiza writes these messages on stderr:
 | `` tiza: the TUI needs a terminal on stdout; use `tiza render` for text output `` | The standard output of Tiza is not a terminal. |
 | `tiza: could not open FILE: line ranges start at 1` | The range starts at line 0. |
 | `tiza: could not open FILE: range A-B: the first line must not be after the last` | `A` is after `B`. |
-| `` tiza: could not open FILE: malformed line range `R`: use A, A-B or A..B `` | The text after the last `:` has only digits, `-` and `.`, but it is not `A`, `A-B` or `A..B`. |
+| `` tiza: could not open FILE: malformed line range `R`: use A, A-B or A..B `` | The text after the last `:` starts with a digit, or it has only digits, `-` and `.`. But it is not `A`, `A-B` or `A..B`. |
 | `tiza: could not open FILE` | Tiza cannot read the file. |
 | `tiza: --padding expects V or V,H` | `--padding` got another value. |
 | `tiza: invalid range: R` | `--focus` got a value that is not a range. |
@@ -241,7 +241,8 @@ Tiza writes these messages on stderr:
 | `tiza: MESSAGE (CODE)` | The live instance answers a command with an error. |
 
 - The messages `no grammar for …` and `config ignored: …` are warnings. Tiza goes on.
-- When the text after the last `:` has other characters, Tiza reads the whole text as a file name. Then the message is `could not open FILE`.
+- When the text after the last `:` does not start with a digit and has other characters than digits, `-` and `.`, Tiza reads the whole text as a file name, for example `a:b.rs`. Then the message is `could not open FILE`.
+- A file that is there opens as a file, also when its name has a `:` and a digit, for example `notes 12:00.md`.
 - `tiza: config ignored: PATH` ends with the error text of the TOML reader or of the system.
 - For `tiza scene text --width`, the live instance checks the width. Then the message ends with ` (invalid_argument)`, as in `tiza: MESSAGE (CODE)`.
 - `could not open FILE`, `could not read PATH` and `no Tiza instance is listening on …` can end with the error of the system. `--padding expects V or V,H` can end with the reason of the error.

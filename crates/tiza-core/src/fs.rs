@@ -8,23 +8,19 @@ use crate::model::{CodeSource, Document, SCHEMA_VERSION};
 
 pub const EXT: &str = "tiza";
 
-/// Splits `path[:A[-B]]`. Returns the path and the line range (1-based, inclusive).
-pub fn parse_target(spec: &str) -> (PathBuf, Option<(u32, u32)>) {
-    match parse_target_checked(spec) {
-        Ok(t) => t,
-        Err(_) => (PathBuf::from(spec), None),
-    }
-}
-
-/// Like [`parse_target`], but `A-B` with `A > B` or `A == 0` is an error
-/// instead of being silently reordered. Accepts `A-B`, `A..B` and `A`.
-pub fn parse_target_checked(spec: &str) -> Result<(PathBuf, Option<(u32, u32)>), Error> {
+/// Splits `path[:A[-B]]`. Returns the path and the line range (1-based,
+/// inclusive). Accepts `A-B`, `A..B` and `A`. Text after the last `:` that
+/// starts with a digit, or that has only digits, `-` and `.`, is a range: a
+/// malformed one, `A > B` or `A == 0` is an error, never a part of the file
+/// name. Other text after a `:` (`C:thing`, `a:b.rs`) is part of the path.
+pub fn parse_target(spec: &str) -> Result<(PathBuf, Option<(u32, u32)>), Error> {
     if let Some((path, range)) = spec.rsplit_once(':')
         && !path.is_empty()
         && !range.is_empty()
-        && range
-            .chars()
-            .all(|c| c.is_ascii_digit() || c == '-' || c == '.')
+        && (range.starts_with(|c: char| c.is_ascii_digit())
+            || range
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '-' || c == '.'))
     {
         let malformed = || {
             Error::Invalid(format!(
@@ -123,9 +119,27 @@ pub fn open_range_as_code(spec: &str) -> Result<Opened, Error> {
     open_with(spec, false)
 }
 
+/// [`parse_target`] for a file in `base` (the current folder when `None`):
+/// a name that is a file there stays a file name, also with a `:` and a
+/// digit in it (`notes 12:00.md`).
+pub fn parse_target_in(
+    spec: &str,
+    base: Option<&Path>,
+) -> Result<(PathBuf, Option<(u32, u32)>), Error> {
+    let path = Path::new(spec);
+    let full = match base {
+        Some(b) if path.is_relative() => b.join(path),
+        _ => path.to_path_buf(),
+    };
+    if full.is_file() {
+        return Ok((path.to_path_buf(), None));
+    }
+    parse_target(spec)
+}
+
 /// `range_document`: open the `FILE.A-B.tiza` of a range when it exists.
 fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
-    let (path, asked) = parse_target_checked(spec)?;
+    let (path, asked) = parse_target_in(spec, None)?;
     if is_document_path(&path) {
         let document = load_document(&path)?;
         let notice = outside_notice(&document);
@@ -770,19 +784,30 @@ mod tests {
 
     #[test]
     fn parses_ranges() {
+        let ok = |s: &str| parse_target(s).unwrap();
+        assert_eq!(ok("src/main.rs"), (PathBuf::from("src/main.rs"), None));
         assert_eq!(
-            parse_target("src/main.rs"),
-            (PathBuf::from("src/main.rs"), None)
-        );
-        assert_eq!(
-            parse_target("src/main.rs:12-48"),
+            ok("src/main.rs:12-48"),
             (PathBuf::from("src/main.rs"), Some((12, 48)))
         );
         assert_eq!(
-            parse_target("src/main.rs:7"),
+            ok("src/main.rs:12..48"),
+            (PathBuf::from("src/main.rs"), Some((12, 48)))
+        );
+        assert_eq!(
+            ok("src/main.rs:7"),
             (PathBuf::from("src/main.rs"), Some((7, 7)))
         );
-        assert_eq!(parse_target("C:thing"), (PathBuf::from("C:thing"), None));
+        assert_eq!(ok("C:thing"), (PathBuf::from("C:thing"), None));
+        assert_eq!(ok("a:b.rs"), (PathBuf::from("a:b.rs"), None));
+        assert_eq!(ok("main.rs:"), (PathBuf::from("main.rs:"), None));
+        // Text that starts with a digit is a range, never a part of the name.
+        let err = |s: &str| parse_target(s).unwrap_err().to_string();
+        assert!(err("main.rs:3-x").contains("malformed line range `3-x`"));
+        assert!(err("main.rs:1e3").contains("malformed line range `1e3`"));
+        assert!(err("main.rs:9-3").contains("range 9-3"));
+        assert!(err("main.rs:0-2").contains("start at 1"));
+        assert!(err("main.rs:-5").contains("malformed line range `-5`"));
     }
 
     #[test]

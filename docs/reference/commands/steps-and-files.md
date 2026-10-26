@@ -64,7 +64,7 @@ Makes the document read its code from a file.
 ```
 
 - `:ref` without a path makes the document read its code from the source file again.
-- With `:ref`, and with `:link` at step 0, a range that is not correct becomes part of the file name. Then Tiza cannot read the file.
+- `:ref` and `:link` read a range as `tiza FILE:A-B` does. A range that is not correct gives an error, and the document does not change.
 - The code of a document is in [The document and its code](../document-format.md#the-document-and-its-code).
 
 ## `:embed`

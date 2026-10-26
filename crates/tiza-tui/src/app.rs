@@ -4465,7 +4465,7 @@ impl App {
                         });
                         (f, r)
                     } else {
-                        let (p, r) = fs::parse_target(rest);
+                        let (p, r) = fs::parse_target_in(rest, self.save_path.parent())?;
                         (p.to_string_lossy().into_owned(), r)
                     };
                     // The file must be readable. Code on screen that is not
@@ -5124,7 +5124,7 @@ impl App {
     /// `:link path[:A-B]` at step N ≥ 1: records `code.link {file, lines}`
     /// at the current step. The file is read next to the document.
     fn cmd_link_move(&mut self, rest: &str) -> Result<String, Error> {
-        let (p, r) = fs::parse_target_checked(rest.trim())?;
+        let (p, r) = fs::parse_target_in(rest.trim(), self.save_path.parent())?;
         let file = p.to_string_lossy().into_owned();
         let lines = r.map(|(a, b)| {
             if a == b {
