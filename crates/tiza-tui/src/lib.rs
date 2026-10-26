@@ -509,12 +509,7 @@ fn event_loop(
                     needs_draw = true;
                 }
                 Event::Paste(text) => {
-                    if let Mode::Command(input) = &mut app.mode {
-                        // Pasting into the command line: text, not a new document.
-                        input.push_str(text.lines().next().unwrap_or("").trim_end());
-                    } else if let Err(e) = app.replace_code(&text) {
-                        app.error(e.to_string());
-                    }
+                    app.paste(&text);
                     needs_draw = true;
                 }
                 Event::Resize(_, _) => {

@@ -15,6 +15,7 @@ mod ctrl_c_cancels;
 mod help_panel;
 mod live_pointer;
 mod mouse;
+mod paste_in_each_mode;
 mod presentation_command_line;
 mod resize_at_start;
 mod selection_after_a_command;

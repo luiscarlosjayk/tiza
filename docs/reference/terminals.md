@@ -57,6 +57,8 @@ Tiza has no test record for other terminals. To report a result, see [Report a t
 | `` tiza: the TUI needs a terminal to read keys from (ERROR); use `tiza render` for text output or `tiza check` to check a document `` | Standard output is a terminal, but Tiza has no terminal to read keys from. |
 | `nothing to paste: the clipboard text is empty` | Outside the command line, you paste no text or only white space. |
 | `cannot paste while moves are applied (step N): go back to step 0 first` | You paste at a step where a move is applied. |
+| `paste ignored: close the PANEL with Esc, then paste again` | You paste while the help, the list or the review is open. `PANEL` is `help`, `list` or `review`. With a filter, the message says `Esc twice`, because the first `Esc` clears the filter. |
+| `paste ignored in presentation mode: press P to leave it, then paste again` | You paste in presentation mode. |
 
 - The two `tiza:` messages go to stderr. Then Tiza exits with code 1.
 - Tiza checks the terminal after it opens the file. A file that does not open gives its own error first.
@@ -98,8 +100,9 @@ Tiza draws with Unicode box-drawing characters and arrows, for example `─ │ 
 Tiza turns on bracketed paste at start. Then the terminal marks the start and the end of each paste.
 
 - A paste in normal mode replaces the code on screen with the pasted code.
-- A paste also replaces the code in a `v` or `V` selection, while a panel is open, and in presentation mode.
-- A paste into the command line adds the text before the first line feed. Tiza removes the spaces at the end of that text.
+- A paste also replaces the code in a `v` or `V` selection.
+- While a panel is open, also while you type its filter, a paste changes nothing. The status bar tells you to close the panel. In presentation mode, a paste changes nothing too.
+- A paste into the command line adds the text before the first line end. A line end is a line feed or a carriage return. Tiza removes the spaces at the end of that text.
 - A terminal without bracketed paste sends a paste as typed keys. Then Tiza runs each character as a key.
 - In that terminal, pipe the code into Tiza. For example, type `pbpaste | tiza --lang rs` on macOS.
 

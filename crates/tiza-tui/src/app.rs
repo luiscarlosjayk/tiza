@@ -2838,6 +2838,39 @@ impl App {
         self.set_theme_name(next, true);
     }
 
+    /// A paste from the terminal. On the command line it adds the first line
+    /// of the text: a terminal can end a pasted line with CR alone. With a
+    /// panel open or in presentation mode it changes nothing and says how to
+    /// paste. Elsewhere the text replaces the code.
+    pub fn paste(&mut self, text: &str) {
+        if let Mode::Command(input) = &mut self.mode {
+            let first = text.split(['\r', '\n']).next().unwrap_or("");
+            input.push_str(first.trim_end());
+            return;
+        }
+        let panel = match self.overlay {
+            Overlay::None => None,
+            Overlay::Help => Some("help"),
+            Overlay::List => Some("list"),
+            Overlay::Review => Some("review"),
+        };
+        if let Some(panel) = panel {
+            // With a filter, the first Esc only clears it.
+            let esc = if self.overlay_typing || !self.overlay_filter.is_empty() {
+                "Esc twice"
+            } else {
+                "Esc"
+            };
+            self.error(format!(
+                "paste ignored: close the {panel} with {esc}, then paste again"
+            ));
+        } else if self.present {
+            self.error("paste ignored in presentation mode: press P to leave it, then paste again");
+        } else if let Err(e) = self.replace_code(text) {
+            self.error(e.to_string());
+        }
+    }
+
     /// Replaces the code (paste, stdin). Annotations are re-anchored by the
     /// text they pointed at: the old text of each anchor is searched in the
     /// new code (same line first, then anywhere); what cannot be found is

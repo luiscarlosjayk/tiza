@@ -206,8 +206,9 @@ Outside the command line, a paste replaces the code with the pasted text. Each a
 - After a paste, the cursor goes to the first line.
 - A paste of empty text changes nothing and shows a message.
 - Tiza refuses a paste while a move is applied. See [A paste while a move is applied](document-format.md#a-paste-while-a-move-is-applied).
-- On the command line, a paste adds the first line of the pasted text.
-- In a selection, in a panel and while you type a filter, a paste also replaces the code.
+- On the command line, a paste adds the first line of the pasted text. A line ends at a line feed or at a carriage return.
+- In a selection, a paste also replaces the code.
+- While a panel is open, also while you type its filter, a paste changes nothing and shows a message. In presentation mode, a paste changes nothing too.
 
 ## The command line
 
@@ -348,6 +349,8 @@ The rest of the status bar shows the first of these that applies:
 | `N lines pasted (K annotations kept)` | A paste replaced the code. |
 | `N lines pasted; K annotations dropped (their text is gone; u undoes)` | A paste removed the text of `K` annotations. |
 | `nothing to paste: the clipboard text is empty` | A paste had no text. |
+| `paste ignored: close the PANEL with Esc, then paste again` | A paste came while the help, the list or the review was open. `PANEL` is `help`, `list` or `review`. With a filter, the message says `Esc twice`, because the first `Esc` clears the filter. |
+| `paste ignored in presentation mode: press P to leave it, then paste again` | A paste came in presentation mode. |
 | `the help needs 40×12 or more` | `?` found the terminal too small. |
 | `the list needs 40×12 or more` | `L` found the terminal too small. |
 | `the agent changes need 40×12 or more` | `:review` found the terminal too small. |

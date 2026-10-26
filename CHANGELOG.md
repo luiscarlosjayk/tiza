@@ -4,8 +4,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Changed
+- A paste while the help, the list or the review is open, also while you type a filter, changes nothing. A paste in presentation mode changes nothing too. The status bar tells you what to do. Before, the paste replaced the code under the panel.
+
 ### Fixed
 - A line range that starts with a digit but is not `A`, `A-B` or `A..B`, such as `main.rs:3-x`, gives the error of the range. Before, Tiza read `main.rs:3-x` as a file name and said `could not open`. `:link` and `:ref` at step 0 also refuse a bad range now. Before, they kept the range as a part of the file name.
+- A paste on the command line adds only the first line of the pasted text, also when the terminal ends each pasted line with a carriage return. Before, the next lines went into the command too, for example as the title of a box.
 
 ## [0.1.1] - 2026-10-26
 
