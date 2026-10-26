@@ -24,8 +24,13 @@ This script copies the pages that nav.json lists into content/, and:
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
 - copies the images and the favicon into static/,
+- gives the navigation a short title and a group of pages under a page,
+  when nav.json has them (see section_pages),
 - lists the release notes by itself: an entry "docs/release-notes/" in
-  nav.json becomes the notes of every release vX.Y.Z, the newest first,
+  nav.json becomes the page "Release notes", with the notes of the newest
+  release vX.Y.Z and links to the earlier ones. The notes of each release
+  also have their own page, /release-notes/vX.Y.Z/, which the navigation
+  does not show,
 - writes release.toml: the version of the workspace Cargo.toml and the git
   ref that the site describes, for the header and the source links.
 
@@ -121,6 +126,24 @@ def split_code_spans(line):
     return parts
 
 
+def section_pages(sec):
+    """The pages of a section of nav.json, in order, as (repo path, short
+    title, parent). An entry is a path, or an object:
+    {"page": PATH, "nav_title": TITLE, "pages": [ENTRY, ...]}. The navigation
+    shows TITLE for the page instead of its title, and the pages of "pages"
+    in a group under the page. A page in a group has no group of its own."""
+    out = []
+    for e in sec["pages"]:
+        e = {"page": e} if isinstance(e, str) else e
+        out.append((e["page"], e.get("nav_title"), None))
+        for c in e.get("pages", []):
+            c = {"page": c} if isinstance(c, str) else c
+            if "pages" in c:
+                raise BuildError("nav.json: %s: a group in a group" % c["page"])
+            out.append((c["page"], c.get("nav_title"), e["page"]))
+    return out
+
+
 class Site:
     def __init__(self, repo, site, nav, version, ref):
         self.repo = repo
@@ -135,9 +158,16 @@ class Site:
         self.branch = nav["branch"]
         # repo path of a page -> content path (for @/ links)
         self.pages = {nav["home"]: "_index.md"}
+        self.notes = []
         for sec in nav["sections"]:
-            for p in sec["pages"]:
-                self.pages[p] = "%s/%s" % (sec["id"], posixpath.basename(p))
+            for p, _, _ in sec["entries"]:
+                if p == RELEASE_NOTES:
+                    self.notes = release_notes(repo)
+                    self.pages[p.rstrip("/")] = "%s/release-notes.md" % sec["id"]
+                    for n in self.notes:
+                        self.pages[n] = "%s/%s" % (NOTES_SECTION, posixpath.basename(n))
+                else:
+                    self.pages[p] = "%s/%s" % (sec["id"], posixpath.basename(p))
         self.assets = dict(nav.get("assets", {}))
         # The frames of the reference pages: every file in docs/images/ is an asset.
         for root, _, files in os.walk(os.path.join(repo, "docs", "images")):
@@ -239,7 +269,10 @@ class Site:
         return ""
 
     # -- pages ---------------------------------------------------------
-    def convert(self, src):
+    def convert(self, src, shift=0):
+        """The title (the first H1) and the Zola Markdown of a page. shift
+        moves each other heading down that many levels, to put the page
+        under a heading of another page."""
         with open(os.path.join(self.repo, src), encoding="utf-8") as f:
             lines = f.read().split("\n")
         title = None
@@ -308,7 +341,8 @@ class Site:
                 seen[slug] = n + 1
                 if n:
                     slug = "%s-%d" % (slug, n)
-                out.append("%s %s {#%s}" % (h.group(1), self.rewrite_links(text, src), slug))
+                out.append("%s %s {#%s}" % ("#" * min(level + shift, 6),
+                                            self.rewrite_links(text, src), slug))
                 continue
             out.append(self.rewrite_links(line, src))
         if table:
@@ -332,23 +366,74 @@ def plain_title(md):
 
 
 RELEASE_NOTE_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)\.md$")
+# The entry of nav.json for the page "Release notes".
+RELEASE_NOTES = "docs/release-notes/"
+# The section of the pages of each release: it is not in the navigation
+# (config.toml, nav_sections) and has no page of its own.
+NOTES_SECTION = "notes"
 
 
-def expand_release_notes(repo, nav):
-    """Replace a "docs/release-notes/" entry of nav.json with the notes of
-    each release vX.Y.Z, the newest first. The notes of a prerelease
-    (vX.Y.Z-rc.N) are not on the site: the site shows releases only."""
-    folder = "docs/release-notes/"
-    for sec in nav["sections"]:
-        if folder not in sec["pages"]:
-            continue
-        names = os.listdir(os.path.join(repo, folder))
-        found = [(tuple(int(n) for n in m.groups()), name)
-                 for name in names for m in [RELEASE_NOTE_RE.match(name)] if m]
-        notes = [folder + name for _, name in sorted(found, reverse=True)]
-        i = sec["pages"].index(folder)
-        sec["pages"][i:i + 1] = notes
-        nav.setdefault("skip", []).append(folder)
+def release_notes(repo):
+    """The notes of each release vX.Y.Z, the newest first. The notes of a
+    prerelease (vX.Y.Z-rc.N) are not on the site: the site shows releases only."""
+    names = os.listdir(os.path.join(repo, RELEASE_NOTES))
+    found = [(tuple(int(n) for n in m.groups()), name)
+             for name in names for m in [RELEASE_NOTE_RE.match(name)] if m]
+    if not found:
+        raise BuildError("%s has no notes vX.Y.Z.md" % RELEASE_NOTES)
+    return [RELEASE_NOTES + name for _, name in sorted(found, reverse=True)]
+
+
+def write_page(path, src, title, url_path, weight, body, search=True, **extra):
+    """Write a page of the site with its front matter. extra: more keys of
+    [extra]; a key with the value None is left out."""
+    fm = [
+        "+++",
+        "title = %s" % toml_str(plain_title(title)),
+        "path = %s" % toml_str(url_path),
+        "weight = %d" % weight,
+    ]
+    if not search:
+        fm.append("in_search_index = false")
+    fm += [
+        "",
+        "[extra]",
+        "title_md = %s" % toml_str(title),
+        "source = %s" % toml_str(src),
+    ]
+    fm += ["%s = %s" % (k, toml_str(v)) for k, v in extra.items() if v is not None]
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(fm + ["+++", ""]) + body)
+
+
+def write_release_notes(site, content, path, weight):
+    """Write the page "Release notes" to path: the notes of the newest
+    release, then links to the notes of the earlier ones. Write the notes of
+    each release to its own page too, in NOTES_SECTION."""
+    d = os.path.join(content, NOTES_SECTION)
+    os.makedirs(d)
+    with open(os.path.join(d, "_index.md"), "w", encoding="utf-8") as f:
+        f.write("+++\ntitle = \"Release notes\"\nrender = false\nsort_by = \"weight\"\n+++\n")
+    titles = []
+    for i, src in enumerate(site.notes):
+        title, body = site.convert(src)
+        titles.append(title)
+        # The notes of the newest release are in the search once: on "Release notes".
+        write_page(os.path.join(d, posixpath.basename(src)), src, title,
+                   page_path(src), i + 1, body, search=i > 0)
+    newest, earlier = site.notes[0], site.notes[1:]
+    _, body = site.convert(newest, shift=1)
+    lines = []
+    if earlier:
+        lines += ["For the notes of an earlier release, see [Earlier releases](#earlier-releases).", ""]
+    lines += ["## %s {#%s}" % (titles[0], gh_slug(titles[0])), "", body.rstrip("\n")]
+    if earlier:
+        lines += ["", "## Earlier releases {#earlier-releases}", ""]
+        lines += ["- [%s](@/%s)" % (t, site.pages[src]) for src, t in zip(earlier, titles[1:])]
+    url_path = page_path(RELEASE_NOTES.rstrip("/"))
+    # nav_prefix: the navigation marks "Release notes" on the page of each release too.
+    write_page(path, newest, "Release notes", url_path, weight, "\n".join(lines) + "\n",
+               nav_prefix="/%s/" % url_path)
 
 
 def main():
@@ -360,7 +445,11 @@ def main():
     with open(os.path.join(HERE, "nav.json"), encoding="utf-8") as f:
         nav = json.load(f)
     try:
-        expand_release_notes(repo, nav)
+        for sec in nav["sections"]:
+            sec["entries"] = section_pages(sec)
+            if any(p == RELEASE_NOTES for p, _, _ in sec["entries"]):
+                # The notes of a prerelease are not on the site.
+                nav.setdefault("skip", []).append(RELEASE_NOTES)
         version = workspace_version(repo)
         build(repo, nav, version, args.ref)
     except BuildError as e:
@@ -387,25 +476,18 @@ def build(repo, nav, version, ref):
         with open(os.path.join(d, "_index.md"), "w", encoding="utf-8") as f:
             f.write("+++\ntitle = %s\nweight = %d\nsort_by = \"weight\"\ntemplate = \"section.html\"\n+++\n"
                     % (toml_str(sec["title"]), si + 1))
-        for pi, src in enumerate(sec["pages"]):
+        for pi, (src, nav_title, parent) in enumerate(sec["entries"]):
+            if src == RELEASE_NOTES:
+                write_release_notes(site, content, os.path.join(d, "release-notes.md"), pi + 1)
+                continue
             title, body = site.convert(src)
             if not title:
                 site.warnings.append("no H1 in %s" % src)
                 title = posixpath.basename(src)[:-3]
-            fm = [
-                "+++",
-                "title = %s" % toml_str(plain_title(title)),
-                "path = %s" % toml_str(page_path(src)),
-                "weight = %d" % (pi + 1),
-                "",
-                "[extra]",
-                "title_md = %s" % toml_str(title),
-                "source = %s" % toml_str(src),
-                "+++",
-                "",
-            ]
-            with open(os.path.join(d, posixpath.basename(src)), "w", encoding="utf-8") as f:
-                f.write("\n".join(fm) + body)
+            # The navigation shows the pages of a group under this page.
+            group = any(up == src for _, _, up in sec["entries"])
+            write_page(os.path.join(d, posixpath.basename(src)), src, title, page_path(src),
+                       pi + 1, body, nav_title=nav_title, parent=parent, group=group or None)
 
     # The version and the ref, for the header and the source links.
     with open(os.path.join(HERE, "release.toml"), "w", encoding="utf-8") as f:

@@ -53,6 +53,7 @@
 </header>
 <div class="layout">
   <nav id="sidebar" class="sidebar" aria-label="Docs">
+    {# The 404 page has no current_path. #}{% set here = current_path | default(value="") %}
     {% for id in config.extra.nav_sections %}
     {% set s = get_section(path=id ~ "/_index.md") %}
     <details class="nav-group" open>
@@ -61,9 +62,21 @@
         {% if loop.first %}
         <li><a href="{{ get_url(path='/') }}"{% if current_path == "/" %} aria-current="page"{% endif %}>Overview</a></li>
         {% endif %}
-        {% for p in s.pages %}
-        <li><a href="{{ p.permalink }}"{% if current_path == p.path %} aria-current="page"{% endif %}>{{ p.extra.title_md | markdown(inline=true) | safe }}</a></li>
-        {% endfor %}
+        {% for p in s.pages %}{% if not p.extra.parent %}
+        {# A page with a group (extra.group): the link, then the arrow of the group on the same row. The group is open on every page; the arrow folds it. #}
+        <li{% if p.extra.group %} class="nav-sub"{% endif %}><a href="{{ p.permalink }}"{% if current_path == p.path %} aria-current="page"{% elif p.extra.nav_prefix and p.extra.nav_prefix in here %} aria-current="true"{% endif %}>{{ p.extra.nav_title | default(value=p.extra.title_md) | markdown(inline=true) | safe }}</a>
+          {% if p.extra.group %}
+          <details open>
+            <summary aria-label="Pages under {{ p.title }}"></summary>
+            <ul>
+              {% for k in s.pages %}{% if k.extra.parent == p.extra.source %}
+              <li><a href="{{ k.permalink }}"{% if current_path == k.path %} aria-current="page"{% endif %}>{{ k.extra.nav_title | default(value=k.extra.title_md) | markdown(inline=true) | safe }}</a></li>
+              {% endif %}{% endfor %}
+            </ul>
+          </details>
+          {% endif %}
+        </li>
+        {% endif %}{% endfor %}
       </ul>
     </details>
     {% endfor %}

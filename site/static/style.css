@@ -173,15 +173,21 @@ img { max-width: 100%; height: auto; }
   border-right: 1.5px solid var(--fg-faint); border-bottom: 1.5px solid var(--fg-faint);
   transform: rotate(45deg) translateY(-2px);
 }
-.nav-group:not([open]) summary::after { transform: rotate(-45deg); }
+.nav-group:not([open]) > summary::after, .nav-sub details:not([open]) > summary::after { transform: rotate(-45deg); }
 .nav-group ul { list-style: none; margin: 4px 0 0 8px; padding: 0 0 0 8px; border-left: 1px solid var(--rule); }
+/* A page with a group of pages: the arrow of the group is on the row of the
+   page, at the same place as the arrow of a section. */
+.nav-sub { position: relative; }
+.nav-sub > a { padding-right: 36px; }
+.nav-sub summary { position: absolute; top: 0; right: 0; width: 40px; height: 28px; padding: 0 8px; justify-content: flex-end; }
 .nav-group li a {
   display: block; padding: 4px 10px; margin-left: -9px;
   font-size: 14px; line-height: 1.4; color: var(--fg-muted); text-decoration: none;
   border-left: 2px solid transparent; border-radius: 0 4px 4px 0;
 }
 .nav-group li a:hover { color: var(--fg); }
-.nav-group li a[aria-current="page"] { color: var(--fg); font-weight: 600; background: var(--accent-soft); border-left-color: var(--accent); }
+/* "true": a page under this entry that the navigation does not show, such as the notes of one release. */
+.nav-group li a[aria-current="page"], .nav-group li a[aria-current="true"] { color: var(--fg); font-weight: 600; background: var(--accent-soft); border-left-color: var(--accent); }
 .nav-group code, .toc code { font-size: 0.9em; background: none; padding: 0; }
 .nav-foot { font-size: 13px; padding: 8px; margin: 16px 0 0; border-top: 1px solid var(--rule); }
 .nav-foot a { color: var(--fg-muted); }

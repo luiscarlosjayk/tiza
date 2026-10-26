@@ -1,5 +1,5 @@
 {
-  "_comment": "The pages of the site and the order of the left navigation. Paths are relative to the repo root. A page that is not here is not on the site. The entry docs/release-notes/ lists the notes of every release vX.Y.Z, the newest first.",
+  "_comment": "The pages of the site and the order of the left navigation. Paths are relative to the repo root. A page that is not here is not on the site. An entry is a path, or an object {page, nav_title, pages}: the navigation shows nav_title for the page, and the entries of pages in a group under the page. The entry docs/release-notes/ is the page Release notes: the notes of the newest release vX.Y.Z and links to the earlier ones.",
   "repo_url": "https://github.com/luiscarlosjayk/tiza",
   "branch": "main",
   "home": "README.md",
@@ -37,14 +37,18 @@
       "title": "Reference",
       "pages": [
         "docs/reference/keys.md",
-        "docs/reference/commands.md",
-        "docs/reference/commands/annotate.md",
-        "docs/reference/commands/change.md",
-        "docs/reference/commands/steps-and-files.md",
-        "docs/reference/commands/view.md",
-        "docs/reference/commands/export-and-agents.md",
-        "docs/reference/commands/save-and-quit.md",
-        "docs/reference/commands/messages.md",
+        {
+          "page": "docs/reference/commands.md",
+          "pages": [
+            { "page": "docs/reference/commands/annotate.md", "nav_title": "Annotate" },
+            { "page": "docs/reference/commands/change.md", "nav_title": "Change" },
+            { "page": "docs/reference/commands/steps-and-files.md", "nav_title": "Steps and files" },
+            { "page": "docs/reference/commands/view.md", "nav_title": "View" },
+            { "page": "docs/reference/commands/export-and-agents.md", "nav_title": "Export and agents" },
+            { "page": "docs/reference/commands/save-and-quit.md", "nav_title": "Save, quit, panel, undo" },
+            { "page": "docs/reference/commands/messages.md", "nav_title": "Messages" }
+          ]
+        },
         "docs/reference/cli.md",
         "docs/reference/document-format.md",
         "docs/reference/exports.md",

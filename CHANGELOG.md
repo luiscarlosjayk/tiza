@@ -15,6 +15,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `:margin N`, `:margin` and `--margin-cols` say that notes wrap at the margin, and that labels, legends and long notes are cut there. Before, they said only that notes wrap.
 - An MP4 or a WebM export writes the `ffmpeg` command on stderr only when `ffmpeg` fails. Before, it wrote the command each time.
 - A paste while the help, the list or the review is open, also while you type a filter, changes nothing. A paste in presentation mode changes nothing too. The status bar tells you what to do. Before, the paste replaced the code under the panel.
+- The navigation of the docs site has one entry for the release notes, "Release notes". The page shows the notes of the latest release, then links to the notes of the earlier releases. The notes of each release stay at their address, for example `/release-notes/v0.1.0/`.
+- In the navigation of the docs site, the pages of the `:` commands are in a group under "`:` commands", with short names. The group is open on each page. Its arrow folds it.
 
 ### Fixed
 - In a terminal narrower than about 80 columns, the footer of the review shows `y/n one · a/d all · j/k`. Before, it lost `d reject all` below about 70 columns and `a accept all` too below about 55.
