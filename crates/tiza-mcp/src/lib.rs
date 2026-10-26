@@ -749,7 +749,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "State of the live Tiza instance, the terminal where you draw a box, arrow, highlight or note on code to explain it step by step: open file, lines, annotations, current step and terminal size (`stale_moves`: how many moves are skipped because the code changed under them); plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
+        description = "State of the live Tiza instance, the terminal where you draw a box, arrow, highlight or note on code to explain it step by step: open file, lines, annotations, current step and terminal size (`stale_moves`: how many moves are skipped because the code changed under them; `save_error`: why the last save of the document failed, or null: then your changes are not saved); plus `bridge` (this server's version/build; `binary_rebuilt`/`hint` when tiza was rebuilt and the client should reconnect). Call it first to learn whether an instance exists."
     )]
     async fn status(&self, Parameters(_p): Parameters<Empty>) -> Result<CallToolResult, McpError> {
         let mut v = self.call("status", json!({})).await?;

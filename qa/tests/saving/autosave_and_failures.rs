@@ -3,7 +3,8 @@
 //! Acceptance criteria:
 //! - AC1 Autosave writes the sidecar after every change.
 //! - AC2 A failed save stays visible on the status line (in the error color)
-//!   even after later info messages, until a save succeeds.
+//!   even after later info messages, until a save succeeds. `status` gives
+//!   its reason in `save_error` (`null` after a save that worked).
 //! - AC3 `q` refuses to quit while changes could not be saved; `:q!` quits;
 //!   `:saveas other/path` then `q` works (`:w other/path` only writes a
 //!   copy now, as in Vim).
@@ -43,6 +44,9 @@ fn failed_save_is_sticky_and_blocks_q() {
         "error wins over the info message: {bar}"
     );
     assert!(live.with(|app| app.save_error.is_some()));
+    // An agent sees it too: `status` gives the reason.
+    let why = live.api_ok("status", serde_json::json!({}))["save_error"].clone();
+    assert!(why.as_str().is_some_and(|w| !w.is_empty()), "{why}");
     live.keys(&[KeyCode::Char('q')]);
     assert!(!live.with(|app| app.quit), "q refused while the save fails");
     let bar = live.screen(120, 20).lines().last().unwrap().to_string();
@@ -52,6 +56,8 @@ fn failed_save_is_sticky_and_blocks_q() {
     live.command(&format!("saveas {}", other.display()));
     assert!(other.exists());
     assert!(live.with(|app| app.save_error.is_none()));
+    let status = live.api_ok("status", serde_json::json!({}));
+    assert!(status["save_error"].is_null(), "{status}");
     live.keys(&[KeyCode::Char('q')]);
     assert!(live.with(|app| app.quit));
 }

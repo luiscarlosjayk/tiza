@@ -186,6 +186,14 @@
             "minimum": 0,
             "type": "integer"
           },
+          "save_error": {
+            "default": null,
+            "description": "Why the last save of the document failed (a read-only file or\nfolder), or `null` when the last save worked. Always present.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "stale_moves": {
             "description": "Moves skipped because the code changed under them (a follow reload,\na paste) and they no longer match it (`move.list` says why).",
             "format": "uint",

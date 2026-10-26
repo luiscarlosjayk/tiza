@@ -6861,6 +6861,7 @@ impl App {
             margin: self.doc.margin,
             pointer: self.pointer,
             stale_moves: tiza_core::stale::count(&self.doc),
+            save_error: self.save_error.clone(),
         }
     }
 

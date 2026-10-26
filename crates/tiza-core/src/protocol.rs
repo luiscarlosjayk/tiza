@@ -912,6 +912,10 @@ pub struct Status {
     /// a paste) and they no longer match it (`move.list` says why).
     #[serde(default, skip_serializing_if = "is_zero")]
     pub stale_moves: usize,
+    /// Why the last save of the document failed (a read-only file or
+    /// folder), or `null` when the last save worked. Always present.
+    #[serde(default)]
+    pub save_error: Option<String>,
 }
 
 /// Where the live pointer is.

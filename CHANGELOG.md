@@ -4,6 +4,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+### Added
+- `status` has `save_error`: why the last save of the document failed, or `null` when the last save worked. An agent can see that its changes are not saved.
+
 ### Changed
 - `:margin N`, `:margin` and `--margin-cols` say that notes wrap at the margin, and that labels, legends and long notes are cut there. Before, they said only that notes wrap.
 - An MP4 or a WebM export writes the `ffmpeg` command on stderr only when `ffmpeg` fails. Before, it wrote the command each time.
