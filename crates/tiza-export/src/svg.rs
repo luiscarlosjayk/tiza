@@ -50,6 +50,11 @@ pub struct Geometry {
 }
 
 pub fn geometry(canvas: &Canvas, o: &SvgOptions) -> Geometry {
+    geometry_for(canvas.width, canvas.height, o)
+}
+
+/// [`geometry`] of a canvas of `cols` × `rows` cells, without the canvas.
+pub fn geometry_for(cols: usize, rows: usize, o: &SvgOptions) -> Geometry {
     let cell_w = o.font_size * fonts::CELL_WIDTH_EM;
     let cell_h = o.font_size * fonts::CELL_HEIGHT_EM;
     let margin = (o.margin_cells * cell_h).round();
@@ -59,8 +64,8 @@ pub fn geometry(canvas: &Canvas, o: &SvgOptions) -> Geometry {
         cell_w,
         cell_h,
         margin,
-        width: px(canvas.width as f32 * cell_w + 2.0 * margin),
-        height: px(canvas.height as f32 * cell_h + 2.0 * margin),
+        width: px(cols as f32 * cell_w + 2.0 * margin),
+        height: px(rows as f32 * cell_h + 2.0 * margin),
     }
 }
 

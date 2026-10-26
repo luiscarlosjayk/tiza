@@ -542,6 +542,9 @@ fn real_main() -> anyhow::Result<()> {
             if matches!(format, Format::Png | Format::Webp | Format::Svg) || animated {
                 tiza_core::layout::check_font_size(font_size)
                     .map_err(|e| anyhow::anyhow!("{e}"))?;
+                tiza_core::layout::check_margin_cells(margin)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                tiza_core::layout::check_radius(radius).map_err(|e| anyhow::anyhow!("{e}"))?;
                 if format != Format::Svg {
                     tiza_core::layout::check_scale(scale).map_err(|e| anyhow::anyhow!("{e}"))?;
                 }
@@ -586,6 +589,52 @@ fn real_main() -> anyhow::Result<()> {
                 eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
             }
             let theme = export_theme(theme, &doc, theme_file.as_ref())?;
+            // The code alone can make a raster image too large: refused
+            // before the layout, which a huge document fills the memory
+            // with. The steps are the ones that the export lays out
+            // (`render_all_steps` checks its own, after its usage errors).
+            if !all_steps && format == Format::Svg {
+                tiza_export::check_svg_lines(
+                    doc.lines_at(step),
+                    &tiza_export::SvgOptions {
+                        font_size,
+                        margin_cells: margin,
+                        radius,
+                        embed_fonts: false,
+                        title: None,
+                    },
+                )
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
+            if !all_steps
+                && matches!(
+                    format,
+                    Format::Png | Format::Webp | Format::Gif | Format::Mp4 | Format::Webm
+                )
+            {
+                let steps = if animated {
+                    let first = u32::from(skip_zero);
+                    first..=doc.max_step().max(first)
+                } else {
+                    step..=step
+                };
+                let lines = steps.map(|s| doc.lines_at(s)).max().unwrap_or(0);
+                tiza_export::check_lines(
+                    lines,
+                    &tiza_export::SvgOptions {
+                        font_size,
+                        margin_cells: margin,
+                        radius,
+                        embed_fonts: false,
+                        title: None,
+                    },
+                    &tiza_export::PngOptions {
+                        scale,
+                        system_fonts,
+                    },
+                )
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
             if all_steps {
                 let opts = LayoutOptions {
                     width,
@@ -613,23 +662,29 @@ fn real_main() -> anyhow::Result<()> {
                     &doc, &theme, &out, format, &opts, &svg_opts, &png_opts, skip_zero,
                 );
             }
-            let l = layout(
-                &doc,
-                &theme,
-                &LayoutOptions {
-                    width,
-                    step,
-                    focus: None,
-                    pointer: None,
-                    line_numbers,
-                    tab_width: 4,
-                    typing: false,
-                    stable: true,
-                    margin_cap,
-                },
-            );
+            // The layout of the step, only for a still or a text export: a
+            // recording lays out its own frames, and the check above covers
+            // only the steps that it lays out.
+            let lay_out_step = || {
+                layout(
+                    &doc,
+                    &theme,
+                    &LayoutOptions {
+                        width,
+                        step,
+                        focus: None,
+                        pointer: None,
+                        line_numbers,
+                        tab_width: 4,
+                        typing: false,
+                        stable: true,
+                        margin_cap,
+                    },
+                )
+            };
             // A still of the step: an SVG, a PNG, or a WebP with --step.
             let still = |format: Format| -> anyhow::Result<Vec<u8>> {
+                let l = lay_out_step();
                 let svg_opts = tiza_export::SvgOptions {
                     font_size,
                     margin_cells: margin,
@@ -637,11 +692,24 @@ fn real_main() -> anyhow::Result<()> {
                     embed_fonts: format == Format::Svg && !no_embed_fonts,
                     title: doc.title.clone(),
                 };
-                let svg = tiza_export::to_svg(&l.canvas, &theme, &svg_opts);
                 let png_opts = tiza_export::PngOptions {
                     scale,
                     system_fonts,
                 };
+                // Over the limits: an error before the SVG, not after it.
+                if format == Format::Svg {
+                    tiza_export::svg_size(&l.canvas, &svg_opts)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                } else {
+                    tiza_export::image_size(&l.canvas, &svg_opts, &png_opts).context(
+                        if format == Format::Webp {
+                            "could not encode the WebP"
+                        } else {
+                            "could not rasterize the PNG"
+                        },
+                    )?;
+                }
+                let svg = tiza_export::to_svg(&l.canvas, &theme, &svg_opts);
                 Ok(match format {
                     Format::Svg => svg.into_bytes(),
                     Format::Webp => {
@@ -654,9 +722,12 @@ fn real_main() -> anyhow::Result<()> {
                 })
             };
             let bytes: Vec<u8> = match format {
-                Format::Txt => (l.canvas.to_plain_text() + "\n").into_bytes(),
-                Format::Ansi => l.canvas.to_ansi().into_bytes(),
-                Format::Md => l.canvas.to_markdown(doc.title.as_deref()).into_bytes(),
+                Format::Txt => (lay_out_step().canvas.to_plain_text() + "\n").into_bytes(),
+                Format::Ansi => lay_out_step().canvas.to_ansi().into_bytes(),
+                Format::Md => lay_out_step()
+                    .canvas
+                    .to_markdown(doc.title.as_deref())
+                    .into_bytes(),
                 Format::Webp if !animated => still(format)?,
                 Format::Gif | Format::Mp4 | Format::Webm | Format::Webp => {
                     let anim_opts = tiza_core::anim::AnimOptions {
@@ -1106,6 +1177,15 @@ fn render_all_steps(
             "--skip-zero leaves nothing to write: this document only has step 0 (no annotations or moves)"
         );
     }
+    // The code alone can make the images too large: refused before the
+    // layouts below (every step from 0, which sizes the take).
+    let lines = || (0..=last).map(|s| doc.lines_at(s)).max().unwrap_or(0);
+    match format {
+        Format::Png | Format::Webp => tiza_export::check_lines(lines(), svg_opts, png_opts),
+        Format::Svg => tiza_export::check_svg_lines(lines(), svg_opts),
+        _ => Ok(()),
+    }
+    .map_err(|e| anyhow::anyhow!("{e}"))?;
     std::fs::create_dir_all(dir).with_context(|| format!("could not create {out}"))?;
     // The take's geometry, once for every step.
     let geometry = opts
@@ -1139,6 +1219,17 @@ fn render_all_steps(
             Format::Ansi => canvas.to_ansi().into_bytes(),
             Format::Md => canvas.to_markdown(doc.title.as_deref()).into_bytes(),
             _ => {
+                if format == Format::Svg {
+                    tiza_export::svg_size(canvas, svg_opts).map_err(|e| anyhow::anyhow!("{e}"))?;
+                } else {
+                    tiza_export::image_size(canvas, svg_opts, png_opts).context(
+                        if format == Format::Webp {
+                            "could not encode the WebP"
+                        } else {
+                            "could not rasterize the PNG"
+                        },
+                    )?;
+                }
                 let svg = tiza_export::to_svg(canvas, theme, svg_opts);
                 if format == Format::Svg {
                     svg.into_bytes()
@@ -1391,6 +1482,8 @@ fn encode_video(
     let mut list = String::from("ffconcat version 1.0\n");
     let mut total_ms: u64 = 0;
     for (i, f) in frames.iter().enumerate() {
+        tiza_export::image_size(&f.canvas, svg_opts, png_opts)
+            .context("could not rasterize a frame")?;
         let svg = tiza_export::to_svg(&f.canvas, theme, svg_opts);
         let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
         let name = format!("f{i:05}.png");
@@ -1514,15 +1607,23 @@ fn image_exporter(
     title: Option<&str>,
 ) -> Result<Vec<u8>, String> {
     let is_svg = format == tiza_tui::app::ImageFormat::Svg;
-    let svg = tiza_export::to_svg(
-        canvas,
-        theme,
-        &tiza_export::SvgOptions {
-            embed_fonts: is_svg,
-            title: title.map(str::to_string),
-            ..Default::default()
-        },
-    );
+    let svg_opts = tiza_export::SvgOptions {
+        embed_fonts: is_svg,
+        title: title.map(str::to_string),
+        ..Default::default()
+    };
+    // Over the limits: an error before the SVG, not after it.
+    if is_svg {
+        tiza_export::svg_size(canvas, &svg_opts).map_err(|e| e.to_string())?;
+    } else {
+        tiza_export::image_size(canvas, &svg_opts, &tiza_export::PngOptions::default()).map_err(
+            |e| match format {
+                tiza_tui::app::ImageFormat::Webp => format!("could not encode the WebP: {e}"),
+                _ => format!("could not rasterize the PNG: {e}"),
+            },
+        )?;
+    }
+    let svg = tiza_export::to_svg(canvas, theme, &svg_opts);
     match format {
         tiza_tui::app::ImageFormat::Svg => Ok(svg.into_bytes()),
         tiza_tui::app::ImageFormat::Webp => {

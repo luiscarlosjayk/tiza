@@ -125,8 +125,8 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`, where notes wrap. |
 | `--lang` | A language id | The `--lang` before `render`, or the detected language | The language of the code. |
 | `--font-size` | 4 to 96 px | 16 | The size of the font in an image or a video. |
-| `--margin` | Cells | 1.5 | The blank margin around the drawing in an image or a video. |
-| `--radius` | px | 12 | The radius of the corners of the background, where `0` gives square corners. |
+| `--margin` | 0 to 20 cells | 1.5 | The blank margin around the drawing in an image or a video. |
+| `--radius` | 0 to 100 px | 12 | The radius of the corners of the background, where `0` gives square corners. |
 | `--scale` | 0.25 to 8 | 2, or 1 for MP4 and WebM | The device scale of a PNG, a WebP, a GIF or a video. |
 | `--no-embed-fonts` | None | Off | Tiza writes an SVG without fonts, so the viewer uses its own fonts. |
 | `--system-fonts` | None | Off | Tiza adds the fonts of the system to a PNG, a WebP, a GIF, an MP4 or a WebM export, for emoji and CJK. |
@@ -220,7 +220,10 @@ An animation is a GIF, or a WebP without `step`.
 | `scale=N: use a number between 0.25 and 8 (invalid_argument)` | `scale` is out of the range. |
 | `font-size=N: use a number between 4 and 96 (invalid_argument)` | `font_size` is out of the range. |
 | `interval=N: use a number of seconds between 0 and 3600 (invalid_argument)` | `interval` is out of the range. |
-| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size (invalid_argument)` | The PNG, the WebP or a frame of an animation is too large. |
+| `a W×H px image is over the limit (16384 px per side, 100000000 px in all): use a smaller width, scale or font_size (invalid_argument)` | The PNG, the WebP or a frame of an animation is too large. |
+| `` N lines of code make an image at least H px high, over the limit (16384 px per side, 100000000 px in all): use a smaller scale or font_size, or export a range of lines with `tiza render FILE:A-B` (invalid_argument) `` | The code of the document alone makes the image too large. `export_image` finds this before it draws anything. |
+| `` N lines of code make an SVG at least H px high, over the limit (131072 px per side, 6400000000 px in all): use a smaller font_size, or export a range of lines with `tiza render FILE:A-B` (invalid_argument) `` | The code of the document alone makes the SVG too large. `export_image` finds this before it draws anything. |
+| `a W×H px SVG is over the limit (131072 px per side, 6400000000 px in all): use a smaller width or font_size (invalid_argument)` | The SVG is too large. |
 | `a W×H px image is not a WebP size (1 to 16383 px per side) (invalid_argument)` | The WebP has 16384 px on a side. |
 | `No Tiza instance is listening on SOCKET` | No live instance answers on the socket of the MCP server. |
 | `MESSAGE (CODE)` | The live instance refuses a request, and `export_image` passes on its error. |
@@ -261,7 +264,7 @@ An animation is a GIF, or a WebP without `step`.
 | `--all-steps writes one file for each step into a folder, and OUT is a file name. Pass a folder, for example --out steps/ --format FORMAT` | `--all-steps` with an `--out` that ends in the extension of a format, such as `answer.md`, and is not a folder. `FORMAT` is the `--format` that you give, else the format of the extension. |
 | `--all-steps needs a directory, and PATH is a file` | `--out` of `--all-steps` is a file. |
 | `--skip-zero leaves nothing to write: this document only has step 0 (no annotations or moves)` | `--all-steps --skip-zero` with a document that has no annotations and no moves. |
-| `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The image is too large. |
+| `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): use a smaller width, scale, font size or margin, or export fewer lines (FILE:A-B)` | The image is too large. |
 | `could not encode the WebP: a W×H px image is not a WebP size (1 to 16383 px per side)` | The WebP has 16384 px on a side. |
 
 - A GIF or an animated WebP that plays a fixed number of times says `plays N×` instead of `loops forever`.
@@ -291,6 +294,11 @@ An animation is a GIF, or a WebP without `step`.
 | `font-size=N: use a number between 4 and 96` | `--font-size` is out of the range for an image or a video. |
 | `scale=N: use a number between 0.25 and 8` | `--scale` is out of the range for a PNG, a GIF or a video. |
 | `interval=N: use a number of seconds between 0 and 3600` | `--interval` is out of the range. |
+| `--margin=N: use a number of cells between 0 and 20` | `--margin` is out of the range, or is not finite (`NaN` or `inf`). |
+| `--radius=N: use a number of px between 0 and 100` | `--radius` is out of the range, or is not finite (`NaN` or `inf`). |
+| `N lines of code make an image at least H px high, over the limit (16384 px per side, 100000000 px in all): export fewer lines (FILE:A-B), or use a smaller scale, font size or margin` | The code of the document alone makes a PNG, a WebP, a GIF or a video too large. `tiza render` finds this before it draws anything. |
+| `N lines of code make an SVG at least H px high, over the limit (131072 px per side, 6400000000 px in all): export fewer lines (FILE:A-B), or use a smaller font size or margin` | The code of the document alone makes an SVG too large. `tiza render` finds this before it draws anything. |
+| `a W×H px SVG is over the limit (131072 px per side, 6400000000 px in all): use a smaller width, font size or margin, or export fewer lines (FILE:A-B)` | The SVG is too large. |
 
 These messages end with the error of the system or the reason: `could not open FILE`, `could not read the document from stdin`, the `no Tiza instance` message, the two `unexpected` messages, `the live document cannot be rendered` and `could not create FOLDER`.
 
@@ -365,9 +373,10 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `unknown option (step, width, theme)` | An option has another name. |
 | `could not create the folder PATH` | Tiza cannot make a folder of the path. |
 | `could not write PATH` | Tiza cannot write the file. |
-| `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The PNG is too large. |
-| `could not encode the WebP: a W×H px image is over the limit (16384 px per side, 100000000 px in all): lower width, scale or font size` | The WebP is too large. |
+| `could not rasterize the PNG: a W×H px image is over the limit (16384 px per side, 100000000 px in all): use a smaller width, scale, font size or margin, or export fewer lines (FILE:A-B)` | The PNG is too large. |
+| `could not encode the WebP: a W×H px image is over the limit (16384 px per side, 100000000 px in all): use a smaller width, scale, font size or margin, or export fewer lines (FILE:A-B)` | The WebP is too large. |
 | `could not encode the WebP: a W×H px image is not a WebP size (1 to 16383 px per side)` | The WebP has 16384 px on a side. |
+| `a W×H px SVG is over the limit (131072 px per side, 6400000000 px in all): use a smaller width, font size or margin, or export fewer lines (FILE:A-B)` | The SVG is too large. |
 
 The messages `could not create the folder PATH` and `could not write PATH` end with the error of the system.
 
@@ -432,7 +441,13 @@ A new run into the same folder removes the old step files of the same format tha
 
 ### Large images
 
-A PNG, a GIF frame or a video frame can have at most 16384 px on each side. A WebP or a frame of a WebP can have at most 16383 px on each side. Each one can have at most 100000000 px in all. Use a smaller `--width`, `--scale`, `--font-size` or `--margin` for a larger document.
+A PNG, a GIF frame or a video frame can have at most 16384 px on each side. A WebP or a frame of a WebP can have at most 16383 px on each side. Each one can have at most 100000000 px in all. Use a smaller `--width`, `--scale`, `--font-size` or `--margin` for a larger document, or export a range of lines with `FILE:A-B`.
+
+Tiza finds a document that is too large before it draws it, so the export stops at once and uses little memory:
+
+- Before the layout, `tiza render` and `export_image` count the lines of code that the export shows. Each line takes at least one row, so the image is at least that high.
+- Before the SVG, `tiza render`, `:export` and `export_image` calculate the size of the image from the layout.
+- An SVG has a higher limit: 131072 px on each side and 6400000000 px in all, at the size of the take (an SVG has no `--scale`). Its file holds the text of each row, so a very long document makes it large too.
 
 ### Fonts
 

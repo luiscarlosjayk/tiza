@@ -340,6 +340,36 @@ pub fn check_font_size(px: f32) -> Result<f32, crate::Error> {
     }
 }
 
+/// Largest blank margin around an image, in cells (`--margin`).
+pub const MAX_MARGIN_CELLS: f32 = 20.0;
+/// Largest corner radius of an image, in px (`--radius`).
+pub const MAX_RADIUS_PX: f32 = 100.0;
+
+/// Validates the blank margin around an image, in cells, from the user
+/// (`tiza render --margin`). Not the cap of the right margin (`--margin-cols`,
+/// [`check_margin_cap`]).
+pub fn check_margin_cells(cells: f32) -> Result<f32, crate::Error> {
+    if cells.is_finite() && (0.0..=MAX_MARGIN_CELLS).contains(&cells) {
+        Ok(cells)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "--margin={cells}: use a number of cells between 0 and {MAX_MARGIN_CELLS}"
+        )))
+    }
+}
+
+/// Validates the corner radius of an image, in px, from the user
+/// (`tiza render --radius`).
+pub fn check_radius(px: f32) -> Result<f32, crate::Error> {
+    if px.is_finite() && (0.0..=MAX_RADIUS_PX).contains(&px) {
+        Ok(px)
+    } else {
+        Err(crate::Error::Invalid(format!(
+            "--radius={px}: use a number of px between 0 and {MAX_RADIUS_PX}"
+        )))
+    }
+}
+
 /// The vertical part of an arrow between lines: drawn after every stub so
 /// it owns its cells (a stub crossing it shows a one-cell gap).
 struct Rail {

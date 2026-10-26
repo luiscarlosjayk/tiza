@@ -261,6 +261,8 @@ pub fn to_webp_anim(
     let mut enc = None;
     let mut duration_ms = 0u64;
     for (canvas, delay) in frames {
+        // Over the limits: an error before the SVG, not after it.
+        crate::limits::image_size(canvas, &o.svg, &o.png)?;
         let pm = rasterize(&to_svg(canvas, theme, &o.svg), &o.png)?;
         let (w, h) = (pm.width(), pm.height());
         let enc = match enc {

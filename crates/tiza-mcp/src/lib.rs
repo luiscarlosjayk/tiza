@@ -1402,6 +1402,32 @@ fn test_hook(place: &str) {
     }
 }
 
+/// An image over the limits, in words that an agent can act on:
+/// `export_image` has `width`, `scale` and `font_size`, but no margin and
+/// no range of lines.
+fn too_big_message(e: &tiza_export::Error) -> String {
+    let (side, all) = (tiza_export::MAX_SIDE_PX, tiza_export::MAX_PIXELS);
+    let (svg_side, svg_all) = (
+        tiza_export::limits::SVG_MAX_SIDE_PX,
+        tiza_export::limits::SVG_MAX_PIXELS,
+    );
+    match e {
+        tiza_export::Error::TooManyLines { lines, height } => format!(
+            "{lines} lines of code make an image at least {height} px high, over the limit ({side} px per side, {all} px in all): use a smaller scale or font_size, or export a range of lines with `tiza render FILE:A-B`"
+        ),
+        tiza_export::Error::TooBig(w, h) => format!(
+            "a {w}×{h} px image is over the limit ({side} px per side, {all} px in all): use a smaller width, scale or font_size"
+        ),
+        tiza_export::Error::SvgTooManyLines { lines, height } => format!(
+            "{lines} lines of code make an SVG at least {height} px high, over the limit ({svg_side} px per side, {svg_all} px in all): use a smaller font_size, or export a range of lines with `tiza render FILE:A-B`"
+        ),
+        tiza_export::Error::SvgTooBig(w, h) => format!(
+            "a {w}×{h} px SVG is over the limit ({svg_side} px per side, {svg_all} px in all): use a smaller width or font_size"
+        ),
+        other => other.to_string(),
+    }
+}
+
 /// One `export_image`, everything it needs owned, so it runs on a
 /// blocking thread.
 struct ExportJob {
@@ -1431,6 +1457,40 @@ impl ExportJob {
         // A step past the last one: the last, said in the reply,
         // as `tiza render` says it on stderr.
         let step = self.asked_step.min(last);
+        // The code alone can make the image too large: refused before any
+        // layout, which would fill the memory with a huge document. Here,
+        // in the job, so that the deadline covers the count too.
+        let first = u32::from(self.skip_zero);
+        if matches!(format, "png" | "webp" | "gif") {
+            let steps = if animated {
+                first..=last.max(first)
+            } else {
+                step..=step
+            };
+            let lines = steps.map(|s| doc.lines_at(s)).max().unwrap_or(0);
+            tiza_export::check_lines(
+                lines,
+                &tiza_export::SvgOptions {
+                    font_size: self.font_size,
+                    ..Default::default()
+                },
+                &tiza_export::PngOptions {
+                    scale: self.scale,
+                    system_fonts: false,
+                },
+            )
+            .map_err(|e| invalid_argument(too_big_message(&e)))?;
+        }
+        if format == "svg" {
+            tiza_export::check_svg_lines(
+                doc.lines_at(step),
+                &tiza_export::SvgOptions {
+                    font_size: self.font_size,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| invalid_argument(too_big_message(&e)))?;
+        }
         let warning = (!animated && self.asked_step > last).then(|| {
             format!(
                 "step {} does not exist (the document has steps 0 to {last}); exported step {last}",
@@ -1459,12 +1519,15 @@ impl ExportJob {
             doc.theme_overrides.as_ref(),
         );
         let (theme, _notice) = theme.for_export();
+        // An animation lays out a step that the check above covered (with
+        // `skip_zero`, step 0 is not one); its width is the take's.
+        let layout_step = if animated { step.max(first) } else { step };
         let layout = tiza_core::layout::layout(
             doc,
             &theme,
             &tiza_core::layout::LayoutOptions {
                 width: self.width,
-                step,
+                step: layout_step,
                 focus: None,
                 pointer: None,
                 line_numbers: doc.numbers,
@@ -1486,8 +1549,11 @@ impl ExportJob {
         };
         let too_big = |e: tiza_export::Error| match e {
             tiza_export::Error::TooBig(..)
+            | tiza_export::Error::TooManyLines { .. }
+            | tiza_export::Error::SvgTooBig(..)
+            | tiza_export::Error::SvgTooManyLines { .. }
             | tiza_export::Error::Webp(tiza_export::webp::WebpError::Size(..)) => {
-                invalid_argument(e.to_string())
+                invalid_argument(too_big_message(&e))
             }
             other => McpError::internal_error(other.to_string(), None),
         };
@@ -1545,16 +1611,22 @@ impl ExportJob {
                 }
             }
             "png" => {
+                // Over the limits: an error before the SVG, not after it.
+                tiza_export::image_size(&layout.canvas, &svg_opts, &png_opts).map_err(too_big)?;
                 let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
                 tiza_export::to_png(&svg, &png_opts).map_err(too_big)?
             }
             "webp" => {
+                tiza_export::image_size(&layout.canvas, &svg_opts, &png_opts).map_err(too_big)?;
                 let svg = tiza_export::to_svg(&layout.canvas, &theme, &svg_opts);
                 tiza_export::to_webp(&svg, &png_opts)
                     .map_err(too_big)?
                     .bytes
             }
-            _ => tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes(),
+            _ => {
+                tiza_export::svg_size(&layout.canvas, &svg_opts).map_err(too_big)?;
+                tiza_export::to_svg(&layout.canvas, &theme, &svg_opts).into_bytes()
+            }
         };
         test_hook("export:slow-write");
         // Written next to the target and renamed under the lock the

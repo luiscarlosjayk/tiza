@@ -1762,6 +1762,46 @@ mod tests {
     }
 
     #[test]
+    fn lines_at_is_the_line_count_that_view_at_shows() {
+        let mut d = Document::from_code("fn a() {}\nlet u = 1;\nlet v = u;\n", "rs", None);
+        let mv = |v: serde_json::Value| -> Move { serde_json::from_value(v).unwrap() };
+        d.add_move(mv(serde_json::json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// a\n// b"})))
+            .unwrap();
+        d.add_move(mv(serde_json::json!({"at_step": 2, "action": "code.patch", "op": "delete", "position": "1-4"})))
+            .unwrap();
+        for step in [0, 1, 2, 3, u32::MAX] {
+            assert_eq!(
+                d.lines_at(step),
+                d.view_at(step).doc.code.len(),
+                "step {step}"
+            );
+        }
+        assert_ne!(d.lines_at(1), d.lines_at(2), "the moves change the count");
+        // A window of another file: the count is the window's.
+        let mut d = Document::from_code("a\nb\nc\nd\ne\n", "rs", Some("/x/main.rs".into()));
+        d.view_code.insert("lib.rs".into(), code("x\ny\nz\nw"));
+        let link = Move {
+            at_step: 1,
+            action: MoveAction::CodeLink(Link {
+                file: "lib.rs".into(),
+                lines: Some("2-3".into()),
+            }),
+            rebind: BTreeMap::new(),
+            stale: None,
+            held: Vec::new(),
+        };
+        d.add_move(link).unwrap();
+        for step in [0, 1, 2] {
+            assert_eq!(
+                d.lines_at(step),
+                d.view_at(step).doc.code.len(),
+                "step {step}"
+            );
+        }
+        assert_eq!((d.lines_at(0), d.lines_at(1)), (5, 2));
+    }
+
+    #[test]
     fn cursor_select_and_wait_project_and_shift() {
         let mut d = Document::from_code("fn a() {}\nlet u = 1;\nlet v = u;\n", "rs", None);
         let mv = |v: serde_json::Value| -> Move { serde_json::from_value(v).unwrap() };

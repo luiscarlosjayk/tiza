@@ -12,6 +12,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `examples/ownership.rs.tiza` has 6 steps. A box with a label shows each way to pass a value: a move, a shared borrow and a mutable borrow. The callout at the end is gone. The README images show the new example.
 
 ### Fixed
+- An image export of a very long document stops with a clear message, before it makes the SVG. When the lines of code alone make the image too large, `tiza render` and `export_image` stop before the layout too. Before, Tiza used gigabytes of memory and then failed with `invalid SVG`. This is true for PNG, WebP, GIF and video, and for SVG, which has a higher limit.
+- `tiza render` refuses a `--margin` that is not 0 to 20 cells and a `--radius` that is not 0 to 100 px. Before, `NaN` or `inf` gave an empty image or a wrong error.
 - `annotation.update` with `text` says what to send. Send `label` for the text of a note or the title of a callout. Send the whole callout as a new `shape` for the text of a callout. Before, it said that `label` changes the text of a callout.
 - The MCP tool `update_annotation` refuses `text` itself. It says to remove the callout and add it again, and it no longer names fields that only the socket takes.
 - An MCP tool that refuses an argument itself, such as an unknown `border`, ends its error with `(invalid_argument)`. A refusal of the live instance does the same. Before, these errors had no code, so an agent could not tell them apart.

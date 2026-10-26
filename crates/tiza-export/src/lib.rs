@@ -11,11 +11,13 @@
 //! not depend on the fonts installed on the machine.
 pub mod fonts;
 pub mod gif;
+pub mod limits;
 pub mod png;
 pub mod svg;
 pub mod webp;
 
 pub use gif::{GifOptions, GifReport, to_gif};
+pub use limits::{check_lines, check_svg_lines, image_size, pixel_size, svg_size};
 pub use png::{PngOptions, to_png};
 pub use svg::{SvgOptions, to_svg};
 pub use webp::{WebpAnimOptions, WebpReport, WebpStill, to_webp, to_webp_anim};
@@ -32,9 +34,25 @@ pub enum Error {
     #[error("could not allocate a {0}×{1} image")]
     Alloc(u32, u32),
     #[error(
-        "a {0}×{1} px image is over the limit ({MAX_SIDE_PX} px per side, {MAX_PIXELS} px in all): lower width, scale or font size"
+        "a {0}×{1} px image is over the limit ({MAX_SIDE_PX} px per side, {MAX_PIXELS} px in all): use a smaller width, scale, font size or margin, or export fewer lines (FILE:A-B)"
     )]
     TooBig(u32, u32),
+    #[error(
+        "{lines} lines of code make an image at least {height} px high, over the limit ({MAX_SIDE_PX} px per side, {MAX_PIXELS} px in all): export fewer lines (FILE:A-B), or use a smaller scale, font size or margin"
+    )]
+    TooManyLines { lines: usize, height: u32 },
+    #[error(
+        "a {0}×{1} px SVG is over the limit ({side} px per side, {all} px in all): use a smaller width, font size or margin, or export fewer lines (FILE:A-B)",
+        side = limits::SVG_MAX_SIDE_PX,
+        all = limits::SVG_MAX_PIXELS
+    )]
+    SvgTooBig(u32, u32),
+    #[error(
+        "{lines} lines of code make an SVG at least {height} px high, over the limit ({side} px per side, {all} px in all): export fewer lines (FILE:A-B), or use a smaller font size or margin",
+        side = limits::SVG_MAX_SIDE_PX,
+        all = limits::SVG_MAX_PIXELS
+    )]
+    SvgTooManyLines { lines: usize, height: u32 },
     #[error("PNG encoding failed: {0}")]
     Png(String),
     #[error("GIF encoding failed: {0}")]

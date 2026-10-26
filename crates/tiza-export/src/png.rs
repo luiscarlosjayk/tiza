@@ -52,16 +52,7 @@ pub fn rasterize(svg: &str, o: &PngOptions) -> Result<resvg::tiny_skia::Pixmap, 
     };
     let tree = usvg::Tree::from_str(svg, &opts).map_err(|e| Error::Svg(e.to_string()))?;
     let size = tree.size();
-    let w = (size.width() * o.scale).ceil().max(1.0) as u32;
-    let h = (size.height() * o.scale).ceil().max(1.0) as u32;
-    // Bounded before any allocation: a typo in width or scale must be an
-    // error, never an aborted process.
-    if w > crate::MAX_SIDE_PX
-        || h > crate::MAX_SIDE_PX
-        || u64::from(w) * u64::from(h) > crate::MAX_PIXELS
-    {
-        return Err(Error::TooBig(w, h));
-    }
+    let (w, h) = crate::limits::pixel_size(size.width(), size.height(), o.scale)?;
     let mut pixmap = resvg::tiny_skia::Pixmap::new(w, h).ok_or(Error::Alloc(w, h))?;
     let ts = resvg::tiny_skia::Transform::from_scale(o.scale, o.scale);
     resvg::render(&tree, ts, &mut pixmap.as_mut());

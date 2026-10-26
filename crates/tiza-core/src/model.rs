@@ -1520,6 +1520,20 @@ impl Document {
         shapes
     }
 
+    /// How many code lines [`Document::view_at`] shows at `step`, without
+    /// a copy of the document: the layout of that step has a row for each
+    /// of them, so an export can refuse a take that is too large before it
+    /// lays it out.
+    pub fn lines_at(&self, step: u32) -> usize {
+        if self.moves.is_empty() || step == self.step {
+            return self.code.len();
+        }
+        match moves::project(self, &self.moves, step) {
+            Ok(proj) => proj.shown_code(self).0.len(),
+            Err(_) => self.code.len(),
+        }
+    }
+
     /// The document as shown at `step`: the shown file (cropped to its
     /// window) at that step and every annotation of that file with `step <=
     /// step`, shifted deterministically through the patches of later steps.

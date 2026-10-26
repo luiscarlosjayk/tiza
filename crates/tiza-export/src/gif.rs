@@ -83,6 +83,8 @@ pub fn to_gif(
     let mut rgb: Vec<Vec<[u8; 3]>> = Vec::with_capacity(frames.len());
     let (mut width, mut height) = (0u32, 0u32);
     for (i, (canvas, _)) in frames.iter().enumerate() {
+        // Over the limits: an error before the SVG, not after it.
+        crate::limits::image_size(canvas, &o.svg, &o.png)?;
         let svg = to_svg(canvas, theme, &o.svg);
         let pm = rasterize(&svg, &o.png)?;
         if i == 0 {
