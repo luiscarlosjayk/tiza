@@ -6041,7 +6041,7 @@
         "description": "Parameters of `theme.set`.",
         "properties": {
           "theme": {
-            "description": "`dark`, `light` or `toggle` (the default when omitted).",
+            "description": "`dark`, `light`, `terminal`, `auto` (follow the terminal) or `toggle`\n(the default when omitted).",
             "type": [
               "string",
               "null"

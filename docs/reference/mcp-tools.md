@@ -394,6 +394,8 @@ The socket codes are in [Error codes](socket-api.md#error-codes).
 |---|---|---|
 | `MESSAGE (CODE)` | `-32602` | The instance refused the request. |
 | `` No Tiza instance is listening on PATH (ERROR). Ask the user to open `tiza <file>` in a terminal, or pass --socket/--session to the MCP server. `` | `-32603` | The server did not get a reply from the instance. |
+| `The Tiza instance on PATH did not answer within 75 s: it is busy or stopped. Ask the user to look at the Tiza terminal.` | `-32603` | The instance got the request, but it did not reply in time. |
+| `The Tiza instance on PATH closed the connection before it answered: it possibly quit. Ask the user to look at the Tiza terminal.` | `-32603` | The instance closed the connection before it replied. |
 | `unknown border (use solid, dashed, dotted, thick, double) (invalid_argument)` | `-32602` | `border` has a value that Tiza does not know. |
 | `unknown corners (use rounded, sharp) (invalid_argument)` | `-32602` | `corners` has a value that Tiza does not know. |
 | `unknown stroke (use solid, dashed, dotted, thick, double) (invalid_argument)` | `-32602` | `stroke` has a value that Tiza does not know. |
@@ -413,10 +415,7 @@ The socket codes are in [Error codes](socket-api.md#error-codes).
 - The message `No Tiza instance is listening` comes for each of these cases:
   - The server cannot connect to the socket.
   - The server cannot write the request.
-  - The instance does not reply in 75 seconds.
-  - The instance closes the connection before it replies.
   - The reply is not JSON.
-- Thus the instance can be busy or stopped, and not only absent.
 - `WHAT` is `tool NAME` for a tool call, and `resource` for a resource read.
 - `failed to deserialize parameters:` comes when an argument has the wrong type. It also comes when a required argument is missing or `null`.
 - `failed to deserialize parameters:` also comes when `update_annotation` or `clear_annotations` gets an argument that it does not know. `text` of `update_annotation` gets its own message.

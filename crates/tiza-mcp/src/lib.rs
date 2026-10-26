@@ -2,8 +2,10 @@
 //! published only so that `cargo install tiza` works: it has no stable
 //! API. Use the `tiza` binary.
 //!
-//! MCP → local API bridge. Each tool is exactly one socket method; that way
-//! an agent and the presenter do the same thing and the TUI is the only one
+//! MCP → local API bridge. Each tool asks the live instance through its
+//! socket, most of them with exactly one method (`list_annotations`,
+//! `export_image` and the `tiza://render.md` resource use two). That way an
+//! agent and the presenter do the same thing, and the TUI is the only one
 //! that touches the document.
 
 use std::path::PathBuf;
@@ -250,7 +252,7 @@ pub struct HighlightParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct MarkParams {
     #[schemars(
-        description = "Built-in kind (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph."
+        description = "Built-in kind (info, note, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph."
     )]
     pub kind: String,
     #[schemars(
@@ -718,13 +720,19 @@ impl TizaServer {
             .await
             .map_err(|e| McpError::internal_error(e.to_string(), None))?
             .map_err(|e| {
-                McpError::internal_error(
-                    format!(
+                let message = match tiza_tui::ipc::unanswered(&self.socket, &e) {
+                    Some(mut why) => {
+                        if let Some(first) = why.get_mut(0..1) {
+                            first.make_ascii_uppercase();
+                        }
+                        format!("{why}. Ask the user to look at the Tiza terminal.")
+                    }
+                    None => format!(
                         "No Tiza instance is listening on {} ({e}). Ask the user to open `tiza <file>` in a terminal, or pass --socket/--session to the MCP server.",
                         self.socket.display()
                     ),
-                    None,
-                )
+                };
+                McpError::internal_error(message, None)
             })?;
         if let Some(err) = resp.error {
             return Err(McpError::invalid_params(
@@ -753,7 +761,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Preflight, the same as `tiza check --json` on the live document: errors (an anchor or marker that matches nothing, a move whose target does not match exactly once at its step, a linked file that cannot be read, an unknown or duplicate id) and warnings (an annotation hidden as (unanchored) at some step, one outside the `code.link` window of a step that shows its file (`outside_window`: `outside the window at step 3 (src/queue.rs:10-36): kept, but not drawn there`), one whose file its own step does not show (`not_shown`: `its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, but not drawn at its step`), a label clipped with «…» at `width` — named with its step, id and full text — and a step with nothing new), plus `min_clean_width`: the narrowest width from which no label is clipped (and `narrower`, the narrower widths that are clean too, when `width` is one of them); a marker that matches more than once is a warning; `revision` is the document revision it checked (it runs on a copy, while the screen and the other tools keep answering; one that waited may check a revision later than the call). At most one runs and one waits: a check at another width replaces the waiting one, which fails with `busy` (ask again). Runs inside the instance; read-only. Run it before showing a document."
+        description = "Checks the live document, as `tiza check --json` does. It runs inside the instance on a copy and changes nothing: run it before you show a document. Errors: an anchor or a marker that matches nothing; a move whose target does not match exactly once at its step; a linked file that Tiza cannot read; an unknown or a duplicate id. Warnings: an annotation hidden as (unanchored) at a step; an annotation outside the `code.link` window of a step that shows its file (`outside_window`: `outside the window at step 3 (src/queue.rs:10-36): kept, but not drawn there`); an annotation whose own step does not show its file (`not_shown`: `its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, but not drawn at its step`); a label that `width` clips with «…», with its step, id and full text; a step with nothing new; a marker that matches more than once. `min_clean_width` is the narrowest width that clips no label. When `width` clips no label, `narrower` lists the narrower widths that clip none too. `revision` is the revision that it checked: the screen and the other tools keep working while it runs, so a check that waited can check a later revision. One check runs and one waits. A check at another width replaces the waiting one, which fails with `busy`: ask again."
     )]
     async fn check(
         &self,
@@ -1043,7 +1051,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move that runs when the presenter reaches `at_step` (reverted when going back). `code.patch` (the default) inserts, replaces or deletes whole lines of the file shown at that step: targets are matched on that code and must match exactly once; annotations of earlier steps are shifted through the patch, those that lose every line are hidden as (unanchored) unless `rebind` names where they go; annotations of that file at that step or later, and the line numbers of later moves, are carried through it so they stay on the same text (a patch that removes or rewrites the text one of them is on is refused, naming it); `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on — each file keeps its own annotations, `lines` is only a window, and annotations added at a step belong to the file shown there (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply them instantly. When the move leaves annotations unseen at a step that drew them, it is made and the reply's `warning` names them: outside a `code.link` window (`a3: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`) or of a file their step no longer shows (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there`). `delete_move` answers with the same `warning`."
+        description = "Adds a move. The move runs when the presenter reaches `at_step`, and Tiza reverts it when the presenter goes back. `code.patch` (the default) inserts, replaces or deletes whole lines of the file that the step shows. Each target must match exactly once in that code. The patch shifts the annotations of earlier steps. An annotation that loses all its lines is hidden as (unanchored), unless `rebind` names its new place. The patch also carries the annotations of that file at that step or later, and the line numbers of later moves, so that they stay on the same text. Tiza refuses a patch that removes or changes the text under one of them, and names it. `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on. Each file keeps its own annotations, and `lines` is only a window. An annotation added at a step belongs to the file that the step shows (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply the moves at once. When the move hides annotations that a step drew, Tiza makes the move and `warning` in the reply names them: outside a `code.link` window (`a3: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`), or of a file that their step no longer shows (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there`). `delete_move` replies with the same `warning`."
     )]
     async fn add_move(
         &self,
@@ -1697,7 +1705,7 @@ const RESOURCES: &[(&str, &str, &str, &str)] = &[
     (
         "tiza://scene",
         "scene",
-        "The live document as JSON (code embedded, annotations, styles, step, theme). Read-only: to edit, read the document with `tiza scene get` / socket `scene.get`.",
+        "The live document as JSON (code embedded, annotations, styles, step, theme). Read-only: change the document with the tools (add_box, update_annotation…).",
         "application/json",
     ),
     (

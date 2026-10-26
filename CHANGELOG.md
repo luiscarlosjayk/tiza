@@ -19,6 +19,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - A `.cast` does not hold a step for a `wait` move that is stale, as the TUI does not. Before, it held the step for the time of the wait.
 - The `wrote` line of a GIF, a WebP or a video shows a control character of the path as text, as the other `wrote` lines do.
 - `--margin-cols` out of the range gives `--margin-cols=N: use a number between 12 and 200`. Before, the message offered `auto`, which only `:margin` takes.
+- A command or an MCP tool that reaches the live instance, but gets no reply, says why: the instance did not answer within 75 s, or it closed the connection. Before, the message was `no Tiza instance is listening` for these cases too.
+- The message about a `.tiza` document from a newer Tiza fits both a file and `scene.put`: `.tiza document with schema N: this version of Tiza reads schema 1 at most`.
+- The `theme.set` schema and its error name all its values: `dark`, `light`, `terminal`, `auto` and `toggle`. The `add_mark` kinds and the help of `:mark` list `note` too. The descriptions of the MCP tools `check` and `add_move` and of the resource `tiza://scene` are in clear English.
 - The help of `--interval` and `--system-fonts`, the `ffmpeg` messages, the `:export` message for a recording, the `skip_zero` description and the time-limit message of `export_image` are in clear English, without asides. The `ffmpeg` message no longer names Windows, which Tiza does not support.
 
 ## [0.1.1] - 2026-10-26

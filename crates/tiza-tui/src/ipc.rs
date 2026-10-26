@@ -148,13 +148,18 @@ fn handle(stream: UnixStream, tx: Sender<IpcRequest>) -> std::io::Result<()> {
 }
 
 /// Minimal client: one request, one response. Used by the CLI and the MCP bridge.
+///
+/// A connection that fails means that no instance listens at `path`. An
+/// instance that does not answer in time gives a `TimedOut` error, and one
+/// that closes the connection first gives `UnexpectedEof`:
+/// [`unanswered`] says these two in words.
 pub fn call(path: &Path, method: &str, params: Value) -> std::io::Result<Response> {
+    use std::io::ErrorKind;
     let mut stream = UnixStream::connect(path)?;
     // Longer than the supervised-mode proposal timeout: a parked request is
     // answered (accepted, rejected or expired) before the client gives up.
-    stream.set_read_timeout(Some(
-        crate::app::PROPOSAL_TIMEOUT + std::time::Duration::from_secs(15),
-    ))?;
+    let wait = ANSWER_TIMEOUT;
+    stream.set_read_timeout(Some(wait))?;
     let req = Request {
         id: Value::from(1),
         method: method.to_string(),
@@ -163,14 +168,72 @@ pub fn call(path: &Path, method: &str, params: Value) -> std::io::Result<Respons
     writeln!(stream, "{}", serde_json::to_string(&req)?)?;
     stream.flush()?;
     let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line)?;
-    serde_json::from_str(&line).map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
+    match BufReader::new(stream).read_line(&mut line) {
+        Ok(0) => {
+            return Err(std::io::Error::new(
+                ErrorKind::UnexpectedEof,
+                "closed the connection before it answered",
+            ));
+        }
+        Ok(_) => {}
+        // The read timeout: EAGAIN on macOS and Linux.
+        Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => {
+            return Err(std::io::Error::new(
+                ErrorKind::TimedOut,
+                format!("did not answer within {} s", wait.as_secs()),
+            ));
+        }
+        Err(e) => return Err(e),
+    }
+    serde_json::from_str(&line).map_err(|e| std::io::Error::new(ErrorKind::InvalidData, e))
+}
+
+/// How long [`call`] waits for the answer.
+pub const ANSWER_TIMEOUT: std::time::Duration =
+    std::time::Duration::from_secs(crate::app::PROPOSAL_TIMEOUT.as_secs() + 15);
+
+/// Why the instance at `path` gave no answer, in words, when a [`call`]
+/// reached it: it did not answer in time, or it closed the connection.
+/// `None` for another error, such as no instance at `path`.
+pub fn unanswered(path: &Path, e: &std::io::Error) -> Option<String> {
+    let why = match e.kind() {
+        std::io::ErrorKind::TimedOut => format!(
+            "did not answer within {} s: it is busy or stopped",
+            ANSWER_TIMEOUT.as_secs()
+        ),
+        std::io::ErrorKind::UnexpectedEof => {
+            "closed the connection before it answered: it possibly quit".to_string()
+        }
+        _ => return None,
+    };
+    Some(format!("the Tiza instance on {} {why}", path.display()))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn a_call_with_no_answer_says_why() {
+        let p = Path::new("/run/t.sock");
+        let late = std::io::Error::new(std::io::ErrorKind::TimedOut, "late");
+        assert_eq!(
+            unanswered(p, &late).as_deref(),
+            Some(
+                "the Tiza instance on /run/t.sock did not answer within 75 s: it is busy or stopped"
+            )
+        );
+        let closed = std::io::Error::from(std::io::ErrorKind::UnexpectedEof);
+        assert!(
+            unanswered(p, &closed)
+                .unwrap()
+                .contains("closed the connection")
+        );
+        // No instance there: the caller's own message.
+        let none = std::io::Error::from(std::io::ErrorKind::NotFound);
+        assert_eq!(unanswered(p, &none), None);
+    }
 
     #[test]
     fn roundtrip_over_socket() {

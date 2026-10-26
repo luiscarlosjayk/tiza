@@ -183,7 +183,7 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 
 - `scene.put` takes `document`, a `.tiza` object with its code embedded. The instance cannot read a file reference that you send.
 - Tiza refuses a document with a newer `schema` with `unsupported_schema`, and nothing changes.
-- The message is the same as when a file opens, for example `.tiza file with schema 99; this version understands up to 1`.
+- The message is the same as when a file opens, for example `.tiza document with schema 99: this version of Tiza reads schema 1 at most`.
 - Tiza migrates a document with an older `schema`, as it does for a file. When Tiza saves the document, it writes the current schema.
 - The presenter can undo a `scene.put` with `u`. The undo also gives back the step.
 - For the save rules, see [Agents and saving](../concepts/saving.md#agents-and-saving).
@@ -390,6 +390,8 @@ A command prints an error on stderr after `tiza: ` and exits with 1.
 |---|---|
 | `MESSAGE (CODE)` | The instance refused the request. |
 | `` no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | The command did not get a reply from the instance. |
+| `the Tiza instance on PATH did not answer within 75 s: it is busy or stopped; look at its terminal` | The instance got the request, but it did not reply in time. |
+| `the Tiza instance on PATH closed the connection before it answered: it possibly quit; look at its terminal` | The instance closed the connection before it replied. |
 | `the parameters are not valid JSON` | `PARAMS` of `tiza api` is not JSON. |
 | `the parameters from stdin are not valid JSON` | The standard input of `tiza api METHOD -` is not JSON. |
 | `the patch is not valid JSON` | The JSON of `tiza scene patch` is not valid. |
@@ -405,10 +407,7 @@ A command prints an error on stderr after `tiza: ` and exits with 1.
 - The message `no Tiza instance is listening` comes for each of these cases:
   - The command cannot connect to the socket.
   - The command cannot write the request.
-  - The instance does not reply in 75 seconds.
-  - The instance closes the connection before it replies.
   - The reply is not JSON.
-- Thus the instance can be busy or stopped, and not only absent.
 
 ### Standard input
 

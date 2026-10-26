@@ -406,7 +406,7 @@
         ]
       },
       "kind": {
-        "description": "Built-in kind (info, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph.",
+        "description": "Built-in kind (info, note, warn, error, ok, question, important, read, write, move, new, drop, scope, flow, todo; aliases like borrow/borrow_mut/lifetime work), a style defined with define_style, or any name when `style` carries a glyph.",
         "type": "string"
       },
       "label": {

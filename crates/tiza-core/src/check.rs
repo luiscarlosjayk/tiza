@@ -326,7 +326,7 @@ fn check_text_as(
             Level::Error,
             "schema",
             format!(
-                ".tiza file with schema {found}; this version understands up to {SCHEMA_VERSION}"
+                ".tiza document with schema {found}: this version of Tiza reads schema {SCHEMA_VERSION} at most"
             ),
         ));
         return Report::new(width, out, None, None);

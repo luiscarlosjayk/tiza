@@ -91,7 +91,8 @@ pub struct FocusParams {
 /// Parameters of `theme.set`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ThemeParams {
-    /// `dark`, `light` or `toggle` (the default when omitted).
+    /// `dark`, `light`, `terminal`, `auto` (follow the terminal) or `toggle`
+    /// (the default when omitted).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub theme: Option<String>,
 }

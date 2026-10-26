@@ -1191,12 +1191,19 @@ fn call(
     method: &str,
     params: serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
-    let resp = tiza_tui::ipc::call(path, method, params).with_context(|| {
-        format!(
-            "no Tiza instance is listening on {} (open `tiza <file>` or pass --socket/--session)",
-            path.display()
-        )
-    })?;
+    let resp = match tiza_tui::ipc::call(path, method, params) {
+        Ok(r) => r,
+        Err(e) => match tiza_tui::ipc::unanswered(path, &e) {
+            // An instance is there, but it gave no answer.
+            Some(why) => bail!("{why}; look at its terminal"),
+            None => {
+                return Err(anyhow::Error::new(e).context(format!(
+                    "no Tiza instance is listening on {} (open `tiza <file>` or pass --socket/--session)",
+                    path.display()
+                )));
+            }
+        },
+    };
     if let Some(e) = resp.error {
         bail!("{} ({})", e.message, e.code);
     }

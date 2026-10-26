@@ -313,3 +313,29 @@ fn two_clients_interleave() {
     }
     assert_eq!(live.with(|app| app.doc.annotations.len()), 20);
 }
+
+/// An instance that closes the connection with no answer gets its own
+/// error, not `No Tiza instance is listening`.
+#[test]
+fn a_closed_connection_is_not_a_missing_instance() {
+    let dir = scratch("mcp-closed-conn");
+    let sock = dir.join("s.sock");
+    let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+    let server = std::thread::spawn(move || {
+        use std::io::BufRead;
+        let (stream, _) = listener.accept().unwrap();
+        let mut line = String::new();
+        std::io::BufReader::new(&stream)
+            .read_line(&mut line)
+            .unwrap();
+        drop(stream);
+    });
+    let mut mcp = McpClient::start(&sock);
+    let (err, text, _) = mcp.call("status", json!({}));
+    server.join().unwrap();
+    assert!(
+        err && text.contains("closed the connection before it answered")
+            && !text.contains("No Tiza instance is listening"),
+        "{text}"
+    );
+}

@@ -226,6 +226,8 @@ An animation is a GIF, or a WebP without `step`.
 | `a W×H px SVG is over the limit (131072 px per side, 6400000000 px in all): use a smaller width or font_size (invalid_argument)` | The SVG is too large. |
 | `a W×H px image is not a WebP size (1 to 16383 px per side) (invalid_argument)` | The WebP has 16384 px on a side. |
 | `No Tiza instance is listening on SOCKET` | No live instance answers on the socket of the MCP server. |
+| `The Tiza instance on SOCKET did not answer within 75 s: it is busy or stopped. Ask the user to look at the Tiza terminal.` | The live instance got the request, but it did not reply in time. |
+| `The Tiza instance on SOCKET closed the connection before it answered: it possibly quit. Ask the user to look at the Tiza terminal.` | The live instance closed the connection before it replied. |
 | `MESSAGE (CODE)` | The live instance refuses a request, and `export_image` passes on its error. |
 | `the live document cannot be exported` | Tiza cannot load a view of the live document. |
 | `could not write PATH` | Tiza cannot write the file. |

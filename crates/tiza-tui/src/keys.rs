@@ -304,8 +304,8 @@ pub const HELP: &[(Section, &[Row])] = &[
             Sub("Annotate"),
             Command {
                 syntax: ":mark {KIND} {L:text} [{label}]",
-                desc: "Add a mark. KIND is info, warn, error, ok, question, important, read, \
-                       write, move, new, drop, scope, flow, todo or a style.",
+                desc: "Add a mark. KIND is info, note, warn, error, ok, question, important, \
+                       read, write, move, new, drop, scope, flow, todo or a style.",
             },
             Command {
                 syntax: ":style {NAME} glyph={G} legend=\"{text}\" color={C}",

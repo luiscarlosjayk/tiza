@@ -238,6 +238,8 @@ Tiza writes these messages on stderr:
 | `tiza: config ignored: PATH` | Tiza cannot read or parse the config file. |
 | `` tiza: no grammar for `LANG`; the code is shown as plain text `` | `--lang` got a language that has no grammar. |
 | `` tiza: no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | A command finds no live instance. |
+| `tiza: the Tiza instance on PATH did not answer within 75 s: it is busy or stopped; look at its terminal` | A command reached the live instance, but it did not reply in time. |
+| `tiza: the Tiza instance on PATH closed the connection before it answered: it possibly quit; look at its terminal` | The live instance closed the connection before it replied. |
 | `tiza: MESSAGE (CODE)` | The live instance answers a command with an error. |
 
 - The messages `no grammar for …` and `config ignored: …` are warnings. Tiza goes on.

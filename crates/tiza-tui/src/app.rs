@@ -6782,7 +6782,7 @@ impl App {
             "theme.set" => {
                 if params.get("theme").is_some_and(|t| !t.is_string()) {
                     return Err(Error::Invalid(
-                        "`theme` must be a string: dark, light or toggle".into(),
+                        "`theme` must be a string: dark, light, terminal, auto or toggle".into(),
                     ));
                 }
                 match params

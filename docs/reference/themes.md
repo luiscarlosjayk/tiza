@@ -204,7 +204,7 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 | `theme= must be dark or light` | `:export` got `theme=terminal` or another name. |
 | `tiza: config ignored: PATH` | Tiza cannot read or parse the config file. |
 | `tiza: could not open FILE` | A value in `theme_overrides` of the document is not a string. |
-| `` `theme` must be a string: dark, light or toggle `` | `theme.set` got a `theme` that is not a string. |
+| `` `theme` must be a string: dark, light, terminal, auto or toggle `` | `theme.set` got a `theme` that is not a string. |
 | `unknown theme (dark, light, terminal, auto, toggle)` | `theme.set` got a name that it does not know. |
 | `unknown theme (dark, light) (invalid_argument)` | `export_image` got a `theme` that it does not take. |
 
