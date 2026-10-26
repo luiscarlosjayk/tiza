@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `status` has `save_error`: why the last save of the document failed, or `null` when the last save worked. An agent can see that its changes are not saved.
 
 ### Changed
+- `tiza render FILE` without `--step` exports the last step of the document, the same as `--step LAST`. Thus a spotlight of the last step is on. Before, it showed all the annotations with no spotlight.
 - `:margin N`, `:margin` and `--margin-cols` say that notes wrap at the margin, and that labels, legends and long notes are cut there. Before, they said only that notes wrap.
 - An MP4 or a WebM export writes the `ffmpeg` command on stderr only when `ffmpeg` fails. Before, it wrote the command each time.
 - A paste while the help, the list or the review is open, also while you type a filter, changes nothing. A paste in presentation mode changes nothing too. The status bar tells you what to do. Before, the paste replaced the code under the panel.

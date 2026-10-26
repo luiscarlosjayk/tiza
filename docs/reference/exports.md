@@ -20,7 +20,7 @@ tiza render --out shot.png
 - `--out -` writes to standard output.
 - `tiza render` does not make a missing folder for `--out`, except with `--all-steps`.
 - Without a document, `tiza render` exports what the live instance shows. See [The live instance](#the-live-instance).
-- Without `--step`, an export of a document shows all its annotations, as at the last step. A WebP is different: without `--step`, it is an animation of all the steps.
+- Without `--step`, an export of a document shows its last step, the same as `--step LAST`. A WebP is different: without `--step`, it is an animation of all the steps.
 
 For example, this is the last step of `examples/ownership.rs.tiza` as a PNG at 92 columns:
 

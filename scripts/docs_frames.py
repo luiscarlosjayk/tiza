@@ -260,8 +260,8 @@ def main():
                 code = read(os.path.join(ROOT, path))
                 width = opts.get("width") or narrowest_width(tiza, doc, work, "…" in code)
                 theme = [] if opts.get("theme") == "doc" else ["--theme", opts.get("theme", "dark")]
-                # The step on screen: without --step, an export shows every
-                # step, and a spotlight dims nothing.
+                # The step on screen: without --step, an export shows the
+                # last step of the document, not the step it was saved at.
                 step = str(json.loads(read(doc))["step"])
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 r = run(tiza, "render", doc, "--step", step, "--format", "webp", "--font-size", "13",

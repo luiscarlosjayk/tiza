@@ -68,8 +68,9 @@ fn render_past_the_last_step_is_the_last_step() {
             );
         }
     }
-    // The fixture tells the two takes apart: without `--step` a file shows
-    // every step's annotations with the spotlight of step 2 off.
+    // Without `--step` a file shows its last step, spotlight on: the take
+    // of `--step LAST` (Luis, 2026-10-25). The fixture tells the two apart
+    // when the spotlight is off.
     let all = tiza_qa::tiza(&[
         "render",
         &doc_path(),
@@ -81,7 +82,7 @@ fn render_past_the_last_step_is_the_last_step() {
         "-",
     ]);
     let (last, _) = rendered(&dir, LAST, "ansi");
-    assert_ne!(all.stdout, last, "the spotlight changes nothing here");
+    assert_eq!(all.stdout, last, "without --step is not --step {LAST}");
 }
 
 #[test]

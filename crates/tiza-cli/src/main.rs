@@ -187,7 +187,7 @@ enum Cmd {
         /// Output: a path or `-` for stdout. The extension picks the format (`.txt`, `.ansi`, `.md`, `.svg`, `.png`, `.webp`, `.gif`, `.mp4`, `.webm`, `.cast`, `.tape`) unless --format is given.
         #[arg(long, default_value = "-")]
         out: String,
-        /// Step to show (default: the document's current step, or all of them for a file). A .webp with --step is a still of that step; without it, an animation of every step, as a .gif
+        /// Step to show (default: the step on screen of the live instance, or the last step of a file). A .webp with --step is a still of that step; without it, an animation of every step, as a .gif
         #[arg(long)]
         step: Option<u32>,
         /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|webp|txt|ansi|md` for others)
@@ -473,11 +473,10 @@ fn real_main() -> anyhow::Result<()> {
                         &mut opened.document,
                         lang.as_deref().or(cli.lang.as_deref()),
                     );
-                    (
-                        opened.document,
-                        step.unwrap_or(u32::MAX),
-                        width.unwrap_or(100),
-                    )
+                    // Without --step, a file shows its last step, as
+                    // `--step LAST` does: its spotlight too.
+                    let last = opened.document.max_step();
+                    (opened.document, step.unwrap_or(last), width.unwrap_or(100))
                 }
                 None => {
                     let mut scene: tiza_core::protocol::Scene = serde_json::from_value(call(
@@ -568,8 +567,8 @@ fn real_main() -> anyhow::Result<()> {
             // An explicit step past the last one is probably a typo in a
             // script: say so (on stderr, so `--out -` stays clean) and show
             // the last step, the same take as `--step L`. (Without
-            // `--step`, a file shows every step's annotations; a recording
-            // shows every step and takes no `--step`.)
+            // `--step`, a file shows its last step too; a recording shows
+            // every step and takes no `--step`.)
             let recording = animated || matches!(format, Format::Cast | Format::Tape);
             if let Some(asked) = asked_step
                 && asked > doc.max_step()
