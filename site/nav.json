@@ -81,6 +81,7 @@
     "docs/img/hero.png": "img/hero.png",
     "docs/img/ownership.webp": "img/ownership.webp",
     "docs/img/ownership-final.png": "img/ownership-final.png",
-    "docs/brand/mark-small.svg": "favicon.svg"
+    "docs/brand/mark-small.svg": "favicon.svg",
+    "docs/brand/og-card.png": "og-card.png"
   }
 }

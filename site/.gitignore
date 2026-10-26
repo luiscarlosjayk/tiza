@@ -2,6 +2,7 @@ content/
 public/
 static/img/
 static/favicon.svg
+static/og-card.png
 release.toml
 static/images/
 static/releases/
