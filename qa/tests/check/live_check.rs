@@ -172,6 +172,41 @@ fn check_reply(rx: &mpsc::Receiver<(Instant, Response)>) -> (Instant, Value) {
     (at, r.result.unwrap())
 }
 
+/// [`ask_check`] with request id `id`, answered on `reply`. Checks asked
+/// with clones of one sender are answered on one receiver, in the order
+/// the instance sent the replies. No clock is read.
+fn ask_check_on(live: &Live, id: u64, params: Value, reply: mpsc::Sender<Response>) {
+    live.with(move |app| {
+        let req = tiza_core::protocol::Request {
+            id: json!(id),
+            method: "check".into(),
+            params,
+        };
+        app.handle_ipc(req, reply)
+    });
+}
+
+/// The next reply on a receiver of [`ask_check_on`]: its request id and
+/// its report.
+fn next_report(rx: &mpsc::Receiver<Response>) -> (u64, Value) {
+    let r = rx.recv_timeout(CHECK).expect("a check never answered");
+    let id = r.id.as_u64().expect("request id");
+    assert!(r.error.is_none(), "check {id}: {:?}", r.error);
+    (id, r.result.unwrap())
+}
+
+/// After the last check of [`ask_check_on`] was handed over: no reply came
+/// yet, so the first check still runs. A reply here is a request that was
+/// replaced (`busy`), or a first check that ended before the others came.
+fn none_answered_yet(rx: &mpsc::Receiver<Response>) {
+    if let Ok(r) = rx.try_recv() {
+        panic!(
+            "check {} was answered before the first check ended ({:?}): it was replaced, or the first check did not run long enough to tell",
+            r.id, r.error
+        );
+    }
+}
+
 /// Step 1 / AC1: a check in flight; meanwhile `status`, `render.text` and
 /// an annotation edit over the socket and `n` on the keyboard are answered
 /// within `QUICK`, again and again, before the check's reply arrives.
@@ -273,40 +308,37 @@ fn a_change_during_the_check_is_not_in_it_and_the_reply_names_its_revision() {
 }
 
 /// Step 3 / AC3: two checks at once share one computation: two replies,
-/// the same report and the same revision, the second one no later than
-/// the first one's computation. A third at another width waits for them
-/// and is answered with its own width.
+/// the same report and the same revision. A third at another width is
+/// answered after them, with its own width.
+///
+/// Shown by the order of the replies on one channel, not by a clock. The
+/// second check joined the first one: if it waits for a computation of its
+/// own, the check at width 60 takes its place, and Tiza tells it `busy` at
+/// once. That a check at another width waits, and does not run beside the
+/// first one, is shown by
+/// [`another_width_while_one_waits_replaces_it_and_it_is_told_at_once`].
 #[test]
 fn two_checks_at_once_share_one_computation() {
     let (_, live) = big_live("ac3");
     let sock = live.socket.clone();
-    let t0 = Instant::now();
-    let first = ask_check(&live, json!({}));
+    let (tx, replies) = mpsc::channel();
+    ask_check_on(&live, 1, json!({}), tx.clone());
     quick(&sock, "status", json!({}));
-    let second = ask_check(&live, json!({}));
-    let narrow = ask_check(&live, json!({"width": 60}));
+    ask_check_on(&live, 2, json!({}), tx.clone());
+    ask_check_on(&live, 3, json!({"width": 60}), tx);
+    none_answered_yet(&replies);
     quick(&sock, "status", json!({}));
-    let (t1, a) = check_reply(&first);
-    let (t2, b) = check_reply(&second);
+    let (first, a) = next_report(&replies);
+    let (second, b) = next_report(&replies);
+    let (third, c) = next_report(&replies);
+    assert_eq!(
+        [first, second, third],
+        [1, 2, 3],
+        "the check at width 60 was answered before the two at width 100"
+    );
     assert_eq!(a, b, "two checks at once, two different reports");
-    // Shared: the second came with the first, not one more check later
-    // (a second computation would take as long as the first).
-    let took = t1 - t0;
-    let gap = if t2 > t1 { t2 - t1 } else { t1 - t2 };
-    assert!(
-        gap < took / 2,
-        "the second reply came {gap:?} after the first (one check takes {took:?})"
-    );
-    // The one at width 60 ran after them, not beside them: it ends about
-    // one more check later.
-    let (t3, c) = check_reply(&narrow);
-    assert_eq!(c["width"], 60, "{c}");
     assert_eq!(a["width"], 100, "{a}");
-    assert!(
-        t3 > t1 + took / 4,
-        "the check at width 60 ended {:?} after the first one (one check takes {took:?}): it ran beside it",
-        t3.saturating_duration_since(t1)
-    );
+    assert_eq!(c["width"], 60, "{c}");
     assert_eq!(c["revision"], a["revision"], "{c}\n{a}");
 }
 
@@ -343,22 +375,28 @@ fn another_width_while_one_waits_replaces_it_and_it_is_told_at_once() {
 
 /// AC3, the effective width: `{}` and `{"width": 100}` (the default) are
 /// the same check, so the second joins the first instead of waiting for it
-/// and running again.
+/// and running again. Shown without a clock, as in
+/// [`two_checks_at_once_share_one_computation`]: a check at width 60 comes
+/// next, and it takes the place of a `{"width": 100}` that waits (`busy`).
 #[test]
 fn the_default_width_and_the_same_width_given_share_one_computation() {
     let (_, live) = big_live("ac3-default");
-    let t0 = Instant::now();
-    let implicit = ask_check(&live, json!({}));
-    let explicit = ask_check(&live, json!({"width": tiza_core::check::DEFAULT_WIDTH}));
-    let (t1, a) = check_reply(&implicit);
-    let (t2, b) = check_reply(&explicit);
-    assert_eq!(a, b, "{a}\n{b}");
-    let took = t1 - t0;
-    let gap = if t2 > t1 { t2 - t1 } else { t1 - t2 };
-    assert!(
-        gap < took / 2,
-        "`{{\"width\": 100}}` answered {gap:?} after `{{}}` (one check takes {took:?}): it ran again"
+    let (tx, replies) = mpsc::channel();
+    ask_check_on(&live, 1, json!({}), tx.clone());
+    let width = json!({"width": tiza_core::check::DEFAULT_WIDTH});
+    ask_check_on(&live, 2, width, tx.clone());
+    ask_check_on(&live, 3, json!({"width": 60}), tx);
+    none_answered_yet(&replies);
+    let (first, a) = next_report(&replies);
+    let (second, b) = next_report(&replies);
+    let (third, c) = next_report(&replies);
+    assert_eq!(
+        [first, second, third],
+        [1, 2, 3],
+        "the check at width 60 was answered before the two at width 100"
     );
+    assert_eq!(a, b, "{a}\n{b}");
+    assert_eq!(c["width"], 60, "{c}");
 }
 
 /// AC3, a burst: while a check runs, many checks at other widths at once
