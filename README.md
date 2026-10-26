@@ -8,7 +8,7 @@ Use Tiza to explain code to a person or to an AI agent. Examples are a code walk
 
 The annotations follow the code text. They keep their place when you scroll, resize the terminal or change the theme.
 
-> Status: **v0.1.1**, early. The document format and the API can change before 1.0.
+> Status: **v0.1.2**, early. The document format and the API can change before 1.0.
 
 ## Installation
 

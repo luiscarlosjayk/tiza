@@ -4,6 +4,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-26
+
 ### Added
 - `status` has `save_error`: why the last save of the document failed, or `null` when the last save worked. An agent can see that its changes are not saved.
 - When you share a link to a page of the docs site, the preview shows the Tiza card, `docs/brand/og-card.png`, with the title of the page. Each page has Open Graph and Twitter card tags and a canonical address.
