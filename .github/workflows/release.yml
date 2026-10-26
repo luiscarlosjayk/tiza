@@ -50,6 +50,9 @@ jobs:
       # The container has what the runner image would: git before the
       # checkout (a real clone, for the build stamp), a C toolchain for the
       # linker and libwebp, perl for shasum, and rustup for the step after.
+      # The checkout belongs to the runner user and the container runs as
+      # root: git refuses such a repository ("dubious ownership") unless it is
+      # a safe directory, and build.rs then stamped the binary `unknown`.
       - name: build image (container only)
         if: matrix.container
         run: |
@@ -58,6 +61,7 @@ jobs:
             ca-certificates curl git build-essential perl
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: actions/checkout@v7
       # The toolchain rust-toolchain.toml pins (the only place its version is
       # written; rustup >= 1.28 installs it with a bare `toolchain install`),
@@ -83,6 +87,22 @@ jobs:
             crates/tiza-export/assets/fonts/LICENSE-TizaSymbols-DejaVu.txt \
             crates/tiza-export/LICENSE-libwebp.txt "dist/$name/"
           cp -r examples "dist/$name/"
+          # A binary that this runner can run must name the tagged commit,
+          # clean, as scripts/release-local.sh checks: `unknown` means that
+          # git did not answer build.rs. The x86_64 macOS build is
+          # cross-compiled on the arm64 runner, so it is not run.
+          host="$(rustc -vV | sed -n 's/^host: //p')"
+          if [ "$host" = "${{ matrix.target }}" ]; then
+            commit="$(git rev-parse --short=10 HEAD)"
+            said="$("dist/$name/tiza" --version)"
+            echo "$said"
+            case "$said" in
+              *"($commit)"*) ;;
+              *) echo "the binary does not name the commit $commit: $said" >&2; exit 1 ;;
+            esac
+          else
+            echo "not run: ${{ matrix.target }} is cross-compiled on $host"
+          fi
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
       - uses: actions/upload-artifact@v7

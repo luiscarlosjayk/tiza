@@ -13,11 +13,11 @@
       "reason": "webp export for docs frames"
     },
     "x86_64-unknown-linux-gnu": {
-      "binary_bytes": 13264232,
-      "archive_bytes": 6378953,
-      "commit": "7f71f9f",
-      "measured": "2026-10-18",
-      "reason": "SVG font subsetting reverted (skera + write-fonts, unicode-normalization removed); the SVG embeds whole the faces it draws again"
+      "binary_bytes": 15272128,
+      "archive_bytes": 7321269,
+      "commit": "37ba3f3",
+      "measured": "2026-10-26",
+      "reason": "v0.1.1 release build: webp export and the work since 0.1.0"
     }
   }
 }

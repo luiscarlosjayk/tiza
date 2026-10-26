@@ -43,6 +43,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - Messages of the TUI have no dash asides: a failed save, `:q` with stale moves, a command name with a typo and the theme notes. `:lang` writes the language as `LANG` in its messages, as its help does.
 - The help of `--interval` and `--system-fonts`, the `ffmpeg` messages, the `:export` message for a recording, the `skip_zero` description and the time-limit message of `export_image` are in clear English, without asides. The `ffmpeg` message no longer names Windows, which Tiza does not support.
 - `tiza render --all-steps` refuses an `--out` with any extension, such as `deck.jpg` or `talk.pdf`, because it is a file name. Before, Tiza refused only the extension of a format that it exports, such as `answer.md`. For a different extension, it made a folder of that name with PNG files in it.
+- `tiza --version` of the Linux release archive shows the commit of the release. Before, it showed `unknown` in place of the commit.
 
 ## [0.1.1] - 2026-10-26
 
