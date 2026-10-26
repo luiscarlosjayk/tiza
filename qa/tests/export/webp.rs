@@ -8,7 +8,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use serde_json::json;
-use tiza_qa::{Live, McpClient, bin, fixture, scratch, tiza};
+use tiza_qa::{Live, McpClient, bin, fixture, scratch, tiza, webp_frames, webp_still};
 
 fn doc() -> String {
     fixture("shared/ownership/ownership.rs.tiza")
@@ -48,78 +48,6 @@ fn png_rgba(bytes: &[u8]) -> (Vec<u8>, u32, u32) {
 
 fn decoder(bytes: &[u8]) -> image_webp::WebPDecoder<Cursor<&[u8]>> {
     image_webp::WebPDecoder::new(Cursor::new(bytes)).unwrap()
-}
-
-/// RGBA pixels and size of a WebP still.
-fn webp_still(bytes: &[u8]) -> (Vec<u8>, u32, u32) {
-    let mut d = decoder(bytes);
-    assert!(!d.is_animated(), "an animation, not a still");
-    let (w, h) = d.dimensions();
-    let mut px = vec![0; d.output_buffer_size().unwrap()];
-    d.read_image(&mut px).unwrap();
-    if !d.has_alpha() {
-        px = px.chunks(3).flat_map(|c| [c[0], c[1], c[2], 255]).collect();
-    }
-    (px, w, h)
-}
-
-/// The frames of an animated WebP and their times, put together here as
-/// the decoder of libwebp does it: a frame without blending replaces its
-/// rectangle; with blending, an opaque pixel replaces the one below and a
-/// transparent pixel keeps it.
-///
-/// Not image-webp's `read_frame`: version 0.2.4 has a bug. It blends the
-/// opaque pixels too, and its rounding takes 1 off some of them, so a
-/// lossless frame would look lossy. libwebp copies them.
-fn webp_frames(bytes: &[u8]) -> Vec<(Vec<u8>, u32)> {
-    let u24 = |b: &[u8]| u32::from(b[0]) | u32::from(b[1]) << 8 | u32::from(b[2]) << 16;
-    assert!(decoder(bytes).is_animated(), "a still, not an animation");
-    // RGBA, also when the animation is opaque (the decoder then gives RGB).
-    let (cw, ch) = decoder(bytes).dimensions();
-    let mut canvas = vec![0u8; (cw * ch * 4) as usize];
-    let mut dispose = None;
-    let mut out = Vec::new();
-    let mut pos = 12;
-    while pos + 8 <= bytes.len() {
-        let size = u32::from_le_bytes(bytes[pos + 4..pos + 8].try_into().unwrap()) as usize;
-        let (id, body) = (&bytes[pos..pos + 4], &bytes[pos + 8..pos + 8 + size]);
-        pos += 8 + size + (size & 1);
-        if id != b"ANMF" {
-            continue;
-        }
-        let (x, y) = (u24(&body[0..]) * 2, u24(&body[3..]) * 2);
-        let (w, h) = (u24(&body[6..]) + 1, u24(&body[9..]) + 1);
-        let blend = body[15] & 2 == 0;
-        if let Some((dx, dy, dw, dh)) = dispose.take() {
-            for r in dy..dy + dh {
-                let i = ((r * cw + dx) * 4) as usize;
-                canvas[i..i + (dw * 4) as usize].fill(0);
-            }
-        }
-        let data = &body[16..];
-        let mut still = b"RIFF".to_vec();
-        still.extend((4 + data.len() as u32).to_le_bytes());
-        still.extend(b"WEBP");
-        still.extend(data);
-        let (px, fw, fh) = webp_still(&still);
-        assert_eq!((fw, fh), (w, h));
-        for r in 0..h {
-            for c in 0..w {
-                let s = &px[((r * w + c) * 4) as usize..][..4];
-                let i = (((y + r) * cw + x + c) * 4) as usize;
-                match (blend, s[3]) {
-                    (true, 0) => {}
-                    (false, _) | (true, 255) => canvas[i..i + 4].copy_from_slice(s),
-                    (true, a) => panic!("a blended pixel with alpha {a}"),
-                }
-            }
-        }
-        out.push((canvas.clone(), u24(&body[12..])));
-        if body[15] & 1 == 1 {
-            dispose = Some((x, y, w, h));
-        }
-    }
-    out
 }
 
 /// The frame times of a GIF, in milliseconds.

@@ -205,7 +205,6 @@ fn the_v0_1_0_notes_match_what_the_release_builds() {
             .contains(r#"name="tiza-${GITHUB_REF_NAME}-${{ matrix.target }}""#)
     );
     assert!(n.contains("cp tiza-v0.1.0-<target>/tiza"));
-    assert!(root().join("docs/img/ownership.gif").exists());
 }
 
 #[test]

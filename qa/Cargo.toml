@@ -20,6 +20,8 @@ tiza-mcp.workspace = true
 serde_json.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
+# The helpers that read the WebP exports (`webp_frames`, `webp_still`).
+image-webp.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
@@ -27,7 +29,6 @@ jsonschema.workspace = true
 proptest.workspace = true
 two-face.workspace = true
 gif.workspace = true
-image-webp.workspace = true
 png.workspace = true
 
 [lints]

@@ -1,7 +1,7 @@
 //! The README images are real exports of the current renderer, made by
 //! `scripts/readme-images.sh` alone.
 
-use tiza_qa::{example, scratch, tiza_ok};
+use tiza_qa::{example, scratch, tiza_ok, webp_frames};
 
 const WIDTH: &str = "92";
 
@@ -22,16 +22,10 @@ fn png_size(bytes: &[u8]) -> (u32, u32) {
     (be(16), be(20))
 }
 
-fn gif_info(bytes: &[u8]) -> (u16, u16, usize) {
-    let mut opts = gif::DecodeOptions::new();
-    opts.set_color_output(gif::ColorOutput::Indexed);
-    let mut d = opts.read_info(bytes).unwrap();
-    let (w, h) = (d.width(), d.height());
-    let mut n = 0;
-    while d.read_next_frame().unwrap().is_some() {
-        n += 1;
-    }
-    (w, h, n)
+fn loop_count(bytes: &[u8]) -> image_webp::LoopCount {
+    image_webp::WebPDecoder::new(std::io::Cursor::new(bytes))
+        .unwrap()
+        .loop_count()
 }
 
 /// The last step of the example: the highest step of an annotation or a
@@ -76,7 +70,7 @@ fn the_script_uses_tiza_alone_and_writes_every_readme_image() {
         assert!(mode & 0o111 != 0, "not executable");
     }
     for out in [
-        "docs/img/ownership.gif",
+        "docs/img/ownership.webp",
         "docs/img/ownership-final.png",
         "docs/img/src/step$s.png",
         "readme-images:ownership-txt",
@@ -113,7 +107,10 @@ fn the_script_uses_tiza_alone_and_writes_every_readme_image() {
             }
         }
     }
-    assert!(shown >= 2, "the GIF and the PNG of the last step: {shown}");
+    assert!(
+        shown >= 2,
+        "the animation and the PNG of the last step: {shown}"
+    );
 }
 
 fn images(md: &str) -> Vec<(String, String)> {
@@ -135,16 +132,24 @@ fn images(md: &str) -> Vec<(String, String)> {
 #[test]
 fn the_committed_images_match_the_current_renderer_and_the_budget() {
     let dir = scratch("fresh");
-    // GIF: same frames and size as a fresh render; < 1 MB.
-    let gif_path = dir.join("own.gif");
-    render(&["--skip-zero", "--scale", "1.5"], &gif_path);
-    let committed = std::fs::read(root().join("docs/img/ownership.gif")).unwrap();
-    assert!(committed.len() < 1_000_000, "GIF {} bytes", committed.len());
-    assert_eq!(
-        gif_info(&committed),
-        gif_info(&std::fs::read(&gif_path).unwrap()),
-        "docs/img/ownership.gif is stale: run scripts/readme-images.sh"
+    // The animated WebP: the frames, their times and the loop of a fresh
+    // render; < 1 MB. Decoded frames, not bytes: the bytes were the same on
+    // macOS arm64 and Linux x86_64 when they were measured, but a lossless
+    // encoder can choose another encoding of the same pixels.
+    let fresh = dir.join("own.webp");
+    render(&["--skip-zero", "--scale", "1.5"], &fresh);
+    let committed = std::fs::read(root().join("docs/img/ownership.webp")).unwrap();
+    let fresh = std::fs::read(&fresh).unwrap();
+    assert!(
+        committed.len() < 1_000_000,
+        "WebP {} bytes",
+        committed.len()
     );
+    assert!(
+        webp_frames(&committed) == webp_frames(&fresh),
+        "docs/img/ownership.webp is stale: run scripts/readme-images.sh"
+    );
+    assert_eq!(loop_count(&committed), loop_count(&fresh));
     // PNGs: the last step (< 300 KB) and the hero's other two frames.
     let last = last_step();
     for (rel, step) in [
@@ -164,7 +169,7 @@ fn the_committed_images_match_the_current_renderer_and_the_budget() {
             assert!(c.len() < 300_000, "{rel} {} bytes", c.len());
         }
     }
-    // The text block under the GIF is the text export of the last step, rows 1..=17
+    // The text block under the animation is the text export of the last step, rows 1..=17
     // plus the box's bottom border.
     let txt = tiza_ok(&[
         "render",
