@@ -52,6 +52,7 @@ cargo clippy --all-targets -- -D warnings
 cargo run -- examples/ownership.rs
 scripts/size-check.sh                        # release binary < 16 MB, download < 8 MB, ≤ 10 % over qa/budgets.json
 scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
+scripts/docs-frames.sh                       # the frames of the docs pages: a real WebP export for each `<!-- frame -->` comment
 ```
 
 Build the docs site locally with `site/build.sh` and Zola 0.23.6.
