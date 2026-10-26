@@ -81,7 +81,7 @@ Follow mode also turns off in three more cases. The message gives the reason.
 
 ## Messages
 
-The messages of follow mode are in [Messages of follow mode](../reference/commands.md#messages-of-follow-mode).
+The messages of follow mode are in [Messages of follow mode](../reference/commands/messages.md#messages-of-follow-mode).
 
 ## Special cases
 

@@ -46,7 +46,7 @@ The commands work as in Vim.
 - A command that takes a `PATH` does not write over an existing file without `!`.
 - When `PATH` is the open document, `:w PATH` and `:saveas PATH` save to it, as `:w` does.
 
-The messages of these commands are in [Messages of the save commands](../reference/commands.md#messages-of-the-save-commands).
+The messages of these commands are in [Messages of the save commands](../reference/commands/messages.md#messages-of-the-save-commands).
 
 ### Paths
 
@@ -78,7 +78,7 @@ A quit command does not save more than the current mode saves. With autosave on 
 - When the save fails again, Tiza prints `tiza: could not save FILE: ERROR` before the line of what it did not save.
 - When `:wq` cannot save a read-only `.tiza` file, it shows `FILE is read-only`. For other failures, such as a read-only folder, it shows the error of the system.
 
-The messages of `:q` are in [Messages of the save commands](../reference/commands.md#messages-of-the-save-commands).
+The messages of `:q` are in [Messages of the save commands](../reference/commands/messages.md#messages-of-the-save-commands).
 
 When Tiza quits without saving, it prints a line on stderr. For example:
 

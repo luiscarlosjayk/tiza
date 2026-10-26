@@ -203,7 +203,7 @@ Each value has this meaning:
 #### Rules for annotations
 
 - A spotlight is active from its `step` to `until`. Without `until`, it is active only at its `step`.
-- A spotlight dims the code outside its lines and the annotations outside `ids`. With only `ids`, it shows the code of those annotations.
+- A spotlight dims the code outside its lines. When it has `ids`, it also dims the annotations outside `ids`. With only `ids`, it shows the code of those annotations.
 - Tiza refuses a blank `text`, and a range that ends before it starts, when you add an annotation.
 - An annotation whose lines are not in the code stays in the file. Tiza does not draw it, and `tiza check` gives an error for it.
 

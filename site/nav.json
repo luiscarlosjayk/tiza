@@ -38,6 +38,13 @@
       "pages": [
         "docs/reference/keys.md",
         "docs/reference/commands.md",
+        "docs/reference/commands/annotate.md",
+        "docs/reference/commands/change.md",
+        "docs/reference/commands/steps-and-files.md",
+        "docs/reference/commands/view.md",
+        "docs/reference/commands/export-and-agents.md",
+        "docs/reference/commands/save-and-quit.md",
+        "docs/reference/commands/messages.md",
         "docs/reference/cli.md",
         "docs/reference/document-format.md",
         "docs/reference/exports.md",

@@ -42,7 +42,7 @@ For example, to put a box around three lines and go to the next step:
 - At the last step, `n` does not move. With `"loop": true` in the document, `n` goes back to step 0. See [Loop](document-format.md#loop).
 - A document without annotations and without moves has step 0 and step 1. Without `loop`, `n` stops at step 1.
 - When a step types code, the next key finishes the typing. Tiza does not use that key for anything else. `Ctrl-C` is the exception: it does what it does in normal mode. See [Ctrl-C](#ctrl-c).
-- To go to a named step or to a step number, type `:goto ID`. See [Steps and files](commands.md#steps-and-files).
+- To go to a named step or to a step number, type `:goto ID`. See [Steps and files](commands/steps-and-files.md).
 
 ## Select code
 
@@ -122,7 +122,7 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `←` | Goes to the previous step. |
 | `f` | Turns the live pointer on or off. |
 
-- Presentation mode hides the interface. It uses the take. See [View](commands.md#view) for `:layout`.
+- Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
 - The other keys of normal mode also work in presentation mode.
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
 - Only the result of a `:` command shows. The messages of the keys, for example after `u`, do not show in presentation mode.
@@ -363,7 +363,7 @@ The rest of the status bar shows the first of these that applies:
 - With one line or one annotation, the paste messages say `line` and `annotation`.
 - `pointer on` says that `Esc` turns the pointer off. In a selection, `Esc` closes only the selection.
 - The messages of `h`, `s` and `a` in a selection are in [Messages](../guides/present.md#messages). That table also has `arrow cancelled`.
-- A message about a new annotation, or after `+` or `-`, can end with a step hint. Examples are `(step N, press n)`, `(press n)`, `(step N, :step N shows it)` and `(FILE, not shown at step N)`. See [Messages of the annotation commands](commands.md#messages-of-the-annotation-commands).
+- A message about a new annotation, or after `+` or `-`, can end with a step hint. Examples are `(step N, press n)`, `(press n)`, `(step N, :step N shows it)` and `(FILE, not shown at step N)`. See [Messages of the annotation commands](commands/messages.md#messages-of-the-annotation-commands).
 
 ## How it works
 

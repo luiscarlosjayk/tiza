@@ -162,18 +162,8 @@ The fields `auto_advance_ms`, `code.patch` and `wait` are in [Document format](d
 
 ## `:export`
 
-```
-:export [PATH] [step=N] [width=N] [theme=dark|light]
-```
+`:export` writes a step to a file from the TUI. Its syntax and its options are in [`:export`](commands/export-and-agents.md#export).
 
-| Option | Type | Default | Meaning |
-|---|---|---|---|
-| `PATH` | A path | `NAME-stepN.txt` next to the document | The file to write, with an extension that selects the format. |
-| `step=` | A step number | The step on screen | The step to export. |
-| `width=` | 20 to 400 columns | The terminal width minus 2, at least 40 | The width of the take. |
-| `theme=` | `dark` or `light` | The theme on screen | The colors of the export. |
-
-- `NAME` is the name of the document without `.tiza`. `N` is the step.
 - `theme=` also takes the Spanish aliases `oscuro` and `claro`.
 - A relative `PATH` starts at the folder where you started Tiza. `~` at the start is your home folder.
 - Tiza makes the folders that are missing. It writes over a file that exists.
