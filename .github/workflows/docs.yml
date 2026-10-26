@@ -51,8 +51,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          # The manual run needs the tags to find the latest release.
-          fetch-depth: ${{ github.event_name == 'workflow_dispatch' && '0' || '1' }}
+          # All the history and the tags: the manual run finds the latest
+          # release, and the notes of each release show the images of its tag.
+          fetch-depth: 0
       - name: Choose the ref that the site describes
         id: ref
         shell: bash

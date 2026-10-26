@@ -12,8 +12,12 @@ This script copies the pages that nav.json lists into content/, and:
   an image becomes a site path, anything else goes to the file on GitHub;
   a link to a file that does not exist, or to a path outside the repo, is an
   error,
-- serves a raw.githubusercontent.com file of this repo that is an asset from
-  the site, so the site makes no request to another host,
+- serves a raw.githubusercontent.com file of this repo from the site, so
+  the site makes no request to another host. A file at a release tag
+  vX.Y.Z comes from git at that tag, so the notes of each release show
+  the image of that release; the tag must be in the clone. A file at
+  another ref, or at a tag that does not exist yet, is an asset of the
+  tree,
 - turns a code block with the info string "text prompt" into a prompt
   block (<pre class="prompt">); site.js gives it the title "Ask your agent"
   and a "Copy prompt" button. On GitHub it stays a plain text block,
@@ -42,6 +46,7 @@ import os
 import posixpath
 import re
 import shutil
+import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -55,6 +60,8 @@ TABLE_OPEN = '<div class="table-wrap">'
 PROMPT_INFO = "text prompt"
 # A URL in a prompt: the site shows it in the code font.
 PROMPT_URL_RE = re.compile(r"https?://[^\s<]+")
+# A release tag: a raw file at such a tag comes from git.
+TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
@@ -137,6 +144,8 @@ class Site:
             for name in files:
                 rel = os.path.relpath(os.path.join(root, name), repo).replace(os.sep, "/")
                 self.assets.setdefault(rel, rel[len("docs/"):])
+        # (tag, path) -> site path of a raw file at a release tag, from git.
+        self.tag_assets = {}
         self.warnings = []
         self.where = ""  # file:line of the line that convert() reads
 
@@ -163,8 +172,20 @@ class Site:
                 return "@/%s%s" % (self.pages[path], "#" + frag if frag else "")
             return target
         if target.startswith(self.raw_prefix):
-            # raw.githubusercontent.com/OWNER/REPO/REF/PATH: serve an asset from the site.
-            path = target[len(self.raw_prefix):].partition("/")[2].partition("#")[0]
+            # raw.githubusercontent.com/OWNER/REPO/REF/PATH: serve the file from the site.
+            ref, _, rest = target[len(self.raw_prefix):].partition("/")
+            path = rest.partition("#")[0]
+            if TAG_RE.match(ref) and ref != self.ref:
+                if self.has_tag(ref):
+                    dst = "releases/%s/%s" % (ref, path)
+                    self.tag_assets[(ref, path)] = dst
+                    return "/" + dst
+                if path not in self.assets:
+                    raise BuildError("%s: %s is at the tag %s, and this clone does not have "
+                                     "the tag. Fetch the tags: git fetch --tags"
+                                     % (self.where, path, ref))
+                self.warnings.append("%s: the tag %s is not in this clone: the site serves "
+                                     "%s of the tree" % (self.where, ref, path))
             if path in self.assets:
                 return "/" + self.assets[path]
             return target
@@ -178,6 +199,19 @@ class Site:
         if repo_path in self.assets:
             return "/" + self.assets[repo_path]
         return self.github_url(repo_path, anchor)
+
+    def has_tag(self, tag):
+        r = subprocess.run(["git", "-C", self.repo, "rev-parse", "--verify", "--quiet",
+                            "refs/tags/%s^{commit}" % tag], capture_output=True)
+        return r.returncode == 0
+
+    def read_at_tag(self, tag, path):
+        r = subprocess.run(["git", "-C", self.repo, "show", "%s:%s" % (tag, path)],
+                           capture_output=True)
+        if r.returncode != 0:
+            raise BuildError("the tag %s has no file %s: %s"
+                             % (tag, path, r.stderr.decode(errors="replace").strip()))
+        return r.stdout
 
     def rewrite_links(self, text, src):
         out = []
@@ -384,6 +418,11 @@ def build(repo, nav, version, ref):
         out = os.path.join(static, dst)
         os.makedirs(os.path.dirname(out), exist_ok=True)
         shutil.copyfile(os.path.join(repo, src), out)
+    for (tag, path), dst in site.tag_assets.items():
+        out = os.path.join(static, dst)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "wb") as f:
+            f.write(site.read_at_tag(tag, path))
 
     # Pages in docs/ that are neither on the site nor skipped.
     listed = set(site.pages)

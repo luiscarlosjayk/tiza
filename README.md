@@ -65,9 +65,9 @@ To open your own code, run `tiza path/to/file`. On macOS, `pbpaste | tiza` opens
 
 ## What it looks like
 
-This GIF and this text block are real Tiza exports of [the ownership example](examples/ownership.rs.tiza).
+This animation and this text block are real Tiza exports of [the ownership example](examples/ownership.rs.tiza).
 
-![Tiza explaining Rust ownership step by step](docs/img/ownership.gif)
+![Tiza explaining Rust ownership step by step](docs/img/ownership.webp)
 
 <!-- readme-images:ownership-txt -->
 ```

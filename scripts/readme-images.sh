@@ -8,8 +8,9 @@
 #   CHROME=path/to/chrome scripts/readme-images.sh
 #
 # Writes (all from examples/ownership.rs.tiza, dark theme, embedded fonts):
-#   docs/img/ownership.gif         native GIF, from step 1 to the last step
-#                                  (scale 1.5)
+#   docs/img/ownership.webp        lossless animated WebP, from step 1 to
+#                                  the last step (scale 1.5), with the
+#                                  frames and the times of the GIF
 #   docs/img/ownership-final.png   the last step (scale 2); the hero uses it too
 #   docs/img/src/step{1,3}.png     the other real frames of the hero
 #   docs/img/hero.png              1200×630 at device scale 2, from
@@ -42,9 +43,9 @@ mkdir -p docs/img/src
 
 render() { "$TIZA" render "$EXAMPLE" --width "$WIDTH" "$@"; }
 
-# The GIF leaves out step 0 (the bare code) and uses scale 1.5, to keep it
-# light. The PNGs keep the default scale 2.
-render --skip-zero --scale 1.5 --out docs/img/ownership.gif
+# The animation leaves out step 0 (the bare code) and uses scale 1.5, to
+# keep it light. The PNGs keep the default scale 2.
+render --skip-zero --scale 1.5 --out docs/img/ownership.webp
 render --step "$LAST" --out docs/img/ownership-final.png
 for s in 1 3; do
     render --step "$s" --out "docs/img/src/step$s.png"
@@ -93,7 +94,7 @@ else
     "$chrome" "${args[@]}" "file://$root/docs/img/src/hero.html" >/dev/null 2>&1
 fi
 
-for f in docs/img/ownership.gif docs/img/ownership-final.png docs/img/hero.png \
+for f in docs/img/ownership.webp docs/img/ownership-final.png docs/img/hero.png \
          docs/img/src/step1.png docs/img/src/step3.png; do
     [[ -f "$f" ]] && printf '%9d bytes  %s\n' "$(wc -c <"$f")" "$f"
 done
