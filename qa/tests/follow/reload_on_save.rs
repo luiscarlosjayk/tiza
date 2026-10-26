@@ -96,35 +96,6 @@ fn box_lines(live: &Live, id: &str) -> Option<(u32, u32)> {
 }
 
 #[test]
-fn tmp_rename_save_reloads_once_after_debounce() {
-    let (live, src) = followed("ac1", CODE);
-    live.command("follow on");
-    assert_eq!(live.message().unwrap().0, "following main.rs");
-    assert_eq!(
-        reloads(&live),
-        0,
-        "enabling with unchanged content is not a reload"
-    );
-
-    save_like_zed(&src, &CODE.replace("done", "finished"));
-    wait_reloads(&live, 1);
-    assert!(code(&live)[3].contains("finished"), "{:?}", code(&live));
-    let (msg, is_err) = live.message().unwrap();
-    assert!(!is_err);
-    assert_eq!(msg, "main.rs reloaded (#1): 0 annotations kept");
-
-    // A burst of writes within the debounce window is one reload.
-    for i in 0..5 {
-        std::fs::write(&src, CODE.replace("done", &format!("v{i}"))).unwrap();
-        std::thread::sleep(Duration::from_millis(15));
-    }
-    wait_reloads(&live, 2);
-    settle();
-    assert_eq!(reloads(&live), 2, "burst must collapse into one reload");
-    assert!(code(&live)[3].contains("v4"), "{:?}", code(&live));
-}
-
-#[test]
 fn annotations_follow_their_text_and_u_undoes() {
     let (live, src) = followed("ac2", CODE);
     live.command("box 2-3 ownership");

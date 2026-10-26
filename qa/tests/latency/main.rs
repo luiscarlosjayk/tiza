@@ -1,7 +1,9 @@
-//! Tests that measure how fast a child process answers. They are in a crate
-//! of their own, so that no other test of the gate runs beside them, and
-//! they take one lock, so that they run one at a time.
+//! Tests whose result depends on time: how fast a child process answers,
+//! or when file events arrive. They are in a crate of their own, so that
+//! no other test of the gate runs beside them, and they take one lock, so
+//! that they run one at a time.
 
+mod burst_reload;
 mod busy_file_events;
 mod export_sizes;
 mod live_check;
