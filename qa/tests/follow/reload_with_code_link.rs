@@ -190,7 +190,7 @@ fn assert_screen(live: &Live) {
 }
 
 /// Saves main.rs at `step`, then goes to step 0 when the reload has not
-/// happened there (it waits for step 0 while moves are applied).
+/// happened there (it waits while a patch is applied).
 fn save_at(step: u64) {
     let (live, src, tiza) = followed(&format!("save-{step}"), "demo.tiza");
     assert_eq!(saved(&tiza), authored());
@@ -326,4 +326,78 @@ fn a_document_without_code_link_does_not_change() {
     let s = screen(&live);
     let n0 = row_of(&s, "prints it").unwrap_or_else(|| panic!("n0 at step 0:\n{s}"));
     assert!(n0.contains("println!"), "{s}");
+}
+
+/// A save at a step where only moves that do not edit the text apply (a
+/// cursor, a selection, the link to queue.rs, the link back to main.rs)
+/// loads at once, as at step 0. The view of the step stays up, and step 0
+/// shows the new main.rs from line 1.
+#[test]
+fn a_save_at_a_step_with_no_patch_loads_at_once() {
+    for step in 1..=4u64 {
+        let (live, src, tiza) = followed(&format!("now-{step}"), "demo.tiza");
+        goto(&live, step);
+        let before = live.api_ok("status", json!({}));
+        edit(&src);
+        wait_for("the reload", || reloads(&live) >= 1);
+        let after = live.api_ok("status", json!({}));
+        assert_eq!(after["step"], step, "loaded at step {step}");
+        assert_eq!(after["view"], before["view"], "step {step}: the view");
+        assert_eq!(after["file"], before["file"], "step {step}: the file");
+        assert_eq!(live.with(|app| app.doc.base_first()), 1, "step {step}");
+        assert_eq!(saved(&tiza), reloaded(), "step {step}: the saved .tiza");
+        assert_eq!(scene(&live), reloaded(), "step {step}: scene.get");
+        if step == 3 {
+            let s = screen(&live);
+            assert!(s.contains("pub struct Queue"), "queue.rs stays:\n{s}");
+        }
+        assert_screen(&live);
+    }
+}
+
+/// A window of main.rs (lines 7-9) shown at step 1 numbers the code on
+/// screen from line 7. A save there keeps the numbers of the file: step 0
+/// starts at line 1, and the window shows lines 7-9 of the new text.
+#[test]
+fn a_save_while_a_window_of_main_rs_is_shown() {
+    let dir = scratch("window");
+    std::fs::copy(
+        fixture("follow/reload_with_code_link/main.rs"),
+        dir.join("main.rs"),
+    )
+    .unwrap();
+    let doc = json!({
+        "schema": 1,
+        "source": {"language": "rs", "first_line": 1},
+        "code": {"file": "main.rs"},
+        "annotations": [],
+        "step": 0,
+        "moves": [{"at_step": 1, "action": "code.link", "file": "main.rs", "lines": "7-9"}],
+    });
+    let tiza = dir.join("window.tiza");
+    std::fs::write(&tiza, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+    let live = open(&dir, &tiza);
+    live.command("follow on");
+    goto(&live, 1);
+    assert_eq!(live.api_ok("status", json!({}))["first_line"], 7);
+    edit(&dir.join("main.rs"));
+    wait_for("the reload", || reloads(&live) >= 1);
+    let st = live.api_ok("status", json!({}));
+    assert_eq!(
+        (st["step"].clone(), st["first_line"].clone()),
+        (json!(1), json!(7))
+    );
+    let code = live.api_ok("code.get", json!({}));
+    // The new line at the top moved `fn takes` from L8 to L9.
+    let text = code["text"].as_str().unwrap_or_default().to_string();
+    assert!(text.contains("   9  fn takes(s: String) {"), "{code}");
+    goto(&live, 0);
+    let st = live.api_ok("status", json!({}));
+    assert_eq!(st["first_line"], 1, "{st}");
+    let s = screen(&live);
+    let first = s.lines().find(|l| l.contains("// v2")).unwrap_or_default();
+    assert!(
+        first.trim_start().starts_with("1 "),
+        "step 0 from line 1:\n{s}"
+    );
 }

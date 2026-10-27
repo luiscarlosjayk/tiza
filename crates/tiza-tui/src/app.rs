@@ -3398,8 +3398,9 @@ impl App {
         // are re-added below, re-anchored.
         d.annotations.retain(|a| !gone.contains(&a.id));
         if !d.moves.is_empty() {
-            // Only reachable at step 0 (see `moves_block_reason`): the new
-            // text is the step-0 code.
+            // The new text is the step-0 code: a follow reload comes only at
+            // a step with no patch applied, the rest only at step 0 (see
+            // `moves_block_reason`). `revalidate` shows the step's view of it.
             d.base_code = code.clone();
             d.base_first_line = first_line;
         }
@@ -3526,23 +3527,16 @@ impl App {
         }
     }
 
-    /// Following while moves are applied: why a save does not load now (it
-    /// waits for a step with no moves applied), as the reply, the bar and
+    /// Following while a patch is applied: why a save does not load now (it
+    /// waits for a step with no patch applied), as the reply, the bar and
     /// `follow.status` say it. `None` when a save loads at once.
     pub fn follow_waits(&self) -> Option<String> {
-        if self.follow.is_none() || !self.doc.moves_applied() {
+        if self.follow.is_none() || !self.doc.patches_applied() {
             return None;
         }
         let step = self.doc.step;
-        // The last step before the first move: a save loads there or earlier.
-        let back = self
-            .doc
-            .moves
-            .iter()
-            .map(|m| m.at_step)
-            .min()
-            .unwrap_or(1)
-            .saturating_sub(1);
+        // The last step before the first patch: a save loads there or earlier.
+        let back = self.doc.first_patch_step().unwrap_or(1).saturating_sub(1);
         let when = if back == 0 {
             "at step 0".to_string()
         } else {
@@ -3703,7 +3697,7 @@ impl App {
     /// screen has it is no reload: the document references it again.
     /// `true` when the screen changed.
     fn reload_waiting(&mut self) -> bool {
-        if !self.reload_waits || self.doc.moves_applied() || self.follow.is_none() {
+        if !self.reload_waits || self.doc.patches_applied() || self.follow.is_none() {
             return false;
         }
         self.reload_waits = false;
@@ -3719,11 +3713,11 @@ impl App {
         false
     }
 
-    /// Following, with no move applied, over embedded code that the file
+    /// Following, with no patch applied, over embedded code that the file
     /// holds again (saved back as the screen has it): the document
     /// references the file again. `true` when it did.
     fn back_to_reference(&mut self) -> bool {
-        if self.follow.is_none() || self.doc.moves_applied() {
+        if self.follow.is_none() || self.doc.patches_applied() {
             return false;
         }
         let Some(src) = self.paused() else {
@@ -3800,14 +3794,15 @@ impl App {
             // file's once more.
             return self.back_to_reference();
         }
-        if self.doc.moves_applied() && new == f.last_content && !renumbered {
+        if self.doc.patches_applied() && new == f.last_content && !renumbered {
             // Back as it was before it went missing: nothing waits for it.
             self.info(format!("{name} is back; following it"));
             return true;
         }
-        if self.doc.moves_applied() {
-            // ADR 0007 §7: follow is paused while moves are applied (the edits
+        if self.doc.patches_applied() {
+            // ADR 0007 §7: follow is paused while a patch is applied (the edits
             // are not reconciled yet); until then, say so instead of reloading.
+            // The other moves do not change the text: a save loads at once.
             // The code on screen is no longer the file's: embedded meanwhile,
             // as after a paste, so the autosave and a fresh load
             // show it — saved as `code: {file}` they would read the new text
@@ -3827,10 +3822,12 @@ impl App {
         }
         f.mark_reloaded(new.clone());
         let reloads = f.reloads;
+        // The numbers of the step-0 code: the code on screen can be the
+        // window of a `code.link`, numbered from its own first line.
         let first = if self.doc.is_embedded() {
             read_first
         } else {
-            self.doc.source.first_line
+            self.doc.base_first()
         };
         // Code that is not the file's (a paste, an older version) replaced
         // by the file's is always one undo step, so `u` gives it back, even

@@ -679,7 +679,7 @@ fn link_command_socket_and_mcp_record_the_moves() {
 }
 
 #[test]
-fn paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
+fn paste_stays_refused_and_follow_does_not_wait_for_a_link() {
     let (_dir, live) = open_demo("ac7");
     live.api_ok("step.set", json!({"step": 2}));
     let err = live.with(|a| a.replace_code("fn other() {}\n").unwrap_err().to_string());
@@ -687,16 +687,11 @@ fn paste_stays_refused_and_follow_waits_while_a_link_is_applied() {
         err.contains("cannot paste while moves are applied (step 2)"),
         "{err}"
     );
-    // Follow turns on and waits for a step with no move applied (it used
-    // to be refused).
+    // Follow turns on (it used to be refused). A link does not change the
+    // text, so a save loads at once: only a patch makes it wait.
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
-    assert!(
-        r["reason"]
-            .as_str()
-            .is_some_and(|w| w.starts_with("waiting: moves applied at step 2")),
-        "{r}"
-    );
+    assert!(r.get("reason").is_none(), "{r}");
     live.api_ok("follow.set", json!({"enabled": false}));
     // Undo of a link move brings the previous view back.
     live.api_ok("step.set", json!({"step": 1}));

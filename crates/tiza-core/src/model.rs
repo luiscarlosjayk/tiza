@@ -1198,6 +1198,22 @@ impl Document {
         self.moves.iter().any(|m| m.at_step <= self.step)
     }
 
+    /// Whether a `code.patch` of any file is applied at the current step
+    /// (`at_step <= step`), stale or not. The other moves do not change
+    /// the text, so the code on screen is the step-0 code of its view.
+    pub fn patches_applied(&self) -> bool {
+        self.first_patch_step().is_some_and(|s| s <= self.step)
+    }
+
+    /// The step of the first `code.patch` of any file, if there is one.
+    pub fn first_patch_step(&self) -> Option<u32> {
+        self.moves
+            .iter()
+            .filter(|m| matches!(m.action, MoveAction::CodePatch(_)))
+            .map(|m| m.at_step)
+            .min()
+    }
+
     /// The code shown at `step` and its first line: the view a `code.link`
     /// left up, cropped to its window, with every patch `<= step` applied.
     pub fn code_at(&self, step: u32) -> Result<(Vec<String>, u32), Error> {
