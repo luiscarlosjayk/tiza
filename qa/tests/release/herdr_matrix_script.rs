@@ -121,6 +121,8 @@ struct Run {
 
 fn spawn(dir: &Path, args: &[&str], env: &[(&str, &str)]) -> Child {
     Command::new("bash")
+        // The binary that it starts reads the config of the tests.
+        .envs(tiza_qa::isolated_config_env())
         .arg(script())
         .args(args)
         .envs(env.iter().copied())

@@ -1,9 +1,23 @@
 //! Binary smoke test: `render` of the bundled example at several widths and steps.
 
+use std::path::PathBuf;
 use std::process::Command;
+use std::sync::OnceLock;
 
+/// The binary with an empty config file and an empty config folder, so the
+/// config of whoever runs the tests changes nothing.
 fn bin() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_tiza"))
+    static DIR: OnceLock<PathBuf> = OnceLock::new();
+    let dir = DIR.get_or_init(|| {
+        let dir = std::env::temp_dir().join(format!("tiza-cli-tests-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::write(dir.join("config.toml"), "").unwrap();
+        dir
+    });
+    let mut c = Command::new(env!("CARGO_BIN_EXE_tiza"));
+    c.env("TIZA_CONFIG", dir.join("config.toml"))
+        .env("XDG_CONFIG_HOME", dir.join("config"));
+    c
 }
 
 fn example() -> String {

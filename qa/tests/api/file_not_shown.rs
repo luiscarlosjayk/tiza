@@ -41,7 +41,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, example, scratch};
+use tiza_qa::{Live, example, scratch};
 
 // ---------------------------------------------------------------- helpers
 
@@ -125,7 +125,7 @@ fn not_shown(f: &[Value]) -> Vec<(String, u64)> {
 }
 
 fn check_file(path: &Path) -> Value {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(path)
         .output()
@@ -135,11 +135,7 @@ fn check_file(path: &Path) -> Value {
 }
 
 fn check_text(path: &Path) -> String {
-    let out = std::process::Command::new(bin())
-        .arg("check")
-        .arg(path)
-        .output()
-        .unwrap();
+    let out = tiza_qa::command().arg("check").arg(path).output().unwrap();
     String::from_utf8_lossy(&out.stdout).into_owned()
 }
 
@@ -147,7 +143,7 @@ fn check_text(path: &Path) -> String {
 /// live instance with `--socket`): one text per step.
 fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
     let _ = std::fs::remove_dir_all(out);
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .arg("render")
         .args(args)
         .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])

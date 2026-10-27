@@ -30,6 +30,7 @@ struct Cli {
     smoke: bool,
     /// Start with mouse capture on: click moves the cursor, drag selects, wheel scrolls (`:mouse on|off` live).
     /// Off by default, so that the terminal keeps its own text selection (with the capture on, Shift-drag or Option-drag selects text).
+    /// `mouse = true` in config.toml turns it on for every session.
     #[arg(long)]
     mouse: bool,
     /// Initial presentation step
@@ -91,27 +92,56 @@ impl ThemeArg {
     }
 }
 
-/// The `[theme]` table of `~/.config/tiza/config.toml`, with a one-line
-/// warning on stderr when the file does not parse (never fatal), and one
-/// for each thing that Tiza did not take from it.
-fn config_theme() -> Option<tiza_core::theme::ThemeOverrides> {
-    match tiza_core::theme::load_config() {
-        Ok(Some((cfg, _))) => {
-            for n in &cfg.notes {
-                eprintln!("tiza: config: {}", tiza_core::printable::printable_text(n));
+/// `~/.config/tiza/config.toml`, with one line on stderr for each entry
+/// that Tiza does not take (never fatal: a file that cannot be read is
+/// ignored, and said once).
+fn load_config() -> tiza_core::config::Config {
+    match tiza_core::config::load() {
+        Ok(cfg) => {
+            // The warnings quote the file: shown, never sent raw to the
+            // terminal.
+            for w in cfg.warning_lines() {
+                eprintln!("tiza: config: {}", tiza_core::printable::printable_line(&w));
             }
-            cfg.theme
+            cfg
         }
-        Ok(None) => None,
         Err(e) => {
-            let e = e.to_string();
             eprintln!(
                 "tiza: config ignored: {}",
-                tiza_core::printable::printable_text(&e)
+                tiza_core::printable::printable_line(&e.to_string())
             );
-            None
+            // The status bar says it too: stderr is under the TUI.
+            tiza_core::config::Config::unreadable(&e)
         }
     }
+}
+
+/// What the `[theme]` table of the config file gives when a theme is built
+/// (unknown tokens, bad colors, text pushed to 4.5:1): the notes that
+/// `render` prints, each one once with the themes it is about. `tiza config`
+/// lists them with the warnings of the file, and the status bar counts them.
+fn config_theme_notes(cfg: &tiza_core::config::Config) -> Vec<String> {
+    let mut notes: Vec<(String, Vec<&str>)> = Vec::new();
+    if let Some(t) = &cfg.theme {
+        for (base, name) in [(ThemeName::Dark, "dark"), (ThemeName::Light, "light")] {
+            for note in Theme::resolve(base, base == ThemeName::Dark, Some(t), None).1 {
+                match notes.iter_mut().find(|(n, _)| *n == note) {
+                    Some((_, bases)) => bases.push(name),
+                    None => notes.push((note, vec![name])),
+                }
+            }
+        }
+    }
+    notes
+        .into_iter()
+        .map(|(note, bases)| {
+            format!(
+                "[theme] with the {} theme{}: {note}",
+                bases.join(" and "),
+                if bases.len() > 1 { "s" } else { "" }
+            )
+        })
+        .collect()
 }
 
 /// The theme an export paints: the flag or the document's, with the
@@ -121,6 +151,7 @@ fn export_theme(
     flag: Option<ThemeArg>,
     doc: &tiza_core::Document,
     theme_file: Option<&PathBuf>,
+    config: Option<&tiza_core::theme::ThemeOverrides>,
 ) -> anyhow::Result<Theme> {
     let name = flag
         .and_then(ThemeArg::fixed)
@@ -140,7 +171,7 @@ fn export_theme(
     let (theme, notes) = Theme::resolve(
         name,
         true,
-        config_theme().as_ref(),
+        config,
         file.as_ref().or(doc.theme_overrides.as_ref()),
     );
     // The notes quote the overrides as written, from the document or a
@@ -193,7 +224,7 @@ enum Cmd {
         /// One image per step (step 0 included), all the same size: `--out DIR/` gets `step-00.png` … `step-NN.png` (`--format svg|webp|txt|ansi|md` for others)
         #[arg(long, conflicts_with = "step")]
         all_steps: bool,
-        /// Width in columns (default: 100, or the live terminal's width)
+        /// Width in columns (default: `width` in config.toml, else 100; for the live instance, its terminal's width)
         #[arg(long)]
         width: Option<usize>,
         #[arg(long, value_enum)]
@@ -254,7 +285,7 @@ enum Cmd {
     Check {
         /// `.tiza` document, a source file with a `.tiza` document next to it, or `-` for stdin
         file: String,
-        /// Width to check the labels at (default: 100, as `render`)
+        /// Width to check the labels at (default: as `render`: `width` in config.toml, else 100)
         #[arg(long)]
         width: Option<usize>,
         /// Print the findings as JSON (for agents and scripts)
@@ -458,10 +489,14 @@ fn real_main() -> anyhow::Result<()> {
                         _ => Format::Txt,
                     }
                 });
+            let config = load_config();
             // The document: a file, or the live instance's scene.
             // The live instance's `.tiza` and whether it autosaves: what a
             // `.tape` of it opens.
             let mut live_document: Option<(Option<String>, bool)> = None;
+            // The gutter when the document does not set it: the config
+            // file's, or the live instance's (its own config decided it).
+            let mut default_numbers = config.defaults.numbers.unwrap_or(true);
             let asked_step = step;
             let (doc, mut step, width) = match &file {
                 Some(f) => {
@@ -485,7 +520,10 @@ fn real_main() -> anyhow::Result<()> {
                     // Without --step, a file shows its last step, as
                     // `--step LAST` does: its spotlight too.
                     let last = opened.document.max_step();
-                    (opened.document, step.unwrap_or(last), width.unwrap_or(100))
+                    let width = width
+                        .or(config.defaults.width)
+                        .unwrap_or(tiza_core::check::DEFAULT_WIDTH);
+                    (opened.document, step.unwrap_or(last), width)
                 }
                 None => {
                     let mut scene: tiza_core::protocol::Scene = serde_json::from_value(call(
@@ -509,6 +547,7 @@ fn real_main() -> anyhow::Result<()> {
                     .context("unexpected status response")?;
                     let live_w = tiza_core::layout::width_for_terminal(status.cols);
                     live_document = Some((status.document.clone(), status.autosave));
+                    default_numbers = status.numbers;
                     (
                         scene.document,
                         step.unwrap_or(scene.step),
@@ -516,14 +555,15 @@ fn real_main() -> anyhow::Result<()> {
                     )
                 }
             };
-            // The gutter: the document's `numbers` field unless a
-            // flag forces it for this export.
+            // The gutter: the document's `numbers` field (else the config
+            // file's) unless a flag forces it for this export.
+            let shown_numbers = doc.numbers_or(default_numbers);
             let line_numbers = if no_numbers {
                 false
             } else if numbers {
                 true
             } else {
-                doc.numbers
+                shown_numbers
             };
             // Sizes from the command line are bounded: a typo must be
             // an error, never an aborted process.
@@ -603,7 +643,7 @@ fn real_main() -> anyhow::Result<()> {
             }
             // The flag as given, for the command that a .tape types.
             let theme_flag = theme;
-            let theme = export_theme(theme, &doc, theme_file.as_ref())?;
+            let theme = export_theme(theme, &doc, theme_file.as_ref(), config.theme.as_ref())?;
             // The code alone can make a raster image too large: refused
             // before the layout, which a huge document fills the memory
             // with. The steps are the ones that the export lays out
@@ -915,12 +955,13 @@ fn real_main() -> anyhow::Result<()> {
                         // The tape types the command that opens the real
                         // TUI: the flags that the TUI takes go there, and
                         // `--no-save`, so that a recording never writes the
-                        // document. The TUI takes the line numbers and the
-                        // margin only from the document: a flag that
-                        // changes them is refused, never dropped in silence.
-                        if (numbers && !doc.numbers) || (no_numbers && doc.numbers) {
+                        // document. The TUI takes the line numbers (the
+                        // document's, else config.toml's) and the margin
+                        // only from the document: a flag that changes them
+                        // is refused, never dropped in silence.
+                        if (numbers && !shown_numbers) || (no_numbers && shown_numbers) {
                             bail!(
-                                "a .tape drives the TUI, which takes the line numbers from the document: set them with :numbers in Tiza, or export a .gif"
+                                "a .tape drives the TUI, which takes the line numbers from the document or config.toml: set them with :numbers in Tiza, or export a .gif"
                             );
                         }
                         if margin_cols.is_some() && margin_cap != doc.margin.map(usize::from) {
@@ -1058,7 +1099,13 @@ fn real_main() -> anyhow::Result<()> {
                 .map(tiza_core::layout::check_width)
                 .transpose()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let opts = tiza_core::check::CheckOptions { width };
+            // As `render` draws it: the config file's width and gutter
+            // unless the flag or the document says otherwise.
+            let config = load_config();
+            let opts = tiza_core::check::CheckOptions {
+                width: width.or(config.defaults.width),
+                numbers: config.defaults.numbers,
+            };
             let (name, report) = if file == "-" {
                 let mut text = String::new();
                 std::io::stdin().read_to_string(&mut text)?;
@@ -1832,6 +1879,22 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     };
     let mut opened = opened;
     override_language(&mut opened.document, cli.lang.as_deref());
+    let config = load_config();
+    // The bar tells about a file that is there; a `$TIZA_CONFIG` that names
+    // no file (what tests and scripts use for «no config») is said on
+    // stderr and by `tiza config` only. The bar counts what `tiza config`
+    // lists: the warnings of the file, then the notes of its `[theme]`. A
+    // key with a newline stays on one line, as on stderr.
+    let bar_warnings = if config.path.is_some() {
+        config
+            .short_warning_lines()
+            .into_iter()
+            .chain(config_theme_notes(&config))
+            .map(|w| tiza_core::printable::printable_line(&w).into_owned())
+            .collect()
+    } else {
+        Vec::new()
+    };
     // `--padding` is for this session: it is not written into the document.
     let padding = match &cli.padding {
         Some(pad) => {
@@ -1862,7 +1925,10 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             theme: cli.theme.and_then(ThemeArg::fixed),
             theme_auto: cli.theme == Some(ThemeArg::Auto),
             theme_file: cli.theme_file.clone(),
-            config_overrides: config_theme(),
+            config_overrides: config.theme,
+            config_defaults: config.defaults,
+            personal_styles: config.styles,
+            config_warnings: bar_warnings,
             present: cli.present,
             socket: if cli.no_socket {
                 None

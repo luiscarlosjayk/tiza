@@ -158,7 +158,7 @@ fn commands_socket_and_mcp() {
         .collect::<Vec<_>>()
         .join("\n")
         + "\n";
-    let mut child = std::process::Command::new(tiza_qa::bin())
+    let mut child = tiza_qa::command()
         .args(["mcp", "--socket", live.socket.to_str().unwrap()])
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())

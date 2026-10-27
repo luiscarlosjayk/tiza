@@ -192,7 +192,7 @@ fn a_faint_token_moves_toward_the_anchor_that_contrasts_more() {
 
 /// `tiza render main.rs ARGS` in `dir`: (exit 0, stdout, stderr).
 fn render(dir: &Path, args: &[&str], config: &Path) -> (bool, String, String) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["render", "main.rs"])
         .args(args)
         .current_dir(dir)
@@ -235,11 +235,11 @@ fn a_value_that_is_not_a_color_leaves_out_only_that_token() {
         "{err}"
     );
     assert!(
-        line_with(&err, &["tiza: config:", "[dark] fg", "boolean"]),
+        line_with(&err, &["tiza: config:", "[theme.dark] fg", "boolean"]),
         "{err}"
     );
     assert!(
-        line_with(&err, &["tiza: config:", "unknown key them "]),
+        line_with(&err, &["tiza: config:", "them: unknown key"]),
         "{err}"
     );
     // A theme file: the same rule, in `tiza render` and in `:theme file`.
@@ -275,7 +275,7 @@ fn a_document_with_such_a_value_says_what_a_token_must_be() {
         doc["theme_overrides"] = overrides;
         let path = dir.join(format!("{case}.tiza"));
         std::fs::write(&path, doc.to_string()).unwrap();
-        let out = std::process::Command::new(bin())
+        let out = tiza_qa::command()
             .args(["check", path.to_str().unwrap()])
             .output()
             .unwrap();

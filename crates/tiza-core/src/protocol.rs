@@ -897,7 +897,8 @@ pub struct Status {
     /// before the first save. What a `.tape` of the live instance opens.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub document: Option<String>,
-    /// Whether the line-number gutter is shown (`:numbers`, document field).
+    /// Whether the line-number gutter is shown: the document's `numbers`
+    /// (`:numbers`), else the `numbers` of the user's config.toml, else on.
     #[serde(default = "yes")]
     pub numbers: bool,
     /// Right-margin cap in cells (`:margin N`, document field); absent = dynamic.
@@ -1129,7 +1130,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "style.list",
-        "Lists document styles, built-in kinds and aliases",
+        "Lists the document styles, the personal styles of the user's config.toml that the document does not have (`personal`), the built-in kinds and the aliases",
     ),
     (
         "scene.clear",
@@ -1187,7 +1188,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "check",
-        "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
+        "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default: the `width` of the config file, else 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
     ),
     (
         "follow.set",

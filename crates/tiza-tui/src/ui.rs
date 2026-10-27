@@ -391,10 +391,31 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
     frame.set_cursor_position((area.x + cx, area.y));
 }
 
+/// ` (3 warnings: tiza config)`, at the end of the bar's message about the
+/// config file: how many warnings it has, and the command that lists them.
+pub fn config_warnings_tail(n: usize) -> String {
+    let s = if n == 1 { "" } else { "s" };
+    format!(" ({n} warning{s}: tiza config)")
+}
+
+/// Where the tail that [`fit_message`] keeps whole starts: a step hint
+/// ([`crate::app::step_hint_start`]) or a [`config_warnings_tail`].
+fn kept_tail_start(m: &str) -> Option<usize> {
+    crate::app::step_hint_start(m).or_else(|| {
+        let i = m.rfind(" (")?;
+        let count = m[i + 2..].strip_suffix(": tiza config)")?;
+        let n = count
+            .strip_suffix(" warnings")
+            .or_else(|| count.strip_suffix(" warning"))?;
+        (!n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())).then_some(i)
+    })
+}
+
 /// `m` cut to `room` cells with an ellipsis, keeping the beginning — the
 /// useful part of a message. A message that ends saying where to find what
-/// it names — a step hint (`(step 1, press n)`) or a file tail
-/// (`(src/queue.rs, not shown at step 2)`) — keeps that tail whole:
+/// it names — a step hint (`(step 1, press n)`), a file tail
+/// (`(src/queue.rs, not shown at step 2)`) or the count of the config
+/// warnings (`(3 warnings: tiza config)`) — keeps that tail whole:
 /// the middle goes first, never below the message's subject
 /// ([`message_subject`]: `a17: box… (step 1, press n)`, down to
 /// `a17… (step 1, press n)`); then the subject (`(step 1, press n)`); and
@@ -410,7 +431,7 @@ pub fn fit_message(m: &str, room: usize) -> String {
     }
     // A long path gives up its middle folders first (`/Users/…/nuevo/x.tiza`):
     // the file name is what the message is about.
-    let at = crate::app::step_hint_start(m).unwrap_or(m.len());
+    let at = kept_tail_start(m).unwrap_or(m.len());
     let (head, tail) = m.split_at(at);
     let shorter = format!(
         "{}{tail}",
@@ -420,7 +441,7 @@ pub fn fit_message(m: &str, room: usize) -> String {
     if m.width() <= room {
         return m.to_string();
     }
-    let Some(i) = crate::app::step_hint_start(m) else {
+    let Some(i) = kept_tail_start(m) else {
         return cut_keeping_file_name(m, room);
     };
     let (head, tail) = m.split_at(i);
@@ -1179,6 +1200,8 @@ mod tests {
         "a2: 🦀🦀🦀 crab note at L4 (step 2, press n)",
         "a1: box 3-5 (hello)",
         "a long message with no tail at all that goes on and on",
+        "config.toml:3: colour: unknown key (keys: pad, numbers, mouse) (2 warnings: tiza config)",
+        "file.rs:2-99 clamped to 2-4 · cfg.toml:2: co␊lour: unknown key (1 warning: tiza config)",
     ];
 
     /// Whether `r` ends in a cut form of `tail`: a piece of its beginning
@@ -1196,7 +1219,7 @@ mod tests {
     #[test]
     fn fit_message_keeps_the_tail_whole_at_every_width() {
         for m in SHAPES {
-            let tail = crate::app::step_hint_start(m).map(|i| &m[i..]);
+            let tail = kept_tail_start(m).map(|i| &m[i..]);
             let mut last = String::new();
             for room in 0..=130 {
                 let r = fit_message(m, room);

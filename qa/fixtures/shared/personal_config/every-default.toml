@@ -1,0 +1,11 @@
+# Every key of [defaults], next to a [theme] table.
+[theme]
+accent = "#a6e3a1"
+
+[defaults]
+pad = "2 5"
+numbers = false
+mouse = true
+autosave = false
+layout = "stable"
+width = 60

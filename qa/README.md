@@ -2,7 +2,7 @@
 
 `qa/tests/<area>/main.rs` is one test crate. It has one module for each behavior of that area, and each `#[test]` in it covers something that can break, or a bug that someone fixed. The name of a test tells the behavior. A step that only checks text stays a manual step on the card. [AGENTS.md](../AGENTS.md) gives the rule.
 
-The areas are `render`, `tui`, `follow`, `api`, `steps`, `export`, `saving`, `check`, `mcp`, `release` and `policy`. Four crates hold tests that must not share their process with others: `env` (a test that changes the environment of its own process), `latency` (tests that time a child process), `cache` (tests that check the highlight cache of the whole process) and `watchers` (tests that run a TUI with follow on a pty).
+The areas are `render`, `tui`, `follow`, `api`, `steps`, `export`, `saving`, `check`, `mcp`, `release` and `policy`. Four crates hold tests that must not share their process with others: `env` (tests that change the environment of their own process, one at a time), `latency` (tests that time a child process), `cache` (tests that check the highlight cache of the whole process) and `watchers` (tests that run a TUI with follow on a pty).
 
 ```sh
 cargo test -p tiza-qa                              # every area
@@ -12,6 +12,8 @@ cargo test -p tiza-qa --test export -- svg_and_png::svg_is_standalone_and_fonts_
 ```
 
 Test data lives in `qa/fixtures/<area>/<module>/`, and data that several areas use in `qa/fixtures/shared/` (never in `examples/`, which are the demos people open). `tiza_qa` (in `src/lib.rs`) gives the helpers: `bin()` builds and locates the `tiza` binary, `tiza_ok(&[…])` runs it, `fixture("render/callouts/callouts.tiza")`, `scratch(name)` for output (a new empty folder on each call, also with the same name), and `Live` — a headless instance with the real `App` and the real socket server, so a test can call the API (`live.api_ok("annotation.add", json!({…}))`), press keys (`live.keys(&[KeyCode::Char('V')])`), run `:` commands and read the screen (`live.screen(100, 30)`).
+
+A helper that several areas use goes in `tiza_qa`. A helper that several modules of one area use goes in `tests/<area>/common.rs`, which that area's `main.rs` declares with `mod common;` (as in [Submodules in integration tests](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)). Do not copy a helper.
 
 Tests that need a real terminal use `tiza_qa::pty_script(dir, name, body, args)`: it prepends `src/pty.py` to the test's Python body and runs it with a hard wall-clock timeout on the Rust side. The prelude's `Pty` class never blocks: a reader thread drains the pty through `select` from the start (so the child never blocks writing while the body runs `tiza api` or anything else), `wait_for(pred, timeout, what)` waits on what the child printed (never `time.sleep`), `finish()` kills a child that does not exit, and a SIGALRM backstop ends the script at its deadline. A child that stops answering fails the test in seconds instead of hanging `cargo test`. Never write a bare `os.read` loop on a pty or call `Command::output()` on an interactive child.
 

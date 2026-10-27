@@ -27,7 +27,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, bin, scratch, tiza};
+use tiza_qa::{Live, McpClient, scratch, tiza};
 
 fn error_message(live: &Live, method: &str, params: serde_json::Value) -> String {
     let r = live.api(method, params);
@@ -87,21 +87,13 @@ fn loading_names_the_value_and_cuts_a_long_one() {
         .to_string()
     };
     std::fs::write(&file, doc(json!("three"))).unwrap();
-    let out = std::process::Command::new(bin())
-        .arg("check")
-        .arg(&file)
-        .output()
-        .unwrap();
+    let out = tiza_qa::command().arg("check").arg(&file).output().unwrap();
     let text = String::from_utf8_lossy(&out.stdout);
     assert!(text.contains(r#"string "three", expected u32"#), "{text}");
 
     std::fs::write(&file, doc(json!(format!("{}\n\u{1b}[31m", "y".repeat(80))))).unwrap();
     for args in [vec!["check"], vec!["render", "--out", "-"]] {
-        let out = std::process::Command::new(bin())
-            .args(&args)
-            .arg(&file)
-            .output()
-            .unwrap();
+        let out = tiza_qa::command().args(&args).arg(&file).output().unwrap();
         let text = format!(
             "{}{}",
             String::from_utf8_lossy(&out.stdout),
@@ -139,7 +131,7 @@ fn a_load_error_is_printed_once() {
         "annotations": [{"id": "a1", "step": 0, "type": "note", "line": "y".repeat(80), "text": "x"}]
     });
     std::fs::write(&file, doc.to_string()).unwrap();
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["render", "--out", "-"])
         .arg(&file)
         .output()

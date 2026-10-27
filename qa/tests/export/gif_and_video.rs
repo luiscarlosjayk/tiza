@@ -169,7 +169,7 @@ fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
     let dir = scratch("mp4");
     let out = dir.join("own.mp4");
     let ex = fixture("shared/ownership/ownership.rs.tiza");
-    let r = std::process::Command::new(tiza_qa::bin())
+    let r = tiza_qa::command()
         .args([
             "render",
             ex.to_str().unwrap(),
@@ -199,7 +199,7 @@ fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
     let fake = dir.join("ffmpeg-fails");
     std::fs::write(&fake, "#!/bin/sh\nexit 1\n").unwrap();
     std::fs::set_permissions(&fake, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    let r = std::process::Command::new(tiza_qa::bin())
+    let r = tiza_qa::command()
         .args([
             "render",
             ex.to_str().unwrap(),
@@ -222,7 +222,7 @@ fn mp4_needs_ffmpeg_from_path_and_says_so_without_it() {
             .map(|d| d.join("ffmpeg"))
             .find(|p| p.is_file())
     }) {
-        let r = std::process::Command::new(tiza_qa::bin())
+        let r = tiza_qa::command()
             .args([
                 "render",
                 ex.to_str().unwrap(),
@@ -259,7 +259,7 @@ fn the_live_instance_is_recorded_from_the_shell_and_over_mcp() {
     live.api_ok("step.set", json!({"step": 3}));
     // `tiza render --out x.gif` without FILE: the live scene, every step.
     let out = dir.join("live.gif");
-    let r = std::process::Command::new(tiza_qa::bin())
+    let r = tiza_qa::command()
         .args(["render", "--out", out.to_str().unwrap(), "--width", "90"])
         .env("TIZA_SOCKET", &live.socket)
         .output()

@@ -52,7 +52,7 @@ use std::process::Output;
 use std::time::Duration;
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, bin, example, scratch};
+use tiza_qa::{Live, McpClient, example, scratch};
 
 /// Every MCP export must answer well before this (debug builds included).
 const ANSWER: Duration = Duration::from_secs(120);
@@ -60,7 +60,7 @@ const ANSWER: Duration = Duration::from_secs(120);
 /// Runs `tiza <args>` from `cwd`, so a live render cannot lean on files
 /// next to the test.
 fn tiza_in(cwd: &Path, args: &[&str]) -> Output {
-    std::process::Command::new(bin())
+    tiza_qa::command()
         .current_dir(cwd)
         .args(args)
         .output()

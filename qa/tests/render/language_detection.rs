@@ -205,8 +205,8 @@ fn lang_given_a_path_detects_from_it() {
     assert!(String::from_utf8_lossy(&out.stderr).is_empty());
     // Through stdin the same path falls back to the content (a shebang).
     use std::io::Write;
-    use std::process::{Command, Stdio};
-    let mut child = Command::new(tiza_qa::bin())
+    use std::process::Stdio;
+    let mut child = tiza_qa::command()
         .args(["--lang", "/repo/run", "render", "-", "--out", "-"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

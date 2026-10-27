@@ -590,6 +590,12 @@ fi
 WORK="$(mktemp -d /tmp/tiza-herdr.XXXXXX)"
 OPENED="$WORK/opened"   # panes this script opened and has not closed, one per line
 : >"$OPENED"
+# Tiza runs with an empty config file and an empty config folder: the
+# config of whoever runs the script never changes a frame. A pane does not
+# get this environment, so run_tiza gives it on the command line too.
+: >"$WORK/config.toml"
+mkdir -p "$WORK/config"
+export TIZA_CONFIG="$WORK/config.toml" XDG_CONFIG_HOME="$WORK/config"
 TAB=""                  # the tab this script opened, closed last
 
 close_pane() {
@@ -872,7 +878,7 @@ wait_frame() {
 
 # run_tiza PANE SOCKET FLAGS → starts Tiza on the document in PANE.
 run_tiza() {
-    herdr pane run "$1" "$(printf '%q' "$TIZA_BIN") $(printf '%q' "$DOC") ${3:+$3 }--no-save --socket $(printf '%q' "$2")" >/dev/null
+    herdr pane run "$1" "TIZA_CONFIG=$(printf '%q' "$TIZA_CONFIG") XDG_CONFIG_HOME=$(printf '%q' "$XDG_CONFIG_HOME") $(printf '%q' "$TIZA_BIN") $(printf '%q' "$DOC") ${3:+$3 }--no-save --socket $(printf '%q' "$2")" >/dev/null
 }
 
 # ------------------------------------------------------------- the base ----

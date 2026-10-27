@@ -34,6 +34,7 @@ memory, no user settings, no skills and no MCP server but this trial's
 """
 
 import argparse
+import atexit
 import datetime
 import fcntl
 import hashlib
@@ -966,7 +967,19 @@ def report(out_dir):
     return 0
 
 
+def no_config():
+    """Every tiza that this script starts reads an empty config file, and
+    an empty config folder: the config of whoever runs it never changes a
+    result."""
+    folder = tempfile.mkdtemp(prefix="tiza-no-config-")
+    open(os.path.join(folder, "config.toml"), "w").close()
+    os.environ["TIZA_CONFIG"] = os.path.join(folder, "config.toml")
+    os.environ["XDG_CONFIG_HOME"] = folder
+    atexit.register(shutil.rmtree, folder, True)
+
+
 def main():
+    no_config()
     p = argparse.ArgumentParser(description=__doc__.split("\n")[0], add_help=True)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--self-check", action="store_true")

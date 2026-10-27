@@ -42,6 +42,14 @@ pub struct RunOptions {
     pub theme_file: Option<PathBuf>,
     /// The `[theme]` table of the config file (loaded by the binary).
     pub config_overrides: Option<tiza_core::theme::ThemeOverrides>,
+    /// The `[defaults]` of the config file: under the document, `--mouse`,
+    /// `--no-save`, `--padding` and the `:` commands.
+    pub config_defaults: tiza_core::config::Defaults,
+    /// The `[styles]` of the config file (personal mark styles).
+    pub personal_styles: std::collections::BTreeMap<String, tiza_core::MarkStyle>,
+    /// What the config file had wrong, file name and line first: the first
+    /// one goes to the bar.
+    pub config_warnings: Vec<String>,
     pub present: bool,
     /// `None` = no local API server.
     pub socket: Option<PathBuf>,
@@ -65,10 +73,14 @@ pub struct RunOptions {
 /// Starts the TUI with an opened document. Returns when it closes.
 pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     let mut app = App::new(opened.document, opened.save_path);
+    app.config_defaults = opts.config_defaults;
+    app.personal_styles = opts.personal_styles;
     // Before any start-up step that could save (`--theme-file` does):
-    // with `--no-save`, nothing is written.
-    app.autosave = !opts.no_save;
+    // with `--no-save`, nothing is written. `autosave = false` in the
+    // config file is `:autosave off`.
+    app.autosave = !opts.no_save && app.config_defaults.autosave != Some(false);
     app.no_save = opts.no_save;
+    app.layout_stable = app.config_defaults.layout == Some(tiza_core::config::LayoutMode::Stable);
     app.config_overrides = opts.config_overrides;
     app.rebuild_theme();
     if let Some(path) = &opts.theme_file {
@@ -105,9 +117,24 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     app.focus = opts.focus;
     app.padding_override = opts.padding;
     app.image_exporter = opts.image_exporter;
-    app.mouse = opts.mouse;
-    if let Some(n) = &opened.notice {
-        app.info(n.clone());
+    // The flag wins over the config file; the config over the built-in.
+    app.mouse = opts.mouse || app.config_defaults.mouse == Some(true);
+    // A bad entry of the config file was ignored: the first one on the
+    // bar, file name, line and key first (the binary printed every one on
+    // stderr with the full path), and how many there are: a cut keeps the
+    // count and `tiza config` whole. The notice of the document comes
+    // before it, never under it.
+    let config_warning = opts.config_warnings.first().map(|first| {
+        format!(
+            "{first}{}",
+            ui::config_warnings_tail(opts.config_warnings.len())
+        )
+    });
+    match (&opened.notice, config_warning) {
+        (Some(n), Some(c)) => app.error(format!("{n} · {c}")),
+        (Some(n), None) => app.info(n.clone()),
+        (None, Some(c)) => app.error(c),
+        (None, None) => {}
     }
     // A `steps` entry past the last step is kept, never dropped in
     // silence.

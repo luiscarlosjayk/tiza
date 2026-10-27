@@ -279,3 +279,174 @@ fn code_needs_names_the_first_terminal_width_with_no_warning() {
         );
     }
 }
+
+#[test]
+fn a_bad_config_entry_is_on_the_bar_and_tiza_starts() {
+    // The config at a long absolute path, as in a home folder: the bar
+    // names the file, the line and the key at 80 and 120 columns; stderr
+    // has the full path.
+    let dir = crate::common::setup(
+        "config-bar-warning",
+        "shared/personal_config/bad-key-and-value.toml",
+    );
+    let cfg = dir.join("home/.config/tiza/config.toml");
+    std::fs::create_dir_all(cfg.parent().unwrap()).unwrap();
+    std::fs::copy(dir.join("cfg.toml"), &cfg).unwrap();
+    let full = cfg.to_str().unwrap();
+    for cols in [80, 120] {
+        let out = crate::common::tui(
+            &dir,
+            &cfg,
+            cols,
+            &["--no-save", "file.rs"],
+            "config.toml:3: colour",
+            &[],
+        );
+        assert_eq!(crate::common::field(&out, "STARTED"), "True", "{out}");
+        let bar = crate::common::text_field(&out, "BAR0");
+        assert!(
+            bar.contains("config.toml:3: colour: unknown key") && !bar.contains(full),
+            "{cols} columns: {bar}"
+        );
+        if cols == 120 {
+            assert!(bar.contains("(keys: pad"), "{bar}");
+        }
+        // The count and the way to read every warning stay whole: at 80
+        // columns, the cut is in the first warning.
+        assert!(
+            bar.contains(" (2 warnings: tiza config)"),
+            "{cols} columns, the count whole: {bar}"
+        );
+        if cols == 80 {
+            assert!(
+                bar.contains("… (2 warnings: tiza config)"),
+                "80 columns, the cut before the count: {bar}"
+            );
+        }
+        let pre = crate::common::text_field(&out, "PRE");
+        for line in [
+            format!("tiza: config: {full}:3: [defaults] colour: unknown key"),
+            format!("tiza: config: {full}:4: [defaults] width: \"wide\" is not valid"),
+        ] {
+            assert!(pre.contains(&line), "{line} in {pre}");
+        }
+        // The good entry still applies.
+        assert_eq!(
+            crate::common::json_field(&out, "STATUS0")["numbers"],
+            json!(false)
+        );
+    }
+    // `render` says the same on stderr, and works.
+    let (code, _, err) =
+        tiza_qa::tiza_with_config(&dir, full, &["render", "file.rs", "--format", "txt"]);
+    assert_eq!(code, 0, "{err}");
+    assert_eq!(err.matches("tiza: config:").count(), 2, "{err}");
+}
+
+#[test]
+fn the_config_warning_comes_after_the_notice_and_stays_on_one_line() {
+    // A range past the end of the file has a notice of its own. The key of
+    // the warning has a newline: the bar shows it as stderr does.
+    let dir = crate::common::setup(
+        "config-bar-notice",
+        "shared/personal_config/bad-key-and-value.toml",
+    );
+    std::fs::write(dir.join("cfg.toml"), "[defaults]\n\"co\\nlour\" = 1\n").unwrap();
+    // Wide enough for the whole message: the cut is the other test's.
+    let out = crate::common::tui(
+        &dir,
+        &dir.join("cfg.toml"),
+        160,
+        &["--no-save", "file.rs:2-99"],
+        "cfg.toml",
+        &[],
+    );
+    let bar = crate::common::text_field(&out, "BAR0");
+    assert!(
+        bar.contains("clamped to 2-4 · cfg.toml:2:"),
+        "the notice first, then the config: {bar}"
+    );
+    assert!(
+        bar.contains("cfg.toml:2: co␊lour: unknown key"),
+        "a key with a newline, on one line: {bar}"
+    );
+    assert!(
+        bar.contains(" (1 warning: tiza config)") && !bar.contains("1 warnings"),
+        "one warning, singular: {bar}"
+    );
+}
+
+#[test]
+fn a_config_that_cannot_be_read_is_on_the_bar_and_tiza_starts() {
+    let dir = crate::common::setup(
+        "config-bar-unreadable",
+        "shared/personal_config/bad-key-and-value.toml",
+    );
+    std::fs::create_dir_all(dir.join("folder.toml")).unwrap();
+    let out = crate::common::tui(
+        &dir,
+        &dir.join("folder.toml"),
+        160,
+        &["--no-save", "file.rs"],
+        "folder.toml",
+        &[],
+    );
+    assert_eq!(crate::common::field(&out, "STARTED"), "True", "{out}");
+    let bar = crate::common::text_field(&out, "BAR0");
+    assert!(
+        bar.contains("folder.toml: Tiza cannot read this file and ignores it")
+            && bar.contains(" (1 warning: tiza config)"),
+        "the bar: {bar}"
+    );
+    let pre = crate::common::text_field(&out, "PRE");
+    assert!(pre.contains("tiza: config ignored: "), "stderr: {pre}");
+}
+
+#[test]
+fn the_bar_counts_what_tiza_config_lists() {
+    // A bad entry, and two tokens of `[theme]` that give notes.
+    let dir = crate::common::setup(
+        "config-bar-count",
+        "shared/personal_config/bad-key-and-value.toml",
+    );
+    std::fs::write(
+        dir.join("cfg.toml"),
+        "[defaults]\ncolour = 1\n[theme]\nbogus = \"#ffffff\"\naccent = \"notacolor\"\n",
+    )
+    .unwrap();
+    let (code, report, err) = tiza_qa::tiza_with_config(&dir, "cfg.toml", &["config"]);
+    assert_eq!(code, 0, "{err}");
+    let n: usize = report
+        .lines()
+        .find_map(|l| {
+            l.strip_prefix("warnings (")?
+                .strip_suffix("):")?
+                .parse()
+                .ok()
+        })
+        .unwrap_or_else(|| panic!("{report}"));
+    assert!(n >= 3, "the entry and the notes of [theme]: {report}");
+    let bar = |config: &str| {
+        let out = crate::common::tui(
+            &dir,
+            &dir.join(config),
+            160,
+            &["--no-save", "file.rs"],
+            "tiza config",
+            &[],
+        );
+        crate::common::text_field(&out, "BAR0")
+    };
+    let first = bar("cfg.toml");
+    assert!(
+        first.contains(&format!(" ({n} warnings: tiza config)")),
+        "{n} as in tiza config: {first}"
+    );
+    // Only a note of `[theme]`: the bar shows it.
+    std::fs::write(dir.join("notes.toml"), "[theme]\nbogus = \"#ffffff\"\n").unwrap();
+    let only = bar("notes.toml");
+    assert!(
+        only.contains("unknown token `bogus`") && only.contains(" (1 warning: tiza config)"),
+        "only a note: {only}"
+    );
+}

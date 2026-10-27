@@ -40,11 +40,11 @@ use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 use tiza_core::fs;
-use tiza_qa::{Live, McpClient, bin, example, fixture, scratch, tiza};
+use tiza_qa::{Live, McpClient, example, fixture, scratch, tiza};
 
 /// `tiza check <args>` with stdin closed (no terminal): (exit code, stdout, stderr).
 fn check(args: &[&str]) -> (i32, String, String) {
-    let o = Command::new(bin())
+    let o = tiza_qa::command()
         .arg("check")
         .args(args)
         .stdin(Stdio::null())
@@ -558,7 +558,7 @@ fn check_writes_nothing_and_needs_no_terminal() {
     assert!(err.contains("nothing to check"), "{err}");
     assert!(!dir.join("lone.rs.tiza").exists());
     // stdin works too.
-    let o = Command::new(bin())
+    let o = tiza_qa::command()
         .args(["check", "-", "--json"])
         .stdin(std::fs::File::open(fixture("check/preflight/zero.tiza")).unwrap())
         .output()

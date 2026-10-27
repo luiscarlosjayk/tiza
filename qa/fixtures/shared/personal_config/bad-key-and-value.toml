@@ -1,0 +1,5 @@
+# An unknown key and a bad value; the good entry still applies.
+[defaults]
+colour = "x"
+width = "wide"
+numbers = false

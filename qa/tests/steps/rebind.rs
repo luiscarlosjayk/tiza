@@ -24,12 +24,12 @@
 //! entry; a `.tiza` an earlier version saved broken opens.
 
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
 use tiza_core::Document;
-use tiza_qa::{Live, bin, fixture, scratch};
+use tiza_qa::{Live, fixture, scratch};
 
 /// `tiza render FILE --step N --format txt`, which must succeed.
 fn tiza_ok_render(path: &Path, step: u32) -> String {
@@ -71,7 +71,7 @@ const IGNORED: &str = "move #1's rebind of a1 is now ignored";
 const WAIT: Duration = Duration::from_secs(10);
 
 fn run(args: &[&str]) -> (i32, String, String) {
-    let o = Command::new(bin())
+    let o = tiza_qa::command()
         .args(args)
         .stdin(Stdio::null())
         .output()

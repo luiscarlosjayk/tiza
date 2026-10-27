@@ -101,6 +101,8 @@ fn pipeline_passes_both_themes() {
     for theme in ["dark", "light"] {
         let json = dir.join(format!("{theme}.json"));
         let out = std::process::Command::new("python3")
+            // The binary that it starts reads the config of the tests.
+            .envs(tiza_qa::isolated_config_env())
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),
@@ -135,6 +137,8 @@ fn pipeline_passes_both_themes() {
         assert!(dir.join(theme).join("after.png").exists());
         // A role that fails must be reported with exit 1: force it with an absurd minimum.
         let out = std::process::Command::new("python3")
+            // The binary that it starts reads the config of the tests.
+            .envs(tiza_qa::isolated_config_env())
             .args([
                 "-I",
                 root.join("scripts/legibility.py").to_str().unwrap(),

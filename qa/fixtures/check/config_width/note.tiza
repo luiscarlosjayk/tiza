@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "source": {"language": "rs"},
+  "code": {"file": "file.rs"},
+  "annotations": [
+    {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the body of the reply, read whole"}
+  ]
+}

@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, scratch};
+use tiza_qa::{Live, scratch};
 
 const MAIN: &str = "fn main() {\n    let a = 1;\n}\n";
 const MAIN2: &str = "fn main() {\n    let a = 10;\n}\n";
@@ -92,7 +92,7 @@ fn saved_code(tiza: &Path) -> Value {
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(path)
         .output()
@@ -104,7 +104,7 @@ fn check_file(path: &Path) -> (i32, Value) {
 
 fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
     let _ = std::fs::remove_dir_all(out);
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .arg("render")
         .args(args)
         .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])

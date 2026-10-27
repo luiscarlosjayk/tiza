@@ -162,7 +162,7 @@ accent = "#b7410e"
 - Tiza reports a value that is not a string in every subtable. It does not report a color that it cannot read in the subtable of a theme that is not in use.
 - A theme file does not load when Tiza cannot read it, when its TOML is not valid, or when it has no color token to apply. An empty file and a file where no value is a string have none.
 - Then `:theme file` shows the error and changes nothing. `--theme-file` shows the error, and Tiza starts without the file. `tiza render` exits with 1.
-- For the config file, Tiza writes each value that it leaves out and each unknown key on stderr. Each line starts with `tiza: config: `.
+- For the config file, Tiza writes each value that it leaves out and each unknown key on stderr. Each line starts with `tiza: config: `, and then gives the path and the line of the entry.
 - When the TUI starts, Tiza writes these lines before the TUI takes the screen. You see them after you quit.
 - In the `theme_overrides` of a document, a value that is not a string stops the document from opening. Then Tiza writes `tiza: could not open FILE` and exits with 1.
 
@@ -176,8 +176,9 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 
 - An empty `$XDG_CONFIG_HOME` counts as not set. A `$TIZA_CONFIG` that is empty or has only spaces also counts as not set.
 - When the file at that path does not exist, Tiza uses no config file.
-- Tiza reads only the `[theme]` table. It ignores the other keys and tables of the file, and it reports each one.
-- When Tiza cannot read or parse the config file, it ignores the file. It writes `tiza: config ignored: PATH` on stderr.
+- Tiza reads the tables `[theme]`, `[defaults]` and `[styles]`. It ignores the other keys and tables of the file, and it reports each one.
+- When a part of the file does not parse, Tiza ignores only that part. It writes one warning for it, with its line.
+- When Tiza cannot read the config file, it ignores the file. It writes `tiza: config ignored: PATH` on stderr.
 
 ## Messages
 
@@ -193,8 +194,10 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 | `theme KEY: expected a color string, got TYPE` | A value in a table is not a string. Tiza leaves the token out. |
 | `PATH: no color token to apply` | A theme file has no token that Tiza can apply. Tiza changes nothing. |
 | `theme [NAME] KEY: expected a color string, got TYPE` | A value in a subtable is not a string. Tiza leaves the token out. |
-| `tiza: config: unknown key KEY (Tiza reads only [theme])` | The config file has a key or a table other than `[theme]`. |
-| `tiza: config: theme: expected a table, got TYPE` | The `theme` of the config file is not a table. |
+| `tiza: config: PATH:LINE: [theme] KEY: expected a color string, got TYPE` | A value in the `[theme]` table of the config file is not a string. Tiza leaves the token out. |
+| `tiza: config: PATH:LINE: [theme.NAME] KEY: expected a color string, got TYPE` | A value in a subtable of `[theme]` is not a string. Tiza leaves the token out. |
+| `tiza: config: PATH:LINE: KEY: unknown key (Tiza reads the tables [theme], [defaults] and [styles])` | The config file has a key or a table that Tiza does not read. |
+| `tiza: config: PATH:LINE: theme: expected a table, got TYPE` | The `theme` of the config file is not a table. |
 | `` theme: unknown token `KEY` (roles: …; palette: …) `` | A table has a token that Tiza does not know. |
 | `theme: unknown table [NAME] (dark, light, terminal)` | A table has a subtable that Tiza does not know. |
 | `theme KEY: VALUE: use #rrggbb, rgb(r, g, b), an ANSI name (red, bright-blue…), ansiN or reset` | A token has a value that Tiza cannot read. |
@@ -202,7 +205,7 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 | `the terminal theme has no palette outside the terminal: exported with NAME` | An export of the terminal theme used `dark` or `light`. |
 | `theme tokens set to a terminal color have no value in an export (KEYS): the NAME theme's are used` | An export replaced the ANSI and `reset` tokens. |
 | `theme= must be dark or light` | `:export` got `theme=terminal` or another name. |
-| `tiza: config ignored: PATH` | Tiza cannot read or parse the config file. |
+| `tiza: config ignored: PATH` | Tiza cannot read the config file. |
 | `tiza: could not open FILE` | A value in `theme_overrides` of the document is not a string. |
 | `` `theme` must be a string: dark, light, terminal, auto or toggle `` | `theme.set` got a `theme` that is not a string. |
 | `unknown theme (dark, light, terminal, auto, toggle)` | `theme.set` got a name that it does not know. |
@@ -211,7 +214,8 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 - In `theme file PATH: N token(s) applied on NAME`, `N` counts the keys at the top of the file. A subtable counts as one key, and an unknown key counts too. A value that is not a string does not count.
 - When Tiza cannot read a theme file, or its TOML is not valid, the message is `PATH:` and the error text.
 - After `no color token to apply`, the message gives the reports of the values that Tiza left out.
-- `tiza: config ignored: PATH` ends with the error text of the TOML reader or of the system.
+- `tiza: config ignored: PATH` ends with the error text of the system.
+- A `tiza: config:` warning that makes Tiza ignore more than its own line ends with `so Tiza ignores lines A-B`.
 - `tiza: could not open FILE` ends with the error text of the JSON reader. For a value in `theme_overrides` that is not a string, that text says `expected a color string or a table of color strings`.
 - For a wrong `#` or `rgb()` value, the text after `VALUE:` tells what is wrong.
 - `:export` adds an export message after ` — `. `tiza render` writes it on stderr. `export_image` does not show it.
@@ -221,10 +225,10 @@ Tiza reads the config file when it starts. `tiza render` and `export_image` read
 The token reports are the messages about an unknown token, an unknown table, a wrong value and a faint token.
 
 - The TUI shows them after `:theme`, `:theme NAME`, `:theme toggle`, `:theme file` and `--theme-file`. It adds each one after the message, after `; `.
-- The TUI does not show the reports of the config file or of the document at start. Only `--theme-file` shows reports at start.
+- At start, the status bar shows the first warning of the config file and the number of warnings that `tiza config` lists. The token reports of `[theme]` in the config file count as warnings. The TUI does not show the token reports of the document at start. Only `--theme-file` shows reports at start.
 - The TUI shows no reports after `t`, after `:theme auto` or after a change from an agent.
 - `tiza render` writes each report on its own line on stderr, after `tiza: `.
-- `export_image` shows no token report. In `warning`, it says what the config file left out, or that the config file does not parse.
+- `export_image` shows no token report. In `warning`, it says what the config file left out, or that Tiza cannot read the config file.
 
 ## Exports
 

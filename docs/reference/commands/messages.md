@@ -9,6 +9,7 @@ The commands are in [`:` commands](../commands.md).
 | Message | When |
 |---|---|
 | `ID: LEGEND at LN` | `:mark` added a mark. |
+| `ID: LEGEND at LN (style NAME from config.toml)` | `:mark` added a mark with a personal style, and copied the style into the document. |
 | `ID: highlight at LN` | `:hl` added a highlight. |
 | `ID: arrow LA → LB` | `:arrow` added an arrow. |
 | `ID: box A-B` | `:box` added a box. |
@@ -116,8 +117,10 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `numbers off: the gutter is hidden here, in exports and for agents (saved in the document; :numbers on restores it)` | `:numbers off` hid the line numbers. |
 | `numbers already on` or `numbers already off` | The line numbers were in that state already. |
 | `numbers on` or `numbers off` | `:numbers` shows the state of the line numbers. |
+| `numbers on (from config.toml)` or `numbers off (from config.toml)` | `:numbers` shows the state that the config file sets, because the document does not set it. |
 | `padding V H` | `:pad` set the padding. |
 | `padding V H (default)` | `:pad default` set the default padding. |
+| `padding V H (from config.toml)` | `:pad default` set the padding of the config file, or `:pad` shows it. |
 | `padding V H (shown as CV CH: the terminal is too small for more)` | The terminal is too small for the padding. |
 | `padding V H (from --padding, not saved)` | `:pad` shows a padding from `--padding`. |
 | `margin N: notes wrap at N cells, and labels, legends and long notes are cut there (saved in the document)` | `:margin N` set the margin. |

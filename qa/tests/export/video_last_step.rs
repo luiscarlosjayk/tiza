@@ -208,7 +208,7 @@ fn total_as_the_gif(
             out.to_str().unwrap(),
         ];
         args.extend_from_slice(flags);
-        let r = Command::new(tiza_qa::bin())
+        let r = tiza_qa::command()
             .args(&args)
             .env("TIZA_FFMPEG", &wrapper)
             .output()

@@ -1032,7 +1032,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Lists the mark kinds available: the document's styles and the built-in ones, with their glyphs."
+        description = "Lists the mark kinds available, with their glyphs: the document's styles, the user's personal styles (`personal`) and the built-in kinds. A personal style goes into the document when a mark uses it."
     )]
     async fn list_kinds(
         &self,
@@ -1319,6 +1319,11 @@ impl TizaServer {
         let status: tiza_core::protocol::Status =
             serde_json::from_value(self.call("status", json!({})).await?)
                 .map_err(|e| McpError::internal_error(e.to_string(), None))?;
+        // The gutter the screen shows: when the document does not set
+        // it, the instance's config file decided it, and `status` says how.
+        if scene.document.numbers.is_none() {
+            scene.document.numbers = Some(status.numbers);
+        }
         let job = ExportJob {
             path: p.path,
             format,
@@ -1518,14 +1523,19 @@ impl ExportJob {
             .unwrap_or(doc.theme.unwrap_or(tiza_core::ThemeName::Dark));
         // The config file and the document's overrides apply, as in `tiza
         // render`; a terminal theme or `reset` tokens have no palette in a
-        // file and fall back. What the config file left out, or a config
-        // file that does not parse, is said in the reply, never fatal.
-        let (config, mut said) = match tiza_core::theme::load_config() {
-            Ok(Some((cfg, _))) => (
-                cfg.theme,
-                cfg.notes.iter().map(|n| format!("config: {n}")).collect(),
+        // file and fall back. What Tiza did not take from the config file,
+        // or a config file that it cannot read, is said in the reply, never
+        // fatal. A `$TIZA_CONFIG` that names no file (what tests and scripts
+        // use for «no config») is not, as on the status bar.
+        let (config, mut said) = match tiza_core::config::load() {
+            Ok(cfg) => (
+                cfg.theme.clone(),
+                cfg.warning_lines()
+                    .into_iter()
+                    .filter(|_| cfg.path.is_some())
+                    .map(|w| format!("config: {w}"))
+                    .collect(),
             ),
-            Ok(None) => (None, Vec::new()),
             Err(e) => (None, vec![format!("config ignored: {e}")]),
         };
         let (theme, _) = tiza_core::Theme::resolve(
@@ -1546,7 +1556,7 @@ impl ExportJob {
                 step: layout_step,
                 focus: None,
                 pointer: None,
-                line_numbers: doc.numbers,
+                line_numbers: doc.numbers_or(true),
                 tab_width: 4,
                 typing: false,
                 stable: true,
@@ -1587,7 +1597,7 @@ impl ExportJob {
                     &tiza_core::anim::AnimOptions {
                         interval: self.interval,
                         width: layout.canvas.width,
-                        line_numbers: doc.numbers,
+                        line_numbers: doc.numbers_or(true),
                         from_zero: !self.skip_zero,
                         margin_cap: None,
                     },

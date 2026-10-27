@@ -25,7 +25,7 @@
 //! foreign `scene put` leaves changes (`unsaved (:w)`), and after the `:w`
 //! that writes it over the file opened the chip is `autosave off`.
 
-use tiza_qa::{Live, bin, scratch};
+use tiza_qa::{Live, scratch};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n}\n";
 
@@ -473,7 +473,7 @@ fn plural_a_gif_of_one_frame_and_of_two_frames() {
     // `--skip-zero`.
     for (extra, says) in [(None, "2 frames, "), (Some("--skip-zero"), "1 frame, ")] {
         let out = dir.join("demo.gif");
-        let mut cmd = std::process::Command::new(bin());
+        let mut cmd = tiza_qa::command();
         cmd.arg("render")
             .arg(dir.join("main.rs"))
             .arg("--out")

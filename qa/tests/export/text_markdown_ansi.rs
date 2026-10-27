@@ -292,7 +292,7 @@ fn empty_document_and_stdin_render_to_md() {
     assert!(!txt.ends_with("\n\n"), "{txt:?}");
     // `render -` from stdin straight to Markdown on stdout.
     use std::io::Write;
-    let mut child = std::process::Command::new(tiza_qa::bin())
+    let mut child = tiza_qa::command()
         .args([
             "render", "-", "--out", "-", "--format", "md", "--lang", "rs",
         ])

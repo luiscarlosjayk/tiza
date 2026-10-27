@@ -50,7 +50,7 @@ The server has these tools. The third column names every socket method that each
 | `add_mark` | Puts a mark of a kind on a part of a line. | `annotation.add` |
 | `add_spotlight` | Dims the code and the annotations outside the ones that it names. | `annotation.add` |
 | `define_style` | Defines a style, or changes it. | `style.set` |
-| `list_kinds` | Lists the styles of the document, the built-in kinds and their aliases. | `style.list` |
+| `list_kinds` | Lists the styles of the document, the personal styles of the user (`personal`), the built-in kinds and their aliases. A mark that uses a personal style copies it into the document. | `style.list` |
 
 ### Change annotations
 
@@ -244,7 +244,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `set_theme` | `theme` | `dark`, `light`, `terminal`, `auto` or `toggle`. |
 | `set_follow` | `enabled` | `true` turns follow mode on, and `false` turns it off. |
 | `render_text` | `width` | The width of the take in columns, from 20 to 400, or the width of the code area of the screen. |
-| `check` | `width` | The width at which `check` measures the labels, from 20 to 400, with 100 as the default. |
+| `check` | `width` | The width at which `check` measures the labels, from 20 to 400. The default is the `width` of the config file, else 100. |
 
 - The presenter can undo `clear_annotations` with `u`. The reply gives `removed`, `remaining` and `revision`.
 - `clear_annotations` refuses `"step": null` and an unknown key. In its input schema, `step` is an integer, and the schema has `"additionalProperties": false`.

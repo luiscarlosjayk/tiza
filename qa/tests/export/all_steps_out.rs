@@ -7,7 +7,7 @@ fn all_steps_refuses_a_file_name_for_out() {
     let dir = tiza_qa::scratch("all-steps");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     let run = |out: &str, format: Option<&str>| {
-        let mut c = std::process::Command::new(tiza_qa::bin());
+        let mut c = tiza_qa::command();
         c.args(["render", "main.rs", "--all-steps", "--out", out])
             .current_dir(&dir)
             .env("TIZA_CONFIG", dir.join("no-config.toml"));

@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, scratch};
+use tiza_qa::{Live, scratch};
 
 const MAIN: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
 const QUEUE: &str = "struct Queue {\n    items: Vec<u32>,\n}\n";
@@ -82,7 +82,7 @@ fn message(live: &Live) -> (String, bool) {
 /// `tiza check --json FILE` run from `cwd`: exit code, errors, warnings
 /// and the output.
 fn check_from(file: &Path, cwd: &Path) -> (i32, u64, u64, String) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(file)
         .current_dir(cwd)

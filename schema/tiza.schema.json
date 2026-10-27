@@ -1052,7 +1052,7 @@
       "type": "array"
     },
     "numbers": {
-      "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+      "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export. Absent: the `numbers` of the user's\n`config.toml`, else on.",
       "type": "boolean"
     },
     "padding": {

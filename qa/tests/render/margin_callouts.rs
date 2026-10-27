@@ -683,7 +683,10 @@ fn reply_agrees_with_check(name: &str) {
             let report = check_document(
                 &now,
                 Some(base_dir.as_path()),
-                &CheckOptions { width: Some(w) },
+                &CheckOptions {
+                    width: Some(w),
+                    numbers: None,
+                },
             );
             let mine: Vec<bool> = report
                 .findings

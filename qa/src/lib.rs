@@ -135,9 +135,36 @@ fn profile_dir() -> PathBuf {
     exe.parent().unwrap().parent().unwrap().to_path_buf()
 }
 
+/// The config that every child of the tests reads: an empty file, and an
+/// empty config folder for a child without `TIZA_CONFIG`. The config of
+/// whoever runs the tests (`~/.config/tiza/config.toml`, an exported
+/// `TIZA_CONFIG`) never changes a result. A test that needs a config sets
+/// `TIZA_CONFIG` after these.
+pub fn isolated_config_env() -> [(&'static str, PathBuf); 2] {
+    static DIR: std::sync::OnceLock<PathBuf> = std::sync::OnceLock::new();
+    let dir = DIR.get_or_init(|| {
+        let dir = scratch("no-config");
+        std::fs::create_dir_all(dir.join("config")).unwrap();
+        std::fs::write(dir.join("config.toml"), "").unwrap();
+        dir
+    });
+    [
+        ("TIZA_CONFIG", dir.join("config.toml")),
+        ("XDG_CONFIG_HOME", dir.join("config")),
+    ]
+}
+
+/// `tiza` as the tests run it: [`bin`] with [`isolated_config_env`]. Every
+/// test starts the binary with this (or with a helper that uses it).
+pub fn command() -> Command {
+    let mut c = Command::new(bin());
+    c.envs(isolated_config_env());
+    c
+}
+
 /// Runs `tiza <args>` and returns its output.
 pub fn tiza(args: &[&str]) -> Output {
-    Command::new(bin()).args(args).output().expect("run tiza")
+    command().args(args).output().expect("run tiza")
 }
 
 /// Runs `tiza <args>`, asserting success, and returns stdout as text.
@@ -149,6 +176,22 @@ pub fn tiza_ok(args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).unwrap()
+}
+
+/// Runs `tiza <args>` in `dir` with `TIZA_CONFIG=config` (relative to `dir`,
+/// or absolute): its exit code, stdout and stderr.
+pub fn tiza_with_config(dir: &Path, config: &str, args: &[&str]) -> (i32, String, String) {
+    let out = command()
+        .current_dir(dir)
+        .args(args)
+        .env("TIZA_CONFIG", config)
+        .output()
+        .expect("run tiza");
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
 }
 
 /// A headless Tiza instance: the real `App` and the real socket server,
@@ -445,10 +488,11 @@ impl McpClient {
     /// [`McpClient::start`] with extra environment variables for the server.
     pub fn start_with_env(socket: &Path, env: &[(&str, &str)]) -> McpClient {
         use std::io::{BufRead, Write};
-        let mut child = Command::new(bin())
+        let mut child = command()
             .args(["mcp", "--socket", socket.to_str().unwrap()])
             // No config file unless the test gives one: `export_image`
-            // reads it, and the developer's own must not change a test.
+            // reads it. A `TIZA_CONFIG` that names no file is what scripts
+            // use for «no config».
             .env("TIZA_CONFIG", "/nonexistent/tiza-qa/config.toml")
             .envs(env.iter().copied())
             .stdin(std::process::Stdio::piped())
@@ -648,10 +692,12 @@ fn python_env(
     use std::io::Read;
     use std::process::Stdio;
     let start = std::time::Instant::now();
+    // The binaries that the script starts read the config of the tests.
     let mut child = Command::new("python3")
         .arg("-I")
         .arg(script)
         .args(args)
+        .envs(isolated_config_env())
         .envs(env.iter().map(|(k, v)| (*k, v.as_str())))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

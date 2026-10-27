@@ -93,7 +93,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `render.text` | `width` | Gives the take at the current step as plain text. | `render_text` |
 | `check` | `width` | Gives the report of `tiza check --json` for the live document. | `check` |
 
-- `width` of `check` is from 20 to 400. The default is 100.
+- `width` of `check` is from 20 to 400. The default is the `width` of the config file, else 100.
 
 ### Annotations
 
@@ -104,7 +104,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `annotation.delete` | `id` | Deletes an annotation. | `delete_annotation` |
 | `scene.clear` | `step` | Deletes all the annotations, or the annotations of one step. | `clear_annotations` |
 | `style.set` | `name`, `glyph`, `legend`, `color` | Defines a style, or changes it. | `define_style` |
-| `style.list` | None | Gives the styles of the document, the built-in kinds and the aliases. | `list_kinds` |
+| `style.list` | None | Gives the styles of the document, the personal styles of the config file that the document does not have, the built-in kinds and the aliases. | `list_kinds` |
 
 ### Document
 
@@ -234,7 +234,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `annotation.delete` | `id` and `revision`. |
 | `scene.clear` | `removed`, `remaining` and `revision`. |
 | `style.set` | `name`, `style` and `revision`. |
-| `style.list` | `document`, `builtin` and `aliases`. |
+| `style.list` | `document`, `personal`, `builtin` and `aliases`. |
 | `scene.put` | `revision`, `lines`, `annotations`, `step` and `max_step`. |
 | `scene.patch` | The fields of `scene.put`, and the ids in `added`, `replaced` and `deleted` when there are some. |
 | `move.add` | `index`, `moves`, `max_step`, `revision`, and `warning` when annotations are not drawn at a step any more. |
@@ -284,7 +284,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `pending` | The number of changes that wait for the presenter. |
 | `autosave` | `true` when Tiza saves each change to the document. |
 | `document` | The absolute path of the `.tiza` file, when the file exists on disk. |
-| `numbers` | `true` when Tiza shows the line numbers. |
+| `numbers` | `true` when Tiza shows the line numbers. When the document does not set `numbers`, the config file of the instance sets it. |
 | `margin` | The limit of the right margin in columns, when the document sets one. |
 | `pointer` | The live pointer as `{line, to, by}`, or `null`. |
 | `stale_moves` | The number of moves that do not match the code any more. |

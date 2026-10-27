@@ -64,7 +64,7 @@ fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout:
     let opts = LayoutOptions {
         width,
         step,
-        line_numbers: doc.numbers,
+        line_numbers: doc.numbers_or(true),
         margin_cap: doc.margin.map(usize::from),
         ..Default::default()
     };

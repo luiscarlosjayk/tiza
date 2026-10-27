@@ -19,13 +19,13 @@
 use serde_json::{Value, json};
 use tiza_core::check::{Bound, last_step, min_clean_width, saturation_bounds, saturation_width};
 use tiza_core::layout::{LayoutOptions, MAX_WIDTH, MIN_WIDTH, layout};
-use tiza_qa::{bin, fixture};
+use tiza_qa::fixture;
 
 fn lay(doc: &tiza_core::Document, width: usize, step: u32) -> tiza_core::layout::Layout {
     let opts = LayoutOptions {
         width,
         step,
-        line_numbers: doc.numbers,
+        line_numbers: doc.numbers_or(true),
         margin_cap: doc.margin.map(usize::from),
         ..Default::default()
     };
@@ -75,7 +75,7 @@ fn the_zwsp_note_checks_without_a_panic_and_says_83() {
     // Test step 1, with the debug build the tests run. (83 is what release
     // announced before; that the note is cut at the canvas edge from 172 to
     // 192 columns without a `…` is the layout's, for another card.)
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .arg("check")
         .arg(fixture("check/zero_width_labels/zwsp-note.tiza"))
         .output()

@@ -43,6 +43,7 @@ deny = [
   { crate = "read-fonts", deny-multiple-versions = true, reason = "tied to usvg's version via skrifa and harfrust: never bumped alone" },
   { crate = "rustix", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone" },
   { crate = "signal-hook", deny-multiple-versions = true, reason = "tied to crossterm's version: never bumped alone" },
+  { crate = "toml_parser", deny-multiple-versions = true, reason = "tied to toml's version: never bumped alone" },
   { crate = "reqwest", reason = "network: ADR 0009 — only in tiza-net" },
   { crate = "hyper", reason = "network: ADR 0009 — only in tiza-net" },
   { crate = "hyper-util", reason = "network: ADR 0009 — only in tiza-net" },

@@ -15,11 +15,11 @@
 
 use serde_json::json;
 use std::io::Write;
-use std::process::{Command, Stdio};
-use tiza_qa::{Live, bin, fixture, tiza_ok};
+use std::process::Stdio;
+use tiza_qa::{Live, fixture, tiza_ok};
 
 fn run_with_stdin(args: &[&str], input: &str) -> std::process::Output {
-    let mut child = Command::new(bin())
+    let mut child = tiza_qa::command()
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

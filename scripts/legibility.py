@@ -16,6 +16,7 @@ target/debug/tiza).
 """
 
 import argparse
+import atexit
 import json
 import os
 import shutil
@@ -25,6 +26,17 @@ import tempfile
 
 import numpy as np
 from PIL import Image
+
+
+def no_config():
+    """Every tiza that this script starts reads an empty config file, and
+    an empty config folder: the config of whoever runs it never changes a
+    result."""
+    folder = tempfile.mkdtemp(prefix="tiza-no-config-")
+    open(os.path.join(folder, "config.toml"), "w").close()
+    os.environ["TIZA_CONFIG"] = os.path.join(folder, "config.toml")
+    os.environ["XDG_CONFIG_HOME"] = folder
+    atexit.register(shutil.rmtree, folder, True)
 
 
 def srgb_to_linear(c):
@@ -154,6 +166,7 @@ def measure(before_path, after_path, bg, roles, min_pixels=40, tolerance=10):
 
 
 def main():
+    no_config()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("document")
     ap.add_argument("--step", type=int)

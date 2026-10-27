@@ -1,0 +1,4 @@
+# No gutter and the mouse on in every session.
+[defaults]
+numbers = false
+mouse = true

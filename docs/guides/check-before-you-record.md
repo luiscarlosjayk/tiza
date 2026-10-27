@@ -16,7 +16,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 
 ## What check reports
 
-`tiza check` does not change any file. It checks the labels at the width that you record at: 100 columns, or `--width N`.
+`tiza check` does not change any file. It checks the labels at the width that you record at: the `width` of your config file, else 100 columns, or `--width N`.
 
 The table gives the usual problems. Each finding in the JSON output also has a `code`.
 

@@ -39,7 +39,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, bin, scratch};
+use tiza_qa::{Live, McpClient, scratch};
 
 /// QA 1's repro: a move at step 1, no `step`.
 const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
@@ -144,7 +144,7 @@ fn save_while_waiting(live: &Live, src: &Path, content: &str) {
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(path)
         .output()
@@ -157,7 +157,7 @@ fn check_file(path: &Path) -> (i32, Value) {
 /// `tiza render SOURCE --all-steps --format txt`: one text per step.
 fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
     let _ = std::fs::remove_dir_all(out);
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .arg("render")
         .args(args)
         .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])

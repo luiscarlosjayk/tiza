@@ -174,7 +174,7 @@ fn a_client_command_leaves_the_file_that_socket_names() {
     std::fs::write(&notes, "my notes\n").unwrap();
     chmod(&notes, 0o644);
     for args in [&["api", "status"][..], &["next"][..]] {
-        let out = Command::new(bin())
+        let out = tiza_qa::command()
             .arg("--socket")
             .arg(&notes)
             .args(args)

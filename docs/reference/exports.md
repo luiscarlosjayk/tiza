@@ -117,7 +117,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--format` | A format | From the extension of `--out` | The format of the export, from [Formats](#formats). |
 | `--step` | A step number | The last step, or the step on screen of the live instance | The step to export, except in a recording. |
 | `--all-steps` | None | Off | Tiza writes one file for each step, and you cannot use it with `--step`. |
-| `--width` | 20 to 400 columns | 100, or the terminal width of the live instance minus 2, from 40 to 400 | The width of the take. |
+| `--width` | 20 to 400 columns | `width` of the config file, else 100. For the live instance, its terminal width minus 2, from 40 to 400. | The width of the take. |
 | `--theme` | A theme name | The theme of the document, or `dark` | The colors of the export. |
 | `--theme-file` | A TOML file | The overrides of the document | Theme overrides for this export, instead of the overrides of the document. |
 | `--numbers` | None | The `numbers` field of the document | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |

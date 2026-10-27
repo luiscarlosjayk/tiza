@@ -1,0 +1,9 @@
+# A personal style, and one with the name of a built-in kind.
+[styles.io]
+glyph = "⇄"
+legend = "network I/O"
+color = "cyan"
+
+[styles.warn]
+glyph = "!"
+legend = "mine"

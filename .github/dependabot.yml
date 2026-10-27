@@ -9,11 +9,13 @@ updates:
     # the version the crate that pulls them uses. Bumped alone they add a
     # second copy (PR #1: skrifa 0.48 while usvg stays on 0.44 added a second
     # skrifa and read-fonts and six crates), so they move by hand in the
-    # commit that bumps resvg (skrifa, read-fonts) or crossterm (rustix,
-    # signal-hook). deny.toml and a QA test fail on a second version.
+    # commit that bumps resvg (skrifa, read-fonts), crossterm (rustix,
+    # signal-hook) or toml (toml_parser). deny.toml and a QA test fail on a
+    # second version.
     ignore:
       - dependency-name: skrifa
       - dependency-name: read-fonts
+      - dependency-name: toml_parser
       - dependency-name: rustix
         update-types: ["version-update:semver-major"]
       - dependency-name: signal-hook

@@ -50,7 +50,7 @@ fn a_range_opens_its_document_from_an_earlier_session() {
     // `tiza render` of the range draws its document too, and says so; it
     // only reads it. Another range shows only its lines.
     let render = |r: &str| {
-        let out = std::process::Command::new(tiza_qa::bin())
+        let out = tiza_qa::command()
             .args(["render", &spec(r), "--format", "txt"])
             .output()
             .unwrap();

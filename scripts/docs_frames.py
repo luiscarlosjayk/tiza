@@ -33,6 +33,7 @@ pages and the images go under DIR, at their paths in the repository, and
 the repository does not change.
 """
 import argparse
+import atexit
 import fcntl
 import json
 import os
@@ -46,6 +47,18 @@ import tempfile
 import termios
 import threading
 import time
+
+
+def no_config():
+    """Every tiza that this script starts reads an empty config file, and
+    an empty config folder: the config of whoever runs it never changes a
+    result."""
+    folder = tempfile.mkdtemp(prefix="tiza-no-config-")
+    open(os.path.join(folder, "config.toml"), "w").close()
+    os.environ["TIZA_CONFIG"] = os.path.join(folder, "config.toml")
+    os.environ["XDG_CONFIG_HOME"] = folder
+    atexit.register(shutil.rmtree, folder, True)
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FRAME = re.compile(
@@ -193,6 +206,7 @@ def frame_pages():
 
 
 def main():
+    no_config()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("tiza", help="the tiza binary")
     ap.add_argument("--out", default=ROOT, help="write the pages and the images under this folder")

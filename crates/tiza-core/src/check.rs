@@ -131,6 +131,9 @@ impl Finding {
 pub struct CheckOptions {
     /// Width to check the labels at; `None`: [`DEFAULT_WIDTH`].
     pub width: Option<usize>,
+    /// The gutter when the document does not set `numbers` (the config
+    /// file's default); `None`: on.
+    pub numbers: Option<bool>,
 }
 
 /// Everything `check` found about one document.
@@ -362,6 +365,10 @@ fn check_text_as(
         }
     };
     doc.schema = SCHEMA_VERSION;
+    // The gutter the take draws when the document leaves it to the config.
+    if doc.numbers.is_none() {
+        doc.numbers = opts.numbers;
+    }
     // ---- the code ----
     if let Err(e) = crate::fs::resolve_code(&mut doc, base_dir) {
         out.push(Finding::new(Level::Error, "code", e.to_string()));
@@ -1183,7 +1190,7 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
         step,
         focus: None,
         pointer: None,
-        line_numbers: doc.numbers,
+        line_numbers: doc.numbers_or(true),
         tab_width: 4,
         typing: false,
         stable: true,

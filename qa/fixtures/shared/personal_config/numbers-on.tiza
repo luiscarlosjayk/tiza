@@ -1,0 +1,7 @@
+{
+  "schema": 1,
+  "source": {"language": "rs"},
+  "code": {"file": "file.rs"},
+  "annotations": [],
+  "numbers": true
+}

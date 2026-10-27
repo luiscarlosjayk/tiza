@@ -1,14 +1,10 @@
 //! The help of `tiza render` names every format that `--out` writes.
 
-use std::process::Command;
-
-use tiza_qa::bin;
-
 // --- The help of `tiza render` (docs review, 2026-10-24) ---------------
 
 #[test]
 fn render_help_names_every_format_that_out_writes() {
-    let out = Command::new(bin())
+    let out = tiza_qa::command()
         .args(["render", "--help"])
         .output()
         .unwrap();

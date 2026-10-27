@@ -37,7 +37,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-use tiza_qa::{bin, scratch};
+use tiza_qa::scratch;
 
 const REPO: &str = "https://github.com/luiscarlosjayk/tiza";
 
@@ -810,7 +810,7 @@ fn stamp_this_checkout_keeps_its_commit() {
         return;
     }
     let head = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    let version = Command::new(bin()).arg("--version").output().unwrap();
+    let version = tiza_qa::command().arg("--version").output().unwrap();
     let said = String::from_utf8_lossy(&version.stdout);
     assert!(said.contains(&format!("({head}")), "{said}");
 }

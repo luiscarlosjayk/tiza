@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use toml::de::{DeTable, DeValue};
 
 use crate::canvas::{CellStyle, Rgb};
 use crate::model::{MarkStyle, ThemeName};
@@ -717,18 +718,9 @@ fn hex_of(c: Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
 }
 
-/// `~/.config/tiza/config.toml`: the file as a whole (only `[theme]` for
-/// now), plus a free-standing theme file for `--theme-file`.
-#[derive(Debug, Clone, Default)]
-pub struct ConfigFile {
-    pub theme: Option<ThemeOverrides>,
-    /// What Tiza did not take from the file, one line each: a value that
-    /// is not a color string, a key other than `theme`.
-    pub notes: Vec<String>,
-}
-
 /// Where the config file is: `$TIZA_CONFIG`, else
 /// `$XDG_CONFIG_HOME/tiza/config.toml`, else `~/.config/tiza/config.toml`.
+/// [`crate::config`] reads it.
 pub fn config_path() -> Option<std::path::PathBuf> {
     if let Ok(p) = std::env::var("TIZA_CONFIG")
         && !p.trim().is_empty()
@@ -748,71 +740,60 @@ pub fn config_path() -> Option<std::path::PathBuf> {
     Some(base.join("tiza").join("config.toml"))
 }
 
-/// Reads the config file when there is one. A file that does not parse is
-/// an error the caller shows once; a missing file is `Ok(None)`.
-pub fn load_config() -> Result<Option<(ConfigFile, std::path::PathBuf)>, String> {
-    let Some(path) = config_path() else {
-        return Ok(None);
-    };
-    let text = match std::fs::read_to_string(&path) {
-        Ok(t) => t,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(e) => return Err(format!("{}: {e}", path.display())),
-    };
-    let table: toml::Table =
-        toml::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut cfg = ConfigFile::default();
-    for (k, v) in table {
-        match v {
-            toml::Value::Table(t) if k == "theme" => {
-                let (ov, notes) = overrides_from_table(t);
-                cfg.theme = Some(ov);
-                cfg.notes.extend(notes);
-            }
-            other if k == "theme" => cfg
-                .notes
-                .push(format!("theme: expected a table, got {}", other.type_str())),
-            _ => cfg
-                .notes
-                .push(format!("unknown key {k} (Tiza reads only [theme])")),
-        }
-    }
-    Ok(Some((cfg, path)))
+/// A value of a `[theme]` table that is not a color string: Tiza leaves it
+/// out, and the other tokens apply.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct LeftOut {
+    /// Where its key starts in the text of the file.
+    pub key_at: usize,
+    /// Where its value ends (a value can take more than one line).
+    pub end: usize,
+    /// `dark` for `[dark] fg`; `None` for a flat token.
+    pub table: Option<String>,
+    pub key: String,
+    /// The TOML type that the file gives: `integer`, `boolean`…
+    pub got: &'static str,
 }
 
-/// The tokens of a `[theme]` table, from the config file or a theme file.
-/// A value that is not a color string is left out with a note, one line
-/// each, and the other tokens apply.
-fn overrides_from_table(table: toml::Table) -> (ThemeOverrides, Vec<String>) {
+/// The tokens of a `[theme]` table, from the config file or a theme file:
+/// the one converter for both.
+pub(crate) fn overrides_from_table(table: &DeTable<'_>) -> (ThemeOverrides, Vec<LeftOut>) {
     let mut out = BTreeMap::new();
-    let mut notes = Vec::new();
+    let mut left = Vec::new();
     for (k, v) in table {
-        match v {
-            toml::Value::String(s) => {
-                out.insert(k, OverrideValue::Color(s));
+        let name = k.get_ref().to_string();
+        match v.get_ref() {
+            DeValue::String(s) => {
+                out.insert(name, OverrideValue::Color(s.to_string()));
             }
-            toml::Value::Table(t) => {
+            DeValue::Table(t) => {
                 let mut sub = BTreeMap::new();
                 for (k2, v2) in t {
-                    match v2 {
-                        toml::Value::String(s) => {
-                            sub.insert(k2, s);
+                    match v2.get_ref() {
+                        DeValue::String(s) => {
+                            sub.insert(k2.get_ref().to_string(), s.to_string());
                         }
-                        other => notes.push(format!(
-                            "theme [{k}] {k2}: expected a color string, got {}",
-                            other.type_str()
-                        )),
+                        other => left.push(LeftOut {
+                            key_at: k2.span().start,
+                            end: v2.span().end,
+                            table: Some(name.clone()),
+                            key: k2.get_ref().to_string(),
+                            got: other.type_str(),
+                        }),
                     }
                 }
-                out.insert(k, OverrideValue::Table(sub));
+                out.insert(name, OverrideValue::Table(sub));
             }
-            other => notes.push(format!(
-                "theme {k}: expected a color string, got {}",
-                other.type_str()
-            )),
+            other => left.push(LeftOut {
+                key_at: k.span().start,
+                end: v.span().end,
+                table: None,
+                key: name,
+                got: other.type_str(),
+            }),
         }
     }
-    (ThemeOverrides(out), notes)
+    (ThemeOverrides(out), left)
 }
 
 /// Parses a theme file (`--theme-file`, `:theme file PATH`): either a
@@ -821,12 +802,26 @@ fn overrides_from_table(table: toml::Table) -> (ThemeOverrides, Vec<String>) {
 /// with no color token at all is refused, as one that does not parse: its
 /// tokens would replace those of the document with nothing.
 pub fn parse_theme_file(text: &str) -> Result<(ThemeOverrides, Vec<String>), String> {
-    let value: toml::Table = toml::from_str(text).map_err(|e| e.to_string())?;
-    let table = match value.get("theme") {
-        Some(toml::Value::Table(t)) => t.clone(),
-        _ => value,
-    };
-    let (ov, notes) = overrides_from_table(table);
+    let root = DeTable::parse(text).map_err(|e| e.to_string())?;
+    let root = root.get_ref();
+    let table = root
+        .iter()
+        .find_map(|(k, v)| match v.get_ref() {
+            DeValue::Table(t) if k.get_ref() == "theme" => Some(t),
+            _ => None,
+        })
+        .unwrap_or(root);
+    let (ov, left) = overrides_from_table(table);
+    let notes: Vec<String> = left
+        .iter()
+        .map(|l| match &l.table {
+            Some(t) => format!(
+                "theme [{t}] {}: expected a color string, got {}",
+                l.key, l.got
+            ),
+            None => format!("theme {}: expected a color string, got {}", l.key, l.got),
+        })
+        .collect();
     let tokens: usize =
         ov.0.values()
             .map(|v| match v {

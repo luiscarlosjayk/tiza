@@ -278,7 +278,7 @@ fn overrides_built_in_then_config_then_document_then_command() {
     .unwrap();
     let ex = fixture("shared/ownership/ownership.rs.tiza");
     let svg = |args: &[&str]| {
-        let r = std::process::Command::new(tiza_qa::bin())
+        let r = tiza_qa::command()
             .args([
                 "render",
                 ex.to_str().unwrap(),
@@ -314,7 +314,7 @@ fn overrides_built_in_then_config_then_document_then_command() {
     doc["code"] = json!({"file": fixture("shared/ownership/ownership.rs").to_str().unwrap()});
     let path = dir.join("doc.tiza");
     std::fs::write(&path, doc.to_string()).unwrap();
-    let r = std::process::Command::new(tiza_qa::bin())
+    let r = tiza_qa::command()
         .args([
             "render",
             path.to_str().unwrap(),
@@ -336,7 +336,7 @@ fn overrides_built_in_then_config_then_document_then_command() {
     );
     // `--theme-file` replaces the document's table for one export.
     let (s, _) = {
-        let r = std::process::Command::new(tiza_qa::bin())
+        let r = tiza_qa::command()
             .args([
                 "render",
                 path.to_str().unwrap(),
@@ -356,9 +356,10 @@ fn overrides_built_in_then_config_then_document_then_command() {
         (String::from_utf8_lossy(&r.stdout).into_owned(), ())
     };
     assert!(s.contains("#1e1e2e") && s.contains("#fab387"), "Mocha");
-    // A broken config is reported once and ignored, never fatal.
+    // A broken config is reported with its line and ignored there, never
+    // fatal.
     std::fs::write(&cfg, "[theme\naccent = 1\n").unwrap();
-    let r = std::process::Command::new(tiza_qa::bin())
+    let r = tiza_qa::command()
         .args([
             "render",
             ex.to_str().unwrap(),
@@ -371,7 +372,11 @@ fn overrides_built_in_then_config_then_document_then_command() {
         .output()
         .unwrap();
     assert!(r.status.success());
-    assert!(String::from_utf8_lossy(&r.stderr).contains("config ignored"));
+    let err = String::from_utf8_lossy(&r.stderr);
+    assert!(
+        err.contains("tiza: config: ") && err.contains("config.toml:1:"),
+        "{err}"
+    );
     // Live: scene.patch cannot set overrides, but the document field does
     // through scene.put, and `:theme` reports what it pushed.
     let live = Live::from_code("fn main() {}\n", "rs", "live-ov");
@@ -434,6 +439,8 @@ fn mocha_loads_live_and_passes_the_legibility_gate() {
     let missing = tiza_qa::legibility_tools_missing();
     if missing.is_empty() {
         let r = std::process::Command::new("python3")
+            // The binary that it starts reads the config of the tests.
+            .envs(tiza_qa::isolated_config_env())
             .args([
                 "scripts/legibility.py",
                 "qa/fixtures/shared/ownership/ownership.rs.tiza",

@@ -25,6 +25,13 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 
+# The images never depend on the config file of whoever runs the script:
+# an empty one, and an empty config folder.
+no_config="$(mktemp -d)"
+trap 'rm -rf "$no_config"' EXIT
+: >"$no_config/config.toml"
+export TIZA_CONFIG="$no_config/config.toml" XDG_CONFIG_HOME="$no_config"
+
 # The README images are 92 columns wide. Every label of the example fits
 # from 91 columns on (`tiza check` says so).
 WIDTH=92

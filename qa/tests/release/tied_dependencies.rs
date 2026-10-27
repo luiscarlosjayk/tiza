@@ -13,7 +13,8 @@
 //!   Cargo.lock).
 //!
 //! Corner case: the other crates direct only because they were already in
-//! the tree (rustix and signal-hook, through crossterm) get the same guard.
+//! the tree (rustix and signal-hook, through crossterm, and toml_parser,
+//! through toml) get the same guard.
 
 use std::path::PathBuf;
 
@@ -24,6 +25,7 @@ const TIED: &[(&str, &str)] = &[
     ("read-fonts", "usvg"),
     ("rustix", "crossterm"),
     ("signal-hook", "crossterm"),
+    ("toml_parser", "toml"),
 ];
 
 fn root() -> PathBuf {
@@ -68,7 +70,7 @@ fn one_version_of_each_tied_crate_in_the_lock() {
 #[test]
 fn dependabot_never_bumps_them_alone_nor_groups_minor() {
     let cfg = read(".github/dependabot.yml");
-    for name in ["skrifa", "read-fonts", "rustix", "signal-hook"] {
+    for (name, _) in TIED {
         assert!(
             cfg.contains(&format!("dependency-name: {name}")),
             "dependabot.yml does not ignore {name}"

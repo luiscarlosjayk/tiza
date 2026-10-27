@@ -173,7 +173,10 @@ fn check(job: &Job, width: usize) -> Result<tiza_core::check::Report, String> {
         let report = check_document(
             &job.doc,
             job.base.as_deref(),
-            &CheckOptions { width: Some(width) },
+            &CheckOptions {
+                width: Some(width),
+                numbers: None,
+            },
         );
         // Test hook, only with the `test-hooks` feature: a panic
         // after the check did its work.

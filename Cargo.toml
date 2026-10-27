@@ -61,6 +61,10 @@ rustix = { version = "1.1", default-features = false, features = ["std", "termio
 signal-hook = "0.3.18"
 # Theme override files: `~/.config/tiza/config.toml`, `--theme-file`. Parse only.
 toml = { version = "1.1", default-features = false, features = ["parse", "serde"] }
+# The tokens of the config file for its recovery: the same lexer as the parser, so Tiza never splits a
+# string or takes text inside one as entries. Already in the tree through toml, with the same features:
+# version tied to toml's; never bumped alone.
+toml_parser = { version = "1.1.5", default-features = false, features = ["alloc"] }
 # Animated GIF: encoder only, LZW through weezl; our own palette, no color_quant.
 gif = { version = "0.14", default-features = false, features = ["std"] }
 # Lossless WebP, still and animated: libwebp 1.6 in C, built from source by its build script (a C compiler is

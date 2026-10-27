@@ -25,7 +25,18 @@ baseline (do it on purpose, with the note, in the commit that explains it).
 Usage: scripts/bench.sh [--runs N] [--no-build] [--skip-frame] [--install]
                         [--update-baseline --note TEXT]
 """
-import argparse, datetime, json, os, platform, re, shutil, statistics, subprocess, sys, tempfile, time
+import argparse, atexit, datetime, json, os, platform, re, shutil, statistics, subprocess, sys, tempfile, time
+
+
+def no_config():
+    """Every tiza that this script starts reads an empty config file, and
+    an empty config folder: the config of whoever runs it never changes a
+    result."""
+    folder = tempfile.mkdtemp(prefix="tiza-no-config-")
+    open(os.path.join(folder, "config.toml"), "w").close()
+    os.environ["TIZA_CONFIG"] = os.path.join(folder, "config.toml")
+    os.environ["XDG_CONFIG_HOME"] = folder
+    atexit.register(shutil.rmtree, folder, True)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BENCH = os.path.join(ROOT, "qa", "bench")
@@ -106,7 +117,7 @@ def typescript_large():
 
 TUI = r"""
 binary, doc = sys.argv[1], sys.argv[2]
-env = dict(os.environ, TIZA_CONFIG="/nonexistent/config.toml")
+env = dict(os.environ)
 t0 = time.monotonic()
 s = Pty([binary, doc, "--no-socket", "--no-save"], 40, 120, env=env, ctty=True, raw=True)
 ok = s.wait_for(lambda out: b"\x1b[?1049h" in out and "takes(s);" in plain(out), 10, "first frame")
@@ -185,6 +196,7 @@ def summary(samples):
 
 
 def main():
+    no_config()
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("--runs", type=int, default=7, help="timed runs per scenario after one warm-up (default 7)")
     ap.add_argument("--no-build", action="store_true", help="use target/release/tiza as it is")

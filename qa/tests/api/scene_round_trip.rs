@@ -57,7 +57,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, example, fixture, scratch};
+use tiza_qa::{Live, example, fixture, scratch};
 
 // ---------------------------------------------------------------- helpers
 
@@ -170,7 +170,7 @@ fn all_steps(live: &Live) -> Vec<String> {
 /// `tiza render --socket … --all-steps --format txt`: one text per step.
 fn all_steps_cli(live: &Live, out: &Path) -> Vec<String> {
     let _ = std::fs::remove_dir_all(out);
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .args([
             "render",
             "--socket",
@@ -201,7 +201,7 @@ fn all_steps_cli(live: &Live, out: &Path) -> Vec<String> {
 
 /// `tiza render FILE --step N` (a fresh load from disk).
 fn render_file(path: &Path, step: u32) -> String {
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .args(["render"])
         .arg(path)
         .args(["--step", &step.to_string(), "--out", "-"])
@@ -259,7 +259,7 @@ fn case_a_reference_kept_on_disk_and_later_edits_show() {
     let dir = reference_demo("case-a");
     let live = open(&dir.join("main.rs"));
     let tiza = dir.join("main.rs.tiza");
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["api", "scene.get", "--socket", sock(&live)])
         .output()
         .unwrap();
@@ -279,7 +279,7 @@ fn case_a_reference_kept_on_disk_and_later_edits_show() {
         .push(json!({"id": "n1", "step": 1, "type": "note", "line": 3, "text": "printed here"}));
     let s_json = dir.join("s.json");
     std::fs::write(&s_json, serde_json::to_string(&scene).unwrap()).unwrap();
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["scene", "put"])
         .arg(&s_json)
         .args(["--socket", sock(&live)])
@@ -1165,7 +1165,7 @@ fn a_window_of_the_same_step_is_carried() {
 fn check_warns_about_an_annotation_outside_its_window() {
     let dir = examples_copy("outside-window");
     let tiza = dir.join("stack-and-queue.tiza");
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check"])
         .arg(&tiza)
         .output()
@@ -1411,7 +1411,7 @@ fn a_patch_after_a_zoom_that_pushes_an_annotation_out_is_said() {
     );
     // The zoom alone says nothing (stack-and-queue: only a5, its own step).
     let dir = examples_copy("zoom-alone");
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(dir.join("stack-and-queue.tiza"))
         .output()

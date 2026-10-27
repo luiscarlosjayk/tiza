@@ -98,7 +98,7 @@ fn put_replaces_the_document_and_undo_restores() {
 
     // From stdin.
     use std::io::Write;
-    let mut child = std::process::Command::new(tiza_qa::bin())
+    let mut child = tiza_qa::command()
         .args([
             "--socket",
             live.socket.to_str().unwrap(),

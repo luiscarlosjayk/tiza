@@ -54,6 +54,8 @@ The instance holds the document. Do not edit the `.tiza` file while the instance
 | Point at a line while you talk | `point_at` |
 
 - `list_kinds` gives the [kinds](../reference/document-format.md#kinds) of a mark. For a style that many marks use, call `define_style` once. For one mark only, give `style`.
+- `list_kinds` also gives the personal styles of the presenter, in `personal`. Use one as `kind`, as any other kind. The first mark that uses it copies the style into the document, so `scene.get` then shows it in `styles`.
+- Do not read the config file of the presenter. `status` gives the values that apply, for example `numbers` and `autosave`.
 - Give each variable its own `color`. Use the same color for every annotation about that variable.
 - For arrows, use `solid` for a move of ownership, `dashed` for a shared borrow and `thick` for a mutable borrow.
 - Use the `underline` emphasis to show a span and keep its syntax colors. Use `strike` for a line that goes away.

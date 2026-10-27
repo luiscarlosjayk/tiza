@@ -5,6 +5,7 @@
 
 mod burst_reload;
 mod busy_file_events;
+mod config_noise;
 mod export_sizes;
 mod live_check;
 

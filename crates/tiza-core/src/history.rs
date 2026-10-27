@@ -32,7 +32,7 @@ struct Snapshot {
     styles: BTreeMap<String, MarkStyle>,
     title: Option<String>,
     padding: Option<(u16, u16)>,
-    numbers: bool,
+    numbers: Option<bool>,
     margin: Option<u16>,
     theme_overrides: Option<crate::theme::ThemeOverrides>,
     steps: Vec<crate::steps::NamedStep>,

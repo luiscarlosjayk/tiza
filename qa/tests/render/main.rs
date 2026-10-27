@@ -6,6 +6,7 @@ mod border_styles;
 mod box_title_row;
 mod callouts;
 mod chunked_highlighting;
+mod config_defaults;
 mod control_characters;
 mod frame_snapshots;
 mod highlight_styles;

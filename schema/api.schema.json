@@ -149,7 +149,7 @@
           },
           "numbers": {
             "default": true,
-            "description": "Whether the line-number gutter is shown (`:numbers`, document field).",
+            "description": "Whether the line-number gutter is shown: the document's `numbers`\n(`:numbers`), else the `numbers` of the user's config.toml, else on.",
             "type": "boolean"
           },
           "pending": {
@@ -824,7 +824,7 @@
                 "type": "array"
               },
               "numbers": {
-                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export. Absent: the `numbers` of the user's\n`config.toml`, else on.",
                 "type": "boolean"
               },
               "padding": {
@@ -3113,7 +3113,7 @@
       }
     },
     {
-      "description": "Lists document styles, built-in kinds and aliases",
+      "description": "Lists the document styles, the personal styles of the user's config.toml that the document does not have (`personal`), the built-in kinds and the aliases",
       "method": "style.list",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3602,7 +3602,7 @@
                 "type": "array"
               },
               "numbers": {
-                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export.",
+                "description": "Line-number gutter. Off, the code starts at the left edge\n(lanes and boxes move with it); the TUI, `render` and the agents'\nrenders all follow it. `render --no-numbers` / `--numbers` override\nit for one export. Absent: the `numbers` of the user's\n`config.toml`, else on.",
                 "type": "boolean"
               },
               "padding": {
@@ -6108,7 +6108,7 @@
       }
     },
     {
-      "description": "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
+      "description": "Preflight of the live document, the same report as `tiza check --json`: run on the code and linked files inside the instance. `{width?}` (default: the `width` of the config file, else 100). Off the TUI thread, on a copy of the document: `revision` says which one it checked. At most one runs and one waits; a check at another width replaces the waiting one, which is answered `busy`",
       "method": "check",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",

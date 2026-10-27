@@ -46,7 +46,7 @@ fn lay(doc: &Document, width: usize, step: u32) -> Layout {
     let opts = LayoutOptions {
         width,
         step,
-        line_numbers: doc.numbers,
+        line_numbers: doc.numbers_or(true),
         margin_cap: doc.margin.map(usize::from),
         ..Default::default()
     };

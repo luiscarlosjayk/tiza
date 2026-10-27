@@ -54,7 +54,7 @@ fn lines(text: &str) -> Vec<String> {
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(path)
         .output()

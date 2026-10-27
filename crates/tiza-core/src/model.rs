@@ -126,9 +126,13 @@ pub struct Document {
     /// Line-number gutter. Off, the code starts at the left edge
     /// (lanes and boxes move with it); the TUI, `render` and the agents'
     /// renders all follow it. `render --no-numbers` / `--numbers` override
-    /// it for one export.
-    #[serde(default = "yes", skip_serializing_if = "Clone::clone")]
-    pub numbers: bool,
+    /// it for one export. Absent: the `numbers` of the user's
+    /// `config.toml`, else on.
+    // Never written as `null` (an older Tiza refuses it), and the schema
+    // says a boolean; a `null` read in is taken as absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "bool")]
+    pub numbers: Option<bool>,
     /// Cap on the right margin, in cells: long notes wrap at it
     /// instead of spreading across a wide terminal. `None`: dynamic.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -152,10 +156,6 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
-}
-
-fn yes() -> bool {
-    true
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -924,7 +924,7 @@ impl Document {
             base_first_line: 1,
             views: BTreeMap::new(),
             view_code: BTreeMap::new(),
-            numbers: true,
+            numbers: None,
             margin: None,
             theme_overrides: None,
             steps: Vec::new(),
@@ -1730,6 +1730,12 @@ impl Document {
         let mut v: Vec<String> = self.styles.keys().cloned().collect();
         v.extend(BUILTIN_KINDS.iter().map(|(k, ..)| k.to_string()));
         v
+    }
+
+    /// Whether the gutter is shown: the document's `numbers`, else
+    /// `default` (the config file's, or on).
+    pub fn numbers_or(&self, default: bool) -> bool {
+        self.numbers.unwrap_or(default)
     }
 
     /// Last absolute line of the document.

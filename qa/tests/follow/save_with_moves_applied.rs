@@ -38,7 +38,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, bin, scratch};
+use tiza_qa::{Live, scratch};
 
 /// QA 1's fixture: `a1` highlights `t.len()` from
 /// step 1, the step-2 move replaces `n + 1`.
@@ -132,7 +132,7 @@ fn save_at_step_2(live: &Live, src: &Path, content: &str) {
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json"])
         .arg(path)
         .output()
@@ -146,7 +146,7 @@ fn check_file(path: &Path) -> (i32, Value) {
 /// live instance with `--socket`): one text per step.
 fn all_steps(args: &[&str], out: &Path) -> Vec<String> {
     let _ = std::fs::remove_dir_all(out);
-    let r = std::process::Command::new(bin())
+    let r = tiza_qa::command()
         .arg("render")
         .args(args)
         .args(["--all-steps", "--format", "txt", "--width", "100", "--out"])

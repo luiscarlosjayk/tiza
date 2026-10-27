@@ -39,7 +39,7 @@
 //! with no terminal size known the default width (100) is used and named.
 
 use serde_json::{Value, json};
-use tiza_qa::{Live, McpClient, bin, scratch};
+use tiza_qa::{Live, McpClient, scratch};
 
 const ENV: &str = "DATABASE_URL=postgres://app:s3cr3t-pass@db.internal:5432/app\n\
                    API_TOKEN=tok_live_9f8e7d6c5b4a3f2e1d0c\n\
@@ -103,7 +103,7 @@ fn check_cuts(tiza: &std::path::Path, width: usize) -> Vec<(String, bool)> {
 
 /// [`check_cuts`] with the first step of each finding.
 fn check_findings(tiza: &std::path::Path, width: usize) -> Vec<(String, bool, u64)> {
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args(["check", "--json", "--width", &width.to_string()])
         .arg(tiza)
         .output()

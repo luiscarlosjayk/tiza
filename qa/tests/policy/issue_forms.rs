@@ -42,8 +42,8 @@ fn yaml(rel: &str) -> Option<serde_json::Value> {
             ],
         ),
     ];
-    for (bin, args) in tries {
-        let Ok(out) = Command::new(bin).args(args).arg(&path).output() else {
+    for (tool, args) in tries {
+        let Ok(out) = Command::new(tool).args(args).arg(&path).output() else {
             continue;
         };
         if out.status.success() {
@@ -53,7 +53,7 @@ fn yaml(rel: &str) -> Option<serde_json::Value> {
         // A parser that is there and refuses the file is a failure.
         assert!(
             err.contains("No module named") || err.contains("cannot load such file"),
-            "{rel} is not valid YAML ({bin}): {err}"
+            "{rel} is not valid YAML ({tool}): {err}"
         );
     }
     None

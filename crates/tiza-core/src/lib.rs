@@ -11,12 +11,14 @@
 //! - [`fs`][]: open sources/`.tiza` files and save.
 //! - [`history`][]: undo/redo.
 //! - [`printable`][]: control characters made visible.
+//! - [`config`][]: `config.toml`, the user's personal settings.
 
 pub mod anim;
 pub mod canvas;
 pub mod carry;
 pub mod cast;
 pub mod check;
+pub mod config;
 pub mod error;
 pub mod fs;
 pub mod highlight;

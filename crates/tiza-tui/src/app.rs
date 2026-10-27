@@ -2,7 +2,7 @@
 //! keyboard and the local API go through here, so an agent and the presenter
 //! do exactly the same thing.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
@@ -563,6 +563,12 @@ pub struct App {
     /// The `[theme]` table of the config file, applied under the
     /// document's own overrides.
     pub config_overrides: Option<tiza_core::theme::ThemeOverrides>,
+    /// The `[defaults]` of the config file: `pad` and `numbers` apply
+    /// when the document does not set them (the rest is read at start).
+    pub config_defaults: tiza_core::config::Defaults,
+    /// The `[styles]` of the config file: a mark that uses one copies it
+    /// into the document first (a document style of that name wins).
+    pub personal_styles: BTreeMap<String, MarkStyle>,
     /// What the last theme resolution changed or ignored (pushed tokens,
     /// unknown keys), for `:theme` to report.
     pub theme_notes: Vec<String>,
@@ -601,6 +607,8 @@ impl App {
             theme_auto,
             host_dark: None,
             config_overrides: None,
+            config_defaults: Default::default(),
+            personal_styles: BTreeMap::new(),
             theme_notes: Vec::new(),
             osc: Default::default(),
             doc,
@@ -806,11 +814,81 @@ impl App {
         ))
     }
 
-    /// Padding in effect: the session override, else the document's, else the default.
+    /// Padding in effect: the session override, else the document's, else
+    /// the config file's, else the default.
     pub fn effective_padding(&self) -> (u16, u16) {
         self.padding_override
             .or(self.doc.padding)
+            .or(self.config_defaults.pad)
             .unwrap_or(crate::ui::DEFAULT_PADDING)
+    }
+
+    /// Whether the gutter is shown: the document's `numbers`, else the
+    /// config file's, else on.
+    pub fn numbers(&self) -> bool {
+        self.doc
+            .numbers_or(self.config_defaults.numbers.unwrap_or(true))
+    }
+
+    /// Copies the personal style `kind` into the document when a mark is
+    /// about to use it and the document has no style of that name (the
+    /// copy keeps the `.tiza` the same on any machine). Returns the name
+    /// of the style it copied.
+    fn adopt_personal_style(
+        doc: &mut Document,
+        personal: &BTreeMap<String, MarkStyle>,
+        kind: &str,
+    ) -> Option<String> {
+        let kind = kind.trim();
+        if doc.styles.contains_key(kind) || tiza_core::model::builtin_kind(kind).is_some() {
+            return None;
+        }
+        let st = personal.get(kind)?;
+        doc.styles.insert(kind.to_string(), st.clone());
+        Some(kind.to_string())
+    }
+
+    /// [`Self::adopt_personal_style`] for every mark of `doc`.
+    /// What `:style NAME field=…` and `style.set` change: the style of the
+    /// document, else a copy of the personal style of that name.
+    fn style_to_change(&self, name: &str) -> MarkStyle {
+        self.doc
+            .styles
+            .get(name)
+            .or_else(|| self.personal_styles.get(name))
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    fn adopt_personal_styles(doc: &mut Document, personal: &BTreeMap<String, MarkStyle>) {
+        if personal.is_empty() {
+            return;
+        }
+        let kinds: Vec<String> = doc
+            .annotations
+            .iter()
+            .filter_map(|a| match &a.shape {
+                Shape::Mark { kind, .. } => Some(kind.clone()),
+                _ => None,
+            })
+            .collect();
+        for k in kinds {
+            Self::adopt_personal_style(doc, personal, &k);
+        }
+    }
+
+    /// The names `:mark` takes: the document's styles, the personal
+    /// styles it does not have, then the built-in kinds.
+    fn kind_names(&self) -> Vec<String> {
+        let mut v = self.doc.kind_names();
+        let personal = self
+            .personal_styles
+            .keys()
+            .filter(|k| !self.doc.styles.contains_key(*k))
+            .cloned();
+        let at = self.doc.styles.len();
+        v.splice(at..at, personal);
+        v
     }
 
     pub fn info(&mut self, msg: impl Into<String>) {
@@ -1125,7 +1203,7 @@ impl App {
             step: self.doc.step,
             focus: self.focus,
             pointer: None,
-            line_numbers: self.doc.numbers,
+            line_numbers: self.numbers(),
             tab_width: 4,
             typing: self.typing.is_some(),
             // Presentation mode is a take: one geometry for every step.
@@ -1673,6 +1751,14 @@ impl App {
             return Err(Error::Invalid(format!("style: {}", unknown_color())));
         }
         self.history.record(&self.doc, "add");
+        // A personal style comes into the document with its first mark, in
+        // the same undo step.
+        let adopted = match &shape {
+            Shape::Mark { kind, .. } => {
+                Self::adopt_personal_style(&mut self.doc, &self.personal_styles, kind)
+            }
+            _ => None,
+        };
         let step = step.unwrap_or(self.doc.step).max(1);
         let kind = shape.kind_name();
         let res = self.doc.add(Annotation {
@@ -1691,6 +1777,9 @@ impl App {
             }
             Err(e) => {
                 self.history.discard_last();
+                if let Some(name) = adopted {
+                    self.doc.styles.remove(&name);
+                }
                 Err(e)
             }
         }
@@ -1889,6 +1978,12 @@ impl App {
             return Ok(());
         }
         self.history.record(&self.doc, format!("update {}", p.id));
+        let adopted = match &ann.shape {
+            Shape::Mark { kind, .. } => {
+                Self::adopt_personal_style(&mut self.doc, &self.personal_styles, kind)
+            }
+            _ => None,
+        };
         match self.doc.update(ann) {
             Ok(()) => {
                 self.touch();
@@ -1896,6 +1991,9 @@ impl App {
             }
             Err(e) => {
                 self.history.discard_last();
+                if let Some(name) = adopted {
+                    self.doc.styles.remove(&name);
+                }
                 Err(e)
             }
         }
@@ -1969,6 +2067,8 @@ impl App {
         // Linked files: embedded in `views`, else read next to the
         // open document.
         fs::load_views(&mut doc, base.as_deref())?;
+        // Marks that use a personal style bring it into the document.
+        Self::adopt_personal_styles(&mut doc, &self.personal_styles);
         // The open document's stale moves come back stale (and the
         // annotations they hide, hidden), as `scene.get` gave them out.
         if !other {
@@ -2253,6 +2353,9 @@ impl App {
                 }
                 let old = d.find_annotation(&id).map(|a| (a.step, a.file.clone()));
                 d.annotations.retain(|a| a.id != id);
+                if let Shape::Mark { kind, .. } = &ann.shape {
+                    Self::adopt_personal_style(&mut d, &self.personal_styles, kind);
+                }
                 // An id the document has keeps the step it is sent with
                 // and, without a `step` or a `file` key, its step or its file
                 // (`file: null` is the main one). Only a new id gets the
@@ -2290,7 +2393,7 @@ impl App {
             d.padding = pad;
         }
         if let Some(n) = p.numbers {
-            d.numbers = n;
+            d.numbers = Some(n);
         }
         if let Some(m) = p.margin {
             d.margin = match m {
@@ -4397,7 +4500,7 @@ impl App {
                     words[words.len() - 1]
                 };
                 let pool: Vec<String> = match cmd {
-                    "mark" | "m" if words.len() <= 2 => self.doc.kind_names(),
+                    "mark" | "m" if words.len() <= 2 => self.kind_names(),
                     "style" | "kinds" => self.doc.styles.keys().cloned().collect(),
                     "del" | "delete" | "rm" | "label" | "color" | "col" | "until" | "spot"
                     | "spotlight" => self.doc.annotations.iter().map(|a| a.id.clone()).collect(),
@@ -5060,8 +5163,15 @@ impl App {
                     self.doc.padding = None;
                     self.padding_override = None;
                     self.touch();
-                    let (v, h) = crate::ui::DEFAULT_PADDING;
-                    Ok(format!("padding {v} {h} (default)"))
+                    let (v, h) = self.effective_padding();
+                    Ok(format!(
+                        "padding {v} {h} ({})",
+                        if self.config_defaults.pad.is_some() {
+                            "from config.toml"
+                        } else {
+                            "default"
+                        }
+                    ))
                 }
                 "margin" => match rest.trim() {
                     "" => Ok(match self.doc.margin {
@@ -5098,19 +5208,27 @@ impl App {
                 },
                 "numbers" | "nums" => match rest.trim() {
                     "" => Ok(format!(
-                        "numbers {}",
-                        if self.doc.numbers { "on" } else { "off" }
+                        "numbers {}{}",
+                        if self.numbers() { "on" } else { "off" },
+                        if self.doc.numbers.is_none() && self.config_defaults.numbers.is_some() {
+                            " (from config.toml)"
+                        } else {
+                            ""
+                        }
                     )),
                     "on" | "yes" | "off" | "no" => {
                         let on = matches!(rest.trim(), "on" | "yes");
-                        if on == self.doc.numbers {
+                        // A document without `numbers` gets it, also when the
+                        // config file gives the same value: the document then
+                        // looks the same without the file.
+                        if self.doc.numbers == Some(on) {
                             return Ok(format!(
                                 "numbers already {}",
                                 if on { "on" } else { "off" }
                             ));
                         }
                         self.history.record(&self.doc, "numbers");
-                        self.doc.numbers = on;
+                        self.doc.numbers = Some(on);
                         self.touch();
                         Ok(if on {
                             "numbers on (saved in the document)".into()
@@ -5136,6 +5254,10 @@ impl App {
                                 "padding {v} {h}{}",
                                 if self.padding_override.is_some() {
                                     " (from --padding, not saved)"
+                                } else if self.doc.padding.is_none()
+                                    && self.config_defaults.pad.is_some()
+                                {
+                                    " (from config.toml)"
                                 } else if self.doc.padding.is_none() {
                                     " (default)"
                                 } else {
@@ -5608,7 +5730,7 @@ impl App {
                 focus: self.focus,
                 // `:export` never draws the live pointer.
                 pointer: None,
-                line_numbers: self.doc.numbers,
+                line_numbers: self.numbers(),
                 tab_width: 4,
                 typing: false,
                 stable: true,
@@ -5827,7 +5949,7 @@ impl App {
         if kind_tok.is_empty() || (at.is_empty() && self.pending_sel.is_none()) {
             return Err(Error::Invalid(format!(
                 "usage: :mark KIND[@COLOR] L:text [label]   KIND: {} | a :style name | a glyph",
-                self.doc.kind_names().join(" ")
+                self.kind_names().join(" ")
             )));
         }
         let (kind_tok, color) = match kind_tok.rsplit_once('@') {
@@ -5835,6 +5957,7 @@ impl App {
             _ => (kind_tok, None),
         };
         let known = self.doc.styles.contains_key(kind_tok)
+            || self.personal_styles.contains_key(kind_tok)
             || tiza_core::model::builtin_kind(kind_tok).is_some();
         let (kind, mut style) = if known {
             (kind_tok.to_string(), MarkStyle::default())
@@ -5849,7 +5972,7 @@ impl App {
             {
                 return Err(Error::Invalid(format!(
                     "unknown mark kind (kinds: {}; or define one with :style, or use a glyph/emoji)",
-                    self.doc.kind_names().join(" ")
+                    self.kind_names().join(" ")
                 )));
             }
             (
@@ -5877,7 +6000,7 @@ impl App {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(format!(
                         "usage: :mark KIND[@COLOR] L:text [label]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
-                        self.doc.kind_names().join(" ")
+                        self.kind_names().join(" ")
                     )));
                 }
                 let w = parse_where(at, self.cursor_line)?;
@@ -5887,11 +6010,20 @@ impl App {
         if inline {
             style.legend = opt(label);
         }
+        // A personal style the document does not have yet: the mark
+        // copies it in.
+        let personal = (!inline && !self.doc.styles.contains_key(&kind))
+            .then(|| self.personal_styles.get(&kind))
+            .flatten()
+            .filter(|_| tiza_core::model::builtin_kind(&kind).is_none())
+            .cloned();
         let legend = self
             .doc
             .resolve_style(&kind, &style)
+            .or_else(|| personal.as_ref().map(|p| p.merged(&style)))
             .and_then(|st| st.legend)
             .unwrap_or_else(|| kind.clone());
+        let copied = personal.is_some().then(|| kind.clone());
         let id = self.add_annotation(
             None,
             None,
@@ -5903,7 +6035,13 @@ impl App {
                 emphasis,
             },
         )?;
-        Ok(format!("{id}: {legend} at L{}", span.line))
+        Ok(match copied {
+            Some(name) => format!(
+                "{id}: {legend} at L{} (style {name} from config.toml)",
+                span.line
+            ),
+            None => format!("{id}: {legend} at L{}", span.line),
+        })
     }
 
     /// `:style NAME glyph=🔥 legend="hot path" color=red` defines a reusable style.
@@ -5927,6 +6065,15 @@ impl App {
                     )
                 })
                 .collect();
+            let personal: Vec<String> = self
+                .personal_styles
+                .iter()
+                .filter(|(n, _)| !self.doc.styles.contains_key(*n))
+                .map(|(n, st)| format!("{n} {}", st.glyph.as_deref().unwrap_or("")))
+                .collect();
+            if !personal.is_empty() {
+                out.push(format!("personal: {}", personal.join("  ")));
+            }
             out.push(format!(
                 "built-in: {}",
                 BUILTIN_KINDS
@@ -5949,7 +6096,7 @@ impl App {
                 )),
             };
         }
-        let mut st = self.doc.styles.get(name).cloned().unwrap_or_default();
+        let mut st = self.style_to_change(name);
         let kv = parse_kv(rest);
         check_kv_shape(&kv, rest)?;
         for (k, v) in kv {
@@ -6269,8 +6416,11 @@ impl App {
     fn ask_check(&mut self, req: Request, reply: std::sync::mpsc::Sender<Response>) {
         let width = match check_width(req.params) {
             // The width the check uses: `{}` and `{"width": 100}` are one
-            // check and share one run.
-            Ok(w) => w.unwrap_or(tiza_core::check::DEFAULT_WIDTH),
+            // check and share one run. With no width, the config file's, as
+            // `tiza check` does.
+            Ok(w) => w
+                .or(self.config_defaults.width)
+                .unwrap_or(tiza_core::check::DEFAULT_WIDTH),
             Err(e) => {
                 let _ = reply.send(Response::err(req.id, e.code(), e.to_string()));
                 return;
@@ -6278,8 +6428,15 @@ impl App {
         };
         let base = self.save_path.parent().map(Path::to_path_buf);
         let doc = &self.doc;
+        // The gutter the screen shows, also when the config file decides it.
+        let numbers = self.numbers();
+        let snapshot = || {
+            let mut d = doc.clone();
+            d.numbers = Some(numbers);
+            d
+        };
         self.checks
-            .ask(req.id, reply, width, self.revision, || doc.clone(), base);
+            .ask(req.id, reply, width, self.revision, snapshot, base);
     }
 
     /// An agent's `annotation.add` / `annotation.update` (socket or MCP,
@@ -6744,7 +6901,7 @@ impl App {
                         .and_then(|v| v.as_str())
                         .map(|v| v.to_string())
                 };
-                let mut st = self.doc.styles.get(name).cloned().unwrap_or_default();
+                let mut st = self.style_to_change(name);
                 if let Some(g) = get("glyph") {
                     st.glyph = Some(g);
                 }
@@ -6765,8 +6922,14 @@ impl App {
                 json!({"name": name, "style": st, "revision": self.revision})
             }
             "style.list" => {
+                let personal: BTreeMap<&String, &MarkStyle> = self
+                    .personal_styles
+                    .iter()
+                    .filter(|(k, _)| !self.doc.styles.contains_key(*k))
+                    .collect();
                 json!({
                 "document": self.doc.styles,
+                "personal": personal,
                 "builtin": BUILTIN_KINDS.iter().map(|(k, g, l, c)| json!({"kind": k, "glyph": g, "legend": l, "color": c})).collect::<Vec<_>>(),
                 "aliases": tiza_core::model::KIND_ALIASES.iter().map(|(a, k)| json!({"alias": a, "kind": k})).collect::<Vec<_>>(),
                 })
@@ -6836,7 +6999,10 @@ impl App {
                     report: tiza_core::check::check_document(
                         &self.doc,
                         base.as_deref(),
-                        &tiza_core::check::CheckOptions { width },
+                        &tiza_core::check::CheckOptions {
+                            width: width.or(self.config_defaults.width),
+                            numbers: self.config_defaults.numbers,
+                        },
                     ),
                     revision: self.revision,
                 })?
@@ -6979,7 +7145,7 @@ impl App {
                 p.to_string_lossy().into_owned()
             }),
             pending: self.proposals.len(),
-            numbers: self.doc.numbers,
+            numbers: self.numbers(),
             margin: self.doc.margin,
             pointer: self.pointer,
             stale_moves: tiza_core::stale::count(&self.doc),

@@ -1,6 +1,6 @@
 //! `tiza render --theme auto` exports the theme of the document.
 
-use tiza_qa::{bin, scratch};
+use tiza_qa::scratch;
 
 const CODE: &str = "fn main() {\n    println!(\"hi\");\n}\n";
 
@@ -17,7 +17,7 @@ fn render_with_theme_auto_exports_the_theme_of_the_document() {
         format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
     };
     let (light, dark) = (hex(ThemeName::Light), hex(ThemeName::Dark));
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args([
             "render",
             path.to_str().unwrap(),
@@ -38,7 +38,7 @@ fn render_with_theme_auto_exports_the_theme_of_the_document() {
     assert!(svg.contains(&light), "not the light bg {light}");
     assert!(!svg.contains(&dark), "the dark bg {dark}");
     // terminal: dark, and the export says so.
-    let out = std::process::Command::new(bin())
+    let out = tiza_qa::command()
         .args([
             "render",
             path.to_str().unwrap(),

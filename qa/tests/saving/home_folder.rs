@@ -3,7 +3,7 @@
 
 use std::process::Command;
 
-use tiza_qa::{Live, bin, scratch};
+use tiza_qa::{Live, scratch};
 
 const CODE: &str = "fn main() {\n    println!(\"hi\");\n}\n";
 
@@ -16,7 +16,7 @@ fn an_empty_home_reads_no_config_from_the_current_folder() {
     std::fs::create_dir_all(dir.join(".config/tiza")).unwrap();
     std::fs::write(dir.join(".config/tiza/config.toml"), "not toml [").unwrap();
     let render = |home: &str| {
-        let out = Command::new(bin())
+        let out = tiza_qa::command()
             .args(["render", "main.rs"])
             .current_dir(&dir)
             .env("HOME", home)
@@ -27,12 +27,15 @@ fn an_empty_home_reads_no_config_from_the_current_folder() {
         assert!(out.status.success(), "HOME={home:?}: {out:?}");
         String::from_utf8_lossy(&out.stderr).into_owned()
     };
-    // With HOME at that folder, Tiza reads the file (and says that it is
+    // With HOME at that folder, Tiza reads the file (and says where it is
     // not valid): the file is where an empty HOME used to lead.
     let read = render(dir.to_str().unwrap());
-    assert!(read.contains("config ignored"), "{read}");
+    assert!(
+        read.contains("tiza: config: ") && read.contains("config.toml:1:"),
+        "{read}"
+    );
     let empty = render("");
-    assert!(!empty.contains("config ignored"), "{empty}");
+    assert!(!empty.contains("tiza: config"), "{empty}");
 }
 
 /// Set for the child copy of this test binary that

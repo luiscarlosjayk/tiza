@@ -3,7 +3,7 @@
 //! Acceptance criteria:
 //! - AC1 `:numbers off` hides the gutter (code, lanes and boxes shift
 //!   left), `:numbers on` restores it, `:numbers` reports; saved in the
-//!   document (`numbers: false`, default true), so exports and the next
+//!   document (`numbers: false`; absent: config.toml's, else true), so exports and the next
 //!   session match.
 //! - AC2 `render` honours the field; `--no-numbers` forces it off and
 //!   `--numbers` forces it on.
@@ -85,11 +85,12 @@ fn toggle_in_the_tui_is_saved_and_reported() {
     live.command("numbers maybe");
     let (m, err) = live.message().unwrap();
     assert!(err && m.contains(":numbers on"), "{m}");
-    // The saved file drops the field once it is back to the default.
+    // `:numbers on` is the document's own value: the saved file keeps
+    // it, so a `numbers = false` in config.toml does not hide the gutter.
     live.command("w");
     let saved: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(dir.join("doc.tiza")).unwrap()).unwrap();
-    assert!(saved.get("numbers").is_none(), "{saved}");
+    assert_eq!(saved.get("numbers"), Some(&json!(true)), "{saved}");
 }
 
 #[test]
@@ -128,7 +129,8 @@ fn render_honours_the_field_and_the_flags_override_it() {
     let cast = dir.join("x.cast");
     tiza_ok(&["render", p, "--out", cast.to_str().unwrap()]);
     assert!(!std::fs::read_to_string(&cast).unwrap().contains(" 15 "));
-    // Old documents without the field: numbers on.
+    // Old documents without the field: numbers on (the field is absent,
+    // so a `numbers` of config.toml can decide it).
     let old = tiza_core::fs::open(
         fixture("shared/ownership/ownership.rs.tiza")
             .to_str()
@@ -136,7 +138,8 @@ fn render_honours_the_field_and_the_flags_override_it() {
     )
     .unwrap()
     .document;
-    assert!(old.numbers);
+    assert_eq!(old.numbers, None);
+    assert!(old.numbers_or(true));
 }
 
 #[test]

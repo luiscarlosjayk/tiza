@@ -42,8 +42,8 @@ use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
-use tiza_core::protocol::Response;
-use tiza_qa::{Live, McpClient, scratch, tiza};
+use tiza_core::protocol::{Request, Response};
+use tiza_qa::{Live, McpClient, scratch, tiza_with_config};
 
 /// How long a request answered while a check runs is waited for: a
 /// condition's timeout; that it did not wait for the check is shown by the
@@ -543,23 +543,49 @@ s.finish(10)
 
 /// AC4: for a document that does not change, the live check is the CLI's
 /// `tiza check --json`, field for field, plus the revision it checked —
-/// at the default width and at one that clips labels.
+/// at the default width and at one that clips labels, without a config
+/// width and with one that is not 100 (a width in the call wins).
 #[test]
 fn the_live_check_is_the_cli_check() {
     let (file, live) = big_live("ac4");
-    for (params, args) in [
-        (json!({}), vec![]),
-        (json!({"width": 60}), vec!["--width", "60"]),
-    ] {
-        let mut v = live.api_ok("check", params.clone());
-        let revision = v.as_object_mut().unwrap().remove("revision");
-        assert!(revision.as_ref().is_some_and(Value::is_u64), "{v}");
-        let mut cli_args = vec!["check", file.to_str().unwrap(), "--json"];
-        cli_args.extend(args);
-        let out = tiza(&cli_args);
-        let cli: Value = serde_json::from_slice(&out.stdout).unwrap();
-        assert_eq!(v, cli, "{params}: live\n{v}\nCLI\n{cli}");
+    let dir = file.parent().unwrap().to_path_buf();
+    std::fs::write(dir.join("empty.toml"), "").unwrap();
+    std::fs::write(dir.join("width-72.toml"), "[defaults]\nwidth = 72\n").unwrap();
+    for (config, width) in [("empty.toml", None), ("width-72.toml", Some(72))] {
+        live.with(move |a| a.config_defaults.width = width);
+        for (params, args) in [
+            (json!({}), vec![]),
+            (json!({"width": 60}), vec!["--width", "60"]),
+        ] {
+            let mut v = live.api_ok("check", params.clone());
+            let revision = v.as_object_mut().unwrap().remove("revision");
+            assert!(revision.as_ref().is_some_and(Value::is_u64), "{v}");
+            let mut cli_args = vec!["check", file.to_str().unwrap(), "--json"];
+            cli_args.extend(args);
+            let (_, out, err) = tiza_with_config(&dir, config, &cli_args);
+            let cli: Value =
+                serde_json::from_str(&out).unwrap_or_else(|_| panic!("{config}: {err}"));
+            assert_eq!(v, cli, "{config}, {params}: live\n{v}\nCLI\n{cli}");
+            // A caller of `handle_request` gets the same check in place.
+            let p = params.clone();
+            let mut here = live
+                .with(move |a| {
+                    a.handle_request(Request {
+                        id: json!(1),
+                        method: "check".into(),
+                        params: p,
+                    })
+                })
+                .result
+                .unwrap_or_else(|| panic!("{config}, {params}: no result"));
+            here.as_object_mut().unwrap().remove("revision");
+            assert_eq!(
+                here, cli,
+                "{config}, {params}: in place\n{here}\nCLI\n{cli}"
+            );
+        }
     }
+    assert_eq!(live.api_ok("check", json!({}))["width"], json!(72));
     let v = live.api_ok("check", json!({"width": 60}));
     assert!(v["warnings"].as_u64().unwrap() > 0, "{v}");
 }

@@ -64,7 +64,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 
 | Flag | Command | What it does |
 |---|---|---|
-| `--width N` | `tiza check` | Checks the labels at `N` columns, 100 by default. |
+| `--width N` | `tiza check` | Checks the labels at `N` columns. The default is `width` of the config file, else 100. |
 | `--json` | `tiza check` | Prints the findings as JSON. |
 | `--strict` | `tiza check` | Exits with code 1 also for warnings. |
 | `--width N` | `tiza scene text` | Prints the take at `N` columns, in place of the width of the screen. |
@@ -235,7 +235,8 @@ Tiza writes these messages on stderr:
 | `tiza: the parameters are not valid JSON: ERROR` | The `PARAMS` of `tiza api` do not parse. |
 | `tiza: the parameters from stdin are not valid JSON: ERROR` | The `PARAMS` of `tiza api -` do not parse. |
 | `wrote PATH` | `tiza schema --out PATH` wrote the file. |
-| `tiza: config ignored: PATH` | Tiza cannot read or parse the config file. |
+| `tiza: config: PATH:LINE: WARNING` | Tiza does not take an entry of the config file. The warning tells why. |
+| `tiza: config ignored: PATH: ERROR` | Tiza cannot read the config file. |
 | `` tiza: no grammar for `LANG`; the code is shown as plain text `` | `--lang` got a language that has no grammar. |
 | `` tiza: no Tiza instance is listening on PATH (open `tiza <file>` or pass --socket/--session) `` | A command finds no live instance. |
 | `tiza: the Tiza instance on PATH did not answer within 75 s: it is busy or stopped; look at its terminal` | A command reached the live instance, but it did not reply in time. |
