@@ -323,6 +323,17 @@ enum Cmd {
         /// JSON parameters (or `-` to read them from stdin)
         params: Option<String>,
     },
+    /// Show the config file in use, the values that it sets and its warnings.
+    /// Each value says where it comes from: built-in or config. Exit 1 only
+    /// when Tiza cannot read the file.
+    Config {
+        /// `config` never talks to the live instance: the global `--socket`
+        /// and `--session` are accepted (and ignored) but left out of its help.
+        #[arg(long, hide = true)]
+        socket: Option<PathBuf>,
+        #[arg(long, hide = true)]
+        session: Option<String>,
+    },
     /// Print a JSON Schema: `document` (the .tiza format) or `api` (every socket method)
     Schema {
         #[arg(value_enum, default_value_t = SchemaKind::Document)]
@@ -1150,6 +1161,12 @@ fn real_main() -> anyhow::Result<()> {
             }
             Ok(())
         }
+        Some(Cmd::Config { .. }) => {
+            let cfg = tiza_core::config::load().map_err(|e| anyhow::anyhow!("config: {e}"))?;
+            let text = config_report(&cfg);
+            std::io::stdout().write_all(tiza_core::printable::printable_text(&text).as_bytes())?;
+            Ok(())
+        }
         Some(Cmd::Mcp) => {
             let rt = tokio::runtime::Runtime::new()?;
             rt.block_on(tiza_mcp::serve(socket_path))
@@ -1233,6 +1250,113 @@ fn real_main() -> anyhow::Result<()> {
             Ok(())
         }
     }
+}
+
+/// What `tiza config` prints: the file, each `[defaults]` value with its
+/// source, the personal styles, the `[theme]` tokens and the warnings.
+fn config_report(cfg: &tiza_core::config::Config) -> String {
+    use std::fmt::Write as _;
+    use tiza_core::config::{DEFAULT_KEYS, LayoutMode};
+    use tiza_core::printable::printable_line;
+    let mut out = String::new();
+    match (&cfg.path, &cfg.looked_at) {
+        (Some(p), _) => {
+            let _ = writeln!(out, "file: {}", printable_line(&p.display().to_string()));
+        }
+        (None, Some(p)) => {
+            let _ = writeln!(
+                out,
+                "file: none (no file at {}): every value is built-in",
+                printable_line(&p.display().to_string())
+            );
+        }
+        (None, None) => {
+            let _ = writeln!(out, "file: none (no home folder): every value is built-in");
+        }
+    }
+    let d = &cfg.defaults;
+    let on = |b: bool| if b { "on" } else { "off" }.to_string();
+    let (pv, ph) = tiza_tui::ui::DEFAULT_PADDING;
+    let rows: [(&str, Option<String>, String); 6] = [
+        (
+            "pad",
+            d.pad.map(|(v, h)| format!("{v} {h}")),
+            format!("{pv} {ph}"),
+        ),
+        ("numbers", d.numbers.map(on), on(true)),
+        ("mouse", d.mouse.map(on), on(false)),
+        ("autosave", d.autosave.map(on), on(true)),
+        (
+            "layout",
+            d.layout.map(|l| l.name().to_string()),
+            LayoutMode::Dynamic.name().to_string(),
+        ),
+        (
+            "width",
+            d.width.map(|w| w.to_string()),
+            tiza_core::check::DEFAULT_WIDTH.to_string(),
+        ),
+    ];
+    debug_assert!(rows.iter().map(|r| r.0).eq(DEFAULT_KEYS.iter().copied()));
+    let _ = writeln!(out, "defaults:");
+    for (key, set, builtin) in rows {
+        let (value, from) = match set {
+            Some(v) => (v, "config"),
+            None => (builtin, "built-in"),
+        };
+        let _ = writeln!(out, "  {key:<9} {value:<8} {from}");
+    }
+    if cfg.styles.is_empty() {
+        let _ = writeln!(out, "styles: none");
+    } else {
+        let _ = writeln!(
+            out,
+            "styles (config; a document style with the same name wins):"
+        );
+        for (name, st) in &cfg.styles {
+            let mut line = format!("  {name} {}", st.glyph.as_deref().unwrap_or(""));
+            if let Some(l) = &st.legend {
+                let _ = write!(line, "  {l}");
+            }
+            if let Some(c) = &st.color {
+                let _ = write!(line, "  @{c}");
+            }
+            let _ = writeln!(out, "{}", printable_line(&line));
+        }
+    }
+    match &cfg.theme {
+        Some(t) if !t.0.is_empty() => {
+            let tokens: Vec<String> =
+                t.0.iter()
+                    .map(|(k, v)| match v {
+                        tiza_core::theme::OverrideValue::Color(c) => format!("{k} = {c}"),
+                        tiza_core::theme::OverrideValue::Table(sub) => format!(
+                            "[{k}] {}",
+                            sub.iter()
+                                .map(|(k2, c)| format!("{k2} = {c}"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        ),
+                    })
+                    .collect();
+            let line = format!("theme (config): {}", tokens.join(", "));
+            let _ = writeln!(out, "{}", printable_line(&line));
+        }
+        _ => {
+            let _ = writeln!(out, "theme: built-in");
+        }
+    }
+    let lines = cfg.warning_lines();
+    let notes = config_theme_notes(cfg);
+    if lines.is_empty() && notes.is_empty() {
+        let _ = writeln!(out, "warnings: none");
+    } else {
+        let _ = writeln!(out, "warnings ({}):", lines.len() + notes.len());
+        for w in lines.iter().chain(&notes) {
+            let _ = writeln!(out, "  {}", printable_line(w));
+        }
+    }
+    out
 }
 
 /// Pretty JSON for the terminal: the value as is, with DEL, C1 and bidi

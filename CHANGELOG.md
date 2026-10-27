@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ### Added
 - `[defaults]` in `~/.config/tiza/config.toml` sets the values that each session starts with: `pad`, `numbers`, `mouse`, `autosave`, `layout`, and the `width` of `tiza render` and `tiza check`. The document, the flags and the `:` commands win over the file.
 - `[styles]` in `config.toml` holds your own mark styles for every document. When a mark uses one for the first time, Tiza copies the style into the document. Thus the document looks the same on a computer without your file. `list_kinds` and `style.list` show the personal styles in `personal`.
+- `tiza config` shows the config file in use, each value with its source, the personal styles and the warnings of the file.
 
 ### Changed
 - When the config file has an error, Tiza ignores only the entry or the lines with the error. It writes a warning with the path, the line and the key on stderr, and the status bar shows the first warning at start. Before, an error of TOML made Tiza ignore the whole file.

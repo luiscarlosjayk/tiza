@@ -39,6 +39,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 | `tiza [FILE]` | Opens the code or the document in the TUI. |
 | `tiza render [FILE]` | Exports a document, or what the live instance shows, without the TUI. |
 | `tiza check FILE` | Checks a document before you record, and writes nothing. |
+| `tiza config` | Shows the config file in use, each value with its source, the personal styles and the warnings of the file. |
 | `tiza mcp` | Starts the MCP server on standard input and output. |
 | `tiza scene get` | Prints the document of the live instance as JSON. |
 | `tiza scene list` | Prints the annotations of the live instance, one on each line. |
@@ -56,6 +57,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 - The live instance is the running TUI that agents and these commands talk to. See [Global flags](#global-flags).
 - For each flag of `tiza render`, see [Options of `tiza render`](exports.md#options-of-tiza-render).
 - `tiza check` is in [Check before you record](../guides/check-before-you-record.md).
+- `tiza config` exits with code 0 also when the file has warnings, and with code 1 when Tiza cannot read the file. [The config file](themes.md#the-config-file) tells where Tiza finds it.
 - `tiza mcp` is in [Set up an agent](../agents/setup.md). The tools are in [MCP tools](mcp-tools.md).
 - `tiza scene` and `tiza api` are in [Socket API](socket-api.md).
 - `tiza next`, `tiza prev` and `tiza goto` are in [Go to a named step](document-format.md#go-to-a-named-step).
