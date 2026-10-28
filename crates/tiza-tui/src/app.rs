@@ -8155,7 +8155,7 @@ pub fn apply_border_kv(
         }
         _ => {
             return Err(Error::Invalid(
-                "unknown key (border, corners, fill)".to_string(),
+                "unknown key (border, corners, fill, effect)".to_string(),
             ));
         }
     }
@@ -8196,7 +8196,7 @@ pub fn apply_line_kv(ls: &mut tiza_core::model::LineStyle, k: &str, v: &str) -> 
         }
         _ => {
             return Err(Error::Invalid(
-                "unknown key (stroke, route, heads, start, end)".to_string(),
+                "unknown key (stroke, route, heads, start, end, effect)".to_string(),
             ));
         }
     }

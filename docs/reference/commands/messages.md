@@ -85,8 +85,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `unknown start head (use none, arrow, dot, bar, open)` | `start=` got another value. |
 | `unknown end head (use none, arrow, dot, bar, open)` | `end=` got another value. |
 | `fill must be yes\|tint or no\|none` | `fill=` got another value. |
-| `unknown key (stroke, route, heads, start, end)` | `:arrow` got another key, or `:set` got a key that it does not know. |
-| `unknown key (border, corners, fill)` | `:box` or `:callout` got another key. |
+| `unknown key (stroke, route, heads, start, end, effect)` | `:arrow` got another key, or `:set` got a key that it does not know. |
+| `unknown key (border, corners, fill, effect)` | `:box` or `:callout` got another key. |
 | `unknown key for :hl (emphasis=fill\|underline\|brackets\|strike, effect=draw\|fade)` | `:hl` got another key. |
 | `unknown key for :mark (emphasis=fill\|underline\|brackets\|strike, effect=draw\|fade)` | `:mark` got another key. |
 

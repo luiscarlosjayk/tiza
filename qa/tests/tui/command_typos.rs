@@ -113,6 +113,14 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
             "box 7-9 effect=drw",
             "unknown effect (use draw, fade or none)",
         ),
+        (
+            "box 7-9 x eff=draw",
+            "unknown key (border, corners, fill, effect)",
+        ),
+        (
+            "arrow 2:s 7:s x eff=draw",
+            "unknown key (stroke, route, heads, start, end, effect)",
+        ),
     ] {
         rejected(&live, cmd, expect);
     }
