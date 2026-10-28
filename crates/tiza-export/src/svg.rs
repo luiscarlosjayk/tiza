@@ -1,6 +1,6 @@
 //! Canvas → SVG.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
 use std::sync::OnceLock;
 
 use base64::Engine as _;
@@ -70,8 +70,35 @@ pub fn geometry_for(cols: usize, rows: usize, o: &SvgOptions) -> Geometry {
     }
 }
 
-fn hex(c: Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
+/// A color as `#rrggbb`.
+struct Hex(Rgb);
+
+impl fmt::Display for Hex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Rgb(r, g, b) = self.0;
+        write!(f, "#{r:02x}{g:02x}{b:02x}")
+    }
+}
+
+/// The `class` attribute of a text run, as ` class="b i d"` (bold,
+/// italic, dim), or nothing for plain text.
+struct Classes(CellStyle);
+
+impl fmt::Display for Classes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.0;
+        let mut names = [(s.bold, "b"), (s.italic, "i"), (s.dim, "d")]
+            .into_iter()
+            .filter_map(|(on, name)| on.then_some(name));
+        if let Some(first) = names.next() {
+            write!(f, " class=\"{first}")?;
+            for name in names {
+                write!(f, " {name}")?;
+            }
+            f.write_str("\"")?;
+        }
+        Ok(())
+    }
 }
 
 /// XML text: the markup characters as entities, and a character XML 1.0
@@ -254,7 +281,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
                     g.margin + y as f32 * g.cell_h,
                     r.cells as f32 * g.cell_w,
                     g.cell_h,
-                    hex(bg)
+                    Hex(bg)
                 );
             }
         }
@@ -270,28 +297,15 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
             if let Some(c) = &coverage {
                 used.add(c, &r);
             }
-            let mut class = String::new();
-            if r.style.bold {
-                class.push_str("b ");
-            }
-            if r.style.italic {
-                class.push_str("i ");
-            }
-            if r.style.dim {
-                class.push_str("d ");
-            }
             let _ = write!(
                 body,
-                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
+                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}"{} xml:space="preserve">"#,
                 g.margin + r.x as f32 * g.cell_w,
                 base_y,
                 r.cells as f32 * g.cell_w,
-                hex(r.style.fg.unwrap_or(theme.fg))
+                Hex(r.style.fg.unwrap_or(theme.fg)),
+                Classes(r.style)
             );
-            if !class.is_empty() {
-                let _ = write!(body, r#" class="{}""#, class.trim_end());
-            }
-            body.push_str(r#" xml:space="preserve">"#);
             escape(&r.text, &mut body);
             body.push_str("</text>\n");
         }
@@ -340,7 +354,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         g.width,
         g.height,
         o.radius,
-        hex(theme.bg)
+        Hex(theme.bg)
     );
     s.push_str(&body);
     s.push_str("</svg>\n");
