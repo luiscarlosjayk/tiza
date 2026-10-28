@@ -97,13 +97,14 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if opts.theme_auto {
         app.theme_follow_host();
     }
-    // The host's appearance: asked before crossterm owns the input, 100 ms
-    // with no answer and about 300 ms at most, silent fallback to dark. Keys typed meanwhile
-    // were read with the answer: handled before the first frame.
+    // The host's appearance: asked before crossterm owns the input, one
+    // `COLOR_QUERY_WAIT` with no answer and about three at most, silent
+    // fallback to dark. Keys typed meanwhile were read with the answer:
+    // handled before the first frame.
     let mut early = Vec::new();
     let mut cut_answer = None;
     if app.theme_auto || app.theme.is_terminal() {
-        let (host, typed, cut) = appearance::query_host(Duration::from_millis(100));
+        let (host, typed, cut) = appearance::query_host();
         if let Some(host) = host {
             app.set_host(host);
         }
