@@ -5,6 +5,8 @@
 //! - A box is drawn clockwise from its top-left corner.
 //! - An underline is drawn from left to right.
 //! - An arrow is drawn from its source to its target.
+//! - The dim of a new spotlight fades in on every cell that it dims: code
+//!   and annotations of earlier steps alike.
 //! - The layout that records the effects draws the same frame as the
 //!   layout without them, for every example and fixture at every step.
 
@@ -141,6 +143,37 @@ fn an_arrow_is_drawn_from_its_source_to_its_target() {
         out.last() <= rail.first() && rail.last() <= Some(&at(&first, head, target)),
         "source {out:?}, rail {rail:?}, head {}",
         at(&first, head, target)
+    );
+}
+
+#[test]
+fn the_dim_fades_in_on_every_cell_that_the_spotlight_dims() {
+    // A spotlight with ids at step 2 dims the code and the note and the
+    // highlight of step 1.
+    let doc = open(&fixture("render/enter_effects/spotlight_ids.tiza"));
+    let theme = tiza_core::Theme::dark();
+    let (l, trace) = layout_traced(&doc, &theme, &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, Effects::parse("dim").unwrap()).unwrap();
+    let mut lit = doc.clone();
+    lit.annotations.retain(|a| a.id != "s1");
+    let without = layout(&lit, &theme, &options(2, 100)).canvas;
+    let mut start = l.canvas.clone();
+    plan.paint(&mut start, 0);
+    assert_eq!(
+        start.to_ansi(),
+        without.to_ansi(),
+        "at its start, the step shows as without its new spotlight"
+    );
+    let note = row_of(&l.canvas, "first value");
+    let dimmed_note = (0..l.canvas.width)
+        .any(|x| l.canvas.get(x, note).map(|c| c.style) != without.get(x, note).map(|c| c.style));
+    assert!(dimmed_note, "the spotlight does not dim the note");
+    let mut end = l.canvas.clone();
+    plan.paint(&mut end, plan.duration_ms());
+    assert_eq!(
+        end.to_ansi(),
+        l.canvas.to_ansi(),
+        "at its end, the final frame"
     );
 }
 

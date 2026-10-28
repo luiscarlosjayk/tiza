@@ -419,7 +419,31 @@ pub fn layout_traced(
     geometry: Option<&StableGeometry>,
 ) -> (Layout, Trace) {
     let mut l = lay_out(doc, theme, opts, geometry, true);
-    let trace = l.canvas.take_trace().unwrap_or_default();
+    let mut trace = l.canvas.take_trace().unwrap_or_default();
+    // What a spotlight of the step dims: every cell that keeps its symbol
+    // and has another style without the spotlights of the step, code or
+    // annotation alike. The step before is drawn as it was (its own
+    // spotlights stay), so a dim that is not new does not fade.
+    if doc
+        .annotations
+        .iter()
+        .any(|a| a.step == opts.step && matches!(a.shape, Shape::Spotlight { .. }))
+    {
+        let mut lit = doc.clone();
+        lit.annotations
+            .retain(|a| !(a.step == opts.step && matches!(a.shape, Shape::Spotlight { .. })));
+        let without = lay_out(&lit, theme, opts, geometry, false).canvas;
+        if (without.width, without.height) == (l.canvas.width, l.canvas.height) {
+            for (x, y, cell) in l.canvas.cells() {
+                if let Some(was) = without.get(x, y)
+                    && was.sym == cell.sym
+                    && was.style != cell.style
+                {
+                    trace.undimmed.insert(y * l.canvas.width + x, was.style);
+                }
+            }
+        }
+    }
     (l, trace)
 }
 
@@ -631,40 +655,6 @@ fn layout_pass(
     }
     let line_in_spot =
         |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
-    // A traced layout: the lines the step before dimmed too (its
-    // spotlights, the focus), whose dim is not new at this step.
-    let dimmed_before = {
-        let mut lines: Vec<(u32, u32)> = Vec::new();
-        let mut any = false;
-        if shared.trace && opts.step > 0 {
-            let before = opts.step - 1;
-            for a in &doc.annotations {
-                if let Shape::Spotlight {
-                    from_line,
-                    to_line,
-                    ids,
-                    until,
-                } = &a.shape
-                    && a.step <= before
-                    && before <= until.unwrap_or(a.step)
-                {
-                    any = true;
-                    if let Some(f) = from_line {
-                        lines.push((*f, to_line.unwrap_or(*f)));
-                    }
-                    for id in ids {
-                        if let Some(target) = doc.find_annotation(id) {
-                            lines.extend(target.shape.line_ranges());
-                        }
-                    }
-                }
-            }
-        }
-        move |line: u32| {
-            opts.focus.is_some_and(|(a, b)| line < a || line > b)
-                || (any && !lines.iter().any(|(a, b)| line >= *a && line <= *b))
-        }
-    };
     // Who paints next, for a traced layout: an annotation of the step, or
     // anything else.
     let painter = |canvas: &mut Canvas, a: &Annotation, part: Part| {
@@ -1355,28 +1345,6 @@ fn layout_pass(
             .checked_sub(doc.source.first_line)
             .and_then(|i| segments.get(i as usize))
             .map_or(&[][..], Vec::as_slice);
-        // A traced layout keeps the style that a spotlight of this step
-        // dims away: the line drawn in focus first.
-        let undimmed =
-            (shared.trace && opts.pointer.is_none() && !in_focus && !dimmed_before(*line)).then(
-                || {
-                    paint_code(
-                        &mut canvas,
-                        code_x,
-                        y,
-                        code_w,
-                        text,
-                        segs,
-                        opts.tab_width,
-                        base,
-                        theme,
-                        true,
-                    );
-                    (code_x..code_x + code_w)
-                        .filter_map(|x| canvas.get(x, y).map(|c| (x, c.style)))
-                        .collect::<Vec<_>>()
-                },
-            );
         let drawn = paint_code(
             &mut canvas,
             code_x,
@@ -1389,11 +1357,6 @@ fn layout_pass(
             theme,
             in_focus,
         );
-        for (x, style) in undimmed.into_iter().flatten() {
-            if canvas.get(x, y).is_some_and(|c| c.style != style) {
-                canvas.trace_undimmed(x, y, style);
-            }
-        }
         marks.extend(drawn.into_iter().map(|x| (x, y)));
     }
 

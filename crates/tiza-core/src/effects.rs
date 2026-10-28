@@ -7,8 +7,10 @@
 //!   an underline, an arrow) is drawn cell by cell along its path; the code
 //!   that it recolors fades in with it; the text of a callout or a label
 //!   fades in after every stroke of the step.
-//! - `dim` (`fade`): the code that a new spotlight dims goes from its
-//!   colour to the dimmed colour.
+//! - `dim` (`fade`): every cell that a new spotlight dims (code, or an
+//!   annotation that the spotlight dims) goes from its colour to the
+//!   dimmed colour. The layout finds these cells by itself: they are the
+//!   cells with another style without the spotlights of the step.
 //!
 //! A traced layout ([`crate::layout::layout_traced`]) records what each
 //! annotation of the step paints. [`Plan::new`] turns that record into a
