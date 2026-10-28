@@ -140,8 +140,13 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
             typing: false,
         });
     }
-    // Same size for every frame: pad with the theme background.
-    let mut canvases: Vec<Canvas> = out.iter().map(|f| f.canvas.clone()).collect();
+    // Same size for every frame: pad with the theme background. The
+    // canvases move out of the frames and back, so no frame is copied: a
+    // long take holds every frame at once.
+    let mut canvases: Vec<Canvas> = out
+        .iter_mut()
+        .map(|f| std::mem::replace(&mut f.canvas, Canvas::new(0, 0)))
+        .collect();
     same_size(&mut canvases, theme);
     for (f, c) in out.iter_mut().zip(canvases) {
         f.canvas = c;
