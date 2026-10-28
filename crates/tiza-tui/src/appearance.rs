@@ -39,6 +39,17 @@ pub fn is_dark(c: Rgb) -> bool {
 /// The query both paths send: background, then foreground.
 pub const QUERY: &str = "\x1b]11;?\x1b\\\x1b]10;?\x1b\\";
 
+/// How long the start-up read waits for more data before it stops: one
+/// timed read (VTIME). The docs give it, and a QA test checks them.
+pub const COLOR_QUERY_WAIT: Duration = Duration::from_millis(100);
+
+/// Data that comes after `COLOR_QUERY_WAIT` times this factor ends the
+/// start-up read once it is read: so about three waits at most.
+pub const COLOR_QUERY_LATE_FACTOR: u32 = 2;
+
+// VTIME counts in tenths of a second.
+const _: () = assert!(COLOR_QUERY_WAIT.as_millis().is_multiple_of(100));
+
 /// Parses one OSC colour answer body: `rgb:1515/1717/1b1b` (1-4 hex digits
 /// per channel), `rgb:15/17/1b`, or `#151a1b`.
 pub fn parse_osc_color(body: &str) -> Option<Rgb> {
@@ -98,15 +109,15 @@ pub fn parse_answers(input: &str) -> Host {
 
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
 /// on `/dev/tty`, the query, a timed read (VTIME), the old mode back. `None`
-/// when there is no tty, it does not answer within `timeout`, or the
-/// `TIZA_NO_OSC` variable is set (tests, pipelines). Also returns what else
+/// when there is no tty, it does not answer in time ([`COLOR_QUERY_WAIT`]),
+/// or the `TIZA_NO_OSC` variable is set (tests, pipelines). Also returns what else
 /// the read took from the terminal: keys typed meanwhile, in order, for the
 /// event loop ([`crate::early_keys`]); they are not the query's to eat. They
 /// come in pieces, as crossterm would have read them: one per read, cut
 /// where an answer was taken out (so an ESC that ends one is Esc, not Alt
 /// with the next key). Last, the answer that the end of the wait cut short
 /// ([`cut_answer`]): its rest comes later, with the keys.
-pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>, Option<String>) {
+pub fn query_host() -> (Option<Host>, Vec<Vec<u8>>, Option<String>) {
     if osc_disabled() {
         return (None, Vec::new(), None);
     }
@@ -119,7 +130,7 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>, Option<Stri
     let mut raw = saved.clone();
     raw.make_raw();
     // A read returns after `deciseconds` with nothing rather than blocking.
-    let deciseconds = (timeout.as_millis() / 100).clamp(1, 25) as u8;
+    let deciseconds = (COLOR_QUERY_WAIT.as_millis() / 100).clamp(1, 25) as u8;
     raw.special_codes[rustix::termios::SpecialCodeIndex::VMIN] = 0;
     raw.special_codes[rustix::termios::SpecialCodeIndex::VTIME] = deciseconds;
     if rustix::termios::tcsetattr(&tty, rustix::termios::OptionalActions::Now, &raw).is_err() {
@@ -145,7 +156,7 @@ pub fn query_host(timeout: Duration) -> (Option<Host>, Vec<Vec<u8>>, Option<Stri
             if host.bg.is_some() && host.fg.is_some() {
                 return Some(host);
             }
-            if start.elapsed() > timeout * 2 {
+            if start.elapsed() > COLOR_QUERY_WAIT * COLOR_QUERY_LATE_FACTOR {
                 break;
             }
         }

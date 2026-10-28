@@ -12,6 +12,10 @@ This script copies the pages that nav.json lists into content/, and:
   an image becomes a site path, anything else goes to the file on GitHub;
   a link to a file that does not exist, or to a path outside the repo, is an
   error,
+- checks a link to a file that is not on the site, relative or a GitHub URL
+  at the branch: the file must exist and, for a .md file, the #anchor must
+  be one of its heading ids, as GitHub gives them. The site has no page for
+  that file, so the link check of the site cannot see it,
 - serves a raw.githubusercontent.com file of this repo from the site, so
   the site makes no request to another host. A file at a release tag
   vX.Y.Z comes from git at that tag, so the notes of each release show
@@ -70,6 +74,8 @@ TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
+# An id that raw HTML gives an element: a link can go to it too.
+ID_ATTR_RE = re.compile(r'\sid="([^"]+)"')
 
 
 class BuildError(Exception):
@@ -126,6 +132,13 @@ def split_code_spans(line):
     return parts
 
 
+def closes_fence(fence, m, line):
+    """True when line (with its FENCE_RE match m) ends the fenced block
+    that the fence opened."""
+    return bool(m) and m.group(2)[0] == fence[0] and len(m.group(2)) >= len(fence) \
+        and line.strip() == m.group(2)
+
+
 def section_pages(sec):
     """The pages of a section of nav.json, in order, as (repo path, short
     title, parent). An entry is a path, or an object:
@@ -178,6 +191,7 @@ class Site:
         self.tag_assets = {}
         self.warnings = []
         self.where = ""  # file:line of the line that convert() reads
+        self.ids = {}  # repo path of a .md file -> its heading ids
 
     # -- links ---------------------------------------------------------
     def github_url(self, repo_path, anchor):
@@ -188,7 +202,40 @@ class Site:
         if not os.path.exists(full):
             raise BuildError("%s: the link goes to a file that does not exist: %s"
                              % (self.where, repo_path))
+        if anchor and kind == "blob" and repo_path.endswith(".md") \
+                and anchor[1:] not in self.heading_ids(repo_path):
+            raise BuildError("%s: the link goes to a heading that does not exist: %s%s"
+                             % (self.where, repo_path, anchor))
         return "%s/%s/%s/%s%s" % (self.repo_url, kind, self.ref, repo_path, anchor)
+
+    def heading_ids(self, repo_path):
+        """The ids that GitHub gives in a .md file: the slug of each heading
+        outside a fenced block, the H1 too, with -1, -2 for a slug that comes
+        again; and each id="..." of its HTML."""
+        if repo_path not in self.ids:
+            with open(os.path.join(self.repo, repo_path), encoding="utf-8") as f:
+                lines = f.read().split("\n")
+            ids = set()
+            seen = {}
+            fence = None
+            for line in lines:
+                m = FENCE_RE.match(line)
+                if fence:
+                    if closes_fence(fence, m, line):
+                        fence = None
+                    continue
+                if m:
+                    fence = m.group(2)
+                    continue
+                ids.update(ID_ATTR_RE.findall(line))
+                h = HEADING_RE.match(line)
+                if h:
+                    slug = gh_slug(h.group(2))
+                    n = seen.get(slug, 0)
+                    seen[slug] = n + 1
+                    ids.add("%s-%d" % (slug, n) if n else slug)
+            self.ids[repo_path] = ids
+        return self.ids[repo_path]
 
     def rewrite_target(self, target, src):
         if target.startswith(("mailto:", "#")):
@@ -200,6 +247,8 @@ class Site:
             path, _, frag = rest.partition("#")
             if path in self.pages:
                 return "@/%s%s" % (self.pages[path], "#" + frag if frag else "")
+            # Not on the site: the file and its heading must exist.
+            self.github_url(path.rstrip("/"), "#" + frag if frag else "")
             return target
         if target.startswith(self.raw_prefix):
             # raw.githubusercontent.com/OWNER/REPO/REF/PATH: serve the file from the site.
@@ -288,8 +337,7 @@ class Site:
                 table = False
             m = FENCE_RE.match(line)
             if fence:
-                closes = m and m.group(2)[0] == fence[0] and len(m.group(2)) >= len(fence) \
-                    and line.strip() == m.group(2)
+                closes = closes_fence(fence, m, line)
                 if prompt is not None:
                     if not closes:
                         prompt.append(line)
