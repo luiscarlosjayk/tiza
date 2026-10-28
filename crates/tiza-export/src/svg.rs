@@ -1,6 +1,7 @@
 //! Canvas → SVG.
 
 use std::fmt::Write as _;
+use std::sync::OnceLock;
 
 use base64::Engine as _;
 use tiza_core::canvas::{Canvas, CellStyle, Rgb};
@@ -226,6 +227,13 @@ impl FacesUsed {
     }
 }
 
+/// The base64 of face `i` of [`fonts::FACES`], encoded once per process.
+fn face_base64(i: usize) -> &'static str {
+    static BASE64: [OnceLock<String>; fonts::FACES.len()] =
+        [const { OnceLock::new() }; fonts::FACES.len()];
+    BASE64[i].get_or_init(|| base64::engine::general_purpose::STANDARD.encode(fonts::FACES[i].data))
+}
+
 /// Renders the canvas as a standalone SVG document.
 pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let g = geometry(canvas, o);
@@ -305,15 +313,14 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     // Styles: font faces (optional, only those the runs use) and the shared text attributes.
     s.push_str("<style>\n");
     if o.embed_fonts {
-        for (f, _) in fonts::FACES.iter().zip(used.0).filter(|(_, u)| *u) {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(f.data);
+        for (i, f) in fonts::FACES.iter().enumerate().filter(|(i, _)| used.0[*i]) {
             let _ = writeln!(
                 s,
                 "@font-face{{font-family:\"{}\";font-weight:{};font-style:{};src:url(data:font/ttf;base64,{}) format(\"truetype\");}}",
                 f.family,
                 f.weight,
                 if f.italic { "italic" } else { "normal" },
-                b64
+                face_base64(i)
             );
         }
     }
