@@ -53,6 +53,7 @@ For example, to put a box around three lines and go to the next step:
 | `i` | Selects the word under the cursor. |
 | `v` or `V` in a selection | Closes the selection. |
 | `Esc` in a selection | Closes the selection and cancels an arrow that you started. |
+| `B` in a selection | Goes to the previous word, as `b` does without a selection. In a selection, `b` adds a box. |
 
 While a selection is open, these keys move the cursor and change the selection: `j`, `k`, `↓`, `↑`, `l`, `→`, `←`, `w`, `e`, `B`, `0`, `$`, `Home`, `End` and `i`.
 

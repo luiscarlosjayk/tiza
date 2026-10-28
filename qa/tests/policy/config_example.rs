@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use tiza_core::config::{DEFAULT_KEYS, STYLE_FIELDS};
+use tiza_qa::markdown::{self, table_rows};
 use tiza_qa::{scratch, tiza_with_config};
 
 fn page() -> String {
@@ -15,28 +16,17 @@ fn page() -> String {
 
 /// The text under an H2 of the page, up to the next H2.
 fn section<'a>(md: &'a str, heading: &str) -> &'a str {
-    let start = md
-        .find(&format!("\n{heading}\n"))
-        .unwrap_or_else(|| panic!("the page has no heading {heading:?}"));
-    let rest = &md[start + heading.len() + 2..];
-    rest.find("\n## ").map_or(rest, |end| &rest[..end])
+    markdown::section(md, heading)
+        .unwrap_or_else(|| panic!("the page has no heading {heading:?}"))
+        .text
 }
 
 /// The first cell of each row of the first table of a section, without
 /// its backticks.
 fn first_column(text: &str) -> BTreeSet<String> {
-    text.lines()
-        .skip_while(|l| !l.starts_with('|'))
-        .take_while(|l| l.starts_with('|'))
-        .skip(2)
-        .map(|l| {
-            l.split('|')
-                .nth(1)
-                .unwrap()
-                .trim()
-                .trim_matches('`')
-                .to_string()
-        })
+    table_rows(text)
+        .into_iter()
+        .map(|(_, cells)| cells[0].trim().trim_matches('`').to_string())
         .collect()
 }
 
