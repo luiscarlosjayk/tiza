@@ -121,11 +121,12 @@ pub fn to_gif(
             Some(n) => gif::Repeat::Finite(n),
         })
         .map_err(|e| Error::Gif(e.to_string()))?;
-        // The palette indexes of this frame and of the one before it, and
-        // the changed rectangle: three buffers for the whole animation.
-        let mut idx: Vec<u8> = Vec::new();
-        let mut prev: Vec<u8> = Vec::new();
-        let mut buffer: Vec<u8> = Vec::new();
+        // The palette indexes of this frame and of the one before it: two
+        // buffers of one byte per pixel for the whole animation, at their
+        // exact size (grown, they held up to twice that).
+        let pixels = width as usize * height as usize;
+        let mut idx: Vec<u8> = Vec::with_capacity(pixels);
+        let mut prev: Vec<u8> = Vec::with_capacity(pixels);
         for (i, (canvas, _)) in frames.iter().enumerate() {
             // Rasterizing is deterministic: the same pixels as in step 1. A
             // frame with another size, or with a color that step 1 did not
@@ -141,12 +142,16 @@ pub fn to_gif(
                 let index = *lookup.get(&color).ok_or_else(differs)?;
                 idx.resize(idx.len() + n, index);
             }
+            // The pixels of a frame are freed before its rectangle is
+            // copied, and each copy is freed after its frame is written: a
+            // copy and the pixels of a frame are never alive at the same time.
+            drop(pm);
             let (left, top, w, h) = if i == 0 {
                 (0, 0, width, height)
             } else {
                 changed_rect(&prev, &idx, width, height).unwrap_or((0, 0, 1, 1))
             };
-            buffer.clear();
+            let mut buffer = Vec::with_capacity(w as usize * h as usize);
             for y in top..top + h {
                 let row = (y * width + left) as usize;
                 buffer.extend_from_slice(&idx[row..row + w as usize]);
