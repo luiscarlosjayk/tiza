@@ -140,3 +140,17 @@ fn a_step_without_an_effect_starts_no_effect() {
         .collect();
     assert_eq!(pairs, [(2, false), (3, true)]);
 }
+
+#[test]
+fn the_step_the_tui_opens_at_plays_no_effect() {
+    // drop.tiza is saved at step 1: `--step 2` opens it one step on, at a
+    // step with an effect, and shows the final drawing.
+    let seen = run(
+        "effect-open",
+        "shared/enter_effects/drop.tiza",
+        &["--step", "2"],
+        r#"[["until", {"step": 2}]]"#,
+    );
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0]["effect"], false, "{seen:?}");
+}
