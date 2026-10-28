@@ -2672,10 +2672,10 @@ impl App {
             }
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
-            // Forward one step: the enter effects of the step, after its
-            // typing. A jump, a step back and the loop show the final
-            // drawing.
-            if !loud && forward_one && self.typing.is_none() {
+            // Forward one step, also with a goto: the enter effects of the
+            // step, after its typing. A goto of more than one step, a step
+            // back and the loop show the final drawing.
+            if !loud && s == from_step + 1 && self.typing.is_none() {
                 self.start_effect();
             }
             // Its notice stays on the bar over the step's label.

@@ -186,3 +186,15 @@ fn a_step_change_to_the_step_on_screen_keeps_the_auto_advance() {
     let steps: Vec<u64> = seen.iter().map(|v| v["step"].as_u64().unwrap()).collect();
     assert_eq!(steps, [1, 2], "{seen:?}");
 }
+
+#[test]
+fn a_goto_to_the_next_step_plays_its_effect() {
+    let seen = run(
+        "effect-goto",
+        "shared/enter_effects/drop.tiza",
+        &["--step", "1"],
+        r#"[["api", ["step.goto", {"id": 2}]], ["until", {"step": 2}]]"#,
+    );
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0]["effect"], true, "{seen:?}");
+}
