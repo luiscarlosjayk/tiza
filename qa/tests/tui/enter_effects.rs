@@ -12,7 +12,9 @@ use tiza_qa::{fixture, scratch};
 
 /// Runs the TUI on a copy of `fixture` (a path in `qa/fixtures/`) with
 /// `--no-save --present --theme dark` and `args`, then the steps of
-/// `script`, and prints `STATUS <json>` for each `until`.
+/// `script`: `key` sends keys, `api` calls a socket method, `until` waits
+/// for a status, and `until_code` waits until the code holds a text. Each
+/// wait prints `STATUS <json>`.
 fn run(name: &str, fixture_path: &str, args: &[&str], script: &str) -> Vec<Value> {
     let dir = scratch(name);
     let source = fixture(fixture_path);
@@ -28,10 +30,15 @@ env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="e
 s = Pty([binary, "--no-save", "--present", "--theme", "dark"] + args
         + ["--socket", "s.sock", file], 30, 100, env=env)
 
-def status():
-    r = subprocess.run([binary, "--socket", "s.sock", "api", "status"],
-                       capture_output=True, text=True, timeout=10)
+def call(method, params=None):
+    cmd = [binary, "--socket", "s.sock", "api", method]
+    if params is not None:
+        cmd.append(json.dumps(params))
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
     return json.loads(r.stdout) if r.returncode == 0 else {}
+
+def status():
+    return call("status")
 
 def until(pred, what, timeout=10):
     end = time.monotonic() + timeout
@@ -51,6 +58,16 @@ for step in script if ok else []:
     elif kind == "until":
         want = arg
         st = until(lambda st: all(st.get(k, False) == v for k, v in want.items()), json.dumps(want))
+        print("STATUS", json.dumps({k: st.get(k, False) for k in ("step", "effect")}), flush=True)
+    elif kind == "api":
+        call(arg[0], arg[1])
+    elif kind == "until_code":
+        end = time.monotonic() + 10
+        while arg not in call("code.get").get("text", "") and time.monotonic() < end:
+            s.settle(0.05)
+        if arg not in call("code.get").get("text", ""):
+            print("WAIT_TIMEOUT code", arg, flush=True)
+        st = status()
         print("STATUS", json.dumps({k: st.get(k, False) for k in ("step", "effect")}), flush=True)
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
@@ -153,4 +170,19 @@ fn the_step_the_tui_opens_at_plays_no_effect() {
     );
     assert_eq!(seen.len(), 1, "{seen:?}");
     assert_eq!(seen[0]["effect"], false, "{seen:?}");
+}
+
+#[test]
+fn a_step_change_to_the_step_on_screen_keeps_the_auto_advance() {
+    // `step.set` to the step that plays its effect ends the effect; the
+    // auto-advance of 1 ms then goes on to step 2.
+    let seen = run(
+        "effect-same-step",
+        "tui/enter_effects/auto.tiza",
+        &["--step", "0"],
+        r#"[["key", "n"], ["until", {"step": 1, "effect": true}],
+            ["api", ["step.set", {"step": 1}]], ["until", {"step": 2}]]"#,
+    );
+    let steps: Vec<u64> = seen.iter().map(|v| v["step"].as_u64().unwrap()).collect();
+    assert_eq!(steps, [1, 2], "{seen:?}");
 }

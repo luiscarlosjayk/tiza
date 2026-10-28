@@ -2628,7 +2628,9 @@ impl App {
     fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
         self.finish_typing();
-        self.effect = None;
+        // An effect that plays ends here, and the auto-advance countdown
+        // starts again, also when the step does not change.
+        self.finish_effect();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
         if s != self.doc.step {
