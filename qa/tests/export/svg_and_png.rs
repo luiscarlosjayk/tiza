@@ -17,7 +17,7 @@
 //!   run sits on the grid.
 
 use serde_json::json;
-use tiza_qa::{Live, fixture, scratch, tiza, tiza_ok};
+use tiza_qa::{Live, command, fixture, scratch, tiza, tiza_ok};
 
 fn png_size(bytes: &[u8]) -> (u32, u32) {
     assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
@@ -201,6 +201,71 @@ fn symbols_and_wide_glyphs_render_with_bundled_fonts() {
     assert!(w > 0);
     assert!(svg.contains("★ ✎ ⇄"));
     assert!(svg.contains("名前"));
+}
+
+/// A process keeps one font database with the system fonts and one
+/// without them. An export with them must not put them in a later export
+/// without them, or the other way round: each PNG made here, in both
+/// orders, is equal to the one that a new `tiza render` process writes.
+/// Where the system has no font for the emoji and the wide glyphs of the
+/// fixture, both PNGs are the same and the test cannot tell: on macOS the
+/// system draws the emoji, so there the two PNGs must differ.
+#[test]
+fn system_fonts_stay_in_the_exports_that_ask_for_them() {
+    let dir = scratch("system-fonts");
+    let f = fixture("shared/export/export.tiza");
+    let f = f.to_str().unwrap();
+    let from_new_process = |flags: &[&str], name: &str| {
+        let out = dir.join(name);
+        let mut child = command();
+        // The same system fonts as this process: on Linux, fontconfig reads
+        // its config from XDG_CONFIG_HOME, which `command` empties.
+        match std::env::var_os("XDG_CONFIG_HOME") {
+            Some(dir) => child.env("XDG_CONFIG_HOME", dir),
+            None => child.env_remove("XDG_CONFIG_HOME"),
+        };
+        let status = child
+            .args(["render", f, "--width", "90", "--scale", "1"])
+            .args(flags)
+            .args(["--out", out.to_str().unwrap()])
+            .status()
+            .unwrap();
+        assert!(status.success(), "tiza render {flags:?} failed");
+        std::fs::read(out).unwrap()
+    };
+    let without = from_new_process(&[], "without.png");
+    let with = from_new_process(&["--system-fonts"], "with.png");
+    if cfg!(target_os = "macos") {
+        assert!(with != without, "the system fonts drew nothing more");
+    }
+    let svg = tiza_ok(&[
+        "render",
+        f,
+        "--width",
+        "90",
+        "--format",
+        "svg",
+        "--no-embed-fonts",
+        "--out",
+        "-",
+    ]);
+    let png = |system_fonts| {
+        tiza_export::to_png(
+            &svg,
+            &tiza_export::PngOptions {
+                scale: 1.0,
+                system_fonts,
+            },
+        )
+        .unwrap()
+    };
+    for (i, system_fonts) in [false, true, false, true].into_iter().enumerate() {
+        let expected = if system_fonts { &with } else { &without };
+        assert!(
+            png(system_fonts) == *expected,
+            "export {i} (system_fonts: {system_fonts}) differs from a new process"
+        );
+    }
 }
 
 fn resvg_decode(bytes: &[u8]) -> (u32, u32) {

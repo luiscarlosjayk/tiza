@@ -1,0 +1,166 @@
+{
+  "schema": 1,
+  "title": "A spotlight by lines: one annotation of each shape inside and outside its lines",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "use std::fs;",
+    "const DEFAULT: u16 = 8080;",
+    "fn main() {",
+    "    let path = \"app.toml\";",
+    "    let text = fs::read_to_string(path).unwrap();",
+    "    let port = parse_port(&text);",
+    "    println!(\"port {port}\");",
+    "}",
+    "// parse the first line",
+    "fn parse_port(text: &str) -> u16 {",
+    "    let line = text.lines().next().unwrap();",
+    "    let value = line.trim_start_matches(\"port=\");",
+    "    value.parse().unwrap_or(DEFAULT)",
+    "}",
+    "// a check",
+    "fn check() { assert_eq!(parse_port(\"port=1\"), 1); }"
+  ],
+  "annotations": [
+    {
+      "id": "old",
+      "step": 1,
+      "type": "highlight",
+      "span": {
+        "line": 1,
+        "start": 9,
+        "end": 11
+      },
+      "emphasis": "underline",
+      "color": "purple",
+      "label": "earlier step"
+    },
+    {
+      "id": "s",
+      "step": 2,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 14
+    },
+    {
+      "id": "box-out",
+      "step": 2,
+      "type": "box",
+      "from_line": 3,
+      "to_line": 8,
+      "label": "main",
+      "color": "blue"
+    },
+    {
+      "id": "box-part",
+      "step": 2,
+      "type": "box",
+      "from_line": 12,
+      "to_line": 15,
+      "label": "covers part",
+      "color": "green"
+    },
+    {
+      "id": "enter",
+      "step": 2,
+      "type": "arrow",
+      "from": {
+        "line": 6,
+        "col": 15
+      },
+      "to": {
+        "line": 10,
+        "col": 3
+      },
+      "label": "enters",
+      "color": "cyan"
+    },
+    {
+      "id": "cross",
+      "step": 2,
+      "type": "arrow",
+      "from": {
+        "line": 2,
+        "col": 6
+      },
+      "to": {
+        "line": 16,
+        "col": 24
+      },
+      "label": "crosses",
+      "color": "yellow"
+    },
+    {
+      "id": "outside",
+      "step": 2,
+      "type": "arrow",
+      "from": {
+        "line": 4,
+        "col": 8
+      },
+      "to": {
+        "line": 5,
+        "col": 34
+      },
+      "label": "stays out",
+      "color": "red"
+    },
+    {
+      "id": "c-in",
+      "step": 2,
+      "type": "callout",
+      "from_line": 11,
+      "to_line": 11,
+      "title": "inside",
+      "text": "reads the first line",
+      "color": "green"
+    },
+    {
+      "id": "n-in",
+      "step": 2,
+      "type": "note",
+      "line": 13,
+      "text": "falls back",
+      "color": "pink"
+    },
+    {
+      "id": "n-out",
+      "step": 2,
+      "type": "note",
+      "line": 7,
+      "text": "prints it",
+      "color": "pink"
+    },
+    {
+      "id": "h-out",
+      "step": 2,
+      "type": "highlight",
+      "span": {
+        "line": 9,
+        "start": 13,
+        "end": 18
+      }
+    },
+    {
+      "id": "m-out",
+      "step": 2,
+      "type": "mark",
+      "kind": "read",
+      "span": {
+        "line": 4,
+        "start": 16,
+        "end": 24
+      },
+      "label": "reads the file"
+    },
+    {
+      "id": "later",
+      "step": 3,
+      "type": "note",
+      "line": 16,
+      "text": "no spotlight now"
+    }
+  ]
+}

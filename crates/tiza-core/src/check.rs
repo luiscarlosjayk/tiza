@@ -16,8 +16,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use serde::Serialize;
 
+use crate::canvas::Canvas;
 use crate::layout::{
-    LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_with, stable_geometry,
+    LayoutOptions, MAX_WIDTH, MIN_WIDTH, StableGeometry, layout_measures, layout_with,
+    stable_geometry,
 };
 use crate::model::{CodeSource, Document, SCHEMA_VERSION, Shape, sanitize_texts};
 use crate::moves::{self, Move, MoveAction, ViewKey, Wait};
@@ -991,13 +993,15 @@ pub fn steps_text(steps: &[u32]) -> String {
 /// dropped)` → the steps it is clipped at.
 fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String, bool), Vec<u32>)> {
     let mut out: Vec<((String, String, bool), Vec<u32>)> = Vec::new();
+    let mut spare = None;
     // Laid out once per step where something changes; a label is
     // clipped at every step of that step's run.
     for (i, step) in take.steps.iter().enumerate() {
         if !step.labels {
             continue;
         }
-        for c in take.layout(i, theme, width).clipped_labels {
+        let l = take.measure(i, theme, width, spare.take());
+        for c in l.clipped_labels {
             let key = (c.id, c.text, c.dropped);
             // Cut at some steps and left out at others: two findings, each
             // with its own steps, so each step is reported as it draws.
@@ -1006,6 +1010,7 @@ fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String,
                 None => out.push((key, step.run.clone().collect())),
             }
         }
+        spare = Some(l.canvas);
     }
     out
 }
@@ -1020,6 +1025,8 @@ struct Take<'a> {
     doc: &'a Document,
     geometry: StableGeometry,
     steps: Vec<TakeStep<'a>>,
+    /// The sweeps use [`layout_measures`] (see [`sweeps_measure`]).
+    measures: bool,
 }
 
 struct TakeStep<'a> {
@@ -1058,6 +1065,7 @@ impl<'a> Take<'a> {
             // as a take sizes it.
             geometry: stable_geometry(doc, &take_options(doc, MAX_WIDTH, 0)),
             steps,
+            measures: sweeps_measure(),
         }
     }
 
@@ -1099,6 +1107,29 @@ impl<'a> Take<'a> {
         )
     }
 
+    /// [`Take::layout`] for a sweep, which reads only what is clipped,
+    /// whether the code fits and where the labels go: without the text of
+    /// the code, into `spare` when it is given ([`layout_measures`]).
+    fn measure(
+        &self,
+        i: usize,
+        theme: &Theme,
+        width: usize,
+        spare: Option<Canvas>,
+    ) -> crate::layout::Layout {
+        if !self.measures {
+            return self.layout(i, theme, width);
+        }
+        let s = &self.steps[i];
+        layout_measures(
+            &s.shown,
+            theme,
+            &take_options(self.doc, width, s.step),
+            Some(&self.geometry),
+            spare,
+        )
+    }
+
     /// Lays step `i` out at each of `widths` (on every core: each layout
     /// stands alone) and returns `seen` of each, by index in `widths`, in
     /// no particular order. With `widest`, `widths` must be in descending
@@ -1117,9 +1148,7 @@ impl<'a> Take<'a> {
         if widths.is_empty() {
             return Vec::new();
         }
-        // The first layout of the step fills the highlight cache for its
-        // code before the other threads need it.
-        let first = self.layout(i, theme, widths[0]);
+        let first = self.measure(i, theme, widths[0], None);
         if let Some(w) = widest
             && !first.clipped_labels.is_empty()
         {
@@ -1129,6 +1158,8 @@ impl<'a> Take<'a> {
         let next = AtomicUsize::new(1);
         let work = || {
             let mut mine = Vec::new();
+            // One canvas per thread, laid out again at each width.
+            let mut spare = None;
             loop {
                 let k = next.fetch_add(1, Ordering::Relaxed);
                 let Some(&width) = widths.get(k) else { break };
@@ -1137,13 +1168,14 @@ impl<'a> Take<'a> {
                 {
                     break;
                 }
-                let l = self.layout(i, theme, width);
+                let l = self.measure(i, theme, width, spare.take());
                 if let Some(w) = widest
                     && !l.clipped_labels.is_empty()
                 {
                     w.fetch_max(width, Ordering::Relaxed);
                 }
                 mine.push((k, seen(&l)));
+                spare = Some(l.canvas);
             }
             mine
         };
@@ -1169,6 +1201,22 @@ impl<'a> Take<'a> {
         });
         out
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The tests that compare the sweeps with full layouts turn this on.
+    static FULL_LAYOUTS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the sweeps of a take use [`layout_measures`]: always, except in
+/// the tests that check they give what full layouts give.
+fn sweeps_measure() -> bool {
+    #[cfg(test)]
+    if FULL_LAYOUTS.with(|f| f.get()) {
+        return false;
+    }
+    true
 }
 
 /// Threads for a sweep: one per core (at most 8), fewer when there is
@@ -1894,5 +1942,174 @@ fn widest_clipped(take: &Take, theme: &Theme) -> Option<usize> {
     match widest.into_inner() {
         0 => None,
         w => Some(w),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    /// Documents that put labels everywhere the margin rules decide: wide
+    /// characters, tabs and emoji in the code; every kind of annotation, with
+    /// labels too long for a narrow margin; a patch; a link to another file;
+    /// and a longer one with many steps.
+    fn documents() -> Vec<(&'static str, Value)> {
+        let wide: Vec<String> = (0..24)
+            .map(|i| match i % 4 {
+                0 => format!("\tlet 名前{i} = \"中文字符 {i}\"; // 🎉 emoji"),
+                1 => format!("fn 関数{i}(x: &str) -> usize {{ x.len() + {i} }} // 😀"),
+                2 => format!("\t\tif x == {i} {{ println!(\"東京 {i} 🚀\"); }}"),
+                _ => format!("struct Café{i} {{ naïve: bool, ünïcode: String }}"),
+            })
+            .collect();
+        let long = |i: usize| format!("a label {i} with 中文 and 🎉 too long for a narrow margin");
+        let mut kinds = Vec::new();
+        for i in 0..18usize {
+            let line = 1 + (i * 5) % 20;
+            let step = 1 + i % 6;
+            let id = format!("k{i}");
+            kinds.push(match i % 6 {
+                0 => json!({"id": id, "step": step, "type": "note", "line": line, "text": long(i)}),
+                1 => json!({"id": id, "step": step, "type": "box", "from_line": line, "to_line": line + 2, "label": long(i)}),
+                2 => json!({"id": id, "step": step, "type": "mark", "kind": "borrow", "span": {"line": line, "start": 0, "end": 3}, "label": long(i)}),
+                3 => json!({"id": id, "step": step, "type": "arrow", "from": {"line": line, "col": 1}, "to": {"line": line + 3, "col": 2}, "label": long(i)}),
+                4 => json!({"id": id, "step": step, "type": "callout", "from_line": line, "to_line": line + 2, "title": "part", "text": long(i)}),
+                _ => json!({"id": id, "step": step, "type": "highlight", "span": {"line": line, "start": 0, "end": 2}, "label": long(i)}),
+            });
+        }
+        kinds.push(
+            json!({"id": "s1", "step": 6, "type": "spotlight", "from_line": 3, "to_line": 9}),
+        );
+        // A crowd: more labels on lines 11-12 than their rows hold.
+        for j in 0..8usize {
+            kinds.push(json!({"id": format!("c{j}"), "step": 1, "type": "note", "line": 11 + j % 2, "text": long(j)}));
+        }
+        let other: Vec<String> = (0..12)
+            .map(|i| format!("pub fn other{i}() -> u32 {{ {i} }}"))
+            .collect();
+        let long_code: Vec<String> = (0..120)
+            .map(|i| match i % 5 {
+                0 => format!("/// Item {i}: a doc comment that is longer than most lines here"),
+                1 => format!("pub struct Item{i} {{ name: String, items: Vec<u32> }}"),
+                2 => format!("    fn take(self) -> usize {{ self.items.len() * {i} }}"),
+                3 => "}".to_string(),
+                _ => String::new(),
+            })
+            .collect();
+        let many: Vec<Value> = (0..24usize)
+            .map(|i| {
+                let line = 1 + (i * 7) % 115;
+                json!({"id": format!("m{i}"), "step": 1 + i % 8, "type": "note", "line": line, "text": format!("note {i} {}", "word ".repeat(i % 9))})
+            })
+            .collect();
+        vec![
+            (
+                "wide, every kind, a patch",
+                json!({"schema": 1, "source": {"language": "rs", "first_line": 1}, "code": wide,
+                       "annotations": kinds, "step": 0,
+                       "moves": [{"at_step": 3, "action": "code.patch", "op": "replace", "find": wide[4], "content": format!("{} // 変更", wide[4])}]}),
+            ),
+            (
+                "a link to another file",
+                json!({"schema": 1, "source": {"language": "rs", "first_line": 1}, "code": wide,
+                       "views": {"other.rs": other},
+                       "annotations": [
+                           {"id": "o1", "step": 2, "type": "note", "file": "other.rs", "line": 3, "text": long(1)},
+                           {"id": "o2", "step": 2, "type": "box", "file": "other.rs", "from_line": 5, "to_line": 8, "label": long(2)},
+                           {"id": "n1", "step": 3, "type": "note", "line": 2, "text": long(3)}],
+                       "step": 0,
+                       "moves": [{"at_step": 2, "action": "code.link", "file": "other.rs", "lines": "2-10"},
+                                 {"at_step": 3, "action": "code.link", "file": "main.rs"}]}),
+            ),
+            (
+                "120 lines, 8 steps",
+                json!({"schema": 1, "source": {"language": "rs", "first_line": 1}, "code": long_code,
+                       "annotations": many, "step": 0}),
+            ),
+            (
+                // A margin label that goes on over the rows under its own
+                // line, where what is painted decides if it has room
+                // (`margin_blank`).
+                "a label over the rows under its line",
+                json!({"schema": 1, "source": {"language": "sh", "first_line": 1},
+                       "code": ["let value = compute(a, b)", "B=2", "C=3", "D=4", "E=5"],
+                       "annotations": [
+                           {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "short one"},
+                           {"id": "n2", "step": 1, "type": "note", "line": 1, "text": "short two"},
+                           {"id": "ar", "step": 1, "type": "arrow", "from": {"line": 1, "col": 4}, "to": {"line": 1, "col": 12},
+                            "label": "this arrow label is long enough to wrap over a few rows of the margin"}]}),
+            ),
+        ]
+    }
+
+    fn load(doc: &Value) -> Document {
+        let mut d: Document = serde_json::from_value(doc.clone()).unwrap();
+        crate::fs::resolve_code(&mut d, None).unwrap();
+        let mut found = Vec::new();
+        let missing = load_links(&mut d, None, &mut found);
+        tidy(d, &missing, &mut found)
+    }
+
+    /// Several widths in a row with one canvas, as a sweep lays them out
+    /// (every third one: the label over the rows under its line is
+    /// clipped differently from 46 columns, the others from far wider).
+    fn widths() -> impl Iterator<Item = usize> {
+        (MIN_WIDTH..=100).step_by(3).chain((105..=160).step_by(5))
+    }
+
+    #[test]
+    fn a_sweep_reads_what_a_full_layout_gives() {
+        let theme = Theme::dark();
+        // What the documents make the layout decide: labels clipped, and
+        // labels in the margin and under their lines.
+        let (mut clipped, mut margin, mut under) = (0, 0, 0);
+        for (name, doc) in documents() {
+            let doc = load(&doc);
+            let take = Take::of(&doc);
+            assert!(take.measures, "{name}: the sweeps lay out measures only");
+            for i in 0..take.steps.len() {
+                let mut spare = None;
+                for width in widths() {
+                    let full = take.layout(i, &theme, width);
+                    let fast = take.measure(i, &theme, width, spare.take());
+                    assert_eq!(
+                        (&fast.clipped_labels, fast.code_needs, fast.labels_in_margin),
+                        (&full.clipped_labels, full.code_needs, full.labels_in_margin),
+                        "{name}: step {} at {width} columns",
+                        take.steps[i].step
+                    );
+                    clipped += full.clipped_labels.len();
+                    if full.labels_in_margin {
+                        margin += 1;
+                    } else {
+                        under += 1;
+                    }
+                    spare = Some(fast.canvas);
+                }
+            }
+        }
+        assert!(
+            clipped > 0 && margin > 0 && under > 0,
+            "clipped {clipped}, in the margin {margin}, under {under}"
+        );
+    }
+
+    #[test]
+    fn a_report_is_the_one_full_layouts_give() {
+        for (name, doc) in documents() {
+            let text = doc.to_string();
+            for width in [40, 100] {
+                let opts = CheckOptions {
+                    width: Some(width),
+                    numbers: None,
+                };
+                let fast = check_text(&text, None, &opts);
+                FULL_LAYOUTS.with(|f| f.set(true));
+                let full = check_text(&text, None, &opts);
+                FULL_LAYOUTS.with(|f| f.set(false));
+                assert_eq!(fast, full, "{name} at {width} columns");
+            }
+        }
     }
 }

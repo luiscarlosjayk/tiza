@@ -373,6 +373,22 @@ impl Canvas {
         c
     }
 
+    /// This canvas made again as [`Canvas::new_filled`] makes one, at
+    /// `width` × `height`, in the buffer it already has: `check` lays the
+    /// same take out at many widths in a row.
+    pub(crate) fn refill(&mut self, width: usize, height: usize, style: CellStyle) {
+        self.width = width;
+        self.height = height;
+        self.cells.clear();
+        self.cells.resize(
+            width * height,
+            Cell {
+                style,
+                ..Cell::default()
+            },
+        );
+    }
+
     fn idx(&self, x: usize, y: usize) -> Option<usize> {
         if x < self.width && y < self.height {
             Some(y * self.width + x)

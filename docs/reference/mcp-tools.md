@@ -48,7 +48,7 @@ The server has these tools. The third column names every socket method that each
 | `add_callout` | Adds a block of text with a border that explains a range of lines. | `annotation.add` |
 | `highlight` | Highlights a part of a line. | `annotation.add` |
 | `add_mark` | Puts a mark of a kind on a part of a line. | `annotation.add` |
-| `add_spotlight` | Dims the code and the annotations outside the ones that it names. | `annotation.add` |
+| `add_spotlight` | Dims the code and the annotations outside its lines, except the annotations that it names. | `annotation.add` |
 | `define_style` | Defines a style, or changes it. | `style.set` |
 | `list_kinds` | Lists the styles of the document, the personal styles of the user (`personal`), the built-in kinds and their aliases. A mark that uses a personal style copies it into the document. | `style.list` |
 

@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "title": "Spotlights by lines, by ids, both, two at a step, and until",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "use std::fs;",
+    "const DEFAULT: u16 = 8080;",
+    "fn main() {",
+    "    let path = \"app.toml\";",
+    "    let text = fs::read_to_string(path).unwrap();",
+    "    let port = parse_port(&text);",
+    "    println!(\"port {port}\");",
+    "}",
+    "// parse the first line",
+    "fn parse_port(text: &str) -> u16 {",
+    "    let line = text.lines().next().unwrap();",
+    "    let value = line.trim_start_matches(\"port=\");",
+    "    value.parse().unwrap_or(DEFAULT)",
+    "}",
+    "// a check",
+    "fn check() { assert_eq!(parse_port(\"port=1\"), 1); }"
+  ],
+  "annotations": [
+    {
+      "id": "n2",
+      "step": 1,
+      "type": "note",
+      "line": 2,
+      "text": "the default port",
+      "color": "orange"
+    },
+    {
+      "id": "n6",
+      "step": 1,
+      "type": "note",
+      "line": 6,
+      "text": "calls parse_port",
+      "color": "orange"
+    },
+    {
+      "id": "n11",
+      "step": 1,
+      "type": "note",
+      "line": 11,
+      "text": "only the first line",
+      "color": "orange"
+    },
+    {
+      "id": "h4",
+      "step": 1,
+      "type": "highlight",
+      "span": {
+        "line": 4,
+        "start": 8,
+        "end": 12
+      },
+      "label": "the path",
+      "color": "cyan"
+    },
+    {
+      "id": "n4",
+      "step": 1,
+      "type": "note",
+      "line": 4,
+      "text": "same line as h4",
+      "color": "orange"
+    },
+    {
+      "id": "lines",
+      "step": 2,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 12
+    },
+    {
+      "id": "top",
+      "step": 3,
+      "type": "spotlight",
+      "from_line": 1,
+      "to_line": 2
+    },
+    {
+      "id": "bottom",
+      "step": 3,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 12
+    },
+    {
+      "id": "both",
+      "step": 4,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 12,
+      "ids": [
+        "n6"
+      ]
+    },
+    {
+      "id": "only-ids",
+      "step": 5,
+      "type": "spotlight",
+      "ids": [
+        "h4"
+      ]
+    },
+    {
+      "id": "kept",
+      "step": 6,
+      "type": "spotlight",
+      "from_line": 10,
+      "to_line": 12,
+      "until": 7
+    },
+    {
+      "id": "done",
+      "step": 8,
+      "type": "note",
+      "line": 16,
+      "text": "no spotlight now"
+    }
+  ]
+}

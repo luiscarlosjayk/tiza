@@ -406,7 +406,7 @@ pub fn layout_with(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> Layout {
-    lay_out(doc, theme, opts, geometry, false)
+    layout_run(doc, theme, opts, geometry, Paint::ALL, false)
 }
 
 /// [`layout_with`], with a record of what the annotations of `opts.step`
@@ -418,7 +418,7 @@ pub fn layout_traced(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> (Layout, Trace) {
-    let mut l = lay_out(doc, theme, opts, geometry, true);
+    let mut l = layout_run(doc, theme, opts, geometry, Paint::ALL, true);
     let mut trace = l.canvas.take_trace().unwrap_or_default();
     // What a spotlight of the step dims: every cell that keeps its symbol
     // and has another style without the spotlights of the step, code or
@@ -432,7 +432,7 @@ pub fn layout_traced(
         let mut lit = doc.clone();
         lit.annotations
             .retain(|a| !(a.step == opts.step && matches!(a.shape, Shape::Spotlight { .. })));
-        let without = lay_out(&lit, theme, opts, geometry, false).canvas;
+        let without = layout_run(&lit, theme, opts, geometry, Paint::ALL, false).canvas;
         if (without.width, without.height) == (l.canvas.width, l.canvas.height) {
             for (x, y, cell) in l.canvas.cells() {
                 if let Some(was) = without.get(x, y)
@@ -447,11 +447,51 @@ pub fn layout_traced(
     (l, trace)
 }
 
-fn lay_out(
+/// [`layout_with`] for the sweeps of `check`, which only read what is
+/// clipped or left out, whether the code fits and whether the labels are
+/// in the margin: the text of the code and the line numbers are not
+/// painted, and the layout goes into `spare` when it is given (its buffer
+/// is kept). What it reads is the same as [`layout_with`] gives: the code
+/// never reaches the columns where a label looks for room (`margin_blank`).
+pub(crate) fn layout_measures(
     doc: &Document,
     theme: &Theme,
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
+    spare: Option<Canvas>,
+) -> Layout {
+    layout_run(
+        doc,
+        theme,
+        opts,
+        geometry,
+        Paint { code: false, spare },
+        false,
+    )
+}
+
+/// What the drawing run of [`layout_pass`] paints, and into which buffer.
+struct Paint {
+    /// The text of the code and the line numbers.
+    code: bool,
+    /// A canvas to lay the layout out into instead of a new one.
+    spare: Option<Canvas>,
+}
+
+impl Paint {
+    const ALL: Paint = Paint {
+        code: true,
+        spare: None,
+    };
+}
+
+/// [`layout_with`], painting what `paint` says.
+fn layout_run(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    paint: Paint,
     trace: bool,
 ) -> Layout {
     let owned;
@@ -515,7 +555,7 @@ fn lay_out(
     });
     let mut under = Under::default();
     while planning {
-        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, false)
+        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, None)
         else {
             unreachable!("a plan draws nothing")
         };
@@ -524,7 +564,7 @@ fn lay_out(
         under.lines.extend(more.lines);
         planning = (under.callouts.len(), under.lines.len()) != before;
     }
-    match layout_pass(doc, theme, opts, geometry, &under, &shared, true) {
+    match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint)) {
         Pass::Drawn(l) => l,
         Pass::Planned(_) => unreachable!("a drawing pass returns its layout"),
     }
@@ -560,9 +600,9 @@ struct Under {
 }
 
 /// One run of the layout of `doc` (already as the step shows it) with
-/// `under` (see [`layout_with`]): with `draw`, the layout; without it, a
-/// plan of the rows and the margin blocks that returns what must go under
-/// its line, for the next run.
+/// `under` (see [`layout_with`]): with `draw`, the layout, painted as it
+/// says; without it, a plan of the rows and the margin blocks that returns
+/// what must go under its line, for the next run.
 fn layout_pass(
     doc: &Document,
     theme: &Theme,
@@ -570,7 +610,7 @@ fn layout_pass(
     geometry: Option<&StableGeometry>,
     under: &Under,
     shared: &Shared,
-    draw: bool,
+    draw: Option<Paint>,
 ) -> Pass {
     let under_callouts = &under.callouts;
     let width = opts.width.max(20);
@@ -628,7 +668,11 @@ fn layout_pass(
     let color_of = |a: &Annotation| colors.get(a.id.as_str()).copied().unwrap_or(theme.accent);
 
     // ---- spotlights active at this step ----
+    // `spot_lines`: the code lines that stay bright (the ranges, and the
+    // lines of the annotations in `ids`). `spot_ranges`: only the ranges,
+    // the lines that an annotation must touch to stay bright.
     let mut spot_lines: Vec<(u32, u32)> = Vec::new();
+    let mut spot_ranges: Vec<(u32, u32)> = Vec::new();
     let mut spot_ids: Vec<&str> = Vec::new();
     let mut spot_any = false;
     for a in &vis {
@@ -643,7 +687,7 @@ fn layout_pass(
         {
             spot_any = true;
             if let Some(f) = from_line {
-                spot_lines.push((*f, to_line.unwrap_or(*f)));
+                spot_ranges.push((*f, to_line.unwrap_or(*f)));
             }
             for id in ids {
                 spot_ids.push(id.as_str());
@@ -653,6 +697,7 @@ fn layout_pass(
             }
         }
     }
+    spot_lines.extend_from_slice(&spot_ranges);
     let line_in_spot =
         |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
     // Who paints next, for a traced layout: an annotation of the step, or
@@ -660,12 +705,14 @@ fn layout_pass(
     let painter = |canvas: &mut Canvas, a: &Annotation, part: Part| {
         canvas.trace_painter((a.step == opts.step).then_some((a.id.as_str(), part)));
     };
-    // An annotation is dimmed if there are spotlights with ids and it is not among them.
+    // While a spotlight is active, an annotation stays bright when it is in
+    // the `ids` of a spotlight or when it touches the range of one. Every
+    // other annotation is dimmed.
     let ann_dimmed = |a: &Annotation| {
         spot_any
-            && !spot_ids.is_empty()
-            && !spot_ids.contains(&a.id.as_str())
             && !matches!(a.shape, Shape::Spotlight { .. })
+            && !spot_ids.contains(&a.id.as_str())
+            && !touches_any(&a.shape, &spot_ranges)
     };
     let color_of = |a: &Annotation| {
         if ann_dimmed(a) {
@@ -1297,7 +1344,7 @@ fn layout_pass(
             }
         }
     }
-    if !draw {
+    let Some(paint) = draw else {
         // Lines with a margin label on a row a block takes: their labels go
         // under them in the next run (see `layout_with`).
         let mut lines = std::collections::BTreeSet::new();
@@ -1314,50 +1361,61 @@ fn layout_pass(
             callouts: retry,
             lines,
         });
-    }
+    };
 
     let base = theme.base();
-    let mut canvas = Canvas::new_filled(width, rows.len(), base);
+    let mut canvas = match paint.spare {
+        Some(mut c) => {
+            c.refill(width, rows.len(), base);
+            c
+        }
+        None => Canvas::new_filled(width, rows.len(), base),
+    };
     if shared.trace {
         canvas.start_trace();
     }
-    let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
 
     // ---- 1. code ----
     // The invisible characters' marks, given their colour back at the end
     // (a highlight over them must not hide them).
     let mut marks: Vec<(usize, usize)> = Vec::new();
-    for (y, row) in rows.iter().enumerate() {
-        let Row::Code(line) = row else { continue };
-        let text = doc.line_text(*line).unwrap_or("");
-        let in_focus = match opts.pointer {
-            // The pointer wins over the focus and the spotlights.
-            Some((a, b)) => *line >= a && *line <= b,
-            None => opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line),
-        };
-        if opts.line_numbers {
-            let n = format!("{:>w$}", line, w = num_w - 1);
-            canvas.put_str(0, y, &n, base.fg(theme.muted));
+    // `check`'s sweeps do not paint the code (see `layout_measures`).
+    if paint.code {
+        let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
+        for (y, row) in rows.iter().enumerate() {
+            let Row::Code(line) = row else { continue };
+            let text = doc.line_text(*line).unwrap_or("");
+            let in_focus = match opts.pointer {
+                // The pointer wins over the focus and the spotlights.
+                Some((a, b)) => *line >= a && *line <= b,
+                None => {
+                    opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line)
+                }
+            };
+            if opts.line_numbers {
+                let n = format!("{:>w$}", line, w = num_w - 1);
+                canvas.put_str(0, y, &n, base.fg(theme.muted));
+            }
+            // A view with no loaded lines (a linked file a caller did not load)
+            // draws an empty row, never an index out of bounds.
+            let segs = line
+                .checked_sub(doc.source.first_line)
+                .and_then(|i| segments.get(i as usize))
+                .map_or(&[][..], Vec::as_slice);
+            let drawn = paint_code(
+                &mut canvas,
+                code_x,
+                y,
+                code_w,
+                text,
+                segs,
+                opts.tab_width,
+                base,
+                theme,
+                in_focus,
+            );
+            marks.extend(drawn.into_iter().map(|x| (x, y)));
         }
-        // A view with no loaded lines (a linked file a caller did not load)
-        // draws an empty row, never an index out of bounds.
-        let segs = line
-            .checked_sub(doc.source.first_line)
-            .and_then(|i| segments.get(i as usize))
-            .map_or(&[][..], Vec::as_slice);
-        let drawn = paint_code(
-            &mut canvas,
-            code_x,
-            y,
-            code_w,
-            text,
-            segs,
-            opts.tab_width,
-            base,
-            theme,
-            in_focus,
-        );
-        marks.extend(drawn.into_iter().map(|x| (x, y)));
     }
 
     // ---- 2. highlights and marks ----
@@ -2217,6 +2275,20 @@ fn own_rows_end(rows: &[Row], y: usize) -> usize {
     (y + 1..rows.len())
         .find(|&r| matches!(rows[r], Row::Code(_) | Row::BoxTop(_)))
         .unwrap_or(rows.len())
+}
+
+/// Whether a shape touches one of the line ranges of the spotlights: the
+/// lines from its first line to its last line overlap the range. So a box
+/// that covers part of the range touches it, and an arrow touches it with
+/// one end inside or when it goes across it.
+fn touches_any(shape: &Shape, ranges: &[(u32, u32)]) -> bool {
+    let lines = shape.line_ranges();
+    let first = lines.iter().map(|&(a, b)| a.min(b)).min();
+    let last = lines.iter().map(|&(a, b)| a.max(b)).max();
+    let (Some(first), Some(last)) = (first, last) else {
+        return false;
+    };
+    ranges.iter().any(|&(from, to)| first <= to && from <= last)
 }
 
 /// `doc` with every blank label, box label and callout title taken as

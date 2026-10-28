@@ -1,6 +1,8 @@
 //! Canvas → SVG.
 
-use std::fmt::Write as _;
+use std::fmt::{self, Write as _};
+use std::ops::Range;
+use std::sync::OnceLock;
 
 use base64::Engine as _;
 use tiza_core::canvas::{Canvas, CellStyle, Rgb};
@@ -69,8 +71,35 @@ pub fn geometry_for(cols: usize, rows: usize, o: &SvgOptions) -> Geometry {
     }
 }
 
-fn hex(c: Rgb) -> String {
-    format!("#{:02x}{:02x}{:02x}", c.0, c.1, c.2)
+/// A color as `#rrggbb`.
+struct Hex(Rgb);
+
+impl fmt::Display for Hex {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let Rgb(r, g, b) = self.0;
+        write!(f, "#{r:02x}{g:02x}{b:02x}")
+    }
+}
+
+/// The `class` attribute of a text run, as ` class="b i d"` (bold,
+/// italic, dim), or nothing for plain text.
+struct Classes(CellStyle);
+
+impl fmt::Display for Classes {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = self.0;
+        let mut names = [(s.bold, "b"), (s.italic, "i"), (s.dim, "d")]
+            .into_iter()
+            .filter_map(|(on, name)| on.then_some(name));
+        if let Some(first) = names.next() {
+            write!(f, " class=\"{first}")?;
+            for name in names {
+                write!(f, " {name}")?;
+            }
+            f.write_str("\"")?;
+        }
+        Ok(())
+    }
 }
 
 /// XML text: the markup characters as entities, and a character XML 1.0
@@ -90,15 +119,28 @@ fn escape(s: &str, out: &mut String) {
     }
 }
 
-/// A horizontal run of cells sharing one style.
+/// A horizontal run of cells sharing one style. Its text is the part
+/// `span` of the text of its row (see [`runs`]).
 struct Run {
     x: usize,
     cells: usize,
-    text: String,
+    span: Range<usize>,
     style: CellStyle,
 }
 
-fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
+impl Run {
+    /// The text of the run in `row`, the buffer that [`runs`] filled. It
+    /// is valid until the next call of [`runs`] with that buffer.
+    fn text<'a>(&self, row: &'a str) -> &'a str {
+        &row[self.span.clone()]
+    }
+}
+
+/// The runs of row `y`. Their text goes into `row`, which is cleared
+/// first: the caller gives the same buffer for each row, so a run has no
+/// string of its own.
+fn runs(canvas: &Canvas, y: usize, row: &mut String) -> Vec<Run> {
+    row.clear();
     let mut out: Vec<Run> = Vec::new();
     let mut x = 0;
     while x < canvas.width {
@@ -119,15 +161,17 @@ fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
         } else {
             c.sym.as_str()
         };
+        let start = row.len();
+        row.push_str(sym);
         match out.last_mut() {
             Some(r) if r.style == c.style && r.x + r.cells == x => {
-                r.text.push_str(sym);
+                r.span.end = row.len();
                 r.cells += w;
             }
             _ => out.push(Run {
                 x,
                 cells: w,
-                text: sym.to_string(),
+                span: start..row.len(),
                 style: c.style,
             }),
         }
@@ -144,21 +188,20 @@ fn runs(canvas: &Canvas, y: usize) -> Vec<Run> {
 /// would be spread over the words and shift them off the grid. (The words
 /// could once also be set in the brand serif; the split stays because
 /// the exported image is the same as with it.)
-fn split_glyph_prefix(runs: Vec<Run>) -> Vec<Run> {
+fn split_glyph_prefix(row: &str, runs: Vec<Run>) -> Vec<Run> {
     let mut out = Vec::with_capacity(runs.len());
     for r in runs {
         if !r.style.prose {
             out.push(r);
             continue;
         }
-        let prefix_len: usize = r
-            .text
+        let text = r.text(row);
+        let prefix_len: usize = text
             .graphemes(true)
             .take_while(|g| !g.chars().next().is_some_and(is_prose_char))
             .map(|g| UnicodeWidthStr::width(g).max(1))
             .sum();
-        let prefix_graphemes: usize = r
-            .text
+        let prefix_graphemes: usize = text
             .graphemes(true)
             .take_while(|g| !g.chars().next().is_some_and(is_prose_char))
             .count();
@@ -166,13 +209,12 @@ fn split_glyph_prefix(runs: Vec<Run>) -> Vec<Run> {
             out.push(r);
             continue;
         }
-        let split_at: usize = r
-            .text
+        let split_at: usize = text
             .graphemes(true)
             .take(prefix_graphemes)
             .map(str::len)
             .sum();
-        let (glyphs, words) = r.text.split_at(split_at);
+        let at = r.span.start + split_at;
         let mono = CellStyle {
             prose: false,
             ..r.style
@@ -180,13 +222,13 @@ fn split_glyph_prefix(runs: Vec<Run>) -> Vec<Run> {
         out.push(Run {
             x: r.x,
             cells: prefix_len,
-            text: glyphs.to_string(),
+            span: r.span.start..at,
             style: mono,
         });
         out.push(Run {
             x: r.x + prefix_len,
             cells: r.cells - prefix_len,
-            text: words.to_string(),
+            span: at..r.span.end,
             style: r.style,
         });
     }
@@ -213,17 +255,24 @@ impl FacesUsed {
         Self(used)
     }
 
-    fn add(&mut self, coverage: &fonts::Coverage, r: &Run) {
-        let face = fonts::mono_face(r.style.bold, r.style.italic);
+    fn add(&mut self, coverage: &fonts::Coverage, style: CellStyle, text: &str) {
+        let face = fonts::mono_face(style.bold, style.italic);
         self.0[face] = true;
         if !self.0[fonts::SYMBOLS_FACE]
-            && r.text
+            && text
                 .chars()
                 .any(|ch| !coverage.has(face, ch) && coverage.has(fonts::SYMBOLS_FACE, ch))
         {
             self.0[fonts::SYMBOLS_FACE] = true;
         }
     }
+}
+
+/// The base64 of face `i` of [`fonts::FACES`], encoded once per process.
+fn face_base64(i: usize) -> &'static str {
+    static BASE64: [OnceLock<String>; fonts::FACES.len()] =
+        [const { OnceLock::new() }; fonts::FACES.len()];
+    BASE64[i].get_or_init(|| base64::engine::general_purpose::STANDARD.encode(fonts::FACES[i].data))
 }
 
 /// Renders the canvas as a standalone SVG document.
@@ -233,9 +282,10 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let mut body = String::with_capacity(64 * 1024);
     let coverage = o.embed_fonts.then(fonts::Coverage::new);
     let mut used = FacesUsed::new();
+    let mut row_text = String::new();
     // Cell backgrounds, merged per run.
     for y in 0..canvas.height {
-        for r in runs(canvas, y) {
+        for r in runs(canvas, y, &mut row_text) {
             if let Some(bg) = r.style.bg
                 && bg != theme.bg
             {
@@ -246,7 +296,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
                     g.margin + y as f32 * g.cell_h,
                     r.cells as f32 * g.cell_w,
                     g.cell_h,
-                    hex(bg)
+                    Hex(bg)
                 );
             }
         }
@@ -255,36 +305,25 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let ascent = o.font_size * fonts::ASCENT_EM;
     for y in 0..canvas.height {
         let base_y = g.margin + y as f32 * g.cell_h + ascent;
-        for r in split_glyph_prefix(runs(canvas, y)) {
-            if r.text.trim().is_empty() {
+        let row_runs = runs(canvas, y, &mut row_text);
+        for r in split_glyph_prefix(&row_text, row_runs) {
+            let text = r.text(&row_text);
+            if text.trim().is_empty() {
                 continue;
             }
             if let Some(c) = &coverage {
-                used.add(c, &r);
-            }
-            let mut class = String::new();
-            if r.style.bold {
-                class.push_str("b ");
-            }
-            if r.style.italic {
-                class.push_str("i ");
-            }
-            if r.style.dim {
-                class.push_str("d ");
+                used.add(c, r.style, text);
             }
             let _ = write!(
                 body,
-                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}""#,
+                r#"<text x="{:.2}" y="{:.2}" textLength="{:.2}" lengthAdjust="spacing" fill="{}"{} xml:space="preserve">"#,
                 g.margin + r.x as f32 * g.cell_w,
                 base_y,
                 r.cells as f32 * g.cell_w,
-                hex(r.style.fg.unwrap_or(theme.fg))
+                Hex(r.style.fg.unwrap_or(theme.fg)),
+                Classes(r.style)
             );
-            if !class.is_empty() {
-                let _ = write!(body, r#" class="{}""#, class.trim_end());
-            }
-            body.push_str(r#" xml:space="preserve">"#);
-            escape(&r.text, &mut body);
+            escape(text, &mut body);
             body.push_str("</text>\n");
         }
     }
@@ -305,15 +344,14 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     // Styles: font faces (optional, only those the runs use) and the shared text attributes.
     s.push_str("<style>\n");
     if o.embed_fonts {
-        for (f, _) in fonts::FACES.iter().zip(used.0).filter(|(_, u)| *u) {
-            let b64 = base64::engine::general_purpose::STANDARD.encode(f.data);
+        for (i, f) in fonts::FACES.iter().enumerate().filter(|(i, _)| used.0[*i]) {
             let _ = writeln!(
                 s,
                 "@font-face{{font-family:\"{}\";font-weight:{};font-style:{};src:url(data:font/ttf;base64,{}) format(\"truetype\");}}",
                 f.family,
                 f.weight,
                 if f.italic { "italic" } else { "normal" },
-                b64
+                face_base64(i)
             );
         }
     }
@@ -333,7 +371,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
         g.width,
         g.height,
         o.radius,
-        hex(theme.bg)
+        Hex(theme.bg)
     );
     s.push_str(&body);
     s.push_str("</svg>\n");
@@ -351,10 +389,11 @@ mod tests {
         c.put_str(0, 0, "ab", st);
         c.put_str(2, 0, "🔥", st); // two cells
         c.put_str(4, 0, "x", CellStyle::new().fg(Rgb(9, 9, 9)).bold());
-        let r = runs(&c, 0);
-        assert_eq!(r[0].text, "ab🔥");
+        let mut row = String::new();
+        let r = runs(&c, 0, &mut row);
+        assert_eq!(r[0].text(&row), "ab🔥");
         assert_eq!(r[0].cells, 4);
-        assert_eq!(r[1].text, "x");
+        assert_eq!(r[1].text(&row), "x");
         assert!(r[1].style.bold);
     }
 

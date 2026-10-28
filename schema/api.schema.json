@@ -682,7 +682,7 @@
                 "type": "object"
               },
               {
-                "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
+                "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), keeps in focus its lines, the annotations in `ids` and\ntheir lines, and each annotation that touches its lines. It dims\nthe rest of the code and the other annotations.",
                 "properties": {
                   "from_line": {
                     "format": "uint32",
@@ -3529,7 +3529,7 @@
                 "type": "object"
               },
               {
-                "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), dims the code outside `lines` and the annotations outside `ids`.\nWith only `ids`, the focused code is that of those annotations.",
+                "description": "Directs attention: while active (from `step` to `until`, or only at\n`step`), keeps in focus its lines, the annotations in `ids` and\ntheir lines, and each annotation that touches its lines. It dims\nthe rest of the code and the other annotations.",
                 "properties": {
                   "from_line": {
                     "format": "uint32",

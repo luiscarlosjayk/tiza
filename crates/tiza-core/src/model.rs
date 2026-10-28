@@ -631,8 +631,9 @@ pub enum Shape {
         frame: BorderStyle,
     },
     /// Directs attention: while active (from `step` to `until`, or only at
-    /// `step`), dims the code outside `lines` and the annotations outside `ids`.
-    /// With only `ids`, the focused code is that of those annotations.
+    /// `step`), keeps in focus its lines, the annotations in `ids` and
+    /// their lines, and each annotation that touches its lines. It dims
+    /// the rest of the code and the other annotations.
     Spotlight {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         from_line: Option<u32>,

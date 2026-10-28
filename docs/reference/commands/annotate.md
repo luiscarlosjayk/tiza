@@ -383,7 +383,7 @@ When the right margin has no room, Tiza puts the callout under the lines.
 
 ## `:spot`
 
-Adds a spotlight. At its step, Tiza dims the code outside the lines. When you name ids, Tiza also dims the annotations that you do not name.
+Adds a spotlight. At its step, Tiza dims the code and the annotations outside the lines. Tiza does not dim an annotation that you name, or its code.
 
 ```
 :spot A-B [ID…]
@@ -404,6 +404,7 @@ For example, highlight `&t`, then put a spotlight on lines 7 and 8:
 
 - `:spot ID…` adds a spotlight on the annotations that you name. The fields are in [`spotlight`](../document-format.md#spotlight).
 - A spotlight draws nothing. It only dims.
+- An annotation that touches the lines keeps its color, for example an arrow from a line outside to a line inside. See [Rules for annotations](../document-format.md#rules-for-annotations).
 - A line range and the ids can come in any order. A marker range must come first, for example `:spot @'fn len'..@'}'`.
 - A word that starts with a digit is a line range. When you give two line ranges, Tiza uses the last one.
 - `:spot .` reads `.` as an id, not as the cursor line.

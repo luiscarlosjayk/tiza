@@ -1,6 +1,9 @@
 //! SVG → PNG with resvg, using the embedded fonts.
 
+use std::sync::{Arc, OnceLock};
+
 use resvg::usvg;
+use usvg::fontdb::{Database, Source};
 
 use crate::{Error, fonts};
 
@@ -22,16 +25,33 @@ impl Default for PngOptions {
     }
 }
 
-fn font_db(system_fonts: bool) -> usvg::fontdb::Database {
-    let mut db = usvg::fontdb::Database::new();
-    for f in fonts::FACES {
-        db.load_font_data(f.data.to_vec());
-    }
-    if system_fonts {
-        db.load_system_fonts();
-    }
-    db.set_monospace_family(fonts::FAMILY);
-    db
+/// The fonts of the rasterizer: the embedded faces, then the system fonts
+/// with `system_fonts`. Each of the two databases is built once per
+/// process, at its first use, and every rasterization after it shares it
+/// (usvg only reads it). So a long-lived process that asks for the system
+/// fonts keeps the ones that it found at its first export with them: it
+/// sees a font installed after that only when it starts again. (Today only
+/// `tiza render --system-fonts` asks for them, and it exports once.)
+fn font_db(system_fonts: bool) -> Arc<Database> {
+    static EMBEDDED: OnceLock<Arc<Database>> = OnceLock::new();
+    static WITH_SYSTEM: OnceLock<Arc<Database>> = OnceLock::new();
+    let db = if system_fonts {
+        &WITH_SYSTEM
+    } else {
+        &EMBEDDED
+    };
+    Arc::clone(db.get_or_init(|| {
+        let mut db = Database::new();
+        for f in fonts::FACES {
+            // The bytes in the binary, not a copy.
+            db.load_font_source(Source::Binary(Arc::new(f.data)));
+        }
+        if system_fonts {
+            db.load_system_fonts();
+        }
+        db.set_monospace_family(fonts::FAMILY);
+        Arc::new(db)
+    }))
 }
 
 /// Rasterizes an SVG produced by [`crate::to_svg`] (fonts need not be embedded
@@ -46,7 +66,7 @@ pub fn to_png(svg: &str, o: &PngOptions) -> Result<Vec<u8>, Error> {
 /// encoder reads them directly).
 pub fn rasterize(svg: &str, o: &PngOptions) -> Result<resvg::tiny_skia::Pixmap, Error> {
     let opts = usvg::Options {
-        fontdb: std::sync::Arc::new(font_db(o.system_fonts)),
+        fontdb: font_db(o.system_fonts),
         font_family: fonts::FAMILY.to_string(),
         ..Default::default()
     };
@@ -65,6 +85,15 @@ mod tests {
     use crate::svg::{SvgOptions, to_svg};
     use tiza_core::canvas::{Canvas, CellStyle, Rgb};
     use tiza_core::theme::Theme;
+
+    #[test]
+    fn the_font_databases_with_and_without_system_fonts_stay_apart() {
+        let without = font_db(false);
+        let with = font_db(true);
+        assert!(!Arc::ptr_eq(&without, &with));
+        assert_eq!(font_db(false).len(), fonts::FACES.len());
+        assert!(Arc::ptr_eq(&font_db(true), &with), "built only once");
+    }
 
     #[test]
     fn png_has_the_scaled_size_and_paints_text() {
