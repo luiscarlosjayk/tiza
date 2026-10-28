@@ -68,8 +68,6 @@ pub struct RunOptions {
     pub mouse: bool,
     /// `--no-save`: never autosave the sidecar (`:w` still saves).
     pub no_save: bool,
-    /// `--effects` (experimental): the enter effects of this session.
-    pub effects: Option<tiza_core::effects::Effects>,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -82,7 +80,6 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     // config file is `:autosave off`.
     app.autosave = !opts.no_save && app.config_defaults.autosave != Some(false);
     app.no_save = opts.no_save;
-    app.effects_override = opts.effects;
     app.layout_stable = app.config_defaults.layout == Some(tiza_core::config::LayoutMode::Stable);
     app.config_overrides = opts.config_overrides;
     app.rebuild_theme();

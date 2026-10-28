@@ -66,9 +66,6 @@ struct Cli {
     /// Never write the .tiza document on its own (annotate an example without touching it); `:w` saves explicitly, `:autosave on` resumes
     #[arg(long)]
     no_save: bool,
-    /// Experimental. Enter effects when the step goes forward: draw (strokes are drawn, then the text fades in), dim (the spotlight dim fades in), draw,dim, on or off. `:effects` changes them live
-    #[arg(long, value_name = "EFFECTS", value_parser = parse_effects)]
-    effects: Option<tiza_core::effects::Effects>,
     #[command(subcommand)]
     cmd: Option<Cmd>,
 }
@@ -280,9 +277,6 @@ enum Cmd {
         /// .gif and an animated .webp: how many times it plays (0 = forever, the default)
         #[arg(long = "loop", default_value_t = 0)]
         loop_count: u16,
-        /// Experimental. .gif/.webp/.mp4/.webm: enter effects of each step as extra frames: draw, dim, draw,dim, on or off. A still and a text export show the final drawing
-        #[arg(long, value_name = "EFFECTS", value_parser = parse_effects)]
-        effects: Option<tiza_core::effects::Effects>,
     },
     /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
     /// step, linked files, ids, annotations a move hides, labels
@@ -387,11 +381,6 @@ enum SceneCmd {
     Patch { json: String },
 }
 
-/// The value of `--effects`.
-fn parse_effects(text: &str) -> Result<tiza_core::effects::Effects, String> {
-    tiza_core::effects::Effects::parse(text)
-}
-
 fn main() {
     if let Err(e) = real_main() {
         // An error can quote the document or a find text: its control
@@ -431,7 +420,6 @@ fn real_main() -> anyhow::Result<()> {
             skip_zero,
             title,
             loop_count,
-            effects,
         }) => {
             if all_steps && out == "-" {
                 bail!("--all-steps writes one file per step: pass a directory, --out steps/");
@@ -521,7 +509,7 @@ fn real_main() -> anyhow::Result<()> {
             // file's, or the live instance's (its own config decided it).
             let mut default_numbers = config.defaults.numbers.unwrap_or(true);
             let asked_step = step;
-            let (mut doc, mut step, width) = match &file {
+            let (doc, mut step, width) = match &file {
                 Some(f) => {
                     let mut opened = if f == "-" {
                         let mut text = String::new();
@@ -663,12 +651,6 @@ fn real_main() -> anyhow::Result<()> {
             for r in tiza_core::moves::ignored_rebinds(&doc) {
                 let line = format!("{}: {}", r.place(), r.message());
                 eprintln!("tiza: {}", tiza_core::printable::printable_text(&line));
-            }
-            // The enter effects of a recording: the flag, the document's,
-            // the config file's.
-            let fx = tiza_core::effects::resolve(effects, doc.effects, config.defaults.effects);
-            if fx.any() || effects.is_some() {
-                doc.effects = Some(fx);
             }
             // The flag as given, for the command that a .tape types.
             let theme_flag = theme;
@@ -1295,7 +1277,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
     let d = &cfg.defaults;
     let on = |b: bool| if b { "on" } else { "off" }.to_string();
     let (pv, ph) = tiza_tui::ui::DEFAULT_PADDING;
-    let rows: [(&str, Option<String>, String); 7] = [
+    let rows: [(&str, Option<String>, String); 6] = [
         (
             "pad",
             d.pad.map(|(v, h)| format!("{v} {h}")),
@@ -1313,11 +1295,6 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
             "width",
             d.width.map(|w| w.to_string()),
             tiza_core::check::DEFAULT_WIDTH.to_string(),
-        ),
-        (
-            "effects",
-            d.effects.map(|e| e.label().to_string()),
-            "off".to_string(),
         ),
     ];
     debug_assert!(rows.iter().map(|r| r.0).eq(DEFAULT_KEYS.iter().copied()));
@@ -2089,7 +2066,6 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
             mouse: cli.mouse,
             follow: cli.follow,
             no_save: cli.no_save,
-            effects: cli.effects,
         },
     )?;
     Ok(())

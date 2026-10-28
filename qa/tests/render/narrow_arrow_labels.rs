@@ -127,6 +127,7 @@ fn two_arrows_into_one_line_follow_each_other() {
             id: format!("a{i}"),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: tiza_core::model::Shape::Arrow {

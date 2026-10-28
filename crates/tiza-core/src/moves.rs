@@ -1732,6 +1732,7 @@ mod tests {
             id: String::new(),
             step,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {

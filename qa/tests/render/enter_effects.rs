@@ -1,23 +1,28 @@
-//! Enter effects (experimental): the order in which the stroke of an
-//! annotation is drawn, and the same frame with the record of the effects
-//! on or off.
+//! Enter effects (experimental): each annotation has its own `effect`.
 //!
-//! - A box is drawn clockwise from its top-left corner.
-//! - An underline is drawn from left to right.
-//! - An arrow is drawn from its source to its target.
-//! - The dim of a new spotlight fades in on every cell that it dims: code
-//!   and annotations of earlier steps alike.
+//! - A box is drawn clockwise from its top-left corner, an underline,
+//!   brackets and a strike from left to right, and an arrow from its
+//!   source to its target.
+//! - The text of a callout comes in after the longest stroke of the step.
+//! - The dim of a step fades only when a spotlight with `fade` comes in or
+//!   goes out, on every cell that it dims or lights: code and annotations
+//!   of earlier steps alike.
+//! - An annotation without an effect is whole from the first frame, and a
+//!   `draw` on a shape with no line plays no effect.
 //! - The layout that records the effects draws the same frame as the
-//!   layout without them, for every example and fixture at every step.
+//!   layout without them, and a document without effects has no frames of
+//!   an effect, for every example and fixture at every step.
 
 use std::collections::BTreeMap;
 
-use tiza_core::canvas::Canvas;
-use tiza_core::effects::{Effects, Plan};
+use tiza_core::anim::{AnimOptions, frames};
+use tiza_core::canvas::{Canvas, Part, Trace};
+use tiza_core::effects::{FADE_MS, Plan};
 use tiza_core::layout::{LayoutOptions, layout, layout_traced};
+use tiza_core::{Document, Theme};
 use tiza_qa::{example, fixture};
 
-fn open(path: &std::path::Path) -> tiza_core::Document {
+fn open(path: &std::path::Path) -> Document {
     tiza_core::fs::open(path.to_str().unwrap())
         .unwrap()
         .document
@@ -33,11 +38,10 @@ fn options(step: u32, width: usize) -> LayoutOptions {
 
 /// The final frame of `step` and, for each cell that the effect hides at
 /// first, the moment (ms) from which it shows as in the final frame.
-fn reveal(doc: &tiza_core::Document, step: u32) -> (Canvas, BTreeMap<(usize, usize), u64>) {
-    let theme = tiza_core::Theme::dark();
+fn reveal(doc: &Document, step: u32) -> (Canvas, BTreeMap<(usize, usize), u64>) {
+    let theme = Theme::dark();
     let (l, trace) = layout_traced(doc, &theme, &options(step, 100), None);
-    let fx = Effects::parse("draw").unwrap();
-    let plan = Plan::new(&l.canvas, &trace, fx).expect("the step has an effect");
+    let plan = Plan::new(&l.canvas, &trace, doc).expect("the step has an effect");
     let fin = l.canvas.clone();
     let mut work = l.canvas.clone();
     let mut first: BTreeMap<(usize, usize), u64> = BTreeMap::new();
@@ -52,6 +56,27 @@ fn reveal(doc: &tiza_core::Document, step: u32) -> (Canvas, BTreeMap<(usize, usi
         }
     }
     (fin, first)
+}
+
+/// The cells (`x`, `y`) of `part` that annotation `id` painted, in the
+/// record of a traced layout `width` cells wide.
+fn painted(trace: &Trace, width: usize, id: &str, part: Part) -> Vec<(usize, usize)> {
+    let Some(ann) = trace.ids.iter().position(|x| x == id) else {
+        return Vec::new();
+    };
+    trace
+        .cells
+        .iter()
+        .filter(|(_, r)| r.ann == ann && r.part == part)
+        .map(|(&i, _)| (i % width, i / width))
+        .collect()
+}
+
+/// The canvas of `plan` at `t` ms, painted over the final frame `fin`.
+fn at_time(plan: &Plan, fin: &Canvas, t: u64) -> Canvas {
+    let mut c = fin.clone();
+    plan.paint(&mut c, t);
+    c
 }
 
 /// Where `sym` is on row `y`.
@@ -82,6 +107,33 @@ fn nondecreasing(times: &[u64], what: &str) {
         times.first() < times.last(),
         "{what} is drawn at once: {times:?}"
     );
+}
+
+/// Every `.tiza` of `examples/` and `qa/fixtures/` that opens.
+fn every_document() -> Vec<(std::path::PathBuf, Document)> {
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    for dir in [example(""), fixture("")] {
+        let mut stack = vec![dir];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "tiza") {
+                    files.push(p);
+                }
+            }
+        }
+    }
+    files.sort();
+    files
+        .into_iter()
+        // Fixtures of broken documents do not open: nothing to draw.
+        .filter_map(|f| {
+            let doc = tiza_core::fs::open(f.to_str().unwrap()).ok()?.document;
+            Some((f, doc))
+        })
+        .collect()
 }
 
 #[test]
@@ -147,13 +199,57 @@ fn an_arrow_is_drawn_from_its_source_to_its_target() {
 }
 
 #[test]
+fn brackets_and_strike_are_drawn_from_left_to_right() {
+    let doc = open(&fixture("render/enter_effects/strokes.tiza"));
+    let theme = Theme::dark();
+    for (step, id) in [(4, "h2"), (5, "h3")] {
+        let (l, trace) = layout_traced(&doc, &theme, &options(step, 100), None);
+        let mut cells = painted(&trace, l.canvas.width, id, Part::Stroke);
+        assert!(cells.len() >= 2, "{id} has no stroke: {cells:?}");
+        cells.sort_by_key(|&(x, y)| (x, y));
+        let (_, first) = reveal(&doc, step);
+        let times: Vec<u64> = cells.iter().map(|&(x, y)| at(&first, x, y)).collect();
+        nondecreasing(&times, id);
+    }
+}
+
+#[test]
+fn the_text_of_a_callout_comes_in_after_the_longest_stroke_of_the_step() {
+    let doc = open(&fixture("render/enter_effects/strokes.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(6, 100), None);
+    let w = l.canvas.width;
+    let border = painted(&trace, w, "b2", Part::Stroke);
+    let callout = painted(&trace, w, "c1", Part::Stroke);
+    assert!(
+        border.len() > callout.len(),
+        "the border of b2 ({}) must have more cells than the one of c1 ({})",
+        border.len(),
+        callout.len()
+    );
+    let (c, first) = reveal(&doc, 6);
+    let t_box = border.iter().map(|&(x, y)| at(&first, x, y)).max().unwrap();
+    let letters: Vec<(usize, usize)> = painted(&trace, w, "c1", Part::Text)
+        .into_iter()
+        .filter(|&(x, y)| c.get(x, y).is_some_and(|cell| !cell.sym.trim().is_empty()))
+        .collect();
+    assert!(!letters.is_empty(), "the callout has no text");
+    for (x, y) in letters {
+        assert!(
+            at(&first, x, y) > t_box,
+            "the letter at ({x}, {y}) is whole at {} ms, before the border of b2 ends at {t_box} ms",
+            at(&first, x, y)
+        );
+    }
+}
+
+#[test]
 fn the_dim_fades_in_on_every_cell_that_the_spotlight_dims() {
     // A spotlight with ids at step 2 dims the code and the note and the
     // highlight of step 1.
     let doc = open(&fixture("render/enter_effects/spotlight_ids.tiza"));
-    let theme = tiza_core::Theme::dark();
+    let theme = Theme::dark();
     let (l, trace) = layout_traced(&doc, &theme, &options(2, 100), None);
-    let plan = Plan::new(&l.canvas, &trace, Effects::parse("dim").unwrap()).unwrap();
+    let plan = Plan::new(&l.canvas, &trace, &doc).unwrap();
     let mut lit = doc.clone();
     lit.annotations.retain(|a| a.id != "s1");
     let without = layout(&lit, &theme, &options(2, 100)).canvas;
@@ -178,30 +274,142 @@ fn the_dim_fades_in_on_every_cell_that_the_spotlight_dims() {
 }
 
 #[test]
-fn the_record_of_the_effects_does_not_change_the_frame() {
-    let mut files: Vec<std::path::PathBuf> = Vec::new();
-    for dir in [example(""), fixture("")] {
-        let mut stack = vec![dir];
-        while let Some(d) = stack.pop() {
-            for e in std::fs::read_dir(&d).unwrap().flatten() {
-                let p = e.path();
-                if p.is_dir() {
-                    stack.push(p);
-                } else if p.extension().is_some_and(|x| x == "tiza") {
-                    files.push(p);
-                }
+fn an_annotation_without_an_effect_is_whole_from_the_first_frame() {
+    // Step 1 of mixed.tiza: the box b1 has no effect, the arrow a1 has
+    // draw and crosses the border of b1. A stable layout keeps the lane of
+    // the arrow when the arrow moves to a later step, so the frame without
+    // a1 has the same cells as the step.
+    let doc = open(&fixture("shared/enter_effects/mixed.tiza"));
+    let theme = Theme::dark();
+    let opts = LayoutOptions {
+        stable: true,
+        ..options(1, 100)
+    };
+    let mut later = doc.clone();
+    for a in later.annotations.iter_mut().filter(|a| a.id == "a1") {
+        a.step = 9;
+    }
+    let only_b1 = layout(&later, &theme, &opts).canvas;
+    let (l, trace) = layout_traced(&doc, &theme, &opts, None);
+    let fin = l.canvas;
+    assert_eq!(
+        (only_b1.width, only_b1.height),
+        (fin.width, fin.height),
+        "the step without a1 must have the same size"
+    );
+    let plan = Plan::new(&fin, &trace, &doc).expect("a1 draws");
+    let start = at_time(&plan, &fin, 0);
+    let border = |c: &Canvas, x: usize, y: usize| {
+        c.get(x, y)
+            .is_some_and(|c| "╭╮╰╯─│".contains(c.sym.as_str()))
+    };
+    let mut crossed_border = false;
+    let mut b1_cells = 0;
+    for y in 0..fin.height {
+        for x in 0..fin.width {
+            if only_b1.get(x, y) == fin.get(x, y) {
+                // Not a cell of a1: whole from the first frame.
+                b1_cells += usize::from(border(&fin, x, y));
+                assert_eq!(start.get(x, y), fin.get(x, y), "({x}, {y}) at 0 ms");
+            } else if border(&only_b1, x, y) {
+                // A cell of a1 on the border of b1: the border shows until
+                // a1 comes.
+                crossed_border = true;
+                assert_eq!(
+                    start.get(x, y).map(|c| c.sym.as_str()),
+                    only_b1.get(x, y).map(|c| c.sym.as_str()),
+                    "({x}, {y}), a cell of a1 on the border of b1, at 0 ms"
+                );
             }
         }
     }
-    files.sort();
-    let theme = tiza_core::Theme::dark();
+    assert!(
+        crossed_border,
+        "a1 must change a cell of the border of b1:\n{}",
+        fin.to_plain_text()
+    );
+    assert!(b1_cells > 0, "no border of b1 is whole at 0 ms");
+}
+
+#[test]
+fn a_box_with_fade_is_hidden_at_first_and_whole_at_the_end_of_the_fade() {
+    let doc = open(&fixture("shared/enter_effects/mixed.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("b2 fades");
+    let border = painted(&trace, l.canvas.width, "b2", Part::Stroke);
+    assert!(!border.is_empty(), "b2 has no border");
+    let start = at_time(&plan, &l.canvas, 0);
+    let end = at_time(&plan, &l.canvas, FADE_MS);
+    for (x, y) in border {
+        let s = start.get(x, y).unwrap().style;
+        assert_eq!(s.fg, s.bg, "({x}, {y}) shows at 0 ms");
+        assert_eq!(
+            end.get(x, y),
+            l.canvas.get(x, y),
+            "({x}, {y}) at {FADE_MS} ms"
+        );
+    }
+}
+
+#[test]
+fn the_dim_of_a_step_fades_only_when_a_spotlight_that_changes_has_fade() {
+    // A (fade) lines 1-3, steps 1-2; B (no effect) lines 6-7, steps 1-4;
+    // C (fade) lines 9-10, step 3.
+    let doc = open(&fixture("render/enter_effects/spots.tiza"));
+    let theme = Theme::dark();
+    let shown = |step: u32| layout(&doc, &theme, &options(step, 100)).canvas;
+    let row =
+        |c: &Canvas, y: usize| -> Vec<_> { (0..c.width).map(|x| c.get(x, y).cloned()).collect() };
+    let line_row = |c: &Canvas, line: u32| {
+        let text = doc.line_text(line).unwrap().trim().to_string();
+        row_of(c, &text)
+    };
+    // (step, line, whether the line changes): the row at 0 ms is the one of
+    // the step before, and at the end the one of the step.
+    for (step, checks) in [
+        (1, vec![(12, true)]),
+        (3, vec![(12, false), (2, true), (9, true)]),
+        (4, vec![(9, true)]),
+    ] {
+        assert!(doc.has_effect_at(step), "no effect at step {step}");
+        let (l, trace) = layout_traced(&doc, &theme, &options(step, 100), None);
+        let plan =
+            Plan::new(&l.canvas, &trace, &doc).unwrap_or_else(|| panic!("no plan at step {step}"));
+        let start = at_time(&plan, &l.canvas, 0);
+        let (before, after) = (shown(step - 1), shown(step));
+        for (line, changes) in checks {
+            let y = line_row(&l.canvas, line);
+            assert_eq!(
+                row(&start, y),
+                row(&before, line_row(&before, line)),
+                "step {step}, line {line} at 0 ms"
+            );
+            assert_eq!(
+                row(&l.canvas, y),
+                row(&after, line_row(&after, line)),
+                "step {step}, line {line} at the end"
+            );
+            assert_eq!(
+                row(&start, y) != row(&l.canvas, y),
+                changes,
+                "step {step}, line {line}: does it change?"
+            );
+        }
+    }
+    // B goes out at step 5 with no effect: the dim changes at once.
+    assert!(!doc.has_effect_at(5));
+    let (l, trace) = layout_traced(&doc, &theme, &options(5, 100), None);
+    assert!(
+        Plan::new(&l.canvas, &trace, &doc).is_none(),
+        "a plan at step 5"
+    );
+}
+
+#[test]
+fn the_record_of_the_effects_does_not_change_the_frame() {
+    let theme = Theme::dark();
     let mut checked = 0;
-    for f in &files {
-        // Fixtures of broken documents do not open: nothing to draw.
-        let Ok(opened) = tiza_core::fs::open(f.to_str().unwrap()) else {
-            continue;
-        };
-        let doc = opened.document;
+    for (f, doc) in every_document() {
         for step in 0..=doc.max_step() {
             for width in [100, 60] {
                 let plain = layout(&doc, &theme, &options(step, width)).canvas;
@@ -217,4 +425,154 @@ fn the_record_of_the_effects_does_not_change_the_frame() {
         }
     }
     assert!(checked > 100, "only {checked} frames checked");
+}
+
+#[test]
+fn a_document_without_effects_has_no_effect_frames() {
+    let theme = Theme::dark();
+    let mut checked = 0;
+    for (f, doc) in every_document() {
+        if doc.annotations.iter().any(|a| a.effect.is_some()) {
+            continue;
+        }
+        for step in 0..=doc.max_step() {
+            assert!(
+                !doc.has_effect_at(step),
+                "{} has an effect at step {step}",
+                f.display()
+            );
+        }
+        let fx = frames(&doc, &theme, &AnimOptions::default());
+        assert!(
+            fx.iter().all(|fr| !fr.effect),
+            "{} has frames of an effect",
+            f.display()
+        );
+        checked += 1;
+    }
+    assert!(checked > 50, "only {checked} documents checked");
+}
+
+#[test]
+fn wide_characters_stay_whole_in_every_frame() {
+    let doc = open(&fixture("render/enter_effects/cjk.tiza"));
+    for step in [1, 2] {
+        let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(step, 100), None);
+        let plan = Plan::new(&l.canvas, &trace, &doc).expect("the step draws");
+        for (n, (c, _)) in plan
+            .frames(&l.canvas, tiza_core::effects::EXPORT_FRAME_MS)
+            .iter()
+            .enumerate()
+        {
+            for y in 0..c.height {
+                for x in 0..c.width {
+                    let cell = c.get(x, y).unwrap();
+                    if tiza_core::canvas::drawn_width(cell.sym.as_str()) == 2 {
+                        assert!(
+                            c.get(x + 1, y).is_some_and(|next| next.sym.is_empty()),
+                            "step {step}, frame {n}: {:?} at ({x}, {y}) is cut",
+                            cell.sym
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn a_typed_move_comes_before_the_effect_in_the_frames() {
+    let doc = open(&fixture("render/enter_effects/typed.tiza"));
+    let fx = frames(&doc, &Theme::dark(), &AnimOptions::default());
+    let kinds: Vec<(bool, bool)> = fx
+        .iter()
+        .filter(|f| f.step == 2)
+        .map(|f| (f.typing, f.effect))
+        .collect();
+    let last_typed = kinds.iter().rposition(|k| k.0).expect("no typed frame");
+    let first_effect = kinds
+        .iter()
+        .position(|k| k.1)
+        .expect("no frame of an effect");
+    assert!(last_typed < first_effect, "{kinds:?}");
+}
+
+#[test]
+fn draw_on_a_shape_without_a_stroke_plays_no_effect() {
+    let doc = open(&fixture("shared/enter_effects/mixed.tiza"));
+    assert!(!doc.has_effect_at(3));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(3, 100), None);
+    assert!(Plan::new(&l.canvas, &trace, &doc).is_none());
+}
+
+#[test]
+fn the_fill_of_a_box_does_not_take_the_cells_of_a_highlight() {
+    // Step 4 of mixed.tiza: the underline h1 has draw, the box b3 (no
+    // effect) has a fill over its line.
+    let doc = open(&fixture("shared/enter_effects/mixed.tiza"));
+    let (c, first) = reveal(&doc, 4);
+    let y = (0..c.height)
+        .find(|&y| !xs(&c, y, tiza_core::layout::UNDERLINE_GLYPH).is_empty())
+        .expect("no underline");
+    let times: Vec<u64> = xs(&c, y, tiza_core::layout::UNDERLINE_GLYPH)
+        .into_iter()
+        .map(|x| at(&first, x, y))
+        .collect();
+    // The first cell of a stroke shows at 0 ms: every other one later.
+    assert!(times[1..].iter().all(|&t| t > 0), "{times:?}");
+    nondecreasing(&times, "the underline under the fill");
+}
+
+#[test]
+fn the_typing_keeps_the_dim_of_the_step_before() {
+    // S lights lines 2-3 at step 2 only, with fade. At step 3 its dim
+    // fades out after the typing: while the step types, line 1 stays dim.
+    let doc = open(&fixture("render/enter_effects/typed.tiza"));
+    let theme = Theme::dark();
+    assert!(doc.dim_fades_at(3));
+    let fx = frames(&doc, &theme, &AnimOptions::default());
+    let at_step = |step: u32| {
+        fx.iter()
+            .rfind(|f| f.step == step && !f.typing && !f.effect)
+            .unwrap()
+            .canvas
+            .clone()
+    };
+    let style_of_line_1 = |c: &Canvas| {
+        let y = row_of(c, "fn main()");
+        let x = xs(c, y, "f")[0];
+        c.get(x, y).unwrap().style
+    };
+    let (dim, lit) = (style_of_line_1(&at_step(2)), style_of_line_1(&at_step(3)));
+    assert_ne!(dim, lit, "S must dim line 1 at step 2");
+    let typed: Vec<&tiza_core::anim::Frame> =
+        fx.iter().filter(|f| f.step == 3 && f.typing).collect();
+    assert!(!typed.is_empty(), "no typed frame at step 3");
+    for f in typed {
+        assert_eq!(style_of_line_1(&f.canvas), dim, "line 1 while step 3 types");
+    }
+}
+
+#[test]
+fn a_fade_in_the_terminal_theme_changes_at_the_half() {
+    let doc = open(&fixture("shared/enter_effects/mixed.tiza"));
+    let theme = Theme::terminal(true);
+    let (l, trace) = layout_traced(&doc, &theme, &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("b2 fades");
+    let border = painted(&trace, l.canvas.width, "b2", Part::Stroke);
+    assert!(!border.is_empty(), "b2 has no border");
+    let before = at_time(&plan, &l.canvas, FADE_MS / 2 - 1);
+    let half = at_time(&plan, &l.canvas, FADE_MS / 2);
+    let ann = trace.ids.iter().position(|x| x == "b2").unwrap();
+    for (x, y) in border {
+        let i = y * l.canvas.width + x;
+        let r = &trace.cells[&i];
+        assert_eq!(r.ann, ann);
+        assert_eq!(
+            before.get(x, y),
+            Some(&r.before),
+            "({x}, {y}) just before the half"
+        );
+        assert_eq!(half.get(x, y), l.canvas.get(x, y), "({x}, {y}) at the half");
+    }
 }

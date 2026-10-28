@@ -406,45 +406,75 @@ pub fn layout_with(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> Layout {
-    layout_run(doc, theme, opts, geometry, Paint::ALL, false)
+    layout_run(
+        doc,
+        theme,
+        opts,
+        geometry,
+        Paint::ALL,
+        false,
+        spot_step(doc, opts),
+    )
+}
+
+/// The step whose spotlights are active in a layout with `opts`: the step
+/// itself, or the step before while the step types and its dim fades (the
+/// dim of before shows until the effect fades it).
+fn spot_step(doc: &Document, opts: &LayoutOptions) -> Option<u32> {
+    if opts.typing && doc.dim_fades_at(opts.step) {
+        opts.step.checked_sub(1)
+    } else {
+        Some(opts.step)
+    }
 }
 
 /// [`layout_with`], with a record of what the annotations of `opts.step`
 /// paint (the enter effects, [`crate::effects`]). The canvas is the same
 /// as the one of [`layout_with`].
+///
+/// When a spotlight changes at the step, the record is the one of a base:
+/// the step with the spotlights of the step before, so each cell starts
+/// from the dim that was on the screen. When the dim also fades
+/// ([`Document::dim_fades_at`]), each cell that no annotation of the step
+/// painted and whose style the new dim changes goes into
+/// [`Trace::dim_from`]. A base of another size than the step gives no
+/// base: the record of the step itself, and the dim changes at once.
 pub fn layout_traced(
     doc: &Document,
     theme: &Theme,
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> (Layout, Trace) {
-    let mut l = layout_run(doc, theme, opts, geometry, Paint::ALL, true);
-    let mut trace = l.canvas.take_trace().unwrap_or_default();
-    // What a spotlight of the step dims: every cell that keeps its symbol
-    // and has another style without the spotlights of the step, code or
-    // annotation alike. The step before is drawn as it was (its own
-    // spotlights stay), so a dim that is not new does not fade.
-    if doc
-        .annotations
-        .iter()
-        .any(|a| a.step == opts.step && matches!(a.shape, Shape::Spotlight { .. }))
-    {
-        let mut lit = doc.clone();
-        lit.annotations
-            .retain(|a| !(a.step == opts.step && matches!(a.shape, Shape::Spotlight { .. })));
-        let without = layout_run(&lit, theme, opts, geometry, Paint::ALL, false).canvas;
-        if (without.width, without.height) == (l.canvas.width, l.canvas.height) {
-            for (x, y, cell) in l.canvas.cells() {
-                if let Some(was) = without.get(x, y)
-                    && was.sym == cell.sym
-                    && was.style != cell.style
-                {
-                    trace.undimmed.insert(y * l.canvas.width + x, was.style);
-                }
+    let step = opts.step;
+    let traced = |spot: Option<u32>| {
+        let mut l = layout_run(doc, theme, opts, geometry, Paint::ALL, true, spot);
+        let trace = l.canvas.take_trace().unwrap_or_default();
+        (l, trace)
+    };
+    if !doc.spots_change_at(step) {
+        return traced(Some(step));
+    }
+    let (base, mut trace) = traced(step.checked_sub(1));
+    let last = layout_run(doc, theme, opts, geometry, Paint::ALL, false, Some(step));
+    let (w, h) = (last.canvas.width, last.canvas.height);
+    if (base.canvas.width, base.canvas.height) != (w, h) {
+        return traced(Some(step));
+    }
+    if doc.dim_fades_at(step) {
+        for (x, y, cell) in last.canvas.cells() {
+            let i = y * w + x;
+            if trace.cells.contains_key(&i) {
+                continue;
+            }
+            if let Some(was) = base.canvas.get(x, y)
+                && was.sym == cell.sym
+                && was.style != cell.style
+            {
+                trace.dim_from.insert(i, was.style);
             }
         }
     }
-    (l, trace)
+    (last, trace)
 }
 
 /// [`layout_with`] for the sweeps of `check`, which only read what is
@@ -467,6 +497,7 @@ pub(crate) fn layout_measures(
         geometry,
         Paint { code: false, spare },
         false,
+        Some(opts.step),
     )
 }
 
@@ -485,7 +516,9 @@ impl Paint {
     };
 }
 
-/// [`layout_with`], painting what `paint` says.
+/// [`layout_with`], painting what `paint` says, with a record of the
+/// enter effects when `trace`, and the spotlights active at `spot_step`
+/// (none with `None`).
 fn layout_run(
     doc: &Document,
     theme: &Theme,
@@ -493,6 +526,7 @@ fn layout_run(
     geometry: Option<&StableGeometry>,
     paint: Paint,
     trace: bool,
+    spot_step: Option<u32>,
 ) -> Layout {
     let owned;
     let geometry = match geometry {
@@ -536,6 +570,7 @@ fn layout_run(
             .unwrap_or(0)
             .max(1),
         trace,
+        spot_step,
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -579,6 +614,8 @@ struct Shared {
     code_w: usize,
     /// Record what the annotations of the step paint ([`layout_traced`]).
     trace: bool,
+    /// The step whose spotlights are active (none with `None`).
+    spot_step: Option<u32>,
 }
 
 /// What one run of [`layout_pass`] gives back.
@@ -680,10 +717,9 @@ fn layout_pass(
             from_line,
             to_line,
             ids,
-            until,
+            ..
         } = &a.shape
-            && opts.step >= a.step
-            && opts.step <= until.unwrap_or(a.step)
+            && shared.spot_step.is_some_and(|s| a.spot_active_at(s))
         {
             spot_any = true;
             if let Some(f) = from_line {
@@ -2578,6 +2614,7 @@ mod tests {
             id: "a1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Mark {
@@ -2597,6 +2634,7 @@ mod tests {
             id: "a2".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Arrow {
@@ -2614,6 +2652,7 @@ mod tests {
             id: "a3".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -2628,6 +2667,7 @@ mod tests {
             id: "a4".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2678,6 +2718,7 @@ mod tests {
             id: "s1".into(),
             step: 3,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Spotlight {
@@ -2746,6 +2787,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2860,6 +2902,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {
@@ -2877,6 +2920,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2889,6 +2933,7 @@ mod tests {
             id: "b1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -2955,6 +3000,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {
@@ -2973,6 +3019,7 @@ mod tests {
                 id: "n1".into(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -3057,6 +3104,7 @@ mod tests {
                 id: id.into(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -3070,6 +3118,7 @@ mod tests {
             id: "b1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -3167,6 +3216,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {

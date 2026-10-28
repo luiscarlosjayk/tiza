@@ -44,8 +44,9 @@ pub struct Finding {
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
     /// `steps`, `unanchored`, `outside_window` (outside the `code.link`
     /// window of a step that shows its file), `not_shown` (its own step
-    /// shows another file), `clipped_label`, `empty_step`, and `stale` (a
-    /// live instance's move the code changed under).
+    /// shows another file), `clipped_label`, `empty_step`, `effect` (the
+    /// enter effect `draw` on a shape with no line), and `stale` (a live
+    /// instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -1246,6 +1247,9 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
     }
 }
 
+/// The warning of an annotation from a file with `draw` and no line.
+const EFFECT_WITHOUT_STROKE: &str = "effect draw needs a stroke, so this annotation comes in with no effect. Use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike.";
+
 fn check_loaded(
     doc: &Document,
     take: &Take,
@@ -1297,6 +1301,15 @@ fn check_loaded(
                     .line(anchor_line(&a.shape)),
             );
             continue;
+        }
+        if a.effect == Some(crate::effects::Effect::Draw) && !a.shape.has_stroke() {
+            out.push(
+                Finding::new(Level::Warning, "effect", EFFECT_WITHOUT_STROKE)
+                    .id(a.id.clone())
+                    .step(a.step)
+                    .file(a.file.clone())
+                    .line(anchor_line(&a.shape)),
+            );
         }
         if let Some(m) = &a.markers {
             check_markers(doc, a, m, out);

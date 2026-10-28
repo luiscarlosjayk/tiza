@@ -23,7 +23,7 @@ Each command adds one annotation at the step on screen. The status bar shows its
 | [Annotation commands](commands/annotate.md) | `:mark`, `:hl`, `:arrow`, `:box`, `:note`, `:callout`, `:spot`, `:until`, `:style` |
 | [Change commands](commands/change.md) | `:label`, `:color`, `:set`, `:step ID N`, `:del`, `:clear` |
 | [Step and file commands](commands/steps-and-files.md) | `:step`, `:next`, `:prev`, `:goto`, `:link`, `:ref`, `:embed`, `:follow` |
-| [View commands](commands/view.md) | `:focus`, `:theme`, `:lang`, `:title`, `:numbers`, `:pad`, `:margin`, `:layout`, `:mouse`, `:effects` |
+| [View commands](commands/view.md) | `:focus`, `:theme`, `:lang`, `:title`, `:numbers`, `:pad`, `:margin`, `:layout`, `:mouse` |
 | [Export and agent commands](commands/export-and-agents.md) | `:export`, `:supervise`, `:review` |
 | [Save, quit, panel and undo commands](commands/save-and-quit.md) | `:w`, `:saveas`, `:wq`, `:q`, `:autosave`, `:list`, `:present`, `:help`, `:undo`, `:redo` |
 | [Command messages](commands/messages.md) | The messages and the errors of all the commands |

@@ -225,8 +225,8 @@ pub struct Traced {
 }
 
 /// The record of a traced layout: what the annotations of the step
-/// painted, the path of each stroke and the style of the cells that a
-/// spotlight of the step dims.
+/// painted, the path of each stroke and the style of the cells whose dim
+/// fades in or out at the step.
 #[derive(Debug, Clone, Default)]
 pub struct Trace {
     /// The annotations of the step that painted something.
@@ -236,9 +236,10 @@ pub struct Trace {
     /// The path of each stroke, from where it starts: (annotation, the
     /// corners of a polyline in cells).
     pub paths: Vec<(usize, Vec<(usize, usize)>)>,
-    /// The cells that a spotlight of the step dims (code or annotation),
-    /// with the style they have without the spotlights of the step.
-    pub undimmed: std::collections::BTreeMap<usize, CellStyle>,
+    /// The cells that no annotation of the step painted and whose dim
+    /// changes at the step (code or annotation), with the style they have
+    /// with the spotlights of the step before.
+    pub dim_from: std::collections::BTreeMap<usize, CellStyle>,
     painter: Option<(usize, Part)>,
 }
 
@@ -308,7 +309,10 @@ impl Canvas {
     /// Notes a write into cell `i`, before it happens: a symbol, or a
     /// style only (`restyle`). An annotation that writes a symbol over its
     /// own cell gives it the new part (a box label over its border is
-    /// text); a restyle keeps the stronger part.
+    /// text); a restyle keeps the stronger part. Another annotation of the
+    /// step that writes a symbol takes the cell, from the cell as the one
+    /// before left it; one that only restyles it does not take it (the
+    /// fill of a box over a highlight).
     fn trace_write(&mut self, i: usize, restyle: bool) {
         let Some(t) = self.trace.as_deref_mut() else {
             return;
@@ -319,11 +323,12 @@ impl Canvas {
                 t.cells
                     .entry(i)
                     .and_modify(|r| {
-                        if r.ann == ann && restyle {
-                            r.part = r.part.max(part);
-                        } else {
+                        if r.ann == ann {
+                            r.part = if restyle { r.part.max(part) } else { part };
+                        } else if !restyle {
                             r.ann = ann;
                             r.part = part;
+                            r.before = before.clone();
                         }
                     })
                     .or_insert_with(|| Traced {

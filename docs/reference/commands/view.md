@@ -154,19 +154,3 @@ Turns mouse capture on or off, or shows its state.
 ```
 
 The mouse is in [Use the mouse](../../guides/present.md).
-
-## `:effects`
-
-Experimental. Sets the enter effects of this session, or shows them.
-
-```
-:effects on
-:effects off
-:effects draw
-:effects dim
-:effects draw,dim
-:effects
-```
-
-- The effects play when the step goes forward. See [Enter effects](../document-format.md#enter-effects-experimental).
-- `:effects` does not change the document.

@@ -21,9 +21,7 @@ use crate::model::MarkStyle;
 use crate::theme::ThemeOverrides;
 
 /// The keys `[defaults]` accepts, in the order `tiza config` lists them.
-pub const DEFAULT_KEYS: &[&str] = &[
-    "pad", "numbers", "mouse", "autosave", "layout", "width", "effects",
-];
+pub const DEFAULT_KEYS: &[&str] = &["pad", "numbers", "mouse", "autosave", "layout", "width"];
 
 /// The fields of a `[styles.NAME]` table (those of `:style`).
 pub const STYLE_FIELDS: &[&str] = &["glyph", "legend", "color"];
@@ -69,9 +67,6 @@ pub struct Defaults {
     pub layout: Option<LayoutMode>,
     /// `width = 120`: the width of `tiza render` and `tiza check`.
     pub width: Option<usize>,
-    /// `effects = "draw,dim"`: the enter effects (experimental) of a
-    /// document that does not set them.
-    pub effects: Option<crate::effects::Effects>,
 }
 
 /// What the config file holds, after every entry was checked.
@@ -1172,18 +1167,6 @@ fn defaults_table(t: &DeTable<'_>, cx: &mut Ctx) -> Defaults {
                     )),
                 }
             }
-            "effects" => match value {
-                DeValue::String(s) => match crate::effects::Effects::parse(s) {
-                    Ok(fx) => {
-                        d.effects = Some(fx);
-                        None
-                    }
-                    Err(_) => {
-                        Some("use \"draw\", \"dim\", \"draw,dim\", \"on\" or \"off\"".to_string())
-                    }
-                },
-                _ => Some("use \"draw\", \"dim\", \"draw,dim\", \"on\" or \"off\"".to_string()),
-            },
             other => {
                 cx.ignore(
                     k,
@@ -1361,7 +1344,7 @@ mod tests {
     #[test]
     fn defaults_take_the_values_of_their_commands() {
         let c = cfg(
-            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffects = \"draw,dim\"\n",
+            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\n",
         );
         assert!(c.warnings.is_empty(), "{:?}", c.warning_lines());
         assert_eq!(
@@ -1373,7 +1356,6 @@ mod tests {
                 autosave: Some(false),
                 layout: Some(LayoutMode::Stable),
                 width: Some(120),
-                effects: Some(crate::effects::Effects::parse("draw,dim").unwrap()),
             }
         );
         assert_eq!(cfg("[defaults]\npad = 2").defaults.pad, Some((2, 4)));

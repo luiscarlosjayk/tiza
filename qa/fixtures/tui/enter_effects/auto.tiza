@@ -1,0 +1,37 @@
+{
+ "schema": 1,
+ "title": "An auto-advance after an effect",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let a = 1;",
+  "    let b = a + 1;",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "b1",
+   "step": 1,
+   "type": "box",
+   "from_line": 1,
+   "to_line": 2,
+   "effect": "draw"
+  },
+  {
+   "id": "n2",
+   "step": 2,
+   "type": "note",
+   "line": 3,
+   "text": "the next step"
+  }
+ ],
+ "steps": [
+  {
+   "step": 1,
+   "auto_advance_ms": 1
+  }
+ ]
+}

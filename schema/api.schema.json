@@ -733,6 +733,17 @@
                   "null"
                 ]
               },
+              "effect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Effect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Experimental. The enter effect of the annotation when the step goes forward: draw or fade. Absent: no effect."
+              },
               "file": {
                 "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
@@ -820,21 +831,6 @@
             ],
             "type": "object"
           },
-          "Dim": {
-            "description": "How the dim of a spotlight comes in.",
-            "oneOf": [
-              {
-                "const": "none",
-                "description": "At once, as without effects.",
-                "type": "string"
-              },
-              {
-                "const": "fade",
-                "description": "The dimmed code fades to the dimmed colour.",
-                "type": "string"
-              }
-            ]
-          },
           "Document": {
             "properties": {
               "annotations": {
@@ -847,17 +843,6 @@
               "code": {
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
-              },
-              "effects": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Effects"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "Experimental enter effects: how the annotations of a step come in\nwhen the step goes forward (see [`crate::effects`]). Absent: the\n`effects` of the config file's `[defaults]`, else none."
               },
               "follows": {
                 "anyOf": [
@@ -992,33 +977,20 @@
             ],
             "type": "object"
           },
-          "Effects": {
-            "description": "The `effects` of a document (experimental), and of the `--effects`\nflag, `:effects` and `effects` in `[defaults]`. A key that is not set\ntakes the value of the next level (flag, document, config file); with\nnone, there is no effect.",
-            "properties": {
-              "dim": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Dim"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "How the dim of a spotlight comes in: `fade` or `none`."
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
               },
-              "enter": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Enter"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "How the annotations of a step come in: `draw` or `none`."
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
               }
-            },
-            "type": "object"
+            ]
           },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
@@ -1041,21 +1013,6 @@
               {
                 "const": "strike",
                 "description": "A long stroke through every character.",
-                "type": "string"
-              }
-            ]
-          },
-          "Enter": {
-            "description": "How the annotations of a step come in.",
-            "oneOf": [
-              {
-                "const": "none",
-                "description": "At once, as without effects.",
-                "type": "string"
-              },
-              {
-                "const": "draw",
-                "description": "Strokes drawn along their path, then the text fades in.",
                 "type": "string"
               }
             ]
@@ -3580,6 +3537,17 @@
                   "null"
                 ]
               },
+              "effect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Effect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Experimental. The enter effect of the annotation when the step goes forward: draw or fade. Absent: no effect."
+              },
               "file": {
                 "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
@@ -3667,21 +3635,6 @@
             ],
             "type": "object"
           },
-          "Dim": {
-            "description": "How the dim of a spotlight comes in.",
-            "oneOf": [
-              {
-                "const": "none",
-                "description": "At once, as without effects.",
-                "type": "string"
-              },
-              {
-                "const": "fade",
-                "description": "The dimmed code fades to the dimmed colour.",
-                "type": "string"
-              }
-            ]
-          },
           "Document": {
             "properties": {
               "annotations": {
@@ -3694,17 +3647,6 @@
               "code": {
                 "$ref": "#/$defs/CodeSource",
                 "description": "How the code is stored in the file: embedded (array of lines) or a\nreference to a file (`{\"file\": \"src/main.rs\", \"lines\": \"12-48\"}`)."
-              },
-              "effects": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Effects"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "Experimental enter effects: how the annotations of a step come in\nwhen the step goes forward (see [`crate::effects`]). Absent: the\n`effects` of the config file's `[defaults]`, else none."
               },
               "follows": {
                 "anyOf": [
@@ -3839,33 +3781,20 @@
             ],
             "type": "object"
           },
-          "Effects": {
-            "description": "The `effects` of a document (experimental), and of the `--effects`\nflag, `:effects` and `effects` in `[defaults]`. A key that is not set\ntakes the value of the next level (flag, document, config file); with\nnone, there is no effect.",
-            "properties": {
-              "dim": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Dim"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "How the dim of a spotlight comes in: `fade` or `none`."
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
               },
-              "enter": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/Enter"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "description": "How the annotations of a step come in: `draw` or `none`."
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
               }
-            },
-            "type": "object"
+            ]
           },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
@@ -3888,21 +3817,6 @@
               {
                 "const": "strike",
                 "description": "A long stroke through every character.",
-                "type": "string"
-              }
-            ]
-          },
-          "Enter": {
-            "description": "How the annotations of a step come in.",
-            "oneOf": [
-              {
-                "const": "none",
-                "description": "At once, as without effects.",
-                "type": "string"
-              },
-              {
-                "const": "draw",
-                "description": "Strokes drawn along their path, then the text fades in.",
                 "type": "string"
               }
             ]
@@ -6313,7 +6227,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, and `stale` (a\nlive instance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, `effect` (the\nenter effect `draw` on a shape with no line), and `stale` (a live\ninstance's move the code changed under).",
                 "type": "string"
               },
               "file": {

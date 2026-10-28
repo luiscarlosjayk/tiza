@@ -44,7 +44,8 @@
    "type": "spotlight",
    "ids": [
     "b1"
-   ]
+   ],
+   "effect": "fade"
   }
  ]
 }

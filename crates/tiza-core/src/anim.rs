@@ -101,7 +101,6 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
     let lay = |d: &Document, step: u32, typing: bool, g: Option<&StableGeometry>| {
         layout_with(d, theme, &options(d, step, typing), g).canvas
     };
-    let effects = doc.effects.unwrap_or_default();
     let mut out: Vec<Frame> = Vec::new();
     for step in first..=last {
         // Typed moves: the code as it is being typed, the annotations of the
@@ -138,16 +137,17 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
             None if step == last => hold.saturating_mul(2),
             None => hold,
         };
-        // The enter effects of the document, after its typing: the frames
-        // of the effect, then the step's own frame.
-        let canvas = if effects.any() {
+        // The enter effects of the step, after its typing: the frames of
+        // the effect, then the step's own frame. The first step of the
+        // take shows as when the document opens, with no effect.
+        let canvas = if step > first && doc.has_effect_at(step) {
             let (l, trace) = crate::layout::layout_traced(
                 doc,
                 theme,
                 &options(doc, step, false),
                 Some(&geometry),
             );
-            if let Some(plan) = crate::effects::Plan::new(&l.canvas, &trace, effects) {
+            if let Some(plan) = crate::effects::Plan::new(&l.canvas, &trace, doc) {
                 for (canvas, delay_ms) in plan.frames(&l.canvas, crate::effects::EXPORT_FRAME_MS) {
                     out.push(Frame {
                         step,
@@ -218,6 +218,7 @@ mod tests {
             id: "a1".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: crate::model::Shape::Note {

@@ -134,7 +134,6 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--skip-zero` | None | Off | Tiza starts a recording or `--all-steps` at step 1. |
 | `--title` | A text | The title of the document, or `Tiza` in a `.cast` | The title of a `.cast` or a `.tape` file. |
 | `--loop` | 0 to 65535 | 0 | How many times a GIF or an animated WebP plays, where `0` plays it without end. |
-| `--effects` | `draw`, `dim`, `draw,dim`, `on` or `off` | The `effects` field of the document, else `effects` of the config file | Experimental. A GIF, an animated WebP, an MP4 or a WebM adds the frames of the enter effect of each step. See [Enter effects](document-format.md#enter-effects-experimental). |
 
 - `--theme` takes `dark`, `light`, `terminal` or `auto`.
 - `terminal` has no colors outside the terminal. An export with `terminal` uses `dark`, and Tiza says so on stderr.

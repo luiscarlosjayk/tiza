@@ -96,9 +96,7 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
         | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
         | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
         | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
-        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" | "effects" => {
-            Ignores
-        }
+        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
         _ => return None,
     })
 }
@@ -601,9 +599,6 @@ pub struct App {
     pub typing: Option<TypingState>,
     /// Enter effect of the step just reached, after its typing.
     pub effect: Option<EffectState>,
-    /// The effects of this session (`--effects`, `:effects`): over the
-    /// document's and the config file's.
-    pub effects_override: Option<tiza_core::effects::Effects>,
     /// When the current step became ready (reached, its typing finished
     /// and its `wait` moves elapsed): the `auto_advance_ms` countdown runs
     /// from here. `None` while typing or after it fired.
@@ -731,7 +726,6 @@ impl App {
             screen_via_history: false,
             typing: None,
             effect: None,
-            effects_override: None,
             step_ready_at: Some(std::time::Instant::now()),
             pointer: None,
             pointer_seen: ((cursor_line, cursor_line), None),
@@ -1845,6 +1839,7 @@ impl App {
             id: id.unwrap_or_default(),
             step,
             color,
+            effect: None,
             markers,
             file,
             shape,
@@ -2657,8 +2652,10 @@ impl App {
             }
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
-            // Forward: the enter effects of the step, after its typing.
-            if !loud && s > from_step && self.typing.is_none() {
+            // Forward one step: the enter effects of the step, after its
+            // typing. A jump, a step back and the loop show the final
+            // drawing.
+            if !loud && forward_one && self.typing.is_none() {
                 self.start_effect();
             }
             // Its notice stays on the bar over the step's label.
@@ -2743,22 +2740,12 @@ impl App {
 
     // ---------- enter effects (experimental) ----------
 
-    /// The effects that apply: `--effects` or `:effects`, else the
-    /// document's, else `effects` in the config file's `[defaults]`.
-    pub fn effects(&self) -> tiza_core::effects::Effects {
-        tiza_core::effects::resolve(
-            self.effects_override,
-            self.doc.effects,
-            self.config_defaults.effects,
-        )
-    }
-
-    /// Starts the enter effect of the step on screen, when the effects are
-    /// on and something of the step comes in with one. Its plan is made
-    /// here, once, at the screen's width.
+    /// Starts the enter effect of the step on screen, when something of the
+    /// step comes in with one ([`Document::has_effect_at`]). Its plan is
+    /// made here, once, at the screen's width.
     fn start_effect(&mut self) {
         self.effect = None;
-        if !self.effects().any() {
+        if !self.doc.has_effect_at(self.doc.step) {
             return;
         }
         let mut opts = self.layout_options(self.screen_width());
@@ -2787,8 +2774,7 @@ impl App {
     /// The final layout of the step with `opts` and the plan of its effect.
     fn effect_cache(&self, opts: &LayoutOptions) -> EffectCache {
         let (layout, trace) = self.lay_out_traced(&self.doc, &self.theme, opts, true);
-        let plan =
-            trace.and_then(|t| tiza_core::effects::Plan::new(&layout.canvas, &t, self.effects()));
+        let plan = trace.and_then(|t| tiza_core::effects::Plan::new(&layout.canvas, &t, &self.doc));
         EffectCache {
             width: opts.width,
             pointer: opts.pointer,
@@ -4740,7 +4726,6 @@ impl App {
         "follow",
         "color",
         "del",
-        "effects",
         "embed",
         "focus",
         "export",
@@ -4912,22 +4897,6 @@ impl App {
                     "on" => Ok(self.set_supervised(true)),
                     "off" => Ok(self.set_supervised(false)),
                     _ => Err(Error::Invalid("usage: :supervise [on|off]".into())),
-                },
-                "effects" => match rest.trim() {
-                    "" => Ok(format!("effects {} (experimental)", self.effects().label())),
-                    words => match tiza_core::effects::Effects::parse(words) {
-                        Ok(fx) => {
-                            self.effects_override = Some(fx);
-                            self.finish_effect();
-                            Ok(format!(
-                                "effects {} (experimental): they play when the step goes forward",
-                                self.effects().label()
-                            ))
-                        }
-                        Err(e) => Err(Error::Invalid(format!(
-                            "{e}. Usage: :effects on|off|draw|dim|draw,dim"
-                        ))),
-                    },
                 },
                 "mouse" => match rest.trim() {
                     "" => Ok(format!("mouse {}", if self.mouse { "on" } else { "off" })),

@@ -34,7 +34,8 @@
     "line": 1,
     "start": 0,
     "end": 16
-   }
+   },
+   "effect": "draw"
   },
   {
    "id": "b1",
@@ -42,7 +43,8 @@
    "type": "box",
    "from_line": 10,
    "to_line": 14,
-   "fill": false
+   "fill": false,
+   "effect": "draw"
   },
   {
    "id": "c1",
@@ -51,7 +53,8 @@
    "from_line": 11,
    "to_line": 13,
    "text": "Rust calls drop when the value goes out of scope",
-   "placement": "margin"
+   "placement": "margin",
+   "effect": "draw"
   },
   {
    "id": "s1",
@@ -59,7 +62,15 @@
    "type": "spotlight",
    "from_line": 10,
    "to_line": 14,
-   "until": 3
+   "until": 3,
+   "effect": "fade"
+  },
+  {
+   "id": "n9",
+   "step": 4,
+   "type": "note",
+   "line": 16,
+   "text": "the dim ends"
   }
  ]
 }

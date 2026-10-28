@@ -156,11 +156,6 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
-    /// Experimental enter effects: how the annotations of a step come in
-    /// when the step goes forward (see [`crate::effects`]). Absent: the
-    /// `effects` of the config file's `[defaults]`, else none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effects: Option<crate::effects::Effects>,
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -694,6 +689,19 @@ impl Shape {
         }
     }
 
+    /// Whether the shape has a stroke that the enter effect `draw` draws
+    /// along its path: a box, a callout, an arrow, or a highlight or mark
+    /// with emphasis underline, brackets or strike.
+    pub fn has_stroke(&self) -> bool {
+        match self {
+            Shape::Box { .. } | Shape::Callout { .. } | Shape::Arrow { .. } => true,
+            Shape::Highlight { emphasis, .. } | Shape::Mark { emphasis, .. } => {
+                *emphasis != Emphasis::Fill
+            }
+            Shape::Note { .. } | Shape::Spotlight { .. } => false,
+        }
+    }
+
     /// Line ranges the shape occupies (to focus the code of an annotation).
     /// An arrow occupies only its two endpoints, not the stretch between them.
     pub fn line_ranges(&self) -> Vec<(u32, u32)> {
@@ -729,6 +737,9 @@ pub struct Annotation {
     /// Without a color, arrows rotate through a palette and the rest use the theme color.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
+    /// Experimental. The enter effect of the annotation when the step goes forward: draw or fade. Absent: no effect.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effect: Option<crate::effects::Effect>,
     /// Range shapes (box, callout, spotlight) created from two text markers
     /// (`find_start` / `find_end`): kept so the range can be
     /// re-resolved after the code changes. Lines stay the truth.
@@ -743,6 +754,19 @@ pub struct Annotation {
     pub file: Option<String>,
     #[serde(flatten)]
     pub shape: Shape,
+}
+
+impl Annotation {
+    /// Whether this is a spotlight that is active at `step`: from its
+    /// `step` to its `until`, or only at its `step`.
+    pub fn spot_active_at(&self, step: u32) -> bool {
+        match &self.shape {
+            Shape::Spotlight { until, .. } => {
+                self.step <= step && step <= until.unwrap_or(self.step)
+            }
+            _ => false,
+        }
+    }
 }
 
 /// Two texts that delimit a line range: the first occurrence of `start`
@@ -935,7 +959,6 @@ impl Document {
             theme_overrides: None,
             steps: Vec::new(),
             looping: false,
-            effects: None,
         }
     }
 
@@ -1826,6 +1849,42 @@ impl Document {
             .collect()
     }
 
+    /// Whether a spotlight changes at `step`: one is active at `step` and
+    /// not at the step before, or the other way round.
+    pub fn spots_change_at(&self, step: u32) -> bool {
+        step >= 1
+            && self
+                .annotations
+                .iter()
+                .any(|a| a.spot_active_at(step - 1) != a.spot_active_at(step))
+    }
+
+    /// Whether the dim of `step` fades: a spotlight with the effect `fade`
+    /// comes in or goes out at `step`. The dim is the one of every
+    /// spotlight together, so all of it fades.
+    pub fn dim_fades_at(&self, step: u32) -> bool {
+        step >= 1
+            && self.annotations.iter().any(|a| {
+                a.effect == Some(crate::effects::Effect::Fade)
+                    && a.spot_active_at(step - 1) != a.spot_active_at(step)
+            })
+    }
+
+    /// Whether something comes in with an enter effect at `step`: the dim
+    /// fades, or an annotation of the step has `fade`, or `draw` on a shape
+    /// with a stroke.
+    pub fn has_effect_at(&self, step: u32) -> bool {
+        self.dim_fades_at(step)
+            || self.annotations.iter().any(|a| {
+                a.step == step
+                    && match a.effect {
+                        Some(crate::effects::Effect::Fade) => true,
+                        Some(crate::effects::Effect::Draw) => a.shape.has_stroke(),
+                        None => false,
+                    }
+            })
+    }
+
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()
@@ -2347,6 +2406,7 @@ mod tests {
                 id: String::new(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -2361,6 +2421,7 @@ mod tests {
                 id: String::new(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -2379,6 +2440,7 @@ mod tests {
             id: "a1".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Arrow {

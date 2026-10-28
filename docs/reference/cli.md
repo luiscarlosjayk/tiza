@@ -105,7 +105,6 @@ These flags work with `tiza [FILE]`:
 | `--mouse` | Starts with mouse capture on. |
 | `--no-save` | Starts in no-save mode. |
 | `--no-socket` | Starts without the socket, so agents and `tiza next` cannot reach this TUI. |
-| `--effects EFFECTS` | Experimental. Plays the enter effects when the step goes forward. See [Enter effects](document-format.md#enter-effects-experimental). |
 | `-h` or `--help` | Prints the help. |
 | `-V` or `--version` | Prints the version and the commit. |
 
@@ -214,6 +213,7 @@ The `code` of a finding is one of these:
 | `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
 | `empty_step` | Warning | A step changes nothing. |
 | `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
+| `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, so it comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
 ## Messages
 

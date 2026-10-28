@@ -1,23 +1,27 @@
-//! Enter effects (experimental): how the annotations of a step come in
-//! when the step goes forward. The layout never changes: an effect only
-//! decides which cells of the final drawing show at each moment and how
-//! their colours mix.
+//! Enter effects (experimental): how an annotation comes in when the step
+//! goes forward. The author sets the effect of each annotation with its
+//! `effect` field. The layout never changes: an effect only decides which
+//! cells of the final drawing show at each moment and how their colours
+//! mix.
 //!
-//! - `draw`: the stroke of each new annotation (a box or callout border,
-//!   an underline, an arrow) is drawn cell by cell along its path; the code
-//!   that it recolors fades in with it; the text of a callout or a label
-//!   fades in after every stroke of the step.
-//! - `dim` (`fade`): every cell that a new spotlight dims (code, or an
-//!   annotation that the spotlight dims) goes from its colour to the
-//!   dimmed colour. The layout finds these cells by itself: they are the
-//!   cells with another style without the spotlights of the step.
+//! - `draw`: the stroke of the annotation (a box or callout border, an
+//!   underline, brackets, a strike, an arrow) is drawn cell by cell along
+//!   its path. The code that it recolors fades in with it. Its text fades
+//!   in after the longest stroke of the step.
+//! - `fade`: every cell of the annotation fades in, its text too. On a
+//!   spotlight, the dim of the step fades in and out: every cell that
+//!   keeps its symbol and gets another style when the spotlights of the
+//!   step change, code or annotation alike.
 //!
 //! A traced layout ([`crate::layout::layout_traced`]) records what each
-//! annotation of the step paints. [`Plan::new`] turns that record into a
-//! plan once per step; [`Plan::paint`] then only copies or mixes cells.
-//! The annotations of one step come in at the same time.
+//! annotation of the step paints, over the dim of the step before.
+//! [`Plan::new`] turns that record into a plan once per step;
+//! [`Plan::paint`] then only copies or mixes cells. The annotations of one
+//! step come in at the same time; one without an effect is whole from the
+//! first frame.
 
 use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace};
+use crate::model::Document;
 use crate::theme::{blend, host_color};
 
 /// Shortest time a stroke takes to draw, in milliseconds.
@@ -36,121 +40,18 @@ pub const SCREEN_FRAME_MS: u64 = 33;
 /// multiple of the 10 ms unit of a GIF).
 pub const EXPORT_FRAME_MS: u64 = 40;
 
-/// How the annotations of a step come in.
+/// The enter effect of an annotation (experimental).
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
 )]
 #[serde(rename_all = "lowercase")]
-pub enum Enter {
-    /// At once, as without effects.
-    None,
-    /// Strokes drawn along their path, then the text fades in.
+pub enum Effect {
+    /// The stroke is drawn along its path, then the text fades in. Only
+    /// a box, a callout, an arrow, or a highlight or mark with emphasis
+    /// underline, brackets or strike has a stroke.
     Draw,
-}
-
-/// How the dim of a spotlight comes in.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, schemars::JsonSchema,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum Dim {
-    /// At once, as without effects.
-    None,
-    /// The dimmed code fades to the dimmed colour.
+    /// The annotation fades in. On a spotlight, the dim fades in and out.
     Fade,
-}
-
-/// The `effects` of a document (experimental), and of the `--effects`
-/// flag, `:effects` and `effects` in `[defaults]`. A key that is not set
-/// takes the value of the next level (flag, document, config file); with
-/// none, there is no effect.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Default,
-    PartialEq,
-    Eq,
-    serde::Serialize,
-    serde::Deserialize,
-    schemars::JsonSchema,
-)]
-pub struct Effects {
-    /// How the annotations of a step come in: `draw` or `none`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enter: Option<Enter>,
-    /// How the dim of a spotlight comes in: `fade` or `none`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub dim: Option<Dim>,
-}
-
-impl Effects {
-    /// No effect, with both keys set (it hides the next level).
-    pub const OFF: Effects = Effects {
-        enter: Some(Enter::None),
-        dim: Some(Dim::None),
-    };
-
-    /// Each key not set here takes the value of `other`.
-    pub fn or(self, other: Effects) -> Effects {
-        Effects {
-            enter: self.enter.or(other.enter),
-            dim: self.dim.or(other.dim),
-        }
-    }
-
-    pub fn draw(&self) -> bool {
-        self.enter == Some(Enter::Draw)
-    }
-
-    pub fn fade(&self) -> bool {
-        self.dim == Some(Dim::Fade)
-    }
-
-    /// Whether any effect is on.
-    pub fn any(&self) -> bool {
-        self.draw() || self.fade()
-    }
-
-    /// The words of `--effects`, `:effects` and `[defaults] effects`:
-    /// `draw`, `dim`, `draw,dim`, `on` (both) or `off` (none). The keys
-    /// that a list does not name are off.
-    pub fn parse(text: &str) -> Result<Effects, String> {
-        let text = text.trim();
-        match text {
-            "on" | "all" => {
-                return Ok(Effects {
-                    enter: Some(Enter::Draw),
-                    dim: Some(Dim::Fade),
-                });
-            }
-            "off" | "none" => return Ok(Effects::OFF),
-            _ => {}
-        }
-        let mut fx = Effects::OFF;
-        for word in text.split(',').map(str::trim) {
-            match word {
-                "draw" => fx.enter = Some(Enter::Draw),
-                "dim" | "fade" => fx.dim = Some(Dim::Fade),
-                other => {
-                    return Err(format!(
-                        "unknown effect «{other}»: use draw, dim, draw,dim, on or off"
-                    ));
-                }
-            }
-        }
-        Ok(fx)
-    }
-
-    /// The words of [`Effects::parse`] that give these effects.
-    pub fn label(&self) -> &'static str {
-        match (self.draw(), self.fade()) {
-            (true, true) => "draw,dim",
-            (true, false) => "draw",
-            (false, true) => "dim",
-            (false, false) => "off",
-        }
-    }
 }
 
 /// How one cell changes during an effect.
@@ -179,104 +80,119 @@ pub struct Plan {
 }
 
 impl Plan {
-    /// The plan of the step that `canvas` (a traced layout) draws, or
-    /// `None` when nothing of it comes in with an effect.
-    pub fn new(canvas: &Canvas, trace: &Trace, fx: Effects) -> Option<Plan> {
+    /// The plan of the step that `canvas` (a traced layout of `doc`)
+    /// draws, or `None` when nothing of it comes in with an effect.
+    pub fn new(canvas: &Canvas, trace: &Trace, doc: &Document) -> Option<Plan> {
         let width = canvas.width;
-        let mut changes: Vec<Change> = Vec::new();
         let xy = |i: usize| (i % width.max(1), i / width.max(1));
-        if fx.draw() {
-            // Strokes: in the order of their path, each annotation at its
-            // own speed, all of them at once.
-            let mut stroke_end = 0;
-            let mut timed: Vec<Option<u64>> = vec![None; trace.ids.len()];
-            for (ann, slot) in timed.iter_mut().enumerate() {
-                let mut cells: Vec<(usize, usize)> = trace
-                    .cells
-                    .iter()
-                    .filter(|(_, r)| r.ann == ann && r.part == Part::Stroke)
-                    .map(|(&i, _)| {
-                        let (x, y) = xy(i);
-                        (path_position(trace, ann, x, y).unwrap_or(i), i)
-                    })
-                    .collect();
-                if cells.is_empty() {
-                    continue;
+        // The effect of each annotation that painted something: a `draw`
+        // on a shape with no line is no effect.
+        let effects: Vec<Option<Effect>> = trace
+            .ids
+            .iter()
+            .map(|id| {
+                let a = doc.find_annotation(id)?;
+                match a.effect? {
+                    Effect::Draw if !a.shape.has_stroke() => None,
+                    e => Some(e),
                 }
-                cells.sort_unstable();
-                let n = cells.len() as u64;
-                let ms = (n * STROKE_MS_PER_CELL).clamp(STROKE_MIN_MS, STROKE_MAX_MS);
-                *slot = Some(ms);
-                stroke_end = stroke_end.max(ms);
-                for (k, (_, i)) in cells.into_iter().enumerate() {
-                    let at = k as u64 * ms / n;
-                    let r = &trace.cells[&i];
-                    changes.push(Change {
-                        i,
-                        before: r.before.clone(),
-                        after: canvas.cell_at(i).clone(),
-                        start: at,
-                        end: at,
-                        from: None,
-                    });
-                }
+            })
+            .collect();
+        let mut changes: Vec<Change> = Vec::new();
+        // Strokes: in the order of their path, each annotation at its own
+        // speed, all of them at once.
+        let mut stroke_end = 0;
+        let mut timed: Vec<Option<u64>> = vec![None; trace.ids.len()];
+        for (ann, slot) in timed.iter_mut().enumerate() {
+            if effects[ann] != Some(Effect::Draw) {
+                continue;
             }
-            for (&i, r) in &trace.cells {
-                let after = canvas.cell_at(i).clone();
-                match r.part {
-                    Part::Stroke => {}
-                    // Code it recolors: with its stroke, or a fade.
-                    Part::Recolor => {
-                        let from = match (fx.fade(), trace.undimmed.get(&i)) {
-                            (true, Some(s)) => *s,
-                            _ => r.before.style,
-                        };
-                        changes.push(Change {
-                            i,
-                            before: Cell {
-                                sym: after.sym.clone(),
-                                style: from,
-                            },
-                            after,
-                            start: 0,
-                            end: timed[r.ann].unwrap_or(FADE_MS),
-                            from: Some(from),
-                        });
-                    }
-                    // Text: after every stroke, from its own background.
-                    Part::Text => {
-                        let mut from = after.style;
-                        from.fg = after.style.bg.or(r.before.style.bg);
-                        changes.push(Change {
-                            i,
-                            before: r.before.clone(),
-                            after,
-                            start: stroke_end,
-                            end: stroke_end + TEXT_FADE_MS,
-                            from: Some(from),
-                        });
-                    }
-                }
+            let mut cells: Vec<(usize, usize)> = trace
+                .cells
+                .iter()
+                .filter(|(_, r)| r.ann == ann && r.part == Part::Stroke)
+                .map(|(&i, _)| {
+                    let (x, y) = xy(i);
+                    (path_position(trace, ann, x, y).unwrap_or(i), i)
+                })
+                .collect();
+            if cells.is_empty() {
+                continue;
+            }
+            cells.sort_unstable();
+            let n = cells.len() as u64;
+            let ms = (n * STROKE_MS_PER_CELL).clamp(STROKE_MIN_MS, STROKE_MAX_MS);
+            *slot = Some(ms);
+            stroke_end = stroke_end.max(ms);
+            for (k, (_, i)) in cells.into_iter().enumerate() {
+                let at = k as u64 * ms / n;
+                changes.push(Change {
+                    i,
+                    before: trace.cells[&i].before.clone(),
+                    after: canvas.cell_at(i).clone(),
+                    start: at,
+                    end: at,
+                    from: None,
+                });
             }
         }
-        if fx.fade() {
-            for (&i, &from) in &trace.undimmed {
-                if fx.draw() && trace.cells.contains_key(&i) {
-                    continue;
-                }
-                let after = canvas.cell_at(i).clone();
-                changes.push(Change {
+        for (&i, r) in &trace.cells {
+            let after = canvas.cell_at(i).clone();
+            let change = match (effects[r.ann], r.part) {
+                (None, _) | (Some(Effect::Draw), Part::Stroke) => continue,
+                // Code it recolors: with its stroke.
+                (Some(Effect::Draw), Part::Recolor) => Change {
                     i,
                     before: Cell {
                         sym: after.sym.clone(),
-                        style: from,
+                        style: r.before.style,
                     },
+                    start: 0,
+                    end: timed[r.ann].unwrap_or(FADE_MS),
+                    from: Some(r.before.style),
                     after,
+                },
+                // Text: after the longest stroke, from its own background.
+                (Some(Effect::Draw), Part::Text) => Change {
+                    i,
+                    before: r.before.clone(),
+                    start: stroke_end,
+                    end: stroke_end + TEXT_FADE_MS,
+                    from: Some(hidden(&after, &r.before)),
+                    after,
+                },
+                // Every part at once: from the cell before when it keeps
+                // its symbol, else from its own background.
+                (Some(Effect::Fade), _) => Change {
+                    i,
+                    before: r.before.clone(),
                     start: 0,
                     end: FADE_MS,
-                    from: Some(from),
-                });
-            }
+                    from: Some(if r.before.sym == after.sym {
+                        r.before.style
+                    } else {
+                        hidden(&after, &r.before)
+                    }),
+                    after,
+                },
+            };
+            changes.push(change);
+        }
+        // The dim of the step: the cells that no annotation of the step
+        // painted.
+        for (&i, &from) in &trace.dim_from {
+            let after = canvas.cell_at(i).clone();
+            changes.push(Change {
+                i,
+                before: Cell {
+                    sym: after.sym.clone(),
+                    style: from,
+                },
+                after,
+                start: 0,
+                end: FADE_MS,
+                from: Some(from),
+            });
         }
         if changes.is_empty() {
             return None;
@@ -311,6 +227,16 @@ impl Plan {
             } else {
                 match c.from {
                     None => c.after.clone(),
+                    // A colour of the terminal's own palette (the
+                    // `terminal` theme) cannot be mixed: the cell before
+                    // shows until half of the fade, then the final one.
+                    Some(from) if uses_host_color(from) || uses_host_color(c.after.style) => {
+                        if t_ms < c.start + (c.end - c.start) / 2 {
+                            c.before.clone()
+                        } else {
+                            c.after.clone()
+                        }
+                    }
                     Some(from) => {
                         let t = (t_ms - c.start) as f32 / (c.end - c.start).max(1) as f32;
                         Cell {
@@ -377,28 +303,30 @@ fn along(corners: &[(usize, usize)], x: usize, y: usize) -> (usize, usize) {
     best
 }
 
-/// `a` mixed into `b` at `t` (0: `a`, 1: `b`). A colour of the terminal's
-/// own palette (the `terminal` theme) cannot be mixed: the cell changes
-/// at half of the fade instead.
+/// The style of `after` with its text hidden: the foreground is its own
+/// background (or the one of `before`).
+fn hidden(after: &Cell, before: &Cell) -> CellStyle {
+    let mut from = after.style;
+    from.fg = after.style.bg.or(before.style.bg);
+    from
+}
+
+/// Whether `s` has a colour of the terminal's own palette.
+fn uses_host_color(s: CellStyle) -> bool {
+    s.fg.is_some_and(|c| host_color(c).is_some()) || s.bg.is_some_and(|c| host_color(c).is_some())
+}
+
+/// `a` mixed into `b` at `t` (0: `a`, 1: `b`). A colour that one of them
+/// does not set changes at half of the fade.
 fn mix(a: CellStyle, b: CellStyle, t: f32) -> CellStyle {
     let t = t.clamp(0.0, 1.0);
     let mut s = if t < 0.5 { a } else { b };
     let colour = |x: Option<crate::canvas::Rgb>, y: Option<crate::canvas::Rgb>| match (x, y) {
-        (Some(x), Some(y)) if host_color(x).is_none() && host_color(y).is_none() => {
-            Some(blend(y, x, t))
-        }
+        (Some(x), Some(y)) => Some(blend(y, x, t)),
         _ if t < 0.5 => x,
         _ => y,
     };
     s.fg = colour(a.fg, b.fg);
     s.bg = colour(a.bg, b.bg);
     s
-}
-
-/// The effects that apply: `flag` (the `--effects` flag or `:effects`),
-/// else the document's, else the config file's `[defaults] effects`.
-pub fn resolve(flag: Option<Effects>, doc: Option<Effects>, config: Option<Effects>) -> Effects {
-    flag.unwrap_or_default()
-        .or(doc.unwrap_or_default())
-        .or(config.unwrap_or_default())
 }

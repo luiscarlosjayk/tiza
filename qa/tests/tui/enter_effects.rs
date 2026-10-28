@@ -1,6 +1,7 @@
 //! Enter effects (experimental) on the real TUI: a key ends the effect of
-//! the step at once and does nothing else, and going back shows the
-//! final drawing with no effect.
+//! the step at once and does nothing else, going back shows the final
+//! drawing with no effect, the auto-advance waits for the effect, and a
+//! step without an effect starts none.
 //!
 //! The binary of the tests slows the clock of an effect 100 times
 //! (`TIZA_TEST_HOOK=effect:slow`), so the effect still plays when the
@@ -9,22 +10,23 @@
 use serde_json::Value;
 use tiza_qa::{fixture, scratch};
 
-/// Runs the TUI on `drop.tiza` at step 1 with `--effects draw,dim`, then
-/// the steps of `script`, and prints `STATUS <json>` for each `status`.
-fn run(name: &str, script: &str) -> Vec<Value> {
+/// Runs the TUI on a copy of `fixture` (a path in `qa/fixtures/`) with
+/// `--no-save --present --theme dark` and `args`, then the steps of
+/// `script`, and prints `STATUS <json>` for each `until`.
+fn run(name: &str, fixture_path: &str, args: &[&str], script: &str) -> Vec<Value> {
     let dir = scratch(name);
-    std::fs::copy(
-        fixture("shared/enter_effects/drop.tiza"),
-        dir.join("drop.tiza"),
-    )
-    .unwrap();
+    let source = fixture(fixture_path);
+    let file = source.file_name().unwrap().to_str().unwrap().to_string();
+    std::fs::copy(&source, dir.join(&file)).unwrap();
+    let args = serde_json::to_string(args).unwrap();
     let body = r##"
 import json
 binary, cwd, script = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
+file, args = sys.argv[4], json.loads(sys.argv[5])
 os.chdir(cwd)
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="effect:slow")
-s = Pty([binary, "--no-save", "--present", "--theme", "dark", "--step", "1",
-         "--effects", "draw,dim", "--socket", "s.sock", "drop.tiza"], 30, 100, env=env)
+s = Pty([binary, "--no-save", "--present", "--theme", "dark"] + args
+        + ["--socket", "s.sock", file], 30, 100, env=env)
 
 def status():
     r = subprocess.run([binary, "--socket", "s.sock", "api", "status"],
@@ -61,6 +63,8 @@ print("EXIT", s.finish(10), flush=True)
             tiza_qa::bin().to_str().unwrap(),
             dir.to_str().unwrap(),
             script,
+            &file,
+            &args,
         ],
     );
     assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
@@ -76,6 +80,8 @@ fn a_key_ends_the_effect_and_does_nothing_else() {
     // goes to step 3.
     let seen = run(
         "effect-key",
+        "shared/enter_effects/drop.tiza",
+        &["--step", "1"],
         r#"[["key", "n"], ["until", {"step": 2, "effect": true}],
             ["key", "n"], ["until", {"step": 2, "effect": false}],
             ["key", "n"], ["until", {"step": 3, "effect": true}],
@@ -92,6 +98,8 @@ fn a_key_ends_the_effect_and_does_nothing_else() {
 fn going_back_shows_the_final_drawing_at_once() {
     let seen = run(
         "effect-back",
+        "shared/enter_effects/drop.tiza",
+        &["--step", "1"],
         r#"[["key", "n"], ["until", {"step": 2, "effect": true}],
             ["key", "x"], ["until", {"step": 2, "effect": false}],
             ["key", "n"], ["until", {"step": 3, "effect": true}],
@@ -99,4 +107,36 @@ fn going_back_shows_the_final_drawing_at_once() {
             ["key", "p"], ["until", {"step": 2}]]"#,
     );
     assert_eq!(seen.last().unwrap()["effect"], false, "{seen:?}");
+}
+
+#[test]
+fn auto_advance_waits_for_the_effect() {
+    // Step 1 advances after 1 ms, but only once its effect is over: the
+    // effect still plays at step 1, and `x` ends it.
+    let seen = run(
+        "effect-auto",
+        "tui/enter_effects/auto.tiza",
+        &["--step", "0"],
+        r#"[["key", "n"], ["until", {"step": 1, "effect": true}],
+            ["key", "x"], ["until", {"step": 2}]]"#,
+    );
+    let steps: Vec<u64> = seen.iter().map(|v| v["step"].as_u64().unwrap()).collect();
+    assert_eq!(steps, [1, 2], "{seen:?}");
+}
+
+#[test]
+fn a_step_without_an_effect_starts_no_effect() {
+    // Only the callout of step 3 has an effect: step 2 starts none.
+    let seen = run(
+        "effect-none",
+        "shared/enter_effects/drop-mixed.tiza",
+        &["--step", "1"],
+        r#"[["key", "n"], ["until", {"step": 2}],
+            ["key", "n"], ["until", {"step": 3, "effect": true}]]"#,
+    );
+    let pairs: Vec<(u64, bool)> = seen
+        .iter()
+        .map(|v| (v["step"].as_u64().unwrap(), v["effect"].as_bool().unwrap()))
+        .collect();
+    assert_eq!(pairs, [(2, false), (3, true)]);
 }
