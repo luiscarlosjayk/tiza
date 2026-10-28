@@ -6280,7 +6280,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, `effect` (the\nenter effect `draw` on a shape with no line), and `stale` (a live\ninstance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, `effect` (the\nenter effect `draw` on a shape with no stroke), and `stale` (a live\ninstance's move the code changed under).",
                 "type": "string"
               },
               "file": {

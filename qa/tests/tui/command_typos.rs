@@ -233,6 +233,13 @@ fn effect_is_taken_off_the_end_of_a_note_and_a_spot() {
         "{a:?}"
     );
     assert_eq!(a.effect, Some(Effect::Fade));
+    live.command("note 3 hi\teffect=fade");
+    let a = last(&live);
+    assert!(
+        matches!(&a.shape, Shape::Note { text, .. } if text == "hi"),
+        "{a:?}"
+    );
+    assert_eq!(a.effect, Some(Effect::Fade));
     live.command("note 3 x=1");
     let a = last(&live);
     assert!(

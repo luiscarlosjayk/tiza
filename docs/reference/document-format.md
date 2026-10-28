@@ -602,7 +602,7 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 - The dim of a step comes from all the active spotlights together. When a spotlight with `fade` starts or stops at a step, all the dim of that step fades. A spotlight stops at the step after its `until`, or at the step after its `step` when it has no `until`. A spotlight that is active until the last step does not stop.
 - When only spotlights without `fade` start or stop at a step, the dim changes at once.
 - The effect plays when you go forward one step: `n`, an auto-advance, or a goto to the next step. It plays after the typing of the step. While the step types, the dim of the step before stays.
-- A goto that goes forward more than one step, a step back, `p`, the loop back to step 0 and the open of the document show the final drawing. Thus an annotation at step 0 never plays its effect.
+- A goto that goes forward more than one step, a step back, `p` and the loop back to step 0 show the final drawing. When the document opens, Tiza also shows the final drawing. Thus an annotation at step 0 never plays its effect.
 - Any key ends the effect, and Tiza ignores that key. A key that ends the typing of a step also ends its effect.
 - The auto-advance countdown starts when the effect ends.
 - A GIF, an animated WebP, an MP4 and a WebM show the effect of each step as frames. The first step of the take shows the final drawing, as when the document opens. A `.tape` records the TUI with its effects. A still, a text export, a `.md`, a `.cast` and `render --step N` show the final drawing.

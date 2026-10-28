@@ -6579,7 +6579,7 @@ impl App {
         };
         // Only a last word `effect=…` is the effect: the text of a note
         // can end in any other `key=value` (`x=1`).
-        let (text, effect) = match text.trim_end().rsplit_once(' ') {
+        let (text, effect) = match text.trim_end().rsplit_once(char::is_whitespace) {
             Some((before, last)) if last.starts_with("effect=") => (
                 before.trim_end(),
                 take_effect(&mut vec![split_token(last)])?,

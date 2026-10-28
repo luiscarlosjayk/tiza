@@ -45,7 +45,7 @@ pub struct Finding {
     /// `steps`, `unanchored`, `outside_window` (outside the `code.link`
     /// window of a step that shows its file), `not_shown` (its own step
     /// shows another file), `clipped_label`, `empty_step`, `effect` (the
-    /// enter effect `draw` on a shape with no line), and `stale` (a live
+    /// enter effect `draw` on a shape with no stroke), and `stale` (a live
     /// instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in

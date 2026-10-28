@@ -384,6 +384,8 @@ impl Canvas {
     pub(crate) fn refill(&mut self, width: usize, height: usize, style: CellStyle) {
         self.width = width;
         self.height = height;
+        // A new layout: no record of an earlier one.
+        self.trace = None;
         self.cells.clear();
         self.cells.resize(
             width * height,
