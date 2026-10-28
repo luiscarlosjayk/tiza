@@ -114,8 +114,12 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(s) = opts.step {
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter
-        // effect, as when the document opens at its own step.
+        // effect, as when the document opens at its own step: also after
+        // the typing of its moves.
         app.finish_effect();
+        if let Some(t) = app.typing.as_mut() {
+            t.then_effect = false;
+        }
     }
     app.present = opts.present;
     app.focus = opts.focus;

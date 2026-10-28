@@ -145,6 +145,9 @@ pub struct TypingState {
     pub plan: moves::TypingPlan,
     pub index: usize,
     pub revealed: usize,
+    /// The enter effects of the step play when the typing ends: a step
+    /// forward, not the step the TUI opens at.
+    pub then_effect: bool,
     last: std::time::Instant,
 }
 
@@ -2699,6 +2702,7 @@ impl App {
             plan,
             index: 0,
             revealed: 0,
+            then_effect: true,
             last: std::time::Instant::now(),
         });
         self.refresh_typing_code();
@@ -2731,10 +2735,13 @@ impl App {
             t.revealed -= t.plan.items[t.index].units;
             t.index += 1;
             if t.index >= t.plan.items.len() {
+                let then_effect = t.then_effect;
                 self.finish_typing();
                 self.revision += 1;
                 // The typing is over: the effects of the step come next.
-                self.start_effect();
+                if then_effect {
+                    self.start_effect();
+                }
                 return true;
             }
         }

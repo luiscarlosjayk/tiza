@@ -198,3 +198,18 @@ fn a_goto_to_the_next_step_plays_its_effect() {
     assert_eq!(seen.len(), 1, "{seen:?}");
     assert_eq!(seen[0]["effect"], true, "{seen:?}");
 }
+
+#[test]
+fn a_typed_step_the_tui_opens_at_plays_no_effect_after_its_typing() {
+    // typed.tiza is saved at step 1: `--step 2` types the move of step 2,
+    // and its box (draw) and spotlight (fade) show at once after it.
+    let seen = run(
+        "effect-open-typed",
+        "tui/enter_effects/typed.tiza",
+        &["--step", "2"],
+        r#"[["until_code", "// typed at 25 ms"]]"#,
+    );
+    assert_eq!(seen.len(), 1, "{seen:?}");
+    assert_eq!(seen[0]["step"], 2, "{seen:?}");
+    assert_eq!(seen[0]["effect"], false, "{seen:?}");
+}
