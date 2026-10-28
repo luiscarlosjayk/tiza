@@ -28,6 +28,7 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 | Add a dependency | `../dev/adr/0004-dependencias.md` (criteria and registry) |
 | Write or change a page of the docs | `../dev/writing-docs.md`, `../dev/doc-roles.md` |
 | Change what the renderer draws | [Tests, images and budgets](#tests-images-and-budgets) |
+| Plan a card or write a design | `../dev/lessons/README.md` (the checklist, then the file of your area) |
 | Make a design decision | `../dev/adr/` (one new record for each decision) |
 | Publish a release | [CONTRIBUTING.md](CONTRIBUTING.md#releases-maintainers) |
 
