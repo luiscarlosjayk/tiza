@@ -668,7 +668,7 @@
         ]
       },
       "from_line": {
-        "description": "First line to highlight (the rest of the code is dimmed)",
+        "description": "First line to keep in focus; Tiza dims the code and the annotations outside the range",
         "format": "uint32",
         "minimum": 0,
         "type": [
@@ -683,7 +683,7 @@
         ]
       },
       "ids": {
-        "description": "Ids of annotations to highlight; the others are dimmed and their code stays in focus",
+        "description": "Ids of annotations that keep their color, also outside the range; their code stays in focus",
         "items": {
           "type": "string"
         },
@@ -702,7 +702,7 @@
         ]
       },
       "to_line": {
-        "description": "Last line to highlight; defaults to from_line",
+        "description": "Last line to keep in focus; defaults to from_line",
         "format": "uint32",
         "minimum": 0,
         "type": [

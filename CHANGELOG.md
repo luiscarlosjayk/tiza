@@ -19,6 +19,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - While follow mode is paused, a file that is not valid UTF-8 gives its error one time, and presentation mode shows no follow message.
 - When the config file has an error, Tiza ignores only the entry or the lines with the error. It writes a warning with the path, the line and the key on stderr, and the status bar shows the first warning at start. Before, an error of TOML made Tiza ignore the whole file.
 - `:numbers on` writes `"numbers": true` into the document. Thus `numbers = false` in `config.toml` does not hide the line numbers of that document. A document without `numbers` uses the value of the config file.
+- A spotlight with lines also dims each annotation that does not touch its lines, for example a note or a box of an earlier step. An annotation in `ids` keeps its color. An annotation that touches the lines keeps its color too: for example, a box that covers part of the lines, or an arrow that goes into them or across them. Before, a spotlight with only lines dimmed only the code. A spotlight with lines and `ids` dimmed each annotation that was not in `ids`.
 
 ## [0.1.2] - 2026-10-26
 

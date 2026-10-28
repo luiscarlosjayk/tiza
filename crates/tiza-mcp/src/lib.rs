@@ -404,9 +404,11 @@ pub struct CalloutParams {
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct SpotlightParams {
-    #[schemars(description = "First line to highlight (the rest of the code is dimmed)")]
+    #[schemars(
+        description = "First line to keep in focus; Tiza dims the code and the annotations outside the range"
+    )]
     pub from_line: Option<u32>,
-    #[schemars(description = "Last line to highlight; defaults to from_line")]
+    #[schemars(description = "Last line to keep in focus; defaults to from_line")]
     pub to_line: Option<u32>,
     #[schemars(
         description = "Text on the first line of the range, instead of from_line (with find_end)"
@@ -415,7 +417,7 @@ pub struct SpotlightParams {
     #[schemars(description = "Text on the last line of the range, searched after find_start")]
     pub find_end: Option<String>,
     #[schemars(
-        description = "Ids of annotations to highlight; the others are dimmed and their code stays in focus"
+        description = "Ids of annotations that keep their color, also outside the range; their code stays in focus"
     )]
     pub ids: Option<Vec<String>>,
     #[schemars(description = "Step at which it activates (defaults to the current one)")]
@@ -1000,7 +1002,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Directs attention in a step: dims the code outside a line range and/or the annotations outside `ids`. Use it as a 'look here' step between reveals. Active from `step` to `until`."
+        description = "Directs attention in a step: dims the code outside a line range, and each annotation that does not touch the range and is not in `ids`. An arrow touches the range with one end inside it, or when it goes across it. With only `ids`, it dims every annotation outside `ids`. Use it as a 'look here' step between reveals. Active from `step` to `until`."
     )]
     async fn add_spotlight(
         &self,

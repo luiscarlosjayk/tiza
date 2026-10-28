@@ -176,7 +176,7 @@ Each `type` adds its own fields.
 |---|---|---|---|
 | `from_line` | integer | Required when there are no `ids` | The first line that the spotlight does not dim. |
 | `to_line` | integer | `from_line` | The last line that the spotlight does not dim, not before `from_line`. |
-| `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim. |
+| `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim, also outside its lines. |
 | `until` | integer | No default | The last step at which the spotlight is active. |
 
 #### Values of annotation fields
@@ -203,7 +203,11 @@ Each value has this meaning:
 #### Rules for annotations
 
 - A spotlight is active from its `step` to `until`. Without `until`, it is active only at its `step`.
-- A spotlight dims the code outside its lines. When it has `ids`, it also dims the annotations outside `ids`. With only `ids`, it shows the code of those annotations.
+- A spotlight dims the code outside its lines. It does not dim the code of the annotations in its `ids`.
+- A spotlight also dims each annotation that does not touch its lines and that is not in its `ids`.
+- An annotation touches the lines of a spotlight when one or more of its lines are in the range. The lines of a box or a callout go from `from_line` to `to_line`. The lines of an arrow go from one end to the other. Thus an arrow that goes across the range touches it.
+- A spotlight with only `ids` shows only the code of those annotations. It dims all the other annotations.
+- When two or more spotlights are active at one step, Tiza uses the lines and the `ids` of all of them.
 - Tiza refuses a blank `text`, and a range that ends before it starts, when you add an annotation.
 - An annotation whose lines are not in the code stays in the file. Tiza does not draw it, and `tiza check` gives an error for it.
 

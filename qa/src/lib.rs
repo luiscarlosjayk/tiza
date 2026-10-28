@@ -358,6 +358,16 @@ impl Live {
         r.result.unwrap_or(serde_json::Value::Null)
     }
 
+    /// The screen drawn with ratatui's TestBackend at `cols×rows`, cell by
+    /// cell, with the symbol and the style of each cell.
+    pub fn buffer(&self, cols: u16, rows: u16) -> ratatui::buffer::Buffer {
+        self.with(move |app| {
+            let mut t = Terminal::new(TestBackend::new(cols, rows)).unwrap();
+            t.draw(|f| tiza_tui::ui::draw(f, app)).unwrap();
+            t.backend().buffer().clone()
+        })
+    }
+
     /// The screen as plain text, drawn with ratatui's TestBackend at `cols×rows`.
     pub fn screen(&self, cols: u16, rows: u16) -> String {
         self.with(move |app| {

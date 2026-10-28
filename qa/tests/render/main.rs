@@ -21,6 +21,7 @@ mod padding;
 mod padding_override;
 mod presentation_geometry;
 mod right_margin;
+mod spotlight_dimming;
 mod stable_geometry;
 mod theme_files;
 mod themes;

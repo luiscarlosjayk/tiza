@@ -573,7 +573,11 @@ fn layout_pass(
     let color_of = |a: &Annotation| colors.get(a.id.as_str()).copied().unwrap_or(theme.accent);
 
     // ---- spotlights active at this step ----
+    // `spot_lines`: the code lines that stay bright (the ranges, and the
+    // lines of the annotations in `ids`). `spot_ranges`: only the ranges,
+    // the lines that an annotation must touch to stay bright.
     let mut spot_lines: Vec<(u32, u32)> = Vec::new();
+    let mut spot_ranges: Vec<(u32, u32)> = Vec::new();
     let mut spot_ids: Vec<&str> = Vec::new();
     let mut spot_any = false;
     for a in &vis {
@@ -588,7 +592,7 @@ fn layout_pass(
         {
             spot_any = true;
             if let Some(f) = from_line {
-                spot_lines.push((*f, to_line.unwrap_or(*f)));
+                spot_ranges.push((*f, to_line.unwrap_or(*f)));
             }
             for id in ids {
                 spot_ids.push(id.as_str());
@@ -598,14 +602,17 @@ fn layout_pass(
             }
         }
     }
+    spot_lines.extend_from_slice(&spot_ranges);
     let line_in_spot =
         |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
-    // An annotation is dimmed if there are spotlights with ids and it is not among them.
+    // While a spotlight is active, an annotation stays bright when it is in
+    // the `ids` of a spotlight or when it touches the range of one. Every
+    // other annotation is dimmed.
     let ann_dimmed = |a: &Annotation| {
         spot_any
-            && !spot_ids.is_empty()
-            && !spot_ids.contains(&a.id.as_str())
             && !matches!(a.shape, Shape::Spotlight { .. })
+            && !spot_ids.contains(&a.id.as_str())
+            && !touches_any(&a.shape, &spot_ranges)
     };
     let color_of = |a: &Annotation| {
         if ann_dimmed(a) {
@@ -2085,6 +2092,20 @@ fn own_rows_end(rows: &[Row], y: usize) -> usize {
     (y + 1..rows.len())
         .find(|&r| matches!(rows[r], Row::Code(_) | Row::BoxTop(_)))
         .unwrap_or(rows.len())
+}
+
+/// Whether a shape touches one of the line ranges of the spotlights: the
+/// lines from its first line to its last line overlap the range. So a box
+/// that covers part of the range touches it, and an arrow touches it with
+/// one end inside or when it goes across it.
+fn touches_any(shape: &Shape, ranges: &[(u32, u32)]) -> bool {
+    let lines = shape.line_ranges();
+    let first = lines.iter().map(|&(a, b)| a.min(b)).min();
+    let last = lines.iter().map(|&(a, b)| a.max(b)).max();
+    let (Some(first), Some(last)) = (first, last) else {
+        return false;
+    };
+    ranges.iter().any(|&(from, to)| first <= to && from <= last)
 }
 
 /// `doc` with every blank label, box label and callout title taken as

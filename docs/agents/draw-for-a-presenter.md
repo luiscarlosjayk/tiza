@@ -50,7 +50,7 @@ The instance holds the document. Do not edit the `.tiza` file while the instance
 | Show where a value goes | `add_arrow` |
 | Give a span a meaning, such as `move` or `read` | `add_mark` |
 | Color a span that has no special meaning | `highlight` |
-| Dim the code outside the lines that you name | `add_spotlight` |
+| Dim the code and the annotations outside the lines that you name | `add_spotlight` |
 | Point at a line while you talk | `point_at` |
 
 - `list_kinds` gives the [kinds](../reference/document-format.md#kinds) of a mark. For a style that many marks use, call `define_style` once. For one mark only, give `style`.
