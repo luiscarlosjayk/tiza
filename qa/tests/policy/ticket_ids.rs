@@ -1,7 +1,8 @@
 //! No ticket id (`t-` and three digits) in the repository, `qa/` too.
 
 use std::path::{Path, PathBuf};
-use std::process::Command;
+
+use crate::common::repository_files;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -14,18 +15,6 @@ fn read(rel: &str) -> String {
     std::fs::read_to_string(root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
 }
 
-// --- The files git tracks -----------------------------------------------
-
-/// Git variables a parent process may have set: they would point these
-/// commands at another repository.
-const GIT_ENV: [&str; 5] = [
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_INDEX_FILE",
-    "GIT_COMMON_DIR",
-    "GIT_OBJECT_DIRECTORY",
-];
-
 // ---------- No ticket ids ----------
 
 /// Read as binary whatever their bytes: fonts and images. Any other file
@@ -34,64 +23,12 @@ const BINARY_EXT: [&str; 9] = [
     "ttf", "otf", "woff", "woff2", "png", "gif", "jpg", "jpeg", "ico",
 ];
 
-/// The repository's files, relative to its root, but `qa/.gitleaksignore`
-/// (its entries are paths of old commits, as gitleaks reports them): the ones
-/// git tracks (`git ls-files`; untracked files are left out, so a local
-/// notes folder in the checkout does not fail the gate), else a walk of the
-/// tree without `target/` and `.git`.
-fn repository_files() -> Vec<String> {
-    let root = root();
-    let mut cmd = Command::new("git");
-    for v in GIT_ENV {
-        cmd.env_remove(v);
-    }
-    let listed = cmd
-        .args(["ls-files", "-z", "--cached"])
-        .current_dir(&root)
-        .output()
-        .ok()
-        .filter(|o| o.status.success());
-    let mut files: Vec<String> = match listed {
-        Some(o) => String::from_utf8_lossy(&o.stdout)
-            .split('\0')
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect(),
-        None => {
-            let mut v = Vec::new();
-            walk(&root, &root, &mut v);
-            v
-        }
-    };
+/// The files to read: the repository's files but `qa/.gitleaksignore`
+/// (its entries are paths of old commits, as gitleaks reports them).
+fn files_to_read() -> Vec<String> {
+    let mut files = repository_files();
     files.retain(|f| f != "qa/.gitleaksignore");
-    files.sort();
-    files.dedup();
     files
-}
-
-/// Every regular file under `dir`, relative to `root`, with `/` separators;
-/// `target` and `.git` (a directory, or a worktree's file) are left out.
-fn walk(root: &Path, dir: &Path, out: &mut Vec<String>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for e in entries.flatten() {
-        let name = e.file_name();
-        if name == ".git" || name == "target" {
-            continue;
-        }
-        let Ok(ft) = e.file_type() else {
-            continue;
-        };
-        let path = e.path();
-        if ft.is_dir() {
-            walk(root, &path, out);
-        } else if ft.is_file()
-            && let Ok(rel) = path.strip_prefix(root)
-        {
-            out.push(rel.to_string_lossy().replace('\\', "/"));
-        }
-    }
 }
 
 /// Where `\bt-\d{3}\b` matches in `line` (byte offsets): `t-` and exactly
@@ -125,7 +62,7 @@ fn ids_none_in_the_repository() {
         .find(|l| l.starts_with("- No ticket ids"))
         .map(str::to_string)
         .expect("AGENTS.md states the rule on ticket ids");
-    let files = repository_files();
+    let files = files_to_read();
     assert!(
         files.iter().any(|f| f == "README.md") && files.iter().any(|f| f.ends_with(".rs")),
         "the listing missed the README or the sources: {files:?}"

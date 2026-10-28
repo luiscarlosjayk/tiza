@@ -13,6 +13,21 @@ use ratatui::{Terminal, backend::TestBackend};
 use tiza_core::Document;
 use tiza_tui::app::App;
 
+pub mod markdown;
+
+/// The root of the repository: the folder above `qa/`.
+pub fn repo_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf()
+}
+
+/// The text of a file of the repository, by its path from the root.
+pub fn repo_file(rel: &str) -> String {
+    std::fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"))
+}
+
 /// Path of a fixture under `qa/fixtures/`.
 pub fn fixture(rel: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
