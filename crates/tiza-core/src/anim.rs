@@ -47,6 +47,9 @@ pub struct Frame {
     /// An intermediate frame of a typing animation (the step's annotations
     /// are not drawn yet).
     pub typing: bool,
+    /// An intermediate frame of an enter effect (the step's annotations
+    /// come in, [`crate::effects`]).
+    pub effect: bool,
 }
 
 /// Validates the seconds each step of a recording stays (`--interval`,
@@ -98,6 +101,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
     let lay = |d: &Document, step: u32, typing: bool, g: Option<&StableGeometry>| {
         layout_with(d, theme, &options(d, step, typing), g).canvas
     };
+    let effects = doc.effects.unwrap_or_default();
     let mut out: Vec<Frame> = Vec::new();
     for step in first..=last {
         // Typed moves: the code as it is being typed, the annotations of the
@@ -123,6 +127,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                     canvas: lay(&d, step, true, None),
                     delay_ms: delay.min(max),
                     typing: true,
+                    effect: false,
                 });
             }
         }
@@ -133,11 +138,36 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
             None if step == last => hold.saturating_mul(2),
             None => hold,
         };
+        // The enter effects of the document, after its typing: the frames
+        // of the effect, then the step's own frame.
+        let canvas = if effects.any() {
+            let (l, trace) = crate::layout::layout_traced(
+                doc,
+                theme,
+                &options(doc, step, false),
+                Some(&geometry),
+            );
+            if let Some(plan) = crate::effects::Plan::new(&l.canvas, &trace, effects) {
+                for (canvas, delay_ms) in plan.frames(&l.canvas, crate::effects::EXPORT_FRAME_MS) {
+                    out.push(Frame {
+                        step,
+                        canvas,
+                        delay_ms,
+                        typing: false,
+                        effect: true,
+                    });
+                }
+            }
+            l.canvas
+        } else {
+            lay(doc, step, false, Some(&geometry))
+        };
         out.push(Frame {
             step,
-            canvas: lay(doc, step, false, Some(&geometry)),
+            canvas,
             delay_ms: delay,
             typing: false,
+            effect: false,
         });
     }
     // Same size for every frame: pad with the theme background.

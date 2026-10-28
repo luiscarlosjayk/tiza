@@ -19,6 +19,7 @@ pub mod carry;
 pub mod cast;
 pub mod check;
 pub mod config;
+pub mod effects;
 pub mod error;
 pub mod fs;
 pub mod highlight;

@@ -156,6 +156,11 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
+    /// Experimental enter effects: how the annotations of a step come in
+    /// when the step goes forward (see [`crate::effects`]). Absent: the
+    /// `effects` of the config file's `[defaults]`, else none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effects: Option<crate::effects::Effects>,
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -929,6 +934,7 @@ impl Document {
             theme_overrides: None,
             steps: Vec::new(),
             looping: false,
+            effects: None,
         }
     }
 

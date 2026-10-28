@@ -1,0 +1,49 @@
+{
+ "schema": 1,
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let a = String::new();",
+  "    let b = &a;",
+  "    let c = 1;",
+  "    println!(\"{b}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "b1",
+   "step": 1,
+   "type": "box",
+   "from_line": 2,
+   "to_line": 3,
+   "fill": false
+  },
+  {
+   "id": "u1",
+   "step": 2,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 4,
+    "start": 4,
+    "end": 14
+   }
+  },
+  {
+   "id": "r1",
+   "step": 3,
+   "type": "arrow",
+   "from": {
+    "line": 5,
+    "col": 15
+   },
+   "to": {
+    "line": 2,
+    "col": 8
+   }
+  }
+ ]
+}
