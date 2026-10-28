@@ -1,10 +1,13 @@
 //! Animated GIF from Tiza's own frames: every frame is rasterized
-//! by the PNG path (same pixels as `render --out x.png`), the palette is
-//! built once for the whole animation (the colors that cover most pixels
-//! — background, code, rails — are kept exactly; the anti-aliasing blends
-//! are median-cut into what is left of the 256 entries; no dithering, so
-//! text stays crisp), and every frame after the first is written as the
-//! sub-rectangle that changed, so a seven-step demo stays small.
+//! by the PNG path in strips of rows (the pixels of `render --out x.png`,
+//! except some edge pixels of a glyph or a round corner at the edge of a
+//! strip, and at row 8191 of a taller image),
+//! the palette is built once for the whole animation (the colors that
+//! cover most pixels — background, code, rails — are kept exactly; the
+//! anti-aliasing blends are median-cut into what is left of the 256
+//! entries; no dithering, so text stays crisp), and every frame after the
+//! first is written as the sub-rectangle that changed, so a seven-step
+//! demo stays small.
 
 use std::collections::HashMap;
 
@@ -13,7 +16,7 @@ use tiza_core::canvas::Canvas;
 use tiza_core::theme::Theme;
 
 use crate::Error;
-use crate::png::{PngOptions, rasterize};
+use crate::png::{PngOptions, Raster, Strips};
 use crate::svg::{SvgOptions, to_svg};
 
 /// Shortest delay a GIF frame may have, in milliseconds (the format counts
@@ -81,15 +84,16 @@ pub fn to_gif(
         return Err(Error::Gif("no frames".into()));
     }
     // 1. The colors of the whole animation. Each frame is rasterized
-    // twice, here and in step 3, and its pixels are dropped after each
-    // use: to keep the pixels of every frame between the two steps would
-    // take 3 bytes per pixel and frame (2 GB for 22 frames of 300 lines at
-    // scale 2).
+    // twice, here and in step 3, one strip of rows at a time: to keep the
+    // pixels of every frame between the two steps would take 3 bytes per
+    // pixel and frame (2 GB for 22 frames of 300 lines at scale 2), and the
+    // pixels of one whole frame take 4 bytes per pixel (117 MB).
     let (mut width, mut height) = (0u32, 0u32);
     let mut histogram: HashMap<[u8; 3], u64> = HashMap::new();
+    let mut strips = Strips::default();
     for (i, (canvas, _)) in frames.iter().enumerate() {
-        let pm = rasterize_frame(canvas, theme, o)?;
-        let (w, h) = (pm.width(), pm.height());
+        let raster = frame_raster(canvas, theme, o)?;
+        let (w, h) = (raster.width, raster.height);
         if i == 0 {
             (width, height) = (w, h);
         } else if (w, h) != (width, height) {
@@ -97,9 +101,12 @@ pub fn to_gif(
                 "frame {i} is {w}×{h} px, the first one {width}×{height}: every frame of a take must have the same size"
             )));
         }
-        for (color, n) in color_runs(&pm) {
-            *histogram.entry(color).or_insert(0) += n as u64;
-        }
+        raster.strips(&mut strips, |pm| {
+            for (color, n) in color_runs(pm) {
+                *histogram.entry(color).or_insert(0) += n as u64;
+            }
+            Ok(())
+        })?;
     }
     if width > u16::MAX as u32 || height > u16::MAX as u32 {
         return Err(Error::TooBig(width, height));
@@ -128,24 +135,27 @@ pub fn to_gif(
         // animation.
         let mut buffer: Vec<u8> = Vec::new();
         for (i, (canvas, _)) in frames.iter().enumerate() {
-            // Rasterizing is deterministic: the same pixels as in step 1. A
-            // frame with another size, or with a color that step 1 did not
-            // count, is an error, not a panic.
-            let pm = rasterize_frame(canvas, theme, o)?;
+            // Rasterizing is deterministic: the same strips, with the same
+            // pixels, as in step 1. A frame with another size, or with a
+            // color that step 1 did not count, is an error, not a panic.
+            let raster = frame_raster(canvas, theme, o)?;
             let differs =
                 || Error::Gif(format!("frame {i} rasterized differently the second time"));
-            if (pm.width(), pm.height()) != (width, height) {
+            if (raster.width, raster.height) != (width, height) {
                 return Err(differs());
             }
             screen.start();
-            for (color, n) in color_runs(&pm) {
-                let index = *lookup.get(&color).ok_or_else(differs)?;
-                screen.write(index, n);
-            }
+            raster.strips(&mut strips, |pm| {
+                for (color, n) in color_runs(pm) {
+                    let index = *lookup.get(&color).ok_or_else(differs)?;
+                    screen.write(index, n);
+                }
+                Ok(())
+            })?;
             // The runs cover the frame: no pixel of the frame before stays.
             debug_assert_eq!(screen.at, screen.idx.len());
-            // The pixels of a frame are freed before its rectangle is copied.
-            drop(pm);
+            // The parsed frame is freed before its rectangle is copied.
+            drop(raster);
             let (left, top, w, h) = if i == 0 {
                 (0, 0, width, height)
             } else {
@@ -200,11 +210,11 @@ pub fn to_gif(
     ))
 }
 
-/// One frame through the PNG path. Over the limits, an error comes before
-/// the SVG, not after it.
-fn rasterize_frame(canvas: &Canvas, theme: &Theme, o: &GifOptions) -> Result<Pixmap, Error> {
+/// One frame, parsed for the PNG path. Over the limits, an error comes
+/// before the SVG, not after it.
+fn frame_raster(canvas: &Canvas, theme: &Theme, o: &GifOptions) -> Result<Raster, Error> {
     crate::limits::image_size(canvas, &o.svg, &o.png)?;
-    rasterize(&to_svg(canvas, theme, &o.svg), &o.png)
+    Raster::new(&to_svg(canvas, theme, &o.svg), &o.png)
 }
 
 /// The pixels of a frame as runs of one color, row after row. A frame of

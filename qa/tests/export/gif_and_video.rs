@@ -106,8 +106,8 @@ fn the_example_becomes_a_small_looping_gif_with_one_geometry() {
             .all(|f| f.0 + f.2 <= g.width && f.1 + f.3 <= g.height)
     );
     // Stable geometry: the same PNG path at every step puts the code at
-    // one x (stable geometry), and the GIF is those pixels; the frame size is the
-    // tallest step's and never changes.
+    // one x (stable geometry), and the GIF is made from those pixels; the
+    // frame size is the tallest step's and never changes.
     let out2 = tiza(&[
         "render",
         ex.to_str().unwrap(),
