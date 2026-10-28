@@ -62,3 +62,17 @@ pub fn table_rows(text: &str) -> Vec<(usize, Vec<String>)> {
         })
         .collect()
 }
+
+/// The JSON of the first `tiza scene patch '…'` command of `text`, or
+/// `None` when the text has no such command.
+pub fn scene_patch_json(text: &str) -> Option<serde_json::Value> {
+    const COMMAND: &str = "tiza scene patch '";
+    let start = text.find(COMMAND)? + COMMAND.len();
+    let len = text[start..]
+        .find('\'')
+        .expect("the quote that closes the JSON of `tiza scene patch`");
+    Some(
+        serde_json::from_str(&text[start..start + len])
+            .unwrap_or_else(|e| panic!("the JSON of `tiza scene patch` is not valid: {e}")),
+    )
+}

@@ -254,6 +254,10 @@ code, kbd, pre { font-family: var(--mono); }
   tab-size: 4;
 }
 .doc pre code { font-size: inherit; background: none; border: 0; padding: 0; white-space: pre; }
+/* A Tiza frame in a folded block (<details>) is a text export of 92
+   columns. At this size the whole frame shows, without a scroll, in a
+   window of 1280 px or more. */
+.doc details pre { font-size: 11.5px; }
 /* site.js marks a block of `:` commands: a long command wraps, and its next
    rows are indented, so it still reads as one command. */
 .doc pre.cmds code { white-space: normal; }

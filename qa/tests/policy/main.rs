@@ -10,5 +10,7 @@ mod issue_forms;
 mod package_licences;
 mod readme_images;
 mod scenario_paths;
+mod text_frames;
 mod ticket_ids;
+mod tour_of_tally;
 mod zed_tasks_doc;

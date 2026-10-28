@@ -30,6 +30,7 @@
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use tiza_qa::markdown::scene_patch_json;
 use tiza_qa::{Live, McpClient, example, scratch, tiza, tiza_ok};
 
 fn root() -> PathBuf {
@@ -276,13 +277,7 @@ fn the_prompts_tool_calls_rebuild_the_shipped_example() {
 /// The JSON that scenario 12 passes to `tiza scene patch '…'`.
 fn scenario_12_patch() -> Value {
     let s = scenarios();
-    let body = &s[11].1;
-    let start = body
-        .find("tiza scene patch '")
-        .expect("scenario 12 patches the steps")
-        + "tiza scene patch '".len();
-    let len = body[start..].find('\'').expect("the closing quote");
-    serde_json::from_str(&body[start..start + len]).expect("scenario 12's patch is JSON")
+    scene_patch_json(&s[11].1).expect("scenario 12 patches the steps")
 }
 
 /// Waits (10 s at most) until `cond` holds.

@@ -74,6 +74,8 @@ fn the_script_uses_tiza_alone_and_writes_every_readme_image() {
         "docs/img/ownership-final.png",
         "docs/img/src/step$s.png",
         "readme-images:ownership-txt",
+        "readme-images:frame",
+        "--text",
     ] {
         assert!(s.contains(out), "script does not write {out}");
     }
