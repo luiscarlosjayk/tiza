@@ -290,9 +290,10 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `stale_moves` | The number of moves that do not match the code any more. |
 | `save_error` | Why the last save of the document failed, for example a read-only folder, or `null` when the last save worked. |
 | `follow` | While follow mode is on: `paused`, `pending` and `resume_step`, as `follow.status` gives them. |
+| `effect` | Experimental. `true` while an enter effect plays on the screen. |
 
 - A field that does not apply is not in the result, except `file`, `pointer` and `save_error`, which are `null`.
-- `loop` and `supervised` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.
+- `loop`, `supervised` and `effect` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.
 - `by` of `pointer` is `presenter` or `agent`. It tells who moved the pointer last.
 - `revision` grows when something changes, by 1 or more. A request that changes nothing keeps it.
 - A change is a change of the document or of what the instance shows. Examples are the step, the focus, the theme and supervised mode.

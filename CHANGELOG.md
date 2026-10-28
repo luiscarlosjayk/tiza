@@ -5,6 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 ## [Unreleased]
 
 ### Added
+- Experimental: enter effects. With `"effects": {"enter": "draw", "dim": "fade"}` in the document, `--effects draw,dim` or `:effects on`, Tiza draws the lines of the new annotations of a step along their path, and the dim of a new spotlight fades in. The TUI plays them when the step goes forward. A GIF, a WebP and a video show them as frames. Without effects, nothing changes.
 - `[defaults]` in `~/.config/tiza/config.toml` sets the values that each session starts with: `pad`, `numbers`, `mouse`, `autosave`, `layout`, and the `width` of `tiza render` and `tiza check`. The document, the flags and the `:` commands win over the file.
 - `[styles]` in `config.toml` holds your own mark styles for every document. When a mark uses one for the first time, Tiza copies the style into the document. Thus the document looks the same on a computer without your file. `list_kinds` and `style.list` show the personal styles in `personal`.
 - `tiza config` shows the config file in use, each value with its source, the personal styles and the warnings of the file.

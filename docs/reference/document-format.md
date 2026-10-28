@@ -52,6 +52,7 @@ Two examples show moves and views:
 | `padding` | array of two integers | No default | The blank rows and columns around the code, as `[vertical, horizontal]`. |
 | `margin` | integer | No default | The maximum width of the right margin in columns. Notes wrap at this width. Tiza cuts labels, legends and long notes there. |
 | `numbers` | `true` or `false` | `numbers` of the config file, else `true` | When `false`, Tiza does not show line numbers. |
+| `effects` | object | `effects` of the config file, else no effects | Experimental. How the annotations of a step come in. See [Enter effects](#enter-effects-experimental). |
 
 - `views` holds the full code of a linked file. The window stays in the move.
 - When a linked file is not in `views`, Tiza reads it from disk.
@@ -571,6 +572,32 @@ Tiza never drops these entries:
 Tiza keeps them in the file. It gives one warning for each entry, and the warning names all the unknown keys of that entry. The warning appears when you open the document. It also appears in `status.warnings` and in the output of `tiza render` and `tiza check`.
 
 Only the entries of `steps` keep unknown keys. Tiza does not keep an unknown key at the top level or in an annotation.
+
+## Enter effects (experimental)
+
+This function is an experiment. It can change or go away.
+
+An enter effect shows how the new annotations of a step come in when the step goes forward. The layout does not change. The effect only changes which cells of the final drawing show, and their colors.
+
+```json
+"effects": {"enter": "draw", "dim": "fade"}
+```
+
+| Field | Values | Default | Meaning |
+|---|---|---|---|
+| `enter` | `"draw"` or `"none"` | `"none"` | With `draw`, Tiza draws the line of each new annotation along its path. Then the text of callouts and labels fades in. |
+| `dim` | `"fade"` or `"none"` | `"none"` | With `fade`, the cells that a new spotlight dims fade to the dimmed color. |
+
+- Tiza draws a box or a callout clockwise from its top-left corner, an underline from left to right, and an arrow from its source.
+- The code that an annotation colors fades in with its line. A highlight with no line fades in.
+- The annotations of one step come in at the same time.
+- The effect plays when the step goes forward: `n`, an auto-advance, a goto and the loop. It plays after the typing of the step.
+- Any key ends the effect, and Tiza ignores that key. `p` shows the final drawing at once.
+- The auto-advance countdown starts when the effect ends.
+- A GIF, an animated WebP, an MP4 and a WebM show the effect as frames. A still, a text export and `render --step N` show the final drawing.
+- `--effects` of the TUI and of `tiza render`, and `:effects`, win over the document. The document wins over `effects` in `[defaults]` of the [config file](config.md).
+- `--effects` and `:effects` take `draw`, `dim`, `draw,dim`, `on` or `off`.
+- With the `terminal` theme, a fade changes the color in one step at its middle.
 
 ## Rules the schema does not check
 

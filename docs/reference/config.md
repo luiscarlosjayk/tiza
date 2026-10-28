@@ -14,6 +14,7 @@ mouse = true
 autosave = false
 layout = "stable"
 width = 120
+effects = "draw,dim"
 
 [styles.decision]
 glyph = "◆"
@@ -75,6 +76,7 @@ The values that a session starts with.
 | `autosave` | `true` or `false` | `true` | Autosave of the document. |
 | `layout` | `"stable"` or `"dynamic"` | `"dynamic"` | The layout of normal mode. |
 | `width` | integer | `100` | The width of `tiza render` and `tiza check`, from 20 to 400 columns. |
+| `effects` | string | `"off"` | Experimental. The enter effects of a document that does not set `effects`: `"draw"`, `"dim"`, `"draw,dim"`, `"on"` or `"off"`. See [Enter effects](document-format.md#enter-effects-experimental). |
 
 - `pad = "V"` sets `H` to two times `V`. A number, for example `pad = 2`, does the same. `pad = "default"` gives the built-in value.
 - `numbers`, `mouse` and `autosave` also take the strings `"on"`, `"off"`, `"yes"` and `"no"`.
@@ -93,6 +95,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 | `autosave` | `--no-save` | No | `:autosave on`, `:autosave off` |
 | `layout` | No flag | No | `:layout stable`, `:layout dynamic` |
 | `width` | `--width N` of `tiza render` and `tiza check` | No | No command |
+| `effects` | `--effects` of the TUI and of `tiza render` | Yes, as `effects` | `:effects on`, `:effects off`, for the session |
 
 - **`pad`:** `--padding` wins over the padding of the document for the session. `:pad V H` saves the padding in the document. `:pad default` removes it from the document. Then the padding of the config file applies. When the file has no `pad`, the built-in value applies.
 - **`numbers`:** When the document has a `numbers` field, it wins over the config file. `:numbers on` and `:numbers off` always write the field, also when the gutter is already in that state. Then the document looks the same on a computer without your config file. To use the config file again, remove the field from the `.tiza` file.
@@ -146,6 +149,7 @@ defaults:
   autosave  off      config
   layout    stable   config
   width     120      config
+  effects   draw,dim config
 styles (config; a document style with the same name wins):
   decision ◆  decision  @purple
 theme (config): [dark] accent = #a6e3a1, [light] accent = #b7410e

@@ -105,6 +105,7 @@ These flags work with `tiza [FILE]`:
 | `--mouse` | Starts with mouse capture on. |
 | `--no-save` | Starts in no-save mode. |
 | `--no-socket` | Starts without the socket, so agents and `tiza next` cannot reach this TUI. |
+| `--effects EFFECTS` | Experimental. Plays the enter effects when the step goes forward. See [Enter effects](document-format.md#enter-effects-experimental). |
 | `-h` or `--help` | Prints the help. |
 | `-V` or `--version` | Prints the version and the commit. |
 
