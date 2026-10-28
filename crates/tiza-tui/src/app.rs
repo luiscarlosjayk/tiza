@@ -5726,11 +5726,12 @@ impl App {
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, rest) = self.parse_range_arg(rest).map_err(|e| match e {
             Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
-                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]   or   :box @'start'..@'end' [label]   ({m})"
+                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no] [effect=draw|fade]   or   :box @'start'..@'end' [label]   ({m})"
             )),
             other => other,
         })?;
-        let (label, kv) = split_trailing_kv(rest);
+        let (label, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut frame = tiza_core::model::BorderStyle::default();
         for (k, v) in &kv {
             apply_border_kv(&mut frame, k, v)?;
@@ -5741,7 +5742,7 @@ impl App {
             None,
             markers,
             None,
-            None,
+            effect,
             Shape::Box {
                 from_line: a,
                 to_line: b,
@@ -5914,20 +5915,25 @@ impl App {
         let (to, rest) = split_first(rest);
         if from.is_empty() || to.is_empty() {
             return Err(Error::Invalid(
-                "usage: :arrow L:text L:text [label] [stroke=dashed] [heads=none,arrow] [route=sharp]"
+                "usage: :arrow L:text L:text [label] [stroke=dashed] [heads=none,arrow] [route=sharp] [effect=draw|fade]"
                     .into(),
             ));
         }
-        let (label, kv) = split_trailing_kv(rest);
+        let (label, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut line = tiza_core::model::LineStyle::default();
         for (k, v) in &kv {
             apply_line_kv(&mut line, k, v)?;
         }
         let f = self.resolve_anchor_strict(&parse_where(from, self.cursor_line)?)?;
         let t = self.resolve_anchor_strict(&parse_where(to, self.cursor_line)?)?;
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Arrow {
                 from: f,
                 to: t,
@@ -6133,14 +6139,7 @@ impl App {
                 "text" if is_callout => callout_text = Some(v.clone()),
                 "label" | "text" | "title" => p.label = Some(v.clone()),
                 "color" => p.color = Some(v.clone()),
-                "effect" => {
-                    p.effect = Some(match v.as_str() {
-                        "draw" => Some(Effect::Draw),
-                        "fade" => Some(Effect::Fade),
-                        "none" => None,
-                        _ => return Err(Error::Invalid(UNKNOWN_EFFECT.into())),
-                    })
-                }
+                "effect" => p.effect = Some(take_effect(&mut vec![(k.clone(), v.clone())])?),
                 "step" => {
                     p.step = Some(
                         v.parse()
@@ -6199,14 +6198,16 @@ impl App {
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
         // `emphasis=underline` (or `style=`) may trail the label.
-        let (rest, kv) = split_trailing_kv(rest);
+        let (rest, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut emphasis = Emphasis::default();
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" | "style" => emphasis = parse_emphasis(v)?,
                 _ => {
                     return Err(Error::Invalid(
-                        "unknown key for :hl (emphasis=fill|underline|brackets|strike)".to_string(),
+                        "unknown key for :hl (emphasis=fill|underline|brackets|strike, effect=draw|fade)"
+                            .to_string(),
                     ));
                 }
             }
@@ -6220,7 +6221,7 @@ impl App {
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(
-                        "usage: :hl L:text [label]   (L:text = the text on line L; L: alone = the whole line; .:text = the cursor line)"
+                        "usage: :hl L:text [label] [effect=draw|fade]   (L:text = the text on line L; L: alone = the whole line; .:text = the cursor line)"
                             .into(),
                     ));
                 }
@@ -6228,9 +6229,13 @@ impl App {
                 (self.resolve_span_strict(&w)?, label)
             }
         };
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Highlight {
                 span,
                 label: opt(label),
@@ -6244,14 +6249,15 @@ impl App {
     /// an alias (`borrow`), a style defined with `:style`, or a bare glyph/emoji for a
     /// one-off inline style (`:mark 🔥 7:&t hot path`). `KIND@COLOR` sets the color.
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
-        let (rest, kv) = split_trailing_kv(rest);
+        let (rest, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut emphasis = Emphasis::default();
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" => emphasis = parse_emphasis(v)?,
                 _ => {
                     return Err(Error::Invalid(
-                        "unknown key for :mark (emphasis=fill|underline|brackets|strike)"
+                        "unknown key for :mark (emphasis=fill|underline|brackets|strike, effect=draw|fade)"
                             .to_string(),
                     ));
                 }
@@ -6261,7 +6267,7 @@ impl App {
         let (at, label) = split_first(rest);
         if kind_tok.is_empty() || (at.is_empty() && self.pending_sel.is_none()) {
             return Err(Error::Invalid(format!(
-                "usage: :mark KIND[@COLOR] L:text [label]   KIND: {} | a :style name | a glyph",
+                "usage: :mark KIND[@COLOR] L:text [label] [effect=draw|fade]   KIND: {} | a :style name | a glyph",
                 self.kind_names().join(" ")
             )));
         }
@@ -6312,7 +6318,7 @@ impl App {
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(format!(
-                        "usage: :mark KIND[@COLOR] L:text [label]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
+                        "usage: :mark KIND[@COLOR] L:text [label] [effect=draw|fade]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
                         self.kind_names().join(" ")
                     )));
                 }
@@ -6337,9 +6343,13 @@ impl App {
             .and_then(|st| st.legend)
             .unwrap_or_else(|| kind.clone());
         let copied = personal.is_some().then(|| kind.clone());
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Mark {
                 kind,
                 span,
@@ -6450,8 +6460,11 @@ impl App {
             markers = m;
             rest = after;
         }
+        let mut effect = None;
         for tok in rest.split_whitespace() {
-            if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if tok.starts_with("effect=") {
+                effect = take_effect(&mut vec![split_token(tok)])?;
+            } else if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 range = Some(parse_range(tok)?);
             } else {
                 ids.push(tok.to_string());
@@ -6459,7 +6472,7 @@ impl App {
         }
         if range.is_none() && ids.is_empty() {
             return Err(Error::Invalid(
-                "usage: :spot A-B [ID…]  |  :spot ID…".into(),
+                "usage: :spot A-B [ID…] [effect=draw|fade]  |  :spot ID… [effect=draw|fade]".into(),
             ));
         }
         let id = self.add_annotation_full(
@@ -6468,7 +6481,7 @@ impl App {
             None,
             markers,
             None,
-            None,
+            effect,
             Shape::Spotlight {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
@@ -6483,7 +6496,7 @@ impl App {
     fn cmd_callout(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, mut rest) = self.parse_range_arg(rest).map_err(|e| match e {
             Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
-                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   (or @'start'..@'end')   ({m})"
+                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text [effect=draw|fade]   (or @'start'..@'end')   ({m})"
             )),
             other => other,
         })?;
@@ -6514,7 +6527,8 @@ impl App {
                 break;
             }
         }
-        let (text, kv) = split_trailing_kv(rest);
+        let (text, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut frame = tiza_core::model::BorderStyle::default();
         for (k, v) in &kv {
             apply_border_kv(&mut frame, k, v)?;
@@ -6528,7 +6542,7 @@ impl App {
             None,
             markers,
             None,
-            None,
+            effect,
             Shape::Callout {
                 from_line: a,
                 to_line: if b == a { None } else { Some(b) },
@@ -6548,15 +6562,34 @@ impl App {
             self.cursor_line
         } else {
             line.parse().map_err(|_| {
-                Error::Invalid("usage: :note L text  (L may be . for the cursor line)".into())
+                Error::Invalid(
+                    "usage: :note L text [effect=draw|fade]  (L may be . for the cursor line)"
+                        .into(),
+                )
             })?
+        };
+        // Only a last word `effect=…` is the effect: the text of a note
+        // can end in any other `key=value` (`x=1`).
+        let (text, effect) = match text.trim_end().rsplit_once(' ') {
+            Some((before, last)) if last.starts_with("effect=") => (
+                before.trim_end(),
+                take_effect(&mut vec![split_token(last)])?,
+            ),
+            None if text.trim_end().starts_with("effect=") => {
+                ("", take_effect(&mut vec![split_token(text.trim_end())])?)
+            }
+            _ => (text, None),
         };
         if text.is_empty() {
             return Err(Error::Invalid("the note is empty".into()));
         }
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Note {
                 line,
                 text: text.into(),
@@ -8035,6 +8068,22 @@ impl ExportFormat {
     }
 }
 
+/// Takes the `effect=` entries out of `kv`: `draw`, `fade` or `none`
+/// (no effect). The last one counts.
+fn take_effect(kv: &mut Vec<(String, String)>) -> Result<Option<Effect>, Error> {
+    let mut effect = None;
+    for (_, v) in kv.iter().filter(|(k, _)| k == "effect") {
+        effect = match v.as_str() {
+            "draw" => Some(Effect::Draw),
+            "fade" => Some(Effect::Fade),
+            "none" => None,
+            _ => return Err(Error::Invalid(UNKNOWN_EFFECT.into())),
+        };
+    }
+    kv.retain(|(k, _)| k != "effect");
+    Ok(effect)
+}
+
 /// Splits trailing `key=value` tokens off a free-text argument:
 /// `"move stroke=dashed heads=none,arrow"` → (`"move"`, [(stroke, dashed), (heads, "none,arrow")]).
 pub fn split_trailing_kv(s: &str) -> (&str, Vec<(String, String)>) {
@@ -8320,7 +8369,8 @@ fn check_width(params: Value) -> Result<Option<usize>, Error> {
 /// The refusal of `draw` on a shape with no stroke to draw.
 const DRAW_NEEDS_A_STROKE: &str = "effect draw needs a stroke: use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike";
 
-/// The refusal of an effect that `:set` does not know.
+/// The refusal of an effect that `:set` or an annotation command does not
+/// know.
 const UNKNOWN_EFFECT: &str = "unknown effect (use draw, fade or none)";
 
 /// Every `key=value` must have both halves: `=`, `=red` or `glyph=` are

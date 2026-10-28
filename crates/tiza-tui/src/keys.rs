@@ -322,7 +322,7 @@ pub const HELP: &[(Section, &[Row])] = &[
             Command {
                 syntax: ":hl {L:text} [{label}]",
                 desc: "Highlight the text. emphasis=underline, brackets or strike changes how \
-                       it shows.",
+                       it shows. effect=draw or fade gives it an enter effect.",
             },
             Command {
                 syntax: ":arrow {L:text} {L:text} [{label}]",
@@ -338,7 +338,8 @@ pub const HELP: &[(Section, &[Row])] = &[
             },
             Command {
                 syntax: ":callout {A}[-{B}] [@margin|@below|@auto] {text}",
-                desc: "Add a paragraph in a frame. title=\"…\" gives it a title.",
+                desc: "Add a paragraph in a frame. title=\"…\" gives it a title. effect=draw or \
+                       fade gives it an enter effect.",
             },
             Command {
                 syntax: ":spot {A-B} [{ID}…]",

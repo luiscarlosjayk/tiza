@@ -4,6 +4,8 @@ Use these commands to add an annotation. A new annotation goes to the step on sc
 
 Each image on this page is a frame of a `tiza render` export. The code is `examples/ownership.rs`. Each frame shows only the lines that it needs.
 
+`effect=E` sets the enter effect of the new annotation: draw or fade. See [Enter effects](../document-format.md#enter-effects-experimental).
+
 Tiza puts a label, a legend or a note in the right margin when the margin has room. When it has no room, Tiza puts it under the line. The frames on this page are narrow, so their labels are under the line.
 
 ## `:mark`
@@ -11,7 +13,7 @@ Tiza puts a label, a legend or a note in the right margin when the margin has ro
 Adds a mark on a span of code. The mark has a glyph, a legend and your label.
 
 ```
-:mark KIND L:TEXT [LABEL] [emphasis=E]
+:mark KIND L:TEXT [LABEL] [emphasis=E] [effect=E]
 ```
 
 <dl>
@@ -79,7 +81,7 @@ A glyph in place of `KIND` makes a style for this mark only. Tiza uses the label
 Adds a highlight and your label on a span of code.
 
 ```
-:hl L:TEXT [LABEL] [emphasis=E]
+:hl L:TEXT [LABEL] [emphasis=E] [effect=E]
 ```
 
 <dl>
@@ -142,7 +144,7 @@ For example, highlight `&t` on line 7:
 Adds an arrow from one span to another span, with your label.
 
 ```
-:arrow L:TEXT L:TEXT [LABEL] [stroke=S] [route=R] [heads=START,END]
+:arrow L:TEXT L:TEXT [LABEL] [stroke=S] [route=R] [heads=START,END] [effect=E]
 ```
 
 <dl>
@@ -218,7 +220,7 @@ A thick arrow with sharp corners:
 Adds a box with your label around lines.
 
 ```
-:box A-B [LABEL] [border=S] [corners=R] [fill=F]
+:box A-B [LABEL] [border=S] [corners=R] [fill=F] [effect=E]
 ```
 
 <dl>
@@ -288,7 +290,7 @@ A range of two markers finds the lines from their text. Tiza keeps the two marke
 Adds a note, a line of text, for a line of code. Tiza draws the note in the right margin when the margin has room. When the margin has no room, Tiza draws the note under the line, as in this frame.
 
 ```
-:note L TEXT
+:note L TEXT [effect=E]
 ```
 
 For example, add a note on line 3:
@@ -310,7 +312,7 @@ For example, add a note on line 3:
 Adds a callout, a paragraph of text, for lines of code.
 
 ```
-:callout A[-B] [@PLACE] [title="TEXT"] TEXT [border=S] [corners=R] [fill=F]
+:callout A[-B] [@PLACE] [title="TEXT"] TEXT [border=S] [corners=R] [fill=F] [effect=E]
 ```
 
 <dl>
@@ -386,8 +388,8 @@ When the right margin has no room, Tiza puts the callout under the lines.
 Adds a spotlight. At its step, Tiza dims the code and the annotations outside the lines. Tiza does not dim an annotation that you name, or its code.
 
 ```
-:spot A-B [ID…]
-:spot ID…
+:spot A-B [ID…] [effect=E]
+:spot ID… [effect=E]
 ```
 
 For example, highlight `&t`, then put a spotlight on lines 7 and 8:
