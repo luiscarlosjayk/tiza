@@ -102,6 +102,11 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("stpe 2", "did you mean :step, :style?"),
         ("colr a1 red", "did you mean :color?"),
         ("zzzzzz", "unknown command (try :help)"),
+        ("set a1 effect=draw", "effect draw needs a stroke"),
+        (
+            "set a4 effect=drw",
+            "unknown effect (use draw, fade or none)",
+        ),
     ] {
         rejected(&live, cmd, expect);
     }
@@ -132,6 +137,8 @@ fn valid_forms_still_work_and_report_what_they_did() {
         ("until a2 3", "a2 active until step 3"),
         ("callout 7-9 @below why", ": callout at L7-9"),
         ("set a1 color=blue", "a1"),
+        ("set a4 effect=draw", "a4"),
+        ("set a4 effect=none", "a4"),
         ("style io glyph=⚡ legend=io", "style io defined"),
         ("lang ts", "language: ts"),
         (

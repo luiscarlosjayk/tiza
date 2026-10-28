@@ -1,6 +1,7 @@
 //! The socket methods and `tiza api` / `tiza scene`: scene get, put and
 //! patch, annotations, errors, fuzzing and schemas.
 
+mod annotation_effect;
 mod clear_and_put_validation;
 mod error_values;
 mod file_not_shown;

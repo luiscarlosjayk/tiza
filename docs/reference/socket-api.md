@@ -165,6 +165,8 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - `annotation.update` takes the new place in `move`: `{"id": "a1", "move": {"at": {"find": "s: String"}}}`. `move` takes `at`, `from`, `to`, `from_line` and `to_line`.
 - `annotation.update` takes `shape`, which replaces the whole shape of the annotation.
 - `annotation.update` takes `heads` with one end only. The other end stays.
+- `annotation.add` and `annotation.update` take `effect`, the experimental [enter effect](document-format.md#enter-effects-experimental): `draw`, `fade` or `null`. In `annotation.update`, an absent `effect` keeps the effect, and `null` removes it.
+- `draw` on an annotation without a stroke fails with `invalid_argument`. `annotation.update` checks it when the request has `effect`, `shape` or `emphasis`. Other updates keep the effect, also on an annotation from a file.
 - `theme.set` without `theme` changes between dark and light, as [Agents and themes](themes.md#agents-and-themes) tells. The MCP tool `set_theme` needs `theme`.
 
 ### `scene.clear`

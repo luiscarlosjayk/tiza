@@ -40,6 +40,21 @@
           }
         },
         "type": "object"
+      },
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
       }
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -50,6 +65,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "from": {
         "$ref": "#/$defs/At"
@@ -114,6 +140,23 @@
     "type": "object"
   },
   "add_box": {
+    "$defs": {
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
+      }
+    },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "border": {
@@ -136,6 +179,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "fill": {
         "description": "Tint the inside: true/false (boxes default to true, callouts to false)",
@@ -203,6 +257,23 @@
     "type": "object"
   },
   "add_callout": {
+    "$defs": {
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
+      }
+    },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "border": {
@@ -224,6 +295,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "fill": {
         "description": "Tint the inside: true/false (boxes default to true, callouts to false)",
@@ -353,6 +435,21 @@
         },
         "type": "object"
       },
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
+      },
       "InlineStyle": {
         "properties": {
           "color": {
@@ -391,6 +488,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "emphasis": {
         "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
@@ -610,6 +718,23 @@
     "type": "object"
   },
   "add_note": {
+    "$defs": {
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
+      }
+    },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "color": {
@@ -618,6 +743,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "id": {
         "type": [
@@ -651,8 +787,36 @@
     "type": "object"
   },
   "add_spotlight": {
+    "$defs": {
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
+      }
+    },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+      },
       "find_end": {
         "description": "Text on the last line of the range, searched after find_start",
         "type": [
@@ -943,6 +1107,21 @@
           }
         },
         "type": "object"
+      },
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
       }
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -956,6 +1135,17 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "emphasis": {
         "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
@@ -1174,6 +1364,21 @@
           }
         },
         "type": "object"
+      },
+      "Effect": {
+        "description": "The enter effect of an annotation (experimental).",
+        "oneOf": [
+          {
+            "const": "draw",
+            "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+            "type": "string"
+          },
+          {
+            "const": "fade",
+            "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+            "type": "string"
+          }
+        ]
       }
     },
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -1210,6 +1415,18 @@
           "string",
           "null"
         ]
+      },
+      "effect": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/Effect"
+          },
+          {
+            "type": "null"
+          }
+        ],
+        "default": null,
+        "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike. `null` removes the effect. Leave it out to keep the effect of the annotation."
       },
       "emphasis": {
         "description": "Highlights/marks: how the span is drawn (fill, underline, brackets, strike)",

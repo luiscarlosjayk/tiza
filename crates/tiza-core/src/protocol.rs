@@ -388,6 +388,10 @@ pub struct AddParams {
     /// Palette name (orange, blue, green, purple, pink, cyan, yellow, red, gray) or `#rrggbb`.
     #[serde(default)]
     pub color: Option<String>,
+    /// Experimental. The enter effect when the step goes forward: `draw`
+    /// or `fade`. Absent or `null`: no effect.
+    #[serde(default)]
+    pub effect: Option<crate::effects::Effect>,
     /// The file (view) the annotation belongs to, as a `code.link` names
     /// it. Default (absent or `null`): the file shown at its step.
     #[serde(default)]
@@ -411,6 +415,14 @@ pub struct UpdateParams {
     pub color: Option<String>,
     #[serde(default)]
     pub label: Option<String>,
+    /// Experimental. The new enter effect: `draw` or `fade`. `null` removes
+    /// it. Absent: the annotation keeps its effect.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub effect: Option<Option<crate::effects::Effect>>,
     /// The file (view) the annotation goes to, as a `code.link` names it.
     /// `null` is the main file. Absent: the annotation keeps its file.
     #[serde(
@@ -1373,6 +1385,11 @@ pub fn describe(a: &Annotation) -> String {
     let base = describe_shape(a);
     let base = match &a.markers {
         Some(m) => format!("{base} @{}..@{}", quote(&m.start), quote(&m.end)),
+        None => base,
+    };
+    let base = match a.effect {
+        Some(crate::effects::Effect::Draw) => format!("{base} effect=draw"),
+        Some(crate::effects::Effect::Fade) => format!("{base} effect=fade"),
         None => base,
     };
     // The file it belongs to, when it is not the main one.

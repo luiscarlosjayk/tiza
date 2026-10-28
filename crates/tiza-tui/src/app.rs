@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use tiza_core::effects::Effect;
 use tiza_core::history::History;
 use tiza_core::layout::{Layout, LayoutOptions};
 use tiza_core::model::{
@@ -1797,11 +1798,12 @@ impl App {
         color: Option<String>,
         shape: Shape,
     ) -> Result<String, Error> {
-        self.add_annotation_full(id, step, color, None, None, shape)
+        self.add_annotation_full(id, step, color, None, None, None, shape)
     }
 
     /// `add_annotation_colored` plus the range markers a box/callout/spotlight
     /// was created from.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_annotation_full(
         &mut self,
         id: Option<String>,
@@ -1809,12 +1811,16 @@ impl App {
         color: Option<String>,
         markers: Option<tiza_core::model::RangeMarkers>,
         file: Option<String>,
+        effect: Option<Effect>,
         shape: Shape,
     ) -> Result<String, Error> {
         if let Some(c) = &color
             && self.theme.named_color(c).is_none()
         {
             return Err(Error::Invalid(unknown_color()));
+        }
+        if effect == Some(Effect::Draw) && !shape.has_stroke() {
+            return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
         }
         // A mark's inline style color too: checked like the
         // annotation's, without repeating it.
@@ -1839,7 +1845,7 @@ impl App {
             id: id.unwrap_or_default(),
             step,
             color,
-            effect: None,
+            effect,
             markers,
             file,
             shape,
@@ -2047,6 +2053,18 @@ impl App {
             };
             // Trimmed, as `:callout` takes it.
             *text = t.trim().to_string();
+        }
+        if let Some(e) = p.effect {
+            ann.effect = e;
+        }
+        // `draw` needs a stroke: checked when the update sets the effect or
+        // changes the shape. An annotation from a file keeps its effect
+        // through the other updates.
+        if (p.effect.is_some() || p.shape.is_some() || p.emphasis.is_some())
+            && ann.effect == Some(Effect::Draw)
+            && !ann.shape.has_stroke()
+        {
+            return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
         }
         // Nothing to change: no undo entry, no new revision, no save.
         if self.doc.find_annotation(&p.id) == Some(&ann) {
@@ -4688,6 +4706,7 @@ impl App {
                     step: Some(step),
                     color: None,
                     label: None,
+                    effect: None,
                     file: None,
                     shape: None,
                     mv: None,
@@ -5176,6 +5195,7 @@ impl App {
                         step: None,
                         color: Some(c.into()),
                         label: None,
+                        effect: None,
                         file: None,
                         shape: None,
                         mv: None,
@@ -5198,6 +5218,7 @@ impl App {
                         step: None,
                         color: None,
                         label: Some(text.trim().into()),
+                        effect: None,
                         file: None,
                         shape: None,
                         mv: None,
@@ -5256,6 +5277,7 @@ impl App {
                                 step: Some(n),
                                 color: None,
                                 label: None,
+                                effect: None,
                                 file: None,
                                 shape: None,
                                 mv: None,
@@ -5719,6 +5741,7 @@ impl App {
             None,
             markers,
             None,
+            None,
             Shape::Box {
                 from_line: a,
                 to_line: b,
@@ -6059,7 +6082,7 @@ impl App {
         let kv = parse_kv(rest);
         if id.is_empty() || kv.is_empty() {
             return Err(Error::Invalid(
-                "usage: :set ID key=value…   (label, color, step; callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
+                "usage: :set ID key=value…   (label, color, step, effect (draw, fade, none); callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
                     .into(),
             ));
         }
@@ -6092,6 +6115,7 @@ impl App {
             step: None,
             color: None,
             label: None,
+            effect: None,
             file: None,
             shape: None,
             mv: None,
@@ -6109,6 +6133,14 @@ impl App {
                 "text" if is_callout => callout_text = Some(v.clone()),
                 "label" | "text" | "title" => p.label = Some(v.clone()),
                 "color" => p.color = Some(v.clone()),
+                "effect" => {
+                    p.effect = Some(match v.as_str() {
+                        "draw" => Some(Effect::Draw),
+                        "fade" => Some(Effect::Fade),
+                        "none" => None,
+                        _ => return Err(Error::Invalid(UNKNOWN_EFFECT.into())),
+                    })
+                }
                 "step" => {
                     p.step = Some(
                         v.parse()
@@ -6436,6 +6468,7 @@ impl App {
             None,
             markers,
             None,
+            None,
             Shape::Spotlight {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
@@ -6494,6 +6527,7 @@ impl App {
             None,
             None,
             markers,
+            None,
             None,
             Shape::Callout {
                 from_line: a,
@@ -7160,7 +7194,8 @@ impl App {
                     p.file = Some(self.canonical_file(f));
                 }
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
-                let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
+                let id = self
+                    .add_annotation_full(p.id, p.step, p.color, markers, p.file, p.effect, shape)?;
                 // Where it stands against the view right now.
                 serde_json::to_value(self.mutated(id))?
             }
@@ -8281,6 +8316,12 @@ fn check_width(params: Value) -> Result<Option<usize>, Error> {
     let p: tiza_core::schema::CheckParams = parse(params)?;
     p.width.map(tiza_core::layout::check_width).transpose()
 }
+
+/// The refusal of `draw` on a shape with no stroke to draw.
+const DRAW_NEEDS_A_STROKE: &str = "effect draw needs a stroke: use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike";
+
+/// The refusal of an effect that `:set` does not know.
+const UNKNOWN_EFFECT: &str = "unknown effect (use draw, fade or none)";
 
 /// Every `key=value` must have both halves: `=`, `=red` or `glyph=` are
 /// typos, not an empty key or an empty value.

@@ -133,6 +133,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `step` | integer | The current step, or 1 at step 0 | The step at which the annotation appears, from 1 to 999. |
 | `color` | string | No default | A [color name](document-format.md#color-names) or `#rrggbb`. |
 | `id` | string | `a1`, `a2` and so on | The id of the new annotation. |
+| `effect` | `"draw"`, `"fade"` or `null` | No effect | Experimental. The [enter effect](document-format.md#enter-effects-experimental) of the annotation when the step goes forward. |
 
 - A `step` of 0 becomes step 1.
 - A `step` after 999 fails with `invalid_argument`.
@@ -141,6 +142,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - An `id` that the document has already fails with `duplicate_id`. Give your own `id`. Then a second try of the same call does not add a copy.
 - `add_spotlight` has no `color`.
 - An unknown color name fails with `invalid_argument`.
+- `draw` needs a stroke: a box, a callout, an arrow, or a highlight or a mark with the emphasis `underline`, `brackets` or `strike`. On another annotation, `draw` fails with `invalid_argument`.
 
 ### Range
 
@@ -219,6 +221,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `stroke`, `route`, `head_start`, `head_end` | Arrow | A new line style. |
 | `border`, `corners`, `fill` | Box, callout | A new border, new corners or a new fill. |
 | `emphasis` | Highlight, mark | A new emphasis. |
+| `effect` | All types | Experimental. The new [enter effect](document-format.md#enter-effects-experimental), `draw` or `fade`, or `null` to remove it. Without `effect`, the annotation keeps its effect. |
 
 - An argument that does not apply to the type of the annotation fails with `invalid_argument`. `color` and `label` are not in this rule.
 - A spotlight stores a `color` and gives no error. `add_spotlight` has no `color`.
@@ -229,6 +232,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - A `text` argument fails with a message that tells you to use `label`.
 - A new place keeps the type, the kind, the style and the label of the annotation.
 - A new `from_line` or `to_line` removes the `markers` of the annotation.
+- With `effect` or `emphasis`, `draw` on an annotation without a stroke fails with `invalid_argument`.
 
 ### Other tools
 

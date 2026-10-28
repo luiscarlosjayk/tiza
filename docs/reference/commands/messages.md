@@ -66,6 +66,8 @@ The commands are in [`:` commands](../commands.md).
 | `` `emphasis` applies to highlights and marks only (ID is not one) `` | `:set` got `emphasis` for another annotation. |
 | `expected key=value, got «TEXT»` | A property has no key or no value. |
 | `step must be a number` | `:set` got a `step` that is not a number. |
+| `effect draw needs a stroke: use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike` | `:set` got `effect=draw` for an annotation without a stroke. |
+| `unknown effect (use draw, fade or none)` | `:set` got another value for `effect`. |
 | `annotations live at steps ≥ 1 (step 0 is the code alone)` | `:step ID N` got step 0. |
 | `step N is beyond the last step (M): an annotation can go up to step K (the next empty one)` | `:step ID N` got a step number past `K`, the first empty step. |
 

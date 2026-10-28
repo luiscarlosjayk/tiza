@@ -1718,6 +1718,21 @@
       "method": "annotation.add",
       "params": {
         "$defs": {
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
+          },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
             "oneOf": [
@@ -2221,6 +2236,18 @@
               "null"
             ]
           },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effect"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Experimental. The enter effect when the step goes forward: `draw`\nor `fade`. Absent or `null`: no effect."
+          },
           "file": {
             "default": null,
             "description": "The file (view) the annotation belongs to, as a `code.link` names\nit. Default (absent or `null`): the file shown at its step.",
@@ -2315,6 +2342,21 @@
       "method": "annotation.update",
       "params": {
         "$defs": {
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
+          },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
             "oneOf": [
@@ -2921,6 +2963,17 @@
               }
             ],
             "description": "Boxes and callouts: new corners."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effect"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Experimental. The new enter effect: `draw` or `fade`. `null` removes\nit. Absent: the annotation keeps its effect."
           },
           "emphasis": {
             "anyOf": [
