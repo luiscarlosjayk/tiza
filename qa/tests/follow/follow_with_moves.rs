@@ -12,8 +12,7 @@
 //!   deferred and loads as a normal reload when a step with no moves is
 //!   reached; at step 0 it behaves as before.
 //! - AC2 The reply and the bar say it is on and waiting in one short line
-//!   (`following main.rs (waiting: moves applied at step 1; loads at step
-//!   0)`); `follow.status` gives `enabled: true` and says why it waits in
+//!   (`following main.rs; step 0 loads a save`); `follow.status` gives `enabled: true` and says why it waits in
 //!   `reason`.
 //! - AC3 What is saved always agrees with a fresh load:
 //!   `tiza check` on the autosave is clean and `render` equals the screen
@@ -45,9 +44,9 @@ use tiza_qa::{Live, McpClient, scratch};
 const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
-const WAITING: &str = "waiting: moves applied at step 1; loads at step 0";
-const DEFERRED: &str =
-    "main.rs changed on disk but moves are applied at step 1: go back to step 0 to reload";
+const WAITING: &str = "paused; loads at step 0";
+/// The reply of `follow on` at step 1, as the bar shows it.
+const SAID: &str = "following main.rs; step 0 loads a save";
 
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -140,7 +139,9 @@ fn save(path: &Path, content: &str) {
 fn save_while_waiting(live: &Live, src: &Path, content: &str) {
     live.with(|app| app.message = None);
     save(src, content);
-    wait_for("the save to wait for step 0", || message(live) == DEFERRED);
+    wait_for("the save to wait for step 0", || {
+        status(live)["pending"] == true
+    });
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
@@ -248,10 +249,10 @@ fn follow_on_at_step_1_waits_and_says_so() {
     let _watchers = shared();
     let (live, src, tiza) = opened("cmd");
     live.command("follow on");
-    let said = format!("following main.rs ({WAITING})");
+    let said = SAID.to_string();
     assert_eq!(message(&live), said);
     assert!(bar(&live).contains(&said), "{}", bar(&live));
-    assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
+    assert!(bar(&live).contains("⟳ paused"), "{}", bar(&live));
     let st = status(&live);
     assert_eq!(st["enabled"], true, "{st}");
     assert_eq!(st["reason"], WAITING, "{st}");
@@ -268,7 +269,7 @@ fn follow_set_at_step_1_waits_and_says_so() {
     let _watchers = shared();
     let (live, src, tiza) = opened("api");
     let r = live.api_ok("follow.set", json!({"enabled": true}));
-    let said = format!("following main.rs ({WAITING})");
+    let said = SAID.to_string();
     assert_eq!(r["message"], said, "{r}");
     assert_eq!(r["enabled"], true, "{r}");
     assert_eq!(r["reason"], WAITING, "{r}");
@@ -314,11 +315,7 @@ fn a_change_made_while_follow_was_off_waits_too() {
     let (live, src, tiza) = opened("off-change");
     save(&src, NEW);
     let r = live.api_ok("follow.set", json!({"enabled": true}));
-    assert_eq!(
-        r["message"],
-        format!("following main.rs ({WAITING})"),
-        "{r}"
-    );
+    assert_eq!(r["message"], SAID, "{r}");
     assert_eq!(base(&live), lines(OLD));
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
     same_as_fresh(&live, &tiza, "the change waits");
@@ -366,14 +363,14 @@ fn the_file_missing_at_step_1() {
     let (live, src, tiza) = opened("missing");
     std::fs::remove_file(&src).unwrap();
     live.command("follow on");
-    assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
+    assert_eq!(message(&live), SAID);
     let st = status(&live);
     assert_eq!(
         (st["enabled"].clone(), st["missing"].clone()),
         (json!(true), json!(true))
     );
     assert!(
-        bar(&live).contains("⟳ following (file removed; waiting)"),
+        bar(&live).contains("⟳ paused (file removed)"),
         "{}",
         bar(&live)
     );
@@ -444,14 +441,12 @@ fn a_first_move_at_step_3_loads_at_step_2() {
     ]);
     let (live, src, tiza) = opened_doc("step3", doc, OLD);
     live.command("follow on");
-    let waits = "waiting: moves applied at step 3; loads at step 2 or earlier";
-    assert_eq!(message(&live), format!("following main.rs ({waits})"));
+    let waits = "paused; loads at step 2 or earlier";
+    assert_eq!(message(&live), "following main.rs; step 2 loads a save");
     assert_eq!(status(&live)["reason"], waits);
     live.with(|app| app.message = None);
     save(&src, NEW);
-    wait_for("the save to wait", || {
-        message(&live).starts_with("main.rs changed on disk but moves are applied at step 3")
-    });
+    wait_for("the save to wait", || status(&live)["pending"] == true);
     same_as_fresh(&live, &tiza, "waiting at step 3");
     live.command("step 2");
     assert_eq!(base(&live), lines(NEW));
@@ -477,18 +472,14 @@ fn over_a_paste_the_wait_does_not_say_the_file_changed() {
     let (live, tiza) = pasted_at_step_1("paste-words");
     live.with(|app| app.message = None);
     live.command("follow on");
-    assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
+    assert_eq!(message(&live), SAID);
     assert_eq!(status(&live)["reason"], WAITING);
     same_as_fresh(&live, &tiza, ":follow on over the paste");
     live.command("follow off");
     live.with(|app| app.message = None);
     let r = live.api_ok("follow.set", json!({"enabled": true}));
-    assert_eq!(
-        r["message"],
-        format!("following main.rs ({WAITING})"),
-        "{r}"
-    );
-    assert_eq!(message(&live), format!("following main.rs ({WAITING})"));
+    assert_eq!(r["message"], SAID, "{r}");
+    assert_eq!(message(&live), SAID);
 }
 
 #[test]

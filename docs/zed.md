@@ -141,7 +141,7 @@ To change the language in Tiza, type `:lang LANG`, for example `:lang sh`. `:lan
 
 ### Follow mode with Zed
 
-The follow-mode task, `--follow` and `:follow on` reload the code each time that you save in Zed (Cmd-S). Follow mode keeps each annotation on its text when the code changes. Follow mode also works with a range: `tiza FILE:A-B --follow` keeps the line numbers `A-B` on screen. [Follow the editor](guides/follow-the-editor.md) gives the status bar states and the messages. It also explains how a document with moves waits for step 0. To restore an annotation that a save dropped, see [Undo a reload](guides/follow-the-editor.md#undo-a-reload).
+The follow-mode task, `--follow` and `:follow on` reload the code each time that you save in Zed (Cmd-S). Follow mode keeps each annotation on its text when the code changes. Follow mode also works with a range: `tiza FILE:A-B --follow` keeps the line numbers `A-B` on screen. [Follow the editor](guides/follow-the-editor.md) gives the status bar states and the messages. It also explains how a save waits while a move changes the code at the step on screen. To restore an annotation that a save dropped, see [Undo a reload](guides/follow-the-editor.md#undo-a-reload).
 
 ### The Zed terminal
 

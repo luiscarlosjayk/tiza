@@ -917,6 +917,24 @@ pub struct Status {
     /// folder), or `null` when the last save worked. Always present.
     #[serde(default)]
     pub save_error: Option<String>,
+    /// Follow mode, while it is on (`follow.status` gives the rest).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub follow: Option<FollowState>,
+}
+
+/// Follow mode in `status`: whether a save loads now.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct FollowState {
+    /// A `code.patch` is applied at the current step: a save does not load
+    /// until the presenter is at `resume_step` or earlier.
+    pub paused: bool,
+    /// Paused, and the file on disk holds other code than the screen: a
+    /// change waits to load.
+    pub pending: bool,
+    /// While paused: the last step before the first patch, where a change
+    /// that waits loads (an earlier step loads it too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_step: Option<u32>,
 }
 
 /// Where the live pointer is.
@@ -1192,11 +1210,11 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "follow.set",
-        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads back at a step with no moves applied (`reason` says which)",
+        "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with a `code.patch` applied it turns on paused: a save loads back at `resume_step` (the step before the first patch) or earlier",
     ),
     (
         "follow.status",
-        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, reason (why it is off, or why a save waits for step 0)",
+        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
     ),
     (
         "supervise.set",

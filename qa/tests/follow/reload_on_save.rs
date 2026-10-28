@@ -301,6 +301,28 @@ fn truncate_then_write_is_one_reload() {
 }
 
 #[test]
+fn every_empty_first_write_waits_for_the_second() {
+    // The empty first write of an editor is skipped at each save, not only
+    // at the first one. Each save is read as the watcher reads it.
+    let (live, src) = followed("truncate-again", CODE);
+    live.command("follow on");
+    let seen = live.with(move |app| {
+        let one = CODE.replace("done", "one");
+        let two = CODE.replace("done", "two");
+        let mut seen = Vec::new();
+        for text in ["", one.as_str(), "", two.as_str()] {
+            std::fs::write(&src, text).unwrap();
+            app.read_save();
+            seen.push(app.doc.code.get(3).cloned().unwrap_or_default());
+        }
+        seen
+    });
+    let line = |w: &str| format!("    println!(\"{w}\");");
+    assert_eq!(seen, [line("done"), line("one"), line("one"), line("two")]);
+    assert_eq!(reloads(&live), 2);
+}
+
+#[test]
 fn identical_content_and_sidecar_autosave_do_not_reload() {
     let (live, src) = followed("same", CODE);
     live.command("follow on");

@@ -119,12 +119,21 @@ pub struct FollowStatus {
     /// The file is currently missing on disk (waiting for it to come back).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub missing: Option<bool>,
+    /// A `code.patch` is applied at the current step: a save does not load
+    /// until the presenter is at `resume_step` or earlier.
+    pub paused: bool,
+    /// Paused, and the file on disk holds other code than the screen: a
+    /// change waits to load.
+    pub pending: bool,
+    /// While paused: the last step before the first patch, where a change
+    /// that waits loads (an earlier step loads it too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_step: Option<u32>,
     /// Why follow is off, when something other than `follow.set` turned it
     /// off: a paste (`the code is pasted, not main.rs; :follow on reloads
     /// main.rs`), or a file watcher that could not start (`cannot watch
     /// /home/me/demo: …`). With follow on, why a save does not load now:
-    /// moves are applied (`waiting: moves applied at step 1; loads at step
-    /// 0`).
+    /// a patch is applied (`paused; loads at step 1 or earlier`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
     /// What `follow.set` did, in words.

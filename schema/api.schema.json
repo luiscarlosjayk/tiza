@@ -25,6 +25,33 @@
       },
       "result": {
         "$defs": {
+          "FollowState": {
+            "description": "Follow mode in `status`: whether a save loads now.",
+            "properties": {
+              "paused": {
+                "description": "A `code.patch` is applied at the current step: a save does not load\nuntil the presenter is at `resume_step` or earlier.",
+                "type": "boolean"
+              },
+              "pending": {
+                "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
+                "type": "boolean"
+              },
+              "resume_step": {
+                "description": "While paused: the last step before the first patch, where a change\nthat waits loads (an earlier step loads it too).",
+                "format": "uint32",
+                "minimum": 0,
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "paused",
+              "pending"
+            ],
+            "type": "object"
+          },
           "PointerAt": {
             "description": "Where the live pointer is.",
             "properties": {
@@ -116,6 +143,17 @@
             "format": "uint32",
             "minimum": 0,
             "type": "integer"
+          },
+          "follow": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/FollowState"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Follow mode, while it is on (`follow.status` gives the rest)."
           },
           "last_line": {
             "default": 0,
@@ -6316,7 +6354,7 @@
       }
     },
     {
-      "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with moves applied it turns on and waits: a save loads back at a step with no moves applied (`reason` says which)",
+      "description": "Turns follow mode on or off (`enabled`): reload the code when the source file is saved, re-anchoring the annotations; fails when the code is embedded. At a step with a `code.patch` applied it turns on paused: a save loads back at `resume_step` (the step before the first patch) or earlier",
       "method": "follow.set",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6368,8 +6406,16 @@
               "null"
             ]
           },
+          "paused": {
+            "description": "A `code.patch` is applied at the current step: a save does not load\nuntil the presenter is at `resume_step` or earlier.",
+            "type": "boolean"
+          },
+          "pending": {
+            "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
+            "type": "boolean"
+          },
           "reason": {
-            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\nmoves are applied (`waiting: moves applied at step 1; loads at step\n0`).",
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\na patch is applied (`paused; loads at step 1 or earlier`).",
             "type": [
               "string",
               "null"
@@ -6382,17 +6428,28 @@
               "integer",
               "null"
             ]
+          },
+          "resume_step": {
+            "description": "While paused: the last step before the first patch, where a change\nthat waits loads (an earlier step loads it too).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
-          "enabled"
+          "enabled",
+          "paused",
+          "pending"
         ],
         "title": "FollowStatus",
         "type": "object"
       }
     },
     {
-      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, reason (why it is off, or why a save waits for step 0)",
+      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
       "method": "follow.status",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6435,8 +6492,16 @@
               "null"
             ]
           },
+          "paused": {
+            "description": "A `code.patch` is applied at the current step: a save does not load\nuntil the presenter is at `resume_step` or earlier.",
+            "type": "boolean"
+          },
+          "pending": {
+            "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
+            "type": "boolean"
+          },
           "reason": {
-            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\nmoves are applied (`waiting: moves applied at step 1; loads at step\n0`).",
+            "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\na patch is applied (`paused; loads at step 1 or earlier`).",
             "type": [
               "string",
               "null"
@@ -6449,10 +6514,21 @@
               "integer",
               "null"
             ]
+          },
+          "resume_step": {
+            "description": "While paused: the last step before the first patch, where a change\nthat waits loads (an earlier step loads it too).",
+            "format": "uint32",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           }
         },
         "required": [
-          "enabled"
+          "enabled",
+          "paused",
+          "pending"
         ],
         "title": "FollowStatus",
         "type": "object"

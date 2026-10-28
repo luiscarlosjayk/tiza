@@ -249,7 +249,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `pointer.clear` | The same fields as `pointer.set`, with `pointer` as `null`. |
 | `theme.set` | `theme`, `auto` and `revision`. |
 | `follow.set` | The fields of `follow.status`, and `message`. |
-| `follow.status` | `enabled`, `path`, `reloads`, `last_reload`, `missing` and `reason`, when they apply. |
+| `follow.status` | `enabled`, `path`, `reloads`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`, when they apply. |
 | `supervise.set` | The fields of `supervise.status`, and `message`. |
 | `supervise.status` | `supervised`, `pending`, `accepted`, `rejected` and `timeout_secs`. |
 
@@ -289,6 +289,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `pointer` | The live pointer as `{line, to, by}`, or `null`. |
 | `stale_moves` | The number of moves that do not match the code any more. |
 | `save_error` | Why the last save of the document failed, for example a read-only folder, or `null` when the last save worked. |
+| `follow` | While follow mode is on: `paused`, `pending` and `resume_step`, as `follow.status` gives them. |
 
 - A field that does not apply is not in the result, except `file`, `pointer` and `save_error`, which are `null`.
 - `loop` and `supervised` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.

@@ -16,6 +16,9 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 | `⟳ following` | Follow mode is on, and no reload occurred yet. |
 | `⟳ following · last HH:MM:SSZ` | Follow mode is on. This is the time of the last reload. |
 | `⟳ following (file removed; waiting)` | The file is not on disk, and Tiza waits for it. |
+| `⟳ paused` | Follow mode is on, and a `code.patch` is applied at this step. A save waits. See [Moves](#moves). |
+| `⟳ paused · changed` | Follow mode is paused, and a save waits to load. |
+| `⟳ paused (file removed)` | Follow mode is paused, and the file is not on disk. |
 
 | Command | What it does |
 |---|---|
@@ -87,15 +90,28 @@ The messages of follow mode are in [Messages of follow mode](../reference/comman
 
 ### Moves
 
-A save in the editor waits while a move is applied at the step on screen. A move is applied when its `at_step` is that step or an earlier step.
+Only a `code.patch` move changes the text of the code. A `cursor`, `select`, `wait` or `code.link` move does not change the text. Thus a save at a step where no patch is applied loads at once, also when other moves are applied. The step keeps the file that its `code.link` shows, and step 0 shows the new code.
 
-1. The message is `FILE changed on disk but moves are applied at step N: go back to step 0 to reload`.
-2. Until you go to a step with no move applied, the document keeps the code on screen as embedded code. If you quit, the document opens as you saw it.
-3. At a step with no move applied, Tiza reloads the change at once. This is one reload. `u` undoes it.
+Follow mode is paused at a step where a `code.patch` is applied. A patch is applied when its `at_step` is that step or an earlier step. The patch can change any file of the document.
 
-When you save the file back to its old content, Tiza does not reload.
+1. The bar shows `⟳ paused`.
+2. A save in the editor does not load. It is a change that waits, and the bar shows `⟳ paused · changed`. Only the newest save counts.
+3. The first change of a pause gives one message: `step N loads the change to FILE`. Step N is the last step before the first patch. The next saves of the same pause give no message.
+4. While a change waits, the document keeps the code on screen as embedded code. If you quit, the document opens as you saw it.
+5. At step N or an earlier step, Tiza loads the change at once. This is one reload. `u` undoes it.
 
-A document opens at its saved `step`, or at step 1 when it has none. When a move is applied at that step, `--follow` and `:follow on` start follow mode, and the reload waits. The message is `following FILE (waiting: moves applied at step N; loads at step 0)`.
+- The moves apply again on the new code. A move that does not match the new code is stale: Tiza skips it and tells you one time. In a `loop`, this message comes one time for each change, not at each loop.
+- A jump to step N or earlier, such as `:goto 0` or `step.goto`, loads the change before the reply.
+- When you save the file back to the code on screen, no change waits. No new message comes, and the message about the change goes from the bar.
+- When the file is removed during a pause, the bar shows `⟳ paused (file removed)`. When the file comes back with other code, that code is the change that waits.
+- When the file is not valid UTF-8, the message `cannot follow FILE: not valid UTF-8 (keeping the previous content)` comes one time. That file is not a change. At step N, Tiza reads the file again.
+- In presentation mode, no message comes. When you leave presentation mode, the bar shows the state.
+- `:follow off` drops a change that waits. The message is `follow off: the change to FILE is not loaded`. When an agent turns follow mode off, the message about the change goes from the bar.
+- A save while you type a `:` command, select text with `v` or `V`, have a panel open, or while a move types its code, waits until you finish.
+
+A document opens at its saved `step`, or at step 1 when it has none. When a patch is applied at that step, `--follow` and `:follow on` start follow mode paused. The message is `following FILE; step N loads a save`. When the file has other code than the screen, that code is the change that waits.
+
+Tiza follows only the main file. Tiza reads a file that a `code.link` shows when the document opens. A save of that file does not load.
 
 ### Link another file
 
@@ -111,23 +127,25 @@ Some editors save a file with two writes. The first write is empty. When Tiza re
 
 ## Agents and follow mode
 
-Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `last_reload`, `missing` and `reason`.
+Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`.
 
 - The reply of `follow.set` comes at once, for example `following FILE`. The file watcher starts on a thread of its own.
 - A save while the watcher starts loads when the watcher runs.
+- `paused` is `true` at a step where a `code.patch` is applied. Then `resume_step` gives step N, where a change that waits loads. `pending` is `true` when a change waits.
+- `status` gives the same `paused`, `pending` and `resume_step` in its `follow` field while follow mode is on.
 - `reason` tells why a save does not load now, or why follow mode is off. `reason` is absent when no reason applies.
 - `scene.get` gives `follows`. A `scene.put` that sends `follows` sets the file that `:follow on` reloads.
 - A `scene.put` of the open document without `follows` keeps the file that the open document follows.
 
 | `reason` | When |
 |---|---|
-| `waiting: moves applied at step N; loads at step 0` | Follow mode is on, and a move is applied at the step on screen. |
+| `paused; loads at step 0` | Follow mode is on, and a `code.patch` is applied at the step on screen. |
 | `the code is pasted, not FILE; :follow on reloads FILE` | Follow mode is off after a paste. |
 | `the code is the paste again, not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back a paste. |
 | `the code on screen is not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back code that the file does not have now. |
 | `cannot watch DIR: ERROR` | Follow mode is off, because the file watcher could not start. |
 
-- When the first move is at step 2 or later, the first row ends with `loads at step M or earlier`. `M` is the step before the first move.
+- When the first patch is at step 2 or later, the first row ends with `loads at step M or earlier`. `M` is the step before the first patch.
 - When the file holds the code on screen again, follow mode is off and `reason` is absent.
 
 ## How it works

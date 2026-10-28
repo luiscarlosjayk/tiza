@@ -264,6 +264,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - A last line after the end of the code becomes the last line.
 - `next_step` after the last step goes to step 0 when the document has `"loop": true`.
 - `set_follow` fails when the code is embedded and no followed file is known. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
+- At a step where a `code.patch` is applied, `set_follow` turns follow mode on paused. The reply gives `paused`, `pending` and `resume_step`.
 
 ## Replies
 

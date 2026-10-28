@@ -173,11 +173,11 @@ When `:q` refuses, the status bar shows one of these messages:
 | Message | When |
 |---|---|
 | `following FILE` | `:follow on` started follow mode. |
-| `following FILE (waiting: moves applied at step N; loads at step 0)` | Follow mode started while a move is applied. See [Moves](../../guides/follow-the-editor.md#moves). |
+| `following FILE; step N loads a save` | Follow mode started while a `code.patch` is applied. A save loads at step `N`. See [Moves](../../guides/follow-the-editor.md#moves). |
 | `already following FILE` | Follow mode was on already. |
 | `FILE reloaded (#N): K annotations kept` | A reload kept all the annotations. |
 | `FILE reloaded (#N): K annotations kept, D dropped (text gone; u undoes)` | A reload dropped `D` annotations. |
-| `FILE changed on disk but moves are applied at step N: go back to step 0 to reload` | You saved the file while a move is applied. |
+| `step N loads the change to FILE` | You saved the file while a `code.patch` is applied. The change waits for step N. |
 | `FILE removed; waiting for it to come back` | The file is not on disk. |
 | `FILE is back; following it` | The file is on disk again. |
 | `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
@@ -188,15 +188,16 @@ When `:q` refuses, the status bar shows one of these messages:
 | `undone: reload #N` | `u` undid a reload. |
 | `follow is off: :follow on reloads FILE` | `u` brought back the code of the file. |
 | `follow off` | `:follow off` stopped follow mode. |
+| `follow off: the change to FILE is not loaded` | `:follow off` stopped follow mode while a change waits. |
 | `follow off: cannot watch DIR: ERROR` | The file watcher could not start. |
 | `following FILE (N reloads)` | `:follow` shows that follow mode is on, with the number of reloads. |
 | `follow off (:follow on to reload when the file is saved)` | `:follow` shows that follow mode is off. |
 | `follow off: WHY` | `:follow` shows why follow mode is off. |
 
-- When the first move is at step 2 or later, `loads at step 0` becomes `loads at step M or earlier`. `M` is the step before the first move.
-- `already following FILE` gets the same `(waiting: …)` end while a move is applied.
+- `N` in `step N loads a save` and `step N loads the change to FILE` is the step before the first patch. An earlier step loads the change too.
+- `already following FILE` gets the same `; step N loads a save` end while a patch is applied.
 - `DIR` is the folder of the file. `ERROR` is the error of the system, or `the watcher did not start`.
-- In `following FILE (N reloads)`, one reload gives `1 reload`. After the first reload, `, last at T` comes before the `)`. While a move is applied, `; waiting: …` also comes before the `)`.
+- In `following FILE (N reloads)`, one reload gives `1 reload`. After the first reload, `, last at T` comes before the `)`. While a patch is applied, `; paused; loads at step N` also comes before the `)`, with ` or earlier` after `N` when `N` is not 0.
 - `WHY` is the reason. For example, the code on screen is not the code of the file, or the file watcher stopped.
 
 ## Usage messages

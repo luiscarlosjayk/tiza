@@ -664,10 +664,7 @@ fn paste_is_refused_and_follow_waits_while_moves_are_applied() {
     // Follow turns on and waits for step 0 (it used to be refused).
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
-    assert_eq!(
-        r["reason"], "waiting: moves applied at step 1; loads at step 0",
-        "{r}"
-    );
+    assert_eq!(r["reason"], "paused; loads at step 0", "{r}");
     live.api_ok("follow.set", json!({"enabled": false}));
     // At step 0 nothing is applied: a paste works on the step-0 code.
     live.api_ok("step.set", json!({"step": 0}));

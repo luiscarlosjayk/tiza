@@ -311,7 +311,7 @@ fn a_start_over_a_paste_at_step_1_keeps_saying_it_waits() {
         "paste.py",
         "follow:slow",
         r##"
-WAITING = "following main.rs (waiting: moves applied at step 1; loads at step 0)"
+WAITING = "following main.rs; step 0 loads a save"
 s, ok = start()
 if ok:
     api("step.set", {"step": 0})
@@ -332,12 +332,6 @@ if ok:
     assert_quick(&out, "SET");
     assert!(out.contains("ONE True"), "{out}");
     let st = line_json(&out, "STATUS");
-    assert_eq!(
-        st["bar"], "following main.rs (waiting: moves applied at step 1; loads at step 0)",
-        "{out}"
-    );
-    assert_eq!(
-        st["reason"], "waiting: moves applied at step 1; loads at step 0",
-        "{out}"
-    );
+    assert_eq!(st["bar"], "following main.rs; step 0 loads a save", "{out}");
+    assert_eq!(st["reason"], "paused; loads at step 0", "{out}");
 }

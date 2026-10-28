@@ -8,8 +8,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `[defaults]` in `~/.config/tiza/config.toml` sets the values that each session starts with: `pad`, `numbers`, `mouse`, `autosave`, `layout`, and the `width` of `tiza render` and `tiza check`. The document, the flags and the `:` commands win over the file.
 - `[styles]` in `config.toml` holds your own mark styles for every document. When a mark uses one for the first time, Tiza copies the style into the document. Thus the document looks the same on a computer without your file. `list_kinds` and `style.list` show the personal styles in `personal`.
 - `tiza config` shows the config file in use, each value with its source, the personal styles and the warnings of the file.
+- `follow.status` has `paused`, `pending` and `resume_step`, and `status` has `follow` with the same fields while follow mode is on. An agent can see that a save waits, and the step where it loads.
 
 ### Changed
+- Follow mode pauses only at a step where a `code.patch` is applied. A save at a step with only `cursor`, `select`, `wait` or `code.link` moves loads at once. Before, a save waited for step 0 when any move was applied.
+- While follow mode is paused, the bar shows `⟳ paused`, and `⟳ paused · changed` when a change waits. One message in each pause names the step that loads the change: `step N loads the change to FILE`. The message goes from the bar when the change goes without a load. Before, each save gave the error `FILE changed on disk but moves are applied at step N: go back to step 0 to reload`.
+- A change that waits loads at the last step before the first patch, or at an earlier step. Before, it loaded only at a step with no move applied.
+- `:follow off` while a change waits says `follow off: the change to FILE is not loaded`.
+- A save while you type a `:` command, select text with `v` or `V`, have a panel open, or while a move types its code, loads when you finish. Before, it loaded under them.
+- While follow mode is paused, a file that is not valid UTF-8 gives its error one time, and presentation mode shows no follow message.
 - When the config file has an error, Tiza ignores only the entry or the lines with the error. It writes a warning with the path, the line and the key on stderr, and the status bar shows the first warning at start. Before, an error of TOML made Tiza ignore the whole file.
 - `:numbers on` writes `"numbers": true` into the document. Thus `numbers = false` in `config.toml` does not hide the line numbers of that document. A document without `numbers` uses the value of the config file.
 

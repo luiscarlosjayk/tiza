@@ -873,13 +873,17 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
     let stale = app.stale_message_shown();
     let mut follow_time = None;
     if let Some(f) = &app.follow {
-        let text = match (&f.missing, &f.last_reload_clock) {
-            (true, _) => "  ⟳ following (file removed; waiting)".to_string(),
-            (false, Some(at)) if !stale => {
+        // Paused at a step with a patch applied: a save waits.
+        let text = match (app.follow_paused(), &f.missing, &f.last_reload_clock) {
+            (true, true, _) => "  ⟳ paused (file removed)".to_string(),
+            (true, false, _) if app.follow_pending() => "  ⟳ paused · changed".to_string(),
+            (true, false, _) => "  ⟳ paused".to_string(),
+            (false, true, _) => "  ⟳ following (file removed; waiting)".to_string(),
+            (false, false, Some(at)) if !stale => {
                 follow_time = Some(left.len());
                 format!("  ⟳ following · last {at}")
             }
-            (false, _) => "  ⟳ following".to_string(),
+            (false, false, _) => "  ⟳ following".to_string(),
         };
         left.push(Span::styled(text, accent));
     }

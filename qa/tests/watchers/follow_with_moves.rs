@@ -11,7 +11,7 @@ use tiza_qa::{bin, scratch};
 const OLD: &str = "fn main() {\n    let x = 1;\n}\n";
 /// The editor's save: the move's `find` still matches.
 const NEW: &str = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
-const WAITING: &str = "waiting: moves applied at step 1; loads at step 0";
+const WAITING: &str = "paused; loads at step 0";
 
 /// The in-process tests start and drop many file watchers; macOS makes a
 /// new one wait while they do, so a TUI started with `--follow` alongside
@@ -145,7 +145,7 @@ if ok:
         s.send(b":follow on\r")
     else:
         # The first frame draws the bar whole.
-        s.wait_for(lambda out: b"(waiting: moves applied at step 1; loads at step 0)" in plain(out).encode(),
+        s.wait_for(lambda out: b"following main.rs; step 0 loads a save" in plain(out).encode(),
                    10, "the bar says it waits")
     until(lambda: api("follow.status").get("enabled") is True, "follow on")
     print("STATUS", json.dumps(api("follow.status")), flush=True)
@@ -208,7 +208,7 @@ fn pty_repro(name: &str, mode: &str) {
     assert_eq!(codes[1], json!(lines(NEW)), "step 0 loaded the save");
     if mode == "api" {
         let set = &line_json(&out, "SET")[0];
-        assert_eq!(set["message"], format!("following main.rs ({WAITING})"));
+        assert_eq!(set["message"], "following main.rs; step 0 loads a save");
     }
     // Quitting at step 0 leaves the file's reference.
     assert_eq!(

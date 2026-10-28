@@ -147,7 +147,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     }
     if opts.follow {
         match app.set_follow(true) {
-            // At a step with moves applied a save waits for step 0: said
+            // At a step with a patch applied follow starts paused: said
             // unless the bar already has something from the load.
             Ok(m) if app.follow_waits().is_some() && app.message.is_none() => app.info(m),
             Ok(_) => {}

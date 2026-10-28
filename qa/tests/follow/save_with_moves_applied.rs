@@ -46,8 +46,6 @@ const OLD: &str = "fn f(t: &str) -> usize {\n    let n = t.len();\n    n + 1\n}\
 /// The editor's save: `t.len()` is gone.
 const NEW: &str = "fn f(t: &str) -> usize {\n    let n = t.chars().count();\n    n + 1\n}\n";
 const OTHER: &str = "fn f(t: &str) -> usize {\n    let n = t.bytes().len();\n    n + 1\n}\n";
-const WAITS: &str =
-    "main.rs changed on disk but moves are applied at step 2: go back to step 0 to reload";
 
 const WAIT: Duration = Duration::from_secs(10);
 
@@ -124,11 +122,14 @@ fn save(path: &Path, content: &str) {
     std::fs::rename(&tmp, path).unwrap();
 }
 
-/// At step 2, an editor save of `content`: the reload waits for step 0.
+/// At step 2, an editor save of `content`: the reload waits for step 1.
+/// It is read as the watcher reads a save, so a second save in the same
+/// pause (no notice of its own) is read when this returns.
 fn save_at_step_2(live: &Live, src: &Path, content: &str) {
     live.with(|app| app.message = None);
     save(src, content);
-    wait_for("the reload to wait for step 0", || message(live) == WAITS);
+    live.with(|app| app.read_save());
+    assert_eq!(status(live)["pending"], true, "{}", message(live));
 }
 
 fn check_file(path: &Path) -> (i32, Value) {
@@ -211,7 +212,7 @@ fn the_repro(name: &str, rebind: bool) {
     assert_eq!(base(&live), lines(OLD), "the screen keeps the old code");
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
     same_as_fresh(&live, &tiza, "the reload waits at step 2");
-    assert!(bar(&live).contains("⟳ following"), "{}", bar(&live));
+    assert!(bar(&live).contains("⟳ paused · changed"), "{}", bar(&live));
     // A paste there is refused, and follow stays on with its reload waiting
     // (moved here from the paste tests and from the paste corner of this file).
     let err = live
@@ -355,7 +356,7 @@ fn follow_on_while_a_change_waits_keeps_the_wait() {
     // It says it waits.
     assert_eq!(
         message(&live),
-        "already following main.rs (waiting: moves applied at step 2; loads at step 1 or earlier)"
+        "already following main.rs; step 1 loads a save"
     );
     live.api_ok("follow.set", json!({"enabled": true}));
     live.command("step 0");

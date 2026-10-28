@@ -649,7 +649,7 @@ At step 0, a paste applies the moves again on the pasted code. Tiza anchors each
 
 ### Follow mode with moves
 
-A save in the editor waits for step 0 while a move is applied. A move is applied when its `at_step` is the current step or before it. Thus a document without moves never waits. See [Moves in Follow the editor](../guides/follow-the-editor.md#moves).
+A save in the editor waits while a `code.patch` is applied. A patch is applied when its `at_step` is the current step or before it. The change loads at the step before the first patch, or at an earlier step. Thus a document without patches never waits. See [Moves in Follow the editor](../guides/follow-the-editor.md#moves).
 
 ## How it works
 

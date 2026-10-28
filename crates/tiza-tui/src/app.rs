@@ -108,6 +108,24 @@ pub enum Selection {
     Lines(u32, u32),
 }
 
+/// Follow at a step with a `code.patch` applied (ADR 0007 §7): a save
+/// does not load there. It loads at the resume step, the last step before
+/// the first patch, or earlier.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Pause {
+    /// A save came in this pause: the file is read again at the resume
+    /// step (a change to load, or the file back as the screen has it).
+    waits: bool,
+    /// The file holds other code than the screen: a change waits.
+    pending: bool,
+    /// This pause gave its notice.
+    noticed: bool,
+    /// The text of that notice, while the change it is about waits.
+    notice: Option<String>,
+    /// The file cannot be read now (not valid UTF-8), and the bar said so.
+    unreadable: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Overlay {
     None,
@@ -537,9 +555,12 @@ pub struct App {
     /// start. Said while that file is still the one to follow and nothing
     /// else explains the code on screen, until follow is turned on or off.
     follow_failed: Option<(PathBuf, String)>,
-    /// The followed file changed while moves were applied: its
-    /// reload waits for step 0, and the code on screen is embedded meanwhile.
-    reload_waits: bool,
+    /// Follow paused at a step with a patch applied: what waits for the
+    /// resume step. While a change waits, the code on screen is embedded.
+    pause: Pause,
+    /// A save came while the presenter was busy ([`App::presenter_busy`]):
+    /// it is read when they are done.
+    save_held: bool,
     /// Code pasted in this session (the newest last, at most
     /// [`PASTES_KEPT`]): embedded code on screen equal to one of them is
     /// «pasted», anything else a version of the file.
@@ -670,7 +691,8 @@ impl App {
             selected_shown: Default::default(),
             follow: None,
             follow_failed: None,
-            reload_waits: false,
+            pause: Pause::default(),
+            save_held: false,
             pasted_codes: Vec::new(),
             screen_via_history: false,
             typing: None,
@@ -2506,10 +2528,7 @@ impl App {
     /// never while a typed move or a `wait` is still running. `true` when
     /// the screen changed.
     pub fn auto_advance_tick(&mut self, now: std::time::Instant) -> bool {
-        if self.typing.is_some()
-            || matches!(self.mode, Mode::Command(_) | Mode::Select { .. })
-            || self.overlay != Overlay::None
-        {
+        if self.presenter_busy() {
             return false;
         }
         let (Some(ms), Some(ready)) = (self.doc.auto_advance_ms(self.doc.step), self.step_ready_at)
@@ -3197,18 +3216,19 @@ impl App {
         replaced: Option<tiza_core::model::CodeSource>,
     ) {
         // Follow on over a file reference again (an undo of the paste a wait
-        // was for): the file holds the code on screen
-        // ([`App::embed_if_not_the_file`] checked it), so nothing waits.
+        // was for, or of an edit that kept the code): no change waits to
+        // load. The read at the resume step stays: the file may not be
+        // readable now.
         if !self.doc.is_embedded()
             && let Some(f) = &mut self.follow
         {
-            self.reload_waits = false;
+            self.pause.pending = false;
             f.last_content = self.doc.base().to_vec();
         }
-        // A change on disk waits for step 0 and the undo left the
+        // A change on disk waits for the resume step and the undo left the
         // step-0 code as it was (a note, a move): follow stays on, the code
-        // embedded, and step 0 still reloads.
-        if self.reload_waits
+        // embedded, and the resume step still reloads.
+        if self.pause.waits
             && self.follow.is_some()
             && self.doc.is_embedded()
             && self.doc.base() == before.code.0.as_slice()
@@ -3335,6 +3355,10 @@ impl App {
         first_line: u32,
         always: Option<String>,
     ) -> crate::reanchor::Outcome {
+        // A typed move or a `wait` that runs (follow loads at a step with no
+        // patch) ends now: at its end it would put back the code it typed
+        // over, the code before this one.
+        self.finish_typing();
         let snapshot = self.doc.clone();
         // A dropped annotation that a `rebind` names leaves that entry
         // ignored, as a fresh load of the saved file will ignore it. The
@@ -3531,42 +3555,70 @@ impl App {
     /// waits for a step with no patch applied), as the reply, the bar and
     /// `follow.status` say it. `None` when a save loads at once.
     pub fn follow_waits(&self) -> Option<String> {
-        if self.follow.is_none() || !self.doc.patches_applied() {
-            return None;
-        }
-        let step = self.doc.step;
-        // The last step before the first patch: a save loads there or earlier.
-        let back = self.doc.first_patch_step().unwrap_or(1).saturating_sub(1);
+        let back = self.resume_step()?;
         let when = if back == 0 {
             "at step 0".to_string()
         } else {
             format!("at step {back} or earlier")
         };
-        Some(format!(
-            "waiting: moves applied at step {step}; loads {when}"
-        ))
+        Some(format!("paused; loads {when}"))
+    }
+
+    /// Following at a step with a patch applied: a save waits.
+    pub fn follow_paused(&self) -> bool {
+        self.follow.is_some() && self.doc.patches_applied()
+    }
+
+    /// Paused with a change on disk that waits to load.
+    pub fn follow_pending(&self) -> bool {
+        self.follow_paused() && self.pause.pending
+    }
+
+    /// While paused: the step where a change loads, the last step before
+    /// the first patch (or an earlier one).
+    pub fn resume_step(&self) -> Option<u32> {
+        if !self.follow_paused() {
+            return None;
+        }
+        Some(self.doc.first_patch_step()?.saturating_sub(1))
+    }
+
+    /// The presenter is in the middle of something that a reload must not
+    /// change under them: a typed move, the `:` line, a `v`/`V` selection
+    /// or a panel. The auto-advance and a save wait for it.
+    fn presenter_busy(&self) -> bool {
+        self.typing.is_some()
+            || matches!(self.mode, Mode::Command(_) | Mode::Select { .. })
+            || self.overlay != Overlay::None
     }
 
     /// Enables or disables follow mode. Enabling needs a file reference
-    /// (`:link` first when the code is embedded). At a step with moves
-    /// applied it starts waiting: a save, or a change made while follow was
-    /// off, loads when a step with no moves is reached.
+    /// (`:link` first when the code is embedded). At a step with a patch
+    /// applied it starts paused: a save, or a change made while follow was
+    /// off, loads at the resume step.
     pub fn set_follow(&mut self, enabled: bool) -> Result<String, Error> {
         if !enabled {
             self.follow_failed = None;
-            self.reload_waits = false;
-            if let Some(f) = &mut self.follow {
+            let dropped = self.follow_pending();
+            self.drop_change();
+            self.pause = Pause::default();
+            self.save_held = false;
+            let name = self.follow.as_mut().map(|f| {
                 f.stop();
-            }
+                f.file_name()
+            });
             self.follow = None;
             // The file embedded code on screen replaced stays known, so the
             // `:follow on reloads main.rs` the bar said still holds.
-            return Ok("follow off".into());
+            return Ok(match name {
+                Some(name) if dropped => format!("follow off: the change to {name} is not loaded"),
+                _ => "follow off".into(),
+            });
         }
         if let Some(f) = &self.follow {
             let name = f.file_name();
-            return Ok(match self.follow_waits() {
-                Some(w) => format!("already following {name} ({w})"),
+            return Ok(match self.resume_step() {
+                Some(at) => format!("already following {name}; step {at} loads a save"),
                 None => format!("already following {name}"),
             });
         }
@@ -3582,17 +3634,18 @@ impl App {
             crate::follow::Follow::start(path, self.doc.base().to_vec()).map_err(Error::Invalid)?;
         let name = f.file_name();
         self.follow = Some(f);
-        self.reload_waits = false;
+        self.pause = Pause::default();
+        self.save_held = false;
         // Pick up anything that changed before we started watching. Code
         // pasted over the file is replaced on purpose: always one undo step,
         // so `u` gives the paste back.
         let pasted = self.doc.is_embedded();
         let said = self.message.clone();
         let _ = self.reload_from_disk(pasted);
-        if self.reload_waits {
-            // With moves applied what differs waits, and the reply says so
-            // (`waiting: …`): over pasted code the file did not change on
-            // disk, as the deferral's own notice would say.
+        if self.pause.pending {
+            // Paused, what differs waits, and the reply says so (`paused:
+            // …`), the bar too (`⟳ paused · changed`): over pasted code the
+            // file did not change on disk, as the notice would say.
             self.message = said;
         }
         // Pasted code that is what the file holds, numbered as the file's
@@ -3615,8 +3668,10 @@ impl App {
         // `follows` stays: while the code on screen is still embedded
         // (the file is missing, or unreadable for now) it names the file the
         // next reload reads, so the file coming back reloads it.
-        Ok(match self.follow_waits() {
-            Some(w) => format!("following {name} ({w})"),
+        // Paused, it says where a save loads, as the notice does: the bar
+        // shows `⟳ paused` beside it.
+        Ok(match self.resume_step() {
+            Some(at) => format!("following {name}; step {at} loads a save"),
             None => format!("following {name}"),
         })
     }
@@ -3645,7 +3700,8 @@ impl App {
         }
         old.stop();
         let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
-        self.reload_waits = false;
+        self.pause = Pause::default();
+        self.save_held = false;
         match crate::follow::Follow::start(path, base) {
             Ok(mut f) => {
                 (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
@@ -3668,22 +3724,26 @@ impl App {
             return false;
         };
         match f.poll() {
-            crate::follow::Poll::Reload => self.reload_from_disk(false),
-            // A step change that is not `step_to` (a step cleared away)
-            // can end the wait too.
-            crate::follow::Poll::Idle => self.reload_waiting(),
-            // A save made while the watcher started is read as any save;
-            // one that already waits for step 0 is read there.
-            crate::follow::Poll::Started => {
-                if !self.reload_waits {
-                    f.touch();
+            crate::follow::Poll::Reload => self.read_save(),
+            // A save held while the presenter was busy, read now that they
+            // are done; and a step change that is not `step_to` (a step
+            // cleared away) can end a pause too.
+            crate::follow::Poll::Idle => {
+                if self.save_held && !self.presenter_busy() {
+                    return self.read_save();
                 }
+                self.reload_waiting()
+            }
+            // A save made while the watcher started is read as any save.
+            crate::follow::Poll::Started => {
+                f.touch();
                 false
             }
             crate::follow::Poll::Failed(why) => {
                 let path = f.path.clone();
                 self.follow = None;
-                self.reload_waits = false;
+                self.pause = Pause::default();
+                self.save_held = false;
                 self.error(format!("follow off: {why}"));
                 self.follow_failed = Some((path, why));
                 true
@@ -3691,16 +3751,49 @@ impl App {
         }
     }
 
-    /// Back where no move is applied with a change on disk that waited for
-    /// it: reloaded now, as a normal reload — one undo step, since
-    /// the code on screen is embedded meanwhile. A file saved back as the
-    /// screen has it is no reload: the document references it again.
-    /// `true` when the screen changed.
-    fn reload_waiting(&mut self) -> bool {
-        if !self.reload_waits || self.doc.patches_applied() || self.follow.is_none() {
+    /// No change waits any more, and none was loaded: the notice that said
+    /// one waits leaves the bar, when it is still there. Another message
+    /// stays.
+    fn drop_change(&mut self) {
+        self.pause.pending = false;
+        if let Some(notice) = self.pause.notice.take()
+            && self
+                .message
+                .as_ref()
+                .is_some_and(|(m, error)| !error && *m == notice)
+        {
+            self.message = None;
+        }
+    }
+
+    /// What a save of the followed file does when the watcher has seen it
+    /// (after its debounce): the file is read and loaded, or, paused, kept
+    /// as the change that waits. While the presenter is busy
+    /// ([`App::presenter_busy`]) it is read when they are done. `true` when
+    /// the screen changed. The in-process tests call it in place of the
+    /// watcher.
+    pub fn read_save(&mut self) -> bool {
+        self.save_held = self.presenter_busy();
+        if self.save_held || self.follow.is_none() {
             return false;
         }
-        self.reload_waits = false;
+        self.reload_from_disk(false)
+    }
+
+    /// At a step with no patch applied, the pause is over: a change on
+    /// disk that waited loads now, as a normal reload (one undo step, since
+    /// the code on screen is embedded meanwhile). A file saved back as the
+    /// screen has it is no reload: the document references it again. A
+    /// file that cannot be read gives its error, and the code on screen
+    /// stays. `true` when the screen changed.
+    fn reload_waiting(&mut self) -> bool {
+        if self.follow.is_none() || self.doc.patches_applied() {
+            return false;
+        }
+        // The next pause gives its own notice.
+        if !std::mem::take(&mut self.pause).waits {
+            return false;
+        }
         if self.reload_from_disk(true) {
             return true;
         }
@@ -3713,11 +3806,11 @@ impl App {
         false
     }
 
-    /// Following, with no patch applied, over embedded code that the file
-    /// holds again (saved back as the screen has it): the document
-    /// references the file again. `true` when it did.
+    /// Following over embedded code that the file holds again (saved back
+    /// as the screen has it): the document references the file again, at
+    /// any step, since the file is the step-0 code. `true` when it did.
     fn back_to_reference(&mut self) -> bool {
-        if self.follow.is_none() || self.doc.patches_applied() {
+        if self.follow.is_none() {
             return false;
         }
         let Some(src) = self.paused() else {
@@ -3745,6 +3838,11 @@ impl App {
         };
         let mut probe = self.doc.clone();
         probe.code_src = code_src.clone();
+        // ADR 0007 §7: follow is paused while a patch is applied (the edits
+        // are not reconciled yet). The other moves do not change the text: a
+        // save there loads at once. Presentation mode shows no notice.
+        let paused = self.doc.patches_applied();
+        let quiet = paused && self.present;
         let Some(f) = &mut self.follow else {
             return false;
         };
@@ -3756,12 +3854,24 @@ impl App {
             Err(e) => {
                 let msg = e.to_string();
                 if !f.path.exists() {
-                    if !f.missing {
-                        f.missing = true;
+                    let first = !std::mem::replace(&mut f.missing, true);
+                    // Nothing to load while it is away.
+                    self.drop_change();
+                    if first && !quiet {
                         self.error(format!("{name} removed; waiting for it to come back"));
+                    }
+                    return first;
+                }
+                if paused {
+                    // Nothing to load either: the resume step reads it
+                    // again, and says why if it still cannot. Said once while
+                    // it stays so.
+                    self.pause.waits = true;
+                    self.drop_change();
+                    if self.pause.unreadable || self.present {
                         return true;
                     }
-                    return false;
+                    self.pause.unreadable = true;
                 }
                 self.error(
                     if msg.contains("stream did not contain valid UTF-8")
@@ -3778,8 +3888,13 @@ impl App {
             }
         };
         let was_missing = std::mem::replace(&mut f.missing, false);
-        // An editor that truncates and then writes: give the second write a chance.
+        self.pause.unreadable = false;
+        // An editor that truncates and then writes: give the second write a
+        // chance, at each save.
         let empty = new.iter().all(|l| l.trim().is_empty());
+        if !empty {
+            f.take_deferred();
+        }
         if empty && !f.last_content.iter().all(|l| l.trim().is_empty()) && !f.take_deferred() {
             f.defer();
             return false;
@@ -3789,35 +3904,41 @@ impl App {
         // load, or saved as `code: {file}` it would load numbered otherwise.
         let renumbered = self.doc.is_embedded() && read_first != self.doc.base_first();
         if new == f.last_content && !was_missing && !renumbered {
-            // Nothing new to load; embedded code the file holds again (a
-            // change that waited for step 0, then saved back) is the
-            // file's once more.
+            // Nothing new to load: a change that waited is dropped, in
+            // silence, and embedded code the file holds again is the file's
+            // once more (the bar changes: `true`).
+            self.drop_change();
             return self.back_to_reference();
         }
-        if self.doc.patches_applied() && new == f.last_content && !renumbered {
+        if paused && new == f.last_content && !renumbered {
             // Back as it was before it went missing: nothing waits for it.
-            self.info(format!("{name} is back; following it"));
+            self.pause.pending = false;
+            if !quiet {
+                self.info(format!("{name} is back; following it"));
+            }
             return true;
         }
-        if self.doc.patches_applied() {
-            // ADR 0007 §7: follow is paused while a patch is applied (the edits
-            // are not reconciled yet); until then, say so instead of reloading.
-            // The other moves do not change the text: a save loads at once.
-            // The code on screen is no longer the file's: embedded meanwhile,
-            // as after a paste, so the autosave and a fresh load
-            // show it — saved as `code: {file}` they would read the new text
-            // under the annotations and `rebind` entries made for this one.
+        if paused {
+            // The change waits for the resume step; one notice per pause
+            // says which step that is. The code on screen is no longer the
+            // file's: embedded meanwhile, as after a paste, so the autosave
+            // and a fresh load show it — saved as `code: {file}` they would
+            // read the new text under the annotations and `rebind` entries
+            // made for this one.
             if !self.doc.is_embedded() {
                 self.doc.follows = self.doc.code_src.file_ref();
                 self.doc.code_src =
                     tiza_core::model::CodeSource::Embedded(self.doc.base().to_vec());
                 self.touch();
             }
-            self.reload_waits = true;
-            let step = self.doc.step;
-            self.error(format!(
-                "{name} changed on disk but moves are applied at step {step}: go back to step 0 to reload"
-            ));
+            (self.pause.waits, self.pause.pending) = (true, true);
+            if !self.pause.noticed && !quiet {
+                self.pause.noticed = true;
+                let at = self.resume_step().unwrap_or(0);
+                let notice = format!("step {at} loads the change to {name}");
+                self.info(notice.clone());
+                self.pause.notice = Some(notice);
+            }
             return true;
         }
         f.mark_reloaded(new.clone());
@@ -3881,14 +4002,24 @@ impl App {
                     "reloads": f.reloads,
                     "last_reload": f.last_reload_clock,
                     "missing": f.missing,
+                    "paused": self.follow_paused(),
+                    "pending": self.follow_pending(),
                 });
+                if let Some(step) = self.resume_step() {
+                    st["resume_step"] = json!(step);
+                }
                 if let Some(why) = self.follow_waits() {
                     st["reason"] = json!(why);
                 }
                 st
             }
             None => {
-                let mut st = json!({"enabled": false, "path": self.source_file().map(|p| p.display().to_string())});
+                let mut st = json!({
+                    "enabled": false,
+                    "path": self.source_file().map(|p| p.display().to_string()),
+                    "paused": false,
+                    "pending": false,
+                });
                 if let Some(why) = self.follow_off_why() {
                     st["reason"] = json!(why);
                 }
@@ -6802,7 +6933,7 @@ impl App {
                 let was = self.follow.is_some();
                 let said = self.message.clone();
                 let msg = self.set_follow(enabled)?;
-                // Turned on where a save waits for step 0: the presenter is
+                // Turned on paused, where a save waits: the presenter is
                 // told too, or the next save would seem lost; unless turning
                 // it on said something of its own (a file that cannot be
                 // read).
@@ -7147,6 +7278,14 @@ impl App {
             pointer: self.pointer,
             stale_moves: tiza_core::stale::count(&self.doc),
             save_error: self.save_error.clone(),
+            follow: self
+                .follow
+                .is_some()
+                .then(|| tiza_core::protocol::FollowState {
+                    paused: self.follow_paused(),
+                    pending: self.follow_pending(),
+                    resume_step: self.resume_step(),
+                }),
         }
     }
 
