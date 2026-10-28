@@ -117,18 +117,26 @@ impl Raster {
     /// crosses it is cut there, and some of its edge pixels change a
     /// little. (tiny-skia cuts an image taller than 8191 rows in the same
     /// way at row 8191, so [`rasterize`] has such pixels there.)
+    ///
+    /// Only the strips `k` (0 at the top) for which `wanted(k)` is true are
+    /// rasterized; `each` gets `k` and the pixels.
     pub(crate) fn strips(
         &self,
         buffers: &mut Strips,
-        mut each: impl FnMut(&Pixmap) -> Result<(), Error>,
+        wanted: impl Fn(usize) -> bool,
+        mut each: impl FnMut(usize, &Pixmap) -> Result<(), Error>,
     ) -> Result<(), Error> {
         let mut top = 0;
+        let mut k = 0;
         while top < self.height {
             let rows = STRIP_ROWS.min(self.height - top);
-            let pixmap = buffers.get(self.width, rows)?;
-            resvg::render(&self.tree, self.transform(top), &mut pixmap.as_mut());
-            each(pixmap)?;
+            if wanted(k) {
+                let pixmap = buffers.get(self.width, rows)?;
+                resvg::render(&self.tree, self.transform(top), &mut pixmap.as_mut());
+                each(k, pixmap)?;
+            }
             top += rows;
+            k += 1;
         }
         Ok(())
     }
@@ -246,12 +254,16 @@ mod tests {
             let mut joined = Vec::new();
             let mut heights = Vec::new();
             raster
-                .strips(&mut buffers, |strip| {
-                    assert_eq!(strip.width(), w);
-                    heights.push(strip.height());
-                    joined.extend_from_slice(strip.data());
-                    Ok(())
-                })
+                .strips(
+                    &mut buffers,
+                    |_| true,
+                    |_, strip| {
+                        assert_eq!(strip.width(), w);
+                        heights.push(strip.height());
+                        joined.extend_from_slice(strip.data());
+                        Ok(())
+                    },
+                )
                 .unwrap();
             assert_eq!(heights.iter().sum::<u32>(), h, "strips of {heights:?} rows");
             assert!(
