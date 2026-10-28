@@ -1361,7 +1361,7 @@ mod tests {
     #[test]
     fn defaults_take_the_values_of_their_commands() {
         let c = cfg(
-            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\n",
+            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffects = \"draw,dim\"\n",
         );
         assert!(c.warnings.is_empty(), "{:?}", c.warning_lines());
         assert_eq!(
@@ -1373,6 +1373,7 @@ mod tests {
                 autosave: Some(false),
                 layout: Some(LayoutMode::Stable),
                 width: Some(120),
+                effects: Some(crate::effects::Effects::parse("draw,dim").unwrap()),
             }
         );
         assert_eq!(cfg("[defaults]\npad = 2").defaults.pad, Some((2, 4)));
