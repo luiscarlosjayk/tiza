@@ -434,7 +434,9 @@ fn spot_step(doc: &Document, opts: &LayoutOptions) -> Option<u32> {
 ///
 /// When a spotlight changes at the step, the record is the one of a base:
 /// the step with the spotlights of the step before, so each cell starts
-/// from the dim that was on the screen. When the dim also fades
+/// from the dim that was on the screen. A step with a typed move shows the
+/// dim of the step while it types, so it has that base only when its dim
+/// fades (the typing then keeps the dim of the step before). When the dim also fades
 /// ([`Document::dim_fades_at`]), each cell that no annotation of the step
 /// painted and whose style the new dim changes goes into
 /// [`Trace::dim_from`]. A base of another size than the step gives no
@@ -451,7 +453,11 @@ pub fn layout_traced(
         let trace = l.canvas.take_trace().unwrap_or_default();
         (l, trace)
     };
-    if !doc.spots_change_at(step) {
+    // A step that types its moves shows the spotlights of the step while
+    // it types, unless its dim fades: then that dim is the base, or the
+    // first frame of the effect would show a dim that was not on screen.
+    let typed_on_screen = crate::moves::typing_plan(doc, step).is_some();
+    if !doc.spots_change_at(step) || (typed_on_screen && !doc.dim_fades_at(step)) {
         return traced(Some(step));
     }
     let (base, mut trace) = traced(step.checked_sub(1));

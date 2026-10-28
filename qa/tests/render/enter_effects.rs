@@ -576,3 +576,38 @@ fn a_fade_in_the_terminal_theme_changes_at_the_half() {
         assert_eq!(half.get(x, y), l.canvas.get(x, y), "({x}, {y}) at the half");
     }
 }
+
+#[test]
+fn the_effect_after_a_typed_move_starts_from_the_dim_of_the_typing() {
+    // flash.tiza: the spotlight S1 (no fade) stops at step 2, which types a
+    // move and draws a box. The typing shows the spotlights of step 2, so
+    // the first frame of the effect must too: no dim that comes back.
+    let doc = open(&fixture("render/enter_effects/flash.tiza"));
+    assert!(!doc.dim_fades_at(2) && doc.spots_change_at(2));
+    let fx = frames(&doc, &Theme::dark(), &AnimOptions::default());
+    let at_step: Vec<&tiza_core::anim::Frame> = fx.iter().filter(|f| f.step == 2).collect();
+    let typed = at_step
+        .iter()
+        .rfind(|f| f.typing)
+        .expect("no typed frame at step 2");
+    let effect = at_step
+        .iter()
+        .find(|f| f.effect)
+        .expect("no frame of an effect at step 2");
+    let style_of_e = |c: &Canvas| {
+        let y = row_of(c, "let s = String");
+        let x = (0..c.width)
+            .find(|&x| {
+                c.get(x, y).is_some_and(|cell| cell.sym == "l")
+                    && c.get(x + 1, y).is_some_and(|cell| cell.sym == "e")
+                    && c.get(x + 2, y).is_some_and(|cell| cell.sym == "t")
+            })
+            .expect("no let on line 2");
+        c.get(x + 1, y).unwrap().style
+    };
+    assert_eq!(
+        style_of_e(&effect.canvas),
+        style_of_e(&typed.canvas),
+        "the e of let on line 2: last typed frame, then the first frame of the effect"
+    );
+}

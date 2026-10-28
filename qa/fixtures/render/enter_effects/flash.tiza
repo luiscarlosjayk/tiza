@@ -1,0 +1,44 @@
+{
+ "schema": 1,
+ "title": "A typed move and an effect at one step",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let s = String::from(\"hi\");",
+  "    s.push('!');",
+  "    let n = s.len();",
+  "    println!(\"{n}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "S1",
+   "step": 1,
+   "type": "spotlight",
+   "from_line": 5,
+   "to_line": 6
+  },
+  {
+   "id": "b1",
+   "step": 2,
+   "type": "box",
+   "from_line": 2,
+   "to_line": 3,
+   "effect": "draw"
+  }
+ ],
+ "moves": [
+  {
+   "at_step": 2,
+   "action": "code.patch",
+   "op": "insert",
+   "after": "s.push('!');",
+   "content": "\n    // typed at 25 ms",
+   "typing": "char",
+   "speed_ms": 25
+  }
+ ]
+}
