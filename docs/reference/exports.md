@@ -191,7 +191,7 @@ The MCP tool `export_image` exports the live document. It does not change the TU
 - A relative `path` starts at the current folder of `tiza mcp`. The tool does not make missing folders.
 - A GIF or an animated WebP from `export_image` plays without end.
 - `export_image`, `tiza render` and `:export` apply the `[theme]` overrides of your config file. `export_image` reads the config file of the `tiza mcp` process.
-- In `warning`, `export_image` says what the config file left out, or that the config file does not parse. The export goes on.
+- In `warning`, `export_image` says what the config file left out, or that Tiza cannot read the config file. The export goes on.
 - When the theme has no colors outside the terminal, `export_image` uses `dark`. Its reply does not say so.
 - `export_image` checks `scale` for a PNG, a WebP and a GIF, and `font_size` for these and an SVG, as `tiza render` does. It checks `interval` for each format.
 - An export that takes more than 120 s stops. The tool writes nothing and replies with an error.
@@ -204,7 +204,7 @@ The reply has these fields:
 | `bytes` | The size of the file. |
 | `format` | The format: `png`, `svg`, `txt`, `ansi`, `md`, `gif` or `webp`. |
 | `step` | The step in the file, except in the reply for an animation. |
-| `warning` | What the config file left out, or that the config file does not parse. Then, except in the reply for an animation, that the step you asked for does not exist. The parts are separated by `; `. |
+| `warning` | What the config file left out, or that Tiza cannot read the config file. Then, except in the reply for an animation, that the step you asked for does not exist. The parts are separated by `; `. |
 | `frames` | The number of frames, only in the reply for an animation. |
 | `steps` | The steps of the animation, for example `0-7`, or `1-7` with `skip_zero`. Only in the reply for an animation. |
 
@@ -312,7 +312,7 @@ The other messages of `tiza` are in [Messages](cli.md#messages).
 |---|---|
 | `the terminal theme has no palette outside the terminal: exported with dark` | The theme is `terminal`. |
 | `theme tokens set to a terminal color have no value in an export (TOKENS): the dark theme's are used` | A theme override sets a token to a color of the terminal. |
-| `config ignored` | Tiza cannot read or parse your config file. |
+| `config ignored` | Tiza cannot read your config file. |
 | `` no grammar for `LANG`; the code is shown as plain text `` | `--lang` names a language that Tiza cannot color. |
 | `N annotations outside the code and not drawn: IDS` | Annotations of the document point at lines that the code does not have. |
 | `the file has N lines: range A-B clamped to C-D` | The range of `FILE:A-B` goes after the last line of the file. |

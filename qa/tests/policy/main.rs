@@ -1,6 +1,7 @@
 //! Repository policy: licenses, ticket ids, links, forms, and docs that must
 //! agree with the code.
 
+mod config_example;
 mod config_isolation;
 mod credits_and_licenses;
 mod issue_forms;

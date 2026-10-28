@@ -57,7 +57,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 - The live instance is the running TUI that agents and these commands talk to. See [Global flags](#global-flags).
 - For each flag of `tiza render`, see [Options of `tiza render`](exports.md#options-of-tiza-render).
 - `tiza check` is in [Check before you record](../guides/check-before-you-record.md).
-- `tiza config` exits with code 0 also when the file has warnings, and with code 1 when Tiza cannot read the file. [The config file](themes.md#the-config-file) tells where Tiza finds it.
+- `tiza config` is in [Config file](config.md#tiza-config).
 - `tiza mcp` is in [Set up an agent](../agents/setup.md). The tools are in [MCP tools](mcp-tools.md).
 - `tiza scene` and `tiza api` are in [Socket API](socket-api.md).
 - `tiza next`, `tiza prev` and `tiza goto` are in [Go to a named step](document-format.md#go-to-a-named-step).
@@ -248,7 +248,8 @@ Tiza writes these messages on stderr:
 - The messages `no grammar for …` and `config ignored: …` are warnings. Tiza goes on.
 - When the text after the last `:` does not start with a digit and has other characters than digits, `-` and `.`, Tiza reads the whole text as a file name, for example `a:b.rs`. Then the message is `could not open FILE`.
 - A file that is there opens as a file, also when its name has a `:` and a digit, for example `notes 12:00.md`.
-- `tiza: config ignored: PATH` ends with the error text of the TOML reader or of the system.
+- `tiza: config ignored: PATH` ends with the error text of the system.
+- The warnings of the config file are in [Warnings](config.md#warnings) of the config file.
 - For `tiza scene text --width`, the live instance checks the width. Then the message ends with ` (invalid_argument)`, as in `tiza: MESSAGE (CODE)`.
 - `could not open FILE`, `could not read PATH` and `no Tiza instance is listening on …` can end with the error of the system. `--padding expects V or V,H` can end with the reason of the error.
 - The errors of `tiza goto` are in [Messages](document-format.md#messages).

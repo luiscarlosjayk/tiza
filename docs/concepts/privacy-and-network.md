@@ -30,7 +30,7 @@ All of this stays on your computer:
 | Any file, as code | When you give `tiza scene put --as-code FILE`, with the `.tiza` document of that file. |
 | A file that a document links with `code.link` | When Tiza loads the document, when you give `:link PATH` or `:ref PATH`, or when an agent adds a `code.link` move. |
 | The file in `follows` | When you give `:follow on`. |
-| The config file | When the TUI starts, and at each `tiza render`. |
+| The config file | When the TUI starts, at each `tiza render`, `tiza check` and `tiza config`, and at each `export_image`. |
 | A theme file | When you give `--theme-file PATH` or `:theme file PATH`. |
 | A JSON file | When you give `tiza scene patch @PATH`. |
 | The fonts of the system | When `tiza render` has `--system-fonts`. |
@@ -80,16 +80,7 @@ Tiza sends the color query to the terminal only when the theme is `auto`, the de
 
 ### The config file
 
-Tiza looks for the config file in this order:
-
-1. `$TIZA_CONFIG`.
-2. `$XDG_CONFIG_HOME/tiza/config.toml`.
-3. `~/.config/tiza/config.toml`.
-
-- An empty `TIZA_CONFIG`, `XDG_CONFIG_HOME` or `HOME` counts as not set.
-- Without `HOME` and without `XDG_CONFIG_HOME`, Tiza reads no config file.
-- When the file does not exist, Tiza uses its defaults.
-- When Tiza cannot read or parse the file, it shows a warning and uses its defaults.
+Tiza reads one config file: `$TIZA_CONFIG`, else `$XDG_CONFIG_HOME/tiza/config.toml`, else `~/.config/tiza/config.toml`. Without `HOME` and without `XDG_CONFIG_HOME`, Tiza reads no config file. The full rules are in [Where Tiza finds the file](../reference/config.md#where-tiza-finds-the-file).
 
 ## Files that Tiza writes
 

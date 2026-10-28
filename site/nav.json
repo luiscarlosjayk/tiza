@@ -51,6 +51,7 @@
         },
         "docs/reference/cli.md",
         "docs/reference/document-format.md",
+        "docs/reference/config.md",
         "docs/reference/exports.md",
         "docs/reference/themes.md",
         "docs/reference/terminals.md",
