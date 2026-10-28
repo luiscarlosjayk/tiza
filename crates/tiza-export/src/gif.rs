@@ -17,7 +17,7 @@ use tiza_core::theme::Theme;
 
 use crate::Error;
 use crate::png::{PngOptions, Raster, STRIP_ROWS, Strips};
-use crate::svg::{SvgOptions, to_svg};
+use crate::svg::{Geometry, SvgOptions, geometry, to_svg, to_svg_rows};
 
 /// Shortest delay a GIF frame may have, in milliseconds (the format counts
 /// in 10 ms units and players treat anything under 20 ms as 100 ms).
@@ -83,16 +83,24 @@ pub fn to_gif(
     encode(frames, theme, o, true).map(|(bytes, report, _)| (bytes, report))
 }
 
-/// [`to_gif`], and the number of strips that it rasterized. With `reuse`,
-/// a strip with no changed row of cells near it is not rasterized again:
-/// its colors and its palette indexes are those of the frame before.
-/// Without it (only the tests), every strip is.
+/// How much [`encode`] rasterized: strips, and bytes of the SVGs it parsed.
+#[derive(Debug, Default)]
+struct Work {
+    strips: usize,
+    svg_bytes: usize,
+}
+
+/// [`to_gif`], and how much it rasterized. With `reuse`, a strip with no
+/// changed row of cells near it is not rasterized again: its colors and its
+/// palette indexes are those of the frame before, and the SVG of the frame
+/// has only the rows that can draw in the other strips. Without it (only
+/// the tests), every strip and every row is.
 fn encode(
     frames: &[(Canvas, u64)],
     theme: &Theme,
     o: &GifOptions,
     reuse: bool,
-) -> Result<(Vec<u8>, GifReport, usize), Error> {
+) -> Result<(Vec<u8>, GifReport, Work), Error> {
     if frames.is_empty() {
         return Err(Error::Gif("no frames".into()));
     }
@@ -113,11 +121,11 @@ fn encode(
     // The colors of each strip when it was last rasterized: a strip that
     // is not rasterized again counts them again.
     let mut strip_colors: Vec<HashMap<[u8; 3], u64>> = Vec::new();
-    let mut rasterized = 0;
+    let mut work = Work::default();
     for (i, (canvas, _)) in frames.iter().enumerate() {
         let dirty = dirty_of(i, height);
         if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
-            let raster = frame_raster(canvas, theme, o)?;
+            let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
             let (w, h) = (raster.width, raster.height);
             if i == 0 {
                 (width, height) = (w, h);
@@ -131,7 +139,7 @@ fn encode(
                 &mut strips,
                 |k| wanted(&dirty, k),
                 |k, pm| {
-                    rasterized += 1;
+                    work.strips += 1;
                     let colors = &mut strip_colors[k];
                     colors.clear();
                     for (color, n) in color_runs(pm) {
@@ -182,7 +190,7 @@ fn encode(
             let dirty = dirty_of(i, height);
             screen.start();
             if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
-                let raster = frame_raster(canvas, theme, o)?;
+                let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
                 let differs =
                     || Error::Gif(format!("frame {i} rasterized differently the second time"));
                 if (raster.width, raster.height) != (width, height) {
@@ -192,7 +200,7 @@ fn encode(
                     &mut strips,
                     |k| wanted(&dirty, k),
                     |k, pm| {
-                        rasterized += 1;
+                        work.strips += 1;
                         let start = k * STRIP_ROWS as usize * width as usize;
                         screen.seek(start);
                         for (color, n) in color_runs(pm) {
@@ -258,7 +266,7 @@ fn encode(
             colors: palette.len(),
             duration_ms,
         },
-        rasterized,
+        work,
     ))
 }
 
@@ -271,8 +279,26 @@ const DIRTY_MARGIN_ROWS: usize = 1;
 
 /// A grapheme of more chars than this (a base and one mark) can stack its
 /// marks past the margin: a frame that changes a row with one rasterizes
-/// every strip.
+/// every strip, and a frame with one in any row has every row in its SVG.
 const MARGIN_CHARS: usize = 2;
+
+/// A grapheme that can draw past [`DIRTY_MARGIN_ROWS`].
+fn tall_grapheme(c: &Canvas, x: usize, y: usize) -> bool {
+    c.get(x, y)
+        .is_some_and(|cell| cell.sym.chars().count() > MARGIN_CHARS)
+}
+
+/// The strips that row `y` of cells can draw in: those that its band of
+/// pixel rows touches, with [`DIRTY_MARGIN_ROWS`] around it. Row 0 too has
+/// a margin above it, in the margin of the image.
+fn row_strips(g: &Geometry, scale: f32, height: u32, y: usize) -> std::ops::Range<usize> {
+    let pixel_row = |row: f32| (g.margin + row * g.cell_h) * scale;
+    let top = pixel_row(y as f32 - DIRTY_MARGIN_ROWS as f32)
+        .floor()
+        .max(0.0) as u32;
+    let bottom = (pixel_row((y + 1 + DIRTY_MARGIN_ROWS) as f32).ceil() as u32).min(height);
+    (top / STRIP_ROWS) as usize..bottom.div_ceil(STRIP_ROWS) as usize
+}
 
 /// Which strips of the frame `now` can have other pixels than in the frame
 /// `before` it: those that touch a row of cells that changed, or the
@@ -287,38 +313,60 @@ fn dirty_strips(before: &Canvas, now: &Canvas, o: &GifOptions, height: u32) -> V
     if o.png.system_fonts || (before.width, before.height) != (now.width, now.height) {
         return vec![true; strips];
     }
-    let g = crate::svg::geometry(now, &o.svg);
-    let scale = o.png.scale;
-    let pixel_row = |row: f32| (g.margin + row * g.cell_h) * scale;
-    let tall = |c: &Canvas, x: usize, y: usize| {
-        c.get(x, y)
-            .is_some_and(|cell| cell.sym.chars().count() > MARGIN_CHARS)
-    };
+    let g = geometry(now, &o.svg);
     let mut dirty = vec![false; strips];
     for y in 0..now.height {
         if (0..now.width).all(|x| before.get(x, y) == now.get(x, y)) {
             continue;
         }
-        if (0..now.width).any(|x| tall(before, x, y) || tall(now, x, y)) {
+        if (0..now.width).any(|x| tall_grapheme(before, x, y) || tall_grapheme(now, x, y)) {
             return vec![true; strips];
         }
-        // Row 0 too has a margin above it, in the margin of the image.
-        let top = pixel_row(y as f32 - DIRTY_MARGIN_ROWS as f32)
-            .floor()
-            .max(0.0) as u32;
-        let bottom = (pixel_row((y + 1 + DIRTY_MARGIN_ROWS) as f32).ceil() as u32).min(height);
-        for k in top / STRIP_ROWS..bottom.div_ceil(STRIP_ROWS) {
-            dirty[k as usize] = true;
+        for k in row_strips(&g, o.png.scale, height, y) {
+            dirty[k] = true;
         }
     }
     dirty
 }
 
-/// One frame, parsed for the PNG path. Over the limits, an error comes
-/// before the SVG, not after it.
-fn frame_raster(canvas: &Canvas, theme: &Theme, o: &GifOptions) -> Result<Raster, Error> {
+/// The rows of cells that the SVG of the frame `now` needs to rasterize
+/// its `dirty` strips: those that can draw in one of them. Every row with
+/// the system fonts, and when a grapheme of the frame, in a changed row or
+/// not, can draw past the margin: a row that is not in the SVG draws
+/// nothing.
+fn needed_rows(now: &Canvas, o: &GifOptions, height: u32, dirty: &[bool]) -> Vec<bool> {
+    if o.png.system_fonts
+        || (0..now.height).any(|y| (0..now.width).any(|x| tall_grapheme(now, x, y)))
+    {
+        return vec![true; now.height];
+    }
+    let g = geometry(now, &o.svg);
+    (0..now.height)
+        .map(|y| row_strips(&g, o.png.scale, height, y).any(|k| dirty[k]))
+        .collect()
+}
+
+/// One frame, parsed for the PNG path: the whole SVG, or with `dirty`
+/// strips only the rows that can draw in them. Over the limits, an error
+/// comes before the SVG, not after it.
+fn frame_raster(
+    canvas: &Canvas,
+    theme: &Theme,
+    o: &GifOptions,
+    height: u32,
+    dirty: &Option<Vec<bool>>,
+    work: &mut Work,
+) -> Result<Raster, Error> {
     crate::limits::image_size(canvas, &o.svg, &o.png)?;
-    Raster::new(&to_svg(canvas, theme, &o.svg), &o.png)
+    let svg = match dirty {
+        None => to_svg(canvas, theme, &o.svg),
+        Some(dirty) => {
+            let rows = needed_rows(canvas, o, height, dirty);
+            to_svg_rows(canvas, theme, &o.svg, |y| rows[y])
+        }
+    };
+    work.svg_bytes += svg.len();
+    Raster::new(&svg, &o.png)
 }
 
 /// The pixels of a frame as runs of one color, row after row. A frame of
@@ -596,6 +644,9 @@ mod tests {
         let f1 = change(&base, edge, "mut x");
         let f3 = change(&f1, rows - 2, "zz");
         let f4 = change(&f3, 0, "top");
+        // Two changes far apart: two strips, and the rows between them out
+        // of the SVG.
+        let f5 = change(&change(&f4, 2, "two"), rows - 3, "two");
         let frames = vec![
             (base, 400),
             (f1.clone(), 400),
@@ -603,8 +654,9 @@ mod tests {
             (f1, 400),
             (f3, 400),
             (f4, 400),
+            (f5, 400),
         ];
-        let (fast, report, reused) = encode(&frames, &Theme::dark(), &o, true).unwrap();
+        let (fast, report, drawn) = encode(&frames, &Theme::dark(), &o, true).unwrap();
         let (every, _, all) = encode(&frames, &Theme::dark(), &o, false).unwrap();
         assert!(
             report.height > 2 * STRIP_ROWS,
@@ -617,8 +669,8 @@ mod tests {
             "the GIF differs when the clean strips are reused"
         );
         assert!(
-            reused * 2 < all,
-            "{reused} of {all} strips rasterized: the clean ones are reused"
+            drawn.strips * 2 < all.strips && drawn.svg_bytes * 2 < all.svg_bytes,
+            "{drawn:?} of {all:?}: the clean strips are reused, their rows not in the SVG"
         );
         assert!(to_gif(&frames, &Theme::dark(), &o).unwrap().0 == fast);
     }
@@ -683,7 +735,7 @@ mod tests {
             ..Default::default()
         };
         let count = |frames: &[(Canvas, u64)], o: &GifOptions, reuse: bool| {
-            encode(frames, &Theme::dark(), o, reuse).unwrap().2
+            encode(frames, &Theme::dark(), o, reuse).unwrap().2.strips
         };
         let plain = tall_frames("xyz");
         assert!(count(&plain, &o, true) < count(&plain, &o, false));
@@ -693,6 +745,150 @@ mod tests {
         o.png.system_fonts = true;
         assert_eq!(count(&plain, &o, true), count(&plain, &o, false));
     }
+
+    /// A row that does not change is not in the SVG of a frame when it is
+    /// far from every changed row. A grapheme with stacked marks can draw
+    /// two rows away: then the SVG has every row.
+    #[test]
+    fn stacked_marks_in_a_row_that_does_not_change_are_still_drawn() {
+        let o = GifOptions {
+            png: PngOptions {
+                scale: 2.0,
+                system_fonts: false,
+            },
+            ..Default::default()
+        };
+        let rows = 90;
+        let mut base = Canvas::new_filled(14, rows, Theme::dark().base());
+        for y in 0..rows {
+            base.put_str(0, y, "let x = 1;", CellStyle::new().fg(Rgb(200, 200, 200)));
+        }
+        let g = crate::svg::geometry(&base, &o.svg);
+        let row_at = |px: u32| ((px as f32 / o.png.scale - g.margin) / g.cell_h) as usize;
+        // A row that changes in the middle of strip 1, and a row of marks
+        // that starts one whole row below strip 1.
+        let changed = row_at(STRIP_ROWS * 3 / 2);
+        let marks = row_at(2 * STRIP_ROWS) + 2;
+        let mut with_marks = base.clone();
+        with_marks.put_str(5, marks, STACKED, CellStyle::new().fg(Rgb(255, 80, 80)));
+        // Its marks draw in strip 1.
+        let strip_1 = |c: &Canvas| {
+            let svg = crate::svg::to_svg(c, &Theme::dark(), &o.svg);
+            let pm = crate::png::rasterize(&svg, &o.png).unwrap();
+            let row = (pm.width() * 4) as usize;
+            pm.data()[STRIP_ROWS as usize * row..2 * STRIP_ROWS as usize * row].to_vec()
+        };
+        assert!(
+            strip_1(&base) != strip_1(&with_marks),
+            "the marks draw in strip 1"
+        );
+        let mut next = with_marks.clone();
+        next.put_str(
+            0,
+            changed,
+            "let y = 2;",
+            CellStyle::new().fg(Rgb(250, 250, 90)),
+        );
+        let frames = vec![(with_marks, 400), (next, 400)];
+        let (fast, _, _) = encode(&frames, &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        assert!(
+            fast == every,
+            "strip 1 lost the marks of a row out of the SVG"
+        );
+    }
+
+    /// A row of cells that crosses the edge between two strips draws in
+    /// both: it is in the SVG of the strip that changes, even when its
+    /// middle is in the other one.
+    #[test]
+    fn a_row_across_the_edge_of_a_strip_is_in_the_svg_of_both_strips() {
+        let o = GifOptions {
+            png: PngOptions {
+                scale: 2.0,
+                system_fonts: false,
+            },
+            ..Default::default()
+        };
+        let rows = 60;
+        let mut base = Canvas::new_filled(14, rows, Theme::dark().base());
+        for y in 0..rows {
+            base.put_str(0, y, "gjpqy |{}[]", CellStyle::new().fg(Rgb(200, 220, 120)));
+        }
+        let g = crate::svg::geometry(&base, &o.svg);
+        let top = |y: usize| (g.margin + y as f32 * g.cell_h) * o.png.scale;
+        let edge = (0..rows)
+            .find(|&y| top(y) < STRIP_ROWS as f32 && top(y + 1) > STRIP_ROWS as f32)
+            .expect("a row across the edge");
+        // Change a row on the side of the edge where the middle of the
+        // crossing row is not: only that strip changes.
+        let middle = (top(edge) + top(edge + 1)) / 2.0;
+        let changed = if middle > STRIP_ROWS as f32 {
+            edge - 2
+        } else {
+            edge + 2
+        };
+        let mut next = base.clone();
+        next.put_str(0, changed, "zzzzzz", CellStyle::new().fg(Rgb(250, 90, 90)));
+        let frames = vec![(base, 400), (next, 400)];
+        let (fast, _, drawn) = encode(&frames, &Theme::dark(), &o, true).unwrap();
+        let (every, _, all) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        assert!(
+            drawn.strips < all.strips,
+            "{drawn:?} of {all:?}: one strip is reused"
+        );
+        assert!(fast == every, "the strip lost the part of the crossing row");
+    }
+
+    /// A row of cells that starts a strip can draw in the strip above it.
+    /// When only the strip above changes, the row is in its SVG by the
+    /// margin, although it does not change.
+    #[test]
+    fn a_row_that_starts_a_strip_is_in_the_svg_of_the_strip_above() {
+        let mut o = GifOptions {
+            png: PngOptions {
+                scale: 2.0,
+                system_fonts: false,
+            },
+            ..Default::default()
+        };
+        o.svg.font_size = 25.0;
+        // Row 10 starts at pixel row 1024: 182 + 10 × 33 = 512, at scale 2.
+        o.svg.margin_cells = 182.0 / 33.0;
+        let mut base = Canvas::new_filled(8, 30, Theme::dark().base());
+        for y in 0..30 {
+            base.put_str(0, y, "aaaa", CellStyle::new().fg(Rgb(255, 255, 255)));
+        }
+        base.put_str(0, 10, TALL, CellStyle::new().fg(Rgb(255, 255, 255)));
+        let g = crate::svg::geometry(&base, &o.svg);
+        let top_10 = (g.margin + 10.0 * g.cell_h) * o.png.scale;
+        assert!(
+            (top_10 - STRIP_ROWS as f32).abs() < 0.01,
+            "row 10 starts strip 1: {top_10}"
+        );
+        // Its glyphs draw in strip 0, above the row.
+        let ink = |c: &Canvas| {
+            let svg = crate::svg::to_svg(c, &Theme::dark(), &o.svg);
+            let pm = crate::png::rasterize(&svg, &o.png).unwrap();
+            let row = (pm.width() * 4) as usize;
+            pm.data()[(STRIP_ROWS as usize - 8) * row..STRIP_ROWS as usize * row].to_vec()
+        };
+        let mut plain = base.clone();
+        plain.put_str(0, 10, "aaaa", CellStyle::new().fg(Rgb(255, 255, 255)));
+        assert!(ink(&plain) != ink(&base), "{TALL:?} draws above row 10");
+        let mut next = base.clone();
+        next.put_str(0, 5, "zzzz", CellStyle::new().fg(Rgb(250, 90, 90)));
+        let height = crate::limits::image_size(&base, &o.svg, &o.png).unwrap().1;
+        let dirty = dirty_strips(&base, &next, &o, height);
+        assert!(dirty[0] && !dirty[1], "only strip 0 changes: {dirty:?}");
+        let frames = vec![(base, 400), (next, 400)];
+        let (fast, _, _) = encode(&frames, &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        assert!(fast == every, "strip 0 lost the glyphs of row 10");
+    }
+
+    /// An "a" with 40 acute accents, stacked: one grapheme, one cell.
+    const STACKED: &str = "a\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}\u{301}";
 
     #[test]
     fn frames_of_other_sizes_are_an_error() {

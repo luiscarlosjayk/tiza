@@ -277,6 +277,21 @@ fn face_base64(i: usize) -> &'static str {
 
 /// Renders the canvas as a standalone SVG document.
 pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
+    to_svg_rows(canvas, theme, o, |_| true)
+}
+
+/// [`to_svg`] with only the rows of cells `y` for which `include(y)` is
+/// true: the same document, size and order, without the backgrounds and
+/// the text of the other rows. (With `embed_fonts`, the `@font-face` rules
+/// are those of the faces that these rows use; the rasterizer does not
+/// read them.) The GIF rasterizes a strip of rows from the rows that can
+/// draw in it.
+pub(crate) fn to_svg_rows(
+    canvas: &Canvas,
+    theme: &Theme,
+    o: &SvgOptions,
+    include: impl Fn(usize) -> bool,
+) -> String {
     let g = geometry(canvas, o);
     // Text runs first: the `<style>` above them embeds only the faces they use.
     let mut body = String::with_capacity(64 * 1024);
@@ -284,7 +299,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     let mut used = FacesUsed::new();
     let mut row_text = String::new();
     // Cell backgrounds, merged per run.
-    for y in 0..canvas.height {
+    for y in (0..canvas.height).filter(|&y| include(y)) {
         for r in runs(canvas, y, &mut row_text) {
             if let Some(bg) = r.style.bg
                 && bg != theme.bg
@@ -303,7 +318,7 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
     }
     // Text runs.
     let ascent = o.font_size * fonts::ASCENT_EM;
-    for y in 0..canvas.height {
+    for y in (0..canvas.height).filter(|&y| include(y)) {
         let base_y = g.margin + y as f32 * g.cell_h + ascent;
         let row_runs = runs(canvas, y, &mut row_text);
         for r in split_glyph_prefix(&row_text, row_runs) {
@@ -381,6 +396,37 @@ pub fn to_svg(canvas: &Canvas, theme: &Theme, o: &SvgOptions) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The SVG of some rows is the SVG of all of them without the lines
+    /// of the other rows: the same header, style and background, and the
+    /// same lines for the rows that it has, in the same order.
+    #[test]
+    fn the_svg_of_some_rows_has_their_lines_only() {
+        let mut c = Canvas::new(6, 4);
+        for (y, text) in ["aa", "bb", "cc", "dd"].iter().enumerate() {
+            c.put_str(
+                0,
+                y,
+                text,
+                CellStyle::new().fg(Rgb(1, 2, 3)).bg(Rgb(9, y as u8, 9)),
+            );
+        }
+        c.put_str(3, 1, "B", CellStyle::new().fg(Rgb(1, 2, 3)).bold());
+        let o = SvgOptions {
+            embed_fonts: false,
+            ..Default::default()
+        };
+        let all = to_svg(&c, &Theme::dark(), &o);
+        assert_eq!(to_svg_rows(&c, &Theme::dark(), &o, |_| true), all);
+        let some = to_svg_rows(&c, &Theme::dark(), &o, |y| y != 1 && y != 2);
+        let without: Vec<&str> = all
+            .lines()
+            .filter(|l| !l.contains(">bb<") && !l.contains(">B<") && !l.contains(">cc<"))
+            .filter(|l| !l.contains("fill=\"#090109\"") && !l.contains("fill=\"#090209\""))
+            .collect();
+        assert_eq!(some.lines().collect::<Vec<_>>(), without);
+        assert!(some.contains(">aa<") && some.contains(">dd<"));
+    }
 
     #[test]
     fn runs_merge_equal_styles_and_keep_wide_cells() {
