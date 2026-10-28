@@ -195,6 +195,51 @@ pub struct Canvas {
     pub width: usize,
     pub height: usize,
     cells: Vec<Cell>,
+    /// Which annotation of the step painted each cell, for the enter
+    /// effects ([`crate::effects`]). `None` (no cost but a branch) unless
+    /// the layout was asked for it.
+    trace: Option<Box<Trace>>,
+}
+
+/// What an annotation paints in a cell, for the enter effects. The
+/// order is the precedence when one annotation paints a cell twice.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Part {
+    /// Code or a fill that the annotation recolors: it fades in.
+    Recolor,
+    /// The text of a label, a note or a callout: it fades in at the end.
+    Text,
+    /// A line (a border, an underline, an arrow): it is drawn along its path.
+    Stroke,
+}
+
+/// A cell that an annotation of the step painted.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Traced {
+    /// The annotation, as an index in [`Trace::ids`].
+    pub ann: usize,
+    pub part: Part,
+    /// The cell as it was before any annotation of the step painted it,
+    /// with what other painters did to it since.
+    pub before: Cell,
+}
+
+/// The record of a traced layout: what the annotations of the step
+/// painted, the path of each stroke and the style of the code cells
+/// that a spotlight of the step dims.
+#[derive(Debug, Clone, Default)]
+pub struct Trace {
+    /// The annotations of the step that painted something.
+    pub ids: Vec<String>,
+    /// The cells they painted, by index (`y * width + x`).
+    pub cells: std::collections::BTreeMap<usize, Traced>,
+    /// The path of each stroke, from where it starts: (annotation, the
+    /// corners of a polyline in cells).
+    pub paths: Vec<(usize, Vec<(usize, usize)>)>,
+    /// Code cells that a spotlight of the step dims, with the style they
+    /// have without it.
+    pub undimmed: std::collections::BTreeMap<usize, CellStyle>,
+    painter: Option<(usize, Part)>,
 }
 
 impl Canvas {
@@ -203,7 +248,133 @@ impl Canvas {
             width,
             height,
             cells: vec![Cell::default(); width * height],
+            trace: None,
         }
+    }
+
+    /// Starts to record what the annotations of the step paint
+    /// ([`Canvas::trace_painter`]).
+    pub fn start_trace(&mut self) {
+        self.trace = Some(Box::default());
+    }
+
+    /// The record, which stops.
+    pub fn take_trace(&mut self) -> Option<Trace> {
+        self.trace.take().map(|t| *t)
+    }
+
+    pub fn is_tracing(&self) -> bool {
+        self.trace.is_some()
+    }
+
+    /// Who paints from now on: an annotation of the step and the part it
+    /// paints, or `None` for anything else (the code, an older
+    /// annotation). Does nothing when no trace runs.
+    pub fn trace_painter(&mut self, painter: Option<(&str, Part)>) {
+        let Some(t) = self.trace.as_deref_mut() else {
+            return;
+        };
+        t.painter = painter.map(|(id, part)| {
+            let i = match t.ids.iter().position(|x| x == id) {
+                Some(i) => i,
+                None => {
+                    t.ids.push(id.to_string());
+                    t.ids.len() - 1
+                }
+            };
+            (i, part)
+        });
+    }
+
+    /// The part the current painter paints from now on.
+    pub fn trace_part(&mut self, part: Part) {
+        if let Some(t) = self.trace.as_deref_mut()
+            && let Some((_, p)) = &mut t.painter
+        {
+            *p = part;
+        }
+    }
+
+    /// The path of the current painter's stroke, from its start: the
+    /// corners of a polyline in cells.
+    pub fn trace_path(&mut self, corners: Vec<(usize, usize)>) {
+        if let Some(t) = self.trace.as_deref_mut()
+            && let Some((ann, _)) = t.painter
+        {
+            t.paths.push((ann, corners));
+        }
+    }
+
+    /// The style a code cell has before a spotlight of the step dims it.
+    pub fn trace_undimmed(&mut self, x: usize, y: usize, style: CellStyle) {
+        if let Some(i) = self.idx(x, y)
+            && let Some(t) = self.trace.as_deref_mut()
+        {
+            t.undimmed.insert(i, style);
+        }
+    }
+
+    /// Notes a write into cell `i`, before it happens: a symbol, or a
+    /// style only (`restyle`). An annotation that writes a symbol over its
+    /// own cell gives it the new part (a box label over its border is
+    /// text); a restyle keeps the stronger part.
+    fn trace_write(&mut self, i: usize, restyle: bool) {
+        let Some(t) = self.trace.as_deref_mut() else {
+            return;
+        };
+        match t.painter {
+            Some((ann, part)) => {
+                let before = &self.cells[i];
+                t.cells
+                    .entry(i)
+                    .and_modify(|r| {
+                        if r.ann == ann && restyle {
+                            r.part = r.part.max(part);
+                        } else {
+                            r.ann = ann;
+                            r.part = part;
+                        }
+                    })
+                    .or_insert_with(|| Traced {
+                        ann,
+                        part,
+                        before: before.clone(),
+                    });
+            }
+            // Another painter writes over it: the cell is its.
+            None => {
+                t.cells.remove(&i);
+            }
+        }
+    }
+
+    /// Notes a restyle of cell `i` with `style`, before it happens.
+    fn trace_restyle(&mut self, i: usize, style: CellStyle) {
+        let Some(t) = self.trace.as_deref_mut() else {
+            return;
+        };
+        if t.painter.is_some() {
+            self.trace_write(i, true);
+            return;
+        }
+        // Another painter: what it does shows before the effect too.
+        if let Some(r) = t.cells.get_mut(&i) {
+            r.before.style = r.before.style.merge(style);
+        }
+        if let Some(s) = t.undimmed.get_mut(&i) {
+            *s = s.merge(style);
+        }
+    }
+
+    /// The cell at index `i` (`y * width + x`).
+    pub(crate) fn cell_at(&self, i: usize) -> &Cell {
+        &self.cells[i]
+    }
+
+    /// Sets the cell at index `i` as it is, without the checks of
+    /// [`Canvas::put`] (it comes from a canvas of the same size).
+    pub(crate) fn set_cell_at(&mut self, i: usize, cell: Cell) {
+        self.cells[i] = cell;
     }
 
     pub fn new_filled(width: usize, height: usize, style: CellStyle) -> Self {
@@ -252,6 +423,12 @@ impl Canvas {
 
     fn put_cell(&mut self, x: usize, y: usize, sym: &str, w: usize, style: CellStyle) -> usize {
         let Some(i) = self.idx(x, y) else { return w };
+        if self.trace.is_some() {
+            self.trace_write(i, false);
+            if w == 2 && x + 1 < self.width {
+                self.trace_write(i + 1, false);
+            }
+        }
         if w == 2 && x + 1 >= self.width {
             // Does not fit whole: leave a space.
             self.cells[i] = Cell {
@@ -346,6 +523,9 @@ impl Canvas {
     pub fn restyle(&mut self, x: usize, y: usize, w: usize, style: CellStyle) {
         for cx in x..x + w {
             if let Some(i) = self.idx(cx, y) {
+                if self.trace.is_some() {
+                    self.trace_restyle(i, style);
+                }
                 self.cells[i].style = self.cells[i].style.merge(style);
             }
         }
