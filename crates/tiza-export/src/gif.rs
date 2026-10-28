@@ -121,12 +121,12 @@ pub fn to_gif(
             Some(n) => gif::Repeat::Finite(n),
         })
         .map_err(|e| Error::Gif(e.to_string()))?;
-        // The palette indexes of this frame and of the one before it: two
-        // buffers of one byte per pixel for the whole animation, at their
-        // exact size (grown, they held up to twice that).
-        let pixels = width as usize * height as usize;
-        let mut idx: Vec<u8> = Vec::with_capacity(pixels);
-        let mut prev: Vec<u8> = Vec::with_capacity(pixels);
+        // The palette indexes of the frame on screen: one buffer of one
+        // byte per pixel for the whole animation.
+        let mut screen = Screen::new(width, height);
+        // The changed rectangle of each frame, one buffer for the whole
+        // animation.
+        let mut buffer: Vec<u8> = Vec::new();
         for (i, (canvas, _)) in frames.iter().enumerate() {
             // Rasterizing is deterministic: the same pixels as in step 1. A
             // frame with another size, or with a color that step 1 did not
@@ -137,24 +137,24 @@ pub fn to_gif(
             if (pm.width(), pm.height()) != (width, height) {
                 return Err(differs());
             }
-            idx.clear();
+            screen.start();
             for (color, n) in color_runs(&pm) {
                 let index = *lookup.get(&color).ok_or_else(differs)?;
-                idx.resize(idx.len() + n, index);
+                screen.write(index, n);
             }
-            // The pixels of a frame are freed before its rectangle is
-            // copied, and each copy is freed after its frame is written: a
-            // copy and the pixels of a frame are never alive at the same time.
+            // The runs cover the frame: no pixel of the frame before stays.
+            debug_assert_eq!(screen.at, screen.idx.len());
+            // The pixels of a frame are freed before its rectangle is copied.
             drop(pm);
             let (left, top, w, h) = if i == 0 {
                 (0, 0, width, height)
             } else {
-                changed_rect(&prev, &idx, width, height).unwrap_or((0, 0, 1, 1))
+                screen.changed().unwrap_or((0, 0, 1, 1))
             };
-            let mut buffer = Vec::with_capacity(w as usize * h as usize);
+            buffer.clear();
             for y in top..top + h {
                 let row = (y * width + left) as usize;
-                buffer.extend_from_slice(&idx[row..row + w as usize]);
+                buffer.extend_from_slice(&screen.idx[row..row + w as usize]);
             }
             // A hold longer than the format's 655 s is split into frames
             // of the same rectangle.
@@ -182,7 +182,6 @@ pub fn to_gif(
                     break;
                 }
             }
-            std::mem::swap(&mut prev, &mut idx);
         }
     }
     let duration_ms = frames
@@ -224,31 +223,62 @@ fn rgb(p: &PremultipliedColorU8) -> [u8; 3] {
     [c.red(), c.green(), c.blue()]
 }
 
-/// Bounding rectangle of the pixels that differ between two index frames;
-/// `None` when nothing changed.
-fn changed_rect(a: &[u8], b: &[u8], width: u32, height: u32) -> Option<(u32, u32, u32, u32)> {
-    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0u32, 0u32);
-    for y in 0..height {
-        let row = (y * width) as usize;
-        let ra = &a[row..row + width as usize];
-        let rb = &b[row..row + width as usize];
-        if ra == rb {
-            continue;
+/// The palette indexes of the frame on screen, one byte per pixel. Each
+/// frame is written over the one before it, run by run, and the pixels
+/// that change give the rectangle to encode: no copy of the frame before.
+struct Screen {
+    idx: Vec<u8>,
+    width: usize,
+    /// The next pixel to write.
+    at: usize,
+    /// Left, top, right and bottom (inclusive) of the pixels that changed.
+    bounds: Option<(usize, usize, usize, usize)>,
+}
+
+impl Screen {
+    fn new(width: u32, height: u32) -> Self {
+        Self {
+            idx: vec![0; width as usize * height as usize],
+            width: width as usize,
+            at: 0,
+            bounds: None,
         }
-        let first = ra.iter().zip(rb).position(|(p, q)| p != q).unwrap() as u32;
-        let last = width
-            - 1
-            - ra.iter()
-                .rev()
-                .zip(rb.iter().rev())
-                .position(|(p, q)| p != q)
-                .unwrap() as u32;
-        x0 = x0.min(first);
-        x1 = x1.max(last);
-        y0 = y0.min(y);
-        y1 = y1.max(y);
     }
-    (x0 != u32::MAX).then(|| (x0, y0, x1 - x0 + 1, y1 - y0 + 1))
+
+    /// The next frame starts at the first pixel, with nothing changed.
+    fn start(&mut self) {
+        self.at = 0;
+        self.bounds = None;
+    }
+
+    /// Writes `n` pixels of `index`, row by row: a run can go past the end
+    /// of a row.
+    fn write(&mut self, index: u8, n: usize) {
+        let end = self.at + n;
+        while self.at < end {
+            let (x, y) = (self.at % self.width, self.at / self.width);
+            let stop = end.min((y + 1) * self.width);
+            let row = &mut self.idx[self.at..stop];
+            if let Some(first) = row.iter().position(|&p| p != index) {
+                let last = row.iter().rposition(|&p| p != index).unwrap_or(first);
+                row[first..=last].fill(index);
+                let (x0, x1) = (x + first, x + last);
+                // Rows come in order: the top is the first row that changed.
+                self.bounds = Some(match self.bounds {
+                    None => (x0, y, x1, y),
+                    Some((l, t, r, _)) => (l.min(x0), t, r.max(x1), y),
+                });
+            }
+            self.at = stop;
+        }
+    }
+
+    /// The rectangle that changed since the frame before (left, top,
+    /// width, height); `None` when nothing changed.
+    fn changed(&self) -> Option<(u32, u32, u32, u32)> {
+        self.bounds
+            .map(|(l, t, r, b)| (l as u32, t as u32, (r - l + 1) as u32, (b - t + 1) as u32))
+    }
 }
 
 /// The palette: every colour when there are at most `max`; otherwise the
@@ -429,10 +459,36 @@ mod tests {
         assert!(p.contains(&[10, 10, 10]) && p.contains(&[250, 250, 250]));
         let m = index_map(&h, &p);
         assert_eq!(p[m[&[10, 10, 10]] as usize], [10, 10, 10]);
-        let (w, _) = changed_rect(&[0, 0, 0, 0], &[0, 1, 0, 0], 2, 2)
-            .map(|r| (r, ()))
-            .unwrap();
-        assert_eq!(w, (1, 0, 1, 1));
-        assert!(changed_rect(&[0, 0], &[0, 0], 2, 1).is_none());
+    }
+
+    #[test]
+    fn a_frame_written_over_the_last_gives_the_rectangle_that_changed() {
+        let mut s = Screen::new(3, 2);
+        let mut frame = |runs: &[(u8, usize)]| {
+            s.start();
+            for &(index, n) in runs {
+                s.write(index, n);
+            }
+            (s.changed(), s.idx.clone())
+        };
+        assert_eq!(frame(&[(0, 6)]), (None, vec![0; 6]));
+        // A run past the end of a row: x 2 of the top row and x 0 of the
+        // next one, so the rectangle is the whole width.
+        assert_eq!(
+            frame(&[(0, 2), (2, 2), (0, 2)]),
+            (Some((0, 0, 3, 2)), vec![0, 0, 2, 2, 0, 0])
+        );
+        // The same frame again: nothing changed.
+        assert_eq!(frame(&[(0, 2), (2, 2), (0, 2)]).0, None);
+        // One pixel in the second row: the top is that row.
+        assert_eq!(
+            frame(&[(0, 2), (2, 3), (0, 1)]),
+            (Some((1, 1, 1, 1)), vec![0, 0, 2, 2, 2, 0])
+        );
+        // One run changes the whole top row.
+        assert_eq!(
+            frame(&[(1, 3), (2, 2), (0, 1)]),
+            (Some((0, 0, 3, 1)), vec![1, 1, 1, 2, 2, 0])
+        );
     }
 }
