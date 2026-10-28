@@ -443,6 +443,10 @@ pub const HELP: &[(Section, &[Row])] = &[
                 syntax: ":mouse on|off",
                 desc: "Use the mouse to move, select and scroll.",
             },
+            Command {
+                syntax: ":effects on|off|draw|dim",
+                desc: "Experimental. Draw the new annotations when the step goes forward, and fade the dim.",
+            },
             Sub("Export and agents"),
             Command {
                 syntax: ":export [{FILE}] [step={N}] [width={N}] [theme={T}]",

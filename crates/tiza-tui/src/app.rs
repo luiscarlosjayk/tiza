@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
 use tiza_core::history::History;
-use tiza_core::layout::{Layout, LayoutOptions, layout};
+use tiza_core::layout::{Layout, LayoutOptions};
 use tiza_core::model::{
     Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
 };
@@ -96,7 +96,9 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
         | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
         | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
         | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
-        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
+        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" | "effects" => {
+            Ignores
+        }
         _ => return None,
     })
 }
@@ -145,6 +147,33 @@ pub struct TypingState {
     pub index: usize,
     pub revealed: usize,
     last: std::time::Instant,
+}
+
+/// An enter effect in progress (experimental): the new annotations of the
+/// step just reached come in as [`tiza_core::effects`] plans them. Any key
+/// or any change of the document ends it.
+#[derive(Debug)]
+pub struct EffectState {
+    pub started: std::time::Instant,
+    /// How long it lasts at the width it started at.
+    pub duration_ms: u64,
+    /// Its clock runs this many times slower (1; more only with the
+    /// `test-hooks` feature and `TIZA_TEST_HOOK=effect:slow`, so a test
+    /// on a pty sees it play).
+    slow: u64,
+    /// The revision it plays at: at another one, it is over.
+    revision: u64,
+    /// The final layout and the plan at a width and with a pointer,
+    /// computed once: each frame only paints the plan over a copy.
+    cache: std::cell::RefCell<Option<EffectCache>>,
+}
+
+#[derive(Debug)]
+struct EffectCache {
+    width: usize,
+    pointer: Option<(u32, u32)>,
+    layout: Layout,
+    plan: Option<tiza_core::effects::Plan>,
 }
 
 /// A mutation an agent asked for while supervised mode is on: it waits for
@@ -570,6 +599,11 @@ pub struct App {
     screen_via_history: bool,
     /// Typing animation of the step just reached.
     pub typing: Option<TypingState>,
+    /// Enter effect of the step just reached, after its typing.
+    pub effect: Option<EffectState>,
+    /// The effects of this session (`--effects`, `:effects`): over the
+    /// document's and the config file's.
+    pub effects_override: Option<tiza_core::effects::Effects>,
     /// When the current step became ready (reached, its typing finished
     /// and its `wait` moves elapsed): the `auto_advance_ms` countdown runs
     /// from here. `None` while typing or after it fired.
@@ -696,6 +730,8 @@ impl App {
             pasted_codes: Vec::new(),
             screen_via_history: false,
             typing: None,
+            effect: None,
+            effects_override: None,
             step_ready_at: Some(std::time::Instant::now()),
             pointer: None,
             pointer_seen: ((cursor_line, cursor_line), None),
@@ -1062,9 +1098,28 @@ impl App {
     /// of its own) out, with the take's geometry computed once per change
     /// ([`App::geometry`]) when `opts` asks for a stable layout.
     fn lay_out(&self, doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
+        self.lay_out_traced(doc, theme, opts, false).0
+    }
+
+    /// [`App::lay_out`], with the record of the enter effects when `traced`.
+    fn lay_out_traced(
+        &self,
+        doc: &Document,
+        theme: &Theme,
+        opts: &LayoutOptions,
+        traced: bool,
+    ) -> (Layout, Option<tiza_core::canvas::Trace>) {
         self.layouts.set(self.layouts.get() + 1);
+        let run = |g: Option<&tiza_core::layout::StableGeometry>| {
+            if traced {
+                let (l, t) = tiza_core::layout::layout_traced(doc, theme, opts, g);
+                (l, Some(t))
+            } else {
+                (tiza_core::layout::layout_with(doc, theme, opts, g), None)
+            }
+        };
         if !opts.stable {
-            return layout(doc, theme, opts);
+            return run(None);
         }
         let key = GeometryKey {
             revision: self.revision,
@@ -1086,7 +1141,7 @@ impl App {
             *self.geometry.borrow_mut() = Some((key, g));
         }
         let cache = self.geometry.borrow();
-        tiza_core::layout::layout_with(doc, theme, opts, cache.as_ref().map(|(_, g)| g))
+        run(cache.as_ref().map(|(_, g)| g))
     }
 
     /// The width the screen lays the code out at: the terminal of the last
@@ -1213,7 +1268,10 @@ impl App {
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
         let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
-        let l = self.lay_out(&self.doc, &self.theme, &opts);
+        let l = match self.effect_frame(&opts) {
+            Some(l) => l,
+            None => self.lay_out(&self.doc, &self.theme, &opts),
+        };
         // `status` reads the viewport from here instead of laying out again.
         *self.viewport.borrow_mut() = Some((self.viewport_key(width), ViewportFacts::of(&l)));
         l
@@ -2557,6 +2615,7 @@ impl App {
     fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
         self.finish_typing();
+        self.effect = None;
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
         if s != self.doc.step {
@@ -2598,6 +2657,10 @@ impl App {
             }
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
+            // Forward: the enter effects of the step, after its typing.
+            if !loud && s > from_step && self.typing.is_none() {
+                self.start_effect();
+            }
             // Its notice stays on the bar over the step's label.
             if self.reload_waiting() {
                 loud = true;
@@ -2653,6 +2716,8 @@ impl App {
             if t.index >= t.plan.items.len() {
                 self.finish_typing();
                 self.revision += 1;
+                // The typing is over: the effects of the step come next.
+                self.start_effect();
                 return true;
             }
         }
@@ -2674,6 +2739,108 @@ impl App {
 
     pub fn is_typing(&self) -> bool {
         self.typing.is_some()
+    }
+
+    // ---------- enter effects (experimental) ----------
+
+    /// The effects that apply: `--effects` or `:effects`, else the
+    /// document's, else `effects` in the config file's `[defaults]`.
+    pub fn effects(&self) -> tiza_core::effects::Effects {
+        tiza_core::effects::resolve(
+            self.effects_override,
+            self.doc.effects,
+            self.config_defaults.effects,
+        )
+    }
+
+    /// Starts the enter effect of the step on screen, when the effects are
+    /// on and something of the step comes in with one. Its plan is made
+    /// here, once, at the screen's width.
+    fn start_effect(&mut self) {
+        self.effect = None;
+        if !self.effects().any() {
+            return;
+        }
+        let mut opts = self.layout_options(self.screen_width());
+        opts.pointer = self.pointer_shown();
+        let cache = self.effect_cache(&opts);
+        let Some(plan) = &cache.plan else {
+            return;
+        };
+        #[allow(unused_mut)]
+        let mut slow = 1;
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "effect:slow") {
+            slow = 100;
+        }
+        self.effect = Some(EffectState {
+            started: std::time::Instant::now(),
+            duration_ms: plan.duration_ms() * slow,
+            slow,
+            revision: self.revision,
+            cache: std::cell::RefCell::new(Some(cache)),
+        });
+        // The auto-advance countdown starts when the effect ends.
+        self.step_ready_at = None;
+    }
+
+    /// The final layout of the step with `opts` and the plan of its effect.
+    fn effect_cache(&self, opts: &LayoutOptions) -> EffectCache {
+        let (layout, trace) = self.lay_out_traced(&self.doc, &self.theme, opts, true);
+        let plan =
+            trace.and_then(|t| tiza_core::effects::Plan::new(&layout.canvas, &t, self.effects()));
+        EffectCache {
+            width: opts.width,
+            pointer: opts.pointer,
+            layout,
+            plan,
+        }
+    }
+
+    /// The screen's layout at this moment of the effect, while one plays.
+    fn effect_frame(&self, opts: &LayoutOptions) -> Option<Layout> {
+        let e = self
+            .effect
+            .as_ref()
+            .filter(|e| e.revision == self.revision)?;
+        let t = e.started.elapsed().as_millis() as u64 / e.slow;
+        let mut cache = e.cache.borrow_mut();
+        if !cache
+            .as_ref()
+            .is_some_and(|c| c.width == opts.width && c.pointer == opts.pointer)
+        {
+            *cache = Some(self.effect_cache(opts));
+        }
+        let c = cache.as_ref()?;
+        let mut l = c.layout.clone();
+        if let Some(plan) = &c.plan {
+            plan.paint(&mut l.canvas, t);
+        }
+        Some(l)
+    }
+
+    /// Advances the enter effect: `true` while one plays or when it just
+    /// ended (the screen changes). Call it every loop iteration.
+    pub fn effect_tick(&mut self) -> bool {
+        let Some(e) = &self.effect else {
+            return false;
+        };
+        if e.revision != self.revision || e.started.elapsed().as_millis() as u64 >= e.duration_ms {
+            self.finish_effect();
+        }
+        true
+    }
+
+    /// Ends the enter effect at once: the final drawing shows (any key).
+    pub fn finish_effect(&mut self) {
+        if self.effect.take().is_some() {
+            // The step is ready: its auto-advance countdown starts.
+            self.step_ready_at = Some(std::time::Instant::now());
+        }
+    }
+
+    pub fn is_playing_effect(&self) -> bool {
+        self.effect.is_some()
     }
 
     /// Adds a move (validated against the code at its step). Undoable. A
@@ -4573,6 +4740,7 @@ impl App {
         "follow",
         "color",
         "del",
+        "effects",
         "embed",
         "focus",
         "export",
@@ -4744,6 +4912,22 @@ impl App {
                     "on" => Ok(self.set_supervised(true)),
                     "off" => Ok(self.set_supervised(false)),
                     _ => Err(Error::Invalid("usage: :supervise [on|off]".into())),
+                },
+                "effects" => match rest.trim() {
+                    "" => Ok(format!("effects {} (experimental)", self.effects().label())),
+                    words => match tiza_core::effects::Effects::parse(words) {
+                        Ok(fx) => {
+                            self.effects_override = Some(fx);
+                            self.finish_effect();
+                            Ok(format!(
+                                "effects {} (experimental): they play when the step goes forward",
+                                self.effects().label()
+                            ))
+                        }
+                        Err(e) => Err(Error::Invalid(format!(
+                            "{e}. Usage: :effects on|off|draw|dim|draw,dim"
+                        ))),
+                    },
                 },
                 "mouse" => match rest.trim() {
                     "" => Ok(format!("mouse {}", if self.mouse { "on" } else { "off" })),
@@ -7286,6 +7470,7 @@ impl App {
                     pending: self.follow_pending(),
                     resume_step: self.resume_step(),
                 }),
+            effect: self.effect.is_some(),
         }
     }
 

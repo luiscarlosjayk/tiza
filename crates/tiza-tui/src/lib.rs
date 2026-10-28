@@ -68,6 +68,8 @@ pub struct RunOptions {
     pub mouse: bool,
     /// `--no-save`: never autosave the sidecar (`:w` still saves).
     pub no_save: bool,
+    /// `--effects` (experimental): the enter effects of this session.
+    pub effects: Option<tiza_core::effects::Effects>,
 }
 
 /// Starts the TUI with an opened document. Returns when it closes.
@@ -80,6 +82,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     // config file is `:autosave off`.
     app.autosave = !opts.no_save && app.config_defaults.autosave != Some(false);
     app.no_save = opts.no_save;
+    app.effects_override = opts.effects;
     app.layout_stable = app.config_defaults.layout == Some(tiza_core::config::LayoutMode::Stable);
     app.config_overrides = opts.config_overrides;
     app.rebuild_theme();
@@ -507,14 +510,24 @@ fn event_loop(
         if app.typing_tick() {
             needs_draw = true;
         }
+        if app.effect_tick() {
+            needs_draw = true;
+        }
         if app.auto_advance_tick(std::time::Instant::now()) {
             needs_draw = true;
         }
         if app.present_message_tick(std::time::Instant::now()) {
             needs_draw = true;
         }
-        // While typing, poll often enough for a smooth animation.
-        let wait = if app.is_typing() { 15 } else { 50 };
+        // While typing, poll often enough for a smooth animation; an
+        // effect redraws at about 30 fps.
+        let wait = if app.is_typing() {
+            15
+        } else if app.is_playing_effect() {
+            tiza_core::effects::SCREEN_FRAME_MS
+        } else {
+            50
+        };
         let ready = match event::poll(Duration::from_millis(wait)) {
             Ok(ready) => ready,
             Err(e) => return hung_up_or(hangup, e),
@@ -610,6 +623,11 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         let _ = (code, mods);
         app.finish_typing();
         app.revision += 1;
+        return;
+    }
+    // So does an enter effect: the final drawing shows at once.
+    if app.is_playing_effect() {
+        app.finish_effect();
         return;
     }
     // `:` on the review (not while its filter is typed) hides it and opens

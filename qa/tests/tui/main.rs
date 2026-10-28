@@ -13,6 +13,7 @@ mod color_query_after_resize;
 mod command_typos;
 mod common;
 mod ctrl_c_cancels;
+mod enter_effects;
 mod help_panel;
 mod live_pointer;
 mod mouse;

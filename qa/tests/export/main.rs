@@ -3,6 +3,7 @@
 
 mod all_steps_out;
 mod cast_and_tape;
+mod enter_effects;
 mod gif_and_video;
 mod huge_exports;
 mod live_export;

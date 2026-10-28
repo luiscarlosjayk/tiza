@@ -920,6 +920,10 @@ pub struct Status {
     /// Follow mode, while it is on (`follow.status` gives the rest).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follow: Option<FollowState>,
+    /// An enter effect plays on the screen (experimental). The reply
+    /// leaves it out when no effect plays.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub effect: bool,
 }
 
 /// Follow mode in `status`: whether a save loads now.

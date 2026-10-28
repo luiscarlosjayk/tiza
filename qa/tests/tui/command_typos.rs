@@ -102,6 +102,15 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("stpe 2", "did you mean :step, :style?"),
         ("colr a1 red", "did you mean :color?"),
         ("zzzzzz", "unknown command (try :help)"),
+        // Enter effects (experimental)
+        (
+            "effects drw",
+            "unknown effect «drw»: use draw, dim, draw,dim, on or off",
+        ),
+        (
+            "effects draw dim",
+            "Usage: :effects on|off|draw|dim|draw,dim",
+        ),
     ] {
         rejected(&live, cmd, expect);
     }
@@ -134,6 +143,8 @@ fn valid_forms_still_work_and_report_what_they_did() {
         ("set a1 color=blue", "a1"),
         ("style io glyph=⚡ legend=io", "style io defined"),
         ("lang ts", "language: ts"),
+        ("effects draw,dim", "effects draw,dim (experimental)"),
+        ("effects off", "effects off (experimental)"),
         (
             "note 4 🔥👩‍👩‍👧‍👦 RTL\u{200f} tab\t%s%n \"quotes\" $(id)",
             ": note at L4",

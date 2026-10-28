@@ -21,7 +21,9 @@ use crate::model::MarkStyle;
 use crate::theme::ThemeOverrides;
 
 /// The keys `[defaults]` accepts, in the order `tiza config` lists them.
-pub const DEFAULT_KEYS: &[&str] = &["pad", "numbers", "mouse", "autosave", "layout", "width"];
+pub const DEFAULT_KEYS: &[&str] = &[
+    "pad", "numbers", "mouse", "autosave", "layout", "width", "effects",
+];
 
 /// The fields of a `[styles.NAME]` table (those of `:style`).
 pub const STYLE_FIELDS: &[&str] = &["glyph", "legend", "color"];
@@ -67,6 +69,9 @@ pub struct Defaults {
     pub layout: Option<LayoutMode>,
     /// `width = 120`: the width of `tiza render` and `tiza check`.
     pub width: Option<usize>,
+    /// `effects = "draw,dim"`: the enter effects (experimental) of a
+    /// document that does not set them.
+    pub effects: Option<crate::effects::Effects>,
 }
 
 /// What the config file holds, after every entry was checked.
@@ -1167,6 +1172,18 @@ fn defaults_table(t: &DeTable<'_>, cx: &mut Ctx) -> Defaults {
                     )),
                 }
             }
+            "effects" => match value {
+                DeValue::String(s) => match crate::effects::Effects::parse(s) {
+                    Ok(fx) => {
+                        d.effects = Some(fx);
+                        None
+                    }
+                    Err(_) => {
+                        Some("use \"draw\", \"dim\", \"draw,dim\", \"on\" or \"off\"".to_string())
+                    }
+                },
+                _ => Some("use \"draw\", \"dim\", \"draw,dim\", \"on\" or \"off\"".to_string()),
+            },
             other => {
                 cx.ignore(
                     k,
