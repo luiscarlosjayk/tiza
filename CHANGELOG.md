@@ -21,6 +21,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - `:numbers on` writes `"numbers": true` into the document. Thus `numbers = false` in `config.toml` does not hide the line numbers of that document. A document without `numbers` uses the value of the config file.
 - A spotlight with lines also dims each annotation that does not touch its lines, for example a note or a box of an earlier step. An annotation in `ids` keeps its color. An annotation that touches the lines keeps its color too: for example, a box that covers part of the lines, or an arrow that goes into them or across them. Before, a spotlight with only lines dimmed only the code. A spotlight with lines and `ids` dimmed each annotation that was not in `ids`.
 - A GIF export uses much less memory and less time. Tiza rasterizes each frame two times and does not keep the pixels of all the frames. For 22 frames of a 300-line document at scale 2 on macOS arm64, an export uses 313 MB of memory and 6.6 s. Before, it used 2.2 GB and 10.9 s. The GIF is the same, byte for byte.
+- `tiza check` and the `check` request of the socket and MCP use less time and memory. For a 2,000-line document with 20 steps on macOS arm64, `tiza check` uses 1.5 s and 250 MB of memory. Before, it used 3.6 s and 453 MB. The report is the same.
 
 ## [0.1.2] - 2026-10-26
 

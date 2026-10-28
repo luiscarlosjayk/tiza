@@ -402,6 +402,48 @@ pub fn layout_with(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> Layout {
+    layout_run(doc, theme, opts, geometry, Paint::ALL)
+}
+
+/// [`layout_with`] for the sweeps of `check`, which only read what is
+/// clipped or left out, whether the code fits and whether the labels are
+/// in the margin: the text of the code and the line numbers are not
+/// painted, and the layout goes into `spare` when it is given (its buffer
+/// is kept). What it reads is the same as [`layout_with`] gives: the code
+/// never reaches the columns where a label looks for room (`margin_blank`).
+pub(crate) fn layout_measures(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    spare: Option<Canvas>,
+) -> Layout {
+    layout_run(doc, theme, opts, geometry, Paint { code: false, spare })
+}
+
+/// What the drawing run of [`layout_pass`] paints, and into which buffer.
+struct Paint {
+    /// The text of the code and the line numbers.
+    code: bool,
+    /// A canvas to lay the layout out into instead of a new one.
+    spare: Option<Canvas>,
+}
+
+impl Paint {
+    const ALL: Paint = Paint {
+        code: true,
+        spare: None,
+    };
+}
+
+/// [`layout_with`], painting what `paint` says.
+fn layout_run(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+    paint: Paint,
+) -> Layout {
     let owned;
     let geometry = match geometry {
         None if opts.stable => {
@@ -462,7 +504,7 @@ pub fn layout_with(
     });
     let mut under = Under::default();
     while planning {
-        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, false)
+        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, None)
         else {
             unreachable!("a plan draws nothing")
         };
@@ -471,7 +513,7 @@ pub fn layout_with(
         under.lines.extend(more.lines);
         planning = (under.callouts.len(), under.lines.len()) != before;
     }
-    match layout_pass(doc, theme, opts, geometry, &under, &shared, true) {
+    match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint)) {
         Pass::Drawn(l) => l,
         Pass::Planned(_) => unreachable!("a drawing pass returns its layout"),
     }
@@ -505,9 +547,9 @@ struct Under {
 }
 
 /// One run of the layout of `doc` (already as the step shows it) with
-/// `under` (see [`layout_with`]): with `draw`, the layout; without it, a
-/// plan of the rows and the margin blocks that returns what must go under
-/// its line, for the next run.
+/// `under` (see [`layout_with`]): with `draw`, the layout, painted as it
+/// says; without it, a plan of the rows and the margin blocks that returns
+/// what must go under its line, for the next run.
 fn layout_pass(
     doc: &Document,
     theme: &Theme,
@@ -515,7 +557,7 @@ fn layout_pass(
     geometry: Option<&StableGeometry>,
     under: &Under,
     shared: &Shared,
-    draw: bool,
+    draw: Option<Paint>,
 ) -> Pass {
     let under_callouts = &under.callouts;
     let width = opts.width.max(20);
@@ -1244,7 +1286,7 @@ fn layout_pass(
             }
         }
     }
-    if !draw {
+    let Some(paint) = draw else {
         // Lines with a margin label on a row a block takes: their labels go
         // under them in the next run (see `layout_with`).
         let mut lines = std::collections::BTreeSet::new();
@@ -1261,47 +1303,58 @@ fn layout_pass(
             callouts: retry,
             lines,
         });
-    }
+    };
 
     let base = theme.base();
-    let mut canvas = Canvas::new_filled(width, rows.len(), base);
-    let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
+    let mut canvas = match paint.spare {
+        Some(mut c) => {
+            c.refill(width, rows.len(), base);
+            c
+        }
+        None => Canvas::new_filled(width, rows.len(), base),
+    };
 
     // ---- 1. code ----
     // The invisible characters' marks, given their colour back at the end
     // (a highlight over them must not hide them).
     let mut marks: Vec<(usize, usize)> = Vec::new();
-    for (y, row) in rows.iter().enumerate() {
-        let Row::Code(line) = row else { continue };
-        let text = doc.line_text(*line).unwrap_or("");
-        let in_focus = match opts.pointer {
-            // The pointer wins over the focus and the spotlights.
-            Some((a, b)) => *line >= a && *line <= b,
-            None => opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line),
-        };
-        if opts.line_numbers {
-            let n = format!("{:>w$}", line, w = num_w - 1);
-            canvas.put_str(0, y, &n, base.fg(theme.muted));
+    // `check`'s sweeps do not paint the code (see `layout_measures`).
+    if paint.code {
+        let segments = highlight_cached(&doc.code, &doc.source.language, theme.syntax);
+        for (y, row) in rows.iter().enumerate() {
+            let Row::Code(line) = row else { continue };
+            let text = doc.line_text(*line).unwrap_or("");
+            let in_focus = match opts.pointer {
+                // The pointer wins over the focus and the spotlights.
+                Some((a, b)) => *line >= a && *line <= b,
+                None => {
+                    opts.focus.is_none_or(|(a, b)| *line >= a && *line <= b) && line_in_spot(*line)
+                }
+            };
+            if opts.line_numbers {
+                let n = format!("{:>w$}", line, w = num_w - 1);
+                canvas.put_str(0, y, &n, base.fg(theme.muted));
+            }
+            // A view with no loaded lines (a linked file a caller did not load)
+            // draws an empty row, never an index out of bounds.
+            let segs = line
+                .checked_sub(doc.source.first_line)
+                .and_then(|i| segments.get(i as usize))
+                .map_or(&[][..], Vec::as_slice);
+            let drawn = paint_code(
+                &mut canvas,
+                code_x,
+                y,
+                code_w,
+                text,
+                segs,
+                opts.tab_width,
+                base,
+                theme,
+                in_focus,
+            );
+            marks.extend(drawn.into_iter().map(|x| (x, y)));
         }
-        // A view with no loaded lines (a linked file a caller did not load)
-        // draws an empty row, never an index out of bounds.
-        let segs = line
-            .checked_sub(doc.source.first_line)
-            .and_then(|i| segments.get(i as usize))
-            .map_or(&[][..], Vec::as_slice);
-        let drawn = paint_code(
-            &mut canvas,
-            code_x,
-            y,
-            code_w,
-            text,
-            segs,
-            opts.tab_width,
-            base,
-            theme,
-            in_focus,
-        );
-        marks.extend(drawn.into_iter().map(|x| (x, y)));
     }
 
     // ---- 2. highlights and marks ----
