@@ -135,14 +135,20 @@ pub fn to_gif(
             Some(n) => gif::Repeat::Finite(n),
         })
         .map_err(|e| Error::Gif(e.to_string()))?;
-        let mut prev: Option<Vec<u8>> = None;
+        // The palette indexes of this frame and of the one before it, and
+        // the changed rectangle: three buffers for the whole animation.
+        let mut idx: Vec<u8> = Vec::new();
+        let mut prev: Vec<u8> = Vec::new();
+        let mut buffer: Vec<u8> = Vec::new();
         for (i, f) in rgb.iter().enumerate() {
-            let idx: Vec<u8> = f.iter().map(|px| lookup[px]).collect();
-            let (left, top, w, h) = match &prev {
-                None => (0, 0, width, height),
-                Some(p) => changed_rect(p, &idx, width, height).unwrap_or((0, 0, 1, 1)),
+            idx.clear();
+            idx.extend(f.iter().map(|px| lookup[px]));
+            let (left, top, w, h) = if i == 0 {
+                (0, 0, width, height)
+            } else {
+                changed_rect(&prev, &idx, width, height).unwrap_or((0, 0, 1, 1))
             };
-            let mut buffer = Vec::with_capacity((w * h) as usize);
+            buffer.clear();
             for y in top..top + h {
                 let row = (y * width + left) as usize;
                 buffer.extend_from_slice(&idx[row..row + w as usize]);
@@ -173,7 +179,7 @@ pub fn to_gif(
                     break;
                 }
             }
-            prev = Some(idx);
+            std::mem::swap(&mut prev, &mut idx);
         }
     }
     let duration_ms = frames
