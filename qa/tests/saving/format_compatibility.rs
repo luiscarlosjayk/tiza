@@ -243,3 +243,77 @@ fn scroll_moves_are_saved_as_they_are_written() {
     // `align: center` is the default and is not written.
     assert!(json["moves"][0].get("align").is_none(), "{json}");
 }
+
+#[test]
+fn a_move_of_a_newer_tiza_is_skipped() {
+    // A newer Tiza can write a move with an action that this version does
+    // not know, or a value that it does not know. The document opens: Tiza
+    // skips the move (also for an `op`, which has no default), a value
+    // falls back to the default of its field, the other moves of the step
+    // run in order, the notice names each one, and a save does not keep
+    // them.
+    use tiza_core::moves::{Align, MoveAction, Typing};
+    let f = compat_dir().join("v1-newer-unknown-move.tiza");
+    let opened = fs::open(f.to_str().unwrap()).unwrap();
+    let doc = &opened.document;
+    let actions: Vec<&str> = doc.moves.iter().map(|m| m.action.name()).collect();
+    assert_eq!(
+        actions,
+        [
+            "code.patch",
+            "cursor",
+            "scroll",
+            "wait",
+            "code.patch",
+            "scroll",
+            "code.patch"
+        ]
+    );
+    let MoveAction::Scroll(s) = &doc.moves[2].action else {
+        unreachable!()
+    };
+    assert_eq!(s.align, Align::Center, "\"middle\"");
+    let MoveAction::CodePatch(p) = &doc.moves[4].action else {
+        unreachable!()
+    };
+    assert_eq!(p.typing, Typing::Instant, "\"word\"");
+    // Step 2: the cursor before the skipped move, then the scroll after it
+    // places the view.
+    let at2 = tiza_core::moves::project(doc, &doc.moves, 2).unwrap();
+    assert_eq!(at2.cursor.map(|c| c.line), Some(3));
+    assert_eq!(at2.camera, Some(2));
+    // Step 4 had only a skipped move: it changes nothing.
+    let at = |step| tiza_core::moves::project(doc, &doc.moves, step).unwrap();
+    assert_eq!(at(4).codes, at(3).codes);
+    assert_eq!(at(4).camera, at(3).camera);
+    let notice = opened.notice.clone().unwrap_or_default();
+    for named in [
+        "Tiza skips 3 moves",
+        "move #3 (step 2, action \"teleport\")",
+        "move #7 (step 4, op \"swap\")",
+        "move #8 (step 5, action \"view\")",
+        "move #4 (step 2, align \"middle\" → center)",
+        "move #6 (step 3, typing \"word\" → instant)",
+    ] {
+        assert!(notice.contains(named), "{named}: {notice}");
+    }
+    // `tiza render` writes the notice on stderr.
+    let out = tiza(&["render", f.to_str().unwrap(), "--out", "-"]);
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("move #3 (step 2, action \"teleport\")"),
+        "{err}"
+    );
+    // The save writes only what this version knows.
+    let dir = scratch("newer-move");
+    let saved = dir.join("s.tiza");
+    fs::save_document(doc, &saved).unwrap();
+    let text = std::fs::read_to_string(&saved).unwrap();
+    for gone in ["teleport", "\"view\"", "swap", "middle", "alig", "word"] {
+        assert!(!text.contains(gone), "{gone}: {text}");
+    }
+    let again = fs::open(saved.to_str().unwrap()).unwrap();
+    assert_eq!(again.document.moves.len(), 7);
+    assert_eq!(again.notice, None);
+}

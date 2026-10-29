@@ -591,7 +591,7 @@ pub fn carry(
         insert,
     };
     r.by_step.sort_by_key(|i| r.anns[*i].step);
-    let named = |e: Error, i: usize, m: &Move| crate::moves::name_move(e, i, m.at_step);
+    let named = |e: Error, i: usize, m: &Move| crate::moves::name_move(e, i + 1, m.at_step);
     // `code.link` windows crop the code at the end of their step: carried
     // once every move of that step has run on both sides.
     let mut windows: Vec<(usize, usize)> = Vec::new();

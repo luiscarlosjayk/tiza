@@ -337,6 +337,20 @@ Every move has `at_step` and `action`. A `code.patch` move can also have `rebind
 
 Several moves at one step run in the order of the list.
 
+### Moves from a newer version
+
+A newer version of Tiza can write a move that this version does not know. The document opens:
+
+- Tiza skips a move with an `action` that this version does not know. The other moves of its step run in the order of the list.
+- `align` and `typing` have a list of values. When a move has a value that this version does not know, the move uses the default of the field. `op` has no default, so Tiza skips the move.
+- A key that this version does not know has no effect, for example `alig` instead of `align`.
+- When the TUI opens the file, it writes each skipped move and each value on stderr, where you see the line after the TUI ends. The status bar shows how many there are. In presentation mode, the last row shows it for 2 seconds. `tiza render` also writes the line on stderr.
+- `tiza check` gives the warning `move` for each skipped move, for each value, and for each move with a key that this version does not know. The warning names a move by its number in the file.
+- A save does not keep the skipped moves, the values or the keys.
+- The step of a skipped move is still a step. A step that has only skipped moves changes nothing. When that step is the last step, the take ends one step before it.
+- A later move can need the code that a skipped move changes. Then Tiza does not open the document. The error names the later move and the skipped move.
+- `move.add`, `scene.put`, `tiza scene put` and `add_move` refuse a move with an action or a value that this version does not know.
+
 ### Fields of a `code.patch` move
 
 | Field | Type | Default | Meaning |
@@ -615,7 +629,7 @@ Tiza never drops these entries:
 
 Tiza keeps them in the file. It gives one warning for each entry, and the warning names all the unknown keys of that entry. The warning appears when you open the document. It also appears in `status.warnings` and in the output of `tiza render` and `tiza check`.
 
-Only the entries of `steps` keep unknown keys. Tiza does not keep an unknown key at the top level or in an annotation.
+Only the entries of `steps` keep unknown keys. Tiza does not keep an unknown key at the top level, in an annotation or in a move. For a move, `tiza check` gives a warning (see [Moves from a newer version](#moves-from-a-newer-version)).
 
 ## Enter effects (experimental)
 

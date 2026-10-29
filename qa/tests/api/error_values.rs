@@ -272,23 +272,29 @@ fn an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
         "expected one of `highlight`, `mark`, `box`, `arrow`, `note`, `callout`, `spotlight`";
     let actions = "expected one of `code.patch`, `code.link`, `cursor`, `select`, `wait`";
     let ops = "expected one of `insert`, `replace`, `delete`";
+    // A file of a newer Tiza: a move with an action or an op that this
+    // version does not know is skipped, and `check` gives the names.
+    let file_actions = "use code.patch, code.link, cursor, select, wait or scroll";
+    let file_ops = "use insert, replace or delete";
     // The document says `box` and `note` itself: they stay.
     let extra = vec![
         json!({"id": "b2", "step": 1, "type": "box", "from_line": 1, "to_line": 2}),
         json!({"id": "n2", "step": 1, "type": "note", "line": 1, "text": "x"}),
     ];
-    for (name, ann, mv, want) in [
+    for (name, ann, mv, want, in_file) in [
         (
             "type",
             Some(json!({"id": "z1", "step": 1, "type": "Q7valueXyz789", "line": 1})),
             None,
             types,
+            None,
         ),
         (
             "action",
             None,
             Some(json!({"at_step": 2, "action": "Q7valueXyz789"})),
             actions,
+            Some(("\"Q7valueXyz789\"", file_actions)),
         ),
         (
             "op",
@@ -297,12 +303,14 @@ fn an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
                 json!({"op": "Q7valueXyz789", "find": "port", "content": "x"}),
             )),
             ops,
+            Some(("\"Q7valueXyz789\"", file_ops)),
         ),
         (
             "plain-op",
             None,
             Some(patch(json!({"op": "zap", "find": "port", "content": "x"}))),
             ops,
+            Some(("\"zap\"", file_ops)),
         ),
     ] {
         let mut doc = document(mv.into_iter().collect());
@@ -311,13 +319,30 @@ fn an_unknown_type_action_or_op_keeps_the_list_of_valid_names() {
         anns.extend(ann);
         let p = write(&dir, name, &doc);
         let ps = p.to_str().unwrap();
-        // On load the value is quoted as written; the list stays.
-        let e = stderr(&["render", ps, "--out", "-"]);
-        assert!(e.contains(want), "{name}: render: {e}");
         let out = tiza(&["check", ps]);
         let report = String::from_utf8_lossy(&out.stdout).into_owned()
             + &String::from_utf8_lossy(&out.stderr);
-        assert!(report.contains(want), "{name}: check: {report}");
+        match in_file {
+            // On load the value is quoted as written; the list stays.
+            None => {
+                let e = stderr(&["render", ps, "--out", "-"]);
+                assert!(e.contains(want), "{name}: render: {e}");
+                assert!(report.contains(want), "{name}: check: {report}");
+            }
+            // The move is skipped: the file opens, and the notice and
+            // `check` quote the value as written, with the names to use.
+            Some((value, names)) => {
+                let r = tiza(&["render", ps, "--out", "-"]);
+                let e = String::from_utf8_lossy(&r.stderr);
+                assert!(r.status.success(), "{name}: render: {e}");
+                assert!(e.contains(value), "{name}: render: {e}");
+                assert!(out.status.success(), "{name}: check: {report}");
+                assert!(
+                    report.contains(value) && report.contains(names),
+                    "{name}: check: {report}"
+                );
+            }
+        }
         // Over the socket, never the value: only the list.
         let (_, msg) = err(&target, "scene.put", json!({"document": doc}));
         assert!(msg.contains(want), "{name}: scene.put: {msg}");

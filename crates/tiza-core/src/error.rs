@@ -32,7 +32,8 @@ pub enum Error {
     NoMatch(String),
     /// A move's target that matches nothing at its step, in the words of
     /// `tiza check`: `move #2, step 3: find «x» matches nothing in the code
-    /// at this step`. `index` is 1-based; `what` names the target.
+    /// at this step`. `index` is the number of the move in the messages
+    /// (`Document::move_number`), from 1; `what` names the target.
     #[error("move #{index}, step {step}: {what} matches nothing in the code at this step")]
     MoveNoMatch {
         index: usize,

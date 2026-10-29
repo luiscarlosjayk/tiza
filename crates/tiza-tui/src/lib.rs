@@ -140,12 +140,13 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             ui::config_warnings_tail(opts.config_warnings.len())
         )
     });
-    // The effects this version does not know: their names went to stderr
-    // as the TUI started; the bar says it in a few words, so it fits.
+    // The effects and the moves this version does not know: their names
+    // went to stderr as the TUI started; the bar says it in a few words, so
+    // it fits.
     let notice = opened.notice.as_ref().map(|n| {
         match (
-            tiza_core::fs::unknown_effects_notice(&app.doc),
-            tiza_core::fs::unknown_effects_short(&app.doc),
+            tiza_core::fs::not_known_notice(&app.doc),
+            tiza_core::fs::not_known_short(&app.doc),
         ) {
             (Some(full), Some(short)) => n.replace(&full, &short),
             _ => n.clone(),
@@ -157,14 +158,21 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         (None, Some(c)) => app.error(c),
         (None, None) => {}
     }
+    // A warning of the load below takes the bar: what this version does
+    // not know stays before it, in a few words.
+    let short = tiza_core::fs::not_known_short(&app.doc);
+    let after_short = |m: String| match &short {
+        Some(s) => format!("{s} · {m}"),
+        None => m,
+    };
     // A `steps` entry past the last step is kept, never dropped in
     // silence.
     if let Some(w) = app.doc.step_warnings().first() {
-        app.error(w.clone());
+        app.error(after_short(w.clone()));
     } else if let Some(r) = tiza_core::moves::ignored_rebinds(&app.doc).first() {
         // A `rebind` entry whose annotation is gone (`tiza check` lists
         // every one).
-        app.info(format!("{}: {}", r.place(), r.message()));
+        app.info(after_short(format!("{}: {}", r.place(), r.message())));
     }
     app.show_unknown_effects(std::time::Instant::now());
     if opts.follow {

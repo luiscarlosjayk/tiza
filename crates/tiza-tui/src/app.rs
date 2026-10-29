@@ -619,6 +619,10 @@ pub struct App {
     pub layout_stable: bool,
     /// The last autosave failure; stays on the status line until a save succeeds.
     pub save_error: Option<String>,
+    /// What the file of the document holds that this version does not know
+    /// ([`tiza_core::fs::not_known_notice`]): `status.warnings` says it to
+    /// an agent until a save writes the file without it.
+    pub not_known: Option<String>,
     /// The first failed autosave just set `message`; the next `info` of the
     /// action that triggered it must not replace it.
     save_warning_pending: bool,
@@ -746,6 +750,10 @@ pub struct App {
 
 impl App {
     pub fn new(mut doc: Document, save_path: PathBuf) -> Self {
+        // A message names a move as `:moves` and `move.list` do. The notice
+        // of the moves that Tiza skips names them as the file does.
+        doc.number_moves_live();
+        let not_known = tiza_core::fs::not_known_notice(&doc);
         // The file the embedded code replaced while it was followed (what
         // `:follow on` reloads) means nothing beside a file reference.
         if !doc.is_embedded() {
@@ -803,6 +811,7 @@ impl App {
             frozen_views,
             layout_stable: false,
             save_error: None,
+            not_known,
             save_warning_pending: false,
             padding_override: None,
             image_exporter: None,
@@ -2168,6 +2177,8 @@ impl App {
         match fs::save_document(&self.doc, &self.save_path) {
             Ok(()) => {
                 self.dirty = false;
+                // The file holds only what this version knows now.
+                self.not_known = None;
                 self.mark_saved();
                 if self.save_error.take().is_some() {
                     // Writable again: say it once, over the action's own
@@ -4038,14 +4049,14 @@ impl App {
     }
 
     /// Presentation mode hides the bar: when the TUI opens there, the effects
-    /// that this version does not know show on the last row for
-    /// [`PRESENT_MESSAGE_TTL`] from `now`, as the result of a `:` command
-    /// does. Normal mode shows them on the bar, as before.
+    /// and the moves that this version does not know show on the last row
+    /// for [`PRESENT_MESSAGE_TTL`] from `now`, as the result of a `:`
+    /// command does. Normal mode shows them on the bar, as before.
     pub fn show_unknown_effects(&mut self, now: std::time::Instant) {
         if !self.present {
             return;
         }
-        let Some(short) = tiza_core::fs::unknown_effects_short(&self.doc) else {
+        let Some(short) = tiza_core::fs::not_known_short(&self.doc) else {
             return;
         };
         if !self
@@ -8509,6 +8520,7 @@ impl App {
             warnings: {
                 let mut w = self.viewport_warnings();
                 w.extend(self.doc.step_warnings());
+                w.extend(self.not_known.clone());
                 w
             },
             supervised: self.supervised,

@@ -1,0 +1,11 @@
+---
+source: qa/tests/saving/format_compatibility.rs
+expression: out
+---
+ 1    fn main() {
+ 2        println!("start");
+   ╭──────────────────────────────────╮
+ 3 │      let s = String::from("hi"); │
+ 4 │      takes(s.clone());           │ ┆ a copy
+   ╰──────────────────────────────────╯
+ 5    }

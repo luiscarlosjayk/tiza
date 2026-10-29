@@ -160,6 +160,82 @@ pub struct Document {
     /// ([`crate::fs::parse_document`]). Never serialized.
     #[serde(skip)]
     pub unknown_effects: UnknownEffects,
+    /// What the moves of the file held that this version does not know
+    /// ([`crate::fs::take_newer_moves`]). Never serialized.
+    #[serde(skip)]
+    pub newer_moves: NewerMoves,
+}
+
+/// What the moves of a file held that this version of Tiza does not know,
+/// as a newer Tiza can write them. A move with an action that this version
+/// does not know is skipped; a value of a field with a list of values that
+/// it does not know falls back to the default of the field (or skips the
+/// move when the field has no default); a key that it does not know is
+/// ignored. `check` warns about each one. It is what the file held when it
+/// loaded, not a part of the document: two documents are equal whatever it
+/// says.
+#[derive(Debug, Clone, Default)]
+pub struct NewerMoves {
+    /// The moves that are not in the document, in the order of the file.
+    pub skipped: Vec<SkippedMove>,
+    /// The values that fell back to the default of their field.
+    pub defaults: Vec<DefaultValue>,
+    /// The keys that this version ignores, one entry for each move.
+    pub keys: Vec<UnknownKeys>,
+    /// The numbers in the file of the skipped moves, in order, while the
+    /// moves are still those of the file: [`Document::move_number`] counts
+    /// them, so that a message names a move as the file does. Empty in a
+    /// live instance ([`Document::number_moves_live`]).
+    pub gaps: Vec<usize>,
+}
+
+impl PartialEq for NewerMoves {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+/// A move of the file that is not in the document.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SkippedMove {
+    /// Its number in the file, from 1.
+    pub number: usize,
+    /// Its `at_step`, when it is a number.
+    pub at_step: Option<u64>,
+    /// The field that this version cannot read: `action`, or a field with
+    /// a list of values and no default (`op`).
+    pub field: &'static str,
+    /// The value as written, cut for the messages.
+    pub value: String,
+    /// The values that this version knows, for the messages.
+    pub known: Vec<&'static str>,
+}
+
+/// A value that fell back to the default of its field.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultValue {
+    /// The number of the move in the file, from 1.
+    pub number: usize,
+    pub at_step: Option<u64>,
+    pub field: &'static str,
+    /// The value as written, cut for the messages.
+    pub value: String,
+    /// The value that the move uses.
+    pub default: &'static str,
+    /// The values that this version knows, for the messages.
+    pub known: &'static [&'static str],
+}
+
+/// The keys of one move that this version does not know.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownKeys {
+    /// The number of the move in the file, from 1.
+    pub number: usize,
+    pub at_step: Option<u64>,
+    /// The action of the move.
+    pub action: String,
+    /// In alphabetical order.
+    pub keys: Vec<String>,
 }
 
 /// The `effect` values of a file that this version of Tiza does not know,
@@ -981,6 +1057,7 @@ impl Document {
             steps: Vec::new(),
             looping: false,
             unknown_effects: UnknownEffects::default(),
+            newer_moves: NewerMoves::default(),
         }
     }
 
@@ -2052,6 +2129,27 @@ impl Document {
             })
     }
 
+    /// The number of the move at `index` (from 0) in a message: its number
+    /// in the file while the moves are those of the file and some were
+    /// skipped ([`NewerMoves::gaps`]), else `index + 1`, its number in
+    /// `move.list`.
+    pub fn move_number(&self, index: usize) -> usize {
+        let mut n = index + 1;
+        for gap in &self.newer_moves.gaps {
+            if *gap <= n {
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// From now on the moves are those of a live instance: a message names
+    /// a move by its place in the list, as `move.list` and `move.delete`
+    /// do, not by its number in the file.
+    pub fn number_moves_live(&mut self) {
+        self.newer_moves.gaps.clear();
+    }
+
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()
@@ -2157,7 +2255,7 @@ impl Document {
             check_step(a.step, &annotation_what(&a.id))?;
         }
         for (i, m) in self.moves.iter().enumerate() {
-            let what = format!("move #{}", i + 1);
+            let what = format!("move #{}", self.move_number(i));
             check_step(m.at_step, &what)?;
             moves::check_move_bounds(m, &what)?;
         }

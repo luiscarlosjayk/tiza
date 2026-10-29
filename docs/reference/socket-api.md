@@ -281,7 +281,7 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `auto_advance_ms` | The `auto_advance_ms` of the current step, when it has one. |
 | `loop` | `true` when the document loops. |
 | `cols`, `rows` | The size of the terminal. |
-| `warnings` | Warnings about the screen and the named steps, in words. |
+| `warnings` | Warnings about the screen and the named steps, in words. When the file has effects or moves that this version of Tiza does not know, a warning names each one and says that a save does not keep it. It goes away after the first save (see [Moves from a newer version](document-format.md#moves-from-a-newer-version)). |
 | `supervised` | `true` in supervised mode. |
 | `pending` | The number of changes that wait for the presenter. |
 | `autosave` | `true` when Tiza saves each change to the document. |

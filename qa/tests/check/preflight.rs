@@ -1191,3 +1191,179 @@ fn an_effect_in_capitals_says_what_to_write_and_both_warnings_end_alike() {
         assert!(message(id).ends_with('.'), "{id}: {}", message(id));
     }
 }
+
+#[test]
+fn a_move_of_a_newer_tiza_is_a_warning() {
+    // A move of a newer Tiza: the file passes, with one warning for each
+    // skipped move, each value that falls back to its default and each move
+    // with a key that this version does not know. Every move keeps its
+    // number in the file, also the moves after a skipped one, and in the
+    // text of a message.
+    let file =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/compat/v1-newer-unknown-move.tiza");
+    let (code, v) = check_json(&file, &[]);
+    assert_eq!(code, 0, "warnings only: {v}");
+    let f = with_code(&findings(&v), "move");
+    let said: Vec<(&str, u64, &str)> = f
+        .iter()
+        .map(|x| {
+            assert_eq!(x["level"], "warning", "{v}");
+            (
+                x["id"].as_str().unwrap(),
+                x["step"].as_u64().unwrap(),
+                x["message"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    let want = [
+        (
+            "move #3",
+            2,
+            "the action \"teleport\" is not known to this version of Tiza: use code.patch, code.link, cursor, select, wait or scroll. Tiza skips the move",
+        ),
+        (
+            "move #4",
+            2,
+            "the align \"middle\" is not known to this version of Tiza: use top, center, bottom or show. The move uses center",
+        ),
+        (
+            "move #4",
+            2,
+            "the key alig is not known to this version of Tiza. Tiza ignores it, and a save does not keep it. Did you mean align?",
+        ),
+        (
+            "move #6",
+            3,
+            "the typing \"word\" is not known to this version of Tiza: use instant, line or char. The move uses instant",
+        ),
+        (
+            "move #7",
+            4,
+            "the op \"swap\" is not known to this version of Tiza: use insert, replace or delete. Tiza skips the move",
+        ),
+        ("move #8", 5, "the action \"view\" is not known"),
+        (
+            "move #9",
+            5,
+            "scroll: move #10 of its step removes its line 3",
+        ),
+    ];
+    assert_eq!(said.len(), want.len(), "{v}");
+    for ((id, step, message), (want_id, want_step, want_text)) in said.iter().zip(want) {
+        assert_eq!((*id, *step), (want_id, want_step), "{message}");
+        assert!(message.starts_with(want_text), "{message}");
+    }
+    // Step 4 had only a skipped move: its warning says why it is empty.
+    assert!(with_code(&findings(&v), "empty_step").is_empty(), "{v}");
+}
+
+#[test]
+fn a_last_step_with_only_a_skipped_move_ends_the_take_sooner() {
+    // A skipped move takes its step with it when nothing else is there:
+    // the take ends one step sooner.
+    let dir = scratch("newer-last-step");
+    let file = dir.join("last.tiza");
+    std::fs::write(
+        &file,
+        serde_json::to_string(&json!({
+            "schema": 1,
+            "source": {"language": "rs", "first_line": 1},
+            "code": ["fn a() {}", "fn b() {}"],
+            "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "a"}],
+            "moves": [{"at_step": 2, "action": "view", "lines": "2"}]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    let (code, v) = check_json(&file, &[]);
+    assert_eq!(code, 0, "{v}");
+    assert_eq!(with_code(&findings(&v), "move").len(), 1, "{v}");
+    let out = tiza(&[
+        "render",
+        file.to_str().unwrap(),
+        "--step",
+        "2",
+        "--out",
+        "-",
+    ]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("step 2 does not exist (the document has steps 0 to 1)"),
+        "{err}"
+    );
+}
+
+#[test]
+fn the_moves_after_a_skipped_move_keep_their_numbers() {
+    // Move #1 is of a newer Tiza. Each finding of a later move names it by
+    // its number in the file: the static rules, a move that does not
+    // apply, a rebind of an annotation that does not exist, a linked file
+    // that cannot be read and a rebind that does not match.
+    let dir = scratch("newer-numbers");
+    let file = dir.join("numbers.tiza");
+    std::fs::write(
+        &file,
+        json!({
+            "schema": 1,
+            "source": {"language": "rs", "first_line": 1},
+            "code": ["fn a() {}", "fn b() {}", "fn c() {}"],
+            "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "a"}],
+            "moves": [
+                {"at_step": 1, "action": "view"},
+                {"at_step": 1, "action": "cursor", "line": 1, "rebind": {"n1": {"at": {"line": 1, "col": 0}}}},
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "nothing here", "content": "x"},
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "fn b() {}", "content": "fn b2() {}", "rebind": {"zz": {"at": {"line": 2, "col": 0}}}},
+                {"at_step": 3, "action": "code.patch", "op": "insert", "after": "fn a() {}", "content": "fn x() {}", "rebind": {"n1": {"at": {"find": "zzz"}}}},
+                {"at_step": 4, "action": "code.link", "file": "missing.rs"}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let (_, v) = check_json(&file, &[]);
+    let all = findings(&v);
+    let id_of = |code: &str, level: &str, text: &str| -> Vec<String> {
+        all.iter()
+            .filter(|f| {
+                f["code"] == code
+                    && f["level"] == level
+                    && f["message"].as_str().unwrap().contains(text)
+            })
+            .map(|f| f["id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(id_of("move", "warning", "\"view\""), ["move #1"], "{v}");
+    assert_eq!(
+        id_of("rebind", "error", "rebind only applies to code.patch"),
+        ["move #2"],
+        "{v}"
+    );
+    assert_eq!(id_of("move", "error", "nothing here"), ["move #3"], "{v}");
+    assert_eq!(id_of("unknown_id", "warning", "zz"), ["move #4"], "{v}");
+    assert_eq!(id_of("rebind", "error", "zzz"), ["move #5"], "{v}");
+    assert_eq!(
+        id_of("link", "error", "linked by move #6 (step 4)"),
+        ["move #6"],
+        "{v}"
+    );
+    // A file that loads: `tiza render` names the ignored rebind by its
+    // number in the file too.
+    let loads = dir.join("loads.tiza");
+    std::fs::write(
+        &loads,
+        json!({
+            "schema": 1,
+            "source": {"language": "rs", "first_line": 1},
+            "code": ["fn a() {}", "fn b() {}"],
+            "moves": [
+                {"at_step": 1, "action": "view"},
+                {"at_step": 2, "action": "code.patch", "op": "replace", "find": "fn b() {}", "content": "fn b2() {}", "rebind": {"zz": {"at": {"line": 2, "col": 0}}}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let out = tiza(&["render", loads.to_str().unwrap(), "--out", "-"]);
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("move #2, step 2: rebind names zz"), "{err}");
+}

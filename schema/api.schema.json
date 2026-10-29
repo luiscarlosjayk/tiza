@@ -279,7 +279,7 @@
             ]
           },
           "warnings": {
-            "description": "Human-readable warnings about the viewport (code clipped, labels cut\nor not drawn, labels under the lines) and the document (a `steps`\nentry past the last step).",
+            "description": "Human-readable warnings about the viewport (code clipped, labels cut\nor not drawn, labels under the lines) and the document (a `steps`\nentry past the last step; what the file holds that this version does\nnot know, until a save writes the file without it).",
             "items": {
               "type": "string"
             },

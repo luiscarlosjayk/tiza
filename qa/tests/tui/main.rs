@@ -17,6 +17,7 @@ mod enter_effects;
 mod help_panel;
 mod live_pointer;
 mod mouse;
+mod newer_moves;
 mod paste_in_each_mode;
 mod personal_defaults;
 mod personal_styles;

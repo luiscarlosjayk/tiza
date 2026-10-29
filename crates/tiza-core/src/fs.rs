@@ -79,17 +79,111 @@ pub struct Opened {
 /// has a `.tiza` sidecar next to it, the sidecar is preferred (it keeps the annotations).
 /// One line naming what of the document Tiza does not draw as the file
 /// says: the annotations whose lines fall outside the code (they are kept
-/// in the file but cannot be drawn) and the effects this version does not
-/// know (they come in with no effect), or `None`.
+/// in the file but cannot be drawn), and what this version does not know
+/// ([`not_known_notice`]), or `None`.
 pub fn open_notice(doc: &Document) -> Option<String> {
-    let notices = [outside_annotations(doc), unknown_effects_notice(doc)];
+    let notices = [outside_annotations(doc), not_known_notice(doc)];
     let notices: Vec<String> = notices.into_iter().flatten().collect();
     (!notices.is_empty()).then(|| notices.join("; "))
 }
 
+/// What the file holds that this version does not know, as a newer Tiza
+/// can write it, or `None`: the effects (the annotation comes in with no
+/// effect), the moves that Tiza skips and the values of moves that fall
+/// back to their default. One line that names each one, for stderr and
+/// `tiza render`.
+pub fn not_known_notice(doc: &Document) -> Option<String> {
+    let notices = [unknown_effects_notice(doc), newer_moves_notice(doc)];
+    let notices: Vec<String> = notices.into_iter().flatten().collect();
+    (!notices.is_empty()).then(|| notices.join("; "))
+}
+
+/// [`not_known_notice`] in a few words, for the status bar: how many of
+/// each, and where the names are.
+pub fn not_known_short(doc: &Document) -> Option<String> {
+    let counts = [
+        (doc.unknown_effects.0.len(), "effect"),
+        (doc.newer_moves.skipped.len(), "move"),
+        (doc.newer_moves.defaults.len(), "value"),
+    ];
+    let parts: Vec<String> = counts
+        .iter()
+        .filter(|(n, _)| *n > 0)
+        .map(|(n, what)| format!("{n} {what}{}", if *n == 1 { "" } else { "s" }))
+        .collect();
+    let total: usize = counts.iter().map(|(n, _)| n).sum();
+    let verb = if total == 1 { "is" } else { "are" };
+    match parts.as_slice() {
+        [] => None,
+        [one] => Some(format!("{one} {verb} not known: see tiza check")),
+        [rest @ .., last] => Some(format!(
+            "{} and {last} {verb} not known: see tiza check",
+            rest.join(", ")
+        )),
+    }
+}
+
+/// The moves that Tiza skips and the values that fall back to their
+/// default ([`take_newer_moves`]), or `None`.
+fn newer_moves_notice(doc: &Document) -> Option<String> {
+    let found = &doc.newer_moves;
+    let mut notices = Vec::new();
+    if !found.skipped.is_empty() {
+        let list: Vec<String> = found.skipped.iter().map(skipped_move_text).collect();
+        let n = found.skipped.len();
+        notices.push(format!(
+            "Tiza skips {n} move{} that this version does not know, and a save does not keep {}: {}",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "it" } else { "them" },
+            list.join(", ")
+        ));
+    }
+    if !found.defaults.is_empty() {
+        let list: Vec<String> = found
+            .defaults
+            .iter()
+            .map(|d| {
+                format!(
+                    "move #{} ({}{} {} → {})",
+                    d.number,
+                    step_text(d.at_step),
+                    d.field,
+                    d.value,
+                    d.default
+                )
+            })
+            .collect();
+        let n = found.defaults.len();
+        notices.push(format!(
+            "{n} value{} of moves {} not known to this version of Tiza, so the move uses the default, and a save does not keep {}: {}",
+            if n == 1 { "" } else { "s" },
+            if n == 1 { "is" } else { "are" },
+            if n == 1 { "it" } else { "them" },
+            list.join(", ")
+        ));
+    }
+    (!notices.is_empty()).then(|| notices.join("; "))
+}
+
+/// `move #3 (step 2, action "teleport")`.
+fn skipped_move_text(m: &crate::model::SkippedMove) -> String {
+    format!(
+        "move #{} ({}{} {})",
+        m.number,
+        step_text(m.at_step),
+        m.field,
+        m.value
+    )
+}
+
+/// `step 2, `, or nothing when the move has no step that is a number.
+fn step_text(at_step: Option<u64>) -> String {
+    at_step.map(|s| format!("step {s}, ")).unwrap_or_default()
+}
+
 /// The annotations whose `effect` this version does not know, or `None`:
-/// one line that names each one, for stderr and `tiza render`.
-pub fn unknown_effects_notice(doc: &Document) -> Option<String> {
+/// one line that names each one.
+fn unknown_effects_notice(doc: &Document) -> Option<String> {
     let found = &doc.unknown_effects.0;
     if found.is_empty() {
         return None;
@@ -103,16 +197,6 @@ pub fn unknown_effects_notice(doc: &Document) -> Option<String> {
         if one { "it comes in" } else { "they come in" },
         list.join(", ")
     ))
-}
-
-/// [`unknown_effects_notice`] in a few words, for the status bar: how many
-/// effects, and where the names are.
-pub fn unknown_effects_short(doc: &Document) -> Option<String> {
-    match doc.unknown_effects.0.len() {
-        0 => None,
-        1 => Some("1 effect is not known: see tiza check".into()),
-        n => Some(format!("{n} effects are not known: see tiza check")),
-    }
 }
 
 /// The annotations outside the code, or `None`.
@@ -335,15 +419,159 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     let mut raw: serde_json::Value = serde_json::from_str(text)?;
     migrate_document_value(&mut raw)?;
     let unknown = take_unknown_effects(&mut raw);
+    let newer = take_newer_moves(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)?;
     doc.unknown_effects = crate::model::UnknownEffects(unknown);
+    doc.newer_moves = newer;
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     // A linked file that cannot be read is named by the document's own
     // `code.link`.
     load_views(&mut doc, base_dir)?;
-    doc.normalize_loaded()?;
+    // The numbers and the rules of each move first, so that an error after
+    // them is one of a move that does not apply.
+    doc.check_bounds()?;
+    crate::moves::validate_shapes(&doc, &doc.moves, &doc.annotations)?;
+    doc.normalize_loaded()
+        .map_err(|e| skipped_moves_hint(e, &doc.newer_moves.skipped))?;
     Ok(doc)
+}
+
+/// A move that does not apply after Tiza skipped a move: the skipped move
+/// can change the code that the later move needs. The error names the
+/// skipped moves before it too. The error of a move that does not apply
+/// starts with `move #N, ` ([`crate::moves::validate`] and
+/// [`crate::moves::name_move`]), with the number of the move in the file.
+fn skipped_moves_hint(e: Error, skipped: &[crate::model::SkippedMove]) -> Error {
+    let failed = match &e {
+        Error::MoveNoMatch { index, .. } => Some(*index),
+        e => e
+            .to_string()
+            .strip_prefix("move #")
+            .and_then(|rest| rest.split([',', ':']).next())
+            .and_then(|n| n.parse().ok()),
+    };
+    let Some(failed) = failed else {
+        return e;
+    };
+    let before: Vec<&crate::model::SkippedMove> =
+        skipped.iter().filter(|m| m.number < failed).collect();
+    if before.is_empty() {
+        return e;
+    }
+    let list: Vec<String> = before.iter().map(|m| skipped_move_text(m)).collect();
+    let one = before.len() == 1;
+    Error::Because {
+        message: format!(
+            "{e}. Tiza skips {}, which this version does not know, and a later move can need the code that {} {}",
+            list.join(", "),
+            if one { "it" } else { "they" },
+            if one { "changes" } else { "change" },
+        ),
+        inner: Box::new(e),
+    }
+}
+
+/// Takes out of the moves of `raw` what this version does not know, as a
+/// newer Tiza can write it ([`crate::model::NewerMoves`]):
+/// - a move whose `action` is a text that this version does not know is
+///   taken out of the list (a move with no `action`, or one that is not a
+///   text, is a broken file and stays, for serde to refuse);
+/// - a value of a field with a list of values that this version does not
+///   know ([`crate::moves::LIST_FIELDS`]) is taken out, so that the field
+///   gets its default; with no default, the move is taken out;
+/// - a key that this version does not know is only noted: serde ignores
+///   it.
+pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::NewerMoves {
+    use crate::model::{DefaultValue, SkippedMove, UnknownKeys};
+    use crate::moves::{ACTION_KEYS, LIST_FIELDS, ListField, MOVE_KEYS, action_keys};
+    let mut out = crate::model::NewerMoves::default();
+    let Some(moves) = raw.get_mut("moves").and_then(|m| m.as_array_mut()) else {
+        return out;
+    };
+    let mut kept = Vec::with_capacity(moves.len());
+    for (i, m) in std::mem::take(moves).into_iter().enumerate() {
+        let number = i + 1;
+        let serde_json::Value::Object(mut o) = m else {
+            kept.push(m);
+            continue;
+        };
+        let at_step = o.get("at_step").and_then(|v| v.as_u64());
+        let Some(action) = o.get("action").and_then(|v| v.as_str()).map(str::to_string) else {
+            kept.push(serde_json::Value::Object(o));
+            continue;
+        };
+        let Some(keys) = action_keys(&action) else {
+            out.skipped.push(SkippedMove {
+                number,
+                at_step,
+                field: "action",
+                value: shown_value(&o["action"]),
+                known: ACTION_KEYS.iter().map(|(name, _)| *name).collect(),
+            });
+            continue;
+        };
+        let fields = || LIST_FIELDS.iter().filter(|f| f.action == action);
+        let not_known = |o: &serde_json::Map<String, serde_json::Value>, f: &ListField| {
+            o.get(f.key)
+                .is_some_and(|v| !v.as_str().is_some_and(|s| f.values.contains(&s)))
+        };
+        if let Some(f) = fields().find(|f| f.default.is_none() && not_known(&o, f)) {
+            out.skipped.push(SkippedMove {
+                number,
+                at_step,
+                field: f.key,
+                value: shown_value(&o[f.key]),
+                known: f.values.to_vec(),
+            });
+            continue;
+        }
+        for f in fields() {
+            let Some(default) = f.default else {
+                continue;
+            };
+            if not_known(&o, f) {
+                let value = o.remove(f.key).unwrap_or_default();
+                out.defaults.push(DefaultValue {
+                    number,
+                    at_step,
+                    field: f.key,
+                    value: shown_value(&value),
+                    default,
+                    known: f.values,
+                });
+            }
+        }
+        let mut unknown: Vec<String> = o
+            .keys()
+            .filter(|k| !MOVE_KEYS.contains(&k.as_str()) && !keys.contains(&k.as_str()))
+            .cloned()
+            .collect();
+        unknown.sort();
+        if !unknown.is_empty() {
+            out.keys.push(UnknownKeys {
+                number,
+                at_step,
+                action,
+                keys: unknown,
+            });
+        }
+        kept.push(serde_json::Value::Object(o));
+    }
+    *moves = kept;
+    out.gaps = out.skipped.iter().map(|m| m.number).collect();
+    out
+}
+
+/// A value as a file writes it, for a message: JSON, cut when it is long
+/// (an object, a long text).
+fn shown_value(v: &serde_json::Value) -> String {
+    let value = v.to_string();
+    if value.chars().count() > 40 {
+        value.chars().take(39).chain(['…']).collect()
+    } else {
+        value
+    }
 }
 
 /// Takes out of the annotations of `raw` an `effect` that this version
@@ -365,19 +593,13 @@ pub(crate) fn take_unknown_effects(raw: &mut serde_json::Value) -> Vec<(String, 
         {
             continue;
         }
-        let value = a.remove("effect").unwrap_or_default().to_string();
+        let value = a.remove("effect").unwrap_or_default();
         let id = a
             .get("id")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        // A long value (an object, a long string) is cut for the messages.
-        let shown = if value.chars().count() > 40 {
-            value.chars().take(39).chain(['…']).collect()
-        } else {
-            value
-        };
-        out.push((id, shown));
+        out.push((id, shown_value(&value)));
     }
     out
 }
@@ -544,8 +766,10 @@ pub fn load_views(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Err
             doc.view_code.insert(key, code);
             continue;
         }
-        let code = read_view_file(&file, base_dir)
-            .map_err(|e| Error::Invalid(format!("move #{}, step {at_step}: {e}", i + 1)))?;
+        let code = read_view_file(&file, base_dir).map_err(|e| {
+            let n = doc.move_number(i);
+            Error::Invalid(format!("move #{n}, step {at_step}: {e}"))
+        })?;
         doc.view_code.insert(key, code);
     }
     Ok(())

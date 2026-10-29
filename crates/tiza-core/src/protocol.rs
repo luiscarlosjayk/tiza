@@ -891,7 +891,8 @@ pub struct Status {
     pub rows: u16,
     /// Human-readable warnings about the viewport (code clipped, labels cut
     /// or not drawn, labels under the lines) and the document (a `steps`
-    /// entry past the last step).
+    /// entry past the last step; what the file holds that this version does
+    /// not know, until a save writes the file without it).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<String>,
     /// Supervised mode: mutations wait for the presenter's approval.

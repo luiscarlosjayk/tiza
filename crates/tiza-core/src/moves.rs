@@ -89,6 +89,110 @@ impl MoveAction {
     }
 }
 
+/// The keys that every move can have.
+pub const MOVE_KEYS: [&str; 3] = ["at_step", "action", "rebind"];
+
+/// Each action and the keys of its own fields, as the format names them.
+/// A test compares it with the schema of [`Move`].
+pub const ACTION_KEYS: [(&str, &[&str]); 6] = [
+    (
+        "code.patch",
+        &[
+            "op",
+            "position",
+            "after",
+            "before",
+            "find",
+            "find_start",
+            "find_end",
+            "occurrence",
+            "end_occurrence",
+            "content",
+            "typing",
+            "speed_ms",
+        ],
+    ),
+    ("code.link", &["file", "lines"]),
+    ("cursor", &["line", "col"]),
+    ("select", &["from", "to"]),
+    ("wait", &["ms"]),
+    (
+        "scroll",
+        &["line", "find", "occurrence", "annotation", "align"],
+    ),
+];
+
+/// The keys of the fields of `action`, or `None` for an action that this
+/// version does not know.
+pub fn action_keys(action: &str) -> Option<&'static [&'static str]> {
+    ACTION_KEYS
+        .iter()
+        .find(|(name, _)| *name == action)
+        .map(|(_, keys)| *keys)
+}
+
+/// The key of `known` that `key` is a typo of: one or two letters from it
+/// (`alig` for `align`), or `None`.
+pub fn near_key<'a>(key: &str, known: &[&'a str]) -> Option<&'a str> {
+    known
+        .iter()
+        .map(|k| (edit_distance(key, k), *k))
+        .filter(|(d, _)| *d <= 2)
+        .min()
+        .map(|(_, k)| k)
+}
+
+/// The number of letters to add, remove or change to make `a` into `b`.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = usize::from(ca != cb);
+            cur.push((prev[j] + cost).min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// A field of a move whose value is one of a list.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListField {
+    pub action: &'static str,
+    pub key: &'static str,
+    pub values: &'static [&'static str],
+    /// The value of the field when the move does not give it. A file with
+    /// a value that this version does not know uses it too. With no
+    /// default, the move is skipped.
+    pub default: Option<&'static str>,
+}
+
+/// The fields of a move whose value is one of a list. A test compares it
+/// with the schema of [`Move`].
+pub const LIST_FIELDS: [ListField; 3] = [
+    ListField {
+        action: "code.patch",
+        key: "op",
+        values: &["insert", "replace", "delete"],
+        default: None,
+    },
+    ListField {
+        action: "code.patch",
+        key: "typing",
+        values: &["instant", "line", "char"],
+        default: Some("instant"),
+    },
+    ListField {
+        action: "scroll",
+        key: "align",
+        values: &["top", "center", "bottom", "show"],
+        default: Some("center"),
+    },
+];
+
 /// `code.link`: `file` is the path as `code.file` would name it (relative to
 /// the `.tiza` directory); `lines` is only a window (`"7-30"` or `"7"`) that
 /// crops what is shown — annotations keep real file line numbers and the
@@ -876,7 +980,7 @@ pub fn project(doc: &Document, moves: &[Move], step: u32) -> Result<Projection, 
             continue;
         }
         p.apply_move(doc, i, m)
-            .map_err(|e| name_move(e, i, m.at_step))?;
+            .map_err(|e| name_move(e, doc.move_number(i), m.at_step))?;
     }
     Ok(p)
 }
@@ -914,7 +1018,10 @@ impl Projection {
                     {
                         p.scroll_misses.push((
                             *k,
-                            format!("move #{} of its step removes its line {l}", i + 1),
+                            format!(
+                                "move #{} of its step removes its line {l}",
+                                doc.move_number(i)
+                            ),
                         ));
                     }
                 }
@@ -1229,11 +1336,39 @@ pub fn check_move_bounds(m: &Move, what: &str) -> Result<(), Error> {
 }
 
 pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> Result<(), Error> {
+    validate_shapes(doc, moves, annotations)?;
+    // Apply in order, checking each patch's `rebind` finds on the code after
+    // it: exactly one match, or an `occurrence` within the matches.
+    let p = project(doc, moves, u32::MAX)?;
+    for ap in &p.patches {
+        let m = &moves[ap.index];
+        if let Some(why) = rebind_problem(m, annotations, &ap.after, doc.view_first_line(&ap.file))
+        {
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: {why}",
+                doc.move_number(ap.index),
+                m.at_step
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The rules of each move on its own, before any move applies: a step
+/// from 1, one target for a `scroll`, and a `rebind` only on a
+/// `code.patch`, where each entry says where to go. A load checks them
+/// before it applies the moves, so that the error of a move that does
+/// not apply is the only one after them.
+pub fn validate_shapes(
+    doc: &Document,
+    moves: &[Move],
+    annotations: &[Annotation],
+) -> Result<(), Error> {
     for (i, m) in moves.iter().enumerate() {
         if m.at_step == 0 {
             return Err(Error::Invalid(format!(
                 "move #{}: at_step must be >= 1 (step 0 is the untouched code)",
-                i + 1
+                doc.move_number(i)
             )));
         }
         if let MoveAction::Scroll(s) = &m.action
@@ -1241,14 +1376,14 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
         {
             return Err(Error::Invalid(format!(
                 "move #{}, step {}: {why}",
-                i + 1,
+                doc.move_number(i),
                 m.at_step
             )));
         }
         if !m.rebind.is_empty() && !matches!(m.action, MoveAction::CodePatch(_)) {
             return Err(Error::Invalid(format!(
                 "move #{}, step {}: rebind only applies to code.patch, not {}",
-                i + 1,
+                doc.move_number(i),
                 m.at_step,
                 m.action.name()
             )));
@@ -1260,24 +1395,10 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
             if spec.is_empty() {
                 return Err(Error::Invalid(format!(
                     "move #{}, step {}: rebind «{id}» says nowhere to go: use `at` {{find | line, col}}, `from`/`to` (arrows) or `from_line`/`to_line` (boxes, callouts, spotlights)",
-                    i + 1,
+                    doc.move_number(i),
                     m.at_step
                 )));
             }
-        }
-    }
-    // Apply in order, checking each patch's `rebind` finds on the code after
-    // it: exactly one match, or an `occurrence` within the matches.
-    let p = project(doc, moves, u32::MAX)?;
-    for ap in &p.patches {
-        let m = &moves[ap.index];
-        if let Some(why) = rebind_problem(m, annotations, &ap.after, doc.view_first_line(&ap.file))
-        {
-            return Err(Error::Invalid(format!(
-                "move #{}, step {}: {why}",
-                ap.index + 1,
-                m.at_step
-            )));
         }
     }
     Ok(())
@@ -1331,6 +1452,8 @@ pub(crate) fn rebind_problem(
 pub struct IgnoredRebind {
     /// 0-based, as in `doc.moves`.
     pub index: usize,
+    /// The number of the move in the messages ([`Document::move_number`]).
+    pub number: usize,
     pub at_step: u32,
     pub id: String,
 }
@@ -1338,7 +1461,7 @@ pub struct IgnoredRebind {
 impl IgnoredRebind {
     /// Where it is, as `check` places a move: `move #3, step 2`.
     pub fn place(&self) -> String {
-        format!("move #{}, step {}", self.index + 1, self.at_step)
+        format!("move #{}, step {}", self.number, self.at_step)
     }
 
     /// What `check` and an export's stderr say about it.
@@ -1362,6 +1485,7 @@ pub fn ignored_rebinds(doc: &Document) -> Vec<IgnoredRebind> {
                 .filter(|id| doc.find_annotation(id).is_none())
                 .map(move |id| IgnoredRebind {
                     index: i,
+                    number: doc.move_number(i),
                     at_step: m.at_step,
                     id: id.clone(),
                 })
@@ -1378,7 +1502,7 @@ pub fn newly_ignored(before: &Document, after: &Document) -> Option<String> {
     let now: Vec<String> = ignored_rebinds(after)
         .into_iter()
         .filter(|r| !was.contains(r))
-        .map(|r| format!("move #{}'s rebind of {}", r.index + 1, r.id))
+        .map(|r| format!("move #{}'s rebind of {}", r.number, r.id))
         .collect();
     (!now.is_empty()).then(|| {
         format!(
@@ -1455,23 +1579,24 @@ pub fn check_rebind_ids(
     Ok(())
 }
 
-/// An error from applying a move, naming the move (1-based) and its step,
-/// so an author sees which move stopped applying — also when the move that
-/// failed is a later one than the one just added or edited.
-pub(crate) fn name_move(e: Error, index: usize, at_step: u32) -> Error {
+/// An error from applying a move, naming the move by `number` (from 1, as
+/// [`Document::move_number`] gives it) and its step, so an author sees
+/// which move stopped applying — also when the move that failed is a later
+/// one than the one just added or edited.
+pub(crate) fn name_move(e: Error, number: usize, at_step: u32) -> Error {
     match e {
         Error::TextNotFound(t) => Error::MoveNoMatch {
-            index: index + 1,
+            index: number,
             step: at_step,
             what: format!("text «{t}»"),
         },
         Error::NoMatch(what) => Error::MoveNoMatch {
-            index: index + 1,
+            index: number,
             step: at_step,
             what,
         },
         e @ Error::MoveNoMatch { .. } => e,
-        other => Error::Invalid(format!("move #{}, step {}: {other}", index + 1, at_step)),
+        other => Error::Invalid(format!("move #{number}, step {at_step}: {other}")),
     }
 }
 
@@ -1849,6 +1974,121 @@ pub fn typing_units(lines: &[String], typing: Typing) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The tables that a file of a newer Tiza is read against are the
+    /// schema of `Move`: an action, a key or a value of a list that a later
+    /// change adds cannot stay out of them. A field with a default in
+    /// [`LIST_FIELDS`] has that default in serde, and one with no default
+    /// is required.
+    #[test]
+    fn the_tables_of_keys_and_values_follow_the_schema() {
+        use serde_json::{Value, json};
+        let schema = crate::schema::document_schema();
+        let defs = &schema["$defs"];
+        let def = |r: &Value| defs[r.as_str().unwrap().trim_start_matches("#/$defs/")].clone();
+        // The `$ref`s of a property, also inside `anyOf` (an `Option`).
+        let refs = |p: &Value| -> Vec<Value> {
+            let mut out: Vec<Value> = p.get("$ref").into_iter().cloned().collect();
+            for k in ["anyOf", "allOf", "oneOf"] {
+                for v in p.get(k).and_then(Value::as_array).into_iter().flatten() {
+                    out.extend(v.get("$ref").cloned());
+                }
+            }
+            out
+        };
+        let sorted = |mut v: Vec<String>| {
+            v.sort();
+            v
+        };
+        let mv = &defs["Move"];
+        let common: Vec<String> = mv["properties"]
+            .as_object()
+            .unwrap()
+            .keys()
+            .cloned()
+            .chain(["action".to_string()])
+            .collect();
+        assert_eq!(
+            sorted(common),
+            sorted(MOVE_KEYS.iter().map(|k| k.to_string()).collect())
+        );
+        let mut actions = Vec::new();
+        let mut lists = Vec::new();
+        for v in mv["oneOf"].as_array().unwrap() {
+            let action = v["properties"]["action"]["const"].as_str().unwrap();
+            let fields = def(&v["$ref"]);
+            let props = fields["properties"].as_object().unwrap();
+            actions.push((action.to_string(), sorted(props.keys().cloned().collect())));
+            for (key, p) in props {
+                for r in refs(p) {
+                    let target = def(&r);
+                    let values: Vec<String> = match (target.get("enum"), target.get("oneOf")) {
+                        (Some(e), _) => e.as_array().unwrap().to_vec(),
+                        (None, Some(o)) => o
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|v| v.get("const").cloned())
+                            .collect(),
+                        _ => Vec::new(),
+                    }
+                    .iter()
+                    .map(|v| v.as_str().unwrap().to_string())
+                    .collect();
+                    if !values.is_empty() {
+                        lists.push((action.to_string(), key.clone(), values));
+                    }
+                }
+            }
+        }
+        let table: Vec<(String, Vec<String>)> = ACTION_KEYS
+            .iter()
+            .map(|(a, keys)| {
+                (
+                    a.to_string(),
+                    sorted(keys.iter().map(|k| k.to_string()).collect()),
+                )
+            })
+            .collect();
+        assert_eq!(sorted_pairs(actions), sorted_pairs(table));
+        let mut table: Vec<(String, String, Vec<String>)> = LIST_FIELDS
+            .iter()
+            .map(|f| {
+                let values = f.values.iter().map(|v| v.to_string()).collect();
+                (f.action.to_string(), f.key.to_string(), values)
+            })
+            .collect();
+        table.sort();
+        lists.sort();
+        assert_eq!(lists, table);
+        // The defaults are those of serde.
+        let sample = |action: &str| match action {
+            "code.patch" => {
+                json!({"at_step": 1, "action": action, "op": "insert", "position": "1", "content": "x"})
+            }
+            "scroll" => json!({"at_step": 1, "action": action, "line": 1}),
+            other => panic!("add a sample move for {other}"),
+        };
+        for f in LIST_FIELDS {
+            let mut without = sample(f.action);
+            without.as_object_mut().unwrap().remove(f.key);
+            let read = serde_json::from_value::<Move>(without);
+            match f.default {
+                Some(d) => {
+                    let mut with = sample(f.action);
+                    with[f.key] = json!(d);
+                    let with = serde_json::from_value::<Move>(with).unwrap();
+                    assert_eq!(read.unwrap(), with, "{}.{}", f.action, f.key);
+                }
+                None => assert!(read.is_err(), "{}.{} has a default", f.action, f.key),
+            }
+        }
+    }
+
+    fn sorted_pairs(mut v: Vec<(String, Vec<String>)>) -> Vec<(String, Vec<String>)> {
+        v.sort();
+        v
+    }
 
     fn code(s: &str) -> Vec<String> {
         s.lines().map(str::to_string).collect()

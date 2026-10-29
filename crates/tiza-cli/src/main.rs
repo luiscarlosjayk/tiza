@@ -1929,8 +1929,19 @@ fn image_exporter(
 /// envelope (`{document, step, …}`: `document` is unwrapped and the
 /// envelope's `step` kept), or — only with `--as-code` — any other file
 /// shown as code. Anything else is refused, so a stray JSON file never
-/// lands on screen as 300 lines of JSON.
+/// lands on screen as 300 lines of JSON. A document with an effect or a
+/// move that this version does not know is refused too, as `scene.put`
+/// refuses it: a file opens without them, but a put would drop them in
+/// silence.
 fn document_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_core::Document> {
+    let document = document_or_code_for_put(file, as_code)?;
+    if let Some(notice) = fs::not_known_notice(&document) {
+        bail!("{file}: {notice}. scene put sends a document as it is, so it refuses this one");
+    }
+    Ok(document)
+}
+
+fn document_or_code_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_core::Document> {
     let (text, base_dir) = if file == "-" {
         let mut text = String::new();
         std::io::stdin().read_to_string(&mut text)?;
@@ -2048,10 +2059,10 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     if !std::io::stdout().is_terminal() {
         bail!("the TUI needs a terminal on stdout; use `tiza render` for text output");
     }
-    // The effects this version does not know, by name, where they stay
-    // after the TUI ends (the bar says it in short; presentation mode has
-    // no bar).
-    if let Some(line) = fs::unknown_effects_notice(&opened.document) {
+    // The effects and the moves this version does not know, by name, where
+    // they stay after the TUI ends (the bar says it in short; presentation
+    // mode has no bar).
+    if let Some(line) = fs::not_known_notice(&opened.document) {
         eprintln!("tiza: {}", tiza_core::printable::printable_line(&line));
     }
     tiza_tui::run(

@@ -345,7 +345,11 @@ fn check_text_as(
     }
     // An effect of a newer Tiza: read as no effect, with a warning below.
     let unknown = crate::fs::take_unknown_effects(&mut raw);
-    let parsed: Result<Document, serde_json::Error> = if migrated || !unknown.is_empty() {
+    // The moves of a newer Tiza: skipped, or with a default, with a
+    // warning in `tidy`.
+    let newer = crate::fs::take_newer_moves(&mut raw);
+    let changed = !unknown.is_empty() || !newer.skipped.is_empty() || !newer.defaults.is_empty();
+    let parsed: Result<Document, serde_json::Error> = if migrated || changed {
         serde_json::from_value(raw)
     } else {
         // Straight from the text: the error keeps its line and column.
@@ -371,6 +375,7 @@ fn check_text_as(
     };
     doc.schema = SCHEMA_VERSION;
     doc.unknown_effects = crate::model::UnknownEffects(unknown);
+    doc.newer_moves = newer;
     // The gutter the take draws when the document leaves it to the config.
     if doc.numbers.is_none() {
         doc.numbers = opts.numbers;
@@ -572,7 +577,7 @@ fn load_links(
         if let Err(e) = crate::fs::load_view(doc, file, base_dir) {
             let which = links
                 .iter()
-                .map(|(i, s, _)| format!("#{} (step {s})", i + 1))
+                .map(|(i, s, _)| format!("#{} (step {s})", doc.move_number(*i)))
                 .collect::<Vec<_>>()
                 .join(", ");
             out.push(
@@ -583,7 +588,7 @@ fn load_links(
                         "{e}; linked by move {which}: its moves and annotations are not checked"
                     ),
                 )
-                .id(format!("move #{}", first + 1))
+                .id(format!("move #{}", doc.move_number(*first)))
                 .step(*step)
                 .file(Some(key.clone())),
             );
@@ -591,6 +596,103 @@ fn load_links(
         }
     }
     missing
+}
+
+/// The moves of a newer Tiza ([`crate::model::NewerMoves`]), in the order
+/// of the file: a warning for each move that Tiza skips, each value that
+/// falls back to its default, and each move with keys that this version
+/// does not know.
+fn newer_moves(doc: &Document, out: &mut Vec<Finding>) {
+    let found = &doc.newer_moves;
+    let mut warnings: Vec<(usize, Option<u64>, String)> = Vec::new();
+    for m in &found.skipped {
+        warnings.push((
+            m.number,
+            m.at_step,
+            format!(
+                "the {} {} is not known to this version of Tiza: use {}. Tiza skips the move, and a save does not keep it.",
+                m.field,
+                m.value,
+                or_list(&m.known)
+            ),
+        ));
+    }
+    for d in &found.defaults {
+        warnings.push((
+            d.number,
+            d.at_step,
+            format!(
+                "the {} {} is not known to this version of Tiza: use {}. The move uses {}, and a save does not keep the value.",
+                d.field,
+                d.value,
+                or_list(d.known),
+                d.default
+            ),
+        ));
+    }
+    for k in &found.keys {
+        let known: Vec<&str> = moves::MOVE_KEYS
+            .iter()
+            .chain(moves::action_keys(&k.action).unwrap_or_default())
+            .copied()
+            .collect();
+        let near: Vec<String> = k
+            .keys
+            .iter()
+            .filter_map(|key| moves::near_key(key, &known).map(|n| (key, n)))
+            .map(|(key, n)| {
+                if k.keys.len() == 1 {
+                    n.to_string()
+                } else {
+                    format!("{n} for {key}")
+                }
+            })
+            .collect();
+        let hint = if near.is_empty() {
+            String::new()
+        } else {
+            format!(" Did you mean {}?", and_list(&near))
+        };
+        let one = k.keys.len() == 1;
+        warnings.push((
+            k.number,
+            k.at_step,
+            format!(
+                "the {} {} {} not known to this version of Tiza. Tiza ignores {}, and a save does not keep {}.{hint}",
+                if one { "key" } else { "keys" },
+                and_list(&k.keys),
+                if one { "is" } else { "are" },
+                if one { "it" } else { "them" },
+                if one { "it" } else { "them" },
+            ),
+        ));
+    }
+    warnings.sort_by_key(|(number, _, _)| *number);
+    for (number, at_step, message) in warnings {
+        let f = Finding::new(Level::Warning, "move", message).id(format!("move #{number}"));
+        out.push(match at_step.and_then(|s| u32::try_from(s).ok()) {
+            Some(s) => f.step(s),
+            None => f,
+        });
+    }
+}
+
+/// `a, b or c`.
+fn or_list(items: &[&str]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => (*one).to_string(),
+        [rest @ .., last] => format!("{} or {last}", rest.join(", ")),
+    }
+}
+
+/// `a, b and c`.
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{} and {last}", rest.join(", ")),
+    }
 }
 
 /// A move that does nothing, put where a broken one was so the moves after
@@ -606,9 +708,10 @@ fn placeholder(at_step: u32) -> Move {
 }
 
 /// A move's error without the `move #N, step S` the finding already
-/// names.
-fn move_message(e: crate::Error, index: usize, at_step: u32) -> String {
-    let tag = format!("move #{}, step {at_step}", index + 1);
+/// names. `number` is the number of the move in the messages
+/// ([`Document::move_number`]).
+fn move_message(e: crate::Error, number: usize, at_step: u32) -> String {
+    let tag = format!("move #{number}, step {at_step}");
     match e {
         crate::Error::MoveNoMatch { what, .. } => {
             format!("{what} matches nothing in the code at this step")
@@ -698,11 +801,13 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         }
     }
     let ids: BTreeSet<String> = doc.annotations.iter().map(|a| a.id.clone()).collect();
+    // ---- moves of a newer Tiza ----
+    newer_moves(&doc, out);
     // ---- moves: the static rules ----
     let mut moves = doc.moves.clone();
     let mut broken = vec![false; moves.len()];
     for (i, m) in moves.iter_mut().enumerate() {
-        let name = format!("move #{}", i + 1);
+        let name = format!("move #{}", doc.move_number(i));
         if m.at_step == 0 {
             out.push(
                 Finding::new(
@@ -744,6 +849,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             if !ids.contains(id) {
                 let r = moves::IgnoredRebind {
                     index: i,
+                    number: doc.move_number(i),
                     at_step: m.at_step,
                     id: id.clone(),
                 };
@@ -813,10 +919,11 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             Ok(_) => accepted = with,
             Err(e) => {
                 let file = d.shown_view_at(trial[i].at_step).file;
-                let msg = in_file(move_message(e, i, trial[i].at_step), &file);
+                let n = doc.move_number(i);
+                let msg = in_file(move_message(e, n, trial[i].at_step), &file);
                 out.push(
                     Finding::new(Level::Error, "move", msg.clone())
-                        .id(format!("move #{}", i + 1))
+                        .id(format!("move #{n}"))
                         .step(trial[i].at_step)
                         .file(file)
                         .line(first_line_in(&msg)),
@@ -844,7 +951,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             let file = d.shown_view_at(m.at_step).file;
             out.push(
                 Finding::new(Level::Warning, "move", in_file(why, &file))
-                    .id(format!("move #{}", i + 1))
+                    .id(format!("move #{}", doc.move_number(i)))
                     .step(m.at_step)
                     .file(file),
             );
@@ -866,10 +973,11 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
         d.moves = only.clone();
         if let Err(e) = moves::validate(&d, &only, &d.annotations) {
             let file = d.shown_view_at(m.at_step).file;
-            let msg = in_file(move_message(e, i, m.at_step), &file);
+            let n = doc.move_number(i);
+            let msg = in_file(move_message(e, n, m.at_step), &file);
             out.push(
                 Finding::new(Level::Error, "rebind", msg)
-                    .id(format!("move #{}", i + 1))
+                    .id(format!("move #{n}"))
                     .step(m.at_step)
                     .file(file),
             );
@@ -1446,8 +1554,14 @@ fn check_loaded(
     }
     // ---- steps with nothing new ----
     for step in 1..=max {
+        // A step of a skipped move: its own warning says why it is empty.
         let has = doc.annotations.iter().any(|a| a.step == step)
-            || doc.moves.iter().any(|m| m.at_step == step);
+            || doc.moves.iter().any(|m| m.at_step == step)
+            || doc
+                .newer_moves
+                .skipped
+                .iter()
+                .any(|m| m.at_step == Some(u64::from(step)));
         if !has {
             out.push(
                 Finding::new(
