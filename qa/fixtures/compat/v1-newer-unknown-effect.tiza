@@ -52,6 +52,17 @@
     "end": 9
    },
    "effect": "fade"
+  },
+  {
+   "id": "n2",
+   "step": 2,
+   "type": "note",
+   "line": 4,
+   "text": "end",
+   "effect": {
+    "kind": "slide",
+    "from": "the left edge of the screen"
+   }
   }
  ]
 }

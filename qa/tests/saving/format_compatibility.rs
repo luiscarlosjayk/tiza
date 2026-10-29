@@ -201,6 +201,11 @@ fn an_effect_of_a_newer_tiza_reads_as_no_effect() {
         notice.contains("b1 (\"slide\")") && notice.contains("n1 (1)"),
         "{notice}"
     );
+    // A long value is cut in the message.
+    assert!(
+        notice.contains("n2 (") && notice.contains('…') && !notice.contains("screen\"}"),
+        "{notice}"
+    );
     let dir = scratch("newer-effect");
     let saved = dir.join("s.tiza");
     fs::save_document(doc, &saved).unwrap();

@@ -94,15 +94,12 @@ fn unknown_effects_notice(doc: &Document) -> Option<String> {
         return None;
     }
     let list: Vec<String> = found.iter().map(|(id, v)| format!("{id} ({v})")).collect();
+    let (n, one) = (found.len(), found.len() == 1);
     Some(format!(
-        "{} effect{} not known to this version of Tiza, so {} with no effect: {}",
-        found.len(),
-        if found.len() == 1 { "" } else { "s" },
-        if found.len() == 1 {
-            "it comes in"
-        } else {
-            "they come in"
-        },
+        "{n} annotation{} {} an effect that this version of Tiza does not know, so {} with no effect: {}",
+        if one { "" } else { "s" },
+        if one { "has" } else { "have" },
+        if one { "it comes in" } else { "they come in" },
         list.join(", ")
     ))
 }
@@ -357,13 +354,19 @@ pub(crate) fn take_unknown_effects(raw: &mut serde_json::Value) -> Vec<(String, 
         {
             continue;
         }
-        let value = a.remove("effect").unwrap_or_default();
+        let value = a.remove("effect").unwrap_or_default().to_string();
         let id = a
             .get("id")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
-        out.push((id, value.to_string()));
+        // A long value (an object, a long string) is cut for the messages.
+        let shown = if value.chars().count() > 40 {
+            value.chars().take(39).chain(['…']).collect()
+        } else {
+            value
+        };
+        out.push((id, shown));
     }
     out
 }

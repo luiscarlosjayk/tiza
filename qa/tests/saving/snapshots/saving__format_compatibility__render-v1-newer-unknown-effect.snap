@@ -7,4 +7,4 @@ expression: out
  2 ╭─┼─     let s = String::from("hi"); │
  3 ╰─┼▶     takes(s);                   │ ┆ moved
      ╰──────────────────────────────────╯
- 4      }
+ 4      }                                 ┆ end

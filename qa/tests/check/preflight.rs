@@ -1124,21 +1124,20 @@ fn an_effect_draw_without_a_stroke_is_a_warning() {
 #[test]
 fn an_effect_of_a_newer_tiza_is_a_warning() {
     // An `effect` that this version does not know: the file passes, with
-    // one warning for each such annotation.
+    // one warning for each such annotation, which names the value (cut
+    // when it is long).
     let file =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/compat/v1-newer-unknown-effect.tiza");
     let (code, v) = check_json(&file, &[]);
     assert_eq!(code, 0, "warnings only: {v}");
     let f = with_code(&findings(&v), "effect");
     let ids: Vec<&str> = f.iter().map(|x| x["id"].as_str().unwrap()).collect();
-    assert_eq!(ids, ["b1", "n1"], "{v}");
-    for x in &f {
-        assert_eq!(x["level"], "warning", "{v}");
-        assert!(
-            x["message"].as_str().unwrap().contains(
-                "is not known to this version of Tiza: the annotation comes in with no effect"
-            ),
-            "{v}"
-        );
-    }
+    assert_eq!(ids, ["b1", "n1", "n2"], "{v}");
+    assert!(f.iter().all(|x| x["level"] == "warning"), "{v}");
+    let message = |i: usize| f[i]["message"].as_str().unwrap().to_string();
+    assert!(message(0).contains("\"slide\""), "{v}");
+    assert!(
+        message(2).contains('…') && !message(2).contains("screen\"}"),
+        "{v}"
+    );
 }

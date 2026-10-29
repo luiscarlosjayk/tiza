@@ -4,4 +4,4 @@ One file per **producer**, named `v<schema>-<app version>-<what>.tiza`, written 
 
 - `v1-0.0.1-ownership.tiza` — the first demo, exactly as v0.0.1 saved it (embedded code, Rust-only mark kinds).
 - `v1-0.0.1-rust-kinds.tiza` — every v0.0.1 shape and the Rust kinds that are aliases today (`borrow`, `borrow_mut`, `lifetime`).
-- `v1-newer-unknown-effect.tiza` — written by hand as a newer Tiza can write it: an `effect` that this version does not know (`"slide"`, and `1`), beside the two values it knows (`draw` and `fade`). The document opens, those annotations come in with no effect, and a save keeps `draw` and `fade` as they are.
+- `v1-newer-unknown-effect.tiza` — written by hand as a newer Tiza can write it: an `effect` that this version does not know (`"slide"`, `1`, and an object that is longer than the messages show), beside the two values it knows (`draw` and `fade`). The document opens, those annotations come in with no effect, and a save keeps `draw` and `fade` as they are.
