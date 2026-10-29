@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use tiza_core::anim::{AnimOptions, frames};
 use tiza_core::canvas::{Canvas, Part, Trace};
 use tiza_core::effects::{FADE_MS, Plan};
-use tiza_core::layout::{LayoutOptions, layout, layout_traced};
+use tiza_core::layout::{LayoutOptions, layout, layout_traced, stable_geometry};
 use tiza_core::{Document, Theme};
 use tiza_qa::{example, fixture};
 
@@ -1000,4 +1000,135 @@ fn every_stroke_has_a_path_and_each_of_its_cells_is_on_it() {
         "stroke cells off their path:\n{}",
         off.join("\n")
     );
+}
+
+/// When each cell that `id` painted as `part` at `step` shows as in the
+/// final frame (0: from the start), with a layout of the whole take (the
+/// geometry of every step, as in presentation mode).
+fn reveal_in_take(
+    doc: &Document,
+    step: u32,
+    id: &str,
+    part: Part,
+) -> BTreeMap<(usize, usize), u64> {
+    let opts = LayoutOptions {
+        stable: true,
+        ..options(step, 100)
+    };
+    let g = stable_geometry(doc, &opts);
+    let (l, trace) = layout_traced(doc, &Theme::dark(), &opts, Some(&g));
+    let plan = Plan::new(&l.canvas, &trace, doc).expect("the step has an effect");
+    let mut work = l.canvas.clone();
+    let mut first = BTreeMap::new();
+    let cells = painted(&trace, l.canvas.width, id, part);
+    for t in (0..=plan.duration_ms()).rev() {
+        plan.paint(&mut work, t);
+        for &(x, y) in &cells {
+            if work.get(x, y) != l.canvas.get(x, y) {
+                first.entry((x, y)).or_insert(t + 1);
+            }
+        }
+    }
+    cells
+        .into_iter()
+        .map(|c| (c, first.get(&c).copied().unwrap_or(0)))
+        .collect()
+}
+
+#[test]
+fn a_stroke_that_other_strokes_cover_whole_does_not_delay_the_text() {
+    // hB and hC, underlines with draw at step 2, cover the underline of hA
+    // whole: nothing of hA draws. The text of the callout c1 comes after
+    // the strokes that show, as if hA had no effect.
+    let doc = open(&fixture("render/enter_effects/covered.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    assert!(
+        painted(&trace, l.canvas.width, "hA", Part::Stroke).is_empty(),
+        "hA keeps cells of its stroke: the fixture does not cover it"
+    );
+    let mut plain = doc.clone();
+    plain
+        .annotations
+        .iter_mut()
+        .find(|a| a.id == "hA")
+        .unwrap()
+        .effect = None;
+    let text = |d: &Document| reveal_in_take(d, 2, "c1", Part::Text);
+    let (with, without) = (text(&doc), text(&plain));
+    assert!(!with.is_empty());
+    assert_eq!(
+        with, without,
+        "the text of c1 waits for the hidden stroke of hA"
+    );
+}
+
+#[test]
+fn an_annotation_without_an_effect_between_two_with_draw_is_whole_from_the_first_frame() {
+    // a1 and a3 have draw, a2 has no effect: a2 is whole from the first
+    // frame, also where a3 painted over it after a1.
+    let doc = open(&fixture("render/enter_effects/three_arrows_mixed.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 2 has an effect");
+    let ix = |id: &str| trace.ids.iter().position(|x| x == id).unwrap();
+    let (a2, a3) = (ix("a2"), ix("a3"));
+    let start = at_time(&plan, &l.canvas, 0);
+    // Where a path starts, its stroke starts at 0 ms.
+    let starts: Vec<(usize, usize)> = trace.paths.iter().map(|(_, p)| p[0]).collect();
+    let mut checked = 0;
+    for (&i, r) in &trace.cells {
+        let (x, y) = (i % l.canvas.width, i / l.canvas.width);
+        if r.ann == a3
+            && r.under.len() >= 2
+            && r.under.last().is_some_and(|(p, _, _)| *p == a2)
+            && !starts.contains(&(x, y))
+        {
+            assert_eq!(
+                start.get(x, y),
+                Some(&r.before),
+                "({x}, {y}) does not show a2 at 0 ms"
+            );
+            checked += 1;
+        }
+    }
+    assert!(checked > 0, "no cell of a3 over a2 over a1");
+}
+
+#[test]
+fn a_box_draws_its_border_in_the_same_times_when_an_arrow_crosses_its_fill() {
+    // The arrow a1 of the same step crosses the fill of the box b1 and
+    // takes some of its cells. The border of b1 comes in at the same times
+    // as when the arrow is at another step: only the cells of its stroke
+    // time a stroke, never its fill.
+    let doc = open(&fixture("render/enter_effects/box_fill_crossed.tiza"));
+    let opts = LayoutOptions {
+        stable: true,
+        ..options(2, 100)
+    };
+    let (_, trace) = layout_traced(
+        &doc,
+        &Theme::dark(),
+        &opts,
+        Some(&stable_geometry(&doc, &opts)),
+    );
+    let b1 = trace.ids.iter().position(|x| x == "b1").unwrap();
+    assert!(
+        trace.cells.values().any(|r| r
+            .under
+            .iter()
+            .any(|(p, part, _)| *p == b1 && *part == Part::Recolor)),
+        "a1 takes no cell of the fill of b1"
+    );
+    let mut later = doc.clone();
+    later
+        .annotations
+        .iter_mut()
+        .find(|a| a.id == "a1")
+        .unwrap()
+        .step = 3;
+    let crossed = reveal_in_take(&doc, 2, "b1", Part::Stroke);
+    let alone = reveal_in_take(&later, 2, "b1", Part::Stroke);
+    assert!(crossed.len() > 4);
+    for (cell, t) in &crossed {
+        assert_eq!(Some(t), alone.get(cell), "{cell:?} of the border of b1");
+    }
 }

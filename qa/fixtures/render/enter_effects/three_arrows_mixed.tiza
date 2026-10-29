@@ -1,0 +1,65 @@
+{
+ "schema": 1,
+ "title": "Three arrows at one step that end at the same line, the middle one with no effect",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let total = items.iter().map(|x| x.price).sum::<u32>();",
+  "    println!(\"{total}\");",
+  "    let z = 0;",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "n1",
+   "step": 1,
+   "type": "note",
+   "line": 1,
+   "text": "step 1"
+  },
+  {
+   "id": "a1",
+   "step": 2,
+   "type": "arrow",
+   "from": {
+    "line": 3,
+    "col": 15
+   },
+   "to": {
+    "line": 2,
+    "col": 20
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "a2",
+   "step": 2,
+   "type": "arrow",
+   "from": {
+    "line": 3,
+    "col": 15
+   },
+   "to": {
+    "line": 2,
+    "col": 36
+   }
+  },
+  {
+   "id": "a3",
+   "step": 2,
+   "type": "arrow",
+   "from": {
+    "line": 3,
+    "col": 15
+   },
+   "to": {
+    "line": 2,
+    "col": 44
+   },
+   "effect": "draw"
+  }
+ ]
+}

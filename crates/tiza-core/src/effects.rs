@@ -167,7 +167,9 @@ impl Plan {
                 "the stroke of {} has no path",
                 trace.ids[ann]
             );
-            if cells.is_empty() {
+            // A stroke that other annotations covered whole shows nothing:
+            // it does not time the text of the step.
+            if !cells.iter().any(|&(_, _, own)| own) {
                 continue;
             }
             cells.sort_unstable();

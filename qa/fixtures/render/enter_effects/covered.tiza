@@ -1,0 +1,67 @@
+{
+ "schema": 1,
+ "title": "An underline with draw that two other underlines cover whole",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let total_value = first_item_price + second_item_price + third;",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "n1",
+   "step": 1,
+   "type": "note",
+   "line": 1,
+   "text": "s1"
+  },
+  {
+   "id": "hA",
+   "step": 2,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 2,
+    "start": 4,
+    "end": 66
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "hB",
+   "step": 2,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 2,
+    "start": 4,
+    "end": 30
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "hC",
+   "step": 2,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 2,
+    "start": 30,
+    "end": 66
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "c1",
+   "step": 2,
+   "type": "callout",
+   "from_line": 1,
+   "text": "text",
+   "width": 10,
+   "effect": "draw"
+  }
+ ]
+}
