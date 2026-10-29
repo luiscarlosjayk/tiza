@@ -190,7 +190,7 @@ impl std::fmt::Display for Sym {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Canvas {
     pub width: usize,
     pub height: usize,
@@ -248,6 +248,26 @@ pub struct Trace {
     /// with the spotlights of the step before.
     pub dim_from: std::collections::BTreeMap<usize, CellStyle>,
     painter: Option<(usize, Part)>,
+}
+
+impl Clone for Canvas {
+    fn clone(&self) -> Self {
+        Self {
+            width: self.width,
+            height: self.height,
+            cells: self.cells.clone(),
+            trace: self.trace.clone(),
+        }
+    }
+
+    /// Keeps the buffer of `self`: an encoder copies each frame of a take
+    /// into the same canvas.
+    fn clone_from(&mut self, source: &Self) {
+        self.width = source.width;
+        self.height = source.height;
+        self.cells.clone_from(&source.cells);
+        self.trace.clone_from(&source.trace);
+    }
 }
 
 impl Canvas {
@@ -432,6 +452,14 @@ impl Canvas {
 
     pub fn get(&self, x: usize, y: usize) -> Option<&Cell> {
         self.idx(x, y).map(|i| &self.cells[i])
+    }
+
+    /// Sets cell (`x`, `y`) to `cell` as it is, with none of the rules of
+    /// [`Canvas::put`]: a copy of a cell of another canvas.
+    pub(crate) fn set_cell(&mut self, x: usize, y: usize, cell: Cell) {
+        if let Some(i) = self.idx(x, y) {
+            self.cells[i] = cell;
+        }
     }
 
     /// Writes a grapheme (width 1 or 2) at (x, y). Returns the width used.

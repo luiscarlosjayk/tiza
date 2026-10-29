@@ -382,17 +382,24 @@ impl Plan {
     /// start: (canvas, how long it stays). The final drawing is not one
     /// of them.
     pub fn frames(&self, canvas: &Canvas, frame_ms: u64) -> Vec<(Canvas, u64)> {
-        let frame_ms = frame_ms.max(1);
         let mut out = Vec::new();
+        self.each_frame(canvas, frame_ms, |c, ms| out.push((c.clone(), ms)));
+        out
+    }
+
+    /// [`Plan::frames`] one at a time: each frame is painted over one work
+    /// canvas and lent to `f` with how long it stays, so no frame is
+    /// copied.
+    pub fn each_frame(&self, canvas: &Canvas, frame_ms: u64, mut f: impl FnMut(&Canvas, u64)) {
+        let frame_ms = frame_ms.max(1);
         let mut work = canvas.clone();
         let mut t = 0;
         while t < self.duration_ms {
             self.paint(&mut work, t);
             let next = (t + frame_ms).min(self.duration_ms);
-            out.push((work.clone(), next - t));
+            f(&work, next - t);
             t = next;
         }
-        out
     }
 }
 

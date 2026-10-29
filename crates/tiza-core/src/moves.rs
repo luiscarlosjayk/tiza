@@ -1337,14 +1337,21 @@ impl TypingPlan {
     /// recording draws between the step's arrival and its annotations.
     pub fn frames(&self, first_line: u32) -> Vec<(Vec<String>, u64)> {
         let mut out = Vec::new();
+        self.each_frame(first_line, |code, ms, _| out.push((code, ms)));
+        out
+    }
+
+    /// [`TypingPlan::frames`] one at a time: each code is made when `f`
+    /// takes it, so the codes of the animation are never all held at once.
+    /// The last call, the full code, has `true`.
+    pub fn each_frame(&self, first_line: u32, mut f: impl FnMut(Vec<String>, u64, bool)) {
         for (k, item) in self.items.iter().enumerate() {
             for revealed in 0..item.units {
-                out.push((self.code_at(first_line, k, revealed), item.speed_ms));
+                f(self.code_at(first_line, k, revealed), item.speed_ms, false);
             }
         }
         let last_speed = self.items.last().map_or(0, |i| i.speed_ms);
-        out.push((self.full.clone(), last_speed));
-        out
+        f(self.full.clone(), last_speed, true);
     }
 }
 
