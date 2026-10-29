@@ -35,9 +35,19 @@ pub const STROKE_MS_PER_CELL: u64 = 12;
 pub const FADE_MS: u64 = 240;
 /// Time the text of a callout or a label takes to fade in.
 pub const TEXT_FADE_MS: u64 = 200;
-/// Time between two frames of an effect on the screen, in microseconds:
-/// 30 fps. A whole number of milliseconds would not be 30 fps.
-pub const SCREEN_FRAME_US: u64 = 33_333;
+/// The frames a second of an effect on the screen when `effect_fps` in
+/// `[defaults]` of config.toml does not set them.
+pub const SCREEN_FPS: u16 = 60;
+/// The frames a second that `effect_fps` takes.
+pub const SCREEN_FPS_VALUES: [u16; 2] = [30, 60];
+
+/// The time between two frames of an effect on the screen at `fps`
+/// frames a second, to the microsecond: 33,333 µs at 30 and 16,667 µs at
+/// 60. A whole number of milliseconds would not give 30 or 60.
+pub fn screen_frame_period(fps: u16) -> std::time::Duration {
+    let fps = u64::from(fps.max(1));
+    std::time::Duration::from_micros((1_000_000 + fps / 2) / fps)
+}
 /// Time between two frames of an effect in a GIF, WebP or video (a
 /// multiple of the 10 ms unit of a GIF).
 pub const EXPORT_FRAME_MS: u64 = 40;

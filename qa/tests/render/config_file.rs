@@ -27,19 +27,19 @@ fn a_broken_line_warns_and_the_rest_of_the_file_applies() {
             "a value that is missing",
             b"[defaults]\nmouse = true\nnumbers = \nwidth = 70\n",
             "cfg.toml:3: [defaults] numbers:",
-            "  mouse     on       config",
+            "  mouse      on       config",
         ),
         (
             "a byte that is not UTF-8",
             b"# caf\xe9 au lait\n[defaults]\nnumbers = false\nmouse = \"o\xffn\"\n",
             "cfg.toml:4: this line is not valid UTF-8",
-            "  numbers   off      config",
+            "  numbers    off      config",
         ),
         (
             "a key that is in the file two times",
             b"[defaults]\nnumbers = false\nnumbers = true\n[defaults]\nmouse = true\n",
             "cfg.toml:3: [defaults] numbers: duplicate key, the first value is used",
-            "  numbers   off      config",
+            "  numbers    off      config",
         ),
         (
             "a table header that is not closed",
@@ -69,7 +69,7 @@ fn a_broken_line_warns_and_the_rest_of_the_file_applies() {
         b"[theme]\naccent = \"#ffffff\"\n[defaults\nnumbers = false\n",
     );
     let (_, out, _) = tiza_with_config(&dir, "cfg.toml", &["config"]);
-    assert!(out.contains("  numbers   on       built-in"), "{out}");
+    assert!(out.contains("  numbers    on       built-in"), "{out}");
     assert!(!out.contains("numbers = false"), "{out}");
 }
 
@@ -82,12 +82,13 @@ fn tiza_config_shows_the_file_the_values_and_the_warnings() {
     assert_eq!(code, 0, "{err}");
     assert!(out.starts_with("file: cfg.toml\n"), "{out}");
     for row in [
-        "  pad       0 1      built-in",
-        "  numbers   off      config",
-        "  mouse     off      built-in",
-        "  autosave  on       built-in",
-        "  layout    dynamic  built-in",
-        "  width     100      built-in",
+        "  pad        0 1      built-in",
+        "  numbers    off      config",
+        "  mouse      off      built-in",
+        "  autosave   on       built-in",
+        "  layout     dynamic  built-in",
+        "  width      100      built-in",
+        "  effect_fps 60       built-in",
         "  io ⇄  network I/O  @cyan",
     ] {
         assert!(out.contains(&format!("{row}\n")), "{row:?} in:\n{out}");

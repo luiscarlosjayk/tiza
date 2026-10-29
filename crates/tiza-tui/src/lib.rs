@@ -491,7 +491,7 @@ fn event_loop(
             needs_draw = false;
             // The end of the frame: after a slow frame, the loop rests.
             let drawn = Instant::now();
-            let period = Duration::from_micros(tiza_core::effects::SCREEN_FRAME_US);
+            let period = app.effect_frame_period();
             frame_due = started(app).map(|s| {
                 let due = frame_due_of(frame_due, Some(s));
                 (s, next_frame_due(due, drawn, period))

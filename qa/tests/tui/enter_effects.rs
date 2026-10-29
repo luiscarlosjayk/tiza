@@ -497,7 +497,7 @@ fn with_no_hold_an_effect_goes_by_its_clock() {
 
 #[test]
 fn the_frames_of_an_effect_keep_to_a_grid() {
-    let p = Duration::from_micros(tiza_core::effects::SCREEN_FRAME_US);
+    let p = tiza_core::effects::screen_frame_period(30);
     let t0 = Instant::now();
     let next = tiza_tui::next_frame_due;
     // The first frame of an effect starts the grid.
@@ -516,7 +516,7 @@ fn the_frames_of_an_effect_keep_to_a_grid() {
 
 #[test]
 fn the_loop_waits_until_the_next_frame_is_due() {
-    let p = Duration::from_micros(tiza_core::effects::SCREEN_FRAME_US);
+    let p = tiza_core::effects::screen_frame_period(30);
     let now = Instant::now();
     let wait = tiza_tui::frame_wait;
     // No frame of the effect yet: the first one shows at once, also when
@@ -561,19 +561,22 @@ fn a_new_effect_starts_with_no_frame_due() {
 }
 
 /// The gaps (ms, sorted) between the frames of the effect of step 2 of
-/// `drop.tiza` with `effect:late-frames`, from the second frame on: each
+/// `drop.tiza`, from the second frame on, with the test hook `hook` and
+/// `effect_fps = 30` in the config file. With `effect:late-frames`, each
 /// frame takes 50 ms more, longer than the 33 ms between two frames, so
 /// every frame is late. With `mouse`, the TUI has mouse capture on and the
 /// mouse moves about every 5 ms during the effect.
-fn late_frame_gaps(name: &str, mouse: bool) -> Vec<f64> {
+fn frame_gaps(name: &str, hook: &str, mouse: bool) -> Vec<f64> {
     let dir = scratch(name);
     let source = fixture("shared/enter_effects/drop.tiza");
     std::fs::copy(&source, dir.join("drop.tiza")).unwrap();
+    std::fs::write(dir.join("cfg.toml"), "[defaults]\neffect_fps = 30\n").unwrap();
     let body = r##"
 import json
-binary, cwd, mouse = sys.argv[1], sys.argv[2], sys.argv[3] == "mouse"
+binary, cwd, mouse, hook = sys.argv[1], sys.argv[2], sys.argv[3] == "mouse", sys.argv[4]
 os.chdir(cwd)
-env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="effect:late-frames")
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK=hook,
+           TIZA_CONFIG=os.path.join(cwd, "cfg.toml"))
 argv = [binary, "--no-save", "--present", "--theme", "dark", "--socket", "s.sock"]
 s = Pty(argv + (["--mouse"] if mouse else []) + ["drop.tiza"], 30, 100, env=env)
 MARK = b"\x1b[?25l"
@@ -613,6 +616,7 @@ print("EXIT", s.finish(10), flush=True)
             tiza_qa::bin().to_str().unwrap(),
             dir.to_str().unwrap(),
             if mouse { "mouse" } else { "keys" },
+            hook,
         ],
     );
     assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
@@ -637,7 +641,7 @@ fn after_a_late_frame_the_loop_rests_one_period() {
     // about 83 ms after the one before. A loop that does not rest draws
     // again at once, about 50 ms after, at 100 % of a core. A busy machine
     // makes most gaps longer; the median is the check.
-    let gaps = late_frame_gaps("effect-late", false);
+    let gaps = frame_gaps("effect-late", "effect:late-frames", false);
     let median = gaps[gaps.len() / 2];
     assert!(median >= 70.0, "median gap {median:.1} ms: {gaps:?}");
 }
@@ -647,7 +651,7 @@ fn a_moving_mouse_draws_no_frame_more_during_an_effect() {
     // With mouse capture on, the terminal sends each motion of the mouse.
     // A motion changes nothing on the screen: the frames still come one
     // period after a late frame, not each time the mouse moves.
-    let gaps = late_frame_gaps("effect-mouse", true);
+    let gaps = frame_gaps("effect-mouse", "effect:late-frames", true);
     let median = gaps[gaps.len() / 2];
     assert!(median >= 70.0, "median gap {median:.1} ms: {gaps:?}");
 }
@@ -735,4 +739,26 @@ fn outside_presentation_a_key_that_moves_the_view_still_ends_the_effect() {
         line,
         "the key moved the cursor"
     );
+}
+
+#[test]
+fn effect_fps_in_the_config_sets_the_frames_a_second_of_an_effect() {
+    // `effect_fps = 30` in `[defaults]`: the frames of an effect come
+    // about 33 ms apart, not about 17 ms as at the 60 of the default. A
+    // busy machine only makes the gaps longer.
+    let gaps = frame_gaps("effect-fps", "effect:slow", false);
+    let median = gaps[gaps.len() / 2];
+    assert!(median >= 25.0, "median gap {median:.1} ms: {gaps:?}");
+}
+
+#[test]
+fn an_effect_plays_at_60_frames_a_second_unless_the_config_says_30() {
+    let live = scrolled_effect("effect-fps-default");
+    let (default, thirty) = live.with(|a| {
+        let default = a.effect_frame_period();
+        a.config_defaults.effect_fps = Some(30);
+        (default, a.effect_frame_period())
+    });
+    assert_eq!(default, Duration::from_micros(16_667));
+    assert_eq!(thirty, Duration::from_micros(33_333));
 }

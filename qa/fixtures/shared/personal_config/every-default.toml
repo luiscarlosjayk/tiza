@@ -9,3 +9,4 @@ mouse = true
 autosave = false
 layout = "stable"
 width = 60
+effect_fps = 30

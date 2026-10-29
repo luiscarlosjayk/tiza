@@ -21,7 +21,15 @@ use crate::model::MarkStyle;
 use crate::theme::ThemeOverrides;
 
 /// The keys `[defaults]` accepts, in the order `tiza config` lists them.
-pub const DEFAULT_KEYS: &[&str] = &["pad", "numbers", "mouse", "autosave", "layout", "width"];
+pub const DEFAULT_KEYS: &[&str] = &[
+    "pad",
+    "numbers",
+    "mouse",
+    "autosave",
+    "layout",
+    "width",
+    "effect_fps",
+];
 
 /// The fields of a `[styles.NAME]` table (those of `:style`).
 pub const STYLE_FIELDS: &[&str] = &["glyph", "legend", "color"];
@@ -67,6 +75,9 @@ pub struct Defaults {
     pub layout: Option<LayoutMode>,
     /// `width = 120`: the width of `tiza render` and `tiza check`.
     pub width: Option<usize>,
+    /// `effect_fps = 30`: the frames a second of an enter effect on the
+    /// screen, one of [`crate::effects::SCREEN_FPS_VALUES`].
+    pub effect_fps: Option<u16>,
 }
 
 /// What the config file holds, after every entry was checked.
@@ -1167,6 +1178,19 @@ fn defaults_table(t: &DeTable<'_>, cx: &mut Ctx) -> Defaults {
                     )),
                 }
             }
+            "effect_fps" => {
+                let n = match value {
+                    DeValue::Integer(i) if i.radix() == 10 => i.as_str().parse::<u16>().ok(),
+                    _ => None,
+                };
+                match n.filter(|n| crate::effects::SCREEN_FPS_VALUES.contains(n)) {
+                    Some(n) => {
+                        d.effect_fps = Some(n);
+                        None
+                    }
+                    None => Some("use 30 or 60".to_string()),
+                }
+            }
             other => {
                 cx.ignore(
                     k,
@@ -1344,7 +1368,7 @@ mod tests {
     #[test]
     fn defaults_take_the_values_of_their_commands() {
         let c = cfg(
-            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\n",
+            "[defaults]\npad = \"1 3\"\nnumbers = false\nmouse = \"on\"\nautosave = false\nlayout = \"stable\"\nwidth = 120\neffect_fps = 30\n",
         );
         assert!(c.warnings.is_empty(), "{:?}", c.warning_lines());
         assert_eq!(
@@ -1356,9 +1380,20 @@ mod tests {
                 autosave: Some(false),
                 layout: Some(LayoutMode::Stable),
                 width: Some(120),
+                effect_fps: Some(30),
             }
         );
         assert_eq!(cfg("[defaults]\npad = 2").defaults.pad, Some((2, 4)));
+        // Only 30 and 60: another number is a warning, and 60 applies.
+        let c = cfg("[defaults]\neffect_fps = 45\n");
+        assert_eq!(c.defaults.effect_fps, None);
+        assert!(
+            c.warning_lines()
+                .iter()
+                .any(|w| w.contains("[defaults] effect_fps: 45 is not valid: use 30 or 60")),
+            "{:?}",
+            c.warning_lines()
+        );
         assert_eq!(cfg("[defaults]\npad = \"2,1\"").defaults.pad, Some((2, 1)));
     }
 

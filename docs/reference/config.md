@@ -14,6 +14,7 @@ mouse = true
 autosave = false
 layout = "stable"
 width = 120
+effect_fps = 30
 
 [styles.decision]
 glyph = "◆"
@@ -75,11 +76,13 @@ The values that a session starts with.
 | `autosave` | `true` or `false` | `true` | Autosave of the document. |
 | `layout` | `"stable"` or `"dynamic"` | `"dynamic"` | The layout of normal mode. |
 | `width` | integer | `100` | The width of `tiza render` and `tiza check`, from 20 to 400 columns. |
+| `effect_fps` | `30` or `60` | `60` | The frames each second of an enter effect on the screen. |
 
 - `pad = "V"` sets `H` to two times `V`. A number, for example `pad = 2`, does the same. `pad = "default"` gives the built-in value.
 - `numbers`, `mouse` and `autosave` also take the strings `"on"`, `"off"`, `"yes"` and `"no"`.
 - `pad` changes only the screen. An export does not draw the padding.
 - In presentation mode, the layout is always stable.
+- `effect_fps` changes only the screen. A GIF, a WebP or a video plays an effect at 25 frames each second.
 
 ## Which value wins
 
@@ -93,6 +96,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 | `autosave` | `--no-save` | No | `:autosave on`, `:autosave off` |
 | `layout` | No flag | No | `:layout stable`, `:layout dynamic` |
 | `width` | `--width N` of `tiza render` and `tiza check` | No | No command |
+| `effect_fps` | No flag | No | No command |
 
 - **`pad`:** `--padding` wins over the padding of the document for the session. `:pad V H` saves the padding in the document. `:pad default` removes it from the document. Then the padding of the config file applies. When the file has no `pad`, the built-in value applies.
 - **`numbers`:** When the document has a `numbers` field, it wins over the config file. `:numbers on` and `:numbers off` always write the field, also when the gutter is already in that state. Then the document looks the same on a computer without your config file. To use the config file again, remove the field from the `.tiza` file.
@@ -100,6 +104,7 @@ A flag, a [`:` command](commands.md) and the document win over the config file. 
 - **`autosave`:** `--no-save` wins over `autosave = true`. `:autosave` changes it for the session. `:autosave on` also ends no-save mode.
 - **`layout`:** `:layout` changes it for the session.
 - **`width`:** For `tiza render` and `tiza check`, `--width` wins, then the file, then 100. For the `check` method and the `check` MCP tool, their `width` argument wins, then the file of the instance, then 100.
+- **`effect_fps`:** Only the file sets it, for every session.
 
 ## `[styles]`
 
@@ -140,12 +145,13 @@ With the file of [An example](#an-example), it shows:
 ```text
 file: /home/dev/.config/tiza/config.toml
 defaults:
-  pad       1 2      config
-  numbers   off      config
-  mouse     on       config
-  autosave  off      config
-  layout    stable   config
-  width     120      config
+  pad        1 2      config
+  numbers    off      config
+  mouse      on       config
+  autosave   off      config
+  layout     stable   config
+  width      120      config
+  effect_fps 30       config
 styles (config; a document style with the same name wins):
   decision ◆  decision  @purple
 theme (config): [dark] accent = #a6e3a1, [light] accent = #b7410e
@@ -202,7 +208,7 @@ For example, a file with six errors gives these warnings:
 
 ```text
 tiza: config: /home/dev/.config/tiza/config.toml:2: [defaults] width: 5 is not valid: use a number of columns between 20 and 400
-tiza: config: /home/dev/.config/tiza/config.toml:3: [defaults] colour: unknown key (keys: pad, numbers, mouse, autosave, layout, width)
+tiza: config: /home/dev/.config/tiza/config.toml:3: [defaults] colour: unknown key (keys: pad, numbers, mouse, autosave, layout, width, effect_fps)
 tiza: config: /home/dev/.config/tiza/config.toml:5: [defaults] numbers: duplicate key, the first value is used
 tiza: config: /home/dev/.config/tiza/config.toml:7: [styles] risk: a style needs a glyph, so Tiza ignores lines 7-9
 tiza: config: /home/dev/.config/tiza/config.toml:11: unclosed table, expected `]`: the table header has an error, so Tiza ignores lines 11-12

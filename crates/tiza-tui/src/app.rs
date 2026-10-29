@@ -2950,6 +2950,17 @@ impl App {
         }
     }
 
+    /// The time between two frames of an enter effect on the screen: from
+    /// `effect_fps` in `[defaults]` of config.toml, else
+    /// [`tiza_core::effects::SCREEN_FPS`].
+    pub fn effect_frame_period(&self) -> std::time::Duration {
+        tiza_core::effects::screen_frame_period(
+            self.config_defaults
+                .effect_fps
+                .unwrap_or(tiza_core::effects::SCREEN_FPS),
+        )
+    }
+
     pub fn is_playing_effect(&self) -> bool {
         self.effect.is_some()
     }

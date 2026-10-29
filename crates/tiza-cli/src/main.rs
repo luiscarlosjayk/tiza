@@ -1277,7 +1277,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
     let d = &cfg.defaults;
     let on = |b: bool| if b { "on" } else { "off" }.to_string();
     let (pv, ph) = tiza_tui::ui::DEFAULT_PADDING;
-    let rows: [(&str, Option<String>, String); 6] = [
+    let rows: [(&str, Option<String>, String); 7] = [
         (
             "pad",
             d.pad.map(|(v, h)| format!("{v} {h}")),
@@ -1296,6 +1296,11 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
             d.width.map(|w| w.to_string()),
             tiza_core::check::DEFAULT_WIDTH.to_string(),
         ),
+        (
+            "effect_fps",
+            d.effect_fps.map(|f| f.to_string()),
+            tiza_core::effects::SCREEN_FPS.to_string(),
+        ),
     ];
     debug_assert!(rows.iter().map(|r| r.0).eq(DEFAULT_KEYS.iter().copied()));
     let _ = writeln!(out, "defaults:");
@@ -1304,7 +1309,7 @@ fn config_report(cfg: &tiza_core::config::Config) -> String {
             Some(v) => (v, "config"),
             None => (builtin, "built-in"),
         };
-        let _ = writeln!(out, "  {key:<9} {value:<8} {from}");
+        let _ = writeln!(out, "  {key:<10} {value:<8} {from}");
     }
     if cfg.styles.is_empty() {
         let _ = writeln!(out, "styles: none");
