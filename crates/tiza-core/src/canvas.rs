@@ -219,9 +219,14 @@ pub struct Traced {
     /// The annotation, as an index in [`Trace::ids`].
     pub ann: usize,
     pub part: Part,
-    /// The cell as it was before any annotation of the step painted it,
-    /// with what other painters did to it since.
+    /// The cell as the annotation found it: as it was before the step,
+    /// or as another annotation of the step left it, with what other
+    /// painters did to it since.
     pub before: Cell,
+    /// When another annotation of the step painted the cell first: that
+    /// annotation and the cell as it found it. If that annotation comes
+    /// in with an effect, the first frame does not show what it painted.
+    pub under: Option<(usize, Cell)>,
 }
 
 /// The record of a traced layout: what the annotations of the step
@@ -324,8 +329,9 @@ impl Canvas {
     /// own cell gives it the new part (a box label over its border is
     /// text); a restyle keeps the stronger part. Another annotation of the
     /// step that writes a symbol takes the cell, from the cell as the one
-    /// before left it; one that only restyles it does not take it (the
-    /// fill of a box over a highlight).
+    /// before left it, and notes that one in [`Traced::under`]; one that
+    /// only restyles it does not take it (the fill of a box over a
+    /// highlight).
     fn trace_write(&mut self, i: usize, restyle: bool) {
         let Some(t) = self.trace.as_deref_mut() else {
             return;
@@ -339,6 +345,7 @@ impl Canvas {
                         if r.ann == ann {
                             r.part = if restyle { r.part.max(part) } else { part };
                         } else if !restyle {
+                            r.under = Some((r.ann, r.before.clone()));
                             r.ann = ann;
                             r.part = part;
                             r.before = before.clone();
@@ -348,6 +355,7 @@ impl Canvas {
                         ann,
                         part,
                         before: before.clone(),
+                        under: None,
                     });
             }
             // Another painter writes over it: the cell is its.
@@ -369,6 +377,9 @@ impl Canvas {
         // Another painter: what it does shows before the effect too.
         if let Some(r) = t.cells.get_mut(&i) {
             r.before.style = r.before.style.merge(style);
+            if let Some((_, cell)) = &mut r.under {
+                cell.style = cell.style.merge(style);
+            }
         }
     }
 
@@ -509,6 +520,13 @@ impl Canvas {
                         sym: Sym::new(sym),
                         style,
                     };
+                    if let Some((_, cell)) = &mut r.under {
+                        let (sym, style) = over(cell.sym.as_str(), cell.style);
+                        *cell = Cell {
+                            sym: Sym::new(sym),
+                            style,
+                        };
+                    }
                     if let Some(t) = self.trace.as_deref_mut() {
                         t.cells.insert(i, r);
                     }

@@ -21,7 +21,7 @@
 //! annotations of one step come in at the same time; one without an effect
 //! is whole from the first frame.
 
-use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace, is_crossing};
+use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace, Traced, is_crossing};
 use crate::model::Document;
 use crate::theme::{blend, host_color};
 
@@ -144,7 +144,7 @@ impl Plan {
                 let at = k as u64 * ms / n;
                 changes.push(Change {
                     i,
-                    before: trace.cells[&i].before.clone(),
+                    before: shown_before(&trace.cells[&i], &effects).clone(),
                     after: canvas.cell_at(i).clone(),
                     start: at,
                     end: at,
@@ -154,6 +154,7 @@ impl Plan {
         }
         for (&i, r) in &trace.cells {
             let after = canvas.cell_at(i).clone();
+            let before = shown_before(r, &effects);
             let change = match (effects[r.ann], r.part) {
                 (None, _) | (Some(Effect::Draw), Part::Stroke) => continue,
                 // Code it recolors: with its stroke.
@@ -161,28 +162,28 @@ impl Plan {
                     i,
                     before: Cell {
                         sym: after.sym.clone(),
-                        style: r.before.style,
+                        style: before.style,
                     },
                     start: 0,
                     end: timed[r.ann].unwrap_or(FADE_MS),
-                    from: Some(r.before.style),
+                    from: Some(before.style),
                     after,
                 },
                 // Text: after the longest stroke, from its own background.
                 (Some(Effect::Draw), Part::Text) => Change {
                     i,
-                    before: r.before.clone(),
+                    before: before.clone(),
                     start: stroke_end,
                     end: stroke_end + TEXT_FADE_MS,
-                    from: Some(hidden(&after, &r.before)),
+                    from: Some(hidden(&after, before)),
                     after,
                 },
                 // An older line that crosses the new stroke: a fade cannot
                 // mix a line into a junction, so the line shows until half
                 // of the fade, then the junction.
-                (Some(Effect::Fade), _) if is_crossing(&r.before.sym, &after.sym) => Change {
+                (Some(Effect::Fade), _) if is_crossing(&before.sym, &after.sym) => Change {
                     i,
-                    before: r.before.clone(),
+                    before: before.clone(),
                     start: FADE_MS / 2,
                     end: FADE_MS / 2,
                     from: None,
@@ -192,13 +193,13 @@ impl Plan {
                 // its symbol, else from its own background.
                 (Some(Effect::Fade), _) => Change {
                     i,
-                    before: r.before.clone(),
+                    before: before.clone(),
                     start: 0,
                     end: FADE_MS,
-                    from: Some(if r.before.sym == after.sym {
-                        r.before.style
+                    from: Some(if before.sym == after.sym {
+                        before.style
                     } else {
-                        hidden(&after, &r.before)
+                        hidden(&after, before)
                     }),
                     after,
                 },
@@ -322,6 +323,17 @@ impl Plan {
             t = next;
         }
         out
+    }
+}
+
+/// The cell that the first frame shows where `r` changes: the cell as
+/// its annotation found it, or, when another annotation of the step
+/// painted it first and comes in with an effect, the cell as that one
+/// found it, because the first frame does not show that one either.
+fn shown_before<'a>(r: &'a Traced, effects: &[Option<Effect>]) -> &'a Cell {
+    match &r.under {
+        Some((first, cell)) if effects[*first].is_some() => cell,
+        _ => &r.before,
     }
 }
 

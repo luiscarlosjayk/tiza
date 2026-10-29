@@ -279,6 +279,38 @@ fn a_crossing_in_a_fade_shows_the_line_until_half_of_the_fade() {
 }
 
 #[test]
+fn cells_that_two_strokes_share_come_with_their_stroke_in_their_colour() {
+    // Two arrows with draw at step 2 end at the same `─▶` on line 2. Those
+    // cells come with the stroke that draws them last: never in the first
+    // frame, and never in the colour of the other arrow.
+    let doc = open(&fixture("render/enter_effects/two_arrows.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 2 has an effect");
+    let c = &l.canvas;
+    let y = row_of(c, "let total");
+    let tip = xs(c, y, "▶")[0];
+    for x in [tip - 1, tip] {
+        let fin = c.get(x, y).unwrap().clone();
+        let start = at_time(&plan, c, 0).get(x, y).unwrap().clone();
+        assert_ne!(
+            start.sym,
+            fin.sym,
+            "({x}, {y}) shows {:?} in the first frame",
+            fin.sym.as_str()
+        );
+        for t in 0..=plan.duration_ms() {
+            let cell = at_time(&plan, c, t).get(x, y).unwrap().clone();
+            if cell.sym == fin.sym {
+                assert_eq!(
+                    cell.style, fin.style,
+                    "({x}, {y}) at {t} ms is not in its final colour"
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn an_underline_is_drawn_from_left_to_right() {
     let doc = open(&fixture("render/enter_effects/strokes.tiza"));
     let (c, first) = reveal(&doc, 2);
