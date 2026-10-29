@@ -448,13 +448,15 @@ fn typing_animation_in_the_tui() {
         "annotation.add",
         json!({"type": "note", "line": 2, "text": "first", "step": 1}),
     );
-    // A slow typing move, so we can observe the placeholder lines.
+    // A typing move of one line an hour, so that the test sees the
+    // placeholder lines: it does not end by its clock during the test, also
+    // on a slow machine. A key, a step change or an undo ends it.
     live.api_ok(
         "move.add",
         json!({
             "at_step": 2, "action": "code.patch", "op": "insert",
             "after": "let b = 2;", "content": "    let c = 3;\n    let d = 4;",
-            "typing": "line", "speed_ms": 400
+            "typing": "line", "speed_ms": 3_600_000
         }),
     );
     live.api_ok(
@@ -521,7 +523,7 @@ fn typing_animation_in_the_tui() {
         "move.add",
         json!({
             "at_step": 2, "action": "code.patch", "op": "insert",
-            "after": "let b = 2;", "content": "    let c = 3;", "typing": "char", "speed_ms": 1000
+            "after": "let b = 2;", "content": "    let c = 3;", "typing": "char", "speed_ms": 3_600_000
         }),
     );
     live.keys(&[KeyCode::Char('n')]);

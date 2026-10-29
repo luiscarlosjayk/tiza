@@ -799,6 +799,8 @@ fn a_save_while_a_move_types_waits_for_it() {
     goto(&live, 1);
     clear(&live);
     let src2 = src.clone();
+    // The step, the save and the checks in one call: no tick comes between
+    // them, so the typing cannot end first. Its natural end comes after.
     let (typing, pending) = live.with(move |app| {
         app.next_step();
         save(&src2, NEW.as_bytes());

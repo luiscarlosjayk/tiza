@@ -487,10 +487,12 @@ fn an_annotation_on_text_a_stale_move_writes_is_unanchored_never_drawn_elsewhere
 
 #[test]
 fn a_step_whose_only_move_is_stale_is_still_stepped_through_and_types_nothing() {
+    // One line an hour: a typing of the stale move would still run when
+    // the test looks, also on a slow machine.
     let (live, _dir) = demo(
         "typing",
         INI,
-        json!([{"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "; a\n; b", "typing": "line", "speed_ms": 500}]),
+        json!([{"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "; a\n; b", "typing": "line", "speed_ms": 3_600_000}]),
         json!([]),
         json!({}),
     );

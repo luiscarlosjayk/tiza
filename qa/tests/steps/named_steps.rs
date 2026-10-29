@@ -43,21 +43,53 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use serde_json::json;
 use tiza_core::Document;
 use tiza_core::fs;
-use tiza_qa::{Live, McpClient, fixture, scratch, tiza};
+use tiza_core::model::MAX_HOLD_MS;
+use tiza_qa::{Live, McpClient, fixture, scratch, tiza, typing_speed};
+use tiza_tui::app::App;
 
 /// The fixture (the ownership demo with moves, steps 0–5; 0–4 named),
 /// opened live with a throwaway save path.
 fn opened(name: &str) -> (Live, std::path::PathBuf) {
-    let dir = scratch(name);
-    let doc = fs::open(fixture("steps/named_steps/steps.tiza").to_str().unwrap())
+    opened_doc(name, steps_doc())
+}
+
+/// The document of the fixture.
+fn steps_doc() -> Document {
+    fs::open(fixture("steps/named_steps/steps.tiza").to_str().unwrap())
         .unwrap()
-        .document;
+        .document
+}
+
+/// [`opened`] on a document already loaded.
+fn opened_doc(name: &str, doc: Document) -> (Live, std::path::PathBuf) {
+    let dir = scratch(name);
     let live = Live::open(doc, dir.join("steps.tiza"), dir.join("live.sock"));
     (live, dir)
+}
+
+/// Whether the auto-advance would leave the step on screen now, if the
+/// countdown of the step had run for an hour: no wait and no tick of the
+/// thread of `Live` between the check and the time it gives.
+fn advances_after_an_hour(live: &Live) -> bool {
+    live.with(|a| a.auto_advance_tick(Instant::now() + Duration::from_secs(3600)))
+}
+
+/// Presses `key`, then runs `f`, in one call on the app thread: no tick
+/// comes between them, so a typing or a countdown cannot end first, also
+/// on a slow machine.
+fn press_then<R: Send + 'static>(
+    live: &Live,
+    key: KeyCode,
+    f: impl FnOnce(&mut App) -> R + Send + 'static,
+) -> R {
+    live.with(move |a| {
+        tiza_tui::on_key(a, key, KeyModifiers::NONE);
+        f(a)
+    })
 }
 
 fn step(live: &Live) -> u32 {
@@ -129,7 +161,8 @@ fn goto_jumps_as_a_full_replay_and_an_unknown_id_is_not_found() {
 
 #[test]
 fn goto_to_a_typed_step_lands_with_the_text_complete() {
-    let (live, _) = opened("typed");
+    // The typing held: it does not end by its clock during the test.
+    let (live, _) = opened_doc("typed", typing_speed(steps_doc(), MAX_HOLD_MS));
     live.api_ok("step.set", json!({"step": 1}));
     // Step 2 types eight lines; goto lands on it whole, no animation.
     live.api_ok("step.goto", json!({"id": "grow"}));
@@ -212,8 +245,7 @@ fn auto_advance_waits_for_the_typing_and_moves_on_alone() {
     assert_eq!(typing_ms, 8 * 160);
     live.api_ok("step.set", json!({"step": 1}));
     let t0 = Instant::now();
-    live.keys(&[KeyCode::Char('n')]);
-    assert!(live.with(|a| a.is_typing()));
+    assert!(press_then(&live, KeyCode::Char('n'), |a| a.is_typing()));
     wait_until("auto-advance to step 3", || step(&live) == 3);
     let took = t0.elapsed();
     assert!(
@@ -221,18 +253,22 @@ fn auto_advance_waits_for_the_typing_and_moves_on_alone() {
         "advanced before the typing and the 500 ms: {took:?}"
     );
     // Step 3 has no auto_advance_ms: it appears alone and stays.
-    std::thread::sleep(Duration::from_millis(300));
+    assert!(!advances_after_an_hour(&live), "step 3 must stay");
     assert_eq!(step(&live), 3, "step 3 must stay");
 
     // A key during the typing finishes it and is consumed (still step 2);
-    // the countdown starts from there.
+    // the countdown starts from there. Both keys in one call: the typing
+    // cannot end by its clock between them.
     live.api_ok("step.set", json!({"step": 1}));
-    live.keys(&[KeyCode::Char('n')]);
-    assert!(live.with(|a| a.is_typing()));
-    let t1 = Instant::now();
-    live.keys(&[KeyCode::Char('n')]);
-    assert_eq!(step(&live), 2, "the key only finished the typing");
-    assert!(!live.with(|a| a.is_typing()));
+    let (typing, t1, at, typing_after) = press_then(&live, KeyCode::Char('n'), |a| {
+        let typing = a.is_typing();
+        let t1 = Instant::now();
+        tiza_tui::on_key(a, KeyCode::Char('n'), KeyModifiers::NONE);
+        (typing, t1, a.doc.step, a.is_typing())
+    });
+    assert!(typing, "n did not start the typing");
+    assert_eq!(at, 2, "the key only finished the typing");
+    assert!(!typing_after, "the key did not finish the typing");
     wait_until("auto-advance after the key", || step(&live) == 3);
     assert!(
         t1.elapsed() >= Duration::from_millis(460),
@@ -303,16 +339,25 @@ fn loop_wraps_to_step_zero() {
 #[test]
 fn the_command_line_defers_the_auto_advance_until_esc() {
     let (live, _) = opened("cmdline");
+    // A countdown of a minute: it cannot end between `step.set` and the
+    // key, also on a slow machine. The test gives the time to the tick.
     live.api_ok(
         "scene.patch",
-        json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 100}]}),
+        json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 60_000}]}),
     );
     live.api_ok("step.set", json!({"step": 3}));
     live.keys(&[KeyCode::Char(':')]);
-    std::thread::sleep(Duration::from_millis(400));
+    assert!(
+        !advances_after_an_hour(&live),
+        "it did not wait for the command line"
+    );
     assert_eq!(step(&live), 3, "deferred while the command line is open");
     live.keys(&[KeyCode::Esc]);
-    wait_until("advance once the command line closes", || step(&live) == 4);
+    assert!(
+        advances_after_an_hour(&live),
+        "no advance once the command line closes"
+    );
+    assert_eq!(step(&live), 4);
 }
 
 #[test]
@@ -659,18 +704,28 @@ fn an_unknown_key_in_steps_is_warned_kept_and_breaks_nothing() {
 #[test]
 fn a_v_selection_defers_the_auto_advance() {
     let (live, _) = opened("visual");
+    // A countdown of a minute: it cannot end between `step.set` and the
+    // keys, also on a slow machine. The test gives the time to the tick.
+    // (A change of the document after `v` would end the selection.)
     live.api_ok(
         "scene.patch",
-        json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 100}]}),
+        json!({"steps": [{"step": 3, "id": "borrow", "auto_advance_ms": 60_000}]}),
     );
     live.api_ok("step.set", json!({"step": 3}));
     live.keys(&[KeyCode::Char('v'), KeyCode::Char('l')]);
     assert!(live.with(|a| a.selection().is_some()));
-    std::thread::sleep(Duration::from_millis(400));
+    assert!(
+        !advances_after_an_hour(&live),
+        "it did not wait for the selection"
+    );
     assert_eq!(step(&live), 3, "deferred while the selection is open");
     assert!(live.with(|a| a.selection().is_some()), "selection kept");
     live.keys(&[KeyCode::Esc]);
-    wait_until("advance once the selection closes", || step(&live) == 4);
+    assert!(
+        advances_after_an_hour(&live),
+        "no advance once the selection closes"
+    );
+    assert_eq!(step(&live), 4);
 }
 
 #[test]

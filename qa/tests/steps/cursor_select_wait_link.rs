@@ -27,7 +27,7 @@
 //! - AC8 ADR/README/agent guide/CHANGELOG and `examples/stack-and-queue.tiza`.
 //! - AC9 This file.
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use serde_json::{Value, json};
 use tiza_qa::{Live, McpClient, example, scratch, tiza, tiza_ok};
 
@@ -95,14 +95,20 @@ fn the_four_actions_load_apply_and_revert() {
         ]
     );
     // Reaching step 3 with `n`: the cursor jumps, the selection is drawn,
-    // the wait holds the step's annotations (any key ends it).
+    // the wait holds the step's annotations (any key ends it). `n`, the
+    // checks and `Esc` in one call: the wait of 800 ms cannot end by its
+    // clock before `Esc`, also on a slow machine.
     live.api_ok("step.set", json!({"step": 2}));
-    live.keys(&[KeyCode::Char('n')]);
-    assert_eq!(live.with(|a| a.doc.step), 3);
-    assert_eq!(live.with(|a| (a.cursor_line, a.cursor_col)), (22, 8));
-    assert!(live.with(|a| a.is_typing()), "the wait is an animation");
-    live.keys(&[KeyCode::Esc]);
-    assert!(!live.with(|a| a.is_typing()));
+    let (step, cursor, waiting, after_esc) = live.with(|a| {
+        tiza_tui::on_key(a, KeyCode::Char('n'), KeyModifiers::NONE);
+        let seen = (a.doc.step, (a.cursor_line, a.cursor_col), a.is_typing());
+        tiza_tui::on_key(a, KeyCode::Esc, KeyModifiers::NONE);
+        (seen.0, seen.1, seen.2, a.is_typing())
+    });
+    assert_eq!(step, 3);
+    assert_eq!(cursor, (22, 8));
+    assert!(waiting, "the wait is an animation");
+    assert!(!after_esc, "Esc did not end the wait");
     let (sel, cur) = live.with(|a| {
         let v = a.doc.view_at(3);
         (v.selection, v.cursor)
