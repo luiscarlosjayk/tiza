@@ -3523,10 +3523,16 @@ impl App {
     /// Advances the typing animation by the time elapsed. Returns true when
     /// the screen changed. Call it every loop iteration.
     pub fn typing_tick(&mut self) -> bool {
+        self.typing_tick_at(std::time::Instant::now())
+    }
+
+    /// [`App::typing_tick`] at `now`: a test gives the time, so that a slow
+    /// machine does not end the typing between two ticks.
+    pub fn typing_tick_at(&mut self, now: std::time::Instant) -> bool {
         let Some(t) = &mut self.typing else {
             return false;
         };
-        let elapsed = t.last.elapsed();
+        let elapsed = now.saturating_duration_since(t.last);
         let item = &t.plan.items[t.index];
         let speed = std::time::Duration::from_millis(item.speed_ms);
         let units = (elapsed.as_micros() / speed.as_micros().max(1)) as usize;

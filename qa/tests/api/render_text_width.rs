@@ -142,11 +142,13 @@ fn opened_doc(name: &str, doc: Value, cols: u16) -> Live {
 
 #[test]
 fn during_a_typing_animation_the_step_as_it_is_once_typed() {
+    // One character an hour: the typing does not end by its clock during
+    // the test, also on a slow machine.
     let doc = json!({
         "schema": 1, "source": {"path": "four.env", "language": "env", "first_line": 1},
         "code": {"file": "four.env"}, "step": 0,
         "moves": [{"at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
-                   "content": "PORT=9090", "typing": "char", "speed_ms": 1000}],
+                   "content": "PORT=9090", "typing": "char", "speed_ms": 3_600_000}],
         "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": NOTE}]
     });
     for cols in [100u16, 117, 140] {

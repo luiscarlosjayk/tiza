@@ -364,12 +364,13 @@ fn a_later_step_with_arrows_the_reply_is_what_check_says() {
 #[test]
 fn a_note_added_while_its_step_is_typed() {
     // Right after `next_step` the step's typing runs: the reply is about
-    // the step once typed, as the screen shows it then.
+    // the step once typed, as the screen shows it then. One character an
+    // hour: the typing does not end by its clock during the test.
     let mut doc = base_doc();
     doc["step"] = json!(0);
     doc["moves"] = json!([{
         "at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
-        "content": "PORT=9090", "typing": "char", "speed_ms": 1000
+        "content": "PORT=9090", "typing": "char", "speed_ms": 3_600_000
     }]);
     let (live, tiza) = opened_with("typing", doc);
     terminal(&live, 26);
