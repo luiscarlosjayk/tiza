@@ -148,12 +148,30 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
+    // A view that a `scroll` holds: its target where `align` puts it, on
+    // the rows of this frame (the annotations of the step came in, the
+    // take changed), until the cursor or the pointer moves.
+    if let Some(h) = app.scroll_held.clone() {
+        if (app.cursor_line, app.cursor_col) == h.cursor && app.pointer == h.pointer {
+            match h.scroll_on(&layout, visible, app.scroll) {
+                Some(top) => app.scroll = top,
+                // The target is not on this layout (`:focus` hides it).
+                None => app.scroll_held = None,
+            }
+        } else {
+            app.scroll_held = None;
+        }
+    }
+
     // Keep the cursor visible — with the virtual rows that belong to its
     // line: the title rows of boxes that open on it (above) and the rows
     // under it (emphasis, labels, bottom borders) when they fit.
     // Otherwise a box whose first line is the first visible row loses its
-    // top border and title.
-    if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {
+    // top border and title. A held view already shows the cursor, on the
+    // first line of its target.
+    if app.scroll_held.is_none()
+        && let Some(&row) = layout.row_of_line.get(&app.cursor_line)
+    {
         let mut top = row;
         while top > 0 && matches!(layout.rows[top - 1], tiza_core::layout::Row::BoxTop(_)) {
             top -= 1;

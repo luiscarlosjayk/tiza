@@ -98,6 +98,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `step N/N: empty, new annotations go here` | `:step N` opened the empty step after the last step. The status bar also counts that step. |
 | `step N is beyond the last step (M); :step K opens a new one` | `:step N` got a step number past `K`, the first empty step. |
 | `move #N added: step S shows FILE (:ref path to change the document's own file)` | `:link PATH` at step 1 or later added a `code.link` move. |
+| `move #N added: step S scrolls to TARGET (ALIGN)` | `:scroll` added a `scroll` move. |
+| `scroll: go to step 1 or later (step 0 is the code before any move)` | `:scroll` at step 0. |
 | `the .tiza now references FILE and shows its code (N annotations kept; u undoes)` | `:ref` or `:link` loaded the code of another file. |
 | `the .tiza now references FILE` | `:ref` or `:link` referenced a file that has the code on screen. |
 | `the .tiza already references FILE` | `:ref` or `:link` got no path, and the document references a file already. |
@@ -232,6 +234,8 @@ A command with wrong arguments shows its usage:
 | `` numbers X: use `:numbers on` or `:numbers off` `` | `:numbers` |
 | `` layout X: use `:layout stable` or `:layout dynamic` `` | `:layout` |
 | `usage: :link path[:A-B]   (without a path, uses the source file)` | `:link` |
+| `usage: :scroll N \| @'text' \| ID \| annotation=ID  [occurrence=N] [align=top\|center\|bottom\|show]` | `:scroll` |
+| `align=A: use top, center, bottom or show` | `:scroll` with an `align` that Tiza does not know |
 | `usage: :follow [on\|off]` | `:follow` |
 | `usage: :autosave [on\|off]` | `:autosave` |
 | `usage: :supervise [on\|off]` | `:supervise` |

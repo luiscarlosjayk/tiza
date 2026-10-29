@@ -359,3 +359,37 @@ fn presentation_chip_no_pop_on_return_and_colon_from_the_overlay() {
     let (err, _, _) = agent2.join().unwrap();
     assert!(err);
 }
+
+#[test]
+fn a_proposed_move_says_its_op_or_its_action() {
+    let live = Live::from_code("fn a() {}\nfn b() {}\n", "rs", "park-moves");
+    live.command("supervise on");
+    let mut handles = Vec::new();
+    for m in [
+        json!({"at_step": 1, "action": "code.patch", "op": "delete", "position": "2"}),
+        json!({"at_step": 1, "action": "cursor", "line": 2}),
+        json!({"at_step": 1, "action": "scroll", "line": 2}),
+    ] {
+        handles.push(send_async(&live.socket, "move.add", m));
+        wait_pending(&live, handles.len());
+    }
+    let sup = live.api_ok("supervise.status", json!({}));
+    let said: Vec<&str> = sup["pending"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["summary"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        said,
+        [
+            "add a delete move at step 1",
+            "add a cursor move at step 1",
+            "add a scroll move at step 1"
+        ]
+    );
+    live.command("supervise off");
+    for h in handles {
+        let _ = h.join();
+    }
+}

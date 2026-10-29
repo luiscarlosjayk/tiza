@@ -392,6 +392,10 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Show another file from this step on. At step 0, :link is :ref.",
             },
             Command {
+                syntax: ":scroll {N}|@'{text}'|{ID}",
+                desc: "At this step, move the view to a line, a text or an annotation.",
+            },
+            Command {
                 syntax: ":ref {path}[:{A-B}]",
                 desc: "Use this file as the code.",
             },

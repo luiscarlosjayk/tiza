@@ -55,6 +55,24 @@ For example, `:link src/lib.rs:10-30` shows lines 10 to 30 of `src/lib.rs` from 
 - At step 1 or later, `:link` also refuses digits, `-` and `.` that are not `A`, `A-B` or `A..B`.
 - `:link` does not put the lines of a range in order.
 
+## `:scroll`
+
+At step 1 or later, adds a `scroll` move at the step on screen. The view moves to the target from that step on.
+
+```
+:scroll N [align=A]
+:scroll @'TEXT' [occurrence=N] [align=A]
+:scroll ID [align=A]
+:scroll annotation=ID [align=A]
+```
+
+For example, `:scroll 120 align=top` puts line 120 at the top of the view at the step on screen.
+
+- `N` or `LN` (`50` or `L50`, as `move.list` writes it) is a line. `@'TEXT'` is a text: the view goes to its first match, or to the match that `occurrence=N` names. Another word is the `id` of an annotation. For an `id` that has the form of a line, for example `12` or `L5`, write `annotation=ID`.
+- `align=A` is `top`, `center`, `bottom` or `show`. Without it, the target goes to the center.
+- The view moves at once. See [Scroll](../document-format.md#scroll).
+- At step 0, `:scroll` gives an error, because step 0 is the code before any move.
+
 ## `:ref`
 
 Makes the document read its code from a file.

@@ -22,6 +22,7 @@ mod personal_defaults;
 mod personal_styles;
 mod presentation_command_line;
 mod resize_at_start;
+mod scroll_move;
 mod selection_after_a_command;
 mod set_text_and_title;
 mod startup_keys;

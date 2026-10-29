@@ -4,6 +4,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use tiza_core::moves::Camera;
 
 use serde_json::{Value, json};
 use tiza_core::effects::Effect;
@@ -97,7 +98,9 @@ fn selection_use(name: &str) -> Option<SelectionUse> {
         | "spot" | "spotlight" | "callout" | "co" | "set" | "follow" | "until" | "clear"
         | "del" | "delete" | "rm" | "color" | "col" | "label" | "step" | "s" | "next" | "goto"
         | "prev" | "focus" | "f" | "theme" | "t" | "present" | "p" | "lang" | "title"
-        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" => Ignores,
+        | "margin" | "numbers" | "nums" | "pad" | "padding" | "layout" | "autosave" | "scroll" => {
+            Ignores
+        }
         _ => return None,
     })
 }
@@ -145,6 +148,8 @@ pub struct TypingState {
     pub plan: moves::TypingPlan,
     pub index: usize,
     pub revealed: usize,
+    /// The next cue of the plan to apply.
+    cue: usize,
     /// The enter effects of the step play when the typing ends: a step
     /// forward, not the step the TUI opens at.
     pub then_effect: bool,
@@ -326,6 +331,9 @@ struct RequestState {
     step_ready_at: Option<std::time::Instant>,
     pointer: Option<tiza_core::protocol::PointerAt>,
     pointer_seen: ((u32, u32), Option<u32>),
+    scroll_applied: Option<(u32, usize)>,
+    scroll_step: u32,
+    scroll_held: Option<ScrollHeld>,
     agent_notice: Option<AgentNotice>,
     agent_deferred: Vec<(String, &'static str)>,
     following: bool,
@@ -360,6 +368,9 @@ impl RequestState {
             step_ready_at: app.step_ready_at,
             pointer: app.pointer,
             pointer_seen: app.pointer_seen,
+            scroll_applied: app.scroll_applied,
+            scroll_step: app.scroll_step,
+            scroll_held: app.scroll_held.clone(),
             agent_notice: app.agent_notice.clone(),
             agent_deferred: app.agent_deferred.clone(),
             following: app.follow.is_some(),
@@ -393,6 +404,9 @@ impl RequestState {
         app.step_ready_at = self.step_ready_at;
         app.pointer = self.pointer;
         app.pointer_seen = self.pointer_seen;
+        app.scroll_applied = self.scroll_applied;
+        app.scroll_step = self.scroll_step;
+        app.scroll_held = self.scroll_held;
         app.agent_notice = self.agent_notice;
         app.agent_deferred = self.agent_deferred;
         // Follow holds a file watcher: stopped, or started again.
@@ -694,6 +708,15 @@ pub struct App {
     /// change since then is a motion of the presenter's, and the pointer
     /// follows it ([`App::sync_pointer`]).
     pointer_seen: ((u32, u32), Option<u32>),
+    /// The `scroll` move the view last jumped to, by its id: a step change
+    /// jumps only when the camera of the new step is another one.
+    scroll_applied: Option<(u32, usize)>,
+    /// The step on screen when the view last jumped to a `scroll`: an undo
+    /// at that step does not send the view to the top.
+    scroll_step: u32,
+    /// After a jump, the view keeps the target where `align` puts it, frame
+    /// after frame, until the cursor or the pointer moves.
+    pub scroll_held: Option<ScrollHeld>,
     /// The last message about an agent change the view does not show,
     /// while it may still group the next one.
     agent_notice: Option<AgentNotice>,
@@ -790,11 +813,17 @@ impl App {
             step_ready_at: Some(std::time::Instant::now()),
             pointer: None,
             pointer_seen: ((cursor_line, cursor_line), None),
+            scroll_applied: None,
+            scroll_step: 0,
+            scroll_held: None,
             agent_notice: None,
             agent_deferred: Vec::new(),
         };
         app.rebuild_theme();
         app.mark_saved();
+        // Opened at a step whose camera is a `scroll`: the first frame
+        // shows its target.
+        app.camera_changed();
         app
     }
 
@@ -1526,6 +1555,131 @@ impl App {
         self.pointer = None;
     }
 
+    /// The camera of the step is `cam`, a `scroll`: a new one (or any one
+    /// with `jump`) puts the cursor on the first line of its target and
+    /// holds the view there; the same one keeps holding a held view on
+    /// its target, which a patch may have moved. Before the effects of the
+    /// step start, so that the pointer it turns off does not end them.
+    fn scroll_camera(&mut self, cam: tiza_core::moves::ScrollCam, jump: bool) {
+        if self.scroll_applied == Some(cam.id) && !jump {
+            match (&mut self.scroll_held, cam.lines) {
+                (Some(h), Some(lines)) => {
+                    h.lines = lines;
+                    h.align = cam.align;
+                    h.pointer = self.pointer;
+                    self.cursor_line = lines.0;
+                    self.cursor_col = 0;
+                    h.cursor = (lines.0, 0);
+                }
+                (Some(_), None) => self.scroll_held = None,
+                (None, _) => {}
+            }
+            return;
+        }
+        self.scroll_applied = Some(cam.id);
+        self.scroll_step = self.doc.step;
+        let Some(lines) = cam.lines else {
+            self.scroll_held = None;
+            return;
+        };
+        self.cursor_line = lines.0;
+        self.cursor_col = 0;
+        let mut held = ScrollHeld {
+            lines,
+            align: cam.align,
+            cursor: (lines.0, 0),
+            pointer: self.pointer,
+        };
+        // The pointer stays only when the new view shows its lines.
+        if let Some(p) = self.pointer {
+            let width = self.screen_width();
+            let layout = self.screen_layout_with_pointer(width);
+            let visible = self.screen_height();
+            if let Some(top) = held.scroll_on(&layout, visible, self.scroll) {
+                self.scroll = top;
+                let shown = |l: u32| {
+                    layout
+                        .row_of_line
+                        .get(&l)
+                        .is_some_and(|r| *r >= top && *r < top + visible)
+                };
+                if !(shown(p.line) && shown(p.to)) {
+                    self.pointer = None;
+                    held.pointer = None;
+                }
+            }
+        }
+        self.scroll_held = Some(held);
+    }
+
+    /// The document or its step changed other than by a step change (a
+    /// move added or deleted, an undo, the start): a `scroll` that is now
+    /// the camera of the step and is not the last one applied jumps; the
+    /// one applied keeps a held view on its target. Without a `scroll`
+    /// camera nothing moves.
+    fn camera_changed(&mut self) {
+        self.camera_changed_with(true);
+    }
+
+    /// [`App::camera_changed`]; without `jump` (a move deleted), a camera
+    /// that is now another `scroll` does not move the view: it counts as
+    /// applied, and the view is not held.
+    fn camera_changed_with(&mut self, jump: bool) {
+        let any = |m: &moves::Move| matches!(m.action, moves::MoveAction::Scroll(_));
+        if !self.doc.moves.iter().any(any)
+            && self.scroll_applied.is_none()
+            && self.scroll_held.is_none()
+        {
+            return;
+        }
+        // During a typing its cues move the view, at their place in the
+        // list: a change now (an agent edits an annotation) does not.
+        if self.typing.is_some() {
+            return;
+        }
+        let cam = self.doc.view_at(self.doc.step).camera;
+        match cam {
+            Camera::Scroll(cam) if !jump && self.scroll_applied != Some(cam.id) => {
+                self.scroll_applied = Some(cam.id);
+                self.scroll_held = None;
+            }
+            Camera::Scroll(cam) => {
+                self.scroll_camera(cam, false);
+                self.clamp_cursor();
+                self.pointer_seen = self.pointer_snapshot();
+            }
+            other => {
+                // Back to the place of no `scroll`: the top, as a step
+                // change goes there (not for a deleted move).
+                if jump
+                    && other == Camera::None
+                    && self.scroll_applied.is_some()
+                    && self.scroll_step != self.doc.step
+                {
+                    self.scroll = 0;
+                    self.cursor_line = self.doc.source.first_line;
+                    self.cursor_col = 0;
+                    self.pointer_seen = self.pointer_snapshot();
+                }
+                self.scroll_applied = None;
+                self.scroll_held = None;
+            }
+        }
+    }
+
+    /// The height the screen shows the code in: the terminal of the last
+    /// frame less the status bar and the padding, as `ui::draw` does.
+    pub fn screen_height(&self) -> usize {
+        let (cols, rows) = self.size;
+        if cols == 0 || rows == 0 {
+            return 0;
+        }
+        let status_h = if self.present { 0 } else { 1 };
+        let (pad_v, _) =
+            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
+        usize::from(rows.saturating_sub(status_h).saturating_sub(pad_v * 2))
+    }
+
     /// A step change keeps the pointer on its line, carried through the
     /// moves of the steps in between; off when the line is gone.
     /// The cursor goes with it, so the view and `j`/`k` stay with it.
@@ -1918,6 +2072,8 @@ impl App {
         match res {
             Ok(id) => {
                 self.history.label_last(format!("{kind} {id}"));
+                // A `scroll` can name the annotation that comes in now.
+                self.camera_changed();
                 self.touch();
                 Ok(id)
             }
@@ -1935,6 +2091,7 @@ impl App {
         self.history.record(&self.doc, format!("delete {id}"));
         match self.doc.delete(id) {
             Ok(_) => {
+                self.camera_changed();
                 self.touch();
                 Ok(())
             }
@@ -1968,6 +2125,7 @@ impl App {
         if self.doc.step > self.doc.max_step() {
             self.doc.step = self.doc.max_step();
         }
+        self.camera_changed();
         self.touch();
         removed
     }
@@ -2144,6 +2302,7 @@ impl App {
         };
         match self.doc.update(ann) {
             Ok(()) => {
+                self.camera_changed();
                 self.touch();
                 Ok(())
             }
@@ -2275,6 +2434,10 @@ impl App {
         self.focus = None;
         self.scroll = 0;
         self.clamp_cursor();
+        // Another document: its camera, as when it opens.
+        self.scroll_applied = None;
+        self.scroll_held = None;
+        self.camera_changed();
         // Said first: what is not saved, below, says it over this.
         self.say_stale(stale);
         // Another document is not the followed file's code: follow goes off
@@ -2592,6 +2755,7 @@ impl App {
         }
         self.selected = None;
         self.clamp_cursor();
+        self.camera_changed();
         self.touch();
         Ok(self.scene_changed(added, replaced, deleted))
     }
@@ -2692,12 +2856,28 @@ impl App {
     /// the step's typing complete.
     fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
-        self.finish_typing();
+        // Leaving the step: its `scroll` moves left do not move the view.
+        let to = step.min(self.doc.max_step().max(1));
+        self.finish_typing_with(to == self.doc.step);
         // An effect that plays ends here, and the auto-advance countdown
         // starts again, also when the step does not change.
         self.finish_effect();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
+        // A goto to the step on screen puts the view back on its target.
+        if s == self.doc.step
+            && jump
+            && self
+                .doc
+                .moves
+                .iter()
+                .any(|m| matches!(m.action, moves::MoveAction::Scroll(_)))
+            && let Camera::Scroll(cam) = self.doc.view_at(s).camera
+        {
+            self.scroll_camera(cam, true);
+            self.clamp_cursor();
+            self.pointer_seen = self.pointer_snapshot();
+        }
         if s != self.doc.step {
             let forward_one = s == self.doc.step + 1 && !jump;
             let from_step = self.doc.step;
@@ -2708,20 +2888,46 @@ impl App {
                 loud = true;
             } else {
                 // A `cursor` move left at this step moves the TUI cursor
-                // too; a `code.link` puts it on the first shown line.
+                // too; a `code.link` puts it on the first shown line. A
+                // `scroll` newer than both places the view instead.
+                let mut scroll = None;
                 if !self.doc.moves.is_empty() {
                     let v = self.doc.view_at(s);
-                    if let Some(c) = v.cursor {
-                        self.cursor_line = c.line;
-                        self.cursor_col = c.col;
-                    } else if v.view.file.is_some() || v.view.window.is_some() {
-                        self.cursor_line = self.doc.source.first_line;
+                    if let Camera::Scroll(cam) = v.camera {
+                        scroll = Some(cam);
+                    } else {
+                        if v.camera == Camera::None && self.scroll_applied.is_some() {
+                            // Back to the place of no `scroll`: the top.
+                            self.scroll = 0;
+                            self.cursor_line = self.doc.source.first_line;
+                            self.cursor_col = 0;
+                        }
+                        self.scroll_applied = None;
+                        self.scroll_held = None;
+                        if let Some(c) = v.cursor {
+                            self.cursor_line = c.line;
+                            self.cursor_col = c.col;
+                        } else if v.view.file.is_some() || v.view.window.is_some() {
+                            self.cursor_line = self.doc.source.first_line;
+                        }
                     }
                 }
                 // Before the typing blanks what it is about to type.
                 self.carry_pointer(from_step);
-                if forward_one {
-                    self.start_typing();
+                // A step that types moves the view at its cues, in the order
+                // of its list ([`App::apply_cues`]).
+                let plan = forward_one
+                    .then(|| moves::typing_plan(&self.doc, s))
+                    .flatten();
+                // After the pointer: the cursor goes to the target, and the
+                // pointer stays only where the new view shows it.
+                if let Some(cam) = scroll
+                    && !plan.as_ref().is_some_and(|p| !p.cues.is_empty())
+                {
+                    self.scroll_camera(cam, jump);
+                }
+                if let Some(plan) = plan {
+                    self.start_typing_with(plan);
                 }
             }
             self.clamp_cursor();
@@ -2756,18 +2962,35 @@ impl App {
     /// Starts the typing animation of the current step, when any of its
     /// moves asks for one. The content of those moves is blanked out and
     /// revealed by `typing_tick`.
-    fn start_typing(&mut self) {
-        let Some(plan) = moves::typing_plan(&self.doc, self.doc.step) else {
-            return;
-        };
+    fn start_typing_with(&mut self, plan: moves::TypingPlan) {
         self.typing = Some(TypingState {
             plan,
             index: 0,
             revealed: 0,
+            cue: 0,
             then_effect: true,
             last: std::time::Instant::now(),
         });
         self.refresh_typing_code();
+        self.apply_cues(0);
+    }
+
+    /// Moves the view to each `scroll` of the typing that comes before
+    /// item `upto` and has not moved it yet; they take no time.
+    fn apply_cues(&mut self, upto: usize) {
+        let Some(t) = &mut self.typing else { return };
+        let mut cameras = Vec::new();
+        while let Some(cue) = t.plan.cues.get(t.cue)
+            && cue.before <= upto
+        {
+            cameras.push(cue.camera.clone());
+            t.cue += 1;
+        }
+        for cam in cameras {
+            self.scroll_camera(cam, false);
+            self.clamp_cursor();
+            self.pointer_seen = self.pointer_snapshot();
+        }
     }
 
     /// Writes the partially typed code into the document.
@@ -2793,19 +3016,27 @@ impl App {
         }
         t.last += speed * units as u32;
         t.revealed += units;
+        let mut done = false;
         while t.revealed >= t.plan.items[t.index].units {
             t.revealed -= t.plan.items[t.index].units;
             t.index += 1;
             if t.index >= t.plan.items.len() {
-                let then_effect = t.then_effect;
-                self.finish_typing();
-                self.revision += 1;
-                // The typing is over: the effects of the step come next.
-                if then_effect {
-                    self.start_effect();
-                }
-                return true;
+                done = true;
+                break;
             }
+        }
+        let (index, then_effect) = (t.index, t.then_effect);
+        // The `scroll` moves that come before the item typed now, or after
+        // the last one: before the effects start.
+        self.apply_cues(index);
+        if done {
+            self.finish_typing();
+            self.revision += 1;
+            // The typing is over: the effects of the step come next.
+            if then_effect {
+                self.start_effect();
+            }
+            return true;
         }
         self.refresh_typing_code();
         self.revision += 1;
@@ -2814,6 +3045,16 @@ impl App {
 
     /// Ends the typing animation at once (any key, `p`, a socket step change).
     pub fn finish_typing(&mut self) {
+        self.finish_typing_with(true);
+    }
+
+    /// [`App::finish_typing`]; without `cues` (the step changes), the
+    /// `scroll` moves left do not move a view that would not be seen.
+    fn finish_typing_with(&mut self, cues: bool) {
+        // The view goes where the `scroll` moves left would put it.
+        if cues {
+            self.apply_cues(usize::MAX);
+        }
         if let Some(t) = self.typing.take() {
             self.doc.code = t.plan.full;
             // The take was sized from the code typed so far.
@@ -3010,6 +3251,7 @@ impl App {
                 let n = tiza_core::stale::refresh(None, &mut self.doc);
                 self.say_stale(n);
                 self.clamp_cursor();
+                self.camera_changed();
                 self.touch();
                 let warning = before.and_then(|b| b.warning(&self.doc));
                 Ok((i, warning))
@@ -3053,6 +3295,7 @@ impl App {
         let n = tiza_core::stale::refresh(None, &mut self.doc);
         self.say_stale(n);
         self.clamp_cursor();
+        self.camera_changed_with(false);
         self.touch();
         let warning = before.and_then(|b| b.warning(&self.doc));
         Ok((m, warning))
@@ -3186,6 +3429,7 @@ impl App {
             self.doc.follows = reference.file_ref();
         }
         self.rebuild_theme();
+        self.camera_changed();
         self.touch();
         self.info(said);
         self.follow_after_history(before, replaced);
@@ -3392,6 +3636,9 @@ impl App {
         }
         self.cursor_line = self.doc.source.first_line;
         self.scroll = 0;
+        self.scroll_applied = None;
+        self.scroll_held = None;
+        self.camera_changed();
         let lines = self.doc.code.len();
         let pasted = format!("{lines} line{} pasted", if lines == 1 { "" } else { "s" });
         let kept = format!(
@@ -4256,6 +4503,8 @@ impl App {
         if out.recorded {
             self.history.label_last(format!("reload #{reloads}"));
         }
+        // The target of a `scroll` may have moved with the new code.
+        self.camera_changed();
         match out.stale {
             None if out.ignored.is_none() => self.info(format!(
                 "{name} reloaded (#{reloads}): {} annotation{} kept{}",
@@ -4894,6 +5143,7 @@ impl App {
         "redo",
         "review",
         "saveas",
+        "scroll",
         "set",
         "spot",
         "step",
@@ -5104,6 +5354,7 @@ impl App {
                     }
                     Ok("code frozen inside the .tiza".into())
                 }
+                "scroll" => self.cmd_scroll(rest),
                 "link" if !rest.is_empty() && self.doc.step >= 1 => {
                     // At a step: a `code.link` move that shows `path` (with
                     // `A-B` as a window) from this step on. At step 0,
@@ -5376,6 +5627,7 @@ impl App {
                             }
                             if n == max + 1 && n != self.doc.step {
                                 self.doc.step = n;
+                                self.camera_changed();
                                 self.revision += 1;
                                 return Ok(format!("step {n}/{n}: empty, new annotations go here"));
                             }
@@ -5847,6 +6099,89 @@ impl App {
             Some(w) => format!("{w} · {added}"),
             None => added,
         })
+    }
+
+    /// `:scroll N | @'TEXT' | ID | annotation=ID [occurrence=N]
+    /// [align=A]`: a `scroll` move at the step on screen. Only digits are a
+    /// line; `@'…'` is a text; another word is the id of an annotation
+    /// (`annotation=ID` for an id of digits only).
+    fn cmd_scroll(&mut self, rest: &str) -> Result<String, Error> {
+        const USAGE: &str = "usage: :scroll N | @'text' | ID | annotation=ID  [occurrence=N] [align=top|center|bottom|show]";
+        if self.doc.step == 0 {
+            return Err(Error::Invalid(
+                "scroll: go to step 1 or later (step 0 is the code before any move)".into(),
+            ));
+        }
+        let usage = || Error::Invalid(USAGE.into());
+        let rest = rest.trim();
+        let mut s = tiza_core::moves::ScrollTo::default();
+        let options = if let Some(after_at) = rest.strip_prefix('@') {
+            let (text, options) = take_marker(after_at).map_err(|_| usage())?;
+            s.find = Some(text);
+            options
+        } else {
+            let (target, options) = split_first(rest);
+            if target.is_empty() {
+                return Err(usage());
+            }
+            if let Some(id) = target.strip_prefix("annotation=") {
+                s.annotation = Some(id.to_string());
+            } else if target.contains('=') {
+                return Err(usage());
+            } else if let Some(n) = target
+                .strip_prefix(['L', 'l'])
+                .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+                .or(Some(target).filter(|t| t.bytes().all(|b| b.is_ascii_digit())))
+            {
+                // `50`, or `L50` as `move.list` writes it.
+                s.line = Some(n.parse().map_err(|_| usage())?);
+            } else {
+                s.annotation = Some(target.to_string());
+            }
+            options
+        };
+        for option in options.split_whitespace() {
+            match option.split_once('=') {
+                Some(("occurrence", n)) => {
+                    s.occurrence = Some(n.parse().map_err(|_| usage())?);
+                }
+                Some(("align", a)) => {
+                    s.align = serde_json::from_value(serde_json::Value::from(a)).map_err(|_| {
+                        Error::Invalid(format!("align={a}: use top, center, bottom or show"))
+                    })?;
+                }
+                _ => return Err(usage()),
+            }
+        }
+        let target = match (&s.line, &s.find, &s.annotation) {
+            (Some(l), _, _) => format!("line {l}"),
+            (None, Some(t), _) => {
+                let short: String = t.chars().take(30).collect();
+                let more = if short.len() < t.len() { "…" } else { "" };
+                let n = s.occurrence.map(|n| format!(" #{n}")).unwrap_or_default();
+                format!("«{short}{more}»{n}")
+            }
+            (None, None, Some(id)) => {
+                let short: String = id.chars().take(30).collect();
+                let more = if short.len() < id.len() { "…" } else { "" };
+                format!("{short}{more}")
+            }
+            (None, None, None) => return Err(usage()),
+        };
+        let align = s.align.name();
+        let m = moves::Move {
+            at_step: self.doc.step,
+            action: moves::MoveAction::Scroll(s),
+            rebind: Default::default(),
+            stale: None,
+            held: Vec::new(),
+        };
+        let (i, _) = self.add_move_noting(m)?;
+        Ok(format!(
+            "move #{} added: step {} scrolls to {target} ({align})",
+            i + 1,
+            self.doc.step
+        ))
     }
 
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
@@ -8098,11 +8433,14 @@ pub fn proposal_summary(req: &Request) -> String {
         "scene.patch" => "patch the document".into(),
         "supervise.set" => "turn supervised mode off".into(),
         "style.set" => format!("define style {}", s("name")),
-        "move.add" => format!(
-            "add a {} move at step {}",
-            s("op"),
-            n("at_step").unwrap_or(0)
-        ),
+        "move.add" => {
+            // A patch by its op; any other move by its action.
+            let what = [s("op"), s("action")]
+                .into_iter()
+                .find(|w| !w.is_empty())
+                .unwrap_or_else(|| "code.patch".into());
+            format!("add a {what} move at step {}", n("at_step").unwrap_or(0))
+        }
         "move.delete" => format!("delete move #{}", n("index").unwrap_or(0)),
         "step.set" => format!("go to step {}", n("step").unwrap_or(0)),
         "step.next" => "next step".into(),
@@ -9053,5 +9391,59 @@ mod tests {
             params: json!({"id": "nope"}),
         });
         assert_eq!(resp.error.unwrap().code, "not_found");
+    }
+}
+
+/// The view that a `scroll` holds after its jump (see [`App::scroll_held`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct ScrollHeld {
+    /// The first and the last line of the target.
+    pub lines: (u32, u32),
+    pub align: tiza_core::moves::Align,
+    /// The cursor and the pointer at the jump: a change lets the view go.
+    pub cursor: (u32, u32),
+    pub pointer: Option<tiza_core::protocol::PointerAt>,
+}
+
+impl ScrollHeld {
+    /// The first row in view that puts the target where `align` says, on
+    /// `layout` with `visible` rows; `current` is the first row now (for
+    /// `show`). `None` when the target is not on the layout.
+    pub fn scroll_on(
+        &self,
+        layout: &tiza_core::layout::Layout,
+        visible: usize,
+        current: usize,
+    ) -> Option<usize> {
+        use tiza_core::layout::Row;
+        use tiza_core::moves::Align;
+        let rows = &layout.rows;
+        let mut top = *layout.row_of_line.get(&self.lines.0)?;
+        while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
+            top -= 1;
+        }
+        // The rows under the last line, up to the next line or the top of
+        // a box that starts there.
+        let mut bottom = *layout.row_of_line.get(&self.lines.1)?;
+        while bottom + 1 < rows.len() && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
+        {
+            bottom += 1;
+        }
+        let height = bottom + 1 - top;
+        let max = rows.len().saturating_sub(visible);
+        let at = if height >= visible {
+            top
+        } else {
+            match self.align {
+                Align::Top => top,
+                // Near the start the target cannot be at the bottom.
+                Align::Bottom => (bottom + 1).saturating_sub(visible),
+                Align::Center => (top + bottom + 1).saturating_sub(visible) / 2,
+                Align::Show if top < current => top,
+                Align::Show if bottom >= current + visible => bottom + 1 - visible,
+                Align::Show => current,
+            }
+        };
+        Some(at.min(max))
     }
 }
