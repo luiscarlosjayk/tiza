@@ -1798,6 +1798,10 @@ impl Document {
             Some(cam) => moves::Camera::Scroll(cam),
             None => moves::Camera::Cursor {
                 at_step: self.moves.get(i).map_or(step, |m| m.at_step),
+                link: self
+                    .moves
+                    .get(i)
+                    .is_some_and(|m| matches!(m.action, MoveAction::CodeLink(_))),
             },
         }
     }

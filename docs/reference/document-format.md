@@ -459,6 +459,8 @@ At step 2, `:link src/queue.rs:10-36` adds the same move.
 - `lines` is only a window that crops the screen. Tiza keeps a note outside the window. Tiza does not draw it.
 - The same file with another window is the same view.
 - When you link the document's own file again, its annotations return exactly as they were.
+- At the step of a `code.link`, the cursor goes to the first line that the link shows. That is the first line of the file, or of its window. The view goes with the cursor. This also occurs when the link goes back to the document's own file.
+- In normal mode, this also occurs at each later step, until another `cursor`, `code.link` or `scroll` move. A `cursor` move does the same with its line. In presentation mode, it occurs only at the step of the move.
 - A `code.patch` move changes the file shown at its step.
 - `:embed` stores every linked file under `views`. Thus the document stays one `.tiza` file.
 - A document fails to load when a linked file cannot be read. The error names the move and the path.

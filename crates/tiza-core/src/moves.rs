@@ -938,9 +938,12 @@ pub enum Camera {
     /// A `cursor` or a `code.link`: the TUI puts its cursor there (or on
     /// the first line of the linked file) at each step, as before `scroll`.
     /// `at_step` is the step of that move: in presentation mode the TUI
-    /// places the view only at that step.
+    /// places the view only at that step. `link` tells a `code.link` from
+    /// a `cursor`: a `cursor` whose line a later patch removed leaves no
+    /// cursor either.
     Cursor {
         at_step: u32,
+        link: bool,
     },
     Scroll(ScrollCam),
 }

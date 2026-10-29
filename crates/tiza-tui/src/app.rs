@@ -3491,19 +3491,21 @@ impl App {
     /// Normal mode places it at each step, as before.
     fn cursor_camera_places(&self, camera: &Camera, s: u32, carried: bool) -> bool {
         match camera {
-            Camera::Cursor { at_step } => !self.present || *at_step == s || !carried,
+            Camera::Cursor { at_step, .. } => !self.present || *at_step == s || !carried,
             _ => true,
         }
     }
 
     /// The cursor that the `cursor` or `code.link` camera of a step puts:
-    /// the line of the `cursor` move, or the first line that a `code.link`
-    /// to another file or to a window shows.
+    /// the line of the `cursor` move, or the first line that the
+    /// `code.link` shows, also when it goes back to the main file with no
+    /// window. A `cursor` whose line a later patch removed puts nothing.
     fn place_step_cursor(&mut self, v: &tiza_core::model::View) {
+        let link = matches!(v.camera, Camera::Cursor { link: true, .. });
         if let Some(c) = v.cursor {
             self.cursor_line = c.line;
             self.cursor_col = c.col;
-        } else if v.view.file.is_some() || v.view.window.is_some() {
+        } else if link || v.view.file.is_some() || v.view.window.is_some() {
             self.cursor_line = self.doc.source.first_line;
         }
     }
@@ -10195,7 +10197,7 @@ pub struct ToCome {
 fn own_camera(camera: &Camera, s: u32) -> bool {
     match camera {
         Camera::Scroll(cam) => cam.id.0 == s && cam.lines.is_some(),
-        Camera::Cursor { at_step } => *at_step == s,
+        Camera::Cursor { at_step, .. } => *at_step == s,
         Camera::None => false,
     }
 }

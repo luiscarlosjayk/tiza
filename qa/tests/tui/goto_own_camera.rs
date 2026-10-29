@@ -185,3 +185,210 @@ fn a_goto_to_the_step_on_screen_is_the_same_as_coming_to_it() {
         }
     }
 }
+
+/// `main.rs` (160 lines `let vN = N;`) and `other.rs` (120 lines
+/// `let wN = N;`): step 2 shows `other.rs`, and step 3 goes back to
+/// `main.rs` with a `code.link` with no `lines`.
+fn open_link_back(name: &str, present: bool) -> Live {
+    let dir = scratch(name);
+    let lines = |prefix: &str, n: u32| -> String {
+        (1..=n)
+            .map(|i| format!("let {prefix}{i} = {i};\n"))
+            .collect()
+    };
+    std::fs::write(dir.join("main.rs"), lines("v", 160)).unwrap();
+    std::fs::write(dir.join("other.rs"), lines("w", 120)).unwrap();
+    let doc = serde_json::json!({
+        "schema": 1,
+        "source": {"language": "rs", "first_line": 1},
+        "code": {"file": "main.rs"},
+        "annotations": [
+            {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "start"}
+        ],
+        "moves": [
+            {"at_step": 2, "action": "code.link", "file": "other.rs"},
+            {"at_step": 3, "action": "code.link", "file": "main.rs"}
+        ]
+    });
+    std::fs::write(dir.join("doc.tiza"), doc.to_string()).unwrap();
+    let doc = tiza_core::fs::load_document(&dir.join("doc.tiza")).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
+    live.command("pad 0 0");
+    live.with(move |a| {
+        a.autosave = false;
+        a.set_present(present);
+        draw(a);
+    });
+    live
+}
+
+#[test]
+fn a_link_back_to_the_main_file_shows_its_first_line() {
+    // A `code.link` back to the main file with no `lines` puts the view at
+    // the first line, as a `code.link` to another file does. Before, the
+    // view stayed on the row where it was in the other file.
+    for present in [false, true] {
+        let live = open_link_back(&format!("link-back-{present}"), present);
+        goto(&live, 2);
+        key(&live, 'G');
+        assert!(
+            first_line(&live) > 80,
+            "present {present}: far down in other.rs"
+        );
+        key(&live, 'n');
+        assert_eq!(live.with(|a| a.doc.step), 3);
+        assert_eq!(state(&live).0, 1, "present {present}: n, the cursor");
+        assert_eq!(first_line(&live), 1, "present {present}: n, the view");
+        // A goto to the step on screen does the same.
+        key(&live, 'G');
+        goto(&live, 3);
+        assert_eq!(state(&live).1, 1, "present {present}: goto here");
+        // With the live pointer on in the other file: the pointer has no
+        // line in the main file, so it goes off, and the view goes to the
+        // first line.
+        let live = open_link_back(&format!("link-back-pointer-{present}"), present);
+        goto(&live, 2);
+        key(&live, 'G');
+        key(&live, 'f');
+        assert!(live.with(|a| a.pointer.is_some()));
+        key(&live, 'n');
+        assert_eq!(state(&live), (1, 1, None), "present {present}: pointer");
+    }
+}
+
+/// `main.rs` with 160 lines `let vN = N;`, and a document with these
+/// annotations and moves.
+fn open_with(
+    name: &str,
+    present: bool,
+    annotations: serde_json::Value,
+    moves: serde_json::Value,
+) -> Live {
+    let dir = scratch(name);
+    let lines: String = (1..=160).map(|i| format!("let v{i} = {i};\n")).collect();
+    std::fs::write(dir.join("main.rs"), lines).unwrap();
+    let other: String = (1..=120).map(|i| format!("let w{i} = {i};\n")).collect();
+    std::fs::write(dir.join("other.rs"), other).unwrap();
+    let doc = serde_json::json!({
+        "schema": 1,
+        "source": {"language": "rs", "first_line": 1},
+        "code": {"file": "main.rs"},
+        "annotations": annotations,
+        "moves": moves
+    });
+    std::fs::write(dir.join("doc.tiza"), doc.to_string()).unwrap();
+    let doc = tiza_core::fs::load_document(&dir.join("doc.tiza")).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
+    live.command("pad 0 0");
+    live.with(move |a| {
+        a.autosave = false;
+        a.set_present(present);
+        draw(a);
+    });
+    live
+}
+
+#[test]
+fn a_cursor_whose_line_a_patch_removes_puts_no_cursor() {
+    // Step 2 puts the cursor on line 10, and step 3 removes lines 8-12.
+    // At step 3 and later, the camera is still that `cursor`, with no line:
+    // the cursor stays where it is. It does not go to the first line, as
+    // for a `code.link`.
+    let live = open_with(
+        "removed-cursor",
+        false,
+        serde_json::json!([
+            {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "start"},
+            {"id": "n4", "step": 4, "type": "note", "line": 140, "text": "later"}
+        ]),
+        serde_json::json!([
+            {"at_step": 2, "action": "cursor", "line": 10},
+            {"at_step": 3, "action": "code.patch", "op": "delete", "position": "8-12"}
+        ]),
+    );
+    goto(&live, 2);
+    key(&live, 'G');
+    for step in [3, 4] {
+        key(&live, 'n');
+        assert_eq!(live.with(|a| a.doc.step), step);
+        let (cursor, first, _) = state(&live);
+        assert!(
+            cursor > 100 && first > 100,
+            "step {step}: {cursor}, {first}"
+        );
+    }
+}
+
+#[test]
+fn an_older_camera_places_the_cursor_again_only_in_normal_mode() {
+    // An older `cursor` (step 2) or an older `code.link` back to the main
+    // file (step 3, with step 2 on `other.rs`): in normal mode it puts the
+    // cursor again at each change of step, and at a goto to the step on
+    // screen. In presentation mode only the camera of the step itself
+    // does; the new annotation of the step comes into the view instead.
+    let older_cursor = serde_json::json!([
+        {"at_step": 2, "action": "cursor", "line": 10}
+    ]);
+    let older_link = serde_json::json!([
+        {"at_step": 2, "action": "code.link", "file": "other.rs"},
+        {"at_step": 3, "action": "code.link", "file": "main.rs"}
+    ]);
+    for (what, moves, line) in [("cursor", older_cursor, 10), ("link", older_link, 1)] {
+        // A step after the camera, with a note on line 100.
+        let late = if what == "cursor" { 3 } else { 4 };
+        let annotations = serde_json::json!([
+            {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "start"},
+            {"id": "nl", "step": late, "type": "note", "line": 100, "text": "late"}
+        ]);
+        for present in [false, true] {
+            let case = format!("{what}, present {present}");
+            let live = open_with(
+                &format!("older-{what}-{present}"),
+                present,
+                annotations.clone(),
+                moves.clone(),
+            );
+            // Coming to the step.
+            goto(&live, late - 1);
+            key(&live, 'G');
+            key(&live, 'n');
+            assert_eq!(live.with(|a| a.doc.step), late, "{case}");
+            let want = if present { 100 } else { line };
+            assert_eq!(state(&live).0, want, "{case}: n");
+            // A goto to the step on screen does the same.
+            key(&live, 'G');
+            goto(&live, late);
+            assert_eq!(state(&live).0, want, "{case}: goto here");
+        }
+    }
+}
+
+#[test]
+fn in_presentation_an_older_cursor_leaves_a_quiet_step_alone() {
+    // Step 3 has only a `wait`: no camera of its own, and nothing new to
+    // show. In presentation mode a goto to it leaves the view where the
+    // presenter put it: the older `cursor` of step 2 does not place it (N
+    // (a)). In normal mode it does, as at each change of step.
+    for present in [false, true] {
+        let live = open_with(
+            &format!("quiet-{present}"),
+            present,
+            serde_json::json!([
+                {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "start"}
+            ]),
+            serde_json::json!([
+                {"at_step": 2, "action": "cursor", "line": 10},
+                {"at_step": 3, "action": "wait", "ms": 1}
+            ]),
+        );
+        goto(&live, 3);
+        key(&live, 'G');
+        goto(&live, 3);
+        let (cursor, first, _) = state(&live);
+        if present {
+            assert!(cursor > 100 && first > 100, "present: {cursor}, {first}");
+        } else {
+            assert_eq!((cursor, first), (10, 10), "normal");
+        }
+    }
+}
