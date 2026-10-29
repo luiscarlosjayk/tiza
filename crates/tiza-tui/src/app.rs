@@ -8179,13 +8179,9 @@ impl ExportFormat {
 /// (no effect). The last one counts.
 fn take_effect(kv: &mut Vec<(String, String)>) -> Result<Option<Effect>, Error> {
     let mut effect = None;
+    // The last one wins, as with the other keys.
     for (_, v) in kv.iter().filter(|(k, _)| k == "effect") {
-        effect = match v.as_str() {
-            "draw" => Some(Effect::Draw),
-            "fade" => Some(Effect::Fade),
-            "none" => None,
-            _ => return Err(Error::Invalid(UNKNOWN_EFFECT.into())),
-        };
+        effect = Effect::parse(v).ok_or_else(|| Error::Invalid(UNKNOWN_EFFECT.into()))?;
     }
     kv.retain(|(k, _)| k != "effect");
     Ok(effect)

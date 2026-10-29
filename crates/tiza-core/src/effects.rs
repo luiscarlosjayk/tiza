@@ -56,6 +56,20 @@ pub enum Effect {
     Fade,
 }
 
+impl Effect {
+    /// The value of `effect=` in a command, as the other keys take theirs:
+    /// in any case, with blanks around it. `Some(None)` for `none`, which
+    /// removes the effect; `None` for an unknown value.
+    pub fn parse(s: &str) -> Option<Option<Effect>> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "draw" => Some(Some(Effect::Draw)),
+            "fade" => Some(Some(Effect::Fade)),
+            "none" => Some(None),
+            _ => None,
+        }
+    }
+}
+
 /// How one cell changes during an effect.
 #[derive(Debug, Clone)]
 struct Change {

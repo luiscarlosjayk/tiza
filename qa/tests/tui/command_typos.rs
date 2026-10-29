@@ -255,3 +255,50 @@ fn effect_is_taken_off_the_end_of_a_note_and_a_spot() {
     );
     assert_eq!(a.effect, Some(Effect::Fade));
 }
+
+#[test]
+fn effect_takes_any_case_and_the_last_one_wins() {
+    // As the other keys with a word (border, corners, emphasis): the word
+    // in any case, and with two `effect=` the last one.
+    use tiza_core::effects::Effect;
+    let live = fresh("effect-case");
+    let last = |live: &Live| live.with(|a| a.doc.annotations.last().cloned()).unwrap();
+    live.command("box 7-9 takes effect=FADE");
+    assert_eq!(last(&live).effect, Some(Effect::Fade));
+    live.command("box 2-3 effect=draw effect=fade");
+    let b = last(&live);
+    assert_eq!(b.effect, Some(Effect::Fade));
+    let effect_of =
+        |live: &Live, id: String| live.with(move |a| a.doc.find_annotation(&id).unwrap().effect);
+    live.command(&format!("set {} effect=Draw", b.id));
+    assert_eq!(effect_of(&live, b.id.clone()), Some(Effect::Draw));
+    live.command(&format!("set {} effect=NONE", b.id));
+    assert_eq!(effect_of(&live, b.id.clone()), None);
+}
+
+#[test]
+fn a_change_of_emphasis_keeps_the_stroke_that_draw_needs() {
+    // A highlight with an underline and draw: `emphasis=fill` would take
+    // its stroke away, so `:set` refuses it, as `effect=draw` on a fill.
+    use tiza_core::model::{Emphasis, Shape};
+    let live = fresh("effect-emphasis");
+    live.command("hl 3:takes x");
+    let id = live.with(|a| a.doc.annotations.last().unwrap().id.clone());
+    live.command(&format!("set {id} emphasis=underline effect=draw"));
+    rejected(
+        &live,
+        &format!("set {id} emphasis=fill"),
+        "effect draw needs a stroke",
+    );
+    let shape = live.with(move |a| a.doc.find_annotation(&id).unwrap().shape.clone());
+    assert!(
+        matches!(
+            shape,
+            Shape::Highlight {
+                emphasis: Emphasis::Underline,
+                ..
+            }
+        ),
+        "{shape:?}"
+    );
+}
