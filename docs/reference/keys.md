@@ -42,6 +42,7 @@ For example, to put a box around three lines and go to the next step:
 - At the last step, `n` does not move. With `"loop": true` in the document, `n` goes back to step 0. See [Loop](document-format.md#loop).
 - A document without annotations and without moves has step 0 and step 1. Without `loop`, `n` stops at step 1.
 - When a step types code, the next key finishes the typing. Tiza does not use that key for anything else. `Ctrl-C` is the exception: it does what it does in normal mode. See [Ctrl-C](#ctrl-c).
+- In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing. The view moves, and the typing continues. See [Present](#present).
 - To go to a named step or to a step number, type `:goto ID`. See [Steps and files](commands/steps-and-files.md).
 
 ## Select code
@@ -123,8 +124,14 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `→` | Goes to the next step. |
 | `←` | Goes to the previous step. |
 | `f` | Turns the live pointer on or off. |
+| `↓` `↑` `j` `k` | Moves the view one row down or up. |
+| `J` `K` | Moves the view half a screen down or up. |
+| `g` `G` `Home` `End` | Goes to the start or the end of the code. |
 
 - Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
+- In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. Without mouse capture, a trackpad and a mouse wheel also move the view, because the terminal sends them as `↑` and `↓`.
+- With the live pointer on, the keys of the view move the pointer, as in normal mode. The view follows the pointer.
+- The view stays on the same code when you go to another step, when an agent changes an annotation and when the terminal changes size. A `scroll`, a `cursor` or a `code.link` move moves the view. When an agent, `Tab` or `Enter` in the list moves the cursor to another line, the view follows the cursor.
 - The other keys of normal mode also work in presentation mode.
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
 - Only the result of a `:` command shows. The messages of the keys, for example after `u`, do not show in presentation mode.

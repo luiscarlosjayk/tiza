@@ -12,7 +12,7 @@ use tiza_core::layout::Layout;
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
-use crate::app::{App, Mode, Overlay, Selection};
+use crate::app::{App, Mode, Overlay, Selection, ViewEdge, view_anchor_of, view_row_of};
 
 /// A canvas colour for ratatui: real colours as they are, the host-palette
 /// sentinels of the `terminal` theme as the terminal's own.
@@ -148,6 +148,15 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
+    // In presentation mode the view stays on its code: the line on top of
+    // the last frame goes back to its row, whatever rows came in or went
+    // above it (a step, an agent, another width).
+    if app.present
+        && let Some(row) = app.view_anchor.and_then(|a| view_row_of(&layout, a))
+    {
+        app.scroll = row;
+    }
+
     // A view that a `scroll` holds: its target where `align` puts it, on
     // the rows of this frame (the annotations of the step came in, the
     // take changed), until the cursor or the pointer moves.
@@ -168,8 +177,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // under it (emphasis, labels, bottom borders) when they fit.
     // Otherwise a box whose first line is the first visible row loses its
     // top border and title. A held view already shows the cursor, on the
-    // first line of its target.
+    // first line of its target. In presentation mode the view follows the
+    // cursor only when its line changed (an agent, Tab, a `cursor` move),
+    // not on every frame: the view stays where the presenter put it.
+    let follow = !app.present || app.cursor_line != app.view_cursor_line;
     if app.scroll_held.is_none()
+        && follow
         && let Some(&row) = layout.row_of_line.get(&app.cursor_line)
     {
         let mut top = row;
@@ -195,7 +208,41 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             app.scroll = row + 1 - visible;
         }
     }
+    // A key of the view in presentation mode, from the view above: it
+    // lets a held view go.
+    if let Some(r) = app.view_request.take()
+        && app.present
+    {
+        app.scroll_held = None;
+        match r.edge {
+            Some(ViewEdge::Top) => app.scroll = 0,
+            Some(ViewEdge::Bottom) => app.scroll = total.saturating_sub(visible),
+            None => {}
+        }
+        let rows =
+            isize::try_from(r.rows).unwrap_or(if r.rows < 0 { isize::MIN } else { isize::MAX });
+        app.scroll = app.scroll.saturating_add_signed(rows);
+    }
     app.scroll = app.scroll.min(total.saturating_sub(visible));
+    if app.present && app.scroll_held.is_none() && app.mode == Mode::Normal {
+        match app.pointer {
+            // The hidden cursor goes into the view.
+            None => app.keep_cursor_in_view(&layout, app.scroll, visible),
+            // The pointer stays on its line, and the view shows that row.
+            Some(_) => {
+                if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {
+                    if row < app.scroll {
+                        app.scroll = row;
+                    } else if row >= app.scroll + visible {
+                        app.scroll = row + 1 - visible;
+                    }
+                }
+            }
+        }
+    }
+    // What the next frame keeps.
+    app.view_anchor = view_anchor_of(&layout, app.scroll);
+    app.view_cursor_line = app.cursor_line;
     let end = (app.scroll + visible).min(total);
     // While an enter effect plays: its frame, on the rows in view only.
     layout.paint_rows(app.scroll..end);

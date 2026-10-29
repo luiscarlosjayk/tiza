@@ -55,7 +55,7 @@ fn fresh(name: &str) -> Live {
 fn state(live: &Live) -> String {
     live.with(|a| {
         format!(
-            "{:?}|{:?}|{}:{}|{}|{}|{:?}|{}|{}|{:?}|{}|{:?}|{:?}|{}|{}|{:?}|{}|{}|{:?}",
+            "{:?}|{:?}|{}:{}|{}|{}|{:?}|{}|{}|{:?}|{}|{:?}|{:?}|{}|{}|{:?}|{}|{}|{:?}|{:?}",
             a.mode,
             a.overlay,
             a.cursor_line,
@@ -75,6 +75,9 @@ fn state(live: &Live) -> String {
             a.dirty,
             a.layout_stable,
             a.pending_sel,
+            // A key of the view in presentation mode moves it at the next
+            // frame.
+            a.view_request(),
         )
     })
 }

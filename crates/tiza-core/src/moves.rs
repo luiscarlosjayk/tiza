@@ -1088,10 +1088,39 @@ impl Projection {
 /// two steps show different files, or when the moves do not apply. The
 /// same line without moves.
 pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> {
-    if doc.moves.is_empty() || from == to {
-        return Some(line);
-    }
+    carry_with(doc, from, to, &[line], false)?.pop().flatten()
+}
+
+/// [`carry_line`] for places in the view (its top line, the hidden
+/// cursor), with one projection for all of them: when a patch removed a
+/// line, the nearest line above it that the patch kept, or the first line.
+/// `None` only when the two steps show different files or the moves do not
+/// apply.
+pub fn carry_lines_near(doc: &Document, from: u32, to: u32, lines: &[u32]) -> Option<Vec<u32>> {
+    carry_with(doc, from, to, lines, true)?
+        .into_iter()
+        .collect()
+}
+
+/// Carries `lines` from step `from` to step `to`; with `near`, a removed
+/// line goes to the nearest line above that remains.
+fn carry_with(
+    doc: &Document,
+    from: u32,
+    to: u32,
+    lines: &[u32],
+    near: bool,
+) -> Option<Vec<Option<u32>>> {
     let (lo, hi) = (from.min(to), from.max(to));
+    // No patch and no link in between: the code shown is the same.
+    let changes = |m: &Move| {
+        matches!(m.action, MoveAction::CodePatch(_) | MoveAction::CodeLink(_))
+            && m.at_step > lo
+            && m.at_step <= hi
+    };
+    if !doc.moves.iter().any(changes) {
+        return Some(lines.iter().map(|l| Some(*l)).collect());
+    }
     let low = project(doc, &doc.moves, lo).ok()?;
     let high = project(doc, &doc.moves, hi).ok()?;
     if low.shown.file != high.shown.file {
@@ -1104,18 +1133,39 @@ pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> 
         .filter(|p| &p.file == key && p.at_step > lo && p.at_step <= hi)
         .map(|p| &p.map)
         .collect();
-    let mut cur = line;
-    if to > from {
-        for m in maps {
-            cur = m.get(cur)?;
+    // Through patch `m`: an old line to its new line, and back.
+    let forward = |m: &LineMap, old: u32| m.get(old);
+    let back = |m: &LineMap, new: u32| {
+        let old = m.map.iter().position(|n| *n == Some(new))?;
+        Some(m.first_line + old as u32)
+    };
+    let step = |m: &LineMap, cur: u32| -> Option<u32> {
+        let one = |l: u32| if to > from { forward(m, l) } else { back(m, l) };
+        match one(cur) {
+            Some(l) => Some(l),
+            None if near => Some(
+                (m.first_line..cur)
+                    .rev()
+                    .find_map(one)
+                    .unwrap_or(m.first_line),
+            ),
+            None => None,
         }
-    } else {
-        for m in maps.iter().rev() {
-            let old = m.map.iter().position(|n| *n == Some(cur))?;
-            cur = m.first_line + old as u32;
+    };
+    let carry = |line: u32| -> Option<u32> {
+        let mut cur = line;
+        if to > from {
+            for m in &maps {
+                cur = step(m, cur)?;
+            }
+        } else {
+            for m in maps.iter().rev() {
+                cur = step(m, cur)?;
+            }
         }
-    }
-    Some(cur)
+        Some(cur)
+    };
+    Some(lines.iter().map(|l| carry(*l)).collect())
 }
 
 /// Validates every move against the code at its step: targets resolve to

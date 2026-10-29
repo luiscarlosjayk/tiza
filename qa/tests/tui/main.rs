@@ -20,6 +20,7 @@ mod mouse;
 mod paste_in_each_mode;
 mod personal_defaults;
 mod personal_styles;
+mod present_view;
 mod presentation_command_line;
 mod resize_at_start;
 mod scroll_move;

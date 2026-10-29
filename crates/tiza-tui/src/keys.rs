@@ -129,6 +129,23 @@ pub const HELP: &[(Section, &[Row])] = &[
                 desc: "Move half a screen down or up.",
                 when: Normal,
             },
+            Key {
+                keys: "j/k  ↓/↑",
+                desc: "In presentation mode, move the view one row down or up. The hidden \
+                       cursor stays in the view.",
+                when: Presenting,
+            },
+            Key {
+                keys: "J/K",
+                desc: "In presentation mode, move the view half a screen down or up.",
+                when: Presenting,
+            },
+            Key {
+                keys: "g/G",
+                desc: "In presentation mode, go to the start or the end of the code. Home \
+                       and End do the same.",
+                when: Presenting,
+            },
         ],
     ),
     (

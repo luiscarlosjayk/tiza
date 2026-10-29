@@ -334,6 +334,9 @@ struct RequestState {
     scroll_applied: Option<(u32, usize)>,
     scroll_step: u32,
     scroll_held: Option<ScrollHeld>,
+    view_anchor: Option<(u32, isize)>,
+    view_cursor_line: u32,
+    view_request: Option<ViewRequest>,
     agent_notice: Option<AgentNotice>,
     agent_deferred: Vec<(String, &'static str)>,
     following: bool,
@@ -371,6 +374,9 @@ impl RequestState {
             scroll_applied: app.scroll_applied,
             scroll_step: app.scroll_step,
             scroll_held: app.scroll_held.clone(),
+            view_anchor: app.view_anchor,
+            view_cursor_line: app.view_cursor_line,
+            view_request: app.view_request,
             agent_notice: app.agent_notice.clone(),
             agent_deferred: app.agent_deferred.clone(),
             following: app.follow.is_some(),
@@ -407,6 +413,9 @@ impl RequestState {
         app.scroll_applied = self.scroll_applied;
         app.scroll_step = self.scroll_step;
         app.scroll_held = self.scroll_held;
+        app.view_anchor = self.view_anchor;
+        app.view_cursor_line = self.view_cursor_line;
+        app.view_request = self.view_request;
         app.agent_notice = self.agent_notice;
         app.agent_deferred = self.agent_deferred;
         // Follow holds a file watcher: stopped, or started again.
@@ -717,6 +726,16 @@ pub struct App {
     /// After a jump, the view keeps the target where `align` puts it, frame
     /// after frame, until the cursor or the pointer moves.
     pub scroll_held: Option<ScrollHeld>,
+    /// Where the last frame showed the code ([`view_anchor_of`]): in
+    /// presentation mode the next frame keeps that line at that row while
+    /// the rows above it change. `None` after [`App::set_scroll`]: then
+    /// `scroll` is the view.
+    pub(crate) view_anchor: Option<(u32, isize)>,
+    /// The cursor line the last frame saw: in presentation mode the view
+    /// follows the cursor only in a frame where its line changed.
+    pub(crate) view_cursor_line: u32,
+    /// A key that moves the view in presentation mode, for the next frame.
+    pub(crate) view_request: Option<ViewRequest>,
     /// The last message about an agent change the view does not show,
     /// while it may still group the next one.
     agent_notice: Option<AgentNotice>,
@@ -816,6 +835,9 @@ impl App {
             scroll_applied: None,
             scroll_step: 0,
             scroll_held: None,
+            view_anchor: None,
+            view_cursor_line: cursor_line,
+            view_request: None,
             agent_notice: None,
             agent_deferred: Vec::new(),
         };
@@ -1595,8 +1617,14 @@ impl App {
             let width = self.screen_width();
             let layout = self.screen_layout_with_pointer(width);
             let visible = self.screen_height();
-            if let Some(top) = held.scroll_on(&layout, visible, self.scroll) {
-                self.scroll = top;
+            // From the view the next frame would show, as `ui::draw` does.
+            let current = self
+                .view_anchor
+                .filter(|_| self.present)
+                .and_then(|a| view_row_of(&layout, a))
+                .unwrap_or(self.scroll);
+            if let Some(top) = held.scroll_on(&layout, visible, current) {
+                self.set_scroll(top);
                 let shown = |l: u32| {
                     layout
                         .row_of_line
@@ -1656,7 +1684,7 @@ impl App {
                     && self.scroll_applied.is_some()
                     && self.scroll_step != self.doc.step
                 {
-                    self.scroll = 0;
+                    self.set_scroll(0);
                     self.cursor_line = self.doc.source.first_line;
                     self.cursor_col = 0;
                     self.pointer_seen = self.pointer_snapshot();
@@ -1665,6 +1693,35 @@ impl App {
                 self.scroll_held = None;
             }
         }
+    }
+
+    /// Puts the view at row `row`: in presentation mode too, the next frame
+    /// shows it as it is, not where the code of the last frame was.
+    fn set_scroll(&mut self, row: usize) {
+        self.scroll = row;
+        self.view_anchor = None;
+    }
+
+    /// A key of the view in presentation mode (the live pointer off): `rows`
+    /// rows down, up when negative. The next frame moves the view, and
+    /// the hidden cursor stays inside it.
+    pub(crate) fn view_by(&mut self, rows: i64) {
+        let r = self.view_request.get_or_insert_default();
+        r.rows = r.rows.saturating_add(rows);
+    }
+
+    /// `g`/Home or `G`/End in presentation mode: the view goes to an end of
+    /// the code in the next frame.
+    pub(crate) fn view_to(&mut self, edge: ViewEdge) {
+        self.view_request = Some(ViewRequest {
+            edge: Some(edge),
+            rows: 0,
+        });
+    }
+
+    /// The move of the view that the next frame makes, if a key asked for one.
+    pub fn view_request(&self) -> Option<ViewRequest> {
+        self.view_request
     }
 
     /// The height the screen shows the code in: the terminal of the last
@@ -1678,6 +1735,62 @@ impl App {
         let (pad_v, _) =
             crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
         usize::from(rows.saturating_sub(status_h).saturating_sub(pad_v * 2))
+    }
+
+    /// A step change in presentation mode, before the moves of the new
+    /// step place the view: the line on top of the view and the hidden
+    /// cursor go to the new step through the patches in between (to the
+    /// nearest line above when a patch removed theirs), so the view stays
+    /// on its code. A `scroll`, a `cursor` or a `code.link` of the step, the
+    /// pointer and the way back to the top then place the view and the
+    /// cursor as before.
+    fn carry_view(&mut self, from_step: u32) {
+        let anchor = self.view_anchor;
+        let mut lines = vec![self.cursor_line];
+        lines.extend(anchor.map(|a| a.0));
+        // Another file: the view of before.
+        let Some(carried) = moves::carry_lines_near(&self.doc, from_step, self.doc.step, &lines)
+        else {
+            self.view_anchor = None;
+            return;
+        };
+        // Not a motion for the view to follow.
+        self.cursor_line = carried[0];
+        self.view_cursor_line = carried[0];
+        if let (Some((_, rows)), Some(line)) = (anchor, carried.get(1)) {
+            self.view_anchor = Some((*line, rows));
+        }
+    }
+
+    /// Presentation mode: the hidden cursor stays on a line of code in the
+    /// rows `top..top + visible` of `layout`, so `f` points at a line the
+    /// audience sees. From above it goes to the first line in view, from
+    /// below to the last one. With no row of code in view (a callout taller
+    /// than the view), to the line above, as a click there.
+    pub(crate) fn keep_cursor_in_view(
+        &mut self,
+        layout: &tiza_core::layout::Layout,
+        top: usize,
+        visible: usize,
+    ) {
+        use tiza_core::layout::Row;
+        let end = (top + visible).min(layout.rows.len());
+        let code = |i: usize| match layout.rows[i] {
+            Row::Code(l) => Some(l),
+            _ => None,
+        };
+        let line = match layout.row_of_line.get(&self.cursor_line) {
+            Some(&r) if r >= top && r < end => return,
+            Some(&r) if r >= end => (top..end).rev().find_map(code),
+            _ => (top..end).find_map(code),
+        };
+        let Some(line) = line.or_else(|| (0..top.min(layout.rows.len())).rev().find_map(code))
+        else {
+            return;
+        };
+        self.cursor_line = line;
+        self.clamp_col();
+        self.pointer_seen = self.pointer_snapshot();
     }
 
     /// A step change keeps the pointer on its line, carried through the
@@ -2432,7 +2545,7 @@ impl App {
         }
         self.selected = None;
         self.focus = None;
-        self.scroll = 0;
+        self.set_scroll(0);
         self.clamp_cursor();
         // Another document: its camera, as when it opens.
         self.scroll_applied = None;
@@ -2740,6 +2853,7 @@ impl App {
             self.step_ready_at = Some(std::time::Instant::now());
         }
         let stepped = d.step != self.doc.step;
+        let from_step = self.doc.step;
         self.doc = d;
         // Another step: its code, as a step change shows it (a typing in
         // progress ends; the code shown is the new step's).
@@ -2747,6 +2861,9 @@ impl App {
             self.finish_typing();
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
+                self.view_anchor = None;
+            } else if self.present {
+                self.carry_view(from_step);
             }
         }
         match self.doc.theme {
@@ -2885,8 +3002,16 @@ impl App {
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
                 self.pointer = None;
+                // The view of before, as it was.
+                self.view_anchor = None;
                 loud = true;
             } else {
+                // In presentation mode the view and the hidden cursor go
+                // with their code first; the moves of the step can then
+                // place them.
+                if self.present {
+                    self.carry_view(from_step);
+                }
                 // A `cursor` move left at this step moves the TUI cursor
                 // too; a `code.link` puts it on the first shown line. A
                 // `scroll` newer than both places the view instead.
@@ -2898,7 +3023,7 @@ impl App {
                     } else {
                         if v.camera == Camera::None && self.scroll_applied.is_some() {
                             // Back to the place of no `scroll`: the top.
-                            self.scroll = 0;
+                            self.set_scroll(0);
                             self.cursor_line = self.doc.source.first_line;
                             self.cursor_col = 0;
                         }
@@ -3488,6 +3613,8 @@ impl App {
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
+        // A key of the view is for presentation mode only.
+        self.view_request = None;
         if !on && !self.agent_deferred.is_empty() {
             let items = std::mem::take(&mut self.agent_deferred);
             self.agent_notice = None;
@@ -3635,7 +3762,7 @@ impl App {
             self.doc.source.language = det.language;
         }
         self.cursor_line = self.doc.source.first_line;
-        self.scroll = 0;
+        self.set_scroll(0);
         self.scroll_applied = None;
         self.scroll_held = None;
         self.camera_changed();
@@ -9463,4 +9590,52 @@ impl ScrollHeld {
         };
         Some(at.min(max))
     }
+}
+
+/// A key that moves the view in presentation mode, kept until the next
+/// frame applies it ([`App::view_by`], [`App::view_to`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ViewRequest {
+    /// `g`/Home or `G`/End: the view starts from that end.
+    pub edge: Option<ViewEdge>,
+    /// Then this many rows down (up when negative).
+    pub rows: i64,
+}
+
+/// An end of the code for [`ViewRequest`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewEdge {
+    Top,
+    Bottom,
+}
+
+/// Where the view of `top` is on `layout`, to keep it on its code when the
+/// rows change: the line of the first row of code at or above row `top`,
+/// and how many rows `top` is under that row. With no row of code above
+/// (the title of a box on the first row), the first row of code, with a
+/// negative offset. `None` with no code.
+pub(crate) fn view_anchor_of(
+    layout: &tiza_core::layout::Layout,
+    top: usize,
+) -> Option<(u32, isize)> {
+    use tiza_core::layout::Row;
+    let line = |i: usize| match layout.rows[i] {
+        Row::Code(l) => Some((l, top as isize - i as isize)),
+        _ => None,
+    };
+    let last = top.min(layout.rows.len().checked_sub(1)?);
+    (0..=last)
+        .rev()
+        .find_map(line)
+        .or_else(|| (0..layout.rows.len()).find_map(line))
+}
+
+/// The first row that puts `anchor` back where [`view_anchor_of`] found it,
+/// on `layout`; `None` when its line is not on the layout.
+pub(crate) fn view_row_of(
+    layout: &tiza_core::layout::Layout,
+    anchor: (u32, isize),
+) -> Option<usize> {
+    let row = *layout.row_of_line.get(&anchor.0)? as isize;
+    Some((row + anchor.1).max(0) as usize)
 }

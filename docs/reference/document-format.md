@@ -373,6 +373,7 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - `speed_ms` is the time for each line or each character.
 - The annotations of the step appear when the typing ends.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
+- In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.
 
 ### Annotations after a `code.patch` move
@@ -503,7 +504,7 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 ```
 
 - When the presenter reaches the step, the view moves to the target. Then the annotations of the step come in, with their effects.
-- The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the cursor or the pointer, the view stays where the presenter puts it.
+- The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the view, the cursor or the pointer, the view stays where the presenter puts it.
 - A step with no `scroll` move of its own does not move the view. `:goto` and the other goto commands move the view to the target of the `scroll` of their step.
 - At a step with no `scroll` move before it, after a step with one, the view goes to the top.
 - A `cursor`, a `code.link` and a `scroll` move all put the view somewhere. The last of them in the order that the moves run wins: the order of the steps, then the order of the list. When a `cursor` or a `code.link` wins, the view does what it did before `scroll`.
@@ -589,7 +590,7 @@ Presentation mode has no status bar. Thus `n`, `p` and an auto-advance do not sh
 
 With `auto_advance_ms`, the TUI goes to the next step by itself. The time starts when the step is ready: the typing has finished, and each `wait` move has elapsed.
 
-- A key during the typing only finishes the typing.
+- A key during the typing only finishes the typing. In presentation mode, with the live pointer off, a key that only moves the view moves the view and does not finish the typing.
 - An open `:` line, a `v` or `V` selection, the help, the list or the review holds the countdown until it closes.
 
 Exports use `auto_advance_ms` in different ways:

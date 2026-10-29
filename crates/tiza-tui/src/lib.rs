@@ -30,7 +30,7 @@ use crossterm::event::{
 use crossterm::execute;
 use tiza_core::fs::Opened;
 
-use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay};
+use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay, ViewEdge};
 
 pub struct RunOptions {
     pub step: Option<u32>,
@@ -693,9 +693,14 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         cancel_or_quit(app);
         return;
     }
-    // A typing animation ends on any key; the key itself is consumed.
+    // A typing animation ends on any key; the key itself is consumed. In
+    // presentation mode a key that only moves the view lets it type on, as
+    // an enter effect does below.
     if app.is_typing() {
-        let _ = (code, mods);
+        if presenter_view_key(app, code, mods) {
+            view_key(app, code);
+            return;
+        }
         app.finish_typing();
         app.revision += 1;
         return;
@@ -705,9 +710,7 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // the view moves: a trackpad or a mouse wheel comes as ↑ and ↓. With
     // the live pointer on, that key would move the pointer, and a change
     // of the pointer ends the effect: it ends it at once, as another key.
-    if app.is_playing_effect()
-        && !(app.present && app.pointer.is_none() && moves_the_view(app, code, mods))
-    {
+    if app.is_playing_effect() && !presenter_view_key(app, code, mods) {
         app.finish_effect();
         return;
     }
@@ -841,6 +844,11 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             return;
         }
     }
+    // In presentation mode these keys move the view, as in a web browser.
+    if presenter_view_key(app, code, mods) {
+        view_key(app, code);
+        return;
+    }
     match code {
         KeyCode::Tab => app.select_annotation(1),
         KeyCode::BackTab => app.select_annotation(-1),
@@ -917,6 +925,28 @@ fn moves_the_view(app: &App, code: KeyCode, mods: KeyModifiers) -> bool {
                 | KeyCode::End
                 | KeyCode::Char('j' | 'k' | 'J' | 'K' | 'g' | 'G')
         )
+}
+
+/// A key of [`moves_the_view`] in presentation mode with the live pointer
+/// off: it moves the view, and the hidden cursor stays inside it. With the
+/// pointer on, the key moves the cursor and the pointer, as elsewhere.
+fn presenter_view_key(app: &App, code: KeyCode, mods: KeyModifiers) -> bool {
+    app.present && app.pointer.is_none() && moves_the_view(app, code, mods)
+}
+
+/// Moves the view for a [`presenter_view_key`]: one row, half the rows of
+/// the code on screen (J, K), or an end of the code.
+fn view_key(app: &mut App, code: KeyCode) {
+    let half = (app.screen_height() as i64 / 2).max(1);
+    match code {
+        KeyCode::Char('j') | KeyCode::Down => app.view_by(1),
+        KeyCode::Char('k') | KeyCode::Up => app.view_by(-1),
+        KeyCode::Char('J') => app.view_by(half),
+        KeyCode::Char('K') => app.view_by(-half),
+        KeyCode::Char('g') | KeyCode::Home => app.view_to(ViewEdge::Top),
+        KeyCode::Char('G') | KeyCode::End => app.view_to(ViewEdge::Bottom),
+        _ => {}
+    }
 }
 
 /// Closes the command line without running it (Esc, Ctrl-C, Backspace on
