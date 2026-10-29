@@ -16,7 +16,9 @@ use std::collections::BTreeMap;
 
 use unicode_segmentation::UnicodeSegmentation;
 
-use crate::canvas::{Canvas, CellStyle, Rgb, code_grapheme_width, code_width, display_width};
+use crate::canvas::{
+    Canvas, CellStyle, Part, Rgb, Trace, code_grapheme_width, code_width, display_width,
+};
 use crate::highlight::{Segment, highlight_cached};
 use crate::model::{Annotation, Document, Emphasis, Shape, TextSpan};
 use crate::theme::Theme;
@@ -380,7 +382,9 @@ pub fn check_radius(px: f32) -> Result<f32, crate::Error> {
 
 /// The vertical part of an arrow between lines: drawn after every stub so
 /// it owns its cells (a stub crossing it shows a one-cell gap).
-struct Rail {
+struct Rail<'a> {
+    /// The arrow it belongs to.
+    ann: &'a Annotation,
     x: usize,
     top: usize,
     bottom: usize,
@@ -402,7 +406,81 @@ pub fn layout_with(
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
 ) -> Layout {
-    layout_run(doc, theme, opts, geometry, Paint::ALL)
+    layout_run(
+        doc,
+        theme,
+        opts,
+        geometry,
+        Paint::ALL,
+        false,
+        spot_step(doc, opts),
+    )
+}
+
+/// The step whose spotlights are active in a layout with `opts`: the step
+/// itself, or the step before while the step types and its dim fades (the
+/// dim of before shows until the effect fades it).
+fn spot_step(doc: &Document, opts: &LayoutOptions) -> Option<u32> {
+    if opts.typing && doc.dim_fades_at(opts.step) {
+        opts.step.checked_sub(1)
+    } else {
+        Some(opts.step)
+    }
+}
+
+/// [`layout_with`], with a record of what the annotations of `opts.step`
+/// paint (the enter effects, [`crate::effects`]). The canvas is the same
+/// as the one of [`layout_with`].
+///
+/// When a spotlight changes at the step, the record is the one of a base:
+/// the step with the spotlights of the step before, so each cell starts
+/// from the dim that was on the screen. A step with a typed move shows the
+/// dim of the step while it types, so it has that base only when its dim
+/// fades (the typing then keeps the dim of the step before). When the dim also fades
+/// ([`Document::dim_fades_at`]), each cell that no annotation of the step
+/// painted and whose style the new dim changes goes into
+/// [`Trace::dim_from`]. A base of another size than the step gives no
+/// base: the record of the step itself, and the dim changes at once.
+pub fn layout_traced(
+    doc: &Document,
+    theme: &Theme,
+    opts: &LayoutOptions,
+    geometry: Option<&StableGeometry>,
+) -> (Layout, Trace) {
+    let step = opts.step;
+    let traced = |spot: Option<u32>| {
+        let mut l = layout_run(doc, theme, opts, geometry, Paint::ALL, true, spot);
+        let trace = l.canvas.take_trace().unwrap_or_default();
+        (l, trace)
+    };
+    // A step that types its moves shows the spotlights of the step while
+    // it types, unless its dim fades: then that dim is the base, or the
+    // first frame of the effect would show a dim that was not on screen.
+    let typed_on_screen = crate::moves::typing_plan(doc, step).is_some();
+    if !doc.spots_change_at(step) || (typed_on_screen && !doc.dim_fades_at(step)) {
+        return traced(Some(step));
+    }
+    let (base, mut trace) = traced(step.checked_sub(1));
+    let last = layout_run(doc, theme, opts, geometry, Paint::ALL, false, Some(step));
+    let (w, h) = (last.canvas.width, last.canvas.height);
+    if (base.canvas.width, base.canvas.height) != (w, h) {
+        return traced(Some(step));
+    }
+    if doc.dim_fades_at(step) {
+        for (x, y, cell) in last.canvas.cells() {
+            let i = y * w + x;
+            if trace.cells.contains_key(&i) {
+                continue;
+            }
+            if let Some(was) = base.canvas.get(x, y)
+                && was.sym == cell.sym
+                && was.style != cell.style
+            {
+                trace.dim_from.insert(i, was.style);
+            }
+        }
+    }
+    (last, trace)
 }
 
 /// [`layout_with`] for the sweeps of `check`, which only read what is
@@ -418,7 +496,15 @@ pub(crate) fn layout_measures(
     geometry: Option<&StableGeometry>,
     spare: Option<Canvas>,
 ) -> Layout {
-    layout_run(doc, theme, opts, geometry, Paint { code: false, spare })
+    layout_run(
+        doc,
+        theme,
+        opts,
+        geometry,
+        Paint { code: false, spare },
+        false,
+        Some(opts.step),
+    )
 }
 
 /// What the drawing run of [`layout_pass`] paints, and into which buffer.
@@ -436,13 +522,17 @@ impl Paint {
     };
 }
 
-/// [`layout_with`], painting what `paint` says.
+/// [`layout_with`], painting what `paint` says, with a record of the
+/// enter effects when `trace`, and the spotlights active at `spot_step`
+/// (none with `None`).
 fn layout_run(
     doc: &Document,
     theme: &Theme,
     opts: &LayoutOptions,
     geometry: Option<&StableGeometry>,
     paint: Paint,
+    trace: bool,
+    spot_step: Option<u32>,
 ) -> Layout {
     let owned;
     let geometry = match geometry {
@@ -485,6 +575,8 @@ fn layout_run(
             .max()
             .unwrap_or(0)
             .max(1),
+        trace,
+        spot_step,
     };
     // Whether a margin block fits, and which rows it covers, is only known
     // once the rows exist, so the rows are planned again while a plan finds
@@ -526,6 +618,10 @@ struct Shared {
     selection: Option<(crate::model::Anchor, crate::model::Anchor)>,
     /// The widest code line, in cells (at least 1).
     code_w: usize,
+    /// Record what the annotations of the step paint ([`layout_traced`]).
+    trace: bool,
+    /// The step whose spotlights are active (none with `None`).
+    spot_step: Option<u32>,
 }
 
 /// What one run of [`layout_pass`] gives back.
@@ -627,10 +723,9 @@ fn layout_pass(
             from_line,
             to_line,
             ids,
-            until,
+            ..
         } = &a.shape
-            && opts.step >= a.step
-            && opts.step <= until.unwrap_or(a.step)
+            && shared.spot_step.is_some_and(|s| a.spot_active_at(s))
         {
             spot_any = true;
             if let Some(f) = from_line {
@@ -647,6 +742,11 @@ fn layout_pass(
     spot_lines.extend_from_slice(&spot_ranges);
     let line_in_spot =
         |line: u32| !spot_any || spot_lines.iter().any(|(a, b)| line >= *a && line <= *b);
+    // Who paints next, for a traced layout: an annotation of the step, or
+    // anything else.
+    let painter = |canvas: &mut Canvas, a: &Annotation, part: Part| {
+        canvas.trace_painter((a.step == opts.step).then_some((a.id.as_str(), part)));
+    };
     // While a spotlight is active, an annotation stays bright when it is in
     // the `ids` of a spotlight or when it touches the range of one. Every
     // other annotation is dimmed.
@@ -1313,6 +1413,9 @@ fn layout_pass(
         }
         None => Canvas::new_filled(width, rows.len(), base),
     };
+    if shared.trace {
+        canvas.start_trace();
+    }
 
     // ---- 1. code ----
     // The invisible characters' marks, given their colour back at the end
@@ -1409,6 +1512,7 @@ fn layout_pass(
         let x1 = code_x + col_to_x(text, span.end, opts.tab_width);
         let x1 = x1.min(code_x + code_w);
         if x1 > x0 {
+            painter(&mut canvas, a, Part::Recolor);
             // Without a tint, the span's own color is the annotation's (a
             // plain highlight keeps the theme text color + the accent).
             let ink = if a.color.is_some() || matches!(a.shape, Shape::Mark { .. }) || ann_dimmed(a)
@@ -1428,6 +1532,8 @@ fn layout_pass(
                 Emphasis::Underline => {
                     canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(ink).bold());
                     if let Some(&uy) = emphasis_row.get(&span.line) {
+                        canvas.trace_part(Part::Stroke);
+                        canvas.trace_path(vec![(x0, uy), (x1 - 1, uy)]);
                         for x in x0..x1 {
                             canvas.put(x, uy, UNDERLINE_GLYPH, base.fg(soft));
                         }
@@ -1442,6 +1548,8 @@ fn layout_pass(
                     let blank_after =
                         x1 < code_x + code_w && canvas.get(x1, y).is_some_and(|c| c.sym == " ");
                     let under = emphasis_row.get(&span.line).copied();
+                    canvas.trace_part(Part::Stroke);
+                    canvas.trace_path(vec![(x0.saturating_sub(1), y), (x1, y)]);
                     if blank_before {
                         canvas.put(x0 - 1, y, "⌈", base.fg(soft));
                     } else if let Some(uy) = under {
@@ -1467,6 +1575,8 @@ fn layout_pass(
                     // still code, so it keeps the code contrast floor (the
                     // softened red alone fell under 4.5:1 after compression).
                     canvas.restyle(x0, y, x1 - x0, CellStyle::new().fg(theme.legible(soft)));
+                    canvas.trace_part(Part::Stroke);
+                    canvas.trace_path(vec![(x0, y), (x1 - 1, y)]);
                     for x in x0..x1 {
                         let cell = canvas.get(x, y).map(|c| (c.sym.clone(), c.style));
                         if let Some((sym, st)) = cell
@@ -1480,6 +1590,8 @@ fn layout_pass(
             }
         }
     }
+
+    canvas.trace_painter(None);
 
     // ---- 3. boxes ----
     for (bi, b) in boxes.iter().enumerate() {
@@ -1496,11 +1608,22 @@ fn layout_pass(
         let (Some(top), Some(bottom)) = (top, bottom) else {
             continue;
         };
+        painter(&mut canvas, b.ann, Part::Stroke);
+        // Clockwise from the top-left corner.
+        canvas.trace_path(vec![
+            (lx, top),
+            (rx, top),
+            (rx, bottom),
+            (lx, bottom),
+            (lx, top),
+        ]);
         for y in top + 1..bottom {
+            canvas.trace_part(Part::Stroke);
             canvas.put_line(lx, y, g.v, box_style);
             canvas.put_line(rx, y, g.v, box_style);
             // subtle tint inside the box (the default; `fill: false` turns it off)
             if frame.fill.unwrap_or(true) {
+                canvas.trace_part(Part::Recolor);
                 canvas.restyle(
                     lx + 1,
                     y,
@@ -1509,6 +1632,7 @@ fn layout_pass(
                 );
             }
         }
+        canvas.trace_part(Part::Stroke);
         canvas.put(lx, top, g.tl, box_style);
         canvas.put(rx, top, g.tr, box_style);
         for x in lx + 1..rx {
@@ -1517,12 +1641,14 @@ fn layout_pass(
         if let Some(l) = label {
             let avail = rx.saturating_sub(lx + 4);
             canvas.put(lx + 1, top, g.h, box_style);
+            canvas.trace_part(Part::Text);
             canvas.put(lx + 2, top, " ", box_style);
             if display_width(l, 4) > avail {
                 clip(&mut clipped, &b.ann.id, l, avail <= 1);
             }
             let w = canvas.put_str_clipped(lx + 3, top, l, avail, box_style.bold());
             canvas.put(lx + 3 + w, top, " ", box_style);
+            canvas.trace_part(Part::Stroke);
         }
         canvas.put(lx, bottom, g.bl, box_style);
         canvas.put(rx, bottom, g.br, box_style);
@@ -1530,6 +1656,7 @@ fn layout_pass(
             canvas.put(x, bottom, g.h, box_style);
         }
     }
+    canvas.trace_painter(None);
 
     // ---- 4. arrows between lines ----
     // The cells every arrow's rail (and its two turns) will occupy, so a
@@ -1562,10 +1689,20 @@ fn layout_pass(
         let ys = row_of_line[&from.line];
         let yt = row_of_line[&to.line];
         let (top, bottom) = (ys.min(yt), ys.max(yt));
+        painter(&mut canvas, a.ann, Part::Stroke);
+        // From the source: its stub out to the lane, the rail, the stub in
+        // to the target.
+        canvas.trace_path(vec![
+            (code_x - 2, ys),
+            (lane_x, ys),
+            (lane_x, yt),
+            (code_x - 2, yt),
+        ]);
         // The rail and its turns toward the code (╭─ at the top row, ╰─ at
         // the bottom, whichever end is the source) are drawn after every
         // stub, in `rails` below.
         rails.push(Rail {
+            ann: a.ann,
             x: lane_x,
             top,
             bottom,
@@ -1604,6 +1741,7 @@ fn layout_pass(
             None => canvas.put_line(code_x - 2, yt, g.h, arrow_style),
         }
         // Mark the source and target points in the code.
+        canvas.trace_part(Part::Recolor);
         mark_anchor(
             &mut canvas,
             doc,
@@ -1631,6 +1769,7 @@ fn layout_pass(
     // The rails, over the stubs: a rail always owns its cells in the lane
     // band, so a stub that crossed it earlier shows a one-cell gap.
     for r in rails {
+        painter(&mut canvas, r.ann, Part::Stroke);
         for y in r.top + 1..r.bottom {
             canvas.put(r.x, y, r.v, r.style);
         }
@@ -1653,6 +1792,8 @@ fn layout_pass(
         let text = doc.line_text(from.line).unwrap_or("");
         let fx = code_x + col_to_x(text, from.col, opts.tab_width).min(code_w.saturating_sub(1));
         let tx = code_x + col_to_x(text, to.col, opts.tab_width).min(code_w.saturating_sub(1));
+        painter(&mut canvas, vis[*i], Part::Stroke);
+        canvas.trace_path(vec![(fx, y), (tx, y)]);
         if tx > fx {
             // Leaves the source downward (╰), runs right, head points right.
             canvas.put(
@@ -1701,6 +1842,7 @@ fn layout_pass(
             );
         }
         let code_row = row_of_line[&from.line];
+        canvas.trace_part(Part::Recolor);
         mark_anchor(
             &mut canvas,
             doc,
@@ -1725,6 +1867,15 @@ fn layout_pass(
         );
     }
 
+    canvas.trace_painter(None);
+    // The painter of a label, by the id of its annotation.
+    let label_painter = |canvas: &mut Canvas, id: &str| {
+        if canvas.is_tracing() {
+            let new = vis.iter().any(|a| a.id == id && a.step == opts.step);
+            canvas.trace_painter(new.then_some((id, Part::Text)));
+        }
+    };
+
     // ---- 6. labels under the lines ----
     // (top row, bottom row, right rail x) of each box: a label under a line
     // inside a box ends a cell before the box's right rail, as the code does.
@@ -1738,6 +1889,7 @@ fn layout_pass(
     for (y, row) in rows.iter().enumerate() {
         let Row::Under(i) = row else { continue };
         let (lbl, is_note) = &unders[*i];
+        label_painter(&mut canvas, &lbl.id);
         // The innermost box around this row and the first margin block on
         // it: neither is drawn over, nor touched (one cell short of it), when
         // it is on the canvas.
@@ -1788,6 +1940,7 @@ fn layout_pass(
             let Some(&y) = row_of_line.get(line) else {
                 continue;
             };
+            label_painter(&mut canvas, id);
             let text_w = code_width(doc.line_text(*line).unwrap_or(""), opts.tab_width);
             let x0 = code_x + text_w + 2 + used.get(line).copied().unwrap_or(0);
             let end = code_x + code_w;
@@ -1814,9 +1967,20 @@ fn layout_pass(
     }
 
     // ---- 6b. callouts ----
+    canvas.trace_painter(None);
     let draw_block = |canvas: &mut Canvas, c: &CalloutPlan, x: usize, y0: usize, color: Rgb| {
         let w = c.width;
         let g = Glyphs::for_border(&c.frame);
+        let yb = y0 + 1 + c.lines.len();
+        painter(canvas, vis[c.idx], Part::Stroke);
+        // Clockwise from the top-left corner.
+        canvas.trace_path(vec![
+            (x, y0),
+            (x + w - 1, y0),
+            (x + w - 1, yb),
+            (x, yb),
+            (x, y0),
+        ]);
         let border = base.fg(color);
         // Callouts are not tinted unless asked (`fill: true`).
         let inside = if c.frame.fill.unwrap_or(false) {
@@ -1833,6 +1997,7 @@ fn layout_pass(
         // Whether the title had to be clipped.
         let mut title_clipped = false;
         if let Some(t) = &c.title {
+            canvas.trace_part(Part::Text);
             canvas.put(x + 2, y0, " ", border);
             title_clipped = display_width(t, 4) > w.saturating_sub(6);
             let tw = canvas.put_str_clipped(x + 3, y0, t, w.saturating_sub(6), border.bold());
@@ -1840,19 +2005,23 @@ fn layout_pass(
         }
         for (k, l) in c.lines.iter().enumerate() {
             let y = y0 + 1 + k;
+            canvas.trace_part(Part::Stroke);
             canvas.put(x, y, g.v, border);
+            canvas.trace_part(Part::Text);
             for xx in x + 1..x + w - 1 {
                 canvas.put(xx, y, " ", inside);
             }
             canvas.put_str(x + 2, y, l, text_style);
+            canvas.trace_part(Part::Stroke);
             canvas.put(x + w - 1, y, g.v, border);
         }
-        let yb = y0 + 1 + c.lines.len();
+        canvas.trace_part(Part::Stroke);
         canvas.put(x, yb, g.bl, border);
         for xx in x + 1..x + w - 1 {
             canvas.put(xx, yb, g.h, border);
         }
         canvas.put(x + w - 1, yb, g.br, border);
+        canvas.trace_painter(None);
         title_clipped
     };
     // Below: their rows already exist.
@@ -1936,6 +2105,7 @@ fn layout_pass(
                         || (owner[r].is_some() && owner[r] == line_row[y] && margin_blank[r]))
             };
             for (k, l) in labels.iter().enumerate() {
+                label_painter(&mut canvas, &l.id);
                 let prefix = if l.note { "┆ " } else { "" };
                 let style = if l.note {
                     base.fg(l.color).italic()
@@ -1988,6 +2158,8 @@ fn layout_pass(
             }
         }
     }
+
+    canvas.trace_painter(None);
 
     // ---- scripted selection and cursor: what `select` and
     // `cursor` moves left at this step, drawn like the TUI's own ----
@@ -2448,6 +2620,7 @@ mod tests {
             id: "a1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Mark {
@@ -2467,6 +2640,7 @@ mod tests {
             id: "a2".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Arrow {
@@ -2484,6 +2658,7 @@ mod tests {
             id: "a3".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -2498,6 +2673,7 @@ mod tests {
             id: "a4".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2548,6 +2724,7 @@ mod tests {
             id: "s1".into(),
             step: 3,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Spotlight {
@@ -2616,6 +2793,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2730,6 +2908,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {
@@ -2747,6 +2926,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {
@@ -2759,6 +2939,7 @@ mod tests {
             id: "b1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -2825,6 +3006,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {
@@ -2843,6 +3025,7 @@ mod tests {
                 id: "n1".into(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -2927,6 +3110,7 @@ mod tests {
                 id: id.into(),
                 step: 1,
                 color: None,
+                effect: None,
                 markers: None,
                 file: None,
                 shape: Shape::Note {
@@ -2940,6 +3124,7 @@ mod tests {
             id: "b1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Box {
@@ -3037,6 +3222,7 @@ mod tests {
             id: "c1".into(),
             step: 1,
             color: Some("cyan".into()),
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Callout {

@@ -66,6 +66,8 @@ The commands are in [`:` commands](../commands.md).
 | `` `emphasis` applies to highlights and marks only (ID is not one) `` | `:set` got `emphasis` for another annotation. |
 | `expected key=value, got «TEXT»` | A property has no key or no value. |
 | `step must be a number` | `:set` got a `step` that is not a number. |
+| `effect draw needs a stroke: use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike` | `:set` or a command that adds an annotation got `effect=draw` for an annotation without a stroke. |
+| `unknown effect (use draw, fade or none)` | `:set`, `:box`, `:arrow`, `:hl`, `:mark`, `:note`, `:callout` or `:spot` got another value for `effect`. |
 | `annotations live at steps ≥ 1 (step 0 is the code alone)` | `:step ID N` got step 0. |
 | `step N is beyond the last step (M): an annotation can go up to step K (the next empty one)` | `:step ID N` got a step number past `K`, the first empty step. |
 
@@ -83,10 +85,10 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `unknown start head (use none, arrow, dot, bar, open)` | `start=` got another value. |
 | `unknown end head (use none, arrow, dot, bar, open)` | `end=` got another value. |
 | `fill must be yes\|tint or no\|none` | `fill=` got another value. |
-| `unknown key (stroke, route, heads, start, end)` | `:arrow` got another key, or `:set` got a key that it does not know. |
-| `unknown key (border, corners, fill)` | `:box` or `:callout` got another key. |
-| `unknown key for :hl (emphasis=fill\|underline\|brackets\|strike)` | `:hl` got another key. |
-| `unknown key for :mark (emphasis=fill\|underline\|brackets\|strike)` | `:mark` got another key. |
+| `unknown key (stroke, route, heads, start, end, effect)` | `:arrow` got another key, or `:set` got a key that it does not know. |
+| `unknown key (border, corners, fill, effect)` | `:box` or `:callout` got another key. |
+| `unknown key for :hl (emphasis=fill\|underline\|brackets\|strike, effect=draw\|fade)` | `:hl` got another key. |
+| `unknown key for :mark (emphasis=fill\|underline\|brackets\|strike, effect=draw\|fade)` | `:mark` got another key. |
 
 ## Messages of the step, file and view commands
 

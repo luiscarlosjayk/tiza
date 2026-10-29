@@ -1102,3 +1102,21 @@ fn a_leftover_that_cannot_be_removed_is_a_warning() {
         assert!(err.contains("removed 1 file from an earlier run: step-09.png"));
     }
 }
+
+#[test]
+fn an_effect_draw_without_a_stroke_is_a_warning() {
+    // The note n1 of mixed.tiza has draw: it has no line to draw.
+    let (code, v) = check_json(&fixture("shared/enter_effects/mixed.tiza"), &[]);
+    assert_eq!(code, 0, "a warning only: {v}");
+    let f = with_code(&findings(&v), "effect");
+    assert_eq!(f.len(), 1, "{v}");
+    assert_eq!(f[0]["id"], "n1", "{v}");
+    assert_eq!(f[0]["level"], "warning", "{v}");
+    assert!(
+        f[0]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("effect draw needs a stroke, so this annotation comes in with no effect."),
+        "{v}"
+    );
+}

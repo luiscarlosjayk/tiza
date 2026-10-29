@@ -77,6 +77,7 @@ For example, make an arrow thick and give it a bar head:
 | `stroke`, `route`, `heads`, `start` and `end` | Arrows. |
 | `border`, `corners` and `fill` | Boxes and callouts. |
 | `emphasis` | Highlights and marks. |
+| `effect` | All the annotations. Experimental: `draw`, `fade` or `none`. See [Enter effects](../document-format.md#enter-effects-experimental). |
 
 The values are the same as in [Annotation commands](annotate.md). The fields are in [Annotations](../document-format.md#annotations).
 
@@ -84,6 +85,7 @@ The values are the same as in [Annotation commands](annotate.md). The fields are
 
 - `label` also has the name `title`. On all the annotations except a callout, it also has the name `text`.
 - On a highlight, `emphasis` also has the name `style`.
+- `effect=none` removes the enter effect. `effect=draw` needs a stroke: a box, a callout, an arrow, or a highlight or a mark with the emphasis `underline`, `brackets` or `strike`.
 
 ## `:step ID N`
 

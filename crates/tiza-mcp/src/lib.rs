@@ -103,6 +103,10 @@ pub struct BoxParams {
         description = "Tint the inside: true/false (boxes default to true, callouts to false)"
     )]
     pub fill: Option<bool>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -127,6 +131,10 @@ pub struct ArrowParams {
         description = "Head at the target: arrow (default), none, dot, bar, open. none+none draws a plain connector."
     )]
     pub head_end: Option<String>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 /// An argument that the tool refuses itself, said as a refusal of the
@@ -231,6 +239,10 @@ pub struct NoteParams {
     )]
     pub color: Option<String>,
     pub id: Option<String>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -247,6 +259,10 @@ pub struct HighlightParams {
         description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
     )]
     pub emphasis: Option<String>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -272,6 +288,10 @@ pub struct MarkParams {
         description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
     )]
     pub emphasis: Option<String>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -320,6 +340,13 @@ pub struct UpdateParams {
         description = "Highlights/marks: how the span is drawn (fill, underline, brackets, strike)"
     )]
     pub emphasis: Option<String>,
+    /// Absent keeps the effect, `null` removes it (`present`), as `file`.
+    #[serde(default, deserialize_with = "tiza_core::protocol::present")]
+    #[schemars(
+        with = "Option<tiza_core::effects::Effect>",
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike. `null` removes the effect. Leave it out to keep the effect of the annotation."
+    )]
+    pub effect: Option<Option<tiza_core::effects::Effect>>,
     /// Absent keeps the file, `null` is the main file (`present`), as in
     /// the socket's `annotation.update`.
     #[serde(default, deserialize_with = "tiza_core::protocol::present")]
@@ -400,6 +427,10 @@ pub struct CalloutParams {
         description = "Tint the inside: true/false (boxes default to true, callouts to false)"
     )]
     pub fill: Option<bool>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -425,6 +456,10 @@ pub struct SpotlightParams {
     #[schemars(description = "Last step at which it stays active; defaults to `step` only")]
     pub until: Option<u32>,
     pub id: Option<String>,
+    #[schemars(
+        description = "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
+    )]
+    pub effect: Option<tiza_core::effects::Effect>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -837,7 +872,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<BoxParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let mut params = json!({"type": "box", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
@@ -852,7 +887,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<ArrowParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let mut params = json!({"type": "arrow", "from": p.from, "to": p.to, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
         let style = line_style_json(&p.stroke, &p.route, &p.head_start, &p.head_end)?;
         for (k, v) in style {
             if k == "heads" {
@@ -880,7 +915,7 @@ impl TizaServer {
         let v = self
             .call(
                 "annotation.add",
-                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id, "color": p.color}),
+                json!({"type": "note", "line": p.line, "text": p.text, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect}),
             )
             .await?;
         Ok(annotation_reply(&v, "added"))
@@ -893,7 +928,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<HighlightParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let mut params = json!({"type": "highlight", "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
         if let Some(e) = emphasis_json(&p.emphasis)? {
             params["emphasis"] = e;
         }
@@ -908,7 +943,7 @@ impl TizaServer {
         &self,
         Parameters(p): Parameters<MarkParams>,
     ) -> Result<CallToolResult, McpError> {
-        let mut params = json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color});
+        let mut params = json!({"type": "mark", "kind": p.kind, "style": p.style.unwrap_or_default(), "at": p.at, "label": p.label, "step": p.step, "id": p.id, "color": p.color, "effect": p.effect});
         if let Some(e) = emphasis_json(&p.emphasis)? {
             params["emphasis"] = e;
         }
@@ -942,6 +977,9 @@ impl TizaServer {
         }
         if let Some(file) = &p.file {
             params["file"] = json!(file);
+        }
+        if let Some(effect) = &p.effect {
+            params["effect"] = json!(effect);
         }
         if p.text.is_some() {
             return Err(invalid_argument(
@@ -993,7 +1031,7 @@ impl TizaServer {
                 return Err(invalid_argument("unknown placement (margin, below, auto)"));
             }
         };
-        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id});
+        let mut params = json!({"type": "callout", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "text": p.text, "title": p.title, "placement": placement, "width": p.width, "step": p.step, "color": p.color, "id": p.id, "effect": p.effect});
         for (k, v) in border_style_json(&p.border, &p.corners, p.fill)? {
             params[k] = v;
         }
@@ -1011,7 +1049,7 @@ impl TizaServer {
         let v = self
             .call(
                 "annotation.add",
-                json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id}),
+                json!({"type": "spotlight", "from_line": p.from_line, "to_line": p.to_line, "find_start": p.find_start, "find_end": p.find_end, "ids": p.ids.unwrap_or_default(), "until": p.until, "step": p.step, "id": p.id, "effect": p.effect}),
             )
             .await?;
         Ok(annotation_reply(&v, "added"))

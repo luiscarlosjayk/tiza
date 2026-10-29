@@ -111,6 +111,7 @@ fn doc_strategy() -> impl Strategy<Value = Document> {
                     id: format!("p{i}"),
                     step,
                     color: None,
+                    effect: None,
                     markers: None,
                     file: None,
                     shape,

@@ -126,6 +126,7 @@ fn old_kinds_resolve_and_no_new_fields_are_added() {
         "\"fill\"",
         "\"placement\"",
         "\"style\"",
+        "\"effect\"",
     ] {
         assert!(
             !text.contains(new_field),

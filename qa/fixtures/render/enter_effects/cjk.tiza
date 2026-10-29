@@ -1,0 +1,35 @@
+{
+ "schema": 1,
+ "title": "Wide characters",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "let 名前 = \"所有権\";",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "u1",
+   "step": 1,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 2,
+    "start": 4,
+    "end": 6
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "c1",
+   "step": 2,
+   "type": "callout",
+   "from_line": 2,
+   "text": "所有権が移る",
+   "effect": "draw"
+  }
+ ]
+}

@@ -130,6 +130,10 @@
               "null"
             ]
           },
+          "effect": {
+            "description": "An enter effect plays on the screen (experimental). The reply\nleaves it out when no effect plays.",
+            "type": "boolean"
+          },
           "file": {
             "description": "The file shown: the source file, or the one a `code.link` move\nleft up at the current step.",
             "type": [
@@ -729,6 +733,17 @@
                   "null"
                 ]
               },
+              "effect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Effect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Experimental. The enter effect of the annotation when the step goes forward: draw or fade. Absent: no effect."
+              },
               "file": {
                 "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
@@ -961,6 +976,21 @@
               "code"
             ],
             "type": "object"
+          },
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
           },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
@@ -1688,6 +1718,21 @@
       "method": "annotation.add",
       "params": {
         "$defs": {
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
+          },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
             "oneOf": [
@@ -2191,6 +2236,18 @@
               "null"
             ]
           },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effect"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Experimental. The enter effect when the step goes forward: `draw`\nor `fade`. Absent or `null`: no effect."
+          },
           "file": {
             "default": null,
             "description": "The file (view) the annotation belongs to, as a `code.link` names\nit. Default (absent or `null`): the file shown at its step.",
@@ -2285,6 +2342,21 @@
       "method": "annotation.update",
       "params": {
         "$defs": {
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
+          },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
             "oneOf": [
@@ -2891,6 +2963,17 @@
               }
             ],
             "description": "Boxes and callouts: new corners."
+          },
+          "effect": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/Effect"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Experimental. The new enter effect: `draw` or `fade`. `null` removes\nit. Absent: the annotation keeps its effect."
           },
           "emphasis": {
             "anyOf": [
@@ -3507,6 +3590,17 @@
                   "null"
                 ]
               },
+              "effect": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/Effect"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Experimental. The enter effect of the annotation when the step goes forward: draw or fade. Absent: no effect."
+              },
               "file": {
                 "description": "The file (view) the annotation belongs to, as a `code.link` names it.\nAbsent: the document's main file. Filled in from the view\nshown at the annotation's step when it is added without one. Lines\nare always real file line numbers; the annotation is drawn only\nwhile its file is shown and its lines fall inside the window.",
                 "type": [
@@ -3739,6 +3833,21 @@
               "code"
             ],
             "type": "object"
+          },
+          "Effect": {
+            "description": "The enter effect of an annotation (experimental).",
+            "oneOf": [
+              {
+                "const": "draw",
+                "description": "The stroke is drawn along its path, then the text fades in. Only\na box, a callout, an arrow, or a highlight or mark with emphasis\nunderline, brackets or strike has a stroke.",
+                "type": "string"
+              },
+              {
+                "const": "fade",
+                "description": "The annotation fades in. On a spotlight, the dim fades in and out.",
+                "type": "string"
+              }
+            ]
           },
           "Emphasis": {
             "description": "How a highlighted or marked span is drawn.",
@@ -6171,7 +6280,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, and `stale` (a\nlive instance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, `effect` (the\nenter effect `draw` on a shape with no stroke), and `stale` (a live\ninstance's move the code changed under).",
                 "type": "string"
               },
               "file": {

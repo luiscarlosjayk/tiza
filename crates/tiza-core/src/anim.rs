@@ -47,6 +47,9 @@ pub struct Frame {
     /// An intermediate frame of a typing animation (the step's annotations
     /// are not drawn yet).
     pub typing: bool,
+    /// An intermediate frame of an enter effect (the step's annotations
+    /// come in, [`crate::effects`]).
+    pub effect: bool,
 }
 
 /// Validates the seconds each step of a recording stays (`--interval`,
@@ -123,6 +126,7 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
                     canvas: lay(&d, step, true, None),
                     delay_ms: delay.min(max),
                     typing: true,
+                    effect: false,
                 });
             }
         }
@@ -133,11 +137,37 @@ pub fn frames(doc: &Document, theme: &Theme, opts: &AnimOptions) -> Vec<Frame> {
             None if step == last => hold.saturating_mul(2),
             None => hold,
         };
+        // The enter effects of the step, after its typing: the frames of
+        // the effect, then the step's own frame. The first step of the
+        // take shows as when the document opens, with no effect.
+        let canvas = if step > first && doc.has_effect_at(step) {
+            let (l, trace) = crate::layout::layout_traced(
+                doc,
+                theme,
+                &options(doc, step, false),
+                Some(&geometry),
+            );
+            if let Some(plan) = crate::effects::Plan::new(&l.canvas, &trace, doc) {
+                for (canvas, delay_ms) in plan.frames(&l.canvas, crate::effects::EXPORT_FRAME_MS) {
+                    out.push(Frame {
+                        step,
+                        canvas,
+                        delay_ms,
+                        typing: false,
+                        effect: true,
+                    });
+                }
+            }
+            l.canvas
+        } else {
+            lay(doc, step, false, Some(&geometry))
+        };
         out.push(Frame {
             step,
-            canvas: lay(doc, step, false, Some(&geometry)),
+            canvas,
             delay_ms: delay,
             typing: false,
+            effect: false,
         });
     }
     // Same size for every frame: pad with the theme background. The
@@ -193,6 +223,7 @@ mod tests {
             id: "a1".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: crate::model::Shape::Note {

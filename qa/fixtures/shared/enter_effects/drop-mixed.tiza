@@ -1,0 +1,73 @@
+{
+ "schema": 1,
+ "title": "Drop demo, with an effect only on the callout",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "struct Player {}",
+  "",
+  "impl Player {",
+  "    fn new() -> Self {",
+  "        println!(\"Creating player!\");",
+  "        Player {}",
+  "    }",
+  "}",
+  "",
+  "impl Drop for Player {",
+  "    fn drop(&mut self) {",
+  "        println!(\"Dropping player!\");",
+  "    }",
+  "}",
+  "",
+  "fn main() {",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "u1",
+   "step": 1,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 1,
+    "start": 0,
+    "end": 16
+   }
+  },
+  {
+   "id": "b1",
+   "step": 2,
+   "type": "box",
+   "from_line": 10,
+   "to_line": 14,
+   "fill": false
+  },
+  {
+   "id": "c1",
+   "step": 3,
+   "type": "callout",
+   "from_line": 11,
+   "to_line": 13,
+   "text": "Rust calls drop when the value goes out of scope",
+   "placement": "margin",
+   "effect": "draw"
+  },
+  {
+   "id": "s1",
+   "step": 2,
+   "type": "spotlight",
+   "from_line": 10,
+   "to_line": 14,
+   "until": 3
+  },
+  {
+   "id": "n9",
+   "step": 4,
+   "type": "note",
+   "line": 16,
+   "text": "the dim ends"
+  }
+ ]
+}

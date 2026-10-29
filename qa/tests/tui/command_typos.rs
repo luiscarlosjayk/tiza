@@ -102,6 +102,25 @@ fn table_of_typos_is_rejected_with_a_way_forward() {
         ("stpe 2", "did you mean :step, :style?"),
         ("colr a1 red", "did you mean :color?"),
         ("zzzzzz", "unknown command (try :help)"),
+        ("set a1 effect=draw", "effect draw needs a stroke"),
+        (
+            "set a4 effect=drw",
+            "unknown effect (use draw, fade or none)",
+        ),
+        ("note 3 hi effect=draw", "effect draw needs a stroke"),
+        ("hl 3:takes effect=draw", "effect draw needs a stroke"),
+        (
+            "box 7-9 effect=drw",
+            "unknown effect (use draw, fade or none)",
+        ),
+        (
+            "box 7-9 x eff=draw",
+            "unknown key (border, corners, fill, effect)",
+        ),
+        (
+            "arrow 2:s 7:s x eff=draw",
+            "unknown key (stroke, route, heads, start, end, effect)",
+        ),
     ] {
         rejected(&live, cmd, expect);
     }
@@ -132,6 +151,10 @@ fn valid_forms_still_work_and_report_what_they_did() {
         ("until a2 3", "a2 active until step 3"),
         ("callout 7-9 @below why", ": callout at L7-9"),
         ("set a1 color=blue", "a1"),
+        ("set a4 effect=draw", "a4"),
+        ("set a4 effect=none", "a4"),
+        ("box 7-9 takes effect=draw", ": box 7-9"),
+        ("spot 2-3 effect=fade", "spot"),
         ("style io glyph=⚡ legend=io", "style io defined"),
         ("lang ts", "language: ts"),
         (
@@ -195,4 +218,40 @@ print(text[text.find("EXIT="):].strip())
     // Without the env var the command does not exist.
     let live = fresh("nopanic");
     rejected(&live, "panic", "unknown command");
+}
+
+#[test]
+fn effect_is_taken_off_the_end_of_a_note_and_a_spot() {
+    use tiza_core::effects::Effect;
+    use tiza_core::model::Shape;
+    let live = fresh("effect-add");
+    let last = |live: &Live| live.with(|a| a.doc.annotations.last().cloned()).unwrap();
+    live.command("note 3 moves effect=fade");
+    let a = last(&live);
+    assert!(
+        matches!(&a.shape, Shape::Note { text, .. } if text == "moves"),
+        "{a:?}"
+    );
+    assert_eq!(a.effect, Some(Effect::Fade));
+    live.command("note 3 hi\teffect=fade");
+    let a = last(&live);
+    assert!(
+        matches!(&a.shape, Shape::Note { text, .. } if text == "hi"),
+        "{a:?}"
+    );
+    assert_eq!(a.effect, Some(Effect::Fade));
+    live.command("note 3 x=1");
+    let a = last(&live);
+    assert!(
+        matches!(&a.shape, Shape::Note { text, .. } if text == "x=1"),
+        "{a:?}"
+    );
+    assert_eq!(a.effect, None);
+    live.command("spot 2-3 effect=fade");
+    let a = last(&live);
+    assert!(
+        matches!(&a.shape, Shape::Spotlight { ids, .. } if ids.is_empty()),
+        "{a:?}"
+    );
+    assert_eq!(a.effect, Some(Effect::Fade));
 }

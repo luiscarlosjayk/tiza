@@ -165,6 +165,8 @@ The arguments of the MCP tools are in [Arguments](mcp-tools.md#arguments). The s
 - `annotation.update` takes the new place in `move`: `{"id": "a1", "move": {"at": {"find": "s: String"}}}`. `move` takes `at`, `from`, `to`, `from_line` and `to_line`.
 - `annotation.update` takes `shape`, which replaces the whole shape of the annotation.
 - `annotation.update` takes `heads` with one end only. The other end stays.
+- `annotation.add` and `annotation.update` take `effect`, the experimental [enter effect](document-format.md#enter-effects-experimental): `draw`, `fade` or `null`. In `annotation.update`, an absent `effect` keeps the effect, and `null` removes it.
+- `draw` on an annotation without a stroke fails with `invalid_argument`. `annotation.update` checks it when the request has `effect`, `shape` or `emphasis`. Other updates keep the effect, also on an annotation from a file.
 - `theme.set` without `theme` changes between dark and light, as [Agents and themes](themes.md#agents-and-themes) tells. The MCP tool `set_theme` needs `theme`.
 
 ### `scene.clear`
@@ -290,9 +292,10 @@ These methods refuse a key that they do not know: `annotation.update`, `scene.cl
 | `stale_moves` | The number of moves that do not match the code any more. |
 | `save_error` | Why the last save of the document failed, for example a read-only folder, or `null` when the last save worked. |
 | `follow` | While follow mode is on: `paused`, `pending` and `resume_step`, as `follow.status` gives them. |
+| `effect` | Experimental. `true` while an enter effect plays on the screen. |
 
 - A field that does not apply is not in the result, except `file`, `pointer` and `save_error`, which are `null`.
-- `loop` and `supervised` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.
+- `loop`, `supervised` and `effect` are not in the result when they are `false`. `pending` and `stale_moves` are not in the result when they are 0.
 - `by` of `pointer` is `presenter` or `agent`. It tells who moved the pointer last.
 - `revision` grows when something changes, by 1 or more. A request that changes nothing keeps it.
 - A change is a change of the document or of what the instance shows. Examples are the step, the focus, the theme and supervised mode.

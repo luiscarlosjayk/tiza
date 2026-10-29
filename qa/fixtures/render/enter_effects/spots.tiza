@@ -1,0 +1,62 @@
+{
+ "schema": 1,
+ "title": "Spotlights that come in and go out",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let a = 1;",
+  "    let b = 2;",
+  "",
+  "    let c = a + b;",
+  "    let d = c * 2;",
+  "    let e = d - 1;",
+  "",
+  "    let f = e + a;",
+  "    let g = f * b;",
+  "",
+  "    let h = g - c;",
+  "    let i = h + d;",
+  "    let j = i * e;",
+  "    let k = j - f;",
+  "    println!(\"{k}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "A",
+   "step": 1,
+   "type": "spotlight",
+   "from_line": 1,
+   "to_line": 3,
+   "until": 2,
+   "effect": "fade"
+  },
+  {
+   "id": "B",
+   "step": 1,
+   "type": "spotlight",
+   "from_line": 6,
+   "to_line": 7,
+   "until": 4
+  },
+  {
+   "id": "C",
+   "step": 3,
+   "type": "spotlight",
+   "from_line": 9,
+   "to_line": 10,
+   "until": 3,
+   "effect": "fade"
+  },
+  {
+   "id": "n5",
+   "step": 5,
+   "type": "note",
+   "line": 16,
+   "text": "the dim ends at once"
+  }
+ ]
+}

@@ -8,4 +8,5 @@ mod export_image_config;
 mod real_client;
 mod refusal_codes;
 mod resources;
+mod update_annotation_effect;
 mod update_annotation_file;

@@ -1,0 +1,77 @@
+{
+ "schema": 1,
+ "title": "Annotations with and without an effect",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let a = String::new();",
+  "    let b = &a;",
+  "    let c = a.len();",
+  "    let d = c + 1;",
+  "    let e = d * 2;",
+  "    println!(\"{e}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "b1",
+   "step": 1,
+   "type": "box",
+   "from_line": 2,
+   "to_line": 4
+  },
+  {
+   "id": "a1",
+   "step": 1,
+   "type": "arrow",
+   "from": {
+    "line": 3,
+    "col": 8
+   },
+   "to": {
+    "line": 6,
+    "col": 8
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "b2",
+   "step": 2,
+   "type": "box",
+   "from_line": 6,
+   "to_line": 7,
+   "effect": "fade"
+  },
+  {
+   "id": "n1",
+   "step": 3,
+   "type": "note",
+   "line": 1,
+   "text": "no line to draw",
+   "effect": "draw"
+  },
+  {
+   "id": "h1",
+   "step": 4,
+   "type": "highlight",
+   "emphasis": "underline",
+   "span": {
+    "line": 5,
+    "start": 4,
+    "end": 18
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "b3",
+   "step": 4,
+   "type": "box",
+   "from_line": 4,
+   "to_line": 6,
+   "fill": true
+  }
+ ]
+}

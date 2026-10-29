@@ -1438,8 +1438,9 @@ fn the_test_hooks_are_never_in_a_release_build() {
         }
     }
     // The hooks of today: the request and check panics of the TUI, its
-    // follow hook and `:panic`, and the two of the MCP server.
-    assert_eq!(seen.len(), 6, "{seen:#?}");
+    // follow hook, `:panic` and the slow clock of an enter effect, and the
+    // two of the MCP server.
+    assert_eq!(seen.len(), 7, "{seen:#?}");
     for manifest in [
         "crates/tiza-tui/Cargo.toml",
         "crates/tiza-mcp/Cargo.toml",

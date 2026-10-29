@@ -6,8 +6,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
+use tiza_core::effects::Effect;
 use tiza_core::history::History;
-use tiza_core::layout::{Layout, LayoutOptions, layout};
+use tiza_core::layout::{Layout, LayoutOptions};
 use tiza_core::model::{
     Annotation, BUILTIN_KINDS, Document, Emphasis, MarkStyle, Shape, ThemeName,
 };
@@ -144,7 +145,37 @@ pub struct TypingState {
     pub plan: moves::TypingPlan,
     pub index: usize,
     pub revealed: usize,
+    /// The enter effects of the step play when the typing ends: a step
+    /// forward, not the step the TUI opens at.
+    pub then_effect: bool,
     last: std::time::Instant,
+}
+
+/// An enter effect in progress (experimental): the new annotations of the
+/// step just reached come in as [`tiza_core::effects`] plans them. Any key
+/// or any change of the document ends it.
+#[derive(Debug)]
+pub struct EffectState {
+    pub started: std::time::Instant,
+    /// How long it lasts at the width it started at.
+    pub duration_ms: u64,
+    /// Its clock runs this many times slower (1; more only with the
+    /// `test-hooks` feature and `TIZA_TEST_HOOK=effect:slow`, so a test
+    /// on a pty sees it play).
+    slow: u64,
+    /// The revision it plays at: at another one, it is over.
+    revision: u64,
+    /// The final layout and the plan at a width and with a pointer,
+    /// computed once: each frame only paints the plan over a copy.
+    cache: std::cell::RefCell<Option<EffectCache>>,
+}
+
+#[derive(Debug)]
+struct EffectCache {
+    width: usize,
+    pointer: Option<(u32, u32)>,
+    layout: Layout,
+    plan: Option<tiza_core::effects::Plan>,
 }
 
 /// A mutation an agent asked for while supervised mode is on: it waits for
@@ -570,6 +601,8 @@ pub struct App {
     screen_via_history: bool,
     /// Typing animation of the step just reached.
     pub typing: Option<TypingState>,
+    /// Enter effect of the step just reached, after its typing.
+    pub effect: Option<EffectState>,
     /// When the current step became ready (reached, its typing finished
     /// and its `wait` moves elapsed): the `auto_advance_ms` countdown runs
     /// from here. `None` while typing or after it fired.
@@ -696,6 +729,7 @@ impl App {
             pasted_codes: Vec::new(),
             screen_via_history: false,
             typing: None,
+            effect: None,
             step_ready_at: Some(std::time::Instant::now()),
             pointer: None,
             pointer_seen: ((cursor_line, cursor_line), None),
@@ -1062,9 +1096,28 @@ impl App {
     /// of its own) out, with the take's geometry computed once per change
     /// ([`App::geometry`]) when `opts` asks for a stable layout.
     fn lay_out(&self, doc: &Document, theme: &Theme, opts: &LayoutOptions) -> Layout {
+        self.lay_out_traced(doc, theme, opts, false).0
+    }
+
+    /// [`App::lay_out`], with the record of the enter effects when `traced`.
+    fn lay_out_traced(
+        &self,
+        doc: &Document,
+        theme: &Theme,
+        opts: &LayoutOptions,
+        traced: bool,
+    ) -> (Layout, Option<tiza_core::canvas::Trace>) {
         self.layouts.set(self.layouts.get() + 1);
+        let run = |g: Option<&tiza_core::layout::StableGeometry>| {
+            if traced {
+                let (l, t) = tiza_core::layout::layout_traced(doc, theme, opts, g);
+                (l, Some(t))
+            } else {
+                (tiza_core::layout::layout_with(doc, theme, opts, g), None)
+            }
+        };
         if !opts.stable {
-            return layout(doc, theme, opts);
+            return run(None);
         }
         let key = GeometryKey {
             revision: self.revision,
@@ -1086,7 +1139,7 @@ impl App {
             *self.geometry.borrow_mut() = Some((key, g));
         }
         let cache = self.geometry.borrow();
-        tiza_core::layout::layout_with(doc, theme, opts, cache.as_ref().map(|(_, g)| g))
+        run(cache.as_ref().map(|(_, g)| g))
     }
 
     /// The width the screen lays the code out at: the terminal of the last
@@ -1213,7 +1266,10 @@ impl App {
     pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
         let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
-        let l = self.lay_out(&self.doc, &self.theme, &opts);
+        let l = match self.effect_frame(&opts) {
+            Some(l) => l,
+            None => self.lay_out(&self.doc, &self.theme, &opts),
+        };
         // `status` reads the viewport from here instead of laying out again.
         *self.viewport.borrow_mut() = Some((self.viewport_key(width), ViewportFacts::of(&l)));
         l
@@ -1745,11 +1801,12 @@ impl App {
         color: Option<String>,
         shape: Shape,
     ) -> Result<String, Error> {
-        self.add_annotation_full(id, step, color, None, None, shape)
+        self.add_annotation_full(id, step, color, None, None, None, shape)
     }
 
     /// `add_annotation_colored` plus the range markers a box/callout/spotlight
     /// was created from.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_annotation_full(
         &mut self,
         id: Option<String>,
@@ -1757,12 +1814,16 @@ impl App {
         color: Option<String>,
         markers: Option<tiza_core::model::RangeMarkers>,
         file: Option<String>,
+        effect: Option<Effect>,
         shape: Shape,
     ) -> Result<String, Error> {
         if let Some(c) = &color
             && self.theme.named_color(c).is_none()
         {
             return Err(Error::Invalid(unknown_color()));
+        }
+        if effect == Some(Effect::Draw) && !shape.has_stroke() {
+            return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
         }
         // A mark's inline style color too: checked like the
         // annotation's, without repeating it.
@@ -1787,6 +1848,7 @@ impl App {
             id: id.unwrap_or_default(),
             step,
             color,
+            effect,
             markers,
             file,
             shape,
@@ -1994,6 +2056,18 @@ impl App {
             };
             // Trimmed, as `:callout` takes it.
             *text = t.trim().to_string();
+        }
+        if let Some(e) = p.effect {
+            ann.effect = e;
+        }
+        // `draw` needs a stroke: checked when the update sets the effect or
+        // changes the shape. An annotation from a file keeps its effect
+        // through the other updates.
+        if (p.effect.is_some() || p.shape.is_some() || p.emphasis.is_some())
+            && ann.effect == Some(Effect::Draw)
+            && !ann.shape.has_stroke()
+        {
+            return Err(Error::Invalid(DRAW_NEEDS_A_STROKE.into()));
         }
         // Nothing to change: no undo entry, no new revision, no save.
         if self.doc.find_annotation(&p.id) == Some(&ann) {
@@ -2557,6 +2631,9 @@ impl App {
     fn step_to_with(&mut self, step: u32, jump: bool) -> bool {
         let mut loud = false;
         self.finish_typing();
+        // An effect that plays ends here, and the auto-advance countdown
+        // starts again, also when the step does not change.
+        self.finish_effect();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
         if s != self.doc.step {
@@ -2598,6 +2675,12 @@ impl App {
             }
             // The auto-advance countdown starts now, or when the typing ends.
             self.step_ready_at = self.typing.is_none().then(std::time::Instant::now);
+            // Forward one step, also with a goto: the enter effects of the
+            // step, after its typing. A goto of more than one step, a step
+            // back and the loop show the final drawing.
+            if !loud && s == from_step + 1 && self.typing.is_none() {
+                self.start_effect();
+            }
             // Its notice stays on the bar over the step's label.
             if self.reload_waiting() {
                 loud = true;
@@ -2619,6 +2702,7 @@ impl App {
             plan,
             index: 0,
             revealed: 0,
+            then_effect: true,
             last: std::time::Instant::now(),
         });
         self.refresh_typing_code();
@@ -2651,8 +2735,13 @@ impl App {
             t.revealed -= t.plan.items[t.index].units;
             t.index += 1;
             if t.index >= t.plan.items.len() {
+                let then_effect = t.then_effect;
                 self.finish_typing();
                 self.revision += 1;
+                // The typing is over: the effects of the step come next.
+                if then_effect {
+                    self.start_effect();
+                }
                 return true;
             }
         }
@@ -2674,6 +2763,97 @@ impl App {
 
     pub fn is_typing(&self) -> bool {
         self.typing.is_some()
+    }
+
+    // ---------- enter effects (experimental) ----------
+
+    /// Starts the enter effect of the step on screen, when something of the
+    /// step comes in with one ([`Document::has_effect_at`]). Its plan is
+    /// made here, once, at the screen's width.
+    fn start_effect(&mut self) {
+        self.effect = None;
+        if !self.doc.has_effect_at(self.doc.step) {
+            return;
+        }
+        let mut opts = self.layout_options(self.screen_width());
+        opts.pointer = self.pointer_shown();
+        let cache = self.effect_cache(&opts);
+        let Some(plan) = &cache.plan else {
+            return;
+        };
+        #[allow(unused_mut)]
+        let mut slow = 1;
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "effect:slow") {
+            slow = 100;
+        }
+        self.effect = Some(EffectState {
+            started: std::time::Instant::now(),
+            duration_ms: plan.duration_ms() * slow,
+            slow,
+            revision: self.revision,
+            cache: std::cell::RefCell::new(Some(cache)),
+        });
+        // The auto-advance countdown starts when the effect ends.
+        self.step_ready_at = None;
+    }
+
+    /// The final layout of the step with `opts` and the plan of its effect.
+    fn effect_cache(&self, opts: &LayoutOptions) -> EffectCache {
+        let (layout, trace) = self.lay_out_traced(&self.doc, &self.theme, opts, true);
+        let plan = trace.and_then(|t| tiza_core::effects::Plan::new(&layout.canvas, &t, &self.doc));
+        EffectCache {
+            width: opts.width,
+            pointer: opts.pointer,
+            layout,
+            plan,
+        }
+    }
+
+    /// The screen's layout at this moment of the effect, while one plays.
+    fn effect_frame(&self, opts: &LayoutOptions) -> Option<Layout> {
+        let e = self
+            .effect
+            .as_ref()
+            .filter(|e| e.revision == self.revision)?;
+        let t = e.started.elapsed().as_millis() as u64 / e.slow;
+        let mut cache = e.cache.borrow_mut();
+        if !cache
+            .as_ref()
+            .is_some_and(|c| c.width == opts.width && c.pointer == opts.pointer)
+        {
+            *cache = Some(self.effect_cache(opts));
+        }
+        let c = cache.as_ref()?;
+        let mut l = c.layout.clone();
+        if let Some(plan) = &c.plan {
+            plan.paint(&mut l.canvas, t);
+        }
+        Some(l)
+    }
+
+    /// Advances the enter effect: `true` while one plays or when it just
+    /// ended (the screen changes). Call it every loop iteration.
+    pub fn effect_tick(&mut self) -> bool {
+        let Some(e) = &self.effect else {
+            return false;
+        };
+        if e.revision != self.revision || e.started.elapsed().as_millis() as u64 >= e.duration_ms {
+            self.finish_effect();
+        }
+        true
+    }
+
+    /// Ends the enter effect at once: the final drawing shows (any key).
+    pub fn finish_effect(&mut self) {
+        if self.effect.take().is_some() {
+            // The step is ready: its auto-advance countdown starts.
+            self.step_ready_at = Some(std::time::Instant::now());
+        }
+    }
+
+    pub fn is_playing_effect(&self) -> bool {
+        self.effect.is_some()
     }
 
     /// Adds a move (validated against the code at its step). Undoable. A
@@ -4535,6 +4715,7 @@ impl App {
                     step: Some(step),
                     color: None,
                     label: None,
+                    effect: None,
                     file: None,
                     shape: None,
                     mv: None,
@@ -5023,6 +5204,7 @@ impl App {
                         step: None,
                         color: Some(c.into()),
                         label: None,
+                        effect: None,
                         file: None,
                         shape: None,
                         mv: None,
@@ -5045,6 +5227,7 @@ impl App {
                         step: None,
                         color: None,
                         label: Some(text.trim().into()),
+                        effect: None,
                         file: None,
                         shape: None,
                         mv: None,
@@ -5103,6 +5286,7 @@ impl App {
                                 step: Some(n),
                                 color: None,
                                 label: None,
+                                effect: None,
                                 file: None,
                                 shape: None,
                                 mv: None,
@@ -5551,11 +5735,12 @@ impl App {
     fn cmd_box(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, rest) = self.parse_range_arg(rest).map_err(|e| match e {
             Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
-                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no]   or   :box @'start'..@'end' [label]   ({m})"
+                "usage: :box A-B [label] [border=double] [corners=sharp] [fill=no] [effect=draw|fade]   or   :box @'start'..@'end' [label]   ({m})"
             )),
             other => other,
         })?;
-        let (label, kv) = split_trailing_kv(rest);
+        let (label, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut frame = tiza_core::model::BorderStyle::default();
         for (k, v) in &kv {
             apply_border_kv(&mut frame, k, v)?;
@@ -5566,6 +5751,7 @@ impl App {
             None,
             markers,
             None,
+            effect,
             Shape::Box {
                 from_line: a,
                 to_line: b,
@@ -5738,20 +5924,25 @@ impl App {
         let (to, rest) = split_first(rest);
         if from.is_empty() || to.is_empty() {
             return Err(Error::Invalid(
-                "usage: :arrow L:text L:text [label] [stroke=dashed] [heads=none,arrow] [route=sharp]"
+                "usage: :arrow L:text L:text [label] [stroke=dashed] [heads=none,arrow] [route=sharp] [effect=draw|fade]"
                     .into(),
             ));
         }
-        let (label, kv) = split_trailing_kv(rest);
+        let (label, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut line = tiza_core::model::LineStyle::default();
         for (k, v) in &kv {
             apply_line_kv(&mut line, k, v)?;
         }
         let f = self.resolve_anchor_strict(&parse_where(from, self.cursor_line)?)?;
         let t = self.resolve_anchor_strict(&parse_where(to, self.cursor_line)?)?;
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Arrow {
                 from: f,
                 to: t,
@@ -5906,7 +6097,7 @@ impl App {
         let kv = parse_kv(rest);
         if id.is_empty() || kv.is_empty() {
             return Err(Error::Invalid(
-                "usage: :set ID key=value…   (label, color, step; callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
+                "usage: :set ID key=value…   (label, color, step, effect (draw, fade, none); callouts: text, title; arrows: stroke, route, heads, start, end; boxes/callouts: border, corners, fill; highlights/marks: emphasis)"
                     .into(),
             ));
         }
@@ -5939,6 +6130,7 @@ impl App {
             step: None,
             color: None,
             label: None,
+            effect: None,
             file: None,
             shape: None,
             mv: None,
@@ -5956,6 +6148,7 @@ impl App {
                 "text" if is_callout => callout_text = Some(v.clone()),
                 "label" | "text" | "title" => p.label = Some(v.clone()),
                 "color" => p.color = Some(v.clone()),
+                "effect" => p.effect = Some(take_effect(&mut vec![(k.clone(), v.clone())])?),
                 "step" => {
                     p.step = Some(
                         v.parse()
@@ -6014,14 +6207,16 @@ impl App {
 
     fn cmd_highlight(&mut self, rest: &str) -> Result<String, Error> {
         // `emphasis=underline` (or `style=`) may trail the label.
-        let (rest, kv) = split_trailing_kv(rest);
+        let (rest, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut emphasis = Emphasis::default();
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" | "style" => emphasis = parse_emphasis(v)?,
                 _ => {
                     return Err(Error::Invalid(
-                        "unknown key for :hl (emphasis=fill|underline|brackets|strike)".to_string(),
+                        "unknown key for :hl (emphasis=fill|underline|brackets|strike, effect=draw|fade)"
+                            .to_string(),
                     ));
                 }
             }
@@ -6035,7 +6230,7 @@ impl App {
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(
-                        "usage: :hl L:text [label]   (L:text = the text on line L; L: alone = the whole line; .:text = the cursor line)"
+                        "usage: :hl L:text [label] [effect=draw|fade]   (L:text = the text on line L; L: alone = the whole line; .:text = the cursor line)"
                             .into(),
                     ));
                 }
@@ -6043,9 +6238,13 @@ impl App {
                 (self.resolve_span_strict(&w)?, label)
             }
         };
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Highlight {
                 span,
                 label: opt(label),
@@ -6059,14 +6258,15 @@ impl App {
     /// an alias (`borrow`), a style defined with `:style`, or a bare glyph/emoji for a
     /// one-off inline style (`:mark 🔥 7:&t hot path`). `KIND@COLOR` sets the color.
     fn cmd_mark(&mut self, rest: &str) -> Result<String, Error> {
-        let (rest, kv) = split_trailing_kv(rest);
+        let (rest, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut emphasis = Emphasis::default();
         for (k, v) in &kv {
             match k.as_str() {
                 "emphasis" => emphasis = parse_emphasis(v)?,
                 _ => {
                     return Err(Error::Invalid(
-                        "unknown key for :mark (emphasis=fill|underline|brackets|strike)"
+                        "unknown key for :mark (emphasis=fill|underline|brackets|strike, effect=draw|fade)"
                             .to_string(),
                     ));
                 }
@@ -6076,7 +6276,7 @@ impl App {
         let (at, label) = split_first(rest);
         if kind_tok.is_empty() || (at.is_empty() && self.pending_sel.is_none()) {
             return Err(Error::Invalid(format!(
-                "usage: :mark KIND[@COLOR] L:text [label]   KIND: {} | a :style name | a glyph",
+                "usage: :mark KIND[@COLOR] L:text [label] [effect=draw|fade]   KIND: {} | a :style name | a glyph",
                 self.kind_names().join(" ")
             )));
         }
@@ -6127,7 +6327,7 @@ impl App {
             _ => {
                 if !typed_anchor_has_line_and_text(at) {
                     return Err(Error::Invalid(format!(
-                        "usage: :mark KIND[@COLOR] L:text [label]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
+                        "usage: :mark KIND[@COLOR] L:text [label] [effect=draw|fade]   (L:text = the text on line L; L: alone = the whole line)   KIND: {} | a :style name | a glyph",
                         self.kind_names().join(" ")
                     )));
                 }
@@ -6152,9 +6352,13 @@ impl App {
             .and_then(|st| st.legend)
             .unwrap_or_else(|| kind.clone());
         let copied = personal.is_some().then(|| kind.clone());
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Mark {
                 kind,
                 span,
@@ -6265,8 +6469,11 @@ impl App {
             markers = m;
             rest = after;
         }
+        let mut effect = None;
         for tok in rest.split_whitespace() {
-            if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+            if tok.starts_with("effect=") {
+                effect = take_effect(&mut vec![split_token(tok)])?;
+            } else if tok.chars().next().is_some_and(|c| c.is_ascii_digit()) {
                 range = Some(parse_range(tok)?);
             } else {
                 ids.push(tok.to_string());
@@ -6274,7 +6481,7 @@ impl App {
         }
         if range.is_none() && ids.is_empty() {
             return Err(Error::Invalid(
-                "usage: :spot A-B [ID…]  |  :spot ID…".into(),
+                "usage: :spot A-B [ID…] [effect=draw|fade]  |  :spot ID… [effect=draw|fade]".into(),
             ));
         }
         let id = self.add_annotation_full(
@@ -6283,6 +6490,7 @@ impl App {
             None,
             markers,
             None,
+            effect,
             Shape::Spotlight {
                 from_line: range.map(|r| r.0),
                 to_line: range.map(|r| r.1),
@@ -6297,7 +6505,7 @@ impl App {
     fn cmd_callout(&mut self, rest: &str) -> Result<String, Error> {
         let (a, b, markers, mut rest) = self.parse_range_arg(rest).map_err(|e| match e {
             Error::Invalid(m) if m.starts_with("invalid range") => Error::Invalid(format!(
-                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text   (or @'start'..@'end')   ({m})"
+                "usage: :callout A[-B] [@below|@margin|@auto] [title=\"…\"] text [effect=draw|fade]   (or @'start'..@'end')   ({m})"
             )),
             other => other,
         })?;
@@ -6328,7 +6536,8 @@ impl App {
                 break;
             }
         }
-        let (text, kv) = split_trailing_kv(rest);
+        let (text, mut kv) = split_trailing_kv(rest);
+        let effect = take_effect(&mut kv)?;
         let mut frame = tiza_core::model::BorderStyle::default();
         for (k, v) in &kv {
             apply_border_kv(&mut frame, k, v)?;
@@ -6342,6 +6551,7 @@ impl App {
             None,
             markers,
             None,
+            effect,
             Shape::Callout {
                 from_line: a,
                 to_line: if b == a { None } else { Some(b) },
@@ -6361,15 +6571,34 @@ impl App {
             self.cursor_line
         } else {
             line.parse().map_err(|_| {
-                Error::Invalid("usage: :note L text  (L may be . for the cursor line)".into())
+                Error::Invalid(
+                    "usage: :note L text [effect=draw|fade]  (L may be . for the cursor line)"
+                        .into(),
+                )
             })?
+        };
+        // Only a last word `effect=…` is the effect: the text of a note
+        // can end in any other `key=value` (`x=1`).
+        let (text, effect) = match text.trim_end().rsplit_once(char::is_whitespace) {
+            Some((before, last)) if last.starts_with("effect=") => (
+                before.trim_end(),
+                take_effect(&mut vec![split_token(last)])?,
+            ),
+            None if text.trim_end().starts_with("effect=") => {
+                ("", take_effect(&mut vec![split_token(text.trim_end())])?)
+            }
+            _ => (text, None),
         };
         if text.is_empty() {
             return Err(Error::Invalid("the note is empty".into()));
         }
-        let id = self.add_annotation(
+        let id = self.add_annotation_full(
             None,
             None,
+            None,
+            None,
+            None,
+            effect,
             Shape::Note {
                 line,
                 text: text.into(),
@@ -7007,7 +7236,8 @@ impl App {
                     p.file = Some(self.canonical_file(f));
                 }
                 let (shape, markers) = p.shape.resolve_with_markers(&self.doc)?;
-                let id = self.add_annotation_full(p.id, p.step, p.color, markers, p.file, shape)?;
+                let id = self
+                    .add_annotation_full(p.id, p.step, p.color, markers, p.file, p.effect, shape)?;
                 // Where it stands against the view right now.
                 serde_json::to_value(self.mutated(id))?
             }
@@ -7286,6 +7516,7 @@ impl App {
                     pending: self.follow_pending(),
                     resume_step: self.resume_step(),
                 }),
+            effect: self.effect.is_some(),
         }
     }
 
@@ -7846,6 +8077,22 @@ impl ExportFormat {
     }
 }
 
+/// Takes the `effect=` entries out of `kv`: `draw`, `fade` or `none`
+/// (no effect). The last one counts.
+fn take_effect(kv: &mut Vec<(String, String)>) -> Result<Option<Effect>, Error> {
+    let mut effect = None;
+    for (_, v) in kv.iter().filter(|(k, _)| k == "effect") {
+        effect = match v.as_str() {
+            "draw" => Some(Effect::Draw),
+            "fade" => Some(Effect::Fade),
+            "none" => None,
+            _ => return Err(Error::Invalid(UNKNOWN_EFFECT.into())),
+        };
+    }
+    kv.retain(|(k, _)| k != "effect");
+    Ok(effect)
+}
+
 /// Splits trailing `key=value` tokens off a free-text argument:
 /// `"move stroke=dashed heads=none,arrow"` → (`"move"`, [(stroke, dashed), (heads, "none,arrow")]).
 pub fn split_trailing_kv(s: &str) -> (&str, Vec<(String, String)>) {
@@ -7908,7 +8155,7 @@ pub fn apply_border_kv(
         }
         _ => {
             return Err(Error::Invalid(
-                "unknown key (border, corners, fill)".to_string(),
+                "unknown key (border, corners, fill, effect)".to_string(),
             ));
         }
     }
@@ -7949,7 +8196,7 @@ pub fn apply_line_kv(ls: &mut tiza_core::model::LineStyle, k: &str, v: &str) -> 
         }
         _ => {
             return Err(Error::Invalid(
-                "unknown key (stroke, route, heads, start, end)".to_string(),
+                "unknown key (stroke, route, heads, start, end, effect)".to_string(),
             ));
         }
     }
@@ -8127,6 +8374,13 @@ fn check_width(params: Value) -> Result<Option<usize>, Error> {
     let p: tiza_core::schema::CheckParams = parse(params)?;
     p.width.map(tiza_core::layout::check_width).transpose()
 }
+
+/// The refusal of `draw` on a shape with no stroke to draw.
+const DRAW_NEEDS_A_STROKE: &str = "effect draw needs a stroke: use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike";
+
+/// The refusal of an effect that `:set` or an annotation command does not
+/// know.
+const UNKNOWN_EFFECT: &str = "unknown effect (use draw, fade or none)";
 
 /// Every `key=value` must have both halves: `=`, `=red` or `glyph=` are
 /// typos, not an empty key or an empty value.

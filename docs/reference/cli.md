@@ -213,6 +213,7 @@ The `code` of a finding is one of these:
 | `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
 | `empty_step` | Warning | A step changes nothing. |
 | `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
+| `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, so it comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
 ## Messages
 

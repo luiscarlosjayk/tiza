@@ -256,6 +256,7 @@ mod tests {
             id: "a1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: Shape::Note {

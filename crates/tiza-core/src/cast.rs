@@ -295,6 +295,7 @@ mod tests {
             id: "n1".into(),
             step: 1,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: crate::model::Shape::Note {
@@ -307,6 +308,7 @@ mod tests {
             id: "n2".into(),
             step: 2,
             color: None,
+            effect: None,
             markers: None,
             file: None,
             shape: crate::model::Shape::Note {
