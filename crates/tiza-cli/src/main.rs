@@ -1929,14 +1929,22 @@ fn image_exporter(
 /// envelope (`{document, step, …}`: `document` is unwrapped and the
 /// envelope's `step` kept), or — only with `--as-code` — any other file
 /// shown as code. Anything else is refused, so a stray JSON file never
-/// lands on screen as 300 lines of JSON. A document with an effect or a
-/// move that this version does not know is refused too, as `scene.put`
-/// refuses it: a file opens without them, but a put would drop them in
-/// silence.
+/// lands on screen as 300 lines of JSON. A document with an effect, a
+/// move or a key of a move that this version does not know is refused
+/// too, as `scene.put` refuses it: a file opens without them, but a put
+/// would drop them in silence.
 fn document_for_put(file: &str, as_code: bool) -> anyhow::Result<tiza_core::Document> {
     let document = document_or_code_for_put(file, as_code)?;
-    if let Some(notice) = fs::not_known_notice(&document) {
-        bail!("{file}: {notice}. scene put sends a document as it is, so it refuses this one");
+    let notices = [
+        fs::not_known_notice(&document),
+        fs::unknown_keys_notice(&document),
+    ];
+    let notices: Vec<String> = notices.into_iter().flatten().collect();
+    if !notices.is_empty() {
+        bail!(
+            "{file}: {}. scene put sends a document as it is, so it refuses this one",
+            notices.join("; ")
+        );
     }
     Ok(document)
 }

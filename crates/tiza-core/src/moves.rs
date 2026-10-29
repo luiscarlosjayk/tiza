@@ -131,6 +131,88 @@ pub fn action_keys(action: &str) -> Option<&'static [&'static str]> {
         .map(|(_, keys)| *keys)
 }
 
+/// The keys of a move (`o`, as JSON) that this version does not know,
+/// sorted: a key that is not of every move and not of its `action`. Empty
+/// when this version does not know the action.
+pub fn unknown_keys(o: &serde_json::Map<String, serde_json::Value>, action: &str) -> Vec<String> {
+    let Some(keys) = action_keys(action) else {
+        return Vec::new();
+    };
+    let mut unknown: Vec<String> = o
+        .keys()
+        .filter(|k| !MOVE_KEYS.contains(&k.as_str()) && !keys.contains(&k.as_str()))
+        .cloned()
+        .collect();
+    unknown.sort();
+    unknown
+}
+
+/// The keys that `move.list` adds to each move ([`crate::protocol::MoveListed`]).
+/// The socket ignores them, so that an agent can send an entry of
+/// `move.list` back to `move.add`.
+pub const LISTED_KEYS: [&str; 4] = ["index", "summary", "stale", "stale_reason"];
+
+/// Refuses a move (`m`, as JSON) with a key that this version does not
+/// know, as the socket does: a typo such as `alig` would be lost without a
+/// word. The message names the first such key in alphabetical order and
+/// the keys of the action. It names the key that the first key is a typo
+/// of, or the actions that have the first key. `which` names the move
+/// (`move #3: `) or is empty. A move with no `action`, or with an action
+/// that this version does not know, is left to serde, and so is `rebind`
+/// on a move that is not a `code.patch`: its own error is clearer.
+pub fn refuse_unknown_keys(m: &serde_json::Value, which: &str) -> Result<(), Error> {
+    let Some(o) = m.as_object() else {
+        return Ok(());
+    };
+    let Some(action) = o.get("action").and_then(|a| a.as_str()) else {
+        return Ok(());
+    };
+    let unknown = unknown_keys(o, action);
+    let Some(first) = unknown.iter().find(|k| !LISTED_KEYS.contains(&k.as_str())) else {
+        return Ok(());
+    };
+    let rebind = (action == "code.patch").then_some("rebind");
+    let known: Vec<&str> = ["at_step", "action"]
+        .into_iter()
+        .chain(rebind)
+        .chain(action_keys(action).unwrap_or_default().iter().copied())
+        .collect();
+    let list: Vec<String> = known.iter().map(|k| format!("`{k}`")).collect();
+    // A key of another action: most likely the `action` is missing (it is
+    // `code.patch` in `add_move` when it is left out).
+    let others: Vec<&str> = ACTION_KEYS
+        .iter()
+        .filter(|(name, keys)| *name != action && keys.contains(&first.as_str()))
+        .map(|(name, _)| *name)
+        .collect();
+    let shown = crate::printable::printable_line(&cut(first)).into_owned();
+    let hint = if !others.is_empty() {
+        format!(
+            ". `{shown}` is a key of a {} move: send the `action` of the move",
+            others.join(" or ")
+        )
+    } else {
+        near_key(first, &known)
+            .map(|n| format!(". Did you mean `{n}`?"))
+            .unwrap_or_default()
+    };
+    Err(Error::Invalid(format!(
+        "{}{which}unknown field `{shown}` of a {action} move, expected one of {}{hint}",
+        crate::error::INVALID_PARAMETERS,
+        list.join(", ")
+    )))
+}
+
+/// `s` for a message: cut at 40 characters, as the values of the messages
+/// are.
+pub(crate) fn cut(s: &str) -> String {
+    if s.chars().count() > 40 {
+        s.chars().take(39).chain(['…']).collect()
+    } else {
+        s.to_string()
+    }
+}
+
 /// The key of `known` that `key` is a typo of: one or two letters from it
 /// (`alig` for `align`), or `None`.
 pub fn near_key<'a>(key: &str, known: &[&'a str]) -> Option<&'a str> {

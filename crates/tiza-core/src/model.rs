@@ -234,7 +234,7 @@ pub struct UnknownKeys {
     pub at_step: Option<u64>,
     /// The action of the move.
     pub action: String,
-    /// In alphabetical order.
+    /// In alphabetical order, each cut and printable for the messages.
     pub keys: Vec<String>,
 }
 

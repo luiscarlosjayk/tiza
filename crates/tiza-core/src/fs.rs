@@ -181,6 +181,35 @@ fn step_text(at_step: Option<u64>) -> String {
     at_step.map(|s| format!("step {s}, ")).unwrap_or_default()
 }
 
+/// The moves with keys that this version does not know, or `None`: one
+/// line that names each one, for `tiza scene put`, which refuses them as
+/// the socket does. A file opens without them, and `tiza check` warns.
+pub fn unknown_keys_notice(doc: &Document) -> Option<String> {
+    let found = &doc.newer_moves.keys;
+    if found.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = found
+        .iter()
+        .map(|k| {
+            format!(
+                "move #{} ({}{} {})",
+                k.number,
+                step_text(k.at_step),
+                if k.keys.len() == 1 { "key" } else { "keys" },
+                k.keys.join(", ")
+            )
+        })
+        .collect();
+    let n = found.len();
+    Some(format!(
+        "{n} move{} {} a key that this version of Tiza does not know: {}",
+        if n == 1 { "" } else { "s" },
+        if n == 1 { "has" } else { "have" },
+        list.join(", ")
+    ))
+}
+
 /// The annotations whose `effect` this version does not know, or `None`:
 /// one line that names each one.
 fn unknown_effects_notice(doc: &Document) -> Option<String> {
@@ -484,7 +513,7 @@ fn skipped_moves_hint(e: Error, skipped: &[crate::model::SkippedMove]) -> Error 
 ///   it.
 pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::NewerMoves {
     use crate::model::{DefaultValue, SkippedMove, UnknownKeys};
-    use crate::moves::{ACTION_KEYS, LIST_FIELDS, ListField, MOVE_KEYS, action_keys};
+    use crate::moves::{ACTION_KEYS, LIST_FIELDS, ListField, action_keys};
     let mut out = crate::model::NewerMoves::default();
     let Some(moves) = raw.get_mut("moves").and_then(|m| m.as_array_mut()) else {
         return out;
@@ -501,7 +530,7 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
             kept.push(serde_json::Value::Object(o));
             continue;
         };
-        let Some(keys) = action_keys(&action) else {
+        if action_keys(&action).is_none() {
             out.skipped.push(SkippedMove {
                 number,
                 at_step,
@@ -510,7 +539,7 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
                 known: ACTION_KEYS.iter().map(|(name, _)| *name).collect(),
             });
             continue;
-        };
+        }
         let fields = || LIST_FIELDS.iter().filter(|f| f.action == action);
         let not_known = |o: &serde_json::Map<String, serde_json::Value>, f: &ListField| {
             o.get(f.key)
@@ -542,18 +571,16 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
                 });
             }
         }
-        let mut unknown: Vec<String> = o
-            .keys()
-            .filter(|k| !MOVE_KEYS.contains(&k.as_str()) && !keys.contains(&k.as_str()))
-            .cloned()
-            .collect();
-        unknown.sort();
+        let unknown = crate::moves::unknown_keys(&o, &action);
         if !unknown.is_empty() {
             out.keys.push(UnknownKeys {
                 number,
                 at_step,
                 action,
-                keys: unknown,
+                keys: unknown
+                    .iter()
+                    .map(|k| crate::printable::printable_line(&crate::moves::cut(k)).into_owned())
+                    .collect(),
             });
         }
         kept.push(serde_json::Value::Object(o));
@@ -566,12 +593,7 @@ pub(crate) fn take_newer_moves(raw: &mut serde_json::Value) -> crate::model::New
 /// A value as a file writes it, for a message: JSON, cut when it is long
 /// (an object, a long text).
 fn shown_value(v: &serde_json::Value) -> String {
-    let value = v.to_string();
-    if value.chars().count() > 40 {
-        value.chars().take(39).chain(['…']).collect()
-    } else {
-        value
-    }
+    crate::moves::cut(&v.to_string())
 }
 
 /// Takes out of the annotations of `raw` an `effect` that this version

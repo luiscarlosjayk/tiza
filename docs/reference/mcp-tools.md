@@ -431,6 +431,7 @@ The socket codes are in [Error codes](socket-api.md#error-codes).
 - An error about a value from a fixed set, such as `color` or `border`, does not repeat the wrong value. It gives the valid values. An error about a value of the wrong type repeats the value, cut at 40 characters.
 - The `width` of `render_text` goes to the instance. The instance refuses a bad width with `invalid_argument`.
 - Only `update_annotation` and `clear_annotations` refuse an argument that they do not know. The other tools ignore an unknown argument at the top level.
+- `add_move` sends its arguments to `move.add` as the keys of the move. An argument that the action of the move does not use fails, for example `align` with a `code.patch`. When you do not give `action`, the action is `code.patch`.
 - In `add_move`, a `rebind` entry with a key that Tiza does not know fails. For the socket, see [Keys that Tiza does not know](socket-api.md#keys-that-tiza-does-not-know).
 - Do not try again in a loop after `rejected` or `internal`. See [Supervised mode](../agents/supervised-mode.md).
 

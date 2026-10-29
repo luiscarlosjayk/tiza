@@ -8235,6 +8235,7 @@ impl App {
             }
             "scene.list" => json!(self.list_lines()),
             "move.add" => {
+                tiza_core::moves::refuse_unknown_keys(&params, "")?;
                 let m: Move = parse(params)?;
                 let (i, warning) = self.add_move_noting(m)?;
                 serde_json::to_value(MoveMutated {
@@ -8334,6 +8335,15 @@ impl App {
                 let mut params = params;
                 if let Some(doc) = params.get_mut("document") {
                     fs::migrate_document_value(doc)?;
+                }
+                // A key of a move that this version does not know is an
+                // error, never lost without a word.
+                let moves = params
+                    .get("document")
+                    .and_then(|d| d.get("moves"))
+                    .and_then(|m| m.as_array());
+                for (i, m) in moves.into_iter().flatten().enumerate() {
+                    tiza_core::moves::refuse_unknown_keys(m, &format!("move #{}: ", i + 1))?;
                 }
                 let mut p: PutParams = parse(params)?;
                 p.document.schema = tiza_core::model::SCHEMA_VERSION;

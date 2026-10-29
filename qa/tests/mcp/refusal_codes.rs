@@ -63,6 +63,11 @@ fn every_refusal_of_the_mcp_tools_has_its_code() {
             "add_move",
             json!({"at_step": 1, "op": "swap", "find": "let a"}),
         ),
+        // An argument that the action of the move does not use.
+        (
+            "add_move",
+            json!({"at_step": 1, "op": "insert", "position": "1", "content": "x", "align": "top"}),
+        ),
     ];
     for (tool, args) in cases {
         let (err, text, _) = mcp.call(tool, args.clone());

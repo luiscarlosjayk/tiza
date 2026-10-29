@@ -349,7 +349,7 @@ A newer version of Tiza can write a move that this version does not know. The do
 - A save does not keep the skipped moves, the values or the keys.
 - The step of a skipped move is still a step. A step that has only skipped moves changes nothing. When that step is the last step, the take ends one step before it.
 - A later move can need the code that a skipped move changes. Then Tiza does not open the document. The error names the later move and the skipped move.
-- `move.add`, `scene.put`, `tiza scene put` and `add_move` refuse a move with an action or a value that this version does not know.
+- `move.add`, `scene.put`, `tiza scene put` and `add_move` refuse a move with an action or a value that this version does not know. `move.add`, `scene.put` and `tiza scene put` also refuse a key of a move that this version does not know, and `add_move` refuses an argument that the action does not use.
 
 ### Fields of a `code.patch` move
 

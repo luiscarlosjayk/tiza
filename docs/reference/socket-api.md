@@ -218,6 +218,16 @@ Tiza refuses a `scene put` in these saving cases. The error code is `invalid_arg
 
 These methods refuse a key that they do not know: `annotation.update`, `scene.clear`, `scene.get`, `scene.patch`, `pointer.set` and `supervise.set`. The `move` object of `annotation.update` also refuses one. The error is `invalid_argument`, and its message names the keys that the method knows. `scene.get` knows no key.
 
+`move.add` and `scene.put` refuse a key of a move that the action of the move does not know. The message names the first of these keys in alphabetical order, and the keys of the action. When that key is one or two letters from a key of the action, the message names that key. When that key is a key of another action, the message names that action. In `scene.put`, the message also names the move by its number in `moves`. The keys that `move.list` adds to a move (`index`, `summary`, `stale` and `stale_reason`) are not refused. Thus you can send an entry of `move.list` to `move.add` again.
+
+| Message | When |
+|---|---|
+| ``invalid parameters: unknown field `alig` of a scroll move, expected one of `at_step`, `action`, `line`, `find`, `occurrence`, `annotation`, `align`. Did you mean `align`?`` | `move.add` got a `scroll` move with the key `alig`. |
+| ``invalid parameters: unknown field `line` of a code.patch move, expected one of …. `line` is a key of a cursor or scroll move: send the `action` of the move`` | `move.add` got a move with `line` and no `action` other than `code.patch`. |
+| ``invalid parameters: move #3: unknown field `alig` of a scroll move, …`` | `scene.put` got a document whose third move has the key `alig`. |
+
+A file with a key that this version does not know opens, and `tiza check` gives a warning (see [Moves from a newer version](document-format.md#moves-from-a-newer-version)).
+
 ## Results
 
 | Method | Result |
