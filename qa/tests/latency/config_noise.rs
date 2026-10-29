@@ -31,9 +31,11 @@ fn a_config_of_one_megabyte_of_noise_is_read_in_time() {
         "{}",
         String::from_utf8_lossy(&out.stderr)
     );
-    // About 0.25 s in release and 3 s in debug here; the shared CI runners
-    // are two to three times slower, so the debug budget is wide (the
-    // release budget is the one that counts).
-    let budget = if cfg!(debug_assertions) { 20.0 } else { 1.0 };
+    // About 0.25 s in release and 3 s in debug on a Mac. The shared CI
+    // runners are two to eight times slower (a macOS runner took 23.4 s
+    // in debug), so the debug budget is 60 s: a slow runner does not fail
+    // it, and it still catches a recovery that goes quadratic or loops.
+    // The release budget is the one that counts.
+    let budget = if cfg!(debug_assertions) { 60.0 } else { 1.0 };
     assert!(took.as_secs_f64() < budget, "{took:?}");
 }
