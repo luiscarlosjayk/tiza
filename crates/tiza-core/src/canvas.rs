@@ -306,6 +306,19 @@ impl Canvas {
         }
     }
 
+    /// The record of cell (`x`, `y`) when a painter that is not an
+    /// annotation of the step writes there and an annotation of the step
+    /// painted a stroke there: (its index, its record).
+    fn crossed_stroke(&self, x: usize, y: usize) -> Option<(usize, Traced)> {
+        let i = self.idx(x, y)?;
+        let t = self.trace.as_deref()?;
+        if t.painter.is_some() {
+            return None;
+        }
+        let r = t.cells.get(&i).filter(|r| r.part == Part::Stroke)?;
+        Some((i, r.clone()))
+    }
+
     /// Notes a write into cell `i`, before it happens: a symbol, or a
     /// style only (`restyle`). An annotation that writes a symbol over its
     /// own cell gives it the new part (a box label over its border is
@@ -473,16 +486,33 @@ impl Canvas {
             .get(x, y)
             .map(|c| (c.sym.to_string(), c.style))
             .unwrap_or((" ".into(), style));
+        // A horizontal stroke never recolors a rail or a junction.
+        let new_is_horizontal = weight(sym).is_some_and(|(h, _)| h);
+        // The line over a cell: a junction with a line there, else the line.
+        let over = |cell_sym: &str, cell_style: CellStyle| match junction(sym, cell_sym) {
+            Some(merged) if new_is_horizontal => (merged, cell_style),
+            Some(merged) => (merged, style),
+            None => (sym, style),
+        };
         match junction(sym, &existing) {
-            Some(merged) => {
-                // A horizontal stroke never recolors a rail or a junction.
-                let new_is_horizontal = weight(sym).is_some_and(|(h, _)| h);
-                let style = if new_is_horizontal {
-                    existing_style
-                } else {
-                    style
-                };
-                self.put(x, y, merged, style);
+            Some(_) => {
+                // Another painter crosses a stroke of an annotation of the
+                // step (a traced layout): the junction comes with that
+                // stroke. Until then the cell shows this line over what it
+                // had before the step.
+                let crossed = self.crossed_stroke(x, y);
+                let (merged, merged_style) = over(&existing, existing_style);
+                self.put(x, y, merged, merged_style);
+                if let Some((i, mut r)) = crossed {
+                    let (sym, style) = over(r.before.sym.as_str(), r.before.style);
+                    r.before = Cell {
+                        sym: Sym::new(sym),
+                        style,
+                    };
+                    if let Some(t) = self.trace.as_deref_mut() {
+                        t.cells.insert(i, r);
+                    }
+                }
             }
             None => {
                 self.put(x, y, sym, style);

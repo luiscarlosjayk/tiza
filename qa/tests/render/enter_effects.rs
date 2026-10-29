@@ -5,6 +5,8 @@
 //!   last. An underline, brackets and a strike are drawn from left to
 //!   right, and an arrow from its source to its target.
 //! - The text of a callout comes in after the longest stroke of the step.
+//! - A line of a step before that crosses a stroke of the step shows as
+//!   it was until the stroke comes; then the crossing shows.
 //! - The dim of a step fades only when a spotlight with `fade` comes in or
 //!   goes out, on every cell that it dims or lights: code and annotations
 //!   of earlier steps alike.
@@ -216,6 +218,32 @@ fn a_border_with_a_label_or_a_title_starts_after_it_and_ends_before_it() {
             );
         }
     }
+}
+
+#[test]
+fn a_line_of_a_step_before_crosses_a_new_border_only_when_the_border_comes() {
+    // An arrow of step 1 crosses the left side of a box with draw at step
+    // 2: the crossing (`┼`) comes with the stroke of the side. Until then
+    // the cell shows the line of the arrow (`─`), as at step 1.
+    let doc = open(&fixture("render/enter_effects/crossing.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 2 has an effect");
+    let (c, first) = reveal(&doc, 2);
+    let y = row_of(&c, "let a = 1;");
+    let x = xs(&c, y, "┼")[0];
+    let start = at_time(&plan, &c, 0);
+    assert_eq!(
+        start.get(x, y).map(|cell| cell.sym.as_str()),
+        Some("─"),
+        "the first frame shows the crossing before the side of the box comes"
+    );
+    // The left side is drawn from the bottom up: the crossing comes after
+    // the cell under it and before the cell over it.
+    let (below, crossing, above) = (at(&first, x, y + 1), at(&first, x, y), at(&first, x, y - 1));
+    assert!(
+        below <= crossing && crossing <= above && below < above,
+        "the crossing at {crossing} ms, its side at {below} ms (under) and {above} ms (over)"
+    );
 }
 
 #[test]
