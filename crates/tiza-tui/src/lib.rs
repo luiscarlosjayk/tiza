@@ -164,6 +164,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         // every one).
         app.info(format!("{}: {}", r.place(), r.message()));
     }
+    app.show_unknown_effects(std::time::Instant::now());
     if opts.follow {
         match app.set_follow(true) {
             // At a step with a patch applied follow starts paused: said

@@ -883,7 +883,7 @@ print("EXIT", s.finish(10), flush=True)
 /// Effects that this version does not know: their names go to stderr
 /// before the TUI starts (so they are on the terminal after it ends, also
 /// in presentation mode), and the bar says it in a few words, so that it
-/// fits.
+/// fits. In presentation mode the last row says it for a few seconds.
 #[test]
 fn unknown_effects_are_named_on_stderr_and_counted_on_the_bar() {
     let dir = scratch("unknown-effects-open");
@@ -899,8 +899,7 @@ env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
 argv = [binary, "--no-save", "--no-socket", "--theme", "dark"] + (["--present"] if present else []) + ["newer.tiza"]
 s = Pty(argv, 30, 120, env=env)
 s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame")
-if not present:
-    s.wait_for(lambda out: b"see tiza check" in out, 10, "the bar")
+s.wait_for(lambda out: b"see tiza check" in out, 10, "the bar or the last row")
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
 sys.stdout.flush()
@@ -927,12 +926,12 @@ print("SCREEN", repr(out[cut:]), flush=True)
                 && before.contains("b1 (\"slide\")"),
             "present {present}: {before}"
         );
-        if !present {
-            assert!(
-                screen.contains("3 effects are not known: see tiza check"),
-                "the bar: {screen}"
-            );
-        }
+        // On the bar, or on the last row for a few seconds in presentation
+        // mode.
+        assert!(
+            screen.contains("3 effects are not known: see tiza check"),
+            "present {present}: {screen}"
+        );
     }
 }
 
@@ -961,4 +960,34 @@ fn the_gesture_that_ends_an_effect_selects_nothing() {
         ]
     );
     assert!(live.with(|a| a.selection().is_none()), "a selection");
+}
+
+/// In presentation mode the bar is hidden: when the TUI opens there, the
+/// effects that this version does not know show on the last row for a few
+/// seconds, as the result of a `:` command. The times are the test's, not
+/// the clock's.
+#[test]
+fn in_presentation_unknown_effects_show_for_a_few_seconds_at_the_start() {
+    use tiza_tui::app::PRESENT_MESSAGE_TTL;
+    let dir = scratch("unknown-effects-present");
+    let doc =
+        tiza_core::fs::load_document(&fixture("compat/v1-newer-unknown-effect.tiza")).unwrap();
+    let mut app = App::new(doc.clone(), dir.join("doc.tiza"));
+    app.set_present(true);
+    let start = Instant::now();
+    app.show_unknown_effects(start);
+    assert!(app.present_message_shown(), "not on the last row");
+    let message = app.message.clone().map(|(m, _)| m).unwrap_or_default();
+    assert!(
+        message.contains("effects are not known: see tiza check"),
+        "{message}"
+    );
+    app.present_message_tick(start + PRESENT_MESSAGE_TTL - Duration::from_millis(1));
+    assert!(app.present_message_shown(), "gone before its time");
+    app.present_message_tick(start + PRESENT_MESSAGE_TTL);
+    assert!(!app.present_message_shown(), "still there after its time");
+    // Normal mode: the bar shows it, with no time.
+    let mut app = App::new(doc, dir.join("doc2.tiza"));
+    app.show_unknown_effects(start);
+    assert!(app.present_message_until.is_none());
 }

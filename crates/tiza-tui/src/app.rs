@@ -3785,6 +3785,27 @@ impl App {
         };
     }
 
+    /// Presentation mode hides the bar: when the TUI opens there, the effects
+    /// that this version does not know show on the last row for
+    /// [`PRESENT_MESSAGE_TTL`] from `now`, as the result of a `:` command
+    /// does. Normal mode shows them on the bar, as before.
+    pub fn show_unknown_effects(&mut self, now: std::time::Instant) {
+        if !self.present {
+            return;
+        }
+        let Some(short) = tiza_core::fs::unknown_effects_short(&self.doc) else {
+            return;
+        };
+        if !self
+            .message
+            .as_ref()
+            .is_some_and(|(m, _)| m.contains(&short))
+        {
+            self.info(short);
+        }
+        self.present_message_until = Some(now + PRESENT_MESSAGE_TTL);
+    }
+
     /// Hides the presentation-mode message once its time is up; `true` when
     /// the frame must be drawn again.
     pub fn present_message_tick(&mut self, now: std::time::Instant) -> bool {
