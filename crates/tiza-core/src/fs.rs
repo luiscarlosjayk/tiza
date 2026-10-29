@@ -98,28 +98,18 @@ pub fn not_known_notice(doc: &Document) -> Option<String> {
     (!notices.is_empty()).then(|| notices.join("; "))
 }
 
-/// [`not_known_notice`] in a few words, for the status bar: how many of
-/// each, and where the names are.
+/// [`not_known_notice`] in a few words, for the status bar: how many
+/// entries of the file this version does not know (effects, moves and
+/// values), and where their names are. One form for every kind, so that
+/// it fits on the bar at 80 columns.
 pub fn not_known_short(doc: &Document) -> Option<String> {
-    let counts = [
-        (doc.unknown_effects.0.len(), "effect"),
-        (doc.newer_moves.skipped.len(), "move"),
-        (doc.newer_moves.defaults.len(), "value"),
-    ];
-    let parts: Vec<String> = counts
-        .iter()
-        .filter(|(n, _)| *n > 0)
-        .map(|(n, what)| format!("{n} {what}{}", if *n == 1 { "" } else { "s" }))
-        .collect();
-    let total: usize = counts.iter().map(|(n, _)| n).sum();
-    let verb = if total == 1 { "is" } else { "are" };
-    match parts.as_slice() {
-        [] => None,
-        [one] => Some(format!("{one} {verb} not known: see tiza check")),
-        [rest @ .., last] => Some(format!(
-            "{} and {last} {verb} not known: see tiza check",
-            rest.join(", ")
-        )),
+    let n = doc.unknown_effects.0.len()
+        + doc.newer_moves.skipped.len()
+        + doc.newer_moves.defaults.len();
+    match n {
+        0 => None,
+        1 => Some("1 entry is not known: see tiza check".into()),
+        n => Some(format!("{n} entries are not known: see tiza check")),
     }
 }
 

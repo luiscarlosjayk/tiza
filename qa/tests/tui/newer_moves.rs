@@ -63,7 +63,7 @@ print("SCREEN", repr(out[cut:]), flush=True)
         // On the bar, or on the last row for a few seconds in presentation
         // mode.
         assert!(
-            screen.contains("1 effect, 3 moves and 2 values are not known: see tiza check"),
+            screen.contains("6 entries are not known: see tiza check"),
             "present {present}: {screen}"
         );
         // The warning of the named step is on the bar too, after the count.

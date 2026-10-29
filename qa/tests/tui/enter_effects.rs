@@ -929,7 +929,7 @@ print("SCREEN", repr(out[cut:]), flush=True)
         // On the bar, or on the last row for a few seconds in presentation
         // mode.
         assert!(
-            screen.contains("3 effects are not known: see tiza check"),
+            screen.contains("3 entries are not known: see tiza check"),
             "present {present}: {screen}"
         );
     }
@@ -979,7 +979,7 @@ fn in_presentation_unknown_effects_show_for_a_few_seconds_at_the_start() {
     assert!(app.present_message_shown(), "not on the last row");
     let message = app.message.clone().map(|(m, _)| m).unwrap_or_default();
     assert!(
-        message.contains("effects are not known: see tiza check"),
+        message.contains("entries are not known: see tiza check"),
         "{message}"
     );
     app.present_message_tick(start + PRESENT_MESSAGE_TTL - Duration::from_millis(1));
