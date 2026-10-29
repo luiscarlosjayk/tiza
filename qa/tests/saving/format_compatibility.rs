@@ -195,6 +195,7 @@ fn an_effect_of_a_newer_tiza_reads_as_no_effect() {
     assert_eq!(effect("b1"), None, "\"slide\"");
     assert_eq!(effect("n1"), None, "1");
     assert_eq!(effect("a1"), Some(Effect::Draw));
+    assert_eq!(effect("h1"), Some(Effect::Fade));
     let notice = opened.notice.clone().unwrap_or_default();
     assert!(
         notice.contains("b1 (\"slide\")") && notice.contains("n1 (1)"),
@@ -217,4 +218,5 @@ fn an_effect_of_a_newer_tiza_reads_as_no_effect() {
     assert!(of("b1").get("effect").is_none(), "{json}");
     assert!(of("n1").get("effect").is_none(), "{json}");
     assert_eq!(of("a1")["effect"], "draw", "{json}");
+    assert_eq!(of("h1")["effect"], "fade", "{json}");
 }

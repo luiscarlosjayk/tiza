@@ -41,6 +41,17 @@
     "col": 10
    },
    "effect": "draw"
+  },
+  {
+   "id": "h1",
+   "step": 2,
+   "type": "highlight",
+   "span": {
+    "line": 2,
+    "start": 4,
+    "end": 9
+   },
+   "effect": "fade"
   }
  ]
 }
