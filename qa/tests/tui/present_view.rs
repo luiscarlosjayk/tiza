@@ -526,6 +526,129 @@ fn an_agent_annotation_above_the_view_keeps_its_code() {
 }
 
 #[test]
+fn the_wheel_moves_the_view_three_rows_and_a_click_does_nothing() {
+    use tiza_tui::app::{Mode, MouseKind, MouseOutcome};
+    let live = open_lines("view-wheel", 200, "0 0");
+    let wheel = |kind: MouseKind| {
+        live.with(move |a| {
+            a.mouse = true;
+            let out = a.on_mouse(kind, 10, 5);
+            draw(a, COLS, ROWS);
+            (out, a.scroll)
+        })
+    };
+    assert_eq!(wheel(MouseKind::ScrollDown), (MouseOutcome::Scrolled, 3));
+    assert_eq!(wheel(MouseKind::ScrollDown), (MouseOutcome::Scrolled, 6));
+    assert_eq!(wheel(MouseKind::ScrollUp), (MouseOutcome::Scrolled, 3));
+    // A click or a drag does nothing.
+    let cursor = live.with(|a| (a.cursor_line, a.cursor_col));
+    for kind in [MouseKind::Down, MouseKind::Drag, MouseKind::Up] {
+        assert_eq!(wheel(kind), (MouseOutcome::Ignored, 3), "{kind:?}");
+    }
+    assert_eq!(live.with(|a| (a.cursor_line, a.cursor_col)), cursor);
+    // With the command line or a selection open, the wheel does nothing.
+    live.with(|a| key(a, KeyCode::Char(':')));
+    assert_eq!(wheel(MouseKind::ScrollDown), (MouseOutcome::Ignored, 3));
+    live.with(|a| {
+        key(a, KeyCode::Esc);
+        key(a, KeyCode::Char('V'));
+    });
+    assert!(matches!(live.with(|a| a.mode.clone()), Mode::Select { .. }));
+    assert_eq!(wheel(MouseKind::ScrollDown), (MouseOutcome::Ignored, 3));
+    // With the live pointer on, the wheel moves the cursor and the pointer
+    // three lines, as ↓ does.
+    let line = live.with(|a| {
+        key(a, KeyCode::Esc);
+        key(a, KeyCode::Char('f'));
+        a.cursor_line
+    });
+    assert_eq!(wheel(MouseKind::ScrollDown).0, MouseOutcome::Scrolled);
+    let pointer = live.with(|a| (a.cursor_line, a.pointer.map(|p| p.line)));
+    assert_eq!(pointer, (line + 3, Some(line + 3)));
+}
+
+#[test]
+fn the_wheel_lets_an_effect_play_and_a_step_type() {
+    use tiza_tui::app::{MouseKind, MouseOutcome};
+    // Step 3 of anchor.tiza has a box with `draw`.
+    let (live, _) = open_anchor("view-wheel-effect");
+    let playing = live.with(|a| {
+        key(a, KeyCode::Char('n'));
+        key(a, KeyCode::Char('n'));
+        a.mouse = true;
+        let out = a.on_mouse(MouseKind::ScrollDown, 10, 5);
+        (out, a.is_playing_effect())
+    });
+    assert_eq!(playing, (MouseOutcome::Scrolled, true));
+    let moves = serde_json::json!([{
+        "at_step": 2, "action": "code.patch", "op": "insert", "position": "150",
+        "content": "// typed\n// more", "typing": "line", "speed_ms": 3_600_000
+    }]);
+    let live = open_moves("view-wheel-typing", moves);
+    let typing = live.with(|a| {
+        key(a, KeyCode::Char('n'));
+        a.mouse = true;
+        a.on_mouse(MouseKind::ScrollDown, 10, 5);
+        draw(a, COLS, ROWS);
+        (a.is_typing(), a.scroll)
+    });
+    assert_eq!(typing, (true, 3));
+    // With the live pointer on, the wheel moves the pointer: it ends the
+    // typing, as ↓ does.
+    let typing = live.with(|a| {
+        // The first key ends the typing, the second goes back a step.
+        key(a, KeyCode::Char('p'));
+        key(a, KeyCode::Char('p'));
+        key(a, KeyCode::Char('f'));
+        key(a, KeyCode::Char('n'));
+        let before = a.is_typing();
+        a.on_mouse(MouseKind::ScrollDown, 10, 5);
+        (before, a.is_typing())
+    });
+    assert_eq!(typing, (true, false));
+}
+
+/// The real TUI with the mouse on, in presentation mode: a notch of the
+/// wheel (SGR 65) moves the view three rows, and the hidden cursor, on
+/// line 1, goes into the view. `f` then points at line 4.
+#[test]
+fn the_wheel_moves_the_view_in_the_real_tui() {
+    let dir = scratch("view-wheel-tui");
+    let code: String = (1..=100).map(|i| format!("line {i}\n")).collect();
+    std::fs::write(dir.join("lines.txt"), code).unwrap();
+    let body = r##"
+import json, subprocess
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
+s = Pty([binary, "--no-save", "--present", "--mouse", "--socket", "s.sock", "lines.txt"], 30, 80, env=env)
+
+def pointer():
+    r = subprocess.run([binary, "--socket", "s.sock", "api", "status"], capture_output=True, text=True, timeout=10)
+    return (json.loads(r.stdout).get("pointer") or {}).get("line") if r.returncode == 0 else None
+
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+    s.send(b"\x1b[<65;20;5M")
+    s.send(b"f")
+    end = time.monotonic() + 10
+    line = None
+    while time.monotonic() < end and line is None:
+        line = pointer()
+    print("POINTER", line, flush=True)
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "wheel.py",
+        body,
+        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
+    assert!(out.contains("POINTER 4"), "{out}");
+}
+
+#[test]
 fn with_the_pointer_on_the_view_keeps_the_pointer_in_it() {
     let live = open_lines("view-pointer", 200, "0 0");
     // The pointer on line 24, the last row: rows that come in above it

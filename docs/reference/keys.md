@@ -129,14 +129,14 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `g` `G` `Home` `End` | Goes to the start or the end of the code. |
 
 - Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
-- In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. Without mouse capture, a trackpad and a mouse wheel also move the view, because the terminal sends them as `↑` and `↓`.
+- In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. A trackpad and a mouse wheel also move the view. With mouse capture, each notch moves it three rows. Without mouse capture, the terminal sends them as `↑` and `↓`.
 - With the live pointer on, the keys of the view move the pointer, as in normal mode. The view follows the pointer.
 - The view stays on the same code when you go to another step, when an agent changes an annotation and when the terminal changes size. A `scroll`, a `cursor` or a `code.link` move moves the view. When an agent, `Tab` or `Enter` in the list moves the cursor to another line, the view follows the cursor.
 - The other keys of normal mode also work in presentation mode.
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
 - Only the result of a `:` command shows. The messages of the keys, for example after `u`, do not show in presentation mode.
 - `Ctrl-C` quits in presentation mode when no item of the [Ctrl-C](#ctrl-c) list is open.
-- Presentation mode ignores the mouse. See [Presentation mode](../guides/present.md#presentation-mode).
+- In presentation mode, a click or a drag does nothing. See [Presentation mode](../guides/present.md#presentation-mode).
 - While an enter effect plays, the keys that only move the view do not end it. See [Enter effects](document-format.md#enter-effects-experimental).
 
 ### The live pointer

@@ -15,7 +15,8 @@
 //!   actions; Esc cancels.
 //! - AC4 The wheel moves the cursor three lines per notch (the frame follows
 //!   it), never past either end; mouse events are ignored while an overlay or the command line
-//!   is open.
+//!   is open. In presentation mode a click or a drag does nothing, and the
+//!   wheel moves the view (`present_view`).
 //! - AC5 Documentation: README says the mouse is opt-in and how to keep the
 //!   terminal's native selection (Shift on Ghostty/WezTerm/Linux, Option on
 //!   iTerm2/Terminal.app), and that Zed keeps Cmd+click for links.
@@ -277,7 +278,7 @@ fn wheel_scrolls_and_overlays_block() {
 }
 
 #[test]
-fn presentation_mode_ignores_the_mouse() {
+fn presentation_mode_ignores_a_click_and_a_drag() {
     let l = live("present");
     l.command("mouse on");
     let _ = l.screen(80, 20);
@@ -307,9 +308,10 @@ fn presentation_mode_ignores_the_mouse() {
         matches!(l.with(|a| a.mode.clone()), Mode::Normal),
         "no selection"
     );
+    // The wheel moves the view there, not the cursor.
     assert_eq!(
         l.with(|a| a.on_mouse(MouseKind::ScrollDown, 10, 5)),
-        MouseOutcome::Ignored
+        MouseOutcome::Scrolled
     );
     assert_eq!(l.with(|a| (a.cursor_line, a.cursor_col)), before);
     // Leaving presentation mode: the mouse works again without `:mouse on`.

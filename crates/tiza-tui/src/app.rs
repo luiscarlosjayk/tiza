@@ -8361,14 +8361,36 @@ impl App {
     /// Handles a mouse event (only when `mouse` is on): click moves the
     /// cursor, drag selects (a span on one line, lines across several) and
     /// leaves the selection open for `h`/`b`/`a`/`n`…, the wheel moves the
-    /// cursor three lines (which scrolls).
+    /// cursor three lines (which scrolls). In presentation mode the wheel
+    /// moves the view, and a click or a drag does nothing.
     pub fn on_mouse(&mut self, kind: MouseKind, column: u16, row: u16) -> MouseOutcome {
-        // Presentation mode hides the status bar, the cursor and the
-        // selection, so annotating with the mouse there would be blind: the
-        // capture stays on (back in normal mode it works again) but every
-        // event is ignored.
-        if !self.mouse || self.present || self.overlay != Overlay::None {
+        if !self.mouse || self.overlay != Overlay::None {
             return MouseOutcome::Ignored;
+        }
+        // Presentation mode hides the status bar, the cursor and the
+        // selection, so annotating with the mouse there would be blind: a
+        // click or a drag does nothing (back in normal mode it works again).
+        // The wheel moves the view three rows, as ↓ and ↑ do: with the live
+        // pointer on, it moves the pointer.
+        if self.present {
+            let rows = match kind {
+                MouseKind::ScrollDown => 3,
+                MouseKind::ScrollUp => -3,
+                _ => return MouseOutcome::Ignored,
+            };
+            if self.mode != Mode::Normal {
+                return MouseOutcome::Ignored;
+            }
+            if self.pointer.is_none() {
+                self.view_by(rows);
+            } else if self.is_typing() {
+                // As ↓ and ↑ with the pointer on: the typing ends.
+                self.finish_typing();
+                self.revision += 1;
+            } else {
+                self.move_cursor(rows);
+            }
+            return MouseOutcome::Scrolled;
         }
         // A button ends an enter effect and does nothing else, as a key
         // does; the wheel lets it play, as the keys that only move the view.
