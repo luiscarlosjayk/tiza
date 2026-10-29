@@ -124,6 +124,21 @@ pub fn slow_follow_start(waited: Duration) -> String {
     }
 }
 
+/// `doc` with each typed `code.patch` at `ms` a unit (a line or a
+/// character). At [`tiza_core::model::MAX_HOLD_MS`] a typing does not end by
+/// its clock during a test, also on a slow machine: a key, a step change or
+/// an undo ends it. At a few milliseconds it ends by its clock.
+pub fn typing_speed(mut doc: Document, ms: u64) -> Document {
+    for m in &mut doc.moves {
+        if let tiza_core::moves::MoveAction::CodePatch(p) = &mut m.action
+            && p.typing != tiza_core::moves::Typing::Instant
+        {
+            p.speed_ms = Some(ms);
+        }
+    }
+    doc
+}
+
 /// The `tiza` binary of the current profile, built on first use.
 pub fn bin() -> PathBuf {
     static BUILD: Once = Once::new();

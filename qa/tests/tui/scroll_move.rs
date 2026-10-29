@@ -9,8 +9,7 @@ use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use tiza_core::model::Document;
-use tiza_core::moves::MoveAction;
-use tiza_qa::{Live, fixture, scratch};
+use tiza_qa::{Live, fixture, scratch, typing_speed};
 use tiza_tui::app::App;
 
 const COLS: u16 = 80;
@@ -208,17 +207,6 @@ fn the_newest_camera_wins_in_the_order_the_moves_run() {
     );
 }
 
-/// `doc` with its typed moves at 40 ms a line, for a typing that ends by
-/// its own clock.
-fn typing_at_40_ms(mut doc: Document) -> Document {
-    for m in &mut doc.moves {
-        if let MoveAction::CodePatch(p) = &mut m.action {
-            p.speed_ms = Some(40);
-        }
-    }
-    doc
-}
-
 /// Runs the typing of the step on screen to its end by its own clock,
 /// within 10 s.
 fn type_to_the_end(live: &Live) {
@@ -244,7 +232,7 @@ fn a_scroll_after_a_typed_move_jumps_when_the_typing_ends() {
     assert!(!live.with(|a| a.is_typing()));
     assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after a key");
     // When the typing ends by its own clock, the view jumps there too.
-    let live = open_doc("scroll-cue-after", typing_at_40_ms(load("typed.tiza")), 1);
+    let live = open_doc("scroll-cue-after", typing_speed(load("typed.tiza"), 40), 1);
     key(&live, KeyCode::Char('n'));
     type_to_the_end(&live);
     assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after the typing");
