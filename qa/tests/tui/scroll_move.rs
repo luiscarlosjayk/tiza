@@ -4,22 +4,34 @@
 //! step with the same camera keeps a view the presenter moved, but a goto
 //! lands on the view of its step.
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
+use tiza_core::model::Document;
+use tiza_core::moves::MoveAction;
 use tiza_qa::{Live, fixture, scratch};
 use tiza_tui::app::App;
 
 const COLS: u16 = 80;
 const ROWS: u16 = 24;
 
+/// The document `tui/scroll_move/FILE`. `typed.tiza` types one line an
+/// hour: its typing does not end by its clock during a test, also on a
+/// slow machine. A key, a step change or a request ends it.
+fn load(file: &str) -> Document {
+    tiza_core::fs::load_document(&fixture(&format!("tui/scroll_move/{file}"))).unwrap()
+}
+
 /// The TUI on `tui/scroll_move/FILE` in presentation mode, with no
 /// padding (every row of the terminal shows code), at `step`.
 fn open(name: &str, file: &str, step: u32) -> Live {
+    open_doc(name, load(file), step)
+}
+
+/// [`open`] on a document already loaded.
+fn open_doc(name: &str, mut doc: Document, step: u32) -> Live {
     let dir = scratch(name);
-    let mut doc =
-        tiza_core::fs::load_document(&fixture(&format!("tui/scroll_move/{file}"))).unwrap();
     doc.step = step;
     let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
     live.command("pad 0 0");
@@ -135,15 +147,30 @@ fn with_the_pointer_on_the_effect_of_a_camera_step_plays_on() {
     let live = open("scroll-pointer", "effect.tiza", 1);
     key(&live, KeyCode::Char('f'));
     assert!(live.with(|a| a.pointer.is_some()));
-    key(&live, KeyCode::Char('n'));
-    let playing = live.with(|a| {
+    // The step, the frames and the ticks in one call, with no wait between
+    // them. The effect also ends by its clock after its time: only a
+    // machine that stops this call that long can see that.
+    let (off, playing, time, took) = live.with(|a| {
+        let start = std::time::Instant::now();
+        tiza_tui::on_key(a, KeyCode::Char('n'), KeyModifiers::NONE);
+        let time = a.effect.as_ref().map(|e| e.duration_ms);
         draw(a);
         a.effect_tick();
         draw(a);
         a.effect_tick();
-        (a.pointer.is_none(), a.is_playing_effect())
+        (
+            a.pointer.is_none(),
+            a.is_playing_effect(),
+            time,
+            start.elapsed(),
+        )
     });
-    assert_eq!(playing, (true, true), "(pointer off, effect plays)");
+    assert!(off, "the pointer is still on");
+    let time = time.expect("the effect of step 2 does not start");
+    assert!(
+        playing || took >= std::time::Duration::from_millis(time),
+        "the effect ended after {took:?} of its {time} ms"
+    );
 }
 
 #[test]
@@ -169,6 +196,17 @@ fn the_newest_camera_wins_in_the_order_the_moves_run() {
     );
 }
 
+/// `doc` with its typed moves at 40 ms a line, for a typing that ends by
+/// its own clock.
+fn typing_at_40_ms(mut doc: Document) -> Document {
+    for m in &mut doc.moves {
+        if let MoveAction::CodePatch(p) = &mut m.action {
+            p.speed_ms = Some(40);
+        }
+    }
+    doc
+}
+
 /// Runs the typing of the step on screen to its end by its own clock,
 /// within 10 s.
 fn type_to_the_end(live: &Live) {
@@ -185,19 +223,19 @@ fn type_to_the_end(live: &Live) {
 fn a_scroll_after_a_typed_move_jumps_when_the_typing_ends() {
     // Step 2 types two lines at line 10, then scrolls to line 100, which
     // holds `v98` after the two new lines: the typing shows where the view
-    // was.
-    let live = open("scroll-cue-after", "typed.tiza", 1);
+    // was, and the view jumps when a key ends the typing.
+    let live = open("scroll-cue-key", "typed.tiza", 1);
     key(&live, KeyCode::Char('n'));
     assert!(live.with(|a| a.is_typing()));
     assert_eq!(row_of(&live, "let v1 = 1;"), Some(0), "while it types");
-    type_to_the_end(&live);
-    assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after the typing");
-    // A key that ends the typing ends it there too.
-    let live = open("scroll-cue-key", "typed.tiza", 1);
-    key(&live, KeyCode::Char('n'));
     key(&live, KeyCode::Char('x'));
     assert!(!live.with(|a| a.is_typing()));
     assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after a key");
+    // When the typing ends by its own clock, the view jumps there too.
+    let live = open_doc("scroll-cue-after", typing_at_40_ms(load("typed.tiza")), 1);
+    key(&live, KeyCode::Char('n'));
+    type_to_the_end(&live);
+    assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after the typing");
 }
 
 #[test]
@@ -385,8 +423,9 @@ fn an_agent_edit_during_a_typing_does_not_move_the_view_early() {
     );
     assert!(live.with(|a| a.is_typing()));
     assert_eq!(row_of(&live, "let v1 = 1;"), Some(0), "while it types");
-    type_to_the_end(&live);
-    assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after the typing");
+    key(&live, KeyCode::Char('x'));
+    assert!(!live.with(|a| a.is_typing()));
+    assert_eq!(row_of(&live, "let v98 = 98;"), Some(0), "after a key");
 }
 
 #[test]

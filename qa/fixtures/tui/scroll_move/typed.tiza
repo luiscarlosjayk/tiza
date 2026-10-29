@@ -225,7 +225,7 @@
       "position": "10",
       "content": "let typed_a = 1;\nlet typed_b = 2;",
       "typing": "line",
-      "speed_ms": 40
+      "speed_ms": 3600000
     },
     {
       "at_step": 2,
@@ -246,7 +246,7 @@
       "position": "70",
       "content": "let typed_c = 3;",
       "typing": "line",
-      "speed_ms": 40
+      "speed_ms": 3600000
     }
   ]
 }
