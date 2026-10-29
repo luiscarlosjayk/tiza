@@ -1323,3 +1323,30 @@ fn an_insert_at_the_end_follows_when_the_last_line_is_sure() {
     assert_eq!(position_of(&live, 0), "9");
     assert_eq!(code_at(&live, 1)[8], "z");
 }
+
+#[test]
+fn a_scroll_line_follows_its_line_and_never_goes_stale() {
+    let (live, _dir) = demo(
+        "scroll-line",
+        INI,
+        json!([{"at_step": 1, "action": "scroll", "line": 4}]),
+        json!([]),
+        json!({}),
+    );
+    paste(&live, &format!("# top\n{INI}"));
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["line"], 5, "{ml}");
+    live.keys(&[KeyCode::Char('u')]);
+    // Its line changed, then removed: the line stays as written, and the
+    // move is not stale (the view only does not move where the line is
+    // gone).
+    paste(&live, &INI.replace("[db]", "[d]"));
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["line"], 4, "{ml}");
+    assert_eq!(stale_count(&live), 0, "{ml}");
+    let shorter: String = INI.lines().take(2).map(|l| format!("{l}\n")).collect();
+    paste(&live, &shorter);
+    let ml = live.api_ok("move.list", json!({}));
+    assert_eq!(ml["moves"][0]["line"], 4, "{ml}");
+    assert_eq!(stale_count(&live), 0, "{ml}");
+}

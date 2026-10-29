@@ -333,6 +333,7 @@ Every move has `at_step` and `action`. A `code.patch` move can also have `rebind
 | `cursor` | Puts the cursor on a line. |
 | `select` | Selects a span. |
 | `wait` | Pauses before the annotations of the step appear. |
+| `scroll` | Moves the view of the TUI to a line, a text or an annotation (see [Scroll](#scroll)). |
 
 Several moves at one step run in the order of the list.
 
@@ -481,6 +482,41 @@ a4 [step 3] box L15-17 (src/queue.rs)
 - The TUI, the GIF, MP4 and WebM exports and the `.tape` show the pause of a `wait`. A `.cast` adds the pause to the time of the step, except at the last step.
 - A still export ignores a `wait`.
 
+### Scroll
+
+A `scroll` move moves the view of the TUI to a line, a text or an annotation when the presenter reaches its step. Thus an effect never plays out of the view. A step that has only a `scroll` move is a camera step: the view moves, and nothing else changes.
+
+| Field | Type | Default | Meaning |
+|---|---|---|---|
+| `line` | integer | Required when it is the target | A line of the code where the move runs. |
+| `find` | string | Required when it is the target | A text of the code where the move runs. The view goes to its first match. |
+| `occurrence` | integer | No default | With `find` only: the match to use, from 1. |
+| `annotation` | string | Required when it is the target | The `id` of an annotation. The view shows its lines, with its borders and its labels. |
+| `align` | `"top"`, `"center"`, `"bottom"` or `"show"` | `"center"` | Where the target goes in the view. `"show"` moves the view as little as possible to show the target. |
+
+A `scroll` move has exactly one target: `line`, `find` or `annotation`.
+
+```json
+{"at_step": 3, "action": "scroll", "line": 50}
+{"at_step": 4, "action": "scroll", "find": "fn drop", "align": "top"}
+{"at_step": 5, "action": "scroll", "annotation": "b2", "align": "bottom"}
+```
+
+- When the presenter reaches the step, the view moves to the target. Then the annotations of the step come in, with their effects.
+- The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the cursor or the pointer, the view stays where the presenter puts it.
+- A step with no `scroll` move of its own does not move the view. `:goto` and the other goto commands move the view to the target of the `scroll` of their step.
+- At a step with no `scroll` move before it, after a step with one, the view goes to the top.
+- A `cursor`, a `code.link` and a `scroll` move all put the view somewhere. The last of them in the order that the moves run wins: the order of the steps, then the order of the list. When a `cursor` or a `code.link` wins, the view does what it did before `scroll`.
+- In a step that types, a `scroll` move moves the view at its place in the list, before or after a typed move or a `wait`. It takes no time.
+- The annotation can be of a later step. The view then goes to the lines where the annotation will come in.
+- When the live pointer is on and the view moves, the pointer stays if the new view shows its lines. If not, the pointer goes off.
+- The view moves in normal mode and in presentation mode.
+- A target that does not resolve does not stop the step: the view does not move, and `tiza check` gives a warning. Examples are a line that is not in the code, a text that is not in the code, and an annotation that does not exist.
+- A `find` that matches more than once goes to the first match. `tiza check` gives a warning, unless `occurrence` names the match or all the matches are on one line.
+- When a later move of the same step removes the line of the target, the view does not move, and `tiza check` gives a warning.
+- The exports show the whole take, so they ignore `scroll` moves. A step that has only a `scroll` move is a pause in a GIF, WebP, MP4 or WebM, as any step is. Its `auto_advance_ms` makes the pause shorter.
+- Tiza 0.1.2 and older do not open a document that has a `scroll` move.
+
 ### Exports and moves
 
 - `tiza render --step N` and `.cast` apply the moves immediately.
@@ -623,6 +659,7 @@ The [document schema](../../schema/tiza.schema.json) accepts some documents that
 - `wait.ms`, `speed_ms` and `auto_advance_ms` are at most 3,600,000 ms, one hour.
 - With embedded code, `source.first_line` is at most 1,000,000,000.
 - Each `code.patch` move has exactly one target, of a type that its `op` accepts.
+- Each `scroll` move has exactly one target: `line`, `find` or `annotation`. Only a `scroll` with `find` has `occurrence`, and `occurrence` is 1 or more.
 - `insert` and `replace` have `content`, and `delete` has no `content`.
 - Each annotation `id` is unique.
 - Each step `id` obeys the rules of [Named steps](#named-steps).

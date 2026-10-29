@@ -365,6 +365,21 @@ fn carry_before(m: &Move, index: usize, map: Option<&Mapper>, who: &str) -> Resu
                 }
             }
         }
+        // Only a line can be lost without a word: a text or an annotation
+        // that no longer resolves is a `check` warning, and deleting the
+        // patch makes it resolve again.
+        MoveAction::Scroll(s) => {
+            // A line that was not in the code before the change stays as it
+            // is written: `check` names it, and it does not stop the change.
+            if let Some(l) = s.line
+                && map.id(l).is_some()
+            {
+                s.line = Some(
+                    map.line(l)
+                        .ok_or_else(|| lost(format!("removes the line it scrolls to ({l})")))?,
+                );
+            }
+        }
         MoveAction::CodeLink(_) | MoveAction::Wait(_) => {}
     }
     Ok(m)

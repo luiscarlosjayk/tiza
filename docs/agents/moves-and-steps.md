@@ -83,6 +83,21 @@ Tiza refuses `delete_move` in the same way in these cases:
 - A later move stops to apply. For example, a deleted `code.link` sends the later moves to another file.
 - The move is the only `code.link` to a file with annotations. Delete those annotations first.
 
+## Move the view
+
+When the lesson talks about code that is far from the view, add a `scroll` move at that step. The view moves before the annotations of the step come in, so their effects play in view. A step with only a `scroll` move is a camera step.
+
+```json
+{"name":"add_move","arguments":{"at_step":4,"action":"scroll","annotation":"b2","align":"top"}}
+{"name":"add_move","arguments":{"at_step":5,"action":"scroll","find":"fn drop"}}
+```
+
+- The target is one of `line`, `find` and `annotation`. `align` is `top`, `center` (the default), `bottom` or `show`.
+- A `find` goes to the first match. Give `occurrence` to choose another match.
+- The annotation can be of a later step: the view moves to where it will come in.
+- `add_move` refuses a target that does not resolve at its step. `check` gives a warning when a later change makes a target not resolve.
+- The exports ignore `scroll` moves. See [Scroll](../reference/document-format.md#scroll).
+
 ## Show another file
 
 A `code.link` move shows another file from its step, until a later link shows another file. A link to the main file of the document goes back to it. See [Several files](../reference/document-format.md#several-files).

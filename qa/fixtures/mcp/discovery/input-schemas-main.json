@@ -554,7 +554,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "action": {
-        "description": "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select` or `wait`",
+        "description": "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select`, `wait` or `scroll` (move the view of the TUI to a `line`, a `find` text or an `annotation`, with `align`)",
         "type": [
           "string",
           "null"
@@ -613,7 +613,7 @@
         ]
       },
       "find": {
-        "description": "replace/delete: text of the one line to change (must match exactly one line)",
+        "description": "replace/delete: text of the one line to change (must match exactly one line). scroll: the text to show: its first match, or the match that `occurrence` names",
         "type": [
           "string",
           "null"
@@ -637,7 +637,7 @@
         "description": "select: where the selection starts — `{find}` (exactly one match at that step, or with `occurrence`) or `{line, col}`"
       },
       "line": {
-        "description": "cursor: the line (real file line number) of the shown file",
+        "description": "cursor, scroll: the line (real file line number) of the shown file",
         "format": "uint32",
         "minimum": 0,
         "type": [
@@ -662,7 +662,7 @@
         ]
       },
       "occurrence": {
-        "description": "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error",
+        "description": "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error, but a scroll goes to the first match",
         "format": "uint32",
         "minimum": 0,
         "type": [
@@ -706,6 +706,20 @@
       },
       "typing": {
         "description": "`instant` (default), `line` or `char`: how the content appears when the presenter reaches the step",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "annotation": {
+        "description": "scroll: the id of the annotation to show, with its borders and labels. It can be an annotation of a later step",
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "align": {
+        "description": "scroll: where the target goes in the view: `top`, `center` (default), `bottom` or `show` (the least motion that shows all of it)",
         "type": [
           "string",
           "null"

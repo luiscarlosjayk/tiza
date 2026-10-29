@@ -8,6 +8,7 @@ mod gif_and_video;
 mod huge_exports;
 mod live_export;
 mod render_help_formats;
+mod scroll_moves;
 mod step_past_the_last;
 mod svg_and_png;
 mod svg_font_faces;

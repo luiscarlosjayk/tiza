@@ -881,6 +881,8 @@ pub struct View {
     /// Cursor and selection the moves left at this step.
     pub cursor: Option<Anchor>,
     pub selection: Option<(Anchor, Anchor)>,
+    /// What places the view of the TUI at this step.
+    pub camera: moves::Camera,
 }
 
 /// Why an annotation is not drawn at a step ([`Document::hidden_reason`]).
@@ -1372,6 +1374,15 @@ impl Document {
                 }
             }
         })?;
+        // A `scroll` never stops a document from loading, but the one being
+        // added must find its target.
+        if let Some(why) = with.scroll_problem(i) {
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: scroll: {why}",
+                i + 1,
+                with.moves[i].at_step
+            )));
+        }
         // Only a patch or a link changes the code annotations stand on (a
         // link sends the later patches to another file).
         if matches!(
@@ -1386,6 +1397,40 @@ impl Document {
         *self = with;
         self.sync_code_to_step();
         Ok(self.moves.len() - 1)
+    }
+
+    /// Why the target of move `i`, a `scroll`, does not resolve at its
+    /// step, or `None` when it does (or when the move is not a `scroll`).
+    pub fn scroll_problem(&self, i: usize) -> Option<String> {
+        let m = self.moves.get(i)?;
+        let MoveAction::Scroll(s) = &m.action else {
+            return None;
+        };
+        let proj = match moves::project(self, &self.moves, m.at_step) {
+            Ok(p) => p,
+            Err(e) => return Some(e.to_string()),
+        };
+        if let Some((_, why)) = proj.scroll_misses.iter().find(|(k, _)| *k == i) {
+            return Some(why.clone());
+        }
+        let id = s.annotation.as_deref()?;
+        let shapes = self.shapes_at(&proj, m.at_step);
+        self.scroll_annotation_lines(&proj, m.at_step, id, &shapes)
+            .err()
+    }
+
+    /// What `check` says of move `i`, a `scroll` whose target resolves: a
+    /// `find` that matches more than once with no `occurrence`.
+    pub fn scroll_note(&self, i: usize) -> Option<String> {
+        let m = self.moves.get(i)?;
+        if !matches!(m.action, MoveAction::Scroll(_)) {
+            return None;
+        }
+        let proj = moves::project(self, &self.moves, m.at_step).ok()?;
+        proj.scroll_notes
+            .into_iter()
+            .find(|(k, _)| *k == i)
+            .map(|(_, note)| note)
     }
 
     /// Every annotation that fits its step in `self` still fits it in
@@ -1616,6 +1661,7 @@ impl Document {
             view: ViewRef::default(),
             cursor: None,
             selection: None,
+            camera: moves::Camera::None,
         };
         if self.moves.is_empty() {
             return plain();
@@ -1625,6 +1671,7 @@ impl Document {
             return plain();
         };
         let shapes = self.shapes_at(&proj, step);
+        let camera = self.camera_of(&proj, step, &shapes);
         let (code, first) = proj.shown_code(self);
         let mut doc = self.clone();
         doc.moves.clear();
@@ -1655,6 +1702,104 @@ impl Document {
             view: proj.shown,
             cursor: proj.cursor,
             selection: proj.selection,
+            camera,
+        }
+    }
+
+    /// The camera of `step` from `proj`, the projection at `step`, and the
+    /// shapes of the annotations there.
+    fn camera_of(
+        &self,
+        proj: &moves::Projection,
+        step: u32,
+        shapes: &[Option<Shape>],
+    ) -> moves::Camera {
+        let Some(i) = proj.camera else {
+            return moves::Camera::None;
+        };
+        match self.scroll_cam(proj, step, i, shapes) {
+            Some(cam) => moves::Camera::Scroll(cam),
+            None => moves::Camera::Cursor,
+        }
+    }
+
+    /// Move `i`, a `scroll` that `proj` (the projection at `step`) applied,
+    /// as the camera of `step`; `None` when it is not a `scroll`.
+    pub(crate) fn scroll_cam(
+        &self,
+        proj: &moves::Projection,
+        step: u32,
+        i: usize,
+        shapes: &[Option<Shape>],
+    ) -> Option<moves::ScrollCam> {
+        let m = self.moves.get(i)?;
+        let MoveAction::Scroll(s) = &m.action else {
+            return None;
+        };
+        let nth = self.moves[..i]
+            .iter()
+            .filter(|o| o.at_step == m.at_step && matches!(o.action, MoveAction::Scroll(_)))
+            .count();
+        let lines = match &s.annotation {
+            Some(id) => self.scroll_annotation_lines(proj, step, id, shapes).ok(),
+            None => proj
+                .scroll_lines
+                .iter()
+                .rev()
+                .find(|(k, _, _)| *k == i)
+                .and_then(|(_, _, l)| *l)
+                .map(|l| (l, l)),
+        };
+        Some(moves::ScrollCam {
+            id: (m.at_step, nth),
+            lines,
+            annotation: s.annotation.clone(),
+            align: s.align,
+        })
+    }
+
+    /// The first and the last line at `step` of annotation `id`, the target
+    /// of a `scroll`, on the file `proj` (the projection at `step`) shows:
+    /// one of a step up to `step` where it is drawn there; one of a later
+    /// step carried back from its own step. Why not, otherwise.
+    pub fn scroll_annotation_lines(
+        &self,
+        proj: &moves::Projection,
+        step: u32,
+        id: &str,
+        shapes: &[Option<Shape>],
+    ) -> Result<(u32, u32), String> {
+        let Some(k) = self.annotations.iter().position(|a| a.id == id) else {
+            return Err(format!("no annotation has the id «{id}»"));
+        };
+        let a = &self.annotations[k];
+        if a.file != proj.shown.file {
+            return Err(format!("annotation «{id}» is on another file"));
+        }
+        let span = |shape: &Shape| {
+            let r = shape.line_ranges();
+            let lo = r.iter().map(|(a, _)| *a).min()?;
+            let hi = r.iter().map(|(_, b)| *b).max()?;
+            Some((lo, hi))
+        };
+        if a.step <= step {
+            let shape = shapes
+                .get(k)
+                .cloned()
+                .flatten()
+                .ok_or_else(|| format!("annotation «{id}» is not anchored at step {step}"))?;
+            return span(&shape).ok_or_else(|| format!("annotation «{id}» has no lines"));
+        }
+        let (lo, hi) = span(&a.shape).ok_or_else(|| format!("annotation «{id}» has no lines"))?;
+        match (
+            moves::carry_line(self, a.step, step, lo),
+            moves::carry_line(self, a.step, step, hi),
+        ) {
+            (Some(x), Some(y)) if x <= y => Ok((x, y)),
+            _ => Err(format!(
+                "the lines of annotation «{id}» (step {}) are not in the code of step {step}",
+                a.step
+            )),
         }
     }
 
@@ -1920,14 +2065,17 @@ impl Document {
     }
 
     /// Next free id with the `a` prefix (a1, a2, …). An id a move's
-    /// `rebind` names is never given out, even when its annotation is gone:
-    /// the entry would re-anchor the new annotation instead.
+    /// `rebind` or a `scroll` names is never given out, even when its
+    /// annotation is gone: the move would take the new annotation instead.
     pub fn next_id(&self) -> String {
         let mut n = self.annotations.len() as u32 + 1;
         loop {
             let id = format!("a{n}");
             if self.find_annotation(&id).is_none()
-                && !self.moves.iter().any(|m| m.rebind.contains_key(&id))
+                && !self.moves.iter().any(|m| {
+                    m.rebind.contains_key(&id)
+                        || matches!(&m.action, MoveAction::Scroll(s) if s.annotation.as_deref() == Some(id.as_str()))
+                })
             {
                 return id;
             }

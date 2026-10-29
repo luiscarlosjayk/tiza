@@ -1,5 +1,30 @@
 {
   "$defs": {
+    "Align": {
+      "description": "Where a `scroll` puts its target in the view.",
+      "oneOf": [
+        {
+          "const": "top",
+          "description": "The first row of the target at the top of the view.",
+          "type": "string"
+        },
+        {
+          "const": "center",
+          "description": "The middle of the target in the middle of the view.",
+          "type": "string"
+        },
+        {
+          "const": "bottom",
+          "description": "The last row of the target at the bottom of the view.",
+          "type": "string"
+        },
+        {
+          "const": "show",
+          "description": "The least motion that shows the whole target (none when it shows).",
+          "type": "string"
+        }
+      ]
+    },
     "Anchor": {
       "description": "A point in the code: absolute line (1-based) and grapheme (0-based).",
       "properties": {
@@ -593,6 +618,20 @@
             "action"
           ],
           "type": "object"
+        },
+        {
+          "$ref": "#/$defs/ScrollTo",
+          "description": "Move the view of the TUI to a line, a text or an annotation of the\nshown file, aligned to the top, the center or the bottom (the\nexports show the whole take and ignore it).",
+          "properties": {
+            "action": {
+              "const": "scroll",
+              "type": "string"
+            }
+          },
+          "required": [
+            "action"
+          ],
+          "type": "object"
         }
       ],
       "properties": {
@@ -861,6 +900,48 @@
         "sharp"
       ],
       "type": "string"
+    },
+    "ScrollTo": {
+      "description": "`scroll`: exactly one target — a `line`, a `find` (its first match, or\nthe one `occurrence` names) or the id of an `annotation` — and where it\ngoes in the view.",
+      "properties": {
+        "align": {
+          "$ref": "#/$defs/Align",
+          "description": "Where the target goes in the view. Default: `center`."
+        },
+        "annotation": {
+          "description": "The id of an annotation: its lines, with its borders and labels.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "find": {
+          "description": "A text of the code where the move runs (in the window of a\n`code.link`): the view goes to its first match, or to the match\nthat `occurrence` names.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "line": {
+          "description": "A line of the code where the move runs.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "occurrence": {
+          "description": "Which match of `find` to use, 1-based. Only with `find`.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "type": "object"
     },
     "SelectSpec": {
       "description": "`select`: two points of the shown file, each a `find` (exactly one match\nat that step, or with `occurrence`) or a `line`/`col`. With `find`, the\nselection starts at the start of `from`'s text and ends at the end of\n`to`'s text.",

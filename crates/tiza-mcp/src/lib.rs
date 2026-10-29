@@ -495,7 +495,7 @@ pub struct AddMoveParams {
     )]
     pub at_step: u32,
     #[schemars(
-        description = "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select` or `wait`"
+        description = "`code.patch` (default: edit lines of the file shown at the step), `code.link` (show another file — or the main file again — from this step on; each file keeps its own annotations), `cursor`, `select`, `wait` or `scroll` (move the view of the TUI to a `line`, a `find` text or an `annotation`, with `align`)"
     )]
     pub action: Option<String>,
     #[schemars(description = "code.patch: `insert`, `replace` or `delete` (whole lines)")]
@@ -508,7 +508,7 @@ pub struct AddMoveParams {
         description = "code.link: a window `A-B` (or `A`) of the file to show; only a crop, annotations keep real file line numbers and a note outside the window is kept but not drawn"
     )]
     pub lines: Option<String>,
-    #[schemars(description = "cursor: the line (real file line number) of the shown file")]
+    #[schemars(description = "cursor, scroll: the line (real file line number) of the shown file")]
     pub line: Option<u32>,
     #[schemars(description = "cursor: grapheme column (default 0)")]
     pub col: Option<u32>,
@@ -537,7 +537,7 @@ pub struct AddMoveParams {
     )]
     pub before: Option<String>,
     #[schemars(
-        description = "replace/delete: text of the one line to change (must match exactly one line)"
+        description = "replace/delete: text of the one line to change (must match exactly one line). scroll: the text to show: its first match, or the match that `occurrence` names"
     )]
     pub find: Option<String>,
     #[schemars(
@@ -549,11 +549,19 @@ pub struct AddMoveParams {
     )]
     pub find_end: Option<String>,
     #[schemars(
-        description = "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error"
+        description = "Which match of find/after/before/find_start to use when the text appears more than once: 1-based, counted in reading order over the whole code as it is at that step. Without it, more than one match is an error, but a scroll goes to the first match"
     )]
     pub occurrence: Option<u32>,
     #[schemars(description = "The same for find_end")]
     pub end_occurrence: Option<u32>,
+    #[schemars(
+        description = "scroll: the id of the annotation to show, with its borders and labels. It can be an annotation of a later step"
+    )]
+    pub annotation: Option<String>,
+    #[schemars(
+        description = "scroll: where the target goes in the view: `top`, `center` (default), `bottom` or `show` (the least motion that shows all of it)"
+    )]
+    pub align: Option<String>,
     #[schemars(description = "insert/replace: the new lines, separated by newlines")]
     pub content: Option<String>,
     #[schemars(
@@ -1091,7 +1099,7 @@ impl TizaServer {
     }
 
     #[tool(
-        description = "Adds a move. The move runs when the presenter reaches `at_step`, and Tiza reverts it when the presenter goes back. `code.patch` (the default) inserts, replaces or deletes whole lines of the file that the step shows. Each target must match exactly once in that code. The patch shifts the annotations of earlier steps. An annotation that loses all its lines is hidden as (unanchored), unless `rebind` names its new place. The patch also carries the annotations of that file at that step or later, and the line numbers of later moves, so that they stay on the same text. Tiza refuses a patch that removes or changes the text under one of them, and names it. `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on. Each file keeps its own annotations, and `lines` is only a window. An annotation added at a step belongs to the file that the step shows (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `render --step N` and the image exports apply the moves at once. When the move hides annotations that a step drew, Tiza makes the move and `warning` in the reply names them: outside a `code.link` window (`a3: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`), or of a file that their step no longer shows (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there`). `delete_move` replies with the same `warning`."
+        description = "Adds a move. The move runs when the presenter reaches `at_step`, and Tiza reverts it when the presenter goes back. `code.patch` (the default) inserts, replaces or deletes whole lines of the file that the step shows. Each target must match exactly once in that code. The patch shifts the annotations of earlier steps. An annotation that loses all its lines is hidden as (unanchored), unless `rebind` names its new place. The patch also carries the annotations of that file at that step or later, and the line numbers of later moves, so that they stay on the same text. Tiza refuses a patch that removes or changes the text under one of them, and names it. `typing: line|char` types the content in place. `code.link {file, lines?}` shows another file from that step on. Each file keeps its own annotations, and `lines` is only a window. An annotation added at a step belongs to the file that the step shows (see list_annotations). `cursor {line, col?}`, `select {from, to}` and `wait {ms}` set the cursor, a selection and a pause. `scroll {line | find | annotation, align?}` moves the view of the TUI to that target when the presenter reaches the step; the exports ignore it. `render --step N` and the image exports apply the moves at once. When the move hides annotations that a step drew, Tiza makes the move and `warning` in the reply names them: outside a `code.link` window (`a3: outside the window at step 3 (src/queue.rs:10-36): kept, not drawn there`), or of a file that their step no longer shows (`a6: its file src/stack.rs is not shown at step 4 (src/queue.rs is): kept, not drawn there`). `delete_move` replies with the same `warning`."
     )]
     async fn add_move(
         &self,
@@ -1124,6 +1132,8 @@ impl TizaServer {
         put("content", p.content.map(Value::from));
         put("typing", p.typing.map(Value::from));
         put("speed_ms", p.speed_ms.map(Value::from));
+        put("annotation", p.annotation.map(Value::from));
+        put("align", p.align.map(Value::from));
         put("rebind", p.rebind.map(Value::Object));
         Ok(text(pretty(&self.call("move.add", m).await?)))
     }

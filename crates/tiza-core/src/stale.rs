@@ -101,7 +101,9 @@ fn region(m: &Move, code: &[String], first: u32) -> Option<Region> {
             let lines: Vec<u32> = [s.from.line, s.to.line].into_iter().flatten().collect();
             (*lines.iter().min()?, *lines.iter().max()?)
         }
-        MoveAction::CodeLink(_) | MoveAction::Wait(_) => return None,
+        // A `scroll` never goes stale: a target that does not resolve only
+        // leaves the view where it is.
+        MoveAction::CodeLink(_) | MoveAction::Wait(_) | MoveAction::Scroll(_) => return None,
     };
     let line = |l: u32| code.get(l.checked_sub(first)? as usize).cloned();
     Some(Region {
@@ -393,6 +395,26 @@ impl<'a> Follow<'a> {
             return (m.clone(), None, None);
         };
         let Some(at_old) = region(m, &old.code, first) else {
+            // A `scroll` on a line never goes stale: its line moves with the
+            // code when it is still there, and stays as written when not.
+            if let MoveAction::Scroll(sc) = &m.action
+                && let Some(l) = sc.line
+                && let Some(new) = self.new.lines(doc, &key)
+            {
+                let map = self.maps.get(&key);
+                let to = old
+                    .ids
+                    .get(l.checked_sub(first).unwrap_or(u32::MAX) as usize)
+                    .and_then(|id| match *id {
+                        LineId::Base(k) => map.map_or(Some(k), |m| m.get(k)).map(LineId::Base),
+                        written => Some(written),
+                    })
+                    .and_then(|id| new.ids.iter().position(|n| *n == id))
+                    .map(|n| first + n as u32);
+                if let Some(to) = to {
+                    return (shifted(m, i64::from(to) - i64::from(l)), None, None);
+                }
+            }
             return (m.clone(), kept, None);
         };
         let was = kept.unwrap_or(at_old);
@@ -487,6 +509,7 @@ fn shifted(m: &Move, by: i64) -> Move {
                 w.line = w.line.map(f);
             }
         }
+        MoveAction::Scroll(s) => s.line = s.line.map(f),
         MoveAction::CodeLink(_) | MoveAction::Wait(_) => {}
     }
     m
@@ -723,6 +746,7 @@ pub(crate) fn first_line(m: &Move) -> Option<u32> {
             .and_then(|pos| pos.split(['-', ':']).next()?.trim().parse::<u32>().ok()),
         MoveAction::Cursor(c) => Some(c.line),
         MoveAction::Select(s) => s.from.line.or(s.to.line),
+        MoveAction::Scroll(s) => s.line,
         MoveAction::CodeLink(_) | MoveAction::Wait(_) => None,
     }
 }

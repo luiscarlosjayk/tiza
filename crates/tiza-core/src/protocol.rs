@@ -1180,7 +1180,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "move.add",
-        "Adds a move: `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}` or `{action: \"wait\", ms}`; validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it",
+        "Adds a move: `{at_step, action: \"code.patch\", op: insert|replace|delete, position|after|before|find|find_start/find_end, content, typing, speed_ms, rebind}`, `{action: \"code.link\", file, lines?}` (show another file; `lines` is only a window), `{action: \"cursor\", line, col?}`, `{action: \"select\", from: {find|line,col}, to: {…}}`, `{action: \"wait\", ms}` or `{action: \"scroll\", line|find|annotation, occurrence?, align?}` (move the view of the TUI); validated against the file shown at that step. A patch carries the annotations of its file at its step and later, and the line numbers of later moves, so they stay on the same text; one it would leave without its text is refused, naming it",
     ),
     (
         "move.delete",
@@ -1336,6 +1336,23 @@ fn describe_move_fields(index: usize, m: &crate::moves::Move) -> String {
         }
         MoveAction::Wait(w) => {
             return format!("#{index} [step {}] wait {}ms", m.at_step, w.ms);
+        }
+        MoveAction::Scroll(s) => {
+            let target = match (&s.line, &s.find, &s.annotation) {
+                (Some(l), _, _) => format!("L{l}"),
+                (None, Some(t), _) => format!(
+                    "{}{}",
+                    quote(t),
+                    s.occurrence.map(|n| format!("#{n}")).unwrap_or_default()
+                ),
+                (None, None, Some(id)) => id.clone(),
+                (None, None, None) => "?".into(),
+            };
+            return format!(
+                "#{index} [step {}] scroll {target} {}",
+                m.at_step,
+                s.align.name()
+            );
         }
     };
     let op = match p.op {

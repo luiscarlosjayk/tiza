@@ -716,6 +716,17 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             broken[i] = true;
             continue;
         }
+        if let MoveAction::Scroll(s) = &m.action
+            && let Some(why) = s.shape_problem()
+        {
+            out.push(
+                Finding::new(Level::Error, "move", why)
+                    .id(name.clone())
+                    .step(m.at_step),
+            );
+            broken[i] = true;
+            continue;
+        }
         if !m.rebind.is_empty() && !matches!(m.action, MoveAction::CodePatch(_)) {
             out.push(
                 Finding::new(
@@ -813,6 +824,30 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                 broken[i] = true;
                 trial[i] = placeholder(trial[i].at_step);
             }
+        }
+    }
+    // ---- scroll targets: a warning, the view does not move ----
+    {
+        let mut d = doc.clone();
+        d.moves = trial.clone();
+        for (i, m) in trial.iter().enumerate() {
+            if broken[i] || !matches!(m.action, MoveAction::Scroll(_)) {
+                continue;
+            }
+            let why = match d.scroll_problem(i) {
+                Some(why) => format!("scroll: {why}, so the view does not move"),
+                None => match d.scroll_note(i) {
+                    Some(note) => format!("scroll: {note}"),
+                    None => continue,
+                },
+            };
+            let file = d.shown_view_at(m.at_step).file;
+            out.push(
+                Finding::new(Level::Warning, "move", in_file(why, &file))
+                    .id(format!("move #{}", i + 1))
+                    .step(m.at_step)
+                    .file(file),
+            );
         }
     }
     // ---- rebind finds, one move at a time ----

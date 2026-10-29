@@ -1,0 +1,19 @@
+---
+source: qa/tests/saving/format_compatibility.rs
+expression: out
+---
+  1    struct Stack {
+  2        items: Vec<i32>,
+  3    }
+  4
+  5    impl Stack {
+  6        fn push(&mut self, x: i32) {
+  7            self.items.push(x);
+  8        }
+  9
+    ╭─ pop takes the last item ───────────────╮
+ 10 │      fn pop(&mut self) -> Option<i32> { │
+ 11 │          self.items.pop()               │
+ 12 │      }                                  │
+    ╰─────────────────────────────────────────╯
+ 13    }

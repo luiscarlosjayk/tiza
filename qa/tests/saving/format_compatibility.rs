@@ -225,3 +225,21 @@ fn an_effect_of_a_newer_tiza_reads_as_no_effect() {
     assert_eq!(of("a1")["effect"], "draw", "{json}");
     assert_eq!(of("h1")["effect"], "fade", "{json}");
 }
+
+#[test]
+fn scroll_moves_are_saved_as_they_are_written() {
+    // The round trip above compares two loads, so a field that the loader
+    // drops would pass it. This compares the saved moves with the file.
+    let f = compat_dir().join("v1-roundtrip-scroll.tiza");
+    let written: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&f).unwrap()).unwrap();
+    let opened = fs::open(f.to_str().unwrap()).unwrap();
+    let dir = scratch("roundtrip-scroll");
+    let saved = dir.join("s.tiza");
+    fs::save_document(&opened.document, &saved).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&saved).unwrap()).unwrap();
+    assert_eq!(json["moves"], written["moves"], "{json}");
+    // `align: center` is the default and is not written.
+    assert!(json["moves"][0].get("align").is_none(), "{json}");
+}

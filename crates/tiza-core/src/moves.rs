@@ -68,6 +68,11 @@ pub enum MoveAction {
     /// recordings; a still render ignores it).
     #[serde(rename = "wait")]
     Wait(Wait),
+    /// Move the view of the TUI to a line, a text or an annotation of the
+    /// shown file, aligned to the top, the center or the bottom (the
+    /// exports show the whole take and ignore it).
+    #[serde(rename = "scroll")]
+    Scroll(ScrollTo),
 }
 
 impl MoveAction {
@@ -79,6 +84,7 @@ impl MoveAction {
             MoveAction::Cursor(_) => "cursor",
             MoveAction::Select(_) => "select",
             MoveAction::Wait(_) => "wait",
+            MoveAction::Scroll(_) => "scroll",
         }
     }
 }
@@ -140,6 +146,85 @@ pub struct CursorAt {
 pub struct SelectSpec {
     pub from: Where,
     pub to: Where,
+}
+
+/// `scroll`: exactly one target — a `line`, a `find` (its first match, or
+/// the one `occurrence` names) or the id of an `annotation` — and where it
+/// goes in the view.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct ScrollTo {
+    /// A line of the code where the move runs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub line: Option<u32>,
+    /// A text of the code where the move runs (in the window of a
+    /// `code.link`): the view goes to its first match, or to the match
+    /// that `occurrence` names.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub find: Option<String>,
+    /// Which match of `find` to use, 1-based. Only with `find`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurrence: Option<u32>,
+    /// The id of an annotation: its lines, with its borders and labels.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub annotation: Option<String>,
+    /// Where the target goes in the view. Default: `center`.
+    #[serde(default, skip_serializing_if = "Align::is_center")]
+    pub align: Align,
+}
+
+impl ScrollTo {
+    /// What is wrong with the fields alone (not the code), if anything:
+    /// exactly one target, `occurrence` only with `find` and 1-based.
+    pub fn shape_problem(&self) -> Option<String> {
+        let targets = [
+            self.line.is_some(),
+            self.find.is_some(),
+            self.annotation.is_some(),
+        ]
+        .iter()
+        .filter(|b| **b)
+        .count();
+        if targets != 1 {
+            return Some("scroll: give exactly one of line, find or annotation".into());
+        }
+        match (self.occurrence, &self.find) {
+            (Some(_), None) => Some("scroll: occurrence goes only with find".into()),
+            (Some(0), Some(_)) => Some("scroll: occurrence is 1-based".into()),
+            _ => None,
+        }
+    }
+}
+
+/// Where a `scroll` puts its target in the view.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, schemars::JsonSchema,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum Align {
+    /// The first row of the target at the top of the view.
+    Top,
+    /// The middle of the target in the middle of the view.
+    #[default]
+    Center,
+    /// The last row of the target at the bottom of the view.
+    Bottom,
+    /// The least motion that shows the whole target (none when it shows).
+    Show,
+}
+
+impl Align {
+    pub fn is_center(&self) -> bool {
+        *self == Align::Center
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Align::Top => "top",
+            Align::Center => "center",
+            Align::Bottom => "bottom",
+            Align::Show => "show",
+        }
+    }
 }
 
 /// `wait`: milliseconds.
@@ -626,6 +711,22 @@ pub struct Projection {
     pub patches: Vec<AppliedPatch>,
     pub cursor: Option<Anchor>,
     pub selection: Option<(Anchor, Anchor)>,
+    /// The index of the newest move that places the view of the TUI: a
+    /// `cursor`, a `code.link` or a `scroll`.
+    pub camera: Option<usize>,
+    /// Each `scroll` whose `line` or `find` does not resolve where it runs,
+    /// by index, and why. Such a move does not stop the projection: the
+    /// view does not move.
+    pub scroll_misses: Vec<(usize, String)>,
+    /// Each `scroll` whose `find` matches more than once with no
+    /// `occurrence`, by index, and what `check` says of it: the view goes to
+    /// the first match.
+    pub scroll_notes: Vec<(usize, String)>,
+    /// Every `scroll` since the last `code.link`, by index, and the line
+    /// its `line` or `find` resolved to, carried through the patches after
+    /// it: `None` when it did not resolve, when a patch removed the line, or
+    /// for an `annotation` (resolved at the step it is shown).
+    pub scroll_lines: Vec<(usize, u32, Option<u32>)>,
 }
 
 impl Projection {
@@ -639,6 +740,33 @@ impl Projection {
         let first = doc.view_first_line(&self.shown.file);
         crop(code, first, self.shown.window)
     }
+}
+
+/// What places the view of the TUI at a step: the newest `cursor`,
+/// `code.link` or `scroll` that runs by then ([`crate::Document::view_at`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum Camera {
+    /// No such move: the view stays where the presenter puts it.
+    #[default]
+    None,
+    /// A `cursor` or a `code.link`: the TUI puts its cursor there (or on
+    /// the first line of the linked file) at each step, as before `scroll`.
+    Cursor,
+    Scroll(ScrollCam),
+}
+
+/// The `scroll` that places the view at a step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScrollCam {
+    /// Which `scroll`: its step and its place among the `scroll` moves of
+    /// that step. It stays the same when carry or follow rewrites its line.
+    pub id: (u32, usize),
+    /// The first and the last line of the target at the step; `None` when
+    /// it does not resolve there.
+    pub lines: Option<(u32, u32)>,
+    /// The id of the annotation it shows, for the rows of its borders.
+    pub annotation: Option<String>,
+    pub align: Align,
 }
 
 /// `code[first..]` cropped to `window`, clamped to the lines that exist.
@@ -772,6 +900,20 @@ impl Projection {
                 if let Some(c) = p.cursor {
                     p.cursor = map.get(c.line).map(|line| Anchor { line, col: c.col });
                 }
+                for (k, at, line) in &mut p.scroll_lines {
+                    let was = *line;
+                    *line = line.and_then(|l| map.get(l));
+                    // A later move of its own step removes the line: the
+                    // view never goes there.
+                    if let (Some(l), None) = (was, *line)
+                        && *at == m.at_step
+                    {
+                        p.scroll_misses.push((
+                            *k,
+                            format!("move #{} of its step removes its line {l}", i + 1),
+                        ));
+                    }
+                }
                 if let Some((a, b)) = p.selection {
                     p.selection =
                         match (map.get_column_anchor(a.line), map.get_column_anchor(b.line)) {
@@ -813,6 +955,8 @@ impl Projection {
                 p.shown = ViewRef { file: key, window };
                 p.cursor = None;
                 p.selection = None;
+                p.camera = Some(i);
+                p.scroll_lines.clear();
             }
             MoveAction::Cursor(c) => {
                 let key = p.shown.file.clone();
@@ -837,6 +981,7 @@ impl Projection {
                     });
                 }
                 p.cursor = Some(Anchor { line: c.line, col });
+                p.camera = Some(i);
             }
             MoveAction::Select(s) => {
                 let key = p.shown.file.clone();
@@ -856,8 +1001,83 @@ impl Projection {
                     return Err(Error::Invalid("wait: ms must be >= 1".into()));
                 }
             }
+            MoveAction::Scroll(s) => {
+                // Never an error: a target that does not resolve leaves the
+                // view where it is, and `check` names it.
+                let line = match p.scroll_line(doc, s) {
+                    Ok((line, note)) => {
+                        if let Some(note) = note {
+                            p.scroll_notes.push((i, note));
+                        }
+                        line
+                    }
+                    Err(why) => {
+                        p.scroll_misses.push((i, why));
+                        None
+                    }
+                };
+                p.camera = Some(i);
+                p.scroll_lines.push((i, m.at_step, line));
+            }
         }
         Ok(())
+    }
+
+    /// The line of the `line` or `find` of `s` on the shown code (in the
+    /// window of a `code.link`), `None` for an `annotation`; and a note when
+    /// the text of a `find` matches more than once.
+    fn scroll_line(
+        &self,
+        doc: &Document,
+        s: &ScrollTo,
+    ) -> Result<(Option<u32>, Option<String>), String> {
+        let key = self.shown.file.clone();
+        let code = self.codes.get(&key).cloned().unwrap_or_default();
+        let (code, first) = crop(code, doc.view_first_line(&key), self.shown.window);
+        let last = first + code.len().saturating_sub(1) as u32;
+        if let Some(l) = s.line {
+            if code.is_empty() || l < first || l > last {
+                return Err(format!(
+                    "line {l} is not in the code shown at this step (lines {first}-{last})"
+                ));
+            }
+            return Ok((Some(l), None));
+        }
+        let Some(text) = &s.find else {
+            return Ok((None, None));
+        };
+        if text.is_empty() {
+            return Err("find: empty text".into());
+        }
+        // Unlike the other moves, a text that matches more than once is
+        // not an error: the view goes to the first match, and `check`
+        // says so (Luis, D7).
+        let hits = matches_of(&code, first, text);
+        match (s.occurrence, hits.as_slice()) {
+            (_, []) => Err(Error::NoMatch(format!("find «{text}»")).to_string()),
+            (Some(n), _) => hits
+                .get(n as usize - 1)
+                .map(|l| (Some(*l), None))
+                .ok_or_else(|| {
+                    format!(
+                        "find «{text}»: occurrence {n} asked, only {} match{} at this step",
+                        hits.len(),
+                        if hits.len() == 1 { "" } else { "es" }
+                    )
+                }),
+            (None, [one]) => Ok((Some(*one), None)),
+            // Matches on one line all put the view there.
+            (None, [first_hit, ..]) if hits.iter().all(|l| l == first_hit) => {
+                Ok((Some(*first_hit), None))
+            }
+            (None, [first_hit, ..]) => Ok((
+                Some(*first_hit),
+                Some(format!(
+                    "find «{text}» matches {} times; the view goes to the first; add occurrence to choose",
+                    hits.len()
+                )),
+            )),
+        }
     }
 }
 
@@ -922,6 +1142,15 @@ pub fn validate(doc: &Document, moves: &[Move], annotations: &[Annotation]) -> R
             return Err(Error::Invalid(format!(
                 "move #{}: at_step must be >= 1 (step 0 is the untouched code)",
                 i + 1
+            )));
+        }
+        if let MoveAction::Scroll(s) = &m.action
+            && let Some(why) = s.shape_problem()
+        {
+            return Err(Error::Invalid(format!(
+                "move #{}, step {}: {why}",
+                i + 1,
+                m.at_step
             )));
         }
         if !m.rebind.is_empty() && !matches!(m.action, MoveAction::CodePatch(_)) {
@@ -1303,6 +1532,19 @@ pub struct TypingItem {
 pub struct TypingPlan {
     pub full: Vec<String>,
     pub items: Vec<TypingItem>,
+    /// The `scroll` moves of the step, where they come in the list: the
+    /// TUI moves the view at each one, and takes no time for it. An export
+    /// shows the whole take and does not read them.
+    pub cues: Vec<Cue>,
+}
+
+/// A `scroll` in the typing of a step: the view moves to `camera` before
+/// item `before` of [`TypingPlan::items`] (after the last one when
+/// `before` is their count), its lines in the code of the end of the step.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Cue {
+    pub before: usize,
+    pub camera: ScrollCam,
 }
 
 impl TypingPlan {
@@ -1430,9 +1672,40 @@ pub fn typing_plan(doc: &crate::Document, step: u32) -> Option<TypingPlan> {
         return None;
     }
     items.sort_by_key(|(i, _)| *i);
+    let at_step: Vec<(usize, &Move)> = moves_at(&doc.moves, step)
+        .filter(|(_, m)| m.stale.is_none())
+        .collect();
+    let mut cues = Vec::new();
+    let shapes = if at_step
+        .iter()
+        .any(|(_, m)| matches!(m.action, MoveAction::Scroll(_)))
+    {
+        doc.shapes_at(&proj, step)
+    } else {
+        Vec::new()
+    };
+    for (k, (i, m)) in at_step.iter().enumerate() {
+        if !matches!(m.action, MoveAction::Scroll(_)) {
+            continue;
+        }
+        // A later `cursor` or `code.link` of the step places the view.
+        if at_step[k + 1..].iter().any(|(_, later)| {
+            matches!(
+                later.action,
+                MoveAction::Cursor(_) | MoveAction::CodeLink(_)
+            )
+        }) {
+            continue;
+        }
+        if let Some(camera) = doc.scroll_cam(&proj, step, *i, &shapes) {
+            let before = items.iter().filter(|(t, _)| t < i).count();
+            cues.push(Cue { before, camera });
+        }
+    }
     Some(TypingPlan {
         full,
         items: items.into_iter().map(|(_, it)| it).collect(),
+        cues,
     })
 }
 
