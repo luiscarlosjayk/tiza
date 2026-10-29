@@ -896,10 +896,11 @@ fn unknown_effects_are_named_on_stderr_and_counted_on_the_bar() {
 binary, cwd, present = sys.argv[1], sys.argv[2], sys.argv[3] == "present"
 os.chdir(cwd)
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
-argv = [binary, "--no-save", "--theme", "dark"] + (["--present"] if present else []) + ["newer.tiza"]
+argv = [binary, "--no-save", "--no-socket", "--theme", "dark"] + (["--present"] if present else []) + ["newer.tiza"]
 s = Pty(argv, 30, 120, env=env)
 s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame")
-s.settle(0.3)
+if not present:
+    s.wait_for(lambda out: b"see tiza check" in out, 10, "the bar")
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
 sys.stdout.flush()
