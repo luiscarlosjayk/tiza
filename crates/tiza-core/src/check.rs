@@ -1351,12 +1351,20 @@ fn check_loaded(
         }
         // An effect of a newer Tiza: the file opens, with no effect there.
         for (_, value) in doc.unknown_effects.0.iter().filter(|(id, _)| *id == a.id) {
+            // What to write instead, for this annotation.
+            let fix = if value == "\"none\"" {
+                "leave out effect for no effect"
+            } else if a.shape.has_stroke() {
+                "use draw or fade"
+            } else {
+                "use fade"
+            };
             out.push(
                 Finding::new(
                     Level::Warning,
                     "effect",
                     format!(
-                        "the effect {value} is not known to this version of Tiza: the annotation comes in with no effect, and a save does not keep it"
+                        "the effect {value} is not known to this version of Tiza: {fix}. The annotation comes in with no effect, and a save does not keep the value."
                     ),
                 )
                 .id(a.id.clone())

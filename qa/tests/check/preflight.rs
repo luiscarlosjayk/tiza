@@ -1141,3 +1141,53 @@ fn an_effect_of_a_newer_tiza_is_a_warning() {
         "{v}"
     );
 }
+
+#[test]
+fn an_effect_in_capitals_says_what_to_write_and_both_warnings_end_alike() {
+    // The format keeps its values in lowercase: `DRAW` is not known, and
+    // the warning says what to write. The two `effect` warnings are full
+    // sentences.
+    let dir = scratch("effect-capitals");
+    let path = dir.join("doc.tiza");
+    let doc = json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1},
+        "code": ["fn a() {", "    b();", "}"],
+        "annotations": [
+            {"id": "b1", "step": 1, "type": "box", "from_line": 1, "to_line": 3, "effect": "DRAW"},
+            {"id": "n1", "step": 1, "type": "note", "line": 2, "text": "no stroke", "effect": "draw"},
+            {"id": "n2", "step": 1, "type": "note", "line": 1, "text": "none", "effect": "none"},
+            {"id": "n3", "step": 1, "type": "note", "line": 3, "text": "caps", "effect": "FADE"}
+        ]
+    });
+    std::fs::write(&path, doc.to_string()).unwrap();
+    let (code, v) = check_json(&path, &[]);
+    assert_eq!(code, 0, "{v}");
+    let f = with_code(&findings(&v), "effect");
+    let message = |id: &str| {
+        f.iter()
+            .find(|x| x["id"] == id)
+            .unwrap_or_else(|| panic!("no warning for {id}: {v}"))["message"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    };
+    let capitals = message("b1");
+    assert!(
+        capitals.contains("\"DRAW\"") && capitals.contains("use draw or fade"),
+        "{capitals}"
+    );
+    // What to write depends on the annotation: a note has no stroke.
+    assert!(
+        message("n2").contains("leave out effect"),
+        "{}",
+        message("n2")
+    );
+    assert!(
+        message("n3").contains("use fade.") && !message("n3").contains("draw or fade"),
+        "{}",
+        message("n3")
+    );
+    for id in ["b1", "n1", "n2", "n3"] {
+        assert!(message(id).ends_with('.'), "{id}: {}", message(id));
+    }
+}
