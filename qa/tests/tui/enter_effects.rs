@@ -208,6 +208,30 @@ fn a_step_change_to_the_step_on_screen_keeps_the_auto_advance() {
 }
 
 #[test]
+fn a_change_of_the_pointer_ends_the_effect() {
+    // An agent points while the effect plays: the effect ends, and the
+    // step stays. So does the end of the pointer of the presenter.
+    let seen = run(
+        "effect-pointer-set",
+        "shared/enter_effects/drop.tiza",
+        &[],
+        r#"[["key", "n"], ["until", {"step": 2, "effect": true}],
+            ["api", ["pointer.set", {"line": 3}]], ["until", {"step": 2, "effect": false}]]"#,
+    );
+    assert_eq!(seen.last().unwrap()["effect"], false, "{seen:?}");
+    assert_eq!(seen.last().unwrap()["step"], 2, "{seen:?}");
+    let seen = run(
+        "effect-pointer-clear",
+        "shared/enter_effects/drop.tiza",
+        &[],
+        r#"[["key", "f"], ["key", "n"], ["until", {"step": 2, "effect": true}],
+            ["api", ["pointer.clear", null]], ["until", {"step": 2, "effect": false}]]"#,
+    );
+    assert_eq!(seen.last().unwrap()["effect"], false, "{seen:?}");
+    assert_eq!(seen.last().unwrap()["step"], 2, "{seen:?}");
+}
+
+#[test]
 fn a_goto_to_the_next_step_plays_its_effect() {
     let seen = run(
         "effect-goto",

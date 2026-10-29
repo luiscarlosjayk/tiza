@@ -152,8 +152,9 @@ pub struct TypingState {
 }
 
 /// An enter effect in progress (experimental): the new annotations of the
-/// step just reached come in as [`tiza_core::effects`] plans them. Any key
-/// or any change of the document ends it.
+/// step just reached come in as [`tiza_core::effects`] plans them. A key
+/// (in presentation mode, not one that only moves the view), a change of
+/// the document or a change of the live pointer ends it.
 #[derive(Debug)]
 pub struct EffectState {
     pub started: std::time::Instant,
@@ -168,6 +169,9 @@ pub struct EffectState {
     hold_ms: Option<u64>,
     /// The revision it plays at: at another one, it is over.
     revision: u64,
+    /// The live pointer shown when it started: when the pointer changes
+    /// (an agent points, the presenter turns it off), it is over.
+    pointer: Option<(u32, u32)>,
     /// The work layout and the plan at a width and with a pointer,
     /// computed when the effect starts, and again at another width or
     /// pointer. A frame takes it ([`App::screen_layout_with_pointer`]),
@@ -2853,6 +2857,7 @@ impl App {
             slow,
             hold_ms: None,
             revision: self.revision,
+            pointer: opts.pointer,
             cache: std::cell::RefCell::new(Some(cache)),
         });
         // The auto-advance countdown starts when the effect ends.
@@ -2879,7 +2884,7 @@ impl App {
         let e = self
             .effect
             .as_ref()
-            .filter(|e| e.revision == self.revision)?;
+            .filter(|e| e.revision == self.revision && e.pointer == opts.pointer)?;
         let t_ms = e
             .hold_ms
             .unwrap_or_else(|| e.started.elapsed().as_millis() as u64 / e.slow);
@@ -2936,7 +2941,10 @@ impl App {
         let Some(e) = &self.effect else {
             return false;
         };
-        if e.revision != self.revision || e.started.elapsed().as_millis() as u64 >= e.duration_ms {
+        if e.revision != self.revision
+            || e.pointer != self.pointer_shown()
+            || e.started.elapsed().as_millis() as u64 >= e.duration_ms
+        {
             self.finish_effect();
         }
         true
