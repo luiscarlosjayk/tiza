@@ -139,8 +139,46 @@ pub fn typing_speed(mut doc: Document, ms: u64) -> Document {
     doc
 }
 
-/// The `tiza` binary of the current profile, built on first use.
+/// The `tiza` binary that the tests start. By default, the binary of the
+/// current profile, built on first use.
+///
+/// When `TIZA_QA_BIN` is set (and not empty), `bin()` returns that file and
+/// does not build `tiza`. Only a load run sets it: many test processes at
+/// once on one `target`. On macOS each `cargo build` removes
+/// `target/<profile>/tiza` and copies it again, also when nothing changed.
+/// Then a test of another process cannot start the binary. CI must not set
+/// it.
 pub fn bin() -> PathBuf {
+    if let Some(path) = std::env::var_os("TIZA_QA_BIN").filter(|p| !p.is_empty()) {
+        static SAID: Once = Once::new();
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "TIZA_QA_BIN is set in CI: it is only for load runs"
+        );
+        // An absolute path: the tests start the binary from other folders.
+        let path = std::fs::canonicalize(&path)
+            .ok()
+            .filter(|p| p.is_file())
+            .unwrap_or_else(|| {
+                panic!(
+                    "TIZA_QA_BIN={} is not a file: build tiza with \
+                     `cargo build -p tiza --features test-hooks` and set it to that binary, \
+                     or unset it",
+                    PathBuf::from(&path).display()
+                )
+            });
+        // Not through `eprintln!`, which the test harness captures: a log
+        // of the whole run shows which binary the tests started.
+        SAID.call_once(|| {
+            use std::io::Write;
+            let _ = writeln!(
+                std::io::stderr(),
+                "tiza_qa: TIZA_QA_BIN={}: the tests start this binary and do not build tiza",
+                path.display()
+            );
+        });
+        return path;
+    }
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let status = Command::new(env!("CARGO"))
