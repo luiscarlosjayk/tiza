@@ -511,6 +511,7 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 - In a step that types, a `scroll` move moves the view at its place in the list, before or after a typed move or a `wait`. It takes no time.
 - The annotation can be of a later step. The view then goes to the lines where the annotation will come in.
 - When the live pointer is on and the view moves, the pointer stays if the new view shows its lines. If not, the pointer goes off.
+- A `scroll` move puts the cursor on the first line of its target. When the live pointer stays, the cursor stays with the pointer: `j` and `k` continue from the pointer. To go to an annotation, press `Tab`.
 - The view moves in normal mode and in presentation mode.
 - A target that does not resolve does not stop the step: the view does not move, and `tiza check` gives a warning. Examples are a line that is not in the code, a text that is not in the code, and an annotation that does not exist.
 - A `find` that matches more than once goes to the first match. `tiza check` gives a warning, unless `occurrence` names the match or all the matches are on one line.

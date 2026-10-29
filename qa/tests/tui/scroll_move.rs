@@ -465,3 +465,51 @@ fn leaving_a_step_while_it_types_keeps_the_pointer() {
     assert_eq!(live.with(|a| a.doc.step), 1);
     assert_eq!(live.with(|a| a.pointer.map(|p| p.line)), Some(2));
 }
+
+#[test]
+fn a_pointer_that_stays_after_a_jump_keeps_the_cursor_with_it() {
+    // Step 2 jumps to the box b2 (lines 98-102). The pointer is on line
+    // 105, which the new view still shows: it stays, and the cursor stays
+    // with it, so `k` moves it to line 104, not near the target.
+    for present in [true, false] {
+        let live = open(
+            &format!("scroll-pointer-cursor-{present}"),
+            "effect.tiza",
+            1,
+        );
+        live.with(move |a| a.set_present(present));
+        live.api_ok("pointer.set", serde_json::json!({ "line": 105 }));
+        key(&live, KeyCode::Char('n'));
+        let after = live.with(|a| {
+            draw(a);
+            (a.cursor_line, a.pointer.map(|p| p.line))
+        });
+        assert_eq!(after, (105, Some(105)), "present {present}: after the jump");
+        // The box of the step comes in with `draw`: end it, then `k`.
+        live.with(|a| a.finish_effect());
+        key(&live, KeyCode::Char('k'));
+        let after = live.with(|a| {
+            draw(a);
+            (a.cursor_line, a.pointer.map(|p| p.line))
+        });
+        assert_eq!(after, (104, Some(104)), "present {present}: after k");
+    }
+}
+
+#[test]
+fn a_step_with_the_same_camera_keeps_the_cursor_on_a_pointer_that_stayed() {
+    // camera.tiza: step 4 jumps to line 50 at the bottom; step 5 keeps
+    // that camera. The pointer on line 45 stays in view at the jump, and
+    // at step 5 the cursor is still with it.
+    let live = open("scroll-pointer-same-camera", "camera.tiza", 3);
+    live.with(|a| a.set_present(false));
+    live.api_ok("pointer.set", serde_json::json!({ "line": 45 }));
+    for step in [4, 5] {
+        key(&live, KeyCode::Char('n'));
+        let at = live.with(|a| {
+            draw(a);
+            (a.doc.step, a.cursor_line, a.pointer.map(|p| p.line))
+        });
+        assert_eq!(at, (step, 45, Some(45)), "step {step}");
+    }
+}

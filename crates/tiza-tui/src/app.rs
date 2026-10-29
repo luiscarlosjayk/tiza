@@ -1589,9 +1589,12 @@ impl App {
                     h.lines = lines;
                     h.align = cam.align;
                     h.pointer = self.pointer;
-                    self.cursor_line = lines.0;
-                    self.cursor_col = 0;
-                    h.cursor = (lines.0, 0);
+                    // A pointer that stayed keeps the cursor with it.
+                    if self.pointer.is_none() {
+                        self.cursor_line = lines.0;
+                        self.cursor_col = 0;
+                    }
+                    h.cursor = (self.cursor_line, self.cursor_col);
                 }
                 (Some(_), None) => self.scroll_held = None,
                 (None, _) => {}
@@ -1604,6 +1607,7 @@ impl App {
             self.scroll_held = None;
             return;
         };
+        let before = (self.cursor_line, self.cursor_col);
         self.cursor_line = lines.0;
         self.cursor_col = 0;
         let mut held = ScrollHeld {
@@ -1634,6 +1638,16 @@ impl App {
                 if !(shown(p.line) && shown(p.to)) {
                     self.pointer = None;
                     held.pointer = None;
+                } else {
+                    // The pointer stays, and the cursor with it: `j` and
+                    // `k` go on from the pointer, not from the target.
+                    self.cursor_line = p.line;
+                    self.cursor_col = if (p.line..=p.to).contains(&before.0) {
+                        before.1
+                    } else {
+                        0
+                    };
+                    held.cursor = (self.cursor_line, self.cursor_col);
                 }
             }
         }
