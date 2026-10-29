@@ -728,6 +728,12 @@ fn weight(g: &str) -> Option<(bool, u8)> {
     })
 }
 
+/// Whether `after` is the junction that a line makes with `before`, a
+/// line: the cell where an older line crosses a new stroke.
+pub(crate) fn is_crossing(before: &str, after: &str) -> bool {
+    is_junction(after) && weight(before).is_some()
+}
+
 /// The junction glyph when `new` is drawn over `existing`, if they cross.
 fn is_junction(sym: &str) -> bool {
     matches!(sym, "┼" | "╂" | "┿" | "╋" | "╪" | "╫" | "╬")

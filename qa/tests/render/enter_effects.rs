@@ -247,6 +247,38 @@ fn a_line_of_a_step_before_crosses_a_new_border_only_when_the_border_comes() {
 }
 
 #[test]
+fn a_crossing_in_a_fade_shows_the_line_until_half_of_the_fade() {
+    // A box with fade at step 3, crossed by the arrow of step 1. A fade
+    // cannot mix a line into a junction: the cell shows the line of the
+    // arrow as at step 2 until half of the fade, then the crossing. It is
+    // never empty and never a junction before the box comes in.
+    let doc = open(&fixture("render/enter_effects/crossing.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(3, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 3 has an effect");
+    let c = &l.canvas;
+    let y = row_of(c, "let d = c * 2;");
+    let x = xs(c, y, "┼")[0];
+    let was = layout(&doc, &Theme::dark(), &options(2, 100)).canvas;
+    let line = was.get(x, row_of(&was, "let d = c * 2;")).unwrap().clone();
+    assert_eq!(line.sym.as_str(), "─", "the arrow at step 2");
+    let shows = |t: u64| at_time(&plan, c, t).get(x, y).unwrap().clone();
+    for t in [0, FADE_MS / 2 - 1] {
+        assert_eq!(
+            shows(t),
+            line,
+            "at {t} ms the cell is not the line of step 2"
+        );
+    }
+    for t in [FADE_MS / 2, FADE_MS] {
+        assert_eq!(
+            &shows(t),
+            c.get(x, y).unwrap(),
+            "at {t} ms the crossing does not show"
+        );
+    }
+}
+
+#[test]
 fn an_underline_is_drawn_from_left_to_right() {
     let doc = open(&fixture("render/enter_effects/strokes.tiza"));
     let (c, first) = reveal(&doc, 2);
@@ -428,6 +460,11 @@ fn a_box_with_fade_is_hidden_at_first_and_whole_at_the_end_of_the_fade() {
     let start = at_time(&plan, &l.canvas, 0);
     let end = at_time(&plan, &l.canvas, FADE_MS);
     for (x, y) in border {
+        // Where the arrow of step 1 crosses it, the cell shows the arrow
+        // until half of the fade (a_crossing_in_a_fade_shows_the_line_…).
+        if l.canvas.get(x, y).is_some_and(|c| c.sym.as_str() == "┼") {
+            continue;
+        }
         let s = start.get(x, y).unwrap().style;
         assert_eq!(s.fg, s.bg, "({x}, {y}) shows at 0 ms");
         assert_eq!(

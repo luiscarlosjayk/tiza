@@ -21,7 +21,7 @@
 //! annotations of one step come in at the same time; one without an effect
 //! is whole from the first frame.
 
-use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace};
+use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace, is_crossing};
 use crate::model::Document;
 use crate::theme::{blend, host_color};
 
@@ -175,6 +175,17 @@ impl Plan {
                     start: stroke_end,
                     end: stroke_end + TEXT_FADE_MS,
                     from: Some(hidden(&after, &r.before)),
+                    after,
+                },
+                // An older line that crosses the new stroke: a fade cannot
+                // mix a line into a junction, so the line shows until half
+                // of the fade, then the junction.
+                (Some(Effect::Fade), _) if is_crossing(&r.before.sym, &after.sym) => Change {
+                    i,
+                    before: r.before.clone(),
+                    start: FADE_MS / 2,
+                    end: FADE_MS / 2,
+                    from: None,
                     after,
                 },
                 // Every part at once: from the cell before when it keeps

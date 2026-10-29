@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "title": "An arrow of a step before, across a box that is drawn",
+ "title": "An arrow of a step before, across a box that is drawn and a box that fades in",
  "source": {
   "language": "rs",
   "first_line": 1
@@ -35,6 +35,14 @@
    "from_line": 1,
    "to_line": 3,
    "effect": "draw"
+  },
+  {
+   "id": "b2",
+   "step": 3,
+   "type": "box",
+   "from_line": 4,
+   "to_line": 6,
+   "effect": "fade"
   }
  ]
 }
