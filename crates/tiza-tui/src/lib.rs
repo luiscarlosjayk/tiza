@@ -689,8 +689,8 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // So does an enter effect: the final drawing shows at once. In
     // presentation mode a key that only moves the view lets it play, and
     // the view moves: a trackpad or a mouse wheel comes as ↑ and ↓. With
-    // the live pointer on, that key moves the pointer, and a change of
-    // the pointer ends the effect.
+    // the live pointer on, that key would move the pointer, and a change
+    // of the pointer ends the effect: it ends it at once, as another key.
     if app.is_playing_effect()
         && !(app.present && app.pointer.is_none() && moves_the_view(app, code, mods))
     {
