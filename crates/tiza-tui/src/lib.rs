@@ -21,7 +21,7 @@ use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
@@ -479,12 +479,26 @@ fn event_loop(
     }
     let mut needs_draw = true;
     let mut mouse_captured = app.mouse;
+    // While an enter effect plays: its start, and when its next frame is
+    // due. Another effect starts with no frame due.
+    let mut frame_due: Option<(Instant, Instant)> = None;
+    let due_of = |frame_due: Option<(Instant, Instant)>, app: &App| {
+        let started = app.effect.as_ref()?.started;
+        frame_due.filter(|(s, _)| *s == started).map(|(_, due)| due)
+    };
     loop {
         if needs_draw {
             if let Err(e) = terminal.draw(|f| ui::draw(f, app)) {
                 return hung_up_or(hangup, e);
             }
             needs_draw = false;
+            // The end of the frame: after a slow frame, the loop rests.
+            let drawn = Instant::now();
+            let period = Duration::from_micros(tiza_core::effects::SCREEN_FRAME_US);
+            frame_due = app.effect.as_ref().map(|e| {
+                let due = next_frame_due(due_of(frame_due, app), drawn, period);
+                (e.started, due)
+            });
         }
         // `:mouse on|off` changed the flag: tell the terminal.
         if app.mouse != mouse_captured {
@@ -524,16 +538,17 @@ fn event_loop(
         if app.present_message_tick(std::time::Instant::now()) {
             needs_draw = true;
         }
-        // While typing, poll often enough for a smooth animation; an
-        // effect redraws at about 30 fps.
+        // While typing, poll often enough for a smooth animation. While an
+        // effect plays, wait for its next frame: an event of the terminal
+        // (a key, the mouse) wakes the loop before, and a frame more shows.
         let wait = if app.is_typing() {
-            15
+            Duration::from_millis(15)
         } else if app.is_playing_effect() {
-            tiza_core::effects::SCREEN_FRAME_MS
+            frame_wait(due_of(frame_due, app), Instant::now())
         } else {
-            50
+            Duration::from_millis(50)
         };
-        let ready = match event::poll(Duration::from_millis(wait)) {
+        let ready = match event::poll(wait) {
             Ok(ready) => ready,
             Err(e) => return hung_up_or(hangup, e),
         };
@@ -588,6 +603,32 @@ fn event_loop(
             return Ok(End::Quit);
         }
     }
+}
+
+/// When the next frame of an enter effect is due, after a frame that
+/// ended at `now`: the frames keep to a grid of `period`. A frame that
+/// ends before `due` is one more (an event of the terminal woke the loop)
+/// and does not move the grid; a frame on time moves it one period; a
+/// late frame starts it again one period after `now`, so the loop rests
+/// and does not draw in a burst to catch up.
+pub fn next_frame_due(due: Option<Instant>, now: Instant, period: Duration) -> Instant {
+    match due {
+        Some(due) if now < due => due,
+        Some(due) if due + period > now => due + period,
+        _ => now + period,
+    }
+}
+
+/// How long the loop waits for the next frame of an enter effect that
+/// plays: until `due`, rounded up to whole milliseconds, so that it
+/// never wakes before. With no frame due yet, no wait: the first frame
+/// shows at once, also when the effect starts with no key (a socket
+/// request, the auto-advance, the end of the typing).
+pub fn frame_wait(due: Option<Instant>, now: Instant) -> Duration {
+    due.map_or(Duration::ZERO, |due| {
+        let left = due.saturating_duration_since(now);
+        Duration::from_millis(left.as_micros().div_ceil(1000) as u64)
+    })
 }
 
 /// Whether the screen is drawn again after a socket request: always after

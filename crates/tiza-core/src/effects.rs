@@ -16,9 +16,10 @@
 //! A traced layout ([`crate::layout::layout_traced`]) records what each
 //! annotation of the step paints, over the dim of the step before.
 //! [`Plan::new`] turns that record into a plan once per step;
-//! [`Plan::paint`] then only copies or mixes cells. The annotations of one
-//! step come in at the same time; one without an effect is whole from the
-//! first frame.
+//! [`Plan::paint`] then only copies or mixes cells, and
+//! [`Plan::paint_rows`] does it only on the rows that a screen shows. The
+//! annotations of one step come in at the same time; one without an effect
+//! is whole from the first frame.
 
 use crate::canvas::{Canvas, Cell, CellStyle, Part, Trace};
 use crate::model::Document;
@@ -34,8 +35,9 @@ pub const STROKE_MS_PER_CELL: u64 = 12;
 pub const FADE_MS: u64 = 240;
 /// Time the text of a callout or a label takes to fade in.
 pub const TEXT_FADE_MS: u64 = 200;
-/// Time between two frames of an effect on the screen (about 30 fps).
-pub const SCREEN_FRAME_MS: u64 = 33;
+/// Time between two frames of an effect on the screen, in microseconds:
+/// 30 fps. A whole number of milliseconds would not be 30 fps.
+pub const SCREEN_FRAME_US: u64 = 33_333;
 /// Time between two frames of an effect in a GIF, WebP or video (a
 /// multiple of the 10 ms unit of a GIF).
 pub const EXPORT_FRAME_MS: u64 = 40;
@@ -197,6 +199,16 @@ impl Plan {
         if changes.is_empty() {
             return None;
         }
+        // By cell, so that a frame can paint only the rows it shows
+        // ([`Plan::paint_rows`]). The sort is stable: two changes of one
+        // cell would keep their order. The record gives a cell one change
+        // at most: `trace.cells` has one entry for each cell, and
+        // `dim_from` has none of them.
+        changes.sort_by_key(|c| c.i);
+        debug_assert!(
+            changes.windows(2).all(|w| w[0].i != w[1].i),
+            "a cell has two changes"
+        );
         let duration_ms = changes.iter().map(|c| c.end).max().unwrap_or(0).max(1);
         Some(Plan {
             width,
@@ -216,10 +228,30 @@ impl Plan {
     /// painted): only the cells that the effect changes are written.
     /// From [`Plan::duration_ms`] on, `canvas` is the final drawing.
     pub fn paint(&self, canvas: &mut Canvas, t_ms: u64) {
+        self.paint_changes(&self.changes, canvas, t_ms);
+    }
+
+    /// [`Plan::paint`] on the rows `rows` of `canvas` only: the other rows
+    /// keep what they show. Each change writes its cell as it is at
+    /// `t_ms`, whatever an earlier call wrote there, so a row painted at
+    /// `t_ms` is the same as with `paint` at `t_ms`. A screen can thus
+    /// paint only the rows it shows at each frame, also a row that comes
+    /// into view while the effect plays.
+    pub fn paint_rows(&self, canvas: &mut Canvas, t_ms: u64, rows: std::ops::Range<usize>) {
+        let first = self
+            .changes
+            .partition_point(|c| c.i < rows.start.saturating_mul(self.width));
+        let end = self
+            .changes
+            .partition_point(|c| c.i < rows.end.saturating_mul(self.width));
+        self.paint_changes(&self.changes[first..end.max(first)], canvas, t_ms);
+    }
+
+    fn paint_changes(&self, changes: &[Change], canvas: &mut Canvas, t_ms: u64) {
         if canvas.width != self.width || canvas.height != self.height {
             return;
         }
-        for c in &self.changes {
+        for c in changes {
             let cell = if t_ms >= c.end {
                 c.after.clone()
             } else if t_ms < c.start {
@@ -329,4 +361,65 @@ fn mix(a: CellStyle, b: CellStyle, t: f32) -> CellStyle {
     s.fg = colour(a.fg, b.fg);
     s.bg = colour(a.bg, b.bg);
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cell(sym: &str) -> Cell {
+        Cell {
+            sym: sym.into(),
+            ..Cell::default()
+        }
+    }
+
+    fn change(i: usize, after: &str) -> Change {
+        Change {
+            i,
+            before: cell("."),
+            after: cell(after),
+            start: 0,
+            end: 10,
+            from: None,
+        }
+    }
+
+    #[test]
+    fn painting_some_rows_keeps_the_order_of_two_changes_of_one_cell() {
+        // A plan made by hand: `Plan::new` never gives a cell two changes,
+        // but if it did, the last one would win in `paint_rows` as in
+        // `paint`.
+        let plan = Plan {
+            width: 2,
+            height: 3,
+            changes: vec![
+                change(1, "a"),
+                change(2, "b"),
+                change(2, "c"),
+                change(5, "d"),
+            ],
+            duration_ms: 10,
+        };
+        let mut whole = Canvas::new(2, 3);
+        plan.paint(&mut whole, 5);
+        let mut rows = Canvas::new(2, 3);
+        plan.paint_rows(&mut rows, 5, 1..2);
+        assert_eq!(rows.get(0, 1), whole.get(0, 1));
+        assert_eq!(rows.get(0, 1).map(|c| c.sym.as_str()), Some("c"));
+        // The rows out of the range keep what they had.
+        assert_eq!(rows.get(1, 0), Canvas::new(2, 3).get(1, 0));
+        assert_eq!(rows.get(1, 2), Canvas::new(2, 3).get(1, 2));
+        // A range past the last row paints up to it; an empty or an
+        // inverted range paints nothing.
+        let mut past = Canvas::new(2, 3);
+        plan.paint_rows(&mut past, 5, 2..10);
+        assert_eq!(past.get(1, 2).map(|c| c.sym.as_str()), Some("d"));
+        assert_eq!(past.get(0, 1), Canvas::new(2, 3).get(0, 1));
+        for empty in [1..1, std::ops::Range { start: 2, end: 1 }] {
+            let mut none = Canvas::new(2, 3);
+            plan.paint_rows(&mut none, 5, empty);
+            assert_eq!(none.to_ansi(), Canvas::new(2, 3).to_ansi());
+        }
+    }
 }

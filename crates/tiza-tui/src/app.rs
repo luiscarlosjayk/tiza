@@ -160,13 +160,19 @@ pub struct EffectState {
     /// How long it lasts at the width it started at.
     pub duration_ms: u64,
     /// Its clock runs this many times slower (1; more only with the
-    /// `test-hooks` feature and `TIZA_TEST_HOOK=effect:slow`, so a test
-    /// on a pty sees it play).
+    /// `test-hooks` feature and `TIZA_TEST_HOOK=effect:slow` or
+    /// `effect:late-frames`, so a test on a pty sees it play).
     slow: u64,
+    /// The moment every frame shows, whatever the clock says
+    /// ([`App::hold_effect_at`], only for tests).
+    hold_ms: Option<u64>,
     /// The revision it plays at: at another one, it is over.
     revision: u64,
-    /// The final layout and the plan at a width and with a pointer,
-    /// computed once: each frame only paints the plan over a copy.
+    /// The work layout and the plan at a width and with a pointer,
+    /// computed when the effect starts, and again at another width or
+    /// pointer. A frame takes it ([`App::screen_layout_with_pointer`]),
+    /// paints the plan on the rows in view and gives it back
+    /// ([`App::put_back_screen`]): no frame copies the layout.
     cache: std::cell::RefCell<Option<EffectCache>>,
 }
 
@@ -174,8 +180,55 @@ pub struct EffectState {
 struct EffectCache {
     width: usize,
     pointer: Option<(u32, u32)>,
+    /// The final layout of the step, with the rows that frames painted at
+    /// the moment of their frame.
     layout: Layout,
     plan: Option<tiza_core::effects::Plan>,
+}
+
+/// The layout of a frame on screen ([`App::screen_layout_with_pointer`]).
+#[derive(Debug)]
+pub enum ScreenLayout {
+    /// A layout of its own.
+    Plain(Layout),
+    /// While an enter effect plays: the work layout of the effect, lent to
+    /// the frame. [`ScreenLayout::paint_rows`] paints the rows in view, and
+    /// [`App::put_back_screen`] gives it back at the end of the frame.
+    Effect(EffectFrame),
+}
+
+/// The work layout of an enter effect, lent to one frame.
+#[derive(Debug)]
+pub struct EffectFrame {
+    /// The effect it belongs to (its start).
+    started: std::time::Instant,
+    /// The moment of the effect that the frame shows, in ms.
+    t_ms: u64,
+    cache: EffectCache,
+}
+
+impl std::ops::Deref for ScreenLayout {
+    type Target = Layout;
+
+    fn deref(&self) -> &Layout {
+        match self {
+            ScreenLayout::Plain(l) => l,
+            ScreenLayout::Effect(f) => &f.cache.layout,
+        }
+    }
+}
+
+impl ScreenLayout {
+    /// Paints the enter effect at the moment of the frame on the rows
+    /// `rows`, the rows in view: the other rows can show another moment,
+    /// so only these rows are drawn. Nothing changes without an effect.
+    pub fn paint_rows(&mut self, rows: std::ops::Range<usize>) {
+        if let ScreenLayout::Effect(f) = self
+            && let Some(plan) = &f.cache.plan
+        {
+            plan.paint_rows(&mut f.cache.layout.canvas, f.t_ms, rows);
+        }
+    }
 }
 
 /// A mutation an agent asked for while supervised mode is on: it waits for
@@ -1262,13 +1315,18 @@ impl App {
 
     /// [`App::layout`] with the live pointer. Only the presenter's
     /// frame (`ui::draw`) calls it; `layout`, the take `render.text` returns
-    /// and every export never draw the pointer.
-    pub fn screen_layout_with_pointer(&self, width: usize) -> Layout {
+    /// and every export never draw the pointer. While an enter effect
+    /// plays, it is the work layout of the effect: the frame paints the
+    /// rows in view on it ([`ScreenLayout::paint_rows`]) and gives it back
+    /// ([`App::put_back_screen`]). Its rows out of view can show other
+    /// moments of the effect, and if a caller does not give it back, the
+    /// next frame lays the document out again.
+    pub fn screen_layout_with_pointer(&self, width: usize) -> ScreenLayout {
         let mut opts = self.layout_options(width);
         opts.pointer = self.pointer_shown();
         let l = match self.effect_frame(&opts) {
-            Some(l) => l,
-            None => self.lay_out(&self.doc, &self.theme, &opts),
+            Some(f) => ScreenLayout::Effect(f),
+            None => ScreenLayout::Plain(self.lay_out(&self.doc, &self.theme, &opts)),
         };
         // `status` reads the viewport from here instead of laying out again.
         *self.viewport.borrow_mut() = Some((self.viewport_key(width), ViewportFacts::of(&l)));
@@ -2784,13 +2842,16 @@ impl App {
         #[allow(unused_mut)]
         let mut slow = 1;
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "effect:slow") {
+        if std::env::var("TIZA_TEST_HOOK")
+            .is_ok_and(|v| v == "effect:slow" || v == "effect:late-frames")
+        {
             slow = 100;
         }
         self.effect = Some(EffectState {
             started: std::time::Instant::now(),
             duration_ms: plan.duration_ms() * slow,
             slow,
+            hold_ms: None,
             revision: self.revision,
             cache: std::cell::RefCell::new(Some(cache)),
         });
@@ -2810,26 +2871,63 @@ impl App {
         }
     }
 
-    /// The screen's layout at this moment of the effect, while one plays.
-    fn effect_frame(&self, opts: &LayoutOptions) -> Option<Layout> {
+    /// The work layout of the effect for a frame at this moment, while one
+    /// plays: taken from the effect until [`App::put_back_screen`] gives it
+    /// back. A new one is laid out when the width or the pointer changed,
+    /// or when the last frame did not give it back.
+    fn effect_frame(&self, opts: &LayoutOptions) -> Option<EffectFrame> {
         let e = self
             .effect
             .as_ref()
             .filter(|e| e.revision == self.revision)?;
-        let t = e.started.elapsed().as_millis() as u64 / e.slow;
-        let mut cache = e.cache.borrow_mut();
-        if !cache
-            .as_ref()
-            .is_some_and(|c| c.width == opts.width && c.pointer == opts.pointer)
+        let t_ms = e
+            .hold_ms
+            .unwrap_or_else(|| e.started.elapsed().as_millis() as u64 / e.slow);
+        // Test hook, only with the `test-hooks` feature: each frame of the
+        // effect takes 50 ms more, longer than the time between two frames,
+        // so a test on a pty sees how the loop paces late frames.
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "effect:late-frames") {
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        let cache = e
+            .cache
+            .borrow_mut()
+            .take()
+            .filter(|c| c.width == opts.width && c.pointer == opts.pointer)
+            .unwrap_or_else(|| self.effect_cache(opts));
+        Some(EffectFrame {
+            started: e.started,
+            t_ms,
+            cache,
+        })
+    }
+
+    /// Gives the work layout of the effect back at the end of a frame
+    /// (`ui::draw`), so that the next frame paints on it again. It is
+    /// dropped when its effect is over or another one plays.
+    pub fn put_back_screen(&self, screen: ScreenLayout) {
+        if let ScreenLayout::Effect(f) = screen
+            && let Some(e) = &self.effect
+            && e.started == f.started
+            && e.revision == self.revision
         {
-            *cache = Some(self.effect_cache(opts));
+            let mut slot = e.cache.borrow_mut();
+            if slot.is_none() {
+                *slot = Some(f.cache);
+            }
         }
-        let c = cache.as_ref()?;
-        let mut l = c.layout.clone();
-        if let Some(plan) = &c.plan {
-            plan.paint(&mut l.canvas, t);
+    }
+
+    /// Only for tests: every frame from now on shows the enter effect that
+    /// plays as it is at `ms` from its start, whatever the clock says. The
+    /// effect still ends by its clock or by a key. Nothing in Tiza calls it:
+    /// no key, request, tool or setting.
+    #[doc(hidden)]
+    pub fn hold_effect_at(&mut self, ms: u64) {
+        if let Some(e) = &mut self.effect {
+            e.hold_ms = Some(ms);
         }
-        Some(l)
     }
 
     /// Advances the enter effect: `true` while one plays or when it just

@@ -12,6 +12,8 @@
 //! - The layout that records the effects draws the same frame as the
 //!   layout without them, and a document without effects has no frames of
 //!   an effect, for every example and fixture at every step.
+//! - A screen that paints only the rows it shows, frame after frame while
+//!   it scrolls, shows on them the frame of the whole plan.
 
 use std::collections::BTreeMap;
 
@@ -610,4 +612,53 @@ fn the_effect_after_a_typed_move_starts_from_the_dim_of_the_typing() {
         style_of_e(&typed.canvas),
         "the e of let on line 2: last typed frame, then the first frame of the effect"
     );
+}
+
+#[test]
+fn painting_only_the_rows_on_screen_gives_the_frame_of_the_whole_plan() {
+    // As the screen does while an effect plays: each frame paints only
+    // the rows in view on the same canvas, at a later time. The view
+    // scrolls one row each frame, down then up, so rows come into view
+    // after the effect started.
+    let theme = Theme::dark();
+    let (mut checked, mut in_motion) = (0, 0);
+    for (f, doc) in every_document() {
+        if !doc.annotations.iter().any(|a| a.effect.is_some()) {
+            continue;
+        }
+        for step in 0..=doc.max_step() {
+            let (l, trace) = layout_traced(&doc, &theme, &options(step, 100), None);
+            let Some(plan) = Plan::new(&l.canvas, &trace, &doc) else {
+                continue;
+            };
+            let fin = l.canvas.clone();
+            let mut work = fin.clone();
+            let view = (fin.height / 3).max(1);
+            let last_top = fin.height - view;
+            for (k, t) in (0..=plan.duration_ms() + 16).step_by(16).enumerate() {
+                let turn = k % (2 * last_top).max(1);
+                let top = turn.min(2 * last_top - turn);
+                plan.paint_rows(&mut work, t, top..top + view);
+                let want = at_time(&plan, &fin, t);
+                for y in top..top + view {
+                    for x in 0..fin.width {
+                        assert_eq!(
+                            work.get(x, y),
+                            want.get(x, y),
+                            "{} step {step}: cell ({x}, {y}) at {t} ms, rows {top}..{}",
+                            f.display(),
+                            top + view
+                        );
+                        if want.get(x, y) != fin.get(x, y) {
+                            in_motion += 1;
+                        }
+                    }
+                }
+            }
+            checked += 1;
+        }
+    }
+    assert!(checked >= 10, "only {checked} steps with an effect checked");
+    // The rows in view showed the effect, not only the final frame.
+    assert!(in_motion > 1000, "only {in_motion} cells in motion checked");
 }

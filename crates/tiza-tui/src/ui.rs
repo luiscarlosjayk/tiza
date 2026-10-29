@@ -144,7 +144,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
 
     // A motion the pointer has not seen yet (mouse, agent): follow it.
     app.sync_pointer();
-    let layout = app.screen_layout_with_pointer(canvas_area.width as usize);
+    let mut layout = app.screen_layout_with_pointer(canvas_area.width as usize);
     let total = layout.rows.len();
     let visible = canvas_area.height as usize;
 
@@ -179,6 +179,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     app.scroll = app.scroll.min(total.saturating_sub(visible));
     let end = (app.scroll + visible).min(total);
+    // While an enter effect plays: its frame, on the rows in view only.
+    layout.paint_rows(app.scroll..end);
     app.hit = tiza_tui_hitmap(canvas_area, &layout, app.scroll, end);
     blit(
         &layout.canvas,
@@ -342,6 +344,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         Overlay::Review => draw_panel(frame, app, |app, _| crate::list::review(app).0),
         Overlay::None => {}
     }
+    // The next frame of an effect paints on the same layout.
+    app.put_back_screen(layout);
 }
 
 /// The `:` line being typed, with completions and notices on the right:
