@@ -258,9 +258,21 @@ pub fn to_webp_anim(
     theme: &Theme,
     o: &WebpAnimOptions,
 ) -> Result<(Vec<u8>, WebpReport), Error> {
+    to_webp_anim_from(frames, theme, o)
+}
+
+/// [`to_webp_anim`] from frames given one at a time ([`crate::Frames`]):
+/// the frames of a [`tiza_core::anim::Take`] are never all in memory.
+pub fn to_webp_anim_from<F: crate::Frames + ?Sized>(
+    frames: &F,
+    theme: &Theme,
+    o: &WebpAnimOptions,
+) -> Result<(Vec<u8>, WebpReport), Error> {
     let mut enc = None;
     let mut duration_ms = 0u64;
-    for (canvas, delay) in frames {
+    let mut count = 0usize;
+    frames.each(&mut |canvas, delay| {
+        count += 1;
         // Over the limits: an error before the SVG, not after it.
         crate::limits::image_size(canvas, &o.svg, &o.png)?;
         let pm = rasterize(&to_svg(canvas, theme, &o.svg), &o.png)?;
@@ -269,18 +281,19 @@ pub fn to_webp_anim(
             Some(ref mut e) => e,
             None => enc.insert(AnimEncoder::new(w, h, Level::DEFAULT, o.plays)?),
         };
-        let ms = frame_delay_ms(*delay);
+        let ms = frame_delay_ms(delay);
         duration_ms = duration_ms.saturating_add(ms);
         // At most two maximum holds (frame_delay_ms), far under MAX_FRAME_MS.
         let ms = u32::try_from(ms).map_err(|_| WebpError::Duration(u32::MAX))?;
         enc.add_frame(Rgba::new(&straight_rgba(pm), w, h)?, ms)?;
-    }
+        Ok(())
+    })?;
     let enc = enc.ok_or(WebpError::NoFrames)?;
     let (width, height) = (enc.width, enc.height);
     Ok((
         enc.finish()?,
         WebpReport {
-            frames: frames.len(),
+            frames: count,
             width,
             height,
             duration_ms,

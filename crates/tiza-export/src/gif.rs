@@ -15,9 +15,9 @@ use resvg::tiny_skia::{Pixmap, PremultipliedColorU8};
 use tiza_core::canvas::Canvas;
 use tiza_core::theme::Theme;
 
-use crate::Error;
 use crate::png::{PngOptions, Raster, STRIP_ROWS, Strips};
 use crate::svg::{Geometry, SvgOptions, geometry, to_svg, to_svg_rows};
+use crate::{Error, Frames};
 
 /// Shortest delay a GIF frame may have, in milliseconds (the format counts
 /// in 10 ms units and players treat anything under 20 ms as 100 ms).
@@ -80,6 +80,17 @@ pub fn to_gif(
     theme: &Theme,
     o: &GifOptions,
 ) -> Result<(Vec<u8>, GifReport), Error> {
+    to_gif_from(frames, theme, o)
+}
+
+/// [`to_gif`] from frames given one at a time ([`Frames`]): the frames
+/// of a [`tiza_core::anim::Take`] are never all in memory. It goes over
+/// them twice.
+pub fn to_gif_from<F: Frames + ?Sized>(
+    frames: &F,
+    theme: &Theme,
+    o: &GifOptions,
+) -> Result<(Vec<u8>, GifReport), Error> {
     encode(frames, theme, o, true).map(|(bytes, report, _)| (bytes, report))
 }
 
@@ -95,15 +106,12 @@ struct Work {
 /// palette indexes are those of the frame before, and the SVG of the frame
 /// has only the rows that can draw in the other strips. Without it (only
 /// the tests), every strip and every row is.
-fn encode(
-    frames: &[(Canvas, u64)],
+fn encode<F: Frames + ?Sized>(
+    frames: &F,
     theme: &Theme,
     o: &GifOptions,
     reuse: bool,
 ) -> Result<(Vec<u8>, GifReport, Work), Error> {
-    if frames.is_empty() {
-        return Err(Error::Gif("no frames".into()));
-    }
     // 1. The colors of the whole animation. Each frame is rasterized
     // twice, here and in step 3, one strip of rows at a time (after the
     // first frame, only the strips near a changed row): to keep the pixels
@@ -113,17 +121,26 @@ fn encode(
     let (mut width, mut height) = (0u32, 0u32);
     let mut histogram: HashMap<[u8; 3], u64> = HashMap::new();
     let mut strips = Strips::default();
-    // The strips of frame `i` to rasterize: `None` for all of them.
-    let dirty_of = |i: usize, height: u32| {
-        (reuse && i > 0).then(|| dirty_strips(&frames[i - 1].0, &frames[i].0, o, height))
+    // The strips of frame `i` to rasterize, from `before`, the frame
+    // before it: `None` for all of them.
+    let dirty_of = |i: usize, before: &Canvas, now: &Canvas, height: u32| {
+        (reuse && i > 0).then(|| dirty_strips(before, now, o, height))
     };
+    // The frame before the one being encoded: the frames come one at a
+    // time.
+    let mut before = Canvas::new(0, 0);
     let wanted = |dirty: &Option<Vec<bool>>, k: usize| dirty.as_ref().is_none_or(|d| d[k]);
     // The colors of each strip when it was last rasterized: a strip that
     // is not rasterized again counts them again.
     let mut strip_colors: Vec<HashMap<[u8; 3], u64>> = Vec::new();
     let mut work = Work::default();
-    for (i, (canvas, _)) in frames.iter().enumerate() {
-        let dirty = dirty_of(i, height);
+    let mut count = 0usize;
+    let mut duration_ms = 0u64;
+    frames.each(&mut |canvas, delay_ms| {
+        let i = count;
+        count += 1;
+        duration_ms = duration_ms.saturating_add(frame_delay_ms(delay_ms));
+        let dirty = dirty_of(i, &before, canvas, height);
         if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
             let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
             let (w, h) = (raster.width, raster.height);
@@ -154,6 +171,11 @@ fn encode(
                 *histogram.entry(*color).or_insert(0) += n;
             }
         }
+        before.clone_from(canvas);
+        Ok(())
+    })?;
+    if count == 0 {
+        return Err(Error::Gif("no frames".into()));
     }
     if width > u16::MAX as u32 || height > u16::MAX as u32 {
         return Err(Error::TooBig(width, height));
@@ -181,13 +203,14 @@ fn encode(
         // The changed rectangle of each frame, one buffer for the whole
         // animation.
         let mut buffer: Vec<u8> = Vec::new();
-        for (i, (canvas, _)) in frames.iter().enumerate() {
+        let mut i = 0usize;
+        frames.each(&mut |canvas, delay_ms| {
             // Rasterizing is deterministic: the same strips, with the same
             // pixels, as in step 1. A frame with another size, or with a
             // color that step 1 did not count, is an error, not a panic.
             // A strip that is not rasterized again has the pixels of the
             // frame before, so its indexes are on the screen already.
-            let dirty = dirty_of(i, height);
+            let dirty = dirty_of(i, &before, canvas, height);
             screen.start();
             if dirty.as_ref().is_none_or(|d| d.contains(&true)) {
                 let raster = frame_raster(canvas, theme, o, height, &dirty, &mut work)?;
@@ -229,7 +252,7 @@ fn encode(
             // of the same rectangle.
             // Bounded: a hold past an hour is a bug upstream, and
             // u64::MAX ms would be 2.8e14 frames of 655 s.
-            let mut cs = frame_delay_ms(frames[i].1) / 10;
+            let mut cs = frame_delay_ms(delay_ms) / 10;
             loop {
                 let this = cs.min(MAX_DELAY_CS);
                 enc.write_frame(&gif::Frame {
@@ -251,16 +274,20 @@ fn encode(
                     break;
                 }
             }
+            before.clone_from(canvas);
+            i += 1;
+            Ok(())
+        })?;
+        if i != count {
+            return Err(Error::Gif(format!(
+                "the first pass gave {count} frames and the second pass gave {i}"
+            )));
         }
     }
-    let duration_ms = frames
-        .iter()
-        .map(|(_, d)| frame_delay_ms(*d))
-        .fold(0u64, u64::saturating_add);
     Ok((
         out,
         GifReport {
-            frames: frames.len(),
+            frames: count,
             width,
             height,
             colors: palette.len(),
@@ -656,8 +683,8 @@ mod tests {
             (f4, 400),
             (f5, 400),
         ];
-        let (fast, report, drawn) = encode(&frames, &Theme::dark(), &o, true).unwrap();
-        let (every, _, all) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        let (fast, report, drawn) = encode(frames.as_slice(), &Theme::dark(), &o, true).unwrap();
+        let (every, _, all) = encode(frames.as_slice(), &Theme::dark(), &o, false).unwrap();
         assert!(
             report.height > 2 * STRIP_ROWS,
             "{} rows: more than two strips",
@@ -673,6 +700,70 @@ mod tests {
             "{drawn:?} of {all:?}: the clean strips are reused, their rows not in the SVG"
         );
         assert!(to_gif(&frames, &Theme::dark(), &o).unwrap().0 == fast);
+    }
+
+    /// Frames lent one at a time from one work canvas, as a
+    /// [`tiza_core::anim::Take`] lends them, give the same GIF as the list
+    /// of the same frames, and as rasterizing every strip of every frame:
+    /// the encoder keeps its own copy of the frame before, in both passes.
+    #[test]
+    fn frames_lent_one_at_a_time_give_the_same_gif() {
+        struct Lent {
+            base: Canvas,
+            edits: Vec<(usize, &'static str, u64)>,
+        }
+        impl Frames for Lent {
+            fn each(
+                &self,
+                f: &mut dyn FnMut(&Canvas, u64) -> Result<(), Error>,
+            ) -> Result<(), Error> {
+                let mut work = self.base.clone();
+                f(&work, 300)?;
+                for (y, text, ms) in &self.edits {
+                    work.put_str(2, *y, text, CellStyle::new().fg(Rgb(250, 250, 90)));
+                    f(&work, *ms)?;
+                }
+                Ok(())
+            }
+        }
+        let o = GifOptions {
+            png: PngOptions {
+                scale: 2.0,
+                system_fonts: false,
+            },
+            ..Default::default()
+        };
+        let rows = 90;
+        let mut base = Canvas::new_filled(14, rows, Theme::dark().base());
+        for y in 0..rows {
+            let n = y as u8;
+            let style = CellStyle::new()
+                .fg(Rgb(255 - n, n.wrapping_mul(29), n.wrapping_mul(53)))
+                .bg(Rgb(n.wrapping_mul(7), 40, n.wrapping_mul(3)));
+            base.put_str(0, y, &format!("{y:02} let ab = cd;"), style);
+        }
+        let lent = Lent {
+            base,
+            // Near the top, the same again, far below, then in the middle.
+            edits: vec![
+                (1, "a", 200),
+                (1, "a", 200),
+                (85, "far", 300),
+                (40, "mid", 100),
+            ],
+        };
+        let mut list = Vec::new();
+        lent.each(&mut |c, ms| {
+            list.push((c.clone(), ms));
+            Ok(())
+        })
+        .unwrap();
+        let (from_lent, report, _) = encode(&lent, &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(list.as_slice(), &Theme::dark(), &o, false).unwrap();
+        assert_eq!(report.frames, 5);
+        assert!(report.height > 2 * STRIP_ROWS, "more than two strips");
+        assert!(from_lent == every, "the GIF of lent frames differs");
+        assert!(to_gif(&list, &Theme::dark(), &o).unwrap().0 == from_lent);
     }
 
     /// Row 0 can start right at the edge of a strip: a glyph that draws
@@ -708,8 +799,8 @@ mod tests {
         };
         assert!(ink(&before) != ink(&now), "{TALL:?} draws above its row");
         let frames = vec![(before.clone(), 400), (now, 400), (before, 400)];
-        let (fast, _, _) = encode(&frames, &Theme::dark(), &o, true).unwrap();
-        let (every, _, _) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        let (fast, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, false).unwrap();
         assert!(fast == every, "the strip above row 0 keeps old pixels");
     }
 
@@ -790,8 +881,8 @@ mod tests {
             CellStyle::new().fg(Rgb(250, 250, 90)),
         );
         let frames = vec![(with_marks, 400), (next, 400)];
-        let (fast, _, _) = encode(&frames, &Theme::dark(), &o, true).unwrap();
-        let (every, _, _) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        let (fast, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, false).unwrap();
         assert!(
             fast == every,
             "strip 1 lost the marks of a row out of the SVG"
@@ -831,8 +922,8 @@ mod tests {
         let mut next = base.clone();
         next.put_str(0, changed, "zzzzzz", CellStyle::new().fg(Rgb(250, 90, 90)));
         let frames = vec![(base, 400), (next, 400)];
-        let (fast, _, drawn) = encode(&frames, &Theme::dark(), &o, true).unwrap();
-        let (every, _, all) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        let (fast, _, drawn) = encode(frames.as_slice(), &Theme::dark(), &o, true).unwrap();
+        let (every, _, all) = encode(frames.as_slice(), &Theme::dark(), &o, false).unwrap();
         assert!(
             drawn.strips < all.strips,
             "{drawn:?} of {all:?}: one strip is reused"
@@ -882,8 +973,8 @@ mod tests {
         let dirty = dirty_strips(&base, &next, &o, height);
         assert!(dirty[0] && !dirty[1], "only strip 0 changes: {dirty:?}");
         let frames = vec![(base, 400), (next, 400)];
-        let (fast, _, _) = encode(&frames, &Theme::dark(), &o, true).unwrap();
-        let (every, _, _) = encode(&frames, &Theme::dark(), &o, false).unwrap();
+        let (fast, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, true).unwrap();
+        let (every, _, _) = encode(frames.as_slice(), &Theme::dark(), &o, false).unwrap();
         assert!(fast == every, "strip 0 lost the glyphs of row 10");
     }
 
