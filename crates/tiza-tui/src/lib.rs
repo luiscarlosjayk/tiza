@@ -122,6 +122,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         }
     }
     app.present = opts.present;
+    app.reveal_at_open();
     app.focus = opts.focus;
     app.padding_override = opts.padding;
     app.image_exporter = opts.image_exporter;

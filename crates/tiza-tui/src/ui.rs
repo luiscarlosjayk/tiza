@@ -164,10 +164,14 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         if (app.cursor_line, app.cursor_col) == h.cursor && app.pointer == h.pointer {
             let to_come = app.held_rows_to_come(&layout, canvas_area.width as usize);
             let current = app.scroll;
-            let top = app
-                .scroll_held
-                .as_mut()
-                .and_then(|h| h.scroll_on(&layout, visible, current, to_come));
+            let top = app.scroll_held.as_mut().and_then(|h| {
+                h.scroll_on(
+                    &layout,
+                    (visible, canvas_area.width as usize),
+                    current,
+                    to_come,
+                )
+            });
             match top {
                 Some(top) => app.scroll = top,
                 // The target is not on this layout: a patch removed its
@@ -232,10 +236,19 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         app.scroll = app.scroll.saturating_add_signed(rows);
     }
     app.scroll = app.scroll.min(total.saturating_sub(visible));
-    if app.present && app.scroll_held.is_none() && app.mode == Mode::Normal {
+    if app.present && app.mode == Mode::Normal {
         match app.pointer {
-            // The hidden cursor goes into the view.
-            None => app.keep_cursor_in_view(&layout, app.scroll, visible),
+            // The hidden cursor goes into the view; a held view (a reveal)
+            // keeps holding with the cursor there.
+            None => {
+                app.keep_cursor_in_view(&layout, app.scroll, visible);
+                let at = (app.cursor_line, app.cursor_col);
+                if let Some(h) = app.scroll_held.as_mut() {
+                    h.cursor = at;
+                }
+            }
+            // A held view decided the pointer at its jump (D14).
+            Some(_) if app.scroll_held.is_some() => {}
             // The pointer stays on its line, and the view shows that row.
             Some(_) => {
                 if let Some(&row) = layout.row_of_line.get(&app.cursor_line) {

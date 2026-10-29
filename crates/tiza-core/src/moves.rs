@@ -715,8 +715,8 @@ pub struct Projection {
     /// `cursor`, a `code.link` or a `scroll`.
     pub camera: Option<usize>,
     /// Each `scroll` whose `line` or `find` does not resolve where it runs,
-    /// by index, and why. Such a move does not stop the projection: the
-    /// view does not move.
+    /// by index, and why. Such a move does not stop the projection, and it
+    /// does not place the view.
     pub scroll_misses: Vec<(usize, String)>,
     /// Each `scroll` whose `find` matches more than once with no
     /// `occurrence`, by index, and what `check` says of it: the view goes to
@@ -751,7 +751,11 @@ pub enum Camera {
     None,
     /// A `cursor` or a `code.link`: the TUI puts its cursor there (or on
     /// the first line of the linked file) at each step, as before `scroll`.
-    Cursor,
+    /// `at_step` is the step of that move: in presentation mode the TUI
+    /// places the view only at that step.
+    Cursor {
+        at_step: u32,
+    },
     Scroll(ScrollCam),
 }
 
@@ -1094,6 +1098,39 @@ impl Projection {
 /// same line without moves.
 pub fn carry_line(doc: &Document, from: u32, to: u32, line: u32) -> Option<u32> {
     carry_with(doc, from, to, &[line], false)?.pop().flatten()
+}
+
+/// The lines that the patches of `step` write in the file shown there, as
+/// they are at the end of the step: the first and the last, each carried
+/// through the later patches of the step. Lines that a patch inserts and
+/// lines that a `replace` writes again count. `None` when the step writes
+/// no line there, or when the moves do not apply.
+pub fn written_lines(doc: &Document, step: u32) -> Option<(u32, u32)> {
+    let patches_at = |m: &Move| m.at_step == step && matches!(m.action, MoveAction::CodePatch(_));
+    if !doc.moves.iter().any(patches_at) {
+        return None;
+    }
+    let proj = project(doc, &doc.moves, step).ok()?;
+    let key = &proj.shown.file;
+    let own: Vec<&AppliedPatch> = proj
+        .patches
+        .iter()
+        .filter(|p| p.at_step == step && &p.file == key)
+        .collect();
+    let mut span: Option<(u32, u32)> = None;
+    for (k, p) in own.iter().enumerate() {
+        // New lines of this patch: inserted ones, and the ones a `replace`
+        // wrote over (its old lines, through its own map).
+        let mut lines: Vec<u32> = p.map.inserted.clone().collect();
+        lines.extend(p.map.replaced.clone().filter_map(|old| p.map.get(old)));
+        for l in lines {
+            let carried = own[k + 1..].iter().try_fold(l, |l, q| q.map.get(l));
+            if let Some(l) = carried {
+                span = Some(span.map_or((l, l), |(a, b)| (a.min(l), b.max(l))));
+            }
+        }
+    }
+    span
 }
 
 /// [`carry_line`] for places in the view (its top line, the hidden

@@ -505,9 +505,9 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 
 - When the presenter reaches the step, the view moves to the target. Then the annotations of the step come in, with their effects.
 - The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the view, the cursor or the pointer, the view stays where the presenter puts it.
-- A step with no `scroll` move of its own does not move the view. `:goto` and the other goto commands move the view to the target of the `scroll` of their step.
+- In normal mode, a step with no `scroll` move of its own does not move the view. In presentation mode, when you go to a step or Tiza opens at it, the new annotations of the step and the lines that its moves write come into the view, and the view moves as little as possible. See [Present](keys.md#present) for when this occurs. `:goto` and the other goto commands move the view to the target of the `scroll` of their step, and in presentation mode they then show what comes in at the step.
 - At a step that no `scroll` move reaches (no `scroll` at that step or before it), after a step with one, the view goes to the top. A `cursor` or a `code.link` move then moves the view only when its line is not in view.
-- A `cursor`, a `code.link` and a `scroll` move all put the view somewhere. The last of them in the order that the moves run wins: the order of the steps, then the order of the list. When a `cursor` or a `code.link` wins, the view does what it did before `scroll`.
+- A `cursor`, a `code.link` and a `scroll` move all put the view somewhere. The last of them in the order that the moves run wins: the order of the steps, then the order of the list. When a `cursor` or a `code.link` wins, the view does what it did before `scroll`. In presentation mode, a `cursor` or a `code.link` moves the view only at its own step.
 - In a step that types, a `scroll` move moves the view at its place in the list, before or after a typed move or a `wait`. It takes no time.
 - The annotation can be of a later step. The view then goes to the lines where the annotation will come in.
 - The view keeps rows for the parts of the target that come in later: the borders, the labels and the callouts of an annotation of a later step, or of the step after a typed move or a `wait`. When they come in, the lines of the target keep their rows. The new rows above the target push the code above it up, and the new rows under the target push the code under it down. Rows that come in inside the target make it taller, so its lines move apart.
@@ -515,9 +515,9 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 - When the live pointer is on and the view moves, the pointer stays if the new view shows its lines. If not, the pointer goes off.
 - A `scroll` move puts the cursor on the first line of its target. When the live pointer stays, the cursor stays with the pointer: `j` and `k` continue from the pointer. To go to an annotation, press `Tab`.
 - The view moves in normal mode and in presentation mode.
-- A target that does not resolve does not stop the step: the view does not move, and `tiza check` gives a warning. Examples are a line that is not in the code, a text that is not in the code, and an annotation that does not exist.
+- A target that does not resolve does not stop the step: the `scroll` move does not place the view, and `tiza check` gives a warning. In presentation mode, the new annotations of the step then come into the view. Examples are a line that is not in the code, a text that is not in the code, and an annotation that does not exist.
 - A `find` that matches more than once goes to the first match. `tiza check` gives a warning, unless `occurrence` names the match or all the matches are on one line.
-- When a later move of the same step removes the line of the target, the view does not move, and `tiza check` gives a warning.
+- When a later move of the same step removes the line of the target, the `scroll` move does not place the view, and `tiza check` gives a warning.
 - The exports show the whole take, so they ignore `scroll` moves. A step that has only a `scroll` move is a pause in a GIF, WebP, MP4 or WebM, as any step is. Its `auto_advance_ms` makes the pause shorter.
 - Tiza 0.1.2 and older do not open a document that has a `scroll` move.
 
@@ -647,7 +647,7 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 - A goto that goes forward more than one step, a step back, `p` and the loop back to step 0 show the final drawing. When the document opens, Tiza also shows the final drawing. Thus an annotation at step 0 never plays its effect.
 - A key ends the effect, and Tiza ignores that key. A key that ends the typing of a step also ends its effect.
 - With the mouse on, in normal mode, a click or a drag of any button ends the effect as a key does. The wheel lets the effect play.
-- In presentation mode, a key that only moves the view does not end the effect: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves and the effect continues. Thus a trackpad or a mouse wheel does not end the effect. With mouse capture, the wheel moves the view. Without mouse capture, the terminal sends the wheel as `↑` and `↓`. When the live pointer is on, these keys end the effect, as any other key does.
+- In presentation mode, a key that only moves the view does not end the effect: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves and the effect continues. Thus a trackpad or a mouse wheel does not end the effect. With mouse capture, the wheel moves the view. Without mouse capture, the terminal sends the wheel as `↑` and `↓`. When the live pointer is on, these keys end the effect, as any other key does. With mouse capture and the live pointer on, a notch of the wheel also ends the effect, and does nothing else.
 - A change of the live pointer ends the effect, for example when an agent points at a line or the pointer goes off.
 - The auto-advance countdown starts when the effect ends.
 - A GIF, an animated WebP, an MP4 and a WebM show the effect of each step as frames. The first step of the take shows the final drawing, as when the document opens. A `.tape` records the TUI with its effects. A still, a text export, a `.md`, a `.cast` and `render --step N` show the final drawing.

@@ -72,7 +72,7 @@ The server has these tools. The third column names every socket method that each
 
 | Tool | What it does | Socket method |
 |---|---|---|
-| `set_step` | Shows a step. | `step.set` |
+| `set_step` | Shows a step. In presentation mode, to the step on screen it does what `goto_step` does. | `step.set` |
 | `next_step` | Shows the next step. | `step.next` |
 | `prev_step` | Shows the previous step. | `step.prev` |
 | `goto_step` | Goes to a named step or to a step number, and applies every move up to that step. | `step.goto` |

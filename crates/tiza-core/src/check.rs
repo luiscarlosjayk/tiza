@@ -826,7 +826,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
             }
         }
     }
-    // ---- scroll targets: a warning, the view does not move ----
+    // ---- scroll targets: a warning, the move does not place the view ----
     {
         let mut d = doc.clone();
         d.moves = trial.clone();
@@ -835,7 +835,7 @@ fn tidy(mut doc: Document, missing: &BTreeSet<String>, out: &mut Vec<Finding>) -
                 continue;
             }
             let why = match d.scroll_problem(i) {
-                Some(why) => format!("scroll: {why}, so the view does not move"),
+                Some(why) => format!("scroll: {why}, so it does not place the view"),
                 None => match d.scroll_note(i) {
                     Some(note) => format!("scroll: {note}"),
                     None => continue,

@@ -11,6 +11,7 @@ Goes to a step.
 ```
 
 - `:step N` can go to the step after the last step. That step is empty. New annotations go there.
+- In presentation mode, `:step N` to the step on screen does what `:goto N` does there: the view goes back to the target of the `scroll` of the step, and what comes in at the step comes into the view. See [Present](../keys.md#present).
 - When a move does not apply, the status bar shows the warning of the move in place of `step N/M`.
 - `:step ID N` moves an annotation to a step. See [`:step ID N`](change.md#step-id-n).
 

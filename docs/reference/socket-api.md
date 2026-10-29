@@ -125,7 +125,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 
 | Method | Params | What it does | MCP tool |
 |---|---|---|---|
-| `step.set` | `step` | Shows a step. | `set_step` |
+| `step.set` | `step` | Shows a step. In presentation mode, to the step on screen it does what `step.goto` does. | `set_step` |
 | `step.next` | None | Shows the next step. | `next_step` |
 | `step.prev` | None | Shows the previous step. | `prev_step` |
 | `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. | `goto_step` |

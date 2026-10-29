@@ -1577,6 +1577,134 @@ impl App {
         self.pointer = None;
     }
 
+    /// What comes in at step `s` in the file shown there: the lines of its
+    /// annotations that are drawn at `s`, and the lines that its moves write
+    /// there (D (a)), in the window of a `code.link`. The first and the last
+    /// line, or `None` when nothing comes in or a move of the step does not
+    /// apply. One projection of the step for all of them.
+    fn reveal_range(&self, s: u32) -> Option<(u32, u32)> {
+        // A move of the step that does not apply: nothing comes in, as at
+        // a step change.
+        if !self.doc.moves.is_empty() && moves::project(&self.doc, &self.doc.moves, s).is_err() {
+            return None;
+        }
+        let view = (!self.doc.moves.is_empty()).then(|| self.doc.view_at(s));
+        // The projection keeps the annotations of the file shown, on their
+        // lines at `s`; with no move, the main file is shown.
+        let doc = view.as_ref().map_or(&self.doc, |v| &v.doc);
+        let main = tiza_core::moves::ViewRef::default().file;
+        let mut span: Option<(u32, u32)> = None;
+        let mut add = |lo: u32, hi: u32| {
+            span = Some(span.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
+        };
+        for a in doc.annotations.iter().filter(|a| a.step == s) {
+            if view.is_none() && a.file != main {
+                continue;
+            }
+            let ranges = a.shape.line_ranges();
+            if ranges
+                .iter()
+                .any(|(f, t)| !doc.has_line(*f) || !doc.has_line(*t))
+            {
+                continue;
+            }
+            if let (Some(lo), Some(hi)) = (
+                ranges.iter().map(|r| r.0).min(),
+                ranges.iter().map(|r| r.1).max(),
+            ) {
+                add(lo, hi);
+            }
+        }
+        if let Some((lo, hi)) = moves::written_lines(&self.doc, s) {
+            let (lo, hi) = (lo.max(doc.source.first_line), hi.min(doc.last_line()));
+            if lo <= hi {
+                add(lo, hi);
+            }
+        }
+        span
+    }
+
+    /// AC5 of presentation mode: what comes in at step `s` comes into the
+    /// view with the least move (`show`), from the view that a `scroll` of
+    /// before holds, or from where the presenter left it. When it does not
+    /// fit, its start (C (a)). The hidden cursor goes to its first line, so
+    /// `f` points at what came in; its column stays, as a step change keeps
+    /// it. `true` when something comes in: then the caller decides the live
+    /// pointer ([`App::settle_pointer`], F (a)).
+    fn reveal(&mut self, s: u32) -> bool {
+        let Some(range) = self.reveal_range(s) else {
+            return false;
+        };
+        self.cursor_line = range.0;
+        self.clamp_col();
+        let at = (self.cursor_line, self.cursor_col);
+        match self.scroll_held.as_mut() {
+            Some(h) if h.from.is_some() => {
+                h.reveal = Some(range);
+                h.step = s;
+                h.to_come = None;
+                h.cursor = at;
+            }
+            _ => {
+                self.scroll_held = Some(ScrollHeld {
+                    lines: range,
+                    align: tiza_core::moves::Align::Show,
+                    annotation: None,
+                    from: None,
+                    reveal: None,
+                    step: s,
+                    cursor: at,
+                    pointer: self.pointer,
+                    to_come: None,
+                    show_row: None,
+                });
+            }
+        }
+        true
+    }
+
+    /// Presentation mode when the TUI opens: it opens at its step as a step
+    /// change reaches it, so what comes in at the step comes into the view
+    /// (A (d)), unless a camera of the step places the view (B (a)).
+    /// Presentation mode that starts later (`P`) is not a step change.
+    pub fn reveal_at_open(&mut self) {
+        let s = self.doc.step;
+        if !self.present || s == 0 {
+            return;
+        }
+        let own = !self.doc.moves.is_empty() && own_camera(&self.doc.view_at(s).camera, s);
+        if !own {
+            self.reveal(s);
+        }
+    }
+
+    /// A step change: the view that a reveal holds is for its own step
+    /// only. It goes, and the view stays where that step left it (the line
+    /// on top of the last frame); the new step then places it.
+    fn drop_stale_reveal(&mut self) {
+        if self
+            .scroll_held
+            .as_ref()
+            .is_some_and(|h| h.reveals() && h.step != self.doc.step)
+        {
+            self.scroll_held = None;
+        }
+    }
+
+    /// Whether the rows of lines `a` to `b` are in a view whose first row is
+    /// `top`, on the layout of the screen now.
+    fn lines_in_view_from(&self, top: usize, a: u32, b: u32) -> bool {
+        let layout = self.screen_layout_with_pointer(self.screen_width());
+        let visible = self.screen_height();
+        let shown = |l: u32| {
+            layout
+                .row_of_line
+                .get(&l)
+                .is_some_and(|&r| r >= top && r < top + visible)
+        };
+        shown(a) && shown(b)
+    }
+
     /// The camera of the step is `cam`, a `scroll`: a new one (or any one
     /// with `jump`) holds the view on its target and puts the cursor on the
     /// first line of the target, or keeps it on a live pointer that stays;
@@ -1584,90 +1712,122 @@ impl App {
     /// may have moved. Before the effects of the step start, so that the
     /// pointer it turns off does not end them.
     fn scroll_camera(&mut self, cam: tiza_core::moves::ScrollCam, jump: bool) {
+        let before = (self.cursor_line, self.cursor_col);
+        if self.place_camera(cam, jump) {
+            self.settle_pointer(before);
+        }
+    }
+
+    /// [`App::scroll_camera`] without the decision on the live pointer:
+    /// `true` when it holds the view on a new target, and the pointer is
+    /// then to decide. A step change decides it once, after its reveal.
+    fn place_camera(&mut self, cam: tiza_core::moves::ScrollCam, jump: bool) -> bool {
         if self.scroll_applied == Some(cam.id) && !jump {
+            // Only the held view of this `scroll`: a reveal alone stays.
             match (&mut self.scroll_held, cam.lines) {
-                (Some(h), Some(lines)) => {
+                (Some(h), Some(lines)) if h.from == Some(cam.id) => {
                     h.lines = lines;
                     h.align = cam.align;
                     h.annotation = cam.annotation.clone();
                     h.to_come = None;
                     h.pointer = self.pointer;
-                    // A pointer that stayed keeps the cursor with it.
-                    if self.pointer.is_none() {
+                    // A pointer that stayed keeps the cursor with it, and a
+                    // reveal keeps it on what came in.
+                    if self.pointer.is_none() && h.reveal.is_none() {
                         self.cursor_line = lines.0;
                         self.cursor_col = 0;
                     }
                     h.cursor = (self.cursor_line, self.cursor_col);
                 }
-                (Some(_), None) => self.scroll_held = None,
-                (None, _) => {}
+                (Some(h), None) if h.from == Some(cam.id) => self.scroll_held = None,
+                _ => {}
             }
-            return;
+            return false;
         }
         self.scroll_applied = Some(cam.id);
         self.scroll_step = self.doc.step;
         let Some(lines) = cam.lines else {
             self.scroll_held = None;
-            return;
+            return false;
         };
-        let before = (self.cursor_line, self.cursor_col);
         self.cursor_line = lines.0;
         self.cursor_col = 0;
-        let mut held = ScrollHeld {
+        self.scroll_held = Some(ScrollHeld {
             lines,
             align: cam.align,
             annotation: cam.annotation.clone(),
+            from: Some(cam.id),
+            reveal: None,
+            step: self.doc.step,
             cursor: (lines.0, 0),
             pointer: self.pointer,
             to_come: None,
             show_row: None,
+        });
+        true
+    }
+
+    /// The live pointer at a jump or a reveal (D14): it stays only when the
+    /// held view shows its lines, also once the rows to come are in; then
+    /// the cursor stays with it (`before` is the cursor of before, for its
+    /// column), so `j` and `k` go on from the pointer. If not, the pointer
+    /// goes off and the cursor stays on the target. One layout, only with
+    /// the pointer on.
+    fn settle_pointer(&mut self, before: (u32, u32)) {
+        let Some(p) = self.pointer else {
+            return;
         };
-        // The pointer stays only when the new view shows its lines.
-        if let Some(p) = self.pointer {
-            let width = self.screen_width();
-            let layout = self.screen_layout_with_pointer(width);
-            let visible = self.screen_height();
-            // From the view the next frame would show, as `ui::draw` does.
-            let current = self
-                .view_anchor
-                .filter(|_| self.present)
-                .and_then(|a| view_row_of(&layout, a))
-                .unwrap_or(self.scroll);
-            let to_come = self.rows_to_come(lines, held.annotation.as_deref(), &layout, width);
-            held.to_come = Some((self.to_come_key(width), to_come));
-            if let Some(top) = held.scroll_on(&layout, visible, current, to_come) {
-                self.set_scroll(top);
-                // Where each line will be once the rows of the target come
-                // in: those above it push up, those under it push down.
-                let shown = |l: u32| {
-                    layout.row_of_line.get(&l).is_some_and(|&r| {
-                        let r = if l < lines.0 {
-                            r.checked_sub(to_come.0)
-                        } else if l > lines.1 {
-                            Some(r + to_come.1)
-                        } else {
-                            Some(r)
-                        };
-                        r.is_some_and(|r| r >= top && r < top + visible)
-                    })
-                };
-                if !(shown(p.line) && shown(p.to)) {
-                    self.pointer = None;
-                    held.pointer = None;
-                } else {
-                    // The pointer stays, and the cursor with it: `j` and
-                    // `k` go on from the pointer, not from the target.
-                    self.cursor_line = p.line;
-                    self.cursor_col = if (p.line..=p.to).contains(&before.0) {
-                        before.1
-                    } else {
-                        0
-                    };
-                    held.cursor = (self.cursor_line, self.cursor_col);
+        let width = self.screen_width();
+        let layout = self.screen_layout_with_pointer(width);
+        let visible = self.screen_height();
+        // From the view the next frame would show, as `ui::draw` does.
+        let current = self
+            .view_anchor
+            .filter(|_| self.present)
+            .and_then(|a| view_row_of(&layout, a))
+            .unwrap_or(self.scroll);
+        let to_come = self.held_rows_to_come(&layout, width);
+        let Some(h) = self.scroll_held.as_mut() else {
+            return;
+        };
+        let Some(top) = h.scroll_on(&layout, (visible, width), current, to_come) else {
+            return;
+        };
+        // Where each line will be once the rows to come are in: those above
+        // the target or the reveal push the code above it up, those under
+        // it push the code under it down.
+        let ranges = [(Some(h.lines), to_come.target), (h.reveal, to_come.reveal)];
+        let shown = |l: u32| {
+            let Some(&r) = layout.row_of_line.get(&l) else {
+                return false;
+            };
+            let mut r = r as isize;
+            for (range, (above, under)) in ranges {
+                match range {
+                    Some((a, _)) if l < a => r -= above as isize,
+                    Some((_, b)) if l > b => r += under as isize,
+                    _ => {}
                 }
             }
+            usize::try_from(r).is_ok_and(|r| r >= top && r < top + visible)
+        };
+        let stays = shown(p.line) && shown(p.to);
+        self.set_scroll(top);
+        if stays {
+            // The pointer stays, and the cursor with it.
+            self.cursor_line = p.line;
+            self.cursor_col = if (p.line..=p.to).contains(&before.0) {
+                before.1
+            } else {
+                0
+            };
+        } else {
+            self.pointer = None;
         }
-        self.scroll_held = Some(held);
+        if let Some(h) = self.scroll_held.as_mut() {
+            h.pointer = self.pointer;
+            h.cursor = (self.cursor_line, self.cursor_col);
+        }
     }
 
     /// The rows that a target (`lines`, showing `annotation` if any) does not
@@ -1719,23 +1879,12 @@ impl App {
                 self.lay_out(&doc, &self.theme, &opts)
             }
         };
-        // As `ScrollHeld::scroll_on` measures a target: the box titles over
-        // its first line, the rows under its last one up to the next line.
+        // As `ScrollHeld::scroll_on` measures a target ([`span_rows`]): the
+        // rows over its first line and under its last one.
         let measure = |l: &tiza_core::layout::Layout| -> Option<(usize, usize)> {
-            use tiza_core::layout::Row;
-            let rows = &l.rows;
+            let (top, bottom) = span_rows(l, lines)?;
             let first = *l.row_of_line.get(&lines.0)?;
-            let mut top = first;
-            while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
-                top -= 1;
-            }
             let last = *l.row_of_line.get(&lines.1)?;
-            let mut bottom = last;
-            while bottom + 1 < rows.len()
-                && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
-            {
-                bottom += 1;
-            }
             Some((first - top, bottom - last))
         };
         match (measure(layout), measure(&then)) {
@@ -1755,23 +1904,27 @@ impl App {
         )
     }
 
-    /// [`App::rows_to_come`] for the held view, from its cache when what it
-    /// depends on did not change.
+    /// [`App::rows_to_come`] for the target and the reveal of the held view,
+    /// from its cache when what it depends on did not change.
     pub(crate) fn held_rows_to_come(
         &mut self,
         layout: &tiza_core::layout::Layout,
         width: usize,
-    ) -> (usize, usize) {
+    ) -> ToCome {
         let key = self.to_come_key(width);
         let Some(h) = &self.scroll_held else {
-            return (0, 0);
+            return ToCome::default();
         };
         if let Some((k, v)) = h.to_come
             && k == key
         {
             return v;
         }
-        let v = self.rows_to_come(h.lines, h.annotation.as_deref(), layout, width);
+        let (lines, annotation, reveal) = (h.lines, h.annotation.clone(), h.reveal);
+        let v = ToCome {
+            target: self.rows_to_come(lines, annotation.as_deref(), layout, width),
+            reveal: reveal.map_or((0, 0), |r| self.rows_to_come(r, None, layout, width)),
+        };
         if let Some(h) = &mut self.scroll_held {
             h.to_come = Some((key, v));
         }
@@ -1801,6 +1954,8 @@ impl App {
     /// that is now another `scroll` does not move the view: it counts as
     /// applied, and the view is not held.
     fn camera_changed_with(&mut self, jump: bool) {
+        // An undo or an agent that changed the step.
+        self.drop_stale_reveal();
         let any = |m: &moves::Move| matches!(m.action, moves::MoveAction::Scroll(_));
         if !self.doc.moves.iter().any(any)
             && self.scroll_applied.is_none()
@@ -1817,7 +1972,7 @@ impl App {
         match cam {
             Camera::Scroll(cam) if !jump && self.scroll_applied != Some(cam.id) => {
                 self.scroll_applied = Some(cam.id);
-                self.scroll_held = None;
+                self.drop_camera_view();
             }
             Camera::Scroll(cam) => {
                 self.scroll_camera(cam, false);
@@ -1836,11 +1991,28 @@ impl App {
                     self.set_scroll(0);
                     self.cursor_line = self.doc.source.first_line;
                     self.cursor_col = 0;
+                    // The pointer stays only where the top shows its lines,
+                    // and the cursor with it (D14).
+                    if let Some(p) = self.pointer {
+                        if self.lines_in_view_from(0, p.line, p.to) {
+                            self.cursor_line = p.line;
+                        } else {
+                            self.pointer = None;
+                        }
+                    }
                     self.pointer_seen = self.pointer_snapshot();
                 }
                 self.scroll_applied = None;
-                self.scroll_held = None;
+                self.drop_camera_view();
             }
+        }
+    }
+
+    /// Lets the held view of a `scroll` go; the view of a reveal alone
+    /// stays (an agent edit, a reload).
+    fn drop_camera_view(&mut self) {
+        if self.scroll_held.as_ref().is_some_and(|h| h.from.is_some()) {
+            self.scroll_held = None;
         }
     }
 
@@ -1892,16 +2064,18 @@ impl App {
     /// nearest line above when a patch removed theirs), so the view stays
     /// on its code. A `scroll`, a `cursor` or a `code.link` of the step, the
     /// pointer and the way back to the top then place the view and the
-    /// cursor as before.
-    fn carry_view(&mut self, from_step: u32) {
+    /// cursor as before. `false` when the code of before is not on screen.
+    fn carry_view(&mut self, from_step: u32) -> bool {
         let anchor = self.view_anchor;
         let mut lines = vec![self.cursor_line];
         lines.extend(anchor.map(|a| a.0));
-        // Another file: the view of before.
+        // Another file, or out of the window of a `code.link`: the code is
+        // not on screen, and the view of before stays as it was.
         let Some(carried) = moves::carry_lines_near(&self.doc, from_step, self.doc.step, &lines)
+            .filter(|c| c.iter().all(|l| self.doc.has_line(*l)))
         else {
             self.view_anchor = None;
-            return;
+            return false;
         };
         // Not a motion for the view to follow.
         self.cursor_line = carried[0];
@@ -1909,6 +2083,7 @@ impl App {
         if let (Some((_, rows)), Some(line)) = (anchor, carried.get(1)) {
             self.view_anchor = Some((*line, rows));
         }
+        true
     }
 
     /// Presentation mode: the hidden cursor stays on a line of code in the
@@ -3054,6 +3229,23 @@ impl App {
         self.step_label_line()
     }
 
+    /// [`App::step_message`] for `:step N`: to the step on screen, as a
+    /// goto there ([`App::step_to_asked`]).
+    fn step_message_asked(&mut self, step: u32) -> String {
+        if self.step_to_asked(step) {
+            return String::new();
+        }
+        self.step_label_line()
+    }
+
+    /// `:step N` and `step.set`: [`App::step_to`]; in presentation mode, to
+    /// the step on screen, as a goto there: its camera again, and what
+    /// comes in at it. Normal mode does not change.
+    fn step_to_asked(&mut self, step: u32) -> bool {
+        let here = self.present && step.min(self.doc.max_step().max(1)) == self.doc.step;
+        self.step_to_with(step, here)
+    }
+
     /// The step label for a message: the title's control characters as
     /// their pictures, as the status bar draws them.
     fn step_label_line(&self) -> String {
@@ -3130,17 +3322,29 @@ impl App {
         self.finish_effect();
         let max = self.doc.max_step();
         let s = step.min(max.max(1));
-        // A goto to the step on screen puts the view back on its target.
-        if s == self.doc.step
-            && jump
-            && self
-                .doc
-                .moves
-                .iter()
-                .any(|m| matches!(m.action, moves::MoveAction::Scroll(_)))
-            && let Camera::Scroll(cam) = self.doc.view_at(s).camera
-        {
-            self.scroll_camera(cam, true);
+        // A goto to the step on screen puts the view back on its target,
+        // and in presentation mode shows what comes in at the step, as a
+        // full replay ends.
+        if s == self.doc.step && jump {
+            let camera = if self.doc.moves.is_empty() {
+                Camera::None
+            } else {
+                self.doc.view_at(s).camera
+            };
+            let own = own_camera(&camera, s);
+            // The live pointer is decided once, on the view of the camera
+            // and the reveal together (D14).
+            let before = (self.cursor_line, self.cursor_col);
+            let mut settle = false;
+            if let Camera::Scroll(cam) = camera {
+                settle |= self.place_camera(cam, true);
+            }
+            if self.present && s != 0 && !own {
+                settle |= self.reveal(s);
+            }
+            if settle {
+                self.settle_pointer(before);
+            }
             self.clamp_cursor();
             self.pointer_seen = self.pointer_snapshot();
         }
@@ -3148,6 +3352,8 @@ impl App {
             let forward_one = s == self.doc.step + 1 && !jump;
             let from_step = self.doc.step;
             self.doc.step = s;
+            // The reveal of the step of before lets go.
+            self.drop_stale_reveal();
             if let Some(e) = self.doc.sync_code_to_step() {
                 self.error(format!("moves: {e}"));
                 self.pointer = None;
@@ -3158,19 +3364,31 @@ impl App {
                 // In presentation mode the view and the hidden cursor go
                 // with their code first; the moves of the step can then
                 // place them.
-                if self.present {
-                    self.carry_view(from_step);
-                }
+                let carried = self.present && self.carry_view(from_step);
                 // A `cursor` move left at this step moves the TUI cursor
                 // too; a `code.link` puts it on the first shown line. A
                 // `scroll` newer than both places the view instead.
                 let mut scroll = None;
+                // A camera of the step itself: it places the view, and
+                // nothing is revealed (B (a)).
+                let mut own = false;
+                let mut went_top = false;
                 if !self.doc.moves.is_empty() {
                     let v = self.doc.view_at(s);
+                    own = own_camera(&v.camera, s);
                     if let Camera::Scroll(cam) = v.camera {
                         scroll = Some(cam);
                     } else {
+                        // N (a): in presentation mode an older `cursor` or
+                        // `code.link` places the view only at its own step,
+                        // or when the view cannot stay on its code (another
+                        // file, out of the window).
+                        let places = match v.camera {
+                            Camera::Cursor { at_step } => !self.present || at_step == s || !carried,
+                            _ => true,
+                        };
                         if self.scroll_applied.is_some() && !self.scroll_runs_by(s) {
+                            went_top = true;
                             // Back to a step that no `scroll` reaches: the
                             // top. A `cursor` or a `code.link` of before then
                             // moves the view only when its line is not in view.
@@ -3180,14 +3398,18 @@ impl App {
                         }
                         self.scroll_applied = None;
                         self.scroll_held = None;
-                        if let Some(c) = v.cursor {
-                            self.cursor_line = c.line;
-                            self.cursor_col = c.col;
-                        } else if v.view.file.is_some() || v.view.window.is_some() {
-                            self.cursor_line = self.doc.source.first_line;
+                        if places {
+                            if let Some(c) = v.cursor {
+                                self.cursor_line = c.line;
+                                self.cursor_col = c.col;
+                            } else if v.view.file.is_some() || v.view.window.is_some() {
+                                self.cursor_line = self.doc.source.first_line;
+                            }
                         }
                     }
                 }
+                // The cursor that the moves left, for when the pointer goes.
+                let placed = (self.cursor_line, self.cursor_col);
                 // Before the typing blanks what it is about to type.
                 self.carry_pointer(from_step);
                 // A step that types moves the view at its cues, in the order
@@ -3195,15 +3417,36 @@ impl App {
                 let plan = forward_one
                     .then(|| moves::typing_plan(&self.doc, s))
                     .flatten();
-                // After the pointer: the cursor goes to the target, and the
-                // pointer stays only where the new view shows it.
+                // After the pointer: the cursor goes to the target, and then
+                // to what comes in.
+                let before = (self.cursor_line, self.cursor_col);
+                let mut settle = false;
                 if let Some(cam) = scroll
                     && !plan.as_ref().is_some_and(|p| !p.cues.is_empty())
                 {
-                    self.scroll_camera(cam, jump);
+                    settle |= self.place_camera(cam, jump);
                 }
                 if let Some(plan) = plan {
                     self.start_typing_with(plan);
+                }
+                // AC5 (A (d)): in presentation mode a step change shows what
+                // comes in at the step, except one step back and the way
+                // back to step 0.
+                if self.present && s != 0 && s + 1 != from_step && !own {
+                    settle |= self.reveal(s);
+                }
+                // The live pointer stays only where the new view shows its
+                // lines, and the cursor with it (D14): decided once, on the
+                // view of the camera and the reveal together. Back at the
+                // top, on the top.
+                if settle {
+                    self.settle_pointer(before);
+                } else if went_top
+                    && let Some(p) = self.pointer
+                    && !self.lines_in_view_from(0, p.line, p.to)
+                {
+                    self.pointer = None;
+                    (self.cursor_line, self.cursor_col) = placed;
                 }
             }
             self.clamp_cursor();
@@ -3764,8 +4007,11 @@ impl App {
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
-        // A key of the view is for presentation mode only.
+        // A key of the view and a reveal are for presentation mode only.
         self.view_request = None;
+        if !on && self.scroll_held.as_ref().is_some_and(ScrollHeld::reveals) {
+            self.scroll_held = None;
+        }
         if !on && !self.agent_deferred.is_empty() {
             let items = std::mem::take(&mut self.agent_deferred);
             self.agent_notice = None;
@@ -5930,7 +6176,7 @@ impl App {
                                 self.revision += 1;
                                 return Ok(format!("step {n}/{n}: empty, new annotations go here"));
                             }
-                            Ok(self.step_message(n))
+                            Ok(self.step_message_asked(n))
                         }
                         [id, n] => {
                             let n: u32 = n
@@ -8095,7 +8341,7 @@ impl App {
             }
             "step.set" => {
                 let p: StepParams = parse(params)?;
-                self.set_step(p.step);
+                self.step_to_asked(p.step);
                 serde_json::to_value(StepReply::of(&self.doc, self.revision))?
             }
             "step.next" => {
@@ -8572,6 +8818,10 @@ impl App {
                 // As ↓ and ↑ with the pointer on: the typing ends.
                 self.finish_typing();
                 self.revision += 1;
+            } else if self.is_playing_effect() {
+                // So does an effect, and the notch does nothing else.
+                self.finish_effect();
+                return MouseOutcome::EndedEffect;
             } else {
                 self.move_cursor(rows);
             }
@@ -9748,25 +9998,37 @@ mod tests {
 /// The view that a `scroll` holds after its jump (see [`App::scroll_held`]).
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScrollHeld {
-    /// The first and the last line of the target.
+    /// The first and the last line of the target: of a `scroll` move, or of
+    /// what comes in at a step (a reveal).
     pub lines: (u32, u32),
     pub align: tiza_core::moves::Align,
     /// The annotation it shows, if any: one of a later step counts with the
     /// rows it will have ([`App::rows_to_come`]).
     pub annotation: Option<String>,
+    /// The `scroll` move it comes from, by its id; `None` for a reveal
+    /// alone. Only that `scroll` refreshes it.
+    pub from: Option<(u32, usize)>,
+    /// What comes in at the step, when it comes with the view of a `scroll`
+    /// of before: the view shows it with the least move from the target.
+    pub reveal: Option<(u32, u32)>,
+    /// The step of the jump or of the reveal: a reveal holds the view only
+    /// at its own step ([`ScrollHeld::reveals`]).
+    pub step: u32,
     /// The cursor and the pointer at the jump: a change lets the view go.
     pub cursor: (u32, u32),
     pub pointer: Option<tiza_core::protocol::PointerAt>,
-    /// [`App::rows_to_come`] for this target, with what it depends on: the
-    /// step, the width, a typing or a `wait` of the step, and the newest
-    /// edit of the document (an agent that gives the target a label). A
-    /// frame lays the code out once more only when one of them changes,
-    /// not at each frame of a typing.
-    pub to_come: Option<(ToComeKey, (usize, usize))>,
+    /// [`App::rows_to_come`] for the target and the reveal, with what it
+    /// depends on: the step, the width, a typing or a `wait` of the step,
+    /// and the newest edit of the document (an agent that gives the target
+    /// a label). A frame lays the code out once more only when one of them
+    /// changes, not at each frame of a typing.
+    pub to_come: Option<(ToComeKey, ToCome)>,
     /// With `show`: the row in the view of the first line of the target, as
-    /// the first frame put it. Later frames keep the target on that row, so
-    /// it keeps its row when rows come in above it.
-    pub show_row: Option<usize>,
+    /// the first frame put it, and the size of the view on screen then (its
+    /// rows and its width). Later frames of that size keep the target
+    /// on that row, so it keeps its row when rows come in above it. At
+    /// another size the view shows the target again from where it is.
+    pub show_row: Option<(usize, (usize, usize))>,
 }
 
 /// What [`App::rows_to_come`] depends on: the step, the width, a typing or
@@ -9774,38 +10036,74 @@ pub struct ScrollHeld {
 /// geometry of presentation mode.
 pub type ToComeKey = (u32, usize, bool, u64, bool);
 
+/// The rows that the target and the reveal of a held view do not have yet,
+/// above and under each ([`App::rows_to_come`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ToCome {
+    pub target: (usize, usize),
+    pub reveal: (usize, usize),
+}
+
+/// Whether `camera` is a camera of step `s` itself that places the view: a
+/// `scroll` with a target, a `cursor` or a `code.link`. Then nothing comes
+/// into the view at `s` by itself (B (a)).
+fn own_camera(camera: &Camera, s: u32) -> bool {
+    match camera {
+        Camera::Scroll(cam) => cam.id.0 == s && cam.lines.is_some(),
+        Camera::Cursor { at_step } => *at_step == s,
+        Camera::None => false,
+    }
+}
+
+/// The rows of `lines` on `layout`: from the titles of the boxes over the
+/// first line to the rows under the last one, up to the next line or the
+/// top of a box that starts there. `None` when a line is not on it.
+pub fn span_rows(layout: &tiza_core::layout::Layout, lines: (u32, u32)) -> Option<(usize, usize)> {
+    use tiza_core::layout::Row;
+    let rows = &layout.rows;
+    let mut top = *layout.row_of_line.get(&lines.0)?;
+    while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
+        top -= 1;
+    }
+    let mut bottom = *layout.row_of_line.get(&lines.1)?;
+    while bottom + 1 < rows.len() && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_)) {
+        bottom += 1;
+    }
+    Some((top, bottom))
+}
+
 impl ScrollHeld {
+    /// Whether it shows what came in at its step: a reveal alone, or the
+    /// view of a `scroll` with a reveal.
+    pub fn reveals(&self) -> bool {
+        self.from.is_none() || self.reveal.is_some()
+    }
+
     /// The first row in view that puts the target where `align` says, on
-    /// `layout` with `visible` rows; `current` is the first row now (for
-    /// `show`). `None` when the target is not on the layout.
-    /// `to_come` are the rows the target does not have yet, above and under
-    /// it ([`App::rows_to_come`]): the view keeps their place, so that the
-    /// lines of the target keep their rows when those rows come in.
+    /// `layout` with `visible` rows of `width` cells (the size of the view
+    /// on screen), and then the reveal, if any, with the
+    /// least move from there; `current` is the first row now (for `show`).
+    /// `None` when the target is not on the layout. `to_come` are the rows
+    /// that the target and the reveal do not have yet: the view keeps their
+    /// place, so that their lines keep their rows when those rows come in.
     pub fn scroll_on(
         &mut self,
         layout: &tiza_core::layout::Layout,
-        visible: usize,
+        (visible, width): (usize, usize),
         current: usize,
-        to_come: (usize, usize),
+        to_come: ToCome,
     ) -> Option<usize> {
-        use tiza_core::layout::Row;
         use tiza_core::moves::Align;
-        let rows = &layout.rows;
-        let mut top = *layout.row_of_line.get(&self.lines.0)?;
-        while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
-            top -= 1;
-        }
-        // The rows under the last line, up to the next line or the top of
-        // a box that starts there.
-        let mut bottom = *layout.row_of_line.get(&self.lines.1)?;
-        while bottom + 1 < rows.len() && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
-        {
-            bottom += 1;
-        }
-        let top = top.saturating_sub(to_come.0);
-        let bottom = bottom + to_come.1;
+        let (top, bottom) = span_rows(layout, self.lines)?;
+        let top = top.saturating_sub(to_come.target.0);
+        let bottom = bottom + to_come.target.1;
         let height = bottom + 1 - top;
-        let max = rows.len().saturating_sub(visible);
+        let max = layout.rows.len().saturating_sub(visible);
+        let size = (visible, width);
+        let placed = self
+            .show_row
+            .filter(|(_, s)| *s == size)
+            .map(|(row, _)| row);
         let at = if height >= visible {
             top
         } else {
@@ -9815,20 +10113,31 @@ impl ScrollHeld {
                 Align::Bottom => (bottom + 1).saturating_sub(visible),
                 Align::Center => (top + bottom + 1).saturating_sub(visible) / 2,
                 // Once placed, the target keeps its row.
-                Align::Show if self.show_row.is_some() => {
+                Align::Show if let Some(row) = placed => {
                     let first = *layout.row_of_line.get(&self.lines.0)?;
-                    let keep = self.show_row.unwrap_or(0).min(visible.saturating_sub(1));
-                    first.saturating_sub(keep)
+                    first.saturating_sub(row.min(visible.saturating_sub(1)))
                 }
                 Align::Show if top < current => top,
                 Align::Show if bottom >= current + visible => bottom + 1 - visible,
                 Align::Show => current,
             }
         };
-        let at = at.min(max);
-        if self.align == Align::Show && self.show_row.is_none() {
+        let mut at = at.min(max);
+        if self.align == Align::Show && placed.is_none() {
             let first = *layout.row_of_line.get(&self.lines.0)?;
-            self.show_row = first.checked_sub(at);
+            self.show_row = first.checked_sub(at).map(|row| (row, size));
+        }
+        // What comes in at the step, from the view of the target: when it
+        // does not fit, the start of its range.
+        if let Some((rtop, rbottom)) = self.reveal.and_then(|r| span_rows(layout, r)) {
+            let rtop = rtop.saturating_sub(to_come.reveal.0);
+            let rbottom = rbottom + to_come.reveal.1;
+            if rbottom + 1 - rtop >= visible || rtop < at {
+                at = rtop;
+            } else if rbottom >= at + visible {
+                at = rbottom + 1 - visible;
+            }
+            at = at.min(max);
         }
         Some(at)
     }

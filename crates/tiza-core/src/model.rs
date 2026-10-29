@@ -1719,7 +1719,9 @@ impl Document {
         };
         match self.scroll_cam(proj, step, i, shapes) {
             Some(cam) => moves::Camera::Scroll(cam),
-            None => moves::Camera::Cursor,
+            None => moves::Camera::Cursor {
+                at_step: self.moves.get(i).map_or(step, |m| m.at_step),
+            },
         }
     }
 

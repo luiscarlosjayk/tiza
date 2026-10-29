@@ -15,6 +15,8 @@ use tiza_tui::app::App;
 
 const COLS: u16 = 80;
 const ROWS: u16 = 24;
+/// The last row of code in normal mode, over the status bar.
+const BOTTOM: u16 = ROWS - 2;
 
 /// The document `tui/scroll_move/FILE`. `typed.tiza` types one line an
 /// hour: its typing does not end by its clock during a test, also on a
@@ -80,31 +82,36 @@ fn a_camera_step_puts_its_line_where_align_says() {
 fn an_older_cursor_does_not_pull_the_view_back() {
     // A `cursor` on line 10 at step 1, a `scroll` at steps 2 to 4, and
     // only a note at step 5: the view stays on the target of step 4, held
-    // or moved by the presenter.
+    // or moved by the presenter. In normal mode: in presentation mode the
+    // note of step 5 comes into view (the test after this one).
     let live = open("scroll-older-cursor", "camera.tiza", 4);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    live.with(|a| a.set_present(false));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
     key(&live, KeyCode::Char('n'));
     assert_eq!(live.with(|a| a.doc.step), 5);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1), "held");
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM), "held");
     key(&live, KeyCode::Char('p'));
     key(&live, KeyCode::Char('j'));
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 2));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM - 1));
     key(&live, KeyCode::Char('n'));
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 2), "moved");
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM - 1), "moved");
 }
 
 #[test]
 fn a_step_with_the_same_camera_keeps_a_moved_view_and_a_goto_applies_it() {
-    // Steps 4 and 5 have the same camera, the `scroll` of step 4.
+    // Steps 4 and 5 have the same camera, the `scroll` of step 4. In normal
+    // mode, where a goto shows nothing more (the presentation variant is
+    // after this one).
     let live = open("scroll-goto", "camera.tiza", 5);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    live.with(|a| a.set_present(false));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
     key(&live, KeyCode::Char('G'));
     assert_eq!(row_of(&live, "let v50 = 50;"), None, "moved to the end");
     key(&live, KeyCode::Char('p'));
     assert_eq!(live.with(|a| a.doc.step), 4);
     assert_eq!(row_of(&live, "let v50 = 50;"), None, "the moved view stays");
     live.command("goto 5");
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1), "goto");
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM), "goto");
 }
 
 #[test]
@@ -186,8 +193,10 @@ fn the_tui_opens_on_the_target_of_its_step() {
 fn the_newest_camera_wins_in_the_order_the_moves_run() {
     // The list holds a `cursor` of step 5 before a `scroll` of step 3. At
     // steps 3 and 4 the `scroll` places the view; at step 5 the `cursor`
-    // is newer, though it comes first in the list.
+    // is newer, though it comes first in the list. In normal mode: in
+    // presentation mode the notes that come in move the view too.
     let live = open("scroll-unordered", "unordered.tiza", 3);
+    live.with(|a| a.set_present(false));
     assert_eq!(row_of(&live, "let v80 = 80;"), Some(0), "step 3");
     key(&live, KeyCode::Char('n'));
     assert_eq!(row_of(&live, "let v80 = 80;"), Some(0), "step 4");
@@ -807,4 +816,65 @@ fn a_pointer_that_the_border_to_come_pushes_out_goes_off_at_the_jump() {
     live.api_ok("pointer.set", serde_json::json!({ "line": 105 }));
     key(&live, KeyCode::Char('n'));
     assert_eq!(live.with(|a| a.pointer), None);
+}
+
+#[test]
+fn in_presentation_the_note_of_a_step_comes_in_and_an_older_cursor_stays_out() {
+    // camera.tiza at step 4 holds line 50 at the bottom; step 5 brings the
+    // note n5 on line 52, under the view: it comes in with the least move.
+    // The `cursor` of step 1 (line 10) does not pull the view back (N (a)).
+    let live = open("scroll-reveal-n5", "camera.tiza", 4);
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(live.with(|a| a.doc.step), 5);
+    assert_eq!(
+        row_of(&live, "let v52 = 52;"),
+        Some(ROWS - 1),
+        "the note in view"
+    );
+    assert_eq!(
+        row_of(&live, "let v10 = 10;"),
+        None,
+        "not back at the cursor"
+    );
+}
+
+#[test]
+fn in_presentation_a_goto_to_the_next_step_applies_its_camera_then_shows_what_comes_in() {
+    // camera.tiza: steps 4 and 5 have the camera of step 4 (line 50 at the
+    // bottom), and step 5 brings the note on line 52. After `G` and `p`, a
+    // goto to step 5 puts line 50 at the bottom again, then shows line 52:
+    // the same view with the live pointer off and on.
+    let mut views = Vec::new();
+    for pointer in [false, true] {
+        let live = open(&format!("scroll-goto-reveal-{pointer}"), "camera.tiza", 5);
+        key(&live, KeyCode::Char('G'));
+        assert_eq!(row_of(&live, "let v50 = 50;"), None, "moved to the end");
+        key(&live, KeyCode::Char('p'));
+        if pointer {
+            live.api_ok("pointer.set", serde_json::json!({ "line": 100 }));
+        }
+        live.command("goto 5");
+        let view = rows_of(&live, &["let v50 = 50;", "let v52 = 52;"]);
+        assert_eq!(view, [Some(ROWS - 3), Some(ROWS - 1)], "pointer {pointer}");
+        views.push((view, live.with(|a| a.scroll)));
+    }
+    assert_eq!(views[0], views[1], "with the pointer and without it");
+}
+
+#[test]
+fn in_presentation_the_notes_come_in_and_the_cursor_of_its_own_step_wins() {
+    // unordered.tiza: the `scroll` of step 3 puts line 80 at the top; step 4
+    // brings the note n4 on line 64, above it: it comes in. Step 5 has its
+    // own `cursor` (line 10): it wins, and nothing more comes in.
+    let live = open("scroll-unordered-present", "unordered.tiza", 3);
+    assert_eq!(row_of(&live, "let v80 = 80;"), Some(0), "step 3");
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(row_of(&live, "let v64 = 64;"), Some(0), "step 4: the note");
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(live.with(|a| (a.doc.step, a.cursor_line)), (5, 10));
+    assert!(
+        row_of(&live, "let v10 = 10;").is_some(),
+        "step 5: the cursor"
+    );
 }

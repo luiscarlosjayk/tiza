@@ -1,5 +1,5 @@
 //! The target of a `scroll` move in `tiza check` and on the socket: one
-//! that does not resolve is a warning (the view does not move), a `find`
+//! that does not resolve is a warning (it does not place the view), a `find`
 //! that matches more than once goes to the first match with a warning
 //! unless `occurrence` names one, the fields of the target are checked as
 //! the document loads, and `move.add` refuses only a target that does not
@@ -97,7 +97,7 @@ fn a_target_that_does_not_resolve_is_a_warning_with_its_move() {
     );
     for (level, _, msg) in &moves {
         assert_eq!(level, "warning");
-        assert!(msg.ends_with("so the view does not move"), "{msg}");
+        assert!(msg.ends_with("so it does not place the view"), "{msg}");
     }
     assert!(moves[0].2.contains("line 99"), "{}", moves[0].2);
     assert!(moves[2].2.contains("«zz»"), "{}", moves[2].2);
