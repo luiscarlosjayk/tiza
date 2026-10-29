@@ -343,7 +343,9 @@ fn check_text_as(
             migrate(&mut raw);
         }
     }
-    let parsed: Result<Document, serde_json::Error> = if migrated {
+    // An effect of a newer Tiza: read as no effect, with a warning below.
+    let unknown = crate::fs::take_unknown_effects(&mut raw);
+    let parsed: Result<Document, serde_json::Error> = if migrated || !unknown.is_empty() {
         serde_json::from_value(raw)
     } else {
         // Straight from the text: the error keeps its line and column.
@@ -368,6 +370,7 @@ fn check_text_as(
         }
     };
     doc.schema = SCHEMA_VERSION;
+    doc.unknown_effects = crate::model::UnknownEffects(unknown);
     // The gutter the take draws when the document leaves it to the config.
     if doc.numbers.is_none() {
         doc.numbers = opts.numbers;
@@ -1309,6 +1312,22 @@ fn check_loaded(
                     .step(a.step)
                     .file(a.file.clone())
                     .line(anchor_line(&a.shape)),
+            );
+        }
+        // An effect of a newer Tiza: the file opens, with no effect there.
+        for (_, value) in doc.unknown_effects.0.iter().filter(|(id, _)| *id == a.id) {
+            out.push(
+                Finding::new(
+                    Level::Warning,
+                    "effect",
+                    format!(
+                        "the effect {value} is not known to this version of Tiza: the annotation comes in with no effect, and a save does not keep it"
+                    ),
+                )
+                .id(a.id.clone())
+                .step(a.step)
+                .file(a.file.clone())
+                .line(anchor_line(&a.shape)),
             );
         }
         if let Some(m) = &a.markers {

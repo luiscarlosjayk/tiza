@@ -1,0 +1,46 @@
+{
+ "schema": 1,
+ "title": "Effects of a newer Tiza",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let s = String::from(\"hi\");",
+  "    takes(s);",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "b1",
+   "step": 1,
+   "type": "box",
+   "from_line": 2,
+   "to_line": 3,
+   "effect": "slide"
+  },
+  {
+   "id": "n1",
+   "step": 1,
+   "type": "note",
+   "line": 3,
+   "text": "moved",
+   "effect": 1
+  },
+  {
+   "id": "a1",
+   "step": 2,
+   "type": "arrow",
+   "from": {
+    "line": 2,
+    "col": 8
+   },
+   "to": {
+    "line": 3,
+    "col": 10
+   },
+   "effect": "draw"
+  }
+ ]
+}

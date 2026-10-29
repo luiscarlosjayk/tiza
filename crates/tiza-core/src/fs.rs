@@ -77,9 +77,38 @@ pub struct Opened {
 
 /// Opens a `.tiza` or a source file (with an optional range). If the source
 /// has a `.tiza` sidecar next to it, the sidecar is preferred (it keeps the annotations).
-/// One line naming the annotations whose lines fall outside the code (they
-/// are kept in the file but cannot be drawn), or `None`.
-pub fn outside_notice(doc: &Document) -> Option<String> {
+/// One line naming what of the document Tiza does not draw as the file
+/// says: the annotations whose lines fall outside the code (they are kept
+/// in the file but cannot be drawn) and the effects this version does not
+/// know (they come in with no effect), or `None`.
+pub fn open_notice(doc: &Document) -> Option<String> {
+    let notices = [outside_annotations(doc), unknown_effects_notice(doc)];
+    let notices: Vec<String> = notices.into_iter().flatten().collect();
+    (!notices.is_empty()).then(|| notices.join("; "))
+}
+
+/// The annotations whose `effect` this version does not know, or `None`.
+fn unknown_effects_notice(doc: &Document) -> Option<String> {
+    let found = &doc.unknown_effects.0;
+    if found.is_empty() {
+        return None;
+    }
+    let list: Vec<String> = found.iter().map(|(id, v)| format!("{id} ({v})")).collect();
+    Some(format!(
+        "{} effect{} not known to this version of Tiza, so {} with no effect: {}",
+        found.len(),
+        if found.len() == 1 { "" } else { "s" },
+        if found.len() == 1 {
+            "it comes in"
+        } else {
+            "they come in"
+        },
+        list.join(", ")
+    ))
+}
+
+/// The annotations outside the code, or `None`.
+fn outside_annotations(doc: &Document) -> Option<String> {
     let bad: Vec<String> = doc
         .annotations
         .iter()
@@ -142,7 +171,7 @@ fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
     let (path, asked) = parse_target_in(spec, None)?;
     if is_document_path(&path) {
         let document = load_document(&path)?;
-        let notice = outside_notice(&document);
+        let notice = open_notice(&document);
         return Ok(Opened {
             document,
             save_path: path,
@@ -153,7 +182,7 @@ fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
     let sidecar = sidecar_path(&path);
     if asked.is_none() && sidecar.exists() {
         let document = load_document(&sidecar)?;
-        let notice = outside_notice(&document);
+        let notice = open_notice(&document);
         return Ok(Opened {
             document,
             save_path: sidecar,
@@ -208,7 +237,7 @@ fn open_with(spec: &str, range_document: bool) -> Result<Opened, Error> {
             inner: Box::new(e),
         })?;
         let opened = format!("opened the existing {}", save_path.display());
-        let notice = [notice, Some(opened), outside_notice(&document)]
+        let notice = [notice, Some(opened), open_notice(&document)]
             .into_iter()
             .flatten()
             .collect::<Vec<_>>()
@@ -235,7 +264,7 @@ pub fn from_stdin(text: &str, language: Option<&str>) -> Result<Opened, Error> {
     let trimmed = text.trim_start_matches('\u{feff}').trim_start();
     if trimmed.starts_with('{') && trimmed.contains("\"schema\"") {
         let document = parse_document(text, std::env::current_dir().ok().as_deref())?;
-        let notice = outside_notice(&document);
+        let notice = open_notice(&document);
         return Ok(Opened {
             document,
             save_path: PathBuf::from(format!("tiza-stdin.{EXT}")),
@@ -297,7 +326,9 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut raw: serde_json::Value = serde_json::from_str(text)?;
     migrate_document_value(&mut raw)?;
+    let unknown = take_unknown_effects(&mut raw);
     let mut doc: Document = serde_json::from_value(raw)?;
+    doc.unknown_effects = crate::model::UnknownEffects(unknown);
     doc.schema = SCHEMA_VERSION;
     resolve_code(&mut doc, base_dir)?;
     // A linked file that cannot be read is named by the document's own
@@ -305,6 +336,36 @@ pub fn parse_document(text: &str, base_dir: Option<&Path>) -> Result<Document, E
     load_views(&mut doc, base_dir)?;
     doc.normalize_loaded()?;
     Ok(doc)
+}
+
+/// Takes out of the annotations of `raw` an `effect` that this version
+/// does not know: a newer Tiza can write an effect that this one cannot
+/// draw. The document opens, and the annotation comes in with no effect
+/// ([`crate::model::UnknownEffects`]). Returns (the id of the annotation,
+/// the value as written).
+pub(crate) fn take_unknown_effects(raw: &mut serde_json::Value) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let Some(annotations) = raw.get_mut("annotations").and_then(|a| a.as_array_mut()) else {
+        return out;
+    };
+    for a in annotations.iter_mut().filter_map(|a| a.as_object_mut()) {
+        let Some(value) = a.get("effect") else {
+            continue;
+        };
+        if value.is_null()
+            || serde_json::from_value::<crate::effects::Effect>(value.clone()).is_ok()
+        {
+            continue;
+        }
+        let value = a.remove("effect").unwrap_or_default();
+        let id = a
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        out.push((id, value.to_string()));
+    }
+    out
 }
 
 /// Readies the document a live instance handed out (`scene.get`) for an

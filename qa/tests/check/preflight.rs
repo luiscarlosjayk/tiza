@@ -1120,3 +1120,25 @@ fn an_effect_draw_without_a_stroke_is_a_warning() {
         "{v}"
     );
 }
+
+#[test]
+fn an_effect_of_a_newer_tiza_is_a_warning() {
+    // An `effect` that this version does not know: the file passes, with
+    // one warning for each such annotation.
+    let file =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures/compat/v1-newer-unknown-effect.tiza");
+    let (code, v) = check_json(&file, &[]);
+    assert_eq!(code, 0, "warnings only: {v}");
+    let f = with_code(&findings(&v), "effect");
+    let ids: Vec<&str> = f.iter().map(|x| x["id"].as_str().unwrap()).collect();
+    assert_eq!(ids, ["b1", "n1"], "{v}");
+    for x in &f {
+        assert_eq!(x["level"], "warning", "{v}");
+        assert!(
+            x["message"].as_str().unwrap().contains(
+                "is not known to this version of Tiza: the annotation comes in with no effect"
+            ),
+            "{v}"
+        );
+    }
+}

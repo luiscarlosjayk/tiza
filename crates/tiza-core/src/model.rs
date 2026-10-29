@@ -156,6 +156,25 @@ pub struct Document {
     /// `n` (and an `auto_advance_ms`) past the last step goes back to step 0.
     #[serde(default, rename = "loop", skip_serializing_if = "std::ops::Not::not")]
     pub looping: bool,
+    /// The `effect` values of the file that this version does not know
+    /// ([`crate::fs::parse_document`]). Never serialized.
+    #[serde(skip)]
+    pub unknown_effects: UnknownEffects,
+}
+
+/// The `effect` values of a file that this version of Tiza does not know,
+/// as a newer Tiza can write them: (the id of the annotation, the value as
+/// written). Such an annotation comes in with no effect, `check` warns,
+/// and a save does not write the value, as an older Tiza that does not
+/// know `effect` at all. It is what the file held when it loaded, not a
+/// part of the document: two documents are equal whatever it says.
+#[derive(Debug, Clone, Default)]
+pub struct UnknownEffects(pub Vec<(String, String)>);
+
+impl PartialEq for UnknownEffects {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 /// Where the code of a `.tiza` comes from.
@@ -959,6 +978,7 @@ impl Document {
             theme_overrides: None,
             steps: Vec::new(),
             looping: false,
+            unknown_effects: UnknownEffects::default(),
         }
     }
 

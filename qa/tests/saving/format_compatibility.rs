@@ -180,3 +180,41 @@ fn schema_bumps_need_a_fixture_and_a_migration() {
         String::from_utf8_lossy(&out.stderr)
     );
 }
+
+#[test]
+fn an_effect_of_a_newer_tiza_reads_as_no_effect() {
+    // A newer Tiza can write an `effect` that this version does not know.
+    // The document opens, those annotations come in with no effect, the
+    // notice names them, and a save does not keep the value. An effect
+    // that this version knows stays.
+    use tiza_core::effects::Effect;
+    let f = compat_dir().join("v1-newer-unknown-effect.tiza");
+    let opened = fs::open(f.to_str().unwrap()).unwrap();
+    let doc = &opened.document;
+    let effect = |id: &str| doc.find_annotation(id).unwrap().effect;
+    assert_eq!(effect("b1"), None, "\"slide\"");
+    assert_eq!(effect("n1"), None, "1");
+    assert_eq!(effect("a1"), Some(Effect::Draw));
+    let notice = opened.notice.clone().unwrap_or_default();
+    assert!(
+        notice.contains("b1 (\"slide\")") && notice.contains("n1 (1)"),
+        "{notice}"
+    );
+    let dir = scratch("newer-effect");
+    let saved = dir.join("s.tiza");
+    fs::save_document(doc, &saved).unwrap();
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&saved).unwrap()).unwrap();
+    let of = |id: &str| {
+        json["annotations"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["id"] == id)
+            .unwrap()
+            .clone()
+    };
+    assert!(of("b1").get("effect").is_none(), "{json}");
+    assert!(of("n1").get("effect").is_none(), "{json}");
+    assert_eq!(of("a1")["effect"], "draw", "{json}");
+}
