@@ -19,6 +19,7 @@ To paste code, paste it into your terminal. Tiza shows the pasted code in place 
 | Bracketed paste | A paste of code into the terminal. | Tiza reads a paste as keys, so pipe the code into Tiza. |
 | The color query | The auto theme: `light` or `dark` from the background of the terminal. | Tiza keeps the [theme that it starts with](#no-answer-to-the-color-query). |
 | Mouse events | Mouse capture, only when you turn it on. | The mouse does not work in Tiza. |
+| Synchronized output (mode 2026) | Each frame shows at one time. | A big change of the view can show part of two frames for a moment. |
 
 ## Tested terminals
 
@@ -41,10 +42,12 @@ Tiza has no test record for other terminals. To report a result, see [Report a t
 | Mouse capture | Tiza turns it on only with `--mouse` or `:mouse on`, and off with `:mouse off`. |
 | The color query | Tiza sends it at start and at each resize, only with the auto theme or the terminal theme. |
 | The cursor | Tiza hides it, except on the `:` command line. |
+| Synchronized output (mode 2026) | Tiza sends each frame in one synchronized update. |
 | The kitty keyboard protocol | Tiza never turns it on. |
 
 - Tiza shows the cursor again when it quits.
-- After a crash, Tiza leaves the alternate screen and turns off raw mode. Then it turns off mouse capture and bracketed paste.
+- With synchronized output, the terminal shows all of each frame at one time. A big change of the view never shows part of the old frame and part of the new one. A terminal without mode 2026 ignores it.
+- After a crash, Tiza ends a synchronized update that is open. Then it leaves the alternate screen and turns off raw mode. Then it turns off mouse capture and bracketed paste.
 - An error in an agent request does not stop Tiza. Tiza answers the request with an error and writes a line to `panics.log`.
 - Tiza does not read `COLORTERM` in its own code. For one theme, it sends the same colors to each terminal. See [Environment variables](../concepts/privacy-and-network.md#environment-variables).
 - No key needs the kitty keyboard protocol. See [Keys](#keys).

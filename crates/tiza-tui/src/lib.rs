@@ -27,7 +27,8 @@ use crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
     Event, KeyCode, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
 };
-use crossterm::execute;
+use crossterm::terminal::{BeginSynchronizedUpdate, EndSynchronizedUpdate};
+use crossterm::{execute, queue};
 use tiza_core::fs::Opened;
 
 use crate::app::{App, Mode, MouseKind, MouseOutcome, Overlay, ViewEdge};
@@ -232,8 +233,7 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
         // One frame, then one poll of the input source: with stdin piped the
         // events come from /dev/tty (crossterm `use-dev-tty`), which is what
         // the smoke test is there to prove.
-        terminal
-            .draw(|f| ui::draw(f, &mut app))
+        draw_frame(&mut terminal, &mut app)
             .and_then(|_| event::poll(Duration::from_millis(100)))
             .map(|_| End::Quit)
     } else if app.quit {
@@ -467,12 +467,44 @@ fn spare_answered_requests() {
             // Caught and answered: its place and message go to panics.log.
             crate::app::note_request_panic(info);
         } else {
+            // A synchronized update that a panic left open (one inside a
+            // frame) ends first, before ratatui's hook leaves the alternate
+            // screen. With no update open, the terminal ignores it.
+            let _ = execute!(io::stdout(), EndSynchronizedUpdate);
             // A dead terminal on stderr would make ratatui's restore and the
             // crash message panic in the hook, an abort.
             silence_dead_stderr();
             inner(info);
         }
     }));
+}
+
+/// Draws one frame, and the terminal paints it at once: the output of the
+/// frame goes in a synchronized update (DEC mode 2026), so that a big
+/// change never shows half the frame before and half the new one. The
+/// update begins after the layout, when ratatui writes the frame, so that
+/// a slow layout never keeps it open; it ends after the flush, also when
+/// the draw fails. A terminal without mode 2026 ignores both.
+fn draw_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
+    let drawn = terminal.draw(|f| {
+        ui::draw(f, app);
+        // Test hooks, only with the `test-hooks` feature: a panic at the
+        // end of the layout, before the update begins, and one inside the
+        // update, for the tests that no update stays open.
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "draw:panic-in-layout") {
+            panic!("TIZA_TEST_HOOK at the layout");
+        }
+        // The backend writes to the same `Stdout`: its buffer keeps this
+        // before the frame.
+        let _ = queue!(io::stdout(), BeginSynchronizedUpdate);
+        #[cfg(feature = "test-hooks")]
+        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "draw:panic-after-begin") {
+            panic!("TIZA_TEST_HOOK at draw");
+        }
+    });
+    let ended = execute!(io::stdout(), EndSynchronizedUpdate);
+    drawn.and(ended)
 }
 
 fn event_loop(
@@ -498,7 +530,7 @@ fn event_loop(
     let started = |app: &App| app.effect.as_ref().map(|e| e.started);
     loop {
         if needs_draw {
-            if let Err(e) = terminal.draw(|f| ui::draw(f, app)) {
+            if let Err(e) = draw_frame(terminal, app) {
                 return hung_up_or(hangup, e);
             }
             needs_draw = false;
