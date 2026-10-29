@@ -8196,6 +8196,8 @@ pub enum MouseOutcome {
     Selecting,
     Selected,
     Scrolled,
+    /// A button ended an enter effect, as a key does, and did nothing else.
+    EndedEffect,
 }
 
 impl App {
@@ -8241,6 +8243,18 @@ impl App {
         if !self.mouse || self.present || self.overlay != Overlay::None {
             return MouseOutcome::Ignored;
         }
+        // A button ends an enter effect and does nothing else, as a key
+        // does; the wheel lets it play, as the keys that only move the view.
+        if self.is_playing_effect()
+            && matches!(
+                kind,
+                MouseKind::Down | MouseKind::Drag | MouseKind::OtherButton
+            )
+        {
+            self.finish_effect();
+            self.drag_from = None;
+            return MouseOutcome::EndedEffect;
+        }
         match kind {
             // The wheel moves the cursor three lines (like `j`/`k`): the frame
             // keeps the cursor visible, so moving the cursor is what scrolls.
@@ -8252,6 +8266,7 @@ impl App {
                 self.move_cursor(-3);
                 MouseOutcome::Scrolled
             }
+            MouseKind::OtherButton => MouseOutcome::Ignored,
             MouseKind::Down => {
                 let Some((line, col)) = self.hit_test(column, row) else {
                     return MouseOutcome::Ignored;
@@ -8324,6 +8339,8 @@ pub enum MouseKind {
     Up,
     ScrollUp,
     ScrollDown,
+    /// The right or the middle button, pressed or dragged.
+    OtherButton,
 }
 
 /// `added` / `updated` for the methods that add or change one annotation,

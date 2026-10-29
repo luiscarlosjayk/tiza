@@ -786,3 +786,123 @@ fn an_effect_plays_at_60_frames_a_second_unless_the_config_says_30() {
     assert_eq!(default, Duration::from_micros(16_667));
     assert_eq!(thirty, Duration::from_micros(33_333));
 }
+
+/// With the mouse on, in normal mode, a button ends the effect as a key
+/// does and does nothing else; the wheel lets it play. Presentation mode
+/// ignores the mouse.
+#[test]
+fn a_mouse_button_ends_the_effect_and_the_wheel_lets_it_play() {
+    use tiza_tui::app::{MouseKind, MouseOutcome};
+    for (kind, ends) in [
+        (MouseKind::Down, true),
+        (MouseKind::Drag, true),
+        (MouseKind::OtherButton, true),
+        (MouseKind::ScrollDown, false),
+        (MouseKind::ScrollUp, false),
+    ] {
+        let live = scrolled_effect(&format!("mouse-{kind:?}"));
+        let (out, playing, moved) = live.with(move |a| {
+            a.mouse = true;
+            let cursor = (a.cursor_line, a.cursor_col);
+            let out = a.on_mouse(kind, 10, 3);
+            (
+                out,
+                a.is_playing_effect(),
+                (a.cursor_line, a.cursor_col) != cursor,
+            )
+        });
+        assert_eq!(playing, !ends, "{kind:?}: {out:?}");
+        if ends {
+            assert_eq!(out, MouseOutcome::EndedEffect, "{kind:?}");
+            assert!(!moved, "{kind:?}: the button did something else");
+        }
+    }
+    let live = presenting_effect("mouse-present", false);
+    let (out, playing) = live.with(|a| {
+        a.mouse = true;
+        (a.on_mouse(MouseKind::Down, 10, 3), a.is_playing_effect())
+    });
+    assert_eq!((out, playing), (MouseOutcome::Ignored, true));
+}
+
+/// The real TUI with the mouse on, in normal mode: a right click (SGR)
+/// during an effect ends it, and the wheel does not. The effect plays 100
+/// times slower, so it is still playing when the mouse comes.
+#[test]
+fn a_right_click_ends_the_effect_in_the_real_tui() {
+    let dir = scratch("mouse-right-click");
+    std::fs::copy(
+        fixture("shared/enter_effects/drop.tiza"),
+        dir.join("drop.tiza"),
+    )
+    .unwrap();
+    let body = r##"
+import json
+binary, cwd = sys.argv[1], sys.argv[2]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="effect:slow")
+s = Pty([binary, "--no-save", "--mouse", "--theme", "dark", "--socket", "s.sock", "drop.tiza"], 30, 100, env=env)
+
+def effect():
+    r = subprocess.run([binary, "--socket", "s.sock", "api", "status"], capture_output=True, text=True, timeout=10)
+    return json.loads(r.stdout).get("effect", False) if r.returncode == 0 else None
+
+def until(want, what):
+    end = time.monotonic() + 10
+    while time.monotonic() < end:
+        if effect() == want:
+            return True
+        s.settle(0.05)
+    print("WAIT_TIMEOUT", what, flush=True)
+    return False
+
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+    s.send(b"n")
+    if until(True, "the effect starts"):
+        s.send(b"\x1b[<65;20;5M")
+        s.settle(0.3)
+        print("AFTER_WHEEL", effect(), flush=True)
+        s.send(b"\x1b[<2;20;5M\x1b[<2;20;5m")
+        until(False, "the right click ends the effect")
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "click.py",
+        body,
+        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
+    assert!(
+        out.contains("AFTER_WHEEL True"),
+        "the wheel ended it: {out}"
+    );
+}
+
+/// After a button ends the effect, the rest of the gesture (a drag, the
+/// release) selects nothing, also from a drag that an earlier lost
+/// release left open.
+#[test]
+fn the_gesture_that_ends_an_effect_selects_nothing() {
+    use tiza_tui::app::{MouseKind, MouseOutcome};
+    let live = scrolled_effect("mouse-gesture");
+    let outs = live.with(|a| {
+        a.mouse = true;
+        a.drag_from = Some((1, 0));
+        [
+            a.on_mouse(MouseKind::Down, 10, 3),
+            a.on_mouse(MouseKind::Drag, 14, 6),
+            a.on_mouse(MouseKind::Up, 14, 6),
+        ]
+    });
+    assert_eq!(
+        outs,
+        [
+            MouseOutcome::EndedEffect,
+            MouseOutcome::Ignored,
+            MouseOutcome::Ignored
+        ]
+    );
+    assert!(live.with(|a| a.selection().is_none()), "a selection");
+}

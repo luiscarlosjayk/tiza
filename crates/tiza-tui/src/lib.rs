@@ -591,6 +591,9 @@ fn event_loop(
                         MouseEventKind::Up(MouseButton::Left) => Some(MouseKind::Up),
                         MouseEventKind::ScrollUp => Some(MouseKind::ScrollUp),
                         MouseEventKind::ScrollDown => Some(MouseKind::ScrollDown),
+                        MouseEventKind::Down(_) | MouseEventKind::Drag(_) => {
+                            Some(MouseKind::OtherButton)
+                        }
                         _ => None,
                     };
                     if let Some(k) = kind

@@ -57,7 +57,7 @@ For other terminals, read the documentation of the terminal. You can also type `
 | Drag over two or more lines | Selects those lines. |
 | Wheel | Moves the cursor three lines, up or down. |
 
-The right and the middle button do nothing.
+The right and the middle button do nothing. During an enter effect, a click or a drag of any button ends the effect and does nothing else, as a key does. The wheel lets the effect play.
 
 ## Selection keys
 

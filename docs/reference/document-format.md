@@ -642,6 +642,7 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 - The effect plays when you go forward one step: `n`, an auto-advance, or a goto to the next step. It plays after the typing of the step. While the step types, the dim of the step before stays when the dim fades at the step: a spotlight with `fade` starts or stops there. If not, the dim of the step shows while it types.
 - A goto that goes forward more than one step, a step back, `p` and the loop back to step 0 show the final drawing. When the document opens, Tiza also shows the final drawing. Thus an annotation at step 0 never plays its effect.
 - A key ends the effect, and Tiza ignores that key. A key that ends the typing of a step also ends its effect.
+- With the mouse on, in normal mode, a click or a drag of any button ends the effect as a key does. The wheel lets the effect play.
 - In presentation mode, a key that only moves the view does not end the effect: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves and the effect continues. Thus a trackpad or a mouse wheel does not end the effect, because the terminal sends it as `↑` and `↓`. When the live pointer is on, these keys end the effect, as any other key does.
 - A change of the live pointer ends the effect, for example when an agent points at a line or the pointer goes off.
 - The auto-advance countdown starts when the effect ends.
