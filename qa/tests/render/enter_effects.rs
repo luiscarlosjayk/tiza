@@ -456,6 +456,37 @@ fn the_text_of_a_strike_fades_in_along_its_stroke_as_with_an_underline() {
 }
 
 #[test]
+fn a_strike_that_fades_in_never_hides_its_letters() {
+    // A strike with fade: its letters fade from the code and get their
+    // mark at half of the fade. A letter never goes away (its colour is
+    // never the colour of its background).
+    let doc = open(&fixture("render/enter_effects/strike_fade.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(2, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 2 has an effect");
+    let c = &l.canvas;
+    let mut cells = painted(&trace, c.width, "x1", Part::Stroke);
+    cells.retain(|&(x, y)| !c.get(x, y).unwrap().sym.trim().is_empty());
+    assert!(!cells.is_empty(), "x1 has no letters");
+    for &(x, y) in &cells {
+        let fin = c.get(x, y).unwrap();
+        for t in 0..=FADE_MS {
+            let cell = at_time(&plan, c, t).get(x, y).unwrap().clone();
+            assert_ne!(
+                cell.style.fg, cell.style.bg,
+                "({x}, {y}) is hidden at {t} ms"
+            );
+            let marked = cell.sym == fin.sym;
+            assert_eq!(
+                marked,
+                t >= FADE_MS / 2,
+                "({x}, {y}) at {t} ms: {:?}",
+                cell.sym.as_str()
+            );
+        }
+    }
+}
+
+#[test]
 fn the_text_of_a_callout_comes_in_after_the_longest_stroke_of_the_step() {
     let doc = open(&fixture("render/enter_effects/strokes.tiza"));
     let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(6, 100), None);

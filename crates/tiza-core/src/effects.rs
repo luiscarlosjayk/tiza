@@ -237,6 +237,17 @@ impl Plan {
                     sym_at: None,
                     after,
                 },
+                // The text of a strike: it fades from the code, and its mark
+                // comes at half of the fade, so the letter never goes away.
+                (Some(Effect::Fade), _) if is_marked(before, &after) => Change {
+                    i,
+                    before: before.clone(),
+                    start: 0,
+                    end: FADE_MS,
+                    from: Some(before.style),
+                    sym_at: Some(FADE_MS / 2),
+                    after,
+                },
                 // Every part at once: from the cell before when it keeps
                 // its symbol, else from its own background.
                 (Some(Effect::Fade), _) => Change {
