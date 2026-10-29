@@ -63,6 +63,30 @@ fn reveal(doc: &Document, step: u32) -> (Canvas, BTreeMap<(usize, usize), u64>) 
     (fin, first)
 }
 
+/// [`reveal`], by symbol: for each cell whose symbol the effect hides at
+/// first, the moment (ms) from which it has its final symbol, whatever its
+/// colour. The mark of a strike comes with its line, before the colour of
+/// its text ends its fade.
+fn reveal_symbol(doc: &Document, step: u32) -> BTreeMap<(usize, usize), u64> {
+    let theme = Theme::dark();
+    let (l, trace) = layout_traced(doc, &theme, &options(step, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, doc).expect("the step has an effect");
+    let fin = l.canvas.clone();
+    let mut work = l.canvas.clone();
+    let mut first: BTreeMap<(usize, usize), u64> = BTreeMap::new();
+    for t in (0..=plan.duration_ms()).rev() {
+        plan.paint(&mut work, t);
+        for y in 0..fin.height {
+            for x in 0..fin.width {
+                if work.get(x, y).map(|c| &c.sym) != fin.get(x, y).map(|c| &c.sym) {
+                    first.entry((x, y)).or_insert(t + 1);
+                }
+            }
+        }
+    }
+    first
+}
+
 /// The cells (`x`, `y`) of `part` that annotation `id` painted, in the
 /// record of a traced layout `width` cells wide.
 fn painted(trace: &Trace, width: usize, id: &str, part: Part) -> Vec<(usize, usize)> {
@@ -358,10 +382,65 @@ fn brackets_and_strike_are_drawn_from_left_to_right() {
         let mut cells = painted(&trace, l.canvas.width, id, Part::Stroke);
         assert!(cells.len() >= 2, "{id} has no stroke: {cells:?}");
         cells.sort_by_key(|&(x, y)| (x, y));
-        let (_, first) = reveal(&doc, step);
+        // The glyphs of the brackets, the marks of the strike.
+        let first = reveal_symbol(&doc, step);
         let times: Vec<u64> = cells.iter().map(|&(x, y)| at(&first, x, y)).collect();
         nondecreasing(&times, id);
     }
+}
+
+#[test]
+fn the_text_of_a_strike_fades_in_along_its_stroke_as_with_an_underline() {
+    // As the code that an underline recolors, the text of a strike fades
+    // in along the whole stroke; the mark of each letter comes when the
+    // line comes. Halfway, the letters the line passed have the mark, the
+    // others not yet, and all of them are between their two colours.
+    let doc = open(&fixture("render/enter_effects/strokes.tiza"));
+    let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(5, 100), None);
+    let plan = Plan::new(&l.canvas, &trace, &doc).expect("step 5 has an effect");
+    let c = &l.canvas;
+    let mut cells = painted(&trace, c.width, "h3", Part::Stroke);
+    cells.retain(|&(x, y)| !c.get(x, y).unwrap().sym.trim().is_empty());
+    cells.sort();
+    let start = at_time(&plan, c, 0);
+    let half = at_time(&plan, c, plan.duration_ms() / 2);
+    // At 0 ms only the first letter of the line has its mark.
+    let at_start = cells
+        .iter()
+        .filter(|&&(x, y)| start.get(x, y).unwrap().sym == c.get(x, y).unwrap().sym)
+        .count();
+    assert!(at_start <= 1, "{at_start} letters have their mark at 0 ms");
+    let (mut marked, mut not_yet) = (0, 0);
+    for &(x, y) in &cells {
+        let (fin, was, now) = (
+            c.get(x, y).unwrap(),
+            start.get(x, y).unwrap(),
+            half.get(x, y).unwrap(),
+        );
+        assert!(
+            now.style.fg != was.style.fg && now.style.fg != fin.style.fg,
+            "({x}, {y}) halfway is not between its colours: {:?}, {:?}, {:?}",
+            was.style.fg,
+            now.style.fg,
+            fin.style.fg
+        );
+        if now.sym == fin.sym {
+            marked += 1;
+            assert_eq!(
+                not_yet, 0,
+                "({x}, {y}) has its mark after a letter with none"
+            );
+        } else {
+            // No mark yet: the symbol of the code, as at 0 ms.
+            assert_eq!(now.sym, was.sym, "({x}, {y})");
+            not_yet += 1;
+        }
+    }
+    assert!(
+        marked > 0 && not_yet > 0,
+        "{marked} marked, {not_yet} not yet"
+    );
+    assert_eq!(at_time(&plan, c, plan.duration_ms()).to_ansi(), c.to_ansi());
 }
 
 #[test]

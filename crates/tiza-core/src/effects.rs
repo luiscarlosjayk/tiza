@@ -84,6 +84,10 @@ struct Change {
     /// The style the cell fades from, between `start` and `end` (with the
     /// symbol of `after`). `None`: it changes at once, at `start`.
     from: Option<CellStyle>,
+    /// When the symbol of `after` comes, if later than `start`: until then
+    /// the cell keeps the symbol of `before`. The text of a strike fades in
+    /// along the whole stroke, and its mark comes when the line comes.
+    sym_at: Option<u64>,
 }
 
 /// The effect of one step: what each changed cell shows at each moment.
@@ -142,13 +146,20 @@ impl Plan {
             stroke_end = stroke_end.max(ms);
             for (k, (_, i)) in cells.into_iter().enumerate() {
                 let at = k as u64 * ms / n;
+                let before = shown_before(&trace.cells[&i], &effects).clone();
+                let after = canvas.cell_at(i).clone();
+                // The text of a strike (its symbol with the mark): its style
+                // fades in along the whole stroke, as the code that an
+                // underline recolors, and the mark comes when the line comes.
+                let marked = is_marked(&before, &after);
                 changes.push(Change {
                     i,
-                    before: shown_before(&trace.cells[&i], &effects).clone(),
-                    after: canvas.cell_at(i).clone(),
-                    start: at,
-                    end: at,
-                    from: None,
+                    start: if marked { 0 } else { at },
+                    end: if marked { ms } else { at },
+                    from: marked.then_some(before.style),
+                    sym_at: marked.then_some(at),
+                    before,
+                    after,
                 });
             }
         }
@@ -167,6 +178,7 @@ impl Plan {
                     start: 0,
                     end: timed[r.ann].unwrap_or(FADE_MS),
                     from: Some(before.style),
+                    sym_at: None,
                     after,
                 },
                 // Text: after the longest stroke, from its own background.
@@ -176,6 +188,7 @@ impl Plan {
                     start: stroke_end,
                     end: stroke_end + TEXT_FADE_MS,
                     from: Some(hidden(&after, before)),
+                    sym_at: None,
                     after,
                 },
                 // An older line that crosses the new stroke: a fade cannot
@@ -187,6 +200,7 @@ impl Plan {
                     start: FADE_MS / 2,
                     end: FADE_MS / 2,
                     from: None,
+                    sym_at: None,
                     after,
                 },
                 // Every part at once: from the cell before when it keeps
@@ -201,6 +215,7 @@ impl Plan {
                     } else {
                         hidden(&after, before)
                     }),
+                    sym_at: None,
                     after,
                 },
             };
@@ -220,6 +235,7 @@ impl Plan {
                 start: 0,
                 end: FADE_MS,
                 from: Some(from),
+                sym_at: None,
             });
         }
         if changes.is_empty() {
@@ -304,6 +320,13 @@ impl Plan {
                     }
                 }
             };
+            let cell = match c.sym_at {
+                Some(at) if t_ms < at && t_ms < c.end => Cell {
+                    sym: c.before.sym.clone(),
+                    ..cell
+                },
+                _ => cell,
+            };
             canvas.set_cell_at(c.i, cell);
         }
     }
@@ -324,6 +347,13 @@ impl Plan {
         }
         out
     }
+}
+
+/// Whether `after` is `before` with a mark over it: the text of a strike
+/// (U+0336 after the symbol), a symbol or the second half of a wide one.
+fn is_marked(before: &Cell, after: &Cell) -> bool {
+    let (b, a) = (before.sym.as_str(), after.sym.as_str());
+    (!b.is_empty() && a.len() > b.len() && a.starts_with(b)) || (b.is_empty() && a.is_empty())
 }
 
 /// The cell that the first frame shows where `r` changes: the cell as
@@ -419,6 +449,7 @@ mod tests {
             start: 0,
             end: 10,
             from: None,
+            sym_at: None,
         }
     }
 
