@@ -223,10 +223,12 @@ pub struct Traced {
     /// or as another annotation of the step left it, with what other
     /// painters did to it since.
     pub before: Cell,
-    /// When another annotation of the step painted the cell first: that
-    /// annotation and the cell as it found it. If that annotation comes
-    /// in with an effect, the first frame does not show what it painted.
-    pub under: Option<(usize, Cell)>,
+    /// The other annotations of the step that painted the cell before,
+    /// the first one first: each one, the part it painted and the cell as
+    /// it found it. If one of them comes in with an effect, the first
+    /// frame does not show what it painted. A stroke counts the cells that
+    /// it lost this way to time its cells.
+    pub under: Vec<(usize, Part, Cell)>,
 }
 
 /// The record of a traced layout: what the annotations of the step
@@ -345,7 +347,7 @@ impl Canvas {
                         if r.ann == ann {
                             r.part = if restyle { r.part.max(part) } else { part };
                         } else if !restyle {
-                            r.under = Some((r.ann, r.before.clone()));
+                            r.under.push((r.ann, r.part, r.before.clone()));
                             r.ann = ann;
                             r.part = part;
                             r.before = before.clone();
@@ -355,7 +357,7 @@ impl Canvas {
                         ann,
                         part,
                         before: before.clone(),
-                        under: None,
+                        under: Vec::new(),
                     });
             }
             // Another painter writes over it: the cell is its.
@@ -377,7 +379,7 @@ impl Canvas {
         // Another painter: what it does shows before the effect too.
         if let Some(r) = t.cells.get_mut(&i) {
             r.before.style = r.before.style.merge(style);
-            if let Some((_, cell)) = &mut r.under {
+            for (_, _, cell) in &mut r.under {
                 cell.style = cell.style.merge(style);
             }
         }
@@ -520,7 +522,7 @@ impl Canvas {
                         sym: Sym::new(sym),
                         style,
                     };
-                    if let Some((_, cell)) = &mut r.under {
+                    for (_, _, cell) in &mut r.under {
                         let (sym, style) = over(cell.sym.as_str(), cell.style);
                         *cell = Cell {
                             sym: Sym::new(sym),

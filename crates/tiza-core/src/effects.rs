@@ -140,15 +140,25 @@ impl Plan {
             // Every stroke records its path ([`Trace::paths`]). A stroke
             // with no path would go in the order of its cells.
             let has_path = trace.paths.iter().any(|(a, _)| *a == ann);
-            let mut cells: Vec<(usize, usize)> = trace
+            // The cells of its stroke, also those that another annotation
+            // of the step painted over after it (`own` false): they keep
+            // the times of the cells that it keeps.
+            let mut cells: Vec<(usize, usize, bool)> = trace
                 .cells
                 .iter()
-                .filter(|(_, r)| r.ann == ann && r.part == Part::Stroke)
-                .map(|(&i, _)| {
+                .filter_map(|(&i, r)| {
+                    let own = r.ann == ann && r.part == Part::Stroke;
+                    let lost = r
+                        .under
+                        .iter()
+                        .any(|(p, part, _)| *p == ann && *part == Part::Stroke);
+                    (own || lost).then_some((i, own))
+                })
+                .map(|(i, own)| {
                     let (x, y) = xy(i);
                     match path_position(trace, ann, x, y) {
-                        Some(along) if has_path => (along, i),
-                        _ => (i, i),
+                        Some(along) if has_path => (along, i, own),
+                        _ => (i, i, own),
                     }
                 })
                 .collect();
@@ -165,7 +175,10 @@ impl Plan {
             let ms = (n * STROKE_MS_PER_CELL).clamp(STROKE_MIN_MS, STROKE_MAX_MS);
             *slot = Some(ms);
             stroke_end = stroke_end.max(ms);
-            for (k, (_, i)) in cells.into_iter().enumerate() {
+            for (k, (_, i, own)) in cells.into_iter().enumerate() {
+                if !own {
+                    continue;
+                }
                 let at = k as u64 * ms / n;
                 let before = shown_before(&trace.cells[&i], &effects).clone();
                 let after = canvas.cell_at(i).clone();
@@ -378,14 +391,19 @@ fn is_marked(before: &Cell, after: &Cell) -> bool {
 }
 
 /// The cell that the first frame shows where `r` changes: the cell as
-/// its annotation found it, or, when another annotation of the step
-/// painted it first and comes in with an effect, the cell as that one
-/// found it, because the first frame does not show that one either.
+/// its annotation found it. When another annotation of the step painted
+/// it before and comes in with an effect, the first frame does not show
+/// that one either: then the cell as that one found it, and so on down
+/// to an annotation with no effect, or to the cell before the step.
 fn shown_before<'a>(r: &'a Traced, effects: &[Option<Effect>]) -> &'a Cell {
-    match &r.under {
-        Some((first, cell)) if effects[*first].is_some() => cell,
-        _ => &r.before,
+    let mut shown = &r.before;
+    for (painter, _, found) in r.under.iter().rev() {
+        if effects[*painter].is_none() {
+            break;
+        }
+        shown = found;
     }
+    shown
 }
 
 /// The position of cell (`x`, `y`) along the stroke paths of annotation
