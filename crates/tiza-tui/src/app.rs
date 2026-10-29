@@ -4026,6 +4026,10 @@ impl App {
         self.present_message_until = None;
         // A key of the view and a reveal are for presentation mode only.
         self.view_request = None;
+        // A selection of normal mode cannot be seen there: it goes.
+        if on {
+            self.selected = None;
+        }
         if !on && self.scroll_held.as_ref().is_some_and(ScrollHeld::reveals) {
             self.scroll_held = None;
         }
@@ -5431,6 +5435,19 @@ impl App {
     /// the first line of what it names; with none of them drawn it has no
     /// line, and comes last.
     fn drawn_annotations(&self) -> Vec<(String, Option<u32>)> {
+        let mut v: Vec<(u32, String, Option<u32>)> = self
+            .drawn_annotation_lines()
+            .into_iter()
+            .map(|(id, line, _)| (line.unwrap_or(u32::MAX), id, line))
+            .collect();
+        v.sort();
+        v.into_iter().map(|(_, id, line)| (id, line)).collect()
+    }
+
+    /// [`App::drawn_annotations`], each with its first line and its line
+    /// ranges on the screen (those of what a spotlight of ids names), in the
+    /// order of the document.
+    fn drawn_annotation_lines(&self) -> Vec<DrawnLines> {
         let step = self.doc.step;
         let view;
         let doc = if self.doc.moves.is_empty() {
@@ -5439,20 +5456,28 @@ impl App {
             view = self.doc.view_at(step);
             &view.doc
         };
-        let first_line = |a: &Annotation| match &a.shape {
-            Shape::Spotlight {
-                from_line: None,
-                ids,
-                ..
-            } => ids
-                .iter()
-                .filter_map(|id| doc.find_annotation(id))
-                .filter_map(|t| t.shape.line_ranges().first().map(|r| r.0))
-                .min(),
-            shape => shape.line_ranges().first().map(|r| r.0),
+        let ranges_of = |a: &Annotation| -> (Option<u32>, Vec<(u32, u32)>) {
+            match &a.shape {
+                Shape::Spotlight {
+                    from_line: None,
+                    ids,
+                    ..
+                } => {
+                    let ranges: Vec<(u32, u32)> = ids
+                        .iter()
+                        .filter_map(|id| doc.find_annotation(id))
+                        .filter_map(|t| t.shape.line_ranges().first().copied())
+                        .collect();
+                    (ranges.iter().map(|r| r.0).min(), ranges)
+                }
+                shape => {
+                    let ranges = shape.line_ranges();
+                    (ranges.first().map(|r| r.0), ranges)
+                }
+            }
         };
         let mut cuts = None;
-        let mut v: Vec<(u32, String, Option<u32>)> = Vec::new();
+        let mut v = Vec::new();
         for a in &doc.annotations {
             let lines = a.shape.line_ranges();
             let drawn = a.step <= step
@@ -5474,11 +5499,70 @@ impl App {
                     continue;
                 }
             }
-            let line = first_line(a);
-            v.push((line.unwrap_or(u32::MAX), a.id.clone(), line));
+            let (line, ranges) = ranges_of(a);
+            v.push((a.id.clone(), line, ranges));
         }
-        v.sort();
-        v.into_iter().map(|(_, id, line)| (id, line)).collect()
+        v
+    }
+
+    /// Presentation mode: the lines where the annotations that the screen
+    /// draws start in the view now (the first line of each one that is in
+    /// the view), in the order of the screen.
+    fn annotation_lines_in_view(&self) -> Vec<u32> {
+        let layout = self.screen_layout_with_pointer(self.screen_width());
+        // From the view the next frame shows, as `ui::draw` does: a step
+        // change or an agent since the last frame keeps the line on top.
+        let top = self
+            .view_anchor
+            .and_then(|a| view_row_of(&layout, a))
+            .unwrap_or(self.scroll);
+        let end = top + self.screen_height();
+        let in_view = |l: u32| {
+            layout
+                .row_of_line
+                .get(&l)
+                .is_some_and(|&r| r >= top && r < end)
+        };
+        let mut v: Vec<u32> = self
+            .drawn_annotation_lines()
+            .into_iter()
+            .filter_map(|(_, _, ranges)| {
+                ranges
+                    .iter()
+                    .filter_map(|&(f, t)| (f..=t).find(|l| in_view(*l)))
+                    .min()
+            })
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    /// `Tab` / `Shift-Tab` in presentation mode: the next line under the
+    /// cursor (or the previous one above it) where an annotation that the
+    /// view shows starts, and round to the first (or the last). Going from
+    /// the cursor line, the annotations of one line are one stop, so each
+    /// `Tab` moves the pointer, and it goes from where the presenter put
+    /// the cursor. The
+    /// hidden cursor goes there, and the live pointer with it; the view
+    /// does not move. Nothing is selected, so no key edits an annotation
+    /// that the presenter cannot see. With none in the view, nothing
+    /// happens.
+    fn tab_in_view(&mut self, dir: i32) {
+        let lines = self.annotation_lines_in_view();
+        let from = self.cursor_line;
+        let next = if dir >= 0 {
+            lines.iter().find(|l| **l > from).or(lines.first())
+        } else {
+            lines.iter().rev().find(|l| **l < from).or(lines.last())
+        };
+        let Some(&line) = next else {
+            return;
+        };
+        self.cursor_line = line;
+        self.clamp_col();
+        // In the view already: not a motion for the view to follow.
+        self.view_cursor_line = line;
+        self.selected = None;
     }
 
     /// Tab / Shift-Tab: select the next or the previous annotation that the
@@ -5486,6 +5570,10 @@ impl App {
     /// The others (another file's, a spotlight past its `until`) are in the
     /// list (`L`, Enter).
     pub fn select_annotation(&mut self, dir: i32) {
+        if self.present {
+            self.tab_in_view(dir);
+            return;
+        }
         let drawn = self.drawn_annotations();
         if drawn.is_empty() {
             self.selected = None;
@@ -5522,7 +5610,9 @@ impl App {
 
     /// Selects annotation `id`, as Tab does. The cursor goes to its first
     /// line on the screen when the step draws it; one that the step does
-    /// not draw is selected all the same, and the cursor stays.
+    /// not draw is selected all the same, and the cursor stays. In
+    /// presentation mode nothing is selected (no key edits what the
+    /// presenter cannot see): the cursor goes there.
     fn focus_annotation(&mut self, id: String) {
         let line = self
             .drawn_annotations()
@@ -5530,7 +5620,9 @@ impl App {
             .find(|(i, _)| *i == id)
             .and_then(|(_, line)| line);
         self.move_cursor_to(line);
-        self.selected = Some(id);
+        if !self.present {
+            self.selected = Some(id);
+        }
     }
 
     /// Enter on a row of the list: the step of that annotation, with it
@@ -10058,6 +10150,10 @@ pub struct ScrollHeld {
     /// another size the view shows the target again from where it is.
     pub show_row: Option<(usize, (usize, usize))>,
 }
+
+/// An annotation that the screen draws ([`App::drawn_annotation_lines`]):
+/// its id, its first line on the screen and its line ranges there.
+type DrawnLines = (String, Option<u32>, Vec<(u32, u32)>);
 
 /// What [`App::rows_to_come`] depends on: the step, the width, a typing or
 /// a `wait` of the step, the newest edit of the document, and the stable

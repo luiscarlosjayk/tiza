@@ -842,6 +842,13 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // ---- selection mode: motions extend, action keys consume ----
     if matches!(app.mode, Mode::Select { .. }) {
         match code {
+            // Presentation mode does not show the selection: `Tab` closes
+            // it and goes on, and the pointer to the line of the `Tab`.
+            KeyCode::Tab | KeyCode::BackTab if app.present => {
+                app.mode = Mode::Normal;
+                app.arrow_from = None;
+                app.select_annotation(if code == KeyCode::Tab { 1 } else { -1 });
+            }
             KeyCode::Esc => {
                 app.mode = Mode::Normal;
                 app.arrow_from = None;

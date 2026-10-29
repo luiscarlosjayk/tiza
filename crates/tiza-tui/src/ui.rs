@@ -190,8 +190,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // top border and title. A held view already shows the cursor: on the
     // first line of its target, or on a pointer that stayed. In
     // presentation mode the view follows the
-    // cursor only when its line changed (an agent, Tab, a `cursor` move),
-    // not on every frame: the view stays where the presenter put it.
+    // cursor only when its line changed (an agent, Enter in the list, a
+    // `cursor` move), not on every frame: the view stays where the
+    // presenter put it. (`Tab` goes only to what the view shows.)
     let follow = !app.present || app.cursor_line != app.view_cursor_line;
     if app.scroll_held.is_none()
         && follow

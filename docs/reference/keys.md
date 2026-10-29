@@ -106,12 +106,16 @@ Press one of these keys while a selection is open:
 - `Tab` goes through the annotations that the screen draws, in the order of their first line on the screen. After the last one, it goes back to the first one.
 - When two annotations start on the same line, `Tab` takes them in the order of their ids as text. Thus `a10` comes before `a2`.
 - `Tab` does not select an annotation that the step does not draw. Examples are a spotlight of an earlier step and an annotation of another file. To select one of these, press `L`, go to its row and press `Enter`.
-- `Tab` moves the cursor to the line where the screen draws the annotation. A move of the step can put it on another line than the line that it was added on. A spotlight that names annotations takes the first line of these annotations.
+- `Tab` moves the cursor to the line where the screen draws the annotation. A move of the step can put it on another line than the line that it was added on. A spotlight that names annotations takes the first line of these annotations. An arrow takes the line where it starts, also when it points up.
 - `Tab` also leaves out a note or a callout that the screen has no room for, and the annotations of the step while its moves type.
 - With an annotation selected, `Enter`, `e`, `c`, `x`, `+` and `-` act on the annotation. The other keys do their usual action.
 - For a note, `Enter` opens the text of the note. For a callout, it opens the title.
 - Tiza refuses `+` on an annotation at step 999. It also refuses `+` and `-` when the lines of the annotation are not in the code of the new step. The status bar shows the error.
 - When `Tab` finds no annotation, it shows a message. See [Messages](#messages).
+- In presentation mode, `Tab` goes to the next line under the cursor where an annotation that the view shows starts. After the last one in the view, it goes back to the first one. `Shift-Tab` goes to the previous one, above the cursor. The annotations that start on one line are one stop, so each `Tab` moves the cursor. The view does not move.
+- In presentation mode, an annotation starts on its first line in the view. Thus an annotation that starts above the view starts on the top line, and an arrow that points up starts on its top end. So the order can be different from normal mode.
+- In presentation mode, `Tab` goes from the cursor line, also after you move the pointer with `j` or `k`. With a selection of lines open, which presentation mode does not show, `Tab` closes the selection first. With nothing in the view, `Tab` does nothing.
+- In presentation mode, `Tab` selects nothing, because you cannot see a selection there. Thus `Enter`, `e`, `c`, `x`, `+` and `-` do not change an annotation. When presentation mode starts, it clears the annotation that `Tab` selected.
 
 The status bar shows the selected annotation and its keys. A message hides them.
 
@@ -131,8 +135,9 @@ The status bar shows the selected annotation and its keys. A message hides them.
 - Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
 - In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. A trackpad and a mouse wheel also move the view. With mouse capture, each notch moves it three rows. Without mouse capture, the terminal sends them as `↑` and `↓`.
 - With the live pointer on, the keys of the view move the pointer, as in normal mode. The view follows the pointer.
-- The view stays on the same code when you go to another step, when an agent changes an annotation and when the terminal changes size. At a step change, these things move it: a `scroll`, a `cursor` or a `code.link` move of the step, the return to the top at a step that no `scroll` move reaches (see [Scroll](document-format.md#scroll)), what comes in at the step, and code that is not on screen at the new step (another file, or lines out of the window of a `code.link`). When an agent, `Tab` or `Enter` in the list moves the cursor to another line, the view follows the cursor.
-- When you go to a step, its new annotations and the lines that its moves write come into the view, and the view moves as little as possible. When they do not fit, the view shows their start. The hidden cursor goes to the first of these lines, so `f` points at it. This also occurs with `:goto`, with `:step`, with the auto-advance, and when Tiza opens at a step in presentation mode. It does not occur when you go back one step, when you go back to step 0, or when you start presentation mode with `P`. Until you move the view, what came in stays in view when the terminal changes size.
+- `Tab` goes only through the annotations that the view shows, and the view does not move. With the live pointer on, the pointer goes with `Tab`. See [Edit an annotation](#edit-an-annotation).
+- The view stays on the same code when you go to another step, when an agent changes an annotation and when the terminal changes size. At a step change, these things move it: a `scroll`, a `cursor` or a `code.link` move of the step, the return to the top at a step that no `scroll` move reaches (see [Scroll](document-format.md#scroll)), what comes in at the step, and code that is not on screen at the new step (another file, or lines out of the window of a `code.link`). When an agent or `Enter` in the list moves the cursor to another line, the view follows the cursor.
+- When you go to a step, its new annotations and the lines that its moves write come into the view, and the view moves as little as possible. When they do not fit, the view shows their start. The hidden cursor goes to the first of these lines, so `f` points at it. This also occurs with `:goto`, with `:step`, with the auto-advance, and when Tiza opens at a step in presentation mode. It does not occur when you go back one step (also with `:goto` or `:step`), when you go back to step 0, or when you start presentation mode with `P`. When you go back to a step that no `scroll` move reaches, the view goes to the top (see [Scroll](document-format.md#scroll)). Until a key moves the view or the cursor, what came in stays in view when the terminal changes size.
 - A `scroll`, a `cursor` or a `code.link` move of the step places the view, and then nothing else comes into the view. A `scroll` move that finds no target does not place the view. A `cursor` or a `code.link` of an earlier step does not move the view, unless the code of the view is not on screen at the new step. Then the view shows the code as that move puts it.
 - The other keys of normal mode also work in presentation mode.
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
@@ -151,7 +156,7 @@ The live pointer works like a laser pointer. It shows one line or a group of lin
 4. Press `f` to turn it off.
 
 - `Esc` also turns off the pointer when no selection, panel or command line is open. In a selection, `Esc` closes only the selection, and the pointer stays on the cursor line.
-- The pointer stays on its line when you change the step.
+- The pointer stays on its line when you change the step. When the step moves the view (a camera move of the step, the return to the top, or in presentation mode what comes in at the step) and the new view does not show the lines of the pointer, the pointer turns off.
 - When a move removes the line of the pointer, the pointer turns off. It also turns off when a move fails at a change of step.
 - After a paste or a reload, the pointer goes to the cursor line.
 - The command line hides the pointer while it is open.
@@ -280,7 +285,8 @@ The help (`?`), the annotation list (`L`) and the agent review (`:review`) are p
 | `q` or `L` | Closes the help. | Closes the list. |
 | `Esc` | Clears the filter, or closes the help. | Clears the filter, or closes the list. |
 
-- In the list, `Enter` on an annotation also selects it, also when the step does not draw it. The cursor goes to its line when the step draws it.
+- In the list, `Enter` on an annotation also selects it, also when the step does not draw it. The cursor goes to its line when the step draws it. In presentation mode, `Enter` does not select the annotation.
+- `Enter` goes to the step of the row as `:goto` does. Then the view follows the cursor to the annotation, so a `scroll` move of that step does not place the view.
 - In the list, `Enter` with no row only closes the list.
 - When the help closes, Tiza goes back to normal mode. It does not go back to the list.
 - When a motion key selects a stale move, the status bar shows `#N is stale: REASON. x deletes it`. The message does not show when the list opens or while you type a filter.
