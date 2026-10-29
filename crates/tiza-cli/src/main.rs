@@ -803,7 +803,8 @@ fn real_main() -> anyhow::Result<()> {
                         from_zero: !skip_zero,
                         margin_cap,
                     };
-                    let frames = tiza_core::anim::frames(&doc, &theme, &anim_opts);
+                    // Made once; each pass of an encoder plays it back.
+                    let take = tiza_core::anim::Take::record(&doc, &theme, &anim_opts);
                     // Which steps the document timed itself.
                     let timed = tiza_core::anim::timed_steps(&doc, &anim_opts);
                     let timed_note = match timed.as_slice() {
@@ -834,10 +835,8 @@ fn real_main() -> anyhow::Result<()> {
                         format!(", plays {loop_count}×")
                     };
                     if format == Format::Webp {
-                        let webp_frames: Vec<(tiza_core::canvas::Canvas, u64)> =
-                            frames.into_iter().map(|f| (f.canvas, f.delay_ms)).collect();
-                        let (bytes, report) = tiza_export::to_webp_anim(
-                            &webp_frames,
+                        let (bytes, report) = tiza_export::to_webp_anim_from(
+                            &take,
                             &theme,
                             &tiza_export::WebpAnimOptions {
                                 svg: svg_opts,
@@ -860,10 +859,8 @@ fn real_main() -> anyhow::Result<()> {
                         return Ok(());
                     }
                     if format == Format::Gif {
-                        let gif_frames: Vec<(tiza_core::canvas::Canvas, u64)> =
-                            frames.into_iter().map(|f| (f.canvas, f.delay_ms)).collect();
-                        let (bytes, report) = tiza_export::to_gif(
-                            &gif_frames,
+                        let (bytes, report) = tiza_export::to_gif_from(
+                            &take,
                             &theme,
                             &tiza_export::GifOptions {
                                 svg: svg_opts,
@@ -886,7 +883,7 @@ fn real_main() -> anyhow::Result<()> {
                         );
                         return Ok(());
                     }
-                    let bytes = encode_video(&frames, &theme, &svg_opts, &png_opts, format, &out)?;
+                    let bytes = encode_video(&take, &theme, &svg_opts, &png_opts, format, &out)?;
                     eprintln!(
                         "wrote {} ({bytes} bytes){timed_note}",
                         tiza_core::printable::printable_text(&out)
@@ -1741,7 +1738,7 @@ fn find_ffmpeg() -> Option<std::path::PathBuf> {
 /// printed command (30 fps, even dimensions, yuv420p for MP4 so every
 /// player opens it). Returns the size of the file written.
 fn encode_video(
-    frames: &[tiza_core::anim::Frame],
+    take: &tiza_core::anim::Take,
     theme: &Theme,
     svg_opts: &tiza_export::SvgOptions,
     png_opts: &tiza_export::PngOptions,
@@ -1762,10 +1759,12 @@ fn encode_video(
     let _cleanup = TempDir(dir.clone());
     let mut list = String::from("ffconcat version 1.0\n");
     let mut total_ms: u64 = 0;
-    for (i, f) in frames.iter().enumerate() {
-        tiza_export::image_size(&f.canvas, svg_opts, png_opts)
+    let mut i = 0usize;
+    // One frame at a time: its PNG is written as it comes.
+    take.each(|f| -> anyhow::Result<()> {
+        tiza_export::image_size(f.canvas, svg_opts, png_opts)
             .context("could not rasterize a frame")?;
-        let svg = tiza_export::to_svg(&f.canvas, theme, svg_opts);
+        let svg = tiza_export::to_svg(f.canvas, theme, svg_opts);
         let png = tiza_export::to_png(&svg, png_opts).context("could not rasterize a frame")?;
         let name = format!("f{i:05}.png");
         std::fs::write(dir.join(&name), png)?;
@@ -1779,7 +1778,9 @@ fn encode_video(
             delay_ms as f64 / 1000.0
         ));
         total_ms += delay_ms;
-    }
+        i += 1;
+        Ok(())
+    })?;
     // The last frame is listed once more so it holds for its duration at
     // all: without the repeat, ffmpeg 6 emits it as a single frame (its
     // `duration` only places the next entry, and there is none). What the
@@ -1790,7 +1791,7 @@ fn encode_video(
     // duration cuts the output at exactly the GIF's length on every
     // version, so the videos are not left to how each ffmpeg treats the
     // tail of a concat list.
-    if let Some(last) = frames.len().checked_sub(1) {
+    if let Some(last) = i.checked_sub(1) {
         list.push_str(&format!("file 'f{last:05}.png'\n"));
     }
     std::fs::write(dir.join("frames.txt"), &list)?;

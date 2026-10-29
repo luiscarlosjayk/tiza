@@ -1631,7 +1631,8 @@ impl ExportJob {
             "gif" | "webp" if animated => {
                 // Every step, the typed moves between them, one geometry
                 // for the take.
-                let frames: Vec<(tiza_core::canvas::Canvas, u64)> = tiza_core::anim::frames(
+                // Made once; each pass of an encoder plays it back.
+                let take = tiza_core::anim::Take::record(
                     doc,
                     &theme,
                     &tiza_core::anim::AnimOptions {
@@ -1641,19 +1642,16 @@ impl ExportJob {
                         from_zero: !self.skip_zero,
                         margin_cap: None,
                     },
-                )
-                .into_iter()
-                .map(|f| (f.canvas, f.delay_ms))
-                .collect();
-                anim_frames = frames.len();
+                );
+                anim_frames = take.len();
                 let svg = tiza_export::SvgOptions {
                     embed_fonts: false,
                     title: None,
                     ..svg_opts.clone()
                 };
                 if format == "webp" {
-                    tiza_export::to_webp_anim(
-                        &frames,
+                    tiza_export::to_webp_anim_from(
+                        &take,
                         &theme,
                         &tiza_export::WebpAnimOptions {
                             svg,
@@ -1664,8 +1662,8 @@ impl ExportJob {
                     .map_err(too_big)?
                     .0
                 } else {
-                    tiza_export::to_gif(
-                        &frames,
+                    tiza_export::to_gif_from(
+                        &take,
                         &theme,
                         &tiza_export::GifOptions {
                             svg,
