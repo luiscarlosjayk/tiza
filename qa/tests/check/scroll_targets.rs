@@ -270,3 +270,30 @@ fn a_patch_keeps_a_line_out_of_the_code_and_refuses_to_remove_a_scroll_line() {
     let err = format!("{:?}", r.error);
     assert!(err.contains("removes the line it scrolls to (6)"), "{err}");
 }
+
+#[test]
+fn a_find_out_of_the_window_of_a_code_link_names_the_window() {
+    // Step 2 shows lines 100-160 of `long.rs`: `fn f30()` is in the file,
+    // out of the window.
+    let dir = scratch("scroll-find-window");
+    let long: String = (1..=200).map(|i| format!("fn f{i}() {{}}\n")).collect();
+    std::fs::write(dir.join("long.rs"), long).unwrap();
+    let doc = json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1}, "code": code(),
+        "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 1, "text": "start"}],
+        "moves": [
+            {"at_step": 2, "action": "code.link", "file": "long.rs", "lines": "100-160"},
+            {"at_step": 2, "action": "scroll", "find": "fn f30()"}
+        ]
+    });
+    let file = dir.join("doc.tiza");
+    std::fs::write(&file, doc.to_string()).unwrap();
+    let (_, findings) = check_json(&file);
+    let moves = moves_of(&findings);
+    assert_eq!(moves.len(), 1, "{moves:?}");
+    assert!(
+        moves[0].2.contains("(lines 100-160)"),
+        "the window: {}",
+        moves[0].2
+    );
+}

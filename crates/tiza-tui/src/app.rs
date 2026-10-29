@@ -6454,7 +6454,20 @@ impl App {
             stale: None,
             held: Vec::new(),
         };
-        let (i, _) = self.add_move_noting(m)?;
+        // A target that does not resolve adds no move: its error names no
+        // move number.
+        let (i, _) = self.add_move_noting(m).map_err(|e| match e {
+            Error::MoveNoMatch { what, .. } => {
+                Error::Invalid(format!("{what} matches nothing in the code at this step"))
+            }
+            Error::Invalid(msg) => {
+                match msg.strip_prefix("move #").and_then(|r| r.split_once(": ")) {
+                    Some((_, rest)) => Error::Invalid(rest.to_string()),
+                    None => Error::Invalid(msg),
+                }
+            }
+            other => other,
+        })?;
         Ok(format!(
             "move #{} added: step {} scrolls to {target} ({align})",
             i + 1,

@@ -319,6 +319,14 @@ fn the_scroll_command_says_its_usage() {
             ":{bad}: {msg}"
         );
     }
+    // A target that does not resolve adds no move, and the message names
+    // no move number.
+    for bad in ["scroll zz", "scroll 999", "scroll @'no such text'"] {
+        live.command(bad);
+        let (msg, error) = live.message().unwrap();
+        assert!(error, ":{bad}: {msg}");
+        assert!(!msg.contains("move #"), ":{bad}: {msg}");
+    }
     let moves = live.api_ok("move.list", serde_json::json!({}));
     assert_eq!(moves["moves"].as_array().unwrap().len(), 5, "nothing added");
     live.command("step 0");

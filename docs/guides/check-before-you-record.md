@@ -23,8 +23,9 @@ The table gives the usual problems. Each finding in the JSON output also has a `
 | Problem | Level |
 |---|---|
 | The document does not follow the `.tiza` format. | Error |
-| An anchor, a marker or a move target does not match at its step. | Error |
-| A move target matches more than one time at its step, and the move has no `occurrence`. | Error |
+| An anchor, a marker or a move target does not match at its step. A `scroll` move is the exception. | Error |
+| A move target matches more than one time at its step, and the move has no `occurrence`. A `scroll` move is the exception. | Error |
+| The target of a `scroll` move does not match at its step, or a `find` matches more than one time and the move has no `occurrence`. The view does not move, or goes to the first match. | Warning |
 | A linked file cannot be read. | Error |
 | An id in the `ids` of a spotlight is unknown. | Error |
 | Two annotations have the same id. | Error |

@@ -511,6 +511,7 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 - In a step that types, a `scroll` move moves the view at its place in the list, before or after a typed move or a `wait`. It takes no time.
 - The annotation can be of a later step. The view then goes to the lines where the annotation will come in.
 - The view keeps rows for the parts of the target that come in later: the borders, the labels and the callouts of an annotation of a later step, or of the step after a typed move or a `wait`. When they come in, the lines of the target keep their rows. The new rows above the target push the code above it up, and the new rows under the target push the code under it down. Rows that come in inside the target make it taller, so its lines move apart.
+- Near the start or the end of the code, the view stops at the first or the last line. The target then stays as near to its place as it can.
 - When the live pointer is on and the view moves, the pointer stays if the new view shows its lines. If not, the pointer goes off.
 - A `scroll` move puts the cursor on the first line of its target. When the live pointer stays, the cursor stays with the pointer: `j` and `k` continue from the pointer. To go to an annotation, press `Tab`.
 - The view moves in normal mode and in presentation mode.

@@ -1054,6 +1054,11 @@ impl Projection {
         // says so (Luis, D7).
         let hits = matches_of(&code, first, text);
         match (s.occurrence, hits.as_slice()) {
+            // In a window the text can be in the file and out of view: say
+            // which lines it looked in, as for a `line`.
+            (_, []) if self.shown.window.is_some() => Err(format!(
+                "find «{text}» matches nothing in the code shown at this step (lines {first}-{last})"
+            )),
             (_, []) => Err(Error::NoMatch(format!("find «{text}»")).to_string()),
             (Some(n), _) => hits
                 .get(n as usize - 1)

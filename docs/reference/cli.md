@@ -200,6 +200,7 @@ The `code` of a finding is one of these:
 | `steps` | Error | An entry of `steps` is not valid. |
 | `steps` | Warning | An entry of `steps` names a step past the last one, or has a key that Tiza does not know. |
 | `move` | Error | A move is not valid, or it does not apply at its step. |
+| `move` | Warning | The target of a `scroll` move does not match at its step, or its `find` matches more than one time. |
 | `rebind` | Error | The `rebind` of a move is not valid, or its target does not match after the patch. |
 | `stale` | Error | In a live instance, a move does not match the code after a reload or a paste. |
 | `unknown_id` | Error | The `ids` of a spotlight name an annotation that does not exist. |
