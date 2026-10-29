@@ -480,12 +480,9 @@ fn event_loop(
     let mut needs_draw = true;
     let mut mouse_captured = app.mouse;
     // While an enter effect plays: its start, and when its next frame is
-    // due. Another effect starts with no frame due.
+    // due ([`frame_due_of`]).
     let mut frame_due: Option<(Instant, Instant)> = None;
-    let due_of = |frame_due: Option<(Instant, Instant)>, app: &App| {
-        let started = app.effect.as_ref()?.started;
-        frame_due.filter(|(s, _)| *s == started).map(|(_, due)| due)
-    };
+    let started = |app: &App| app.effect.as_ref().map(|e| e.started);
     loop {
         if needs_draw {
             if let Err(e) = terminal.draw(|f| ui::draw(f, app)) {
@@ -495,9 +492,9 @@ fn event_loop(
             // The end of the frame: after a slow frame, the loop rests.
             let drawn = Instant::now();
             let period = Duration::from_micros(tiza_core::effects::SCREEN_FRAME_US);
-            frame_due = app.effect.as_ref().map(|e| {
-                let due = next_frame_due(due_of(frame_due, app), drawn, period);
-                (e.started, due)
+            frame_due = started(app).map(|s| {
+                let due = frame_due_of(frame_due, Some(s));
+                (s, next_frame_due(due, drawn, period))
             });
         }
         // `:mouse on|off` changed the flag: tell the terminal.
@@ -529,7 +526,12 @@ fn event_loop(
         if app.typing_tick() {
             needs_draw = true;
         }
-        if app.effect_tick() {
+        // An effect asks for a frame when one is due, and for the final
+        // drawing when it ends. An event that wakes the loop before (the
+        // mouse moves) draws no frame more.
+        if app.effect_tick()
+            && frame_due_of(frame_due, started(app)).is_none_or(|due| Instant::now() >= due)
+        {
             needs_draw = true;
         }
         if app.auto_advance_tick(std::time::Instant::now()) {
@@ -540,11 +542,12 @@ fn event_loop(
         }
         // While typing, poll often enough for a smooth animation. While an
         // effect plays, wait for its next frame: an event of the terminal
-        // (a key, the mouse) wakes the loop before, and a frame more shows.
+        // can wake the loop before, and only one that changes the screen
+        // (a key, a scroll) draws a frame more.
         let wait = if app.is_typing() {
             Duration::from_millis(15)
         } else if app.is_playing_effect() {
-            frame_wait(due_of(frame_due, app), Instant::now())
+            frame_wait(frame_due_of(frame_due, started(app)), Instant::now())
         } else {
             Duration::from_millis(50)
         };
@@ -605,10 +608,22 @@ fn event_loop(
     }
 }
 
+/// When the next frame of the enter effect that started at `started` is
+/// due, from the last frame due (its effect's start, its time): `None`
+/// when no effect plays, or when that frame belongs to an effect before,
+/// so that a new effect starts with no frame due.
+pub fn frame_due_of(
+    frame_due: Option<(Instant, Instant)>,
+    started: Option<Instant>,
+) -> Option<Instant> {
+    let started = started?;
+    frame_due.filter(|(s, _)| *s == started).map(|(_, due)| due)
+}
+
 /// When the next frame of an enter effect is due, after a frame that
 /// ended at `now`: the frames keep to a grid of `period`. A frame that
-/// ends before `due` is one more (an event of the terminal woke the loop)
-/// and does not move the grid; a frame on time moves it one period; a
+/// ends before `due` is one more (the mouse wheel or a resize during
+/// the effect) and does not move the grid; a frame on time moves it one period; a
 /// late frame starts it again one period after `now`, so the loop rests
 /// and does not draw in a burst to catch up.
 pub fn next_frame_due(due: Option<Instant>, now: Instant, period: Duration) -> Instant {

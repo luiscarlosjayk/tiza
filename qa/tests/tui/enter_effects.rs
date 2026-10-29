@@ -476,8 +476,8 @@ fn the_frames_of_an_effect_keep_to_a_grid() {
     // The first frame of an effect starts the grid.
     let due = next(None, t0, p);
     assert_eq!(due, t0 + p);
-    // One more frame before the next is due (a socket request, the
-    // mouse): the grid stays.
+    // One more frame before the next is due (the mouse wheel, a resize):
+    // the grid stays.
     assert_eq!(next(Some(due), t0 + p / 2, p), due);
     // A frame on time, a little after it is due: one period on, so the
     // little delays do not add up.
@@ -518,21 +518,37 @@ fn the_loop_waits_until_the_next_frame_is_due() {
 }
 
 #[test]
-fn after_a_late_frame_the_loop_rests_one_period() {
-    // With `effect:late-frames`, each frame of the effect takes 50 ms more,
-    // longer than the 33 ms between two frames: every frame is late. The
-    // loop rests one period after each, so a frame comes about 83 ms after
-    // the one before. A loop that does not rest draws again at once, about
-    // 50 ms after, at 100 % of a core.
-    let dir = scratch("effect-late");
+fn a_new_effect_starts_with_no_frame_due() {
+    let t0 = Instant::now();
+    let due = t0 + Duration::from_millis(33);
+    let of = tiza_tui::frame_due_of;
+    // The effect that drew the last frame: its next frame.
+    assert_eq!(of(Some((t0, due)), Some(t0)), Some(due));
+    // Another effect started since (a step during an effect): its first
+    // frame shows at once.
+    let later = t0 + Duration::from_millis(5);
+    assert_eq!(of(Some((t0, due)), Some(later)), None);
+    // No effect plays, or no frame yet.
+    assert_eq!(of(Some((t0, due)), None), None);
+    assert_eq!(of(None, Some(t0)), None);
+}
+
+/// The gaps (ms, sorted) between the frames of the effect of step 2 of
+/// `drop.tiza` with `effect:late-frames`, from the second frame on: each
+/// frame takes 50 ms more, longer than the 33 ms between two frames, so
+/// every frame is late. With `mouse`, the TUI has mouse capture on and the
+/// mouse moves about every 5 ms during the effect.
+fn late_frame_gaps(name: &str, mouse: bool) -> Vec<f64> {
+    let dir = scratch(name);
     let source = fixture("shared/enter_effects/drop.tiza");
     std::fs::copy(&source, dir.join("drop.tiza")).unwrap();
     let body = r##"
 import json
-binary, cwd = sys.argv[1], sys.argv[2]
+binary, cwd, mouse = sys.argv[1], sys.argv[2], sys.argv[3] == "mouse"
 os.chdir(cwd)
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="effect:late-frames")
-s = Pty([binary, "--no-save", "--present", "--theme", "dark", "--socket", "s.sock", "drop.tiza"], 30, 100, env=env)
+argv = [binary, "--no-save", "--present", "--theme", "dark", "--socket", "s.sock"]
+s = Pty(argv + (["--mouse"] if mouse else []) + ["drop.tiza"], 30, 100, env=env)
 MARK = b"\x1b[?25l"
 times = []
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
@@ -546,7 +562,18 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
             times.append(time.monotonic())
         return n >= 12
 
-    s.wait_for(frames, 10, "12 frames of the effect")
+    if mouse:
+        end = time.monotonic() + 10
+        x = 0
+        while not frames(s.out) and time.monotonic() < end:
+            # A motion of the mouse with no button (SGR encoding).
+            x = x % 60 + 1
+            s.send(b"\x1b[<35;%d;5M" % x)
+            s.settle(0.005)
+        if not frames(s.out):
+            print("WAIT_TIMEOUT 12 frames of the effect", flush=True)
+    else:
+        s.wait_for(frames, 10, "12 frames of the effect")
 print("TIMES", json.dumps(times), flush=True)
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
@@ -555,7 +582,11 @@ print("EXIT", s.finish(10), flush=True)
         &dir,
         "late.py",
         body,
-        &[tiza_qa::bin().to_str().unwrap(), dir.to_str().unwrap()],
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            if mouse { "mouse" } else { "keys" },
+        ],
     );
     assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
     let times: Vec<f64> = out
@@ -570,8 +601,26 @@ print("EXIT", s.finish(10), flush=True)
         .map(|w| (w[1] - w[0]) * 1000.0)
         .collect();
     gaps.sort_by(f64::total_cmp);
+    gaps
+}
+
+#[test]
+fn after_a_late_frame_the_loop_rests_one_period() {
+    // The loop rests one period after each late frame, so a frame comes
+    // about 83 ms after the one before. A loop that does not rest draws
+    // again at once, about 50 ms after, at 100 % of a core. A busy machine
+    // makes most gaps longer; the median is the check.
+    let gaps = late_frame_gaps("effect-late", false);
     let median = gaps[gaps.len() / 2];
-    // Between 50 ms (no rest) and 83 ms (a rest of one period). A busy
-    // machine only makes the gaps longer.
+    assert!(median >= 70.0, "median gap {median:.1} ms: {gaps:?}");
+}
+
+#[test]
+fn a_moving_mouse_draws_no_frame_more_during_an_effect() {
+    // With mouse capture on, the terminal sends each motion of the mouse.
+    // A motion changes nothing on the screen: the frames still come one
+    // period after a late frame, not each time the mouse moves.
+    let gaps = late_frame_gaps("effect-mouse", true);
+    let median = gaps[gaps.len() / 2];
     assert!(median >= 70.0, "median gap {median:.1} ms: {gaps:?}");
 }
