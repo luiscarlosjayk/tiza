@@ -506,7 +506,7 @@ A `scroll` move has exactly one target: `line`, `find` or `annotation`.
 - When the presenter reaches the step, the view moves to the target. Then the annotations of the step come in, with their effects.
 - The view stays on the target while its rows move: when the annotations of the step come in after a typed move or a `wait`, when presentation mode starts or stops, and when the terminal changes size. When the presenter moves the view, the cursor or the pointer, the view stays where the presenter puts it.
 - A step with no `scroll` move of its own does not move the view. `:goto` and the other goto commands move the view to the target of the `scroll` of their step.
-- At a step with no `scroll` move before it, after a step with one, the view goes to the top.
+- At a step that no `scroll` move reaches (no `scroll` at that step or before it), after a step with one, the view goes to the top. A `cursor` or a `code.link` move then moves the view only when its line is not in view.
 - A `cursor`, a `code.link` and a `scroll` move all put the view somewhere. The last of them in the order that the moves run wins: the order of the steps, then the order of the list. When a `cursor` or a `code.link` wins, the view does what it did before `scroll`.
 - In a step that types, a `scroll` move moves the view at its place in the list, before or after a typed move or a `wait`. It takes no time.
 - The annotation can be of a later step. The view then goes to the lines where the annotation will come in.

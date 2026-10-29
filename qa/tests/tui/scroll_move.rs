@@ -648,6 +648,97 @@ fn an_agent_edit_during_the_wait_counts_in_the_rows_to_come() {
     assert_eq!(rows_of(&live, &["let v60 = 60;", "let v63 = 63;"]), waiting);
 }
 
+#[test]
+fn back_before_the_first_scroll_the_view_goes_to_the_top_also_after_a_cursor() {
+    // camera.tiza: step 1 puts the cursor on line 10, step 2 scrolls to
+    // line 50 at the top. Back at step 1 the view goes to the top, where
+    // line 10 is in view; at step 0 it stays there.
+    let live = open("scroll-back-cursor", "camera.tiza", 1);
+    live.command("goto 0");
+    key(&live, KeyCode::Char('n'));
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(0), "step 2");
+    for step in [1, 0] {
+        key(&live, KeyCode::Char('p'));
+        assert_eq!(live.with(|a| a.doc.step), step);
+        assert_eq!(
+            row_of(&live, "let v1 = 1;"),
+            Some(0),
+            "step {step}: the top"
+        );
+    }
+    assert!(row_of(&live, "let v10 = 10;").is_some(), "line 10 in view");
+}
+
+#[test]
+fn with_no_scroll_a_step_back_leaves_a_view_the_presenter_moved() {
+    // No `scroll` move: the presenter moves the view down at step 1, and
+    // step 0 keeps it.
+    let notes =
+        serde_json::json!([{"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"}]);
+    let live = open_json("scroll-back-free", notes, serde_json::json!([]), 1);
+    live.with(|a| {
+        for _ in 0..10 {
+            tiza_tui::on_key(a, KeyCode::Char('j'), KeyModifiers::NONE);
+        }
+    });
+    assert_eq!(row_of(&live, "let v11 = 11;"), Some(0), "step 1");
+    key(&live, KeyCode::Char('p'));
+    assert_eq!(live.with(|a| a.doc.step), 0);
+    assert_eq!(row_of(&live, "let v11 = 11;"), Some(0), "step 0");
+}
+
+#[test]
+fn a_cursor_after_a_scroll_does_not_send_the_view_to_the_top() {
+    // Step 2 scrolls to line 50 at the top, step 3 puts the cursor on line
+    // 60, which is in view: going forward, the view stays. The way back to
+    // the top is only for a step that no `scroll` reaches.
+    let notes =
+        serde_json::json!([{"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"}]);
+    let moves = serde_json::json!([
+        {"at_step": 2, "action": "scroll", "line": 50, "align": "top"},
+        {"at_step": 3, "action": "cursor", "line": 60}
+    ]);
+    for present in [true, false] {
+        let live = open_json(
+            &format!("scroll-cursor-after-{present}"),
+            notes.clone(),
+            moves.clone(),
+            1,
+        );
+        live.with(move |a| a.set_present(present));
+        key(&live, KeyCode::Char('n'));
+        assert_eq!(
+            row_of(&live, "let v50 = 50;"),
+            Some(0),
+            "present {present}: step 2"
+        );
+        key(&live, KeyCode::Char('n'));
+        assert_eq!(
+            row_of(&live, "let v50 = 50;"),
+            Some(0),
+            "present {present}: step 3"
+        );
+    }
+    // An agent adds that `cursor` while step 3 is on screen: the same.
+    let only_scroll =
+        serde_json::json!([{"at_step": 2, "action": "scroll", "line": 50, "align": "top"}]);
+    // A note of step 3 makes the step: the agent adds its `cursor` there.
+    let notes = serde_json::json!([
+        {"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"},
+        {"id": "n3", "step": 3, "type": "note", "line": 55, "text": "step 3"}
+    ]);
+    let live = open_json("scroll-cursor-agent", notes, only_scroll, 2);
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(live.with(|a| a.doc.step), 3);
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(0), "step 3");
+    live.api_ok(
+        "move.add",
+        serde_json::json!({"at_step": 3, "action": "cursor", "line": 60}),
+    );
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(0), "after the agent");
+}
+
 /// A document whose step 2 scrolls with `align` to the box b3 of step 3
 /// (lines 80-82, with a label), open at step 1.
 fn later_box(name: &str, align: &str) -> Live {

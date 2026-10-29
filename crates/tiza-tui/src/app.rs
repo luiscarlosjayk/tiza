@@ -1778,6 +1778,16 @@ impl App {
         v
     }
 
+    /// Whether a `scroll` move runs at `step` or before it: then a `cursor`
+    /// or a `code.link` that is newer places the view as before `scroll`,
+    /// and the view does not go back to the top.
+    fn scroll_runs_by(&self, step: u32) -> bool {
+        self.doc
+            .moves
+            .iter()
+            .any(|m| m.at_step <= step && matches!(m.action, moves::MoveAction::Scroll(_)))
+    }
+
     /// The document or its step changed other than by a step change (a
     /// move added or deleted, an undo, the start): a `scroll` that is now
     /// the camera of the step and is not the last one applied jumps; the
@@ -1814,13 +1824,14 @@ impl App {
                 self.clamp_cursor();
                 self.pointer_seen = self.pointer_snapshot();
             }
-            other => {
-                // Back to the place of no `scroll`: the top, as a step
-                // change goes there (not for a deleted move).
+            _ => {
+                // Back to a step that no `scroll` reaches (no camera, or a
+                // `cursor` or a `code.link`): the top, as a step change goes
+                // there (not for a deleted move).
                 if jump
-                    && other == Camera::None
                     && self.scroll_applied.is_some()
                     && self.scroll_step != self.doc.step
+                    && !self.scroll_runs_by(self.doc.step)
                 {
                     self.set_scroll(0);
                     self.cursor_line = self.doc.source.first_line;
@@ -3159,8 +3170,10 @@ impl App {
                     if let Camera::Scroll(cam) = v.camera {
                         scroll = Some(cam);
                     } else {
-                        if v.camera == Camera::None && self.scroll_applied.is_some() {
-                            // Back to the place of no `scroll`: the top.
+                        if self.scroll_applied.is_some() && !self.scroll_runs_by(s) {
+                            // Back to a step that no `scroll` reaches: the
+                            // top. A `cursor` or a `code.link` of before then
+                            // moves the view only when its line is not in view.
                             self.set_scroll(0);
                             self.cursor_line = self.doc.source.first_line;
                             self.cursor_col = 0;
