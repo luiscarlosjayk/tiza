@@ -110,16 +110,19 @@ fn a_step_with_the_same_camera_keeps_a_moved_view_and_a_goto_applies_it() {
 #[test]
 fn a_box_comes_in_whole_after_the_wait_of_its_step() {
     // Step 3 waits, then shows a box on lines 60-63; its `scroll` puts
-    // the box at the bottom. While the step waits the box is not drawn;
-    // when it comes in, the view holds the box with its bottom border.
+    // the box at the bottom. While the step waits the box is not drawn,
+    // but the view keeps the row of its bottom border: when it comes in,
+    // the lines of the box keep their rows.
     let live = open("scroll-wait", "effect.tiza", 2);
     key(&live, KeyCode::Char('n'));
     assert_eq!(live.with(|a| a.doc.step), 3);
-    assert_eq!(row_of(&live, "let v63 = 63;"), Some(ROWS - 1), "waiting");
+    assert_eq!(row_of(&live, "let v63 = 63;"), Some(ROWS - 2), "waiting");
+    assert_eq!(row_of(&live, "let v60 = 60;"), Some(ROWS - 5), "waiting");
     // A key ends the wait and does nothing else.
     key(&live, KeyCode::Char('x'));
     let row = row_of(&live, "let v63 = 63;").unwrap();
     assert_eq!(row, ROWS - 2, "the last line of the box over its border");
+    assert_eq!(row_of(&live, "let v60 = 60;"), Some(ROWS - 5));
     let border = live.with(|a| {
         let b = draw(a);
         (0..COLS).any(|x| b[(x, ROWS - 1)].symbol() == "╰")
@@ -512,4 +515,197 @@ fn a_step_with_the_same_camera_keeps_the_cursor_on_a_pointer_that_stayed() {
         });
         assert_eq!(at, (step, 45, Some(45)), "step {step}");
     }
+}
+
+/// The screen rows of the lines with `texts`, in a new frame.
+fn rows_of(live: &Live, texts: &'static [&'static str]) -> Vec<Option<u16>> {
+    texts.iter().map(|t| row_of(live, t)).collect()
+}
+
+/// A document of 160 lines `let vN = N;` with `annotations` and `moves`,
+/// in presentation mode with no padding, at `step`.
+fn open_json(
+    name: &str,
+    annotations: serde_json::Value,
+    moves: serde_json::Value,
+    step: u32,
+) -> Live {
+    let dir = scratch(name);
+    let code: Vec<String> = (1..=160).map(|i| format!("let v{i} = {i};")).collect();
+    let doc = serde_json::json!({
+        "schema": 1, "source": {"language": "rs", "first_line": 1}, "code": code,
+        "annotations": annotations, "moves": moves, "step": step
+    });
+    std::fs::write(dir.join("doc.tiza"), doc.to_string()).unwrap();
+    let doc = tiza_core::fs::load_document(&dir.join("doc.tiza")).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
+    live.command("pad 0 0");
+    live.with(|a| {
+        a.autosave = false;
+        a.set_present(true);
+        draw(a);
+    });
+    live
+}
+
+#[test]
+fn a_box_of_a_later_step_comes_in_without_moving_its_lines() {
+    // camera.tiza: step 6 puts the box b7 of step 7 (lines 100-104, with a
+    // label) at the bottom. At step 6 the view keeps the rows of its
+    // borders; at step 7 the lines of the box keep their rows, line 99
+    // goes one row up for the title, and the border takes the last row.
+    let live = open("scroll-later-box", "camera.tiza", 5);
+    const BOX: &[&str] = &["let v100 = 100;", "let v102 = 102;", "let v104 = 104;"];
+    key(&live, KeyCode::Char('n'));
+    let before = rows_of(&live, BOX);
+    let v99 = row_of(&live, "let v99 = 99;").unwrap();
+    assert_eq!(
+        before[2],
+        Some(ROWS - 2),
+        "step 6: the row of the border is free"
+    );
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(live.with(|a| a.doc.step), 7);
+    assert_eq!(rows_of(&live, BOX), before, "step 7: the lines of the box");
+    assert_eq!(
+        row_of(&live, "let v99 = 99;"),
+        Some(v99 - 1),
+        "the title over it"
+    );
+}
+
+#[test]
+fn with_top_the_title_of_a_later_box_has_its_row() {
+    // Step 2 puts the box b3 of step 3 (lines 80-82, with a label) at the
+    // top: line 80 is on row 1, under the row of the title to come.
+    let notes = serde_json::json!([
+        {"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"},
+        {"id": "b3", "step": 3, "type": "box", "from_line": 80, "to_line": 82, "label": "the box"}
+    ]);
+    let moves = serde_json::json!([
+        {"at_step": 2, "action": "scroll", "annotation": "b3", "align": "top"}
+    ]);
+    let live = open_json("scroll-later-top", notes, moves, 1);
+    key(&live, KeyCode::Char('n'));
+    let step2 = rows_of(&live, &["let v79 = 79;", "let v80 = 80;", "let v83 = 83;"]);
+    assert_eq!(step2, [Some(0), Some(1), Some(4)], "step 2");
+    key(&live, KeyCode::Char('n'));
+    let step3 = rows_of(&live, &["let v79 = 79;", "let v80 = 80;", "let v83 = 83;"]);
+    assert_eq!(
+        step3,
+        [None, Some(1), Some(5)],
+        "step 3: the title, then the border"
+    );
+}
+
+#[test]
+fn a_later_box_after_a_patch_keeps_its_lines_on_their_rows() {
+    // Step 2 shows the box b4 of step 4 at the top; step 3 inserts three
+    // lines above it. The box is on lines 80-82 of step 4, which are
+    // `let v77` to `let v79`: that line stays on row 1 at steps 2, 3 and 4.
+    // In normal mode, so that only the `scroll` places the view.
+    let notes = serde_json::json!([
+        {"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"},
+        {"id": "b4", "step": 4, "type": "box", "from_line": 80, "to_line": 82, "label": "the box"}
+    ]);
+    let moves = serde_json::json!([
+        {"at_step": 2, "action": "scroll", "annotation": "b4", "align": "top"},
+        {"at_step": 3, "action": "code.patch", "op": "insert", "position": "10",
+         "content": "// a\n// b\n// c"}
+    ]);
+    let live = open_json("scroll-later-patch", notes, moves, 1);
+    live.with(|a| a.set_present(false));
+    for step in [2, 3, 4] {
+        key(&live, KeyCode::Char('n'));
+        assert_eq!(live.with(|a| a.doc.step), step);
+        assert_eq!(row_of(&live, "let v77 = 77;"), Some(1), "step {step}");
+    }
+}
+
+#[test]
+fn an_agent_edit_during_the_wait_counts_in_the_rows_to_come() {
+    // Step 3 holds the box b3 (lines 60-63) at the bottom while it waits.
+    // An agent adds a callout below line 63 (its own rows) to step 3: the
+    // view makes room
+    // for it at once, and the lines of the box keep their rows when the
+    // wait ends.
+    let live = open("scroll-wait-edit", "effect.tiza", 2);
+    key(&live, KeyCode::Char('n'));
+    let before = rows_of(&live, &["let v60 = 60;", "let v63 = 63;"]);
+    live.api_ok(
+        "annotation.add",
+        serde_json::json!({
+            "type": "callout", "from_line": 63, "to_line": 63, "step": 3,
+            "text": "an agent", "placement": "below"
+        }),
+    );
+    let waiting = rows_of(&live, &["let v60 = 60;", "let v63 = 63;"]);
+    assert!(
+        waiting[1] < before[1],
+        "room for the callout: {before:?} then {waiting:?}"
+    );
+    key(&live, KeyCode::Char('x'));
+    assert_eq!(rows_of(&live, &["let v60 = 60;", "let v63 = 63;"]), waiting);
+}
+
+/// A document whose step 2 scrolls with `align` to the box b3 of step 3
+/// (lines 80-82, with a label), open at step 1.
+fn later_box(name: &str, align: &str) -> Live {
+    let notes = serde_json::json!([
+        {"id": "n1", "step": 1, "type": "note", "line": 5, "text": "start"},
+        {"id": "b3", "step": 3, "type": "box", "from_line": 80, "to_line": 82, "label": "the box"}
+    ]);
+    let moves = serde_json::json!([
+        {"at_step": 2, "action": "scroll", "annotation": "b3", "align": align}
+    ]);
+    open_json(name, notes, moves, 1)
+}
+
+const AROUND: &[&str] = &[
+    "let v79 = 79;",
+    "let v80 = 80;",
+    "let v82 = 82;",
+    "let v83 = 83;",
+];
+
+#[test]
+fn with_show_or_center_the_lines_of_a_later_box_keep_their_rows() {
+    // With `show` the box is already in view (line 75 on top): the view
+    // does not move at step 2. At step 3 the box comes in: its lines keep
+    // their rows, line 79 goes one row up for the title, and line 83 one
+    // row down for the border.
+    let live = later_box("scroll-later-show", "show");
+    live.with(|a| {
+        for _ in 0..74 {
+            tiza_tui::on_key(a, KeyCode::Char('j'), KeyModifiers::NONE);
+        }
+    });
+    assert_eq!(row_of(&live, "let v75 = 75;"), Some(0));
+    key(&live, KeyCode::Char('n'));
+    let step2 = rows_of(&live, AROUND);
+    assert_eq!(step2, [Some(4), Some(5), Some(7), Some(8)], "show, step 2");
+    key(&live, KeyCode::Char('n'));
+    let step3 = rows_of(&live, AROUND);
+    assert_eq!(step3, [Some(3), Some(5), Some(7), Some(9)], "show, step 3");
+    // With `center`, the same around the middle of the view.
+    let live = later_box("scroll-later-center", "center");
+    key(&live, KeyCode::Char('n'));
+    let step2 = rows_of(&live, AROUND);
+    key(&live, KeyCode::Char('n'));
+    let step3 = rows_of(&live, AROUND);
+    assert_eq!(step3[1..3], step2[1..3], "center: the lines of the box");
+    assert_eq!(step3[0], step2[0].map(|r| r - 1), "center: the line above");
+    assert_eq!(step3[3], step2[3].map(|r| r + 1), "center: the line under");
+}
+
+#[test]
+fn a_pointer_that_the_border_to_come_pushes_out_goes_off_at_the_jump() {
+    // camera.tiza: step 6 puts the box b7 (lines 100-104) of step 7 at
+    // the bottom. The pointer on line 105 is on the last row at step 6, the
+    // row that the bottom border takes at step 7: it goes off at the jump,
+    // not later while it is out of view.
+    let live = open("scroll-pointer-to-come", "camera.tiza", 5);
+    live.api_ok("pointer.set", serde_json::json!({ "line": 105 }));
+    key(&live, KeyCode::Char('n'));
+    assert_eq!(live.with(|a| a.pointer), None);
 }

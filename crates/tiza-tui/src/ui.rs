@@ -160,11 +160,18 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // A view that a `scroll` holds: its target where `align` puts it, on
     // the rows of this frame (the annotations of the step came in, the
     // take changed), until the cursor or the pointer moves.
-    if let Some(h) = app.scroll_held.clone() {
+    if let Some(h) = &app.scroll_held {
         if (app.cursor_line, app.cursor_col) == h.cursor && app.pointer == h.pointer {
-            match h.scroll_on(&layout, visible, app.scroll) {
+            let to_come = app.held_rows_to_come(&layout, canvas_area.width as usize);
+            let current = app.scroll;
+            let top = app
+                .scroll_held
+                .as_mut()
+                .and_then(|h| h.scroll_on(&layout, visible, current, to_come));
+            match top {
                 Some(top) => app.scroll = top,
-                // The target is not on this layout (`:focus` hides it).
+                // The target is not on this layout: a patch removed its
+                // line, or the window of a `code.link` leaves it out.
                 None => app.scroll_held = None,
             }
         } else {
@@ -176,8 +183,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     // line: the title rows of boxes that open on it (above) and the rows
     // under it (emphasis, labels, bottom borders) when they fit.
     // Otherwise a box whose first line is the first visible row loses its
-    // top border and title. A held view already shows the cursor, on the
-    // first line of its target. In presentation mode the view follows the
+    // top border and title. A held view already shows the cursor: on the
+    // first line of its target, or on a pointer that stayed. In
+    // presentation mode the view follows the
     // cursor only when its line changed (an agent, Tab, a `cursor` move),
     // not on every frame: the view stays where the presenter put it.
     let follow = !app.present || app.cursor_line != app.view_cursor_line;

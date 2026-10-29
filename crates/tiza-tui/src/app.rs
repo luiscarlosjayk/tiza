@@ -1578,16 +1578,19 @@ impl App {
     }
 
     /// The camera of the step is `cam`, a `scroll`: a new one (or any one
-    /// with `jump`) puts the cursor on the first line of its target and
-    /// holds the view there; the same one keeps holding a held view on
-    /// its target, which a patch may have moved. Before the effects of the
-    /// step start, so that the pointer it turns off does not end them.
+    /// with `jump`) holds the view on its target and puts the cursor on the
+    /// first line of the target, or keeps it on a live pointer that stays;
+    /// the same one keeps holding a held view on its target, which a patch
+    /// may have moved. Before the effects of the step start, so that the
+    /// pointer it turns off does not end them.
     fn scroll_camera(&mut self, cam: tiza_core::moves::ScrollCam, jump: bool) {
         if self.scroll_applied == Some(cam.id) && !jump {
             match (&mut self.scroll_held, cam.lines) {
                 (Some(h), Some(lines)) => {
                     h.lines = lines;
                     h.align = cam.align;
+                    h.annotation = cam.annotation.clone();
+                    h.to_come = None;
                     h.pointer = self.pointer;
                     // A pointer that stayed keeps the cursor with it.
                     if self.pointer.is_none() {
@@ -1613,8 +1616,11 @@ impl App {
         let mut held = ScrollHeld {
             lines,
             align: cam.align,
+            annotation: cam.annotation.clone(),
             cursor: (lines.0, 0),
             pointer: self.pointer,
+            to_come: None,
+            show_row: None,
         };
         // The pointer stays only when the new view shows its lines.
         if let Some(p) = self.pointer {
@@ -1627,13 +1633,23 @@ impl App {
                 .filter(|_| self.present)
                 .and_then(|a| view_row_of(&layout, a))
                 .unwrap_or(self.scroll);
-            if let Some(top) = held.scroll_on(&layout, visible, current) {
+            let to_come = self.rows_to_come(lines, held.annotation.as_deref(), &layout, width);
+            held.to_come = Some((self.to_come_key(width), to_come));
+            if let Some(top) = held.scroll_on(&layout, visible, current, to_come) {
                 self.set_scroll(top);
+                // Where each line will be once the rows of the target come
+                // in: those above it push up, those under it push down.
                 let shown = |l: u32| {
-                    layout
-                        .row_of_line
-                        .get(&l)
-                        .is_some_and(|r| *r >= top && *r < top + visible)
+                    layout.row_of_line.get(&l).is_some_and(|&r| {
+                        let r = if l < lines.0 {
+                            r.checked_sub(to_come.0)
+                        } else if l > lines.1 {
+                            Some(r + to_come.1)
+                        } else {
+                            Some(r)
+                        };
+                        r.is_some_and(|r| r >= top && r < top + visible)
+                    })
                 };
                 if !(shown(p.line) && shown(p.to)) {
                     self.pointer = None;
@@ -1652,6 +1668,114 @@ impl App {
             }
         }
         self.scroll_held = Some(held);
+    }
+
+    /// The rows that a target (`lines`, showing `annotation` if any) does not
+    /// have yet on `layout` and will have when all of the step is drawn:
+    /// above its first line (the title of a box) and under its last one (a
+    /// border, a label). They come with the annotations of the step that
+    /// wait for its typing or its `wait`, and with an annotation of a later
+    /// step that a `scroll` shows before its step. `(0, 0)` when nothing is
+    /// to come, with no layout more. Rows that come in inside the target
+    /// make it taller: those cannot keep their place.
+    pub(crate) fn rows_to_come(
+        &self,
+        lines: (u32, u32),
+        annotation: Option<&str>,
+        layout: &tiza_core::layout::Layout,
+        width: usize,
+    ) -> (usize, usize) {
+        let later = annotation.and_then(|id| {
+            self.doc
+                .annotations
+                .iter()
+                .position(|a| a.id == id && a.step > self.doc.step)
+        });
+        if self.typing.is_none() && later.is_none() {
+            return (0, 0);
+        }
+        let mut opts = self.layout_options(width);
+        opts.typing = false;
+        let then = match later {
+            None => self.lay_out(&self.doc, &self.theme, &opts),
+            Some(k) => {
+                // The annotation at this step, on the lines where it will
+                // come in: its own lines are those of its step.
+                let mut doc = self.doc.clone();
+                let a = &mut doc.annotations[k];
+                let Some(lo) = a.shape.line_ranges().iter().map(|r| r.0).min() else {
+                    return (0, 0);
+                };
+                let delta = i64::from(lines.0) - i64::from(lo);
+                let moved = |l: u32| -> Option<u32> {
+                    let to = (i64::from(l) + delta).clamp(i64::from(lines.0), i64::from(lines.1));
+                    u32::try_from(to).ok()
+                };
+                let Some(shape) = moves::shift_shape_by(&a.shape, &moved, &|l, _| moved(l)) else {
+                    return (0, 0);
+                };
+                a.shape = shape;
+                a.step = doc.step;
+                self.lay_out(&doc, &self.theme, &opts)
+            }
+        };
+        // As `ScrollHeld::scroll_on` measures a target: the box titles over
+        // its first line, the rows under its last one up to the next line.
+        let measure = |l: &tiza_core::layout::Layout| -> Option<(usize, usize)> {
+            use tiza_core::layout::Row;
+            let rows = &l.rows;
+            let first = *l.row_of_line.get(&lines.0)?;
+            let mut top = first;
+            while top > 0 && matches!(rows[top - 1], Row::BoxTop(_)) {
+                top -= 1;
+            }
+            let last = *l.row_of_line.get(&lines.1)?;
+            let mut bottom = last;
+            while bottom + 1 < rows.len()
+                && !matches!(rows[bottom + 1], Row::Code(_) | Row::BoxTop(_))
+            {
+                bottom += 1;
+            }
+            Some((first - top, bottom - last))
+        };
+        match (measure(layout), measure(&then)) {
+            (Some(now), Some(then)) => (then.0.saturating_sub(now.0), then.1.saturating_sub(now.1)),
+            _ => (0, 0),
+        }
+    }
+
+    /// What [`App::rows_to_come`] depends on, for [`ScrollHeld::to_come`].
+    pub(crate) fn to_come_key(&self, width: usize) -> ToComeKey {
+        (
+            self.doc.step,
+            width,
+            self.typing.is_some(),
+            self.history.newest(),
+            self.present || self.layout_stable,
+        )
+    }
+
+    /// [`App::rows_to_come`] for the held view, from its cache when what it
+    /// depends on did not change.
+    pub(crate) fn held_rows_to_come(
+        &mut self,
+        layout: &tiza_core::layout::Layout,
+        width: usize,
+    ) -> (usize, usize) {
+        let key = self.to_come_key(width);
+        let Some(h) = &self.scroll_held else {
+            return (0, 0);
+        };
+        if let Some((k, v)) = h.to_come
+            && k == key
+        {
+            return v;
+        }
+        let v = self.rows_to_come(h.lines, h.annotation.as_deref(), layout, width);
+        if let Some(h) = &mut self.scroll_held {
+            h.to_come = Some((key, v));
+        }
+        v
     }
 
     /// The document or its step changed other than by a step change (a
@@ -9580,20 +9704,42 @@ pub struct ScrollHeld {
     /// The first and the last line of the target.
     pub lines: (u32, u32),
     pub align: tiza_core::moves::Align,
+    /// The annotation it shows, if any: one of a later step counts with the
+    /// rows it will have ([`App::rows_to_come`]).
+    pub annotation: Option<String>,
     /// The cursor and the pointer at the jump: a change lets the view go.
     pub cursor: (u32, u32),
     pub pointer: Option<tiza_core::protocol::PointerAt>,
+    /// [`App::rows_to_come`] for this target, with what it depends on: the
+    /// step, the width, a typing or a `wait` of the step, and the newest
+    /// edit of the document (an agent that gives the target a label). A
+    /// frame lays the code out once more only when one of them changes,
+    /// not at each frame of a typing.
+    pub to_come: Option<(ToComeKey, (usize, usize))>,
+    /// With `show`: the row in the view of the first line of the target, as
+    /// the first frame put it. Later frames keep the target on that row, so
+    /// it keeps its row when rows come in above it.
+    pub show_row: Option<usize>,
 }
+
+/// What [`App::rows_to_come`] depends on: the step, the width, a typing or
+/// a `wait` of the step, the newest edit of the document, and the stable
+/// geometry of presentation mode.
+pub type ToComeKey = (u32, usize, bool, u64, bool);
 
 impl ScrollHeld {
     /// The first row in view that puts the target where `align` says, on
     /// `layout` with `visible` rows; `current` is the first row now (for
     /// `show`). `None` when the target is not on the layout.
+    /// `to_come` are the rows the target does not have yet, above and under
+    /// it ([`App::rows_to_come`]): the view keeps their place, so that the
+    /// lines of the target keep their rows when those rows come in.
     pub fn scroll_on(
-        &self,
+        &mut self,
         layout: &tiza_core::layout::Layout,
         visible: usize,
         current: usize,
+        to_come: (usize, usize),
     ) -> Option<usize> {
         use tiza_core::layout::Row;
         use tiza_core::moves::Align;
@@ -9609,6 +9755,8 @@ impl ScrollHeld {
         {
             bottom += 1;
         }
+        let top = top.saturating_sub(to_come.0);
+        let bottom = bottom + to_come.1;
         let height = bottom + 1 - top;
         let max = rows.len().saturating_sub(visible);
         let at = if height >= visible {
@@ -9619,12 +9767,23 @@ impl ScrollHeld {
                 // Near the start the target cannot be at the bottom.
                 Align::Bottom => (bottom + 1).saturating_sub(visible),
                 Align::Center => (top + bottom + 1).saturating_sub(visible) / 2,
+                // Once placed, the target keeps its row.
+                Align::Show if self.show_row.is_some() => {
+                    let first = *layout.row_of_line.get(&self.lines.0)?;
+                    let keep = self.show_row.unwrap_or(0).min(visible.saturating_sub(1));
+                    first.saturating_sub(keep)
+                }
                 Align::Show if top < current => top,
                 Align::Show if bottom >= current + visible => bottom + 1 - visible,
                 Align::Show => current,
             }
         };
-        Some(at.min(max))
+        let at = at.min(max);
+        if self.align == Align::Show && self.show_row.is_none() {
+            let first = *layout.row_of_line.get(&self.lines.0)?;
+            self.show_row = first.checked_sub(at);
+        }
+        Some(at)
     }
 }
 
