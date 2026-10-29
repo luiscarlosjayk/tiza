@@ -895,3 +895,66 @@ fn painting_only_the_rows_on_screen_gives_the_frame_of_the_whole_plan() {
     // The rows in view showed the effect, not only the final frame.
     assert!(in_motion > 1000, "only {in_motion} cells in motion checked");
 }
+
+/// The distance in cells from (`x`, `y`) to a polyline of straight
+/// segments between `corners`.
+fn distance_to(corners: &[(usize, usize)], x: usize, y: usize) -> usize {
+    if let [(cx, cy)] = corners {
+        return x.abs_diff(*cx) + y.abs_diff(*cy);
+    }
+    corners
+        .windows(2)
+        .map(|w| {
+            let ((ax, ay), (bx, by)) = (w[0], w[1]);
+            let px = x.clamp(ax.min(bx), ax.max(bx));
+            let py = y.clamp(ay.min(by), ay.max(by));
+            x.abs_diff(px) + y.abs_diff(py)
+        })
+        .min()
+        .unwrap_or(usize::MAX)
+}
+
+#[test]
+fn every_stroke_has_a_path_and_each_of_its_cells_is_on_it() {
+    // A stroke is drawn along its path: each annotation that paints
+    // stroke cells records a path, and each of those cells is on it. A
+    // cell off the path would come at the place of the nearest cell, not
+    // at its own place.
+    let theme = Theme::dark();
+    let (mut strokes, mut off) = (0, Vec::new());
+    for (f, doc) in every_document() {
+        for step in 0..=doc.max_step() {
+            let (l, trace) = layout_traced(&doc, &theme, &options(step, 100), None);
+            let w = l.canvas.width;
+            for (ann, id) in trace.ids.iter().enumerate() {
+                let cells = painted(&trace, w, id, Part::Stroke);
+                if cells.is_empty() {
+                    continue;
+                }
+                strokes += 1;
+                let paths: Vec<&Vec<(usize, usize)>> = trace
+                    .paths
+                    .iter()
+                    .filter(|(a, _)| *a == ann)
+                    .map(|(_, p)| p)
+                    .collect();
+                assert!(
+                    !paths.is_empty(),
+                    "{} step {step}: {id} has no path",
+                    f.display()
+                );
+                for (x, y) in cells {
+                    if paths.iter().all(|p| distance_to(p, x, y) > 0) {
+                        off.push(format!("{} step {step}: {id} ({x}, {y})", f.display()));
+                    }
+                }
+            }
+        }
+    }
+    assert!(strokes > 100, "only {strokes} strokes checked");
+    assert!(
+        off.is_empty(),
+        "stroke cells off their path:\n{}",
+        off.join("\n")
+    );
+}

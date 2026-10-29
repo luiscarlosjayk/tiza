@@ -137,15 +137,26 @@ impl Plan {
             if effects[ann] != Some(Effect::Draw) {
                 continue;
             }
+            // Every stroke records its path ([`Trace::paths`]). A stroke
+            // with no path would go in the order of its cells.
+            let has_path = trace.paths.iter().any(|(a, _)| *a == ann);
             let mut cells: Vec<(usize, usize)> = trace
                 .cells
                 .iter()
                 .filter(|(_, r)| r.ann == ann && r.part == Part::Stroke)
                 .map(|(&i, _)| {
                     let (x, y) = xy(i);
-                    (path_position(trace, ann, x, y).unwrap_or(i), i)
+                    match path_position(trace, ann, x, y) {
+                        Some(along) if has_path => (along, i),
+                        _ => (i, i),
+                    }
                 })
                 .collect();
+            debug_assert!(
+                cells.is_empty() || has_path,
+                "the stroke of {} has no path",
+                trace.ids[ann]
+            );
             if cells.is_empty() {
                 continue;
             }
