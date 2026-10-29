@@ -1,0 +1,53 @@
+{
+ "schema": 1,
+ "title": "Brackets with no space on one side or on both, drawn",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let v = foo(bar)+baz;",
+  "    call(def ghi);",
+  "    one two;",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "k1",
+   "step": 1,
+   "type": "highlight",
+   "emphasis": "brackets",
+   "span": {
+    "line": 2,
+    "start": 16,
+    "end": 19
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "k2",
+   "step": 2,
+   "type": "highlight",
+   "emphasis": "brackets",
+   "span": {
+    "line": 3,
+    "start": 9,
+    "end": 12
+   },
+   "effect": "draw"
+  },
+  {
+   "id": "k3",
+   "step": 3,
+   "type": "highlight",
+   "emphasis": "brackets",
+   "span": {
+    "line": 4,
+    "start": 8,
+    "end": 11
+   },
+   "effect": "draw"
+  }
+ ]
+}

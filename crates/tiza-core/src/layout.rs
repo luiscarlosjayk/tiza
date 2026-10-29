@@ -1549,7 +1549,25 @@ fn layout_pass(
                         x1 < code_x + code_w && canvas.get(x1, y).is_some_and(|c| c.sym == " ");
                     let under = emphasis_row.get(&span.line).copied();
                     canvas.trace_part(Part::Stroke);
-                    canvas.trace_path(vec![(x0.saturating_sub(1), y), (x1, y)]);
+                    // From the left bracket to the right one, on the rows
+                    // where they go: beside the span, or under it when no
+                    // space is there.
+                    let left = if blank_before {
+                        Some((x0 - 1, y))
+                    } else {
+                        under.map(|uy| (x0, uy))
+                    };
+                    let right = if blank_after {
+                        Some((x1, y))
+                    } else {
+                        under.map(|uy| (x1 - 1, uy))
+                    };
+                    match (left, right) {
+                        (Some(a), Some(b)) if a.1 == b.1 => canvas.trace_path(vec![a, b]),
+                        (Some(a), Some(b)) => canvas.trace_path(vec![a, (b.0, a.1), b]),
+                        (Some(a), None) | (None, Some(a)) => canvas.trace_path(vec![a]),
+                        (None, None) => {}
+                    }
                     if blank_before {
                         canvas.put(x0 - 1, y, "⌈", base.fg(soft));
                     } else if let Some(uy) = under {
