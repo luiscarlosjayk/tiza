@@ -87,8 +87,9 @@ pub fn open_notice(doc: &Document) -> Option<String> {
     (!notices.is_empty()).then(|| notices.join("; "))
 }
 
-/// The annotations whose `effect` this version does not know, or `None`.
-fn unknown_effects_notice(doc: &Document) -> Option<String> {
+/// The annotations whose `effect` this version does not know, or `None`:
+/// one line that names each one, for stderr and `tiza render`.
+pub fn unknown_effects_notice(doc: &Document) -> Option<String> {
     let found = &doc.unknown_effects.0;
     if found.is_empty() {
         return None;
@@ -102,6 +103,16 @@ fn unknown_effects_notice(doc: &Document) -> Option<String> {
         if one { "it comes in" } else { "they come in" },
         list.join(", ")
     ))
+}
+
+/// [`unknown_effects_notice`] in a few words, for the status bar: how many
+/// effects, and where the names are.
+pub fn unknown_effects_short(doc: &Document) -> Option<String> {
+    match doc.unknown_effects.0.len() {
+        0 => None,
+        1 => Some("1 effect is not known: see tiza check".into()),
+        n => Some(format!("{n} effects are not known: see tiza check")),
+    }
 }
 
 /// The annotations outside the code, or `None`.

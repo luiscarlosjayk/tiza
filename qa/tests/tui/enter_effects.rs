@@ -880,6 +880,61 @@ print("EXIT", s.finish(10), flush=True)
     );
 }
 
+/// Effects that this version does not know: their names go to stderr
+/// before the TUI starts (so they are on the terminal after it ends, also
+/// in presentation mode), and the bar says it in a few words, so that it
+/// fits.
+#[test]
+fn unknown_effects_are_named_on_stderr_and_counted_on_the_bar() {
+    let dir = scratch("unknown-effects-open");
+    std::fs::copy(
+        fixture("compat/v1-newer-unknown-effect.tiza"),
+        dir.join("newer.tiza"),
+    )
+    .unwrap();
+    let body = r##"
+binary, cwd, present = sys.argv[1], sys.argv[2], sys.argv[3] == "present"
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1")
+argv = [binary, "--no-save", "--theme", "dark"] + (["--present"] if present else []) + ["newer.tiza"]
+s = Pty(argv, 30, 120, env=env)
+s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame")
+s.settle(0.3)
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+sys.stdout.flush()
+out = s.out.decode("utf-8", "replace")
+cut = out.find("\x1b[?1049h")
+print("BEFORE", repr(out[:cut]), flush=True)
+print("SCREEN", repr(out[cut:]), flush=True)
+"##;
+    for present in [false, true] {
+        let out = tiza_qa::pty_script(
+            &dir,
+            "unknown.py",
+            body,
+            &[
+                tiza_qa::bin().to_str().unwrap(),
+                dir.to_str().unwrap(),
+                if present { "present" } else { "normal" },
+            ],
+        );
+        let before = out.lines().find_map(|l| l.strip_prefix("BEFORE ")).unwrap();
+        let screen = out.lines().find_map(|l| l.strip_prefix("SCREEN ")).unwrap();
+        assert!(
+            before.contains("3 annotations have an effect that this version of Tiza does not know")
+                && before.contains("b1 (\"slide\")"),
+            "present {present}: {before}"
+        );
+        if !present {
+            assert!(
+                screen.contains("3 effects are not known: see tiza check"),
+                "the bar: {screen}"
+            );
+        }
+    }
+}
+
 /// After a button ends the effect, the rest of the gesture (a drag, the
 /// release) selects nothing, also from a drag that an earlier lost
 /// release left open.

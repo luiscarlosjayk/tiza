@@ -138,7 +138,18 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
             ui::config_warnings_tail(opts.config_warnings.len())
         )
     });
-    match (&opened.notice, config_warning) {
+    // The effects this version does not know: their names went to stderr
+    // as the TUI started; the bar says it in a few words, so it fits.
+    let notice = opened.notice.as_ref().map(|n| {
+        match (
+            tiza_core::fs::unknown_effects_notice(&app.doc),
+            tiza_core::fs::unknown_effects_short(&app.doc),
+        ) {
+            (Some(full), Some(short)) => n.replace(&full, &short),
+            _ => n.clone(),
+        }
+    });
+    match (&notice, config_warning) {
         (Some(n), Some(c)) => app.error(format!("{n} · {c}")),
         (Some(n), None) => app.info(n.clone()),
         (None, Some(c)) => app.error(c),

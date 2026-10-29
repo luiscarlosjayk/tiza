@@ -2048,6 +2048,12 @@ fn run_tui(cli: Cli, socket_path: PathBuf) -> anyhow::Result<()> {
     if !std::io::stdout().is_terminal() {
         bail!("the TUI needs a terminal on stdout; use `tiza render` for text output");
     }
+    // The effects this version does not know, by name, where they stay
+    // after the TUI ends (the bar says it in short; presentation mode has
+    // no bar).
+    if let Some(line) = fs::unknown_effects_notice(&opened.document) {
+        eprintln!("tiza: {}", tiza_core::printable::printable_line(&line));
+    }
     tiza_tui::run(
         opened,
         tiza_tui::RunOptions {
