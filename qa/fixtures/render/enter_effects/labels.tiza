@@ -1,0 +1,38 @@
+{
+ "schema": 1,
+ "title": "A box with a label and a callout with a title, drawn",
+ "source": {
+  "language": "rs",
+  "first_line": 1
+ },
+ "code": [
+  "fn main() {",
+  "    let mut queue = Vec::new();",
+  "    queue.push(1);",
+  "    queue.push(2);",
+  "    let first = queue.remove(0);",
+  "    println!(\"{first}\");",
+  "}"
+ ],
+ "annotations": [
+  {
+   "id": "b1",
+   "step": 1,
+   "type": "box",
+   "from_line": 2,
+   "to_line": 4,
+   "label": "the queue",
+   "effect": "draw"
+  },
+  {
+   "id": "c1",
+   "step": 2,
+   "type": "callout",
+   "from_line": 5,
+   "to_line": 5,
+   "title": "remove",
+   "text": "takes the first value",
+   "effect": "draw"
+  }
+ ]
+}

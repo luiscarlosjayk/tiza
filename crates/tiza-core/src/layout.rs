@@ -1609,14 +1609,8 @@ fn layout_pass(
             continue;
         };
         painter(&mut canvas, b.ann, Part::Stroke);
-        // Clockwise from the top-left corner.
-        canvas.trace_path(vec![
-            (lx, top),
-            (rx, top),
-            (rx, bottom),
-            (lx, bottom),
-            (lx, top),
-        ]);
+        // Where its stroke starts: the top-left corner, or after the label.
+        let mut start = lx;
         for y in top + 1..bottom {
             canvas.trace_part(Part::Stroke);
             canvas.put_line(lx, y, g.v, box_style);
@@ -1649,7 +1643,9 @@ fn layout_pass(
             let w = canvas.put_str_clipped(lx + 3, top, l, avail, box_style.bold());
             canvas.put(lx + 3 + w, top, " ", box_style);
             canvas.trace_part(Part::Stroke);
+            start = (lx + 4 + w).min(rx);
         }
+        canvas.trace_path(border_path(start, lx, rx, top, bottom));
         canvas.put(lx, bottom, g.bl, box_style);
         canvas.put(rx, bottom, g.br, box_style);
         for x in lx + 1..rx {
@@ -1973,14 +1969,8 @@ fn layout_pass(
         let g = Glyphs::for_border(&c.frame);
         let yb = y0 + 1 + c.lines.len();
         painter(canvas, vis[c.idx], Part::Stroke);
-        // Clockwise from the top-left corner.
-        canvas.trace_path(vec![
-            (x, y0),
-            (x + w - 1, y0),
-            (x + w - 1, yb),
-            (x, yb),
-            (x, y0),
-        ]);
+        // Where its stroke starts: the top-left corner, or after the title.
+        let mut start = x;
         let border = base.fg(color);
         // Callouts are not tinted unless asked (`fill: true`).
         let inside = if c.frame.fill.unwrap_or(false) {
@@ -2002,7 +1992,9 @@ fn layout_pass(
             title_clipped = display_width(t, 4) > w.saturating_sub(6);
             let tw = canvas.put_str_clipped(x + 3, y0, t, w.saturating_sub(6), border.bold());
             canvas.put(x + 3 + tw, y0, " ", border);
+            start = (x + 4 + tw).min(x + w - 1);
         }
+        canvas.trace_path(border_path(start, x, x + w - 1, y0, yb));
         for (k, l) in c.lines.iter().enumerate() {
             let y = y0 + 1 + k;
             canvas.trace_part(Part::Stroke);
@@ -2308,6 +2300,31 @@ fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Opti
         (Head::Open, true) => ">",
         (Head::Open, false) => "<",
     })
+}
+
+/// The path of the border of a box or a callout from `lx` to `rx` and
+/// from `top` to `bottom`, clockwise from `start` on the top border: the
+/// top-left corner, or the first cell after a label or a title. Then the
+/// cells before the label come last and never show apart from the rest of
+/// the border.
+fn border_path(
+    start: usize,
+    lx: usize,
+    rx: usize,
+    top: usize,
+    bottom: usize,
+) -> Vec<(usize, usize)> {
+    let mut path = vec![
+        (start, top),
+        (rx, top),
+        (rx, bottom),
+        (lx, bottom),
+        (lx, top),
+    ];
+    if start > lx + 1 {
+        path.push((lx + 1, top));
+    }
+    path
 }
 
 /// The end (exclusive) of the rows of the line on row `y`: up to the next

@@ -597,7 +597,7 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 
 - `draw` needs a stroke. A box, a callout, an arrow, and a highlight or a mark with the emphasis `underline`, `brackets` or `strike` have a stroke. A note, a spotlight, and a highlight or a mark with `fill` do not have a stroke.
 - An annotation from a file can have `draw` without a stroke. It comes in with no effect, and `tiza check` gives the warning `effect`.
-- Tiza draws a box or a callout clockwise from its top-left corner. It draws an underline, brackets and a strike from left to right, and an arrow from its source.
+- Tiza draws a box or a callout clockwise from its top-left corner. When a box has a label or a callout has a title, Tiza starts after the label or the title. Thus the border before it comes in last. Tiza draws an underline, brackets and a strike from left to right, and an arrow from its source.
 - The annotations of one step come in at the same time. The text of a `draw` annotation comes in after the longest stroke of the step. To show annotations one after the other, put them on consecutive steps.
 - The dim of a step comes from all the active spotlights together. When a spotlight with `fade` starts or stops at a step, all the dim of that step fades. A spotlight stops at the step after its `until`, or at the step after its `step` when it has no `until`. A spotlight that is active until the last step does not stop.
 - When only spotlights without `fade` start or stop at a step, the dim changes at once.

@@ -1,8 +1,9 @@
 //! Enter effects (experimental): each annotation has its own `effect`.
 //!
-//! - A box is drawn clockwise from its top-left corner, an underline,
-//!   brackets and a strike from left to right, and an arrow from its
-//!   source to its target.
+//! - A box is drawn clockwise from its top-left corner, or from the first
+//!   cell after its label, so that the border before the label comes
+//!   last. An underline, brackets and a strike are drawn from left to
+//!   right, and an arrow from its source to its target.
 //! - The text of a callout comes in after the longest stroke of the step.
 //! - The dim of a step fades only when a spotlight with `fade` comes in or
 //!   goes out, on every cell that it dims or lights: code and annotations
@@ -159,6 +160,62 @@ fn a_box_is_drawn_clockwise_from_its_top_left_corner() {
     nondecreasing(&left, "the left side, bottom to top");
     assert!(top_row.last() <= right.first() && right.last() <= bottom_row.first());
     assert!(bottom_row.last() <= left.first());
+}
+
+#[test]
+fn a_border_with_a_label_or_a_title_starts_after_it_and_ends_before_it() {
+    // A label on the top border of a box, a title on the one of a callout:
+    // the stroke starts at the first cell after the text and goes
+    // clockwise, so the cells before the text (`╭─`) come last and never
+    // show apart from the rest of the border. The text comes after them.
+    let doc = open(&fixture("render/enter_effects/labels.tiza"));
+    for (step, id) in [(1, "b1"), (2, "c1")] {
+        let (l, trace) = layout_traced(&doc, &Theme::dark(), &options(step, 100), None);
+        let w = l.canvas.width;
+        let (c, first) = reveal(&doc, step);
+        let stroke = painted(&trace, w, id, Part::Stroke);
+        let top = stroke.iter().map(|&(_, y)| y).min().unwrap();
+        let letters: Vec<(usize, usize)> = painted(&trace, w, id, Part::Text)
+            .into_iter()
+            .filter(|&(x, y)| {
+                y == top && c.get(x, y).is_some_and(|cell| !cell.sym.trim().is_empty())
+            })
+            .collect();
+        let text_x = letters
+            .iter()
+            .map(|&(x, _)| x)
+            .min()
+            .expect("a label on the top border");
+        let (before, rest): (Vec<_>, Vec<_>) =
+            stroke.iter().partition(|&&(x, y)| y == top && x < text_x);
+        assert_eq!(before.len(), 2, "{id}: {before:?} before the text");
+        let after = rest
+            .iter()
+            .filter(|&&(x, y)| y == top && x > text_x)
+            .map(|&(x, _)| x)
+            .min()
+            .unwrap();
+        assert_eq!(
+            at(&first, after, top),
+            0,
+            "{id}: the stroke starts after the text"
+        );
+        let rest_end = rest.iter().map(|&(x, y)| at(&first, x, y)).max().unwrap();
+        for &(x, y) in &before {
+            assert!(
+                at(&first, x, y) >= rest_end,
+                "{id}: ({x}, {y}) before the text shows at {} ms, before the rest of the border ends at {rest_end} ms",
+                at(&first, x, y)
+            );
+        }
+        let before_end = before.iter().map(|&(x, y)| at(&first, x, y)).max().unwrap();
+        for &(x, y) in &letters {
+            assert!(
+                at(&first, x, y) > before_end,
+                "{id}: the text comes before the border closes"
+            );
+        }
+    }
 }
 
 #[test]
