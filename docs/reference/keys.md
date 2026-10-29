@@ -130,6 +130,7 @@ The status bar shows the selected annotation and its keys. A message hides them.
 - Only the result of a `:` command shows. The messages of the keys, for example after `u`, do not show in presentation mode.
 - `Ctrl-C` quits in presentation mode when no item of the [Ctrl-C](#ctrl-c) list is open.
 - Presentation mode ignores the mouse. See [Presentation mode](../guides/present.md#presentation-mode).
+- While an enter effect plays, the keys that only move the view do not end it. See [Enter effects](document-format.md#enter-effects-experimental).
 
 ### The live pointer
 

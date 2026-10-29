@@ -12,6 +12,9 @@
 //! wherever the view scrolls, they keep to a grid of frames, and with no
 //! test holding its moment the effect goes by its clock. The first frame
 //! shows at once, and after a late frame the loop rests one period.
+//!
+//! In presentation mode, a key that only moves the view (a trackpad comes
+//! as ↑ and ↓) lets the effect play, unless the live pointer is on.
 
 use std::time::{Duration, Instant};
 
@@ -251,6 +254,30 @@ fn scrolled_effect(name: &str) -> Live {
         // A first frame: the effect is planned at the width of the screen.
         draw(a);
     });
+    live.keys(&[KeyCode::Char('n')]);
+    assert!(
+        live.with(|a| a.doc.step == 2 && a.is_playing_effect()),
+        "the effect of step 2 does not play"
+    );
+    live
+}
+
+/// [`scrolled_effect`] in presentation mode, with the live pointer on
+/// when `pointer`.
+fn presenting_effect(name: &str, pointer: bool) -> Live {
+    let dir = scratch(name);
+    let doc = tiza_core::fs::load_document(&fixture("tui/enter_effects/scroll.tiza")).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("s.sock"));
+    live.with(|a| {
+        a.autosave = false;
+        a.set_present(true);
+        a.cursor_line = 60;
+        draw(a);
+    });
+    if pointer {
+        live.keys(&[KeyCode::Char('f')]);
+        assert!(live.with(|a| a.pointer.is_some()), "the pointer is off");
+    }
     live.keys(&[KeyCode::Char('n')]);
     assert!(
         live.with(|a| a.doc.step == 2 && a.is_playing_effect()),
@@ -623,4 +650,89 @@ fn a_moving_mouse_draws_no_frame_more_during_an_effect() {
     let gaps = late_frame_gaps("effect-mouse", true);
     let median = gaps[gaps.len() / 2];
     assert!(median >= 70.0, "median gap {median:.1} ms: {gaps:?}");
+}
+
+#[test]
+fn in_presentation_the_keys_that_move_the_view_let_the_effect_play() {
+    // The keys that only move the view do not end the effect in
+    // presentation mode: the view moves and the effect goes on. A
+    // trackpad or a mouse wheel comes as ↑ and ↓.
+    let live = presenting_effect("effect-view-keys", false);
+    let first = live.with(|a| {
+        draw(a);
+        a.scroll
+    });
+    let mut scrolls = Vec::new();
+    for key in [
+        KeyCode::Char('G'),
+        KeyCode::Up,
+        KeyCode::Char('k'),
+        KeyCode::Char('K'),
+        KeyCode::Down,
+        KeyCode::Char('j'),
+        KeyCode::Char('J'),
+        KeyCode::Home,
+        KeyCode::End,
+        KeyCode::Char('g'),
+    ] {
+        live.keys(&[key]);
+        let (playing, scroll) = live.with(|a| {
+            draw(a);
+            (a.is_playing_effect(), a.scroll)
+        });
+        assert!(playing, "{key:?} ended the effect");
+        scrolls.push(scroll);
+    }
+    // `G` went down to the end, `g` back up to the start.
+    assert!(
+        scrolls[0] > first,
+        "G did not move the view: {first} then {scrolls:?}"
+    );
+    assert_eq!(scrolls.last(), Some(&0), "{scrolls:?}");
+}
+
+#[test]
+fn in_presentation_with_the_pointer_on_a_key_that_moves_the_view_ends_the_effect() {
+    // With the live pointer on, ↓ would move the pointer: a change of the
+    // pointer ends the effect, and the key does nothing else.
+    let live = presenting_effect("effect-view-pointer", true);
+    let line = live.with(|a| a.cursor_line);
+    live.keys(&[KeyCode::Down]);
+    assert!(
+        !live.with(|a| a.is_playing_effect()),
+        "the effect still plays"
+    );
+    assert_eq!(
+        live.with(|a| a.cursor_line),
+        line,
+        "the key moved the cursor"
+    );
+}
+
+#[test]
+fn in_presentation_another_key_still_ends_the_effect() {
+    for key in [KeyCode::Char('x'), KeyCode::Char('l')] {
+        let live = presenting_effect("effect-other-key", false);
+        live.keys(&[key]);
+        assert!(
+            !live.with(|a| a.is_playing_effect()),
+            "{key:?} did not end it"
+        );
+    }
+}
+
+#[test]
+fn outside_presentation_a_key_that_moves_the_view_still_ends_the_effect() {
+    let live = scrolled_effect("effect-author-key");
+    let line = live.with(|a| a.cursor_line);
+    live.keys(&[KeyCode::Down]);
+    assert!(
+        !live.with(|a| a.is_playing_effect()),
+        "the effect still plays"
+    );
+    assert_eq!(
+        live.with(|a| a.cursor_line),
+        line,
+        "the key moved the cursor"
+    );
 }

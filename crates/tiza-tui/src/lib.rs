@@ -686,8 +686,14 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.revision += 1;
         return;
     }
-    // So does an enter effect: the final drawing shows at once.
-    if app.is_playing_effect() {
+    // So does an enter effect: the final drawing shows at once. In
+    // presentation mode a key that only moves the view lets it play, and
+    // the view moves: a trackpad or a mouse wheel comes as ↑ and ↓. With
+    // the live pointer on, that key moves the pointer, and a change of
+    // the pointer ends the effect.
+    if app.is_playing_effect()
+        && !(app.present && app.pointer.is_none() && moves_the_view(app, code, mods))
+    {
         app.finish_effect();
         return;
     }
@@ -880,6 +886,23 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         }
         _ => {}
     }
+}
+
+/// The keys that only move the view in presentation mode, with nothing
+/// open: ↑ ↓ j k, J K (half a screen), g G Home End. ← and → change the
+/// step there.
+fn moves_the_view(app: &App, code: KeyCode, mods: KeyModifiers) -> bool {
+    !mods.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
+        && app.mode == Mode::Normal
+        && app.overlay == Overlay::None
+        && matches!(
+            code,
+            KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Home
+                | KeyCode::End
+                | KeyCode::Char('j' | 'k' | 'J' | 'K' | 'g' | 'G')
+        )
 }
 
 /// Closes the command line without running it (Esc, Ctrl-C, Backspace on
