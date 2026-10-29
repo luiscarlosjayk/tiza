@@ -668,8 +668,8 @@ fn ctrl_c_quits_with_the_pointer_on_or_an_annotation_selected() {
 #[test]
 fn ctrl_c_quits_while_a_step_types() {
     // Test step 5: a `typing` move, `n` to its step, Ctrl-C while it types
-    // (three lines at 3 s each) → quits, instead of only ending the
-    // animation.
+    // (three lines, one an hour, so that it still types on a slow machine)
+    // → quits, instead of only ending the animation.
     let dir = scratch("ac4-typing");
     let doc = json!({
         "schema": 1,
@@ -680,7 +680,7 @@ fn ctrl_c_quits_while_a_step_types() {
         "moves": [{
             "at_step": 1, "action": "code.patch", "op": "insert", "after": "let b = 2;",
             "content": "    let c = 3;\n    let d = 4;\n    let e = 5;",
-            "typing": "line", "speed_ms": 3000
+            "typing": "line", "speed_ms": 3_600_000
         }],
     });
     let path = dir.join("typed.tiza");

@@ -56,7 +56,8 @@ fn project(name: &str) -> (PathBuf, PathBuf) {
     (dir, tiza)
 }
 
-/// `typed.tiza`: step 1 types three lines at 3 s each.
+/// `typed.tiza`: step 1 types three lines, one an hour, so that it still
+/// types when the terminal goes, also on a slow machine.
 fn typing_project(name: &str) -> (PathBuf, PathBuf) {
     let dir = scratch(name);
     let doc = json!({
@@ -68,7 +69,7 @@ fn typing_project(name: &str) -> (PathBuf, PathBuf) {
         "moves": [{
             "at_step": 1, "action": "code.patch", "op": "insert", "after": "let b = 2;",
             "content": "    let c = 3;\n    let d = 4;\n    let e = 5;",
-            "typing": "line", "speed_ms": 3000
+            "typing": "line", "speed_ms": 3_600_000
         }],
     });
     let path = dir.join("typed.tiza");
@@ -313,8 +314,8 @@ fn no_save_writes_nothing_and_says_so_in_the_log() {
 
 #[test]
 fn presentation_while_a_step_types() {
-    // Test step 3: `--present`, `n` starts a step that types for 9 s, and
-    // the terminal goes meanwhile — each way it can go. Before, without
+    // Test step 3: `--present`, `n` starts a step that types (one line an
+    // hour), and the terminal goes meanwhile — each way it can go. Before, without
     // SIGHUP the draw on the gone terminal ended in an abort.
     for (close, name) in [
         (Close::Sighup, "typing-hup"),

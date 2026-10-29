@@ -32,12 +32,13 @@ fn lanes() -> Value {
     })
 }
 
-/// A step 1 that types its change.
+/// A step 1 that types its change, one character an hour: the typing does
+/// not end by its clock during a test, also on a slow machine.
 fn typed() -> Value {
     let mut doc = lanes();
     doc["step"] = json!(0);
     doc["moves"] = json!([{"at_step": 1, "action": "code.patch", "op": "replace", "find": "PORT=8080",
-                           "content": "PORT=9090", "typing": "char", "speed_ms": 1000}]);
+                           "content": "PORT=9090", "typing": "char", "speed_ms": 3_600_000}]);
     doc
 }
 

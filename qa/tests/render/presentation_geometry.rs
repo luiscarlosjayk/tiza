@@ -246,17 +246,19 @@ fn a_typing_tick_draws_the_code_typed_so_far() {
     // Typing runs when the step is reached by going forward one.
     app.set_step(typed - 1);
     app.finish_typing();
+    // The test gives the time to each tick, 1 ms more each time from
+    // before the typing starts: each tick that changes the screen shows
+    // one unit more, also on a slow machine.
+    let mut now = Instant::now();
     app.next_step();
     assert_eq!(app.doc.step, typed);
     assert!(app.is_typing());
-    let start = Instant::now();
+    let start = now;
     let mut ticks = 0;
     while app.is_typing() {
-        assert!(
-            start.elapsed() < Duration::from_secs(60),
-            "typing never ended"
-        );
-        if app.typing_tick() {
+        assert!(now - start < Duration::from_secs(60), "typing never ended");
+        now += Duration::from_millis(1);
+        if app.typing_tick_at(now) {
             ticks += 1;
             assert_eq!(kept(&app, 100), fresh(&app, 100), "tick {ticks}");
         }
@@ -426,8 +428,9 @@ fn presentation_with_moves_reuses_the_geometry_every_frame() {
 // ---------- review: a typing ended by a request, a step patched ----------
 
 /// Four lines, a note at step 1, and a move at step 2 that types a line
-/// wider than every other, one line every 5 s: the take's geometry at step
-/// 2 is sized from what is typed so far.
+/// wider than every other, one line an hour: the take's geometry at step
+/// 2 is sized from what is typed so far. The typing does not end by its
+/// clock during a test, also on a slow machine.
 fn typed_wide_line() -> Document {
     let doc = json!({
         "schema": 1, "source": {"language": "rs", "first_line": 1},
@@ -435,7 +438,7 @@ fn typed_wide_line() -> Document {
         "annotations": [{"id": "n1", "step": 1, "type": "note", "line": 2, "text": "the binding a"}],
         "moves": [{
             "at_step": 2, "action": "code.patch", "op": "insert", "after": "let a = 1;",
-            "content": format!("    // {}", "x".repeat(70)), "typing": "line", "speed_ms": 5000
+            "content": format!("    // {}", "x".repeat(70)), "typing": "line", "speed_ms": 3_600_000
         }],
         "step": 1
     });
