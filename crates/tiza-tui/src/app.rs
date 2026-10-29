@@ -3337,18 +3337,27 @@ impl App {
         // and in presentation mode shows what comes in at the step, as a
         // full replay ends.
         if s == self.doc.step && jump {
-            let camera = if self.doc.moves.is_empty() {
-                Camera::None
-            } else {
-                self.doc.view_at(s).camera
-            };
+            let v = (!self.doc.moves.is_empty()).then(|| self.doc.view_at(s));
+            let camera = v.as_ref().map_or(Camera::None, |v| v.camera.clone());
             let own = own_camera(&camera, s);
             // The live pointer is decided once, on the view of the camera
             // and the reveal together (D14).
             let before = (self.cursor_line, self.cursor_col);
             let mut settle = false;
-            if let Camera::Scroll(cam) = camera {
-                settle |= self.place_camera(cam, true);
+            match (camera, &v) {
+                (Camera::Scroll(cam), _) => settle |= self.place_camera(cam, true),
+                // A `cursor` or a `code.link`: the cursor goes there, and
+                // the view with it, as when the presenter comes to the step
+                // (the view of the step on screen stays on its code). A
+                // live pointer keeps the cursor on its line, as then.
+                (camera @ Camera::Cursor { .. }, Some(v))
+                    if self.cursor_camera_places(&camera, s, true) =>
+                {
+                    self.scroll_held = None;
+                    self.place_step_cursor(v);
+                    self.carry_pointer(s);
+                }
+                _ => {}
             }
             if self.present && s != 0 && !own {
                 settle |= self.reveal(s);
@@ -3390,14 +3399,7 @@ impl App {
                     if let Camera::Scroll(cam) = v.camera {
                         scroll = Some(cam);
                     } else {
-                        // N (a): in presentation mode an older `cursor` or
-                        // `code.link` places the view only at its own step,
-                        // or when the view cannot stay on its code (another
-                        // file, out of the window).
-                        let places = match v.camera {
-                            Camera::Cursor { at_step } => !self.present || at_step == s || !carried,
-                            _ => true,
-                        };
+                        let places = self.cursor_camera_places(&v.camera, s, carried);
                         if self.scroll_applied.is_some() && !self.scroll_runs_by(s) {
                             went_top = true;
                             // Back to a step that no `scroll` reaches: the
@@ -3410,12 +3412,7 @@ impl App {
                         self.scroll_applied = None;
                         self.scroll_held = None;
                         if places {
-                            if let Some(c) = v.cursor {
-                                self.cursor_line = c.line;
-                                self.cursor_col = c.col;
-                            } else if v.view.file.is_some() || v.view.window.is_some() {
-                                self.cursor_line = self.doc.source.first_line;
-                            }
+                            self.place_step_cursor(&v);
                         }
                     }
                 }
@@ -3485,6 +3482,30 @@ impl App {
             }
         }
         loud
+    }
+
+    /// Whether the `cursor` or `code.link` camera of step `s` places the
+    /// cursor. N (a): in presentation mode an older `cursor` or `code.link`
+    /// places the view only at its own step, or when the view cannot stay on
+    /// its code (`carried` is `false`: another file, out of the window).
+    /// Normal mode places it at each step, as before.
+    fn cursor_camera_places(&self, camera: &Camera, s: u32, carried: bool) -> bool {
+        match camera {
+            Camera::Cursor { at_step } => !self.present || *at_step == s || !carried,
+            _ => true,
+        }
+    }
+
+    /// The cursor that the `cursor` or `code.link` camera of a step puts:
+    /// the line of the `cursor` move, or the first line that a `code.link`
+    /// to another file or to a window shows.
+    fn place_step_cursor(&mut self, v: &tiza_core::model::View) {
+        if let Some(c) = v.cursor {
+            self.cursor_line = c.line;
+            self.cursor_col = c.col;
+        } else if v.view.file.is_some() || v.view.window.is_some() {
+            self.cursor_line = self.doc.source.first_line;
+        }
     }
 
     // ---------- moves ----------

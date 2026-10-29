@@ -156,7 +156,7 @@ The live pointer works like a laser pointer. It shows one line or a group of lin
 4. Press `f` to turn it off.
 
 - `Esc` also turns off the pointer when no selection, panel or command line is open. In a selection, `Esc` closes only the selection, and the pointer stays on the cursor line.
-- The pointer stays on its line when you change the step. When the step moves the view (a camera move of the step, the return to the top, or in presentation mode what comes in at the step) and the new view does not show the lines of the pointer, the pointer turns off.
+- The pointer stays on its line when you change the step. When the step moves the view (a camera move of the step, the return to the top, or in presentation mode what comes in at the step) and the new view does not show the lines of the pointer, the pointer turns off. When the pointer stays, a `cursor` or a `code.link` of the step does not move it, and the cursor stays on the pointer. This also occurs with a goto to the step on screen.
 - When a move removes the line of the pointer, the pointer turns off. It also turns off when a move fails at a change of step.
 - After a paste or a reload, the pointer goes to the cursor line.
 - The command line hides the pointer while it is open.

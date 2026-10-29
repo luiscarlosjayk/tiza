@@ -14,6 +14,7 @@ mod command_typos;
 mod common;
 mod ctrl_c_cancels;
 mod enter_effects;
+mod goto_own_camera;
 mod help_panel;
 mod live_pointer;
 mod mouse;
