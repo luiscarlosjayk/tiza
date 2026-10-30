@@ -6,6 +6,7 @@ mod followed_file_after_ref_or_put;
 mod paste_and_stdin;
 mod paste_turns_follow_off;
 mod pause_with_patches;
+mod put_while_paused;
 mod reload_on_save;
 mod reload_with_code_link;
 mod reopen_after_follow_off;
