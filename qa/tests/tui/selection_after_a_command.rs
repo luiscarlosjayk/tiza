@@ -93,6 +93,9 @@ for st in steps if ok else []:
         if len(st) > 2 and st[2]:
             s.wait_for(lambda out, w=st[2]: w in plain(out[mark:]), 10, repr(st[2]))
         else:
+            # A key with nothing on screen to wait for: a pause before the
+            # next key, as a person types, not a check. The checks wait for
+            # the annotations (`anns`) or for a text.
             s.settle(0.15)
     elif st[0] == "anns":
         until(lambda: len(anns()) == st[1], f"{st[1]} annotations")

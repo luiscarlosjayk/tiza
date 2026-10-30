@@ -74,6 +74,9 @@ ready = sys.argv[5]
 os.chdir(cwd)
 s = Pty([binary, *args, "main.rs"], 30, 120)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out, 10, "first frame"):
+    # The settles here are pauses between keys, as a person types, not
+    # checks: what the test checks waits for a condition, or for the child
+    # to exit (then nothing more can be written).
     s.settle(0.5)
     mark = 0
     for k in keys[:-1]:
