@@ -260,17 +260,19 @@ fn a_put_while_a_change_waits_cannot_change_the_file_that_follow_reads() {
     let (live, src) = paused_at("put-paused-follows", 2);
     save_and_read(&live, &src, NEW.as_bytes());
     let before = pause(&live);
-    let said = "scene.put: follow is paused and reads main.rs: a put cannot change `follows` \
-                now. Send `follows` as scene.get gives it, or leave it out";
+    let said = FOLLOWS;
     for other in [json!({"file": "main0.rs"}), json!({"file": "nowhere.rs"})] {
         let put = got(&live, |doc| doc["follows"] = other.clone());
         assert_eq!(refused(&live, put), said, "{other}");
     }
     assert_eq!(pause(&live), before);
-    // The same file written another way: fine.
+    // The same file written another way: fine. (`..` and the folder's
+    // name: only the resolved folder tells that it is the same.)
+    let folder = src.parent().unwrap().file_name().unwrap().to_str().unwrap();
     for same in [
         json!({"file": "./main.rs"}),
         json!({"file": src.to_str().unwrap()}),
+        json!({"file": format!("../{folder}/main.rs")}),
     ] {
         live.api_ok("scene.put", got(&live, |doc| doc["follows"] = same.clone()));
     }
@@ -286,6 +288,43 @@ fn a_put_while_a_change_waits_cannot_change_the_file_that_follow_reads() {
     // The change of main.rs is what loads.
     live.api_ok("step.set", json!({"step": 1}));
     assert_eq!(base(&live), lines(NEW));
+}
+
+/// The refusal of another `follows` while follow reads the file over the
+/// code on screen.
+const FOLLOWS: &str = "scene.put: follow reads main.rs over the code on screen: a put cannot \
+                       change `follows` while follow is on. Send `follows` as scene.get gives \
+                       it, or leave it out";
+
+#[test]
+fn another_follows_is_refused_also_when_the_file_is_missing_after_the_pause() {
+    // A change waits, the file goes away, the presenter goes to the resume
+    // step: not paused, but follow still reads main.rs over the code on
+    // screen when it comes back.
+    let (live, src) = paused_at("put-missing-follows", 2);
+    save_and_read(&live, &src, NEW.as_bytes());
+    std::fs::remove_file(&src).unwrap();
+    live.with(|app| app.read_save());
+    live.api_ok("step.set", json!({"step": 1}));
+    assert_eq!(pause(&live).0, json!(false));
+    let put = got(&live, |doc| doc["follows"] = json!({"file": "main0.rs"}));
+    assert_eq!(refused(&live, put), FOLLOWS);
+}
+
+#[test]
+fn another_document_with_its_own_follows_goes_in_while_a_change_waits() {
+    // Another document turns follow off; its `follows` is its own.
+    let (live, src) = paused_at("put-paused-other-doc", 2);
+    save_and_read(&live, &src, NEW.as_bytes());
+    let put = got(&live, |doc| {
+        doc["source"]["path"] = json!("other.rs");
+        doc["follows"] = json!({"file": "other.rs"});
+    });
+    live.api_ok("scene.put", put);
+    assert_eq!(
+        live.api_ok("follow.status", json!({}))["enabled"],
+        json!(false)
+    );
 }
 
 /// The message on the bar.
@@ -312,12 +351,24 @@ fn a_put_or_a_move_that_moves_the_resume_step_renews_the_notice() {
     // A move added at step 1 does the same.
     let (live, src) = paused_at("move-paused-notice", 2);
     save_and_read(&live, &src, NEW.as_bytes());
-    live.api_ok(
+    let added = live.api_ok(
         "move.add",
         json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// new"}),
     );
     assert_eq!(pause(&live).2, json!(0));
     assert_eq!(bar_message(&live), "step 0 loads the change to main.rs");
+    // Deleted, the resume step is 1 again, and the notice says so.
+    live.api_ok("move.delete", json!({"index": added["index"]}));
+    assert_eq!(pause(&live).2, json!(1));
+    assert_eq!(bar_message(&live), "step 1 loads the change to main.rs");
+    // Another message on the bar stays: the notice is not there to renew.
+    live.with(|app| app.message = Some(("something else".into(), false)));
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// new"}),
+    );
+    assert_eq!(pause(&live).2, json!(0));
+    assert_eq!(bar_message(&live), "something else");
 }
 
 #[test]
@@ -351,6 +402,13 @@ fn a_put_or_a_move_that_ends_the_pause_loads_the_change_before_its_reply() {
             "{edit}: {reply}"
         );
     }
+    // A scene.patch to the resume step.
+    let (live, src) = paused_at("patch-paused-step1", 2);
+    save_and_read(&live, &src, longer.as_bytes());
+    let reply = live.api_ok("scene.patch", json!({"step": 1}));
+    assert_eq!(base(&live), lines(&longer));
+    assert_eq!(reply["lines"], json!(5), "{reply}");
+    assert_eq!(reply["revision"], status(&live)["revision"], "{reply}");
     // A move deleted: the patch, move #2.
     let (live, src) = paused_at("move-paused-delete", 2);
     save_and_read(&live, &src, longer.as_bytes());

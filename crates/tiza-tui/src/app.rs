@@ -2944,9 +2944,10 @@ impl App {
         }
         let base = self.save_path.parent().map(Path::to_path_buf);
         let other = doc.source.path != self.doc.source.path;
-        // In a pause over embedded code, `follows` names the file that
-        // follow reads at the resume step ([`App::paused`]): no put points
-        // it at another file. The same file written another way
+        // Following over embedded code (a change that waits in a pause, or
+        // a file that went missing or cannot be read meanwhile), `follows`
+        // names the file that follow reads next ([`App::paused`]): no put
+        // points it at another file. The same file written another way
         // (`./main.rs`, its absolute path) is the same file, as for follow.
         if !other
             && self.follow.is_some()
@@ -2955,7 +2956,7 @@ impl App {
             && !self.follows_the_followed_file(sent)
         {
             return Err(Error::Invalid(format!(
-                "scene.put: follow is paused and reads {file}: a put cannot change `follows` now. Send `follows` as scene.get gives it, or leave it out"
+                "scene.put: follow reads {file} over the code on screen: a put cannot change `follows` while follow is on. Send `follows` as scene.get gives it, or leave it out"
             )));
         }
         if !self.doc.is_embedded() {
@@ -3428,6 +3429,7 @@ impl App {
         self.clamp_cursor();
         self.camera_changed();
         self.touch();
+        self.settle_pause();
         Ok(self.scene_changed(added, replaced, deleted))
     }
 

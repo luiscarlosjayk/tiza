@@ -150,8 +150,8 @@ Agents control follow mode through the socket methods `follow.set` and `follow.s
 - `scene.get` gives `follows`. A `scene.put` that sends `follows` sets the file that `:follow on` reloads.
 - A `scene.put` of the open document without `follows` keeps the file that the open document follows.
 - While follow mode is paused, a `scene.put` of the code on screen works, also when a change waits. Thus `scene.get` and then `scene.put` of the same copy work. The code on screen does not change, and the change that waits still loads at `resume_step`. The other parts of the document, for example the annotations, change as you sent them.
-- While a change waits, a `scene.put` cannot change `follows`: that is the file that the change comes from. Send `follows` as `scene.get` gives it, or leave it out. The same file written another way, for example `./main.rs` or its absolute path, is the same `follows`.
-- When a `scene.put`, `move.add` or `move.delete` leaves no `code.patch` applied at the step on screen, the change that waits loads before the reply, as at a step change. When the change still waits, the bar names the step where it loads now.
+- While a change waits, and while the followed file is missing or cannot be read, a `scene.put` cannot change `follows`: that is the file that follow reads next. Send `follows` as `scene.get` gives it, or leave it out. The same file written another way, for example `./main.rs` or its absolute path, is the same `follows`.
+- When a `scene.put`, `scene.patch` or `move.delete` leaves no `code.patch` applied at the step on screen, the change that waits loads before the reply, as at a step change. When a change of the moves moves the resume step and the change still waits, the notice on the bar names the step where it loads now, if the notice is still there.
 - While a change waits, a `scene.put` with other code fails, also with the code of the file on disk. The code on screen is not what the file holds now, and the pause stops new code at a step with a `code.patch`. The error gives the step where the file loads. To change the code, edit the file.
 
 | `reason` | When |
