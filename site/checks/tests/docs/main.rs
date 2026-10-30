@@ -5,6 +5,7 @@
 
 mod config_example;
 mod doc_constants;
+mod keys_page;
 mod readme_images;
 mod scenario_paths;
 mod text_frames;

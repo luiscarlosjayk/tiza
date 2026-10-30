@@ -9,8 +9,7 @@
 //!   annotation's first line, and the hint on the bar when it fits.
 
 use crossterm::event::KeyCode;
-use tiza_qa::markdown::cited;
-use tiza_qa::{Live, repo_file};
+use tiza_qa::Live;
 
 fn bar(live: &Live, cols: u16) -> String {
     live.screen(cols, 24).lines().last().unwrap().to_string()
@@ -122,34 +121,4 @@ fn command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
         _ => String::new(),
     });
     assert_eq!(input, "note 1 one", "↑ past the oldest stays on the oldest");
-}
-
-/// The keys page gives the size of the command history: Tiza keeps that
-/// many commands and drops the oldest one.
-#[test]
-fn the_history_keeps_as_many_commands_as_the_keys_page_says() {
-    let cites = cited(
-        &repo_file("docs/reference/keys.md"),
-        "keeps the last ",
-        " commands",
-    );
-    let [(_, n)] = cites[..] else {
-        panic!(
-            "keys.md gives the size of the history {} times, not once: {cites:?}",
-            cites.len()
-        );
-    };
-    let live = Live::from_code("fn main() {}\n", "rs", "history-size");
-    live.with(|a| a.autosave = false);
-    // Each command differs from the one before it: Tiza adds them all.
-    for k in 0..=n {
-        live.command(&format!("title t{k}"));
-    }
-    let (len, oldest) = live.with(|a| (a.history_cmds.len(), a.history_cmds[0].clone()));
-    assert_eq!(
-        (len as u64, oldest.as_str()),
-        (n, "title t1"),
-        "after {} commands the history has {len}, the oldest {oldest:?}; keys.md says it keeps {n}",
-        n + 1
-    );
 }
