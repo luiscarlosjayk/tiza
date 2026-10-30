@@ -366,11 +366,15 @@ fn workspace_copy(name: &str) -> PathBuf {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::copy(root().join(f), dir.join(f)).unwrap();
     }
-    for d in ["crates", "qa/src", "scripts"] {
+    for d in ["crates", "qa/src", "site/checks/src", "scripts"] {
         copy_dir(&root().join(d), &dir.join(d));
     }
-    std::fs::create_dir_all(dir.join("qa/tests")).unwrap();
-    std::fs::copy(root().join("qa/Cargo.toml"), dir.join("qa/Cargo.toml")).unwrap();
+    // The members without a crates/ folder: their manifests, and no tests.
+    for m in ["qa", "site/checks"] {
+        std::fs::create_dir_all(dir.join(m).join("tests")).unwrap();
+        let manifest = format!("{m}/Cargo.toml");
+        std::fs::copy(root().join(&manifest), dir.join(&manifest)).unwrap();
+    }
     dir
 }
 

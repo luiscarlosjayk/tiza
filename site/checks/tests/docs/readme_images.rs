@@ -6,10 +6,7 @@ use tiza_qa::{example, scratch, tiza_ok, webp_frames};
 const WIDTH: &str = "92";
 
 fn root() -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
+    tiza_qa::repo_root()
 }
 
 fn read(rel: &str) -> String {

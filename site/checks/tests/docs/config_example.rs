@@ -3,15 +3,13 @@
 //! `tiza config` output are what the binary takes and prints.
 
 use std::collections::BTreeSet;
-use std::path::Path;
 
 use tiza_core::config::{DEFAULT_KEYS, STYLE_FIELDS};
 use tiza_qa::markdown::{self, table_rows};
 use tiza_qa::{scratch, tiza_with_config};
 
 fn page() -> String {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-    std::fs::read_to_string(root.join("docs/reference/config.md")).unwrap()
+    tiza_qa::repo_file("docs/reference/config.md")
 }
 
 /// The text under an H2 of the page, up to the next H2.

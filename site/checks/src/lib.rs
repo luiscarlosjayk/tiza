@@ -1,4 +1,5 @@
-//! Helpers for more than one module of the policy area.
+//! Helpers of the checks of the docs: the code words of a page and its
+//! text frames.
 
 // --- The Markdown of the docs --------------------------------------------
 

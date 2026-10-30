@@ -31,6 +31,9 @@ confidence-threshold = 0.8
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+# A path dependency without a version is fine in a crate that is not
+# published: tiza-site-checks on tiza-qa.
+allow-wildcard-paths = true
 # Network policy (ADR 0009): the `tiza` binary and the core crates never
 # open a connection, so no crate that speaks HTTP/TLS may enter the
 # workspace. When `tiza-net` exists, exempt it here with

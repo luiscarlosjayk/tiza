@@ -1,14 +1,11 @@
 //! Every path that the demo scenarios name exists.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use crate::common::code_words;
+use tiza_site_checks::code_words;
 
 fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
+    tiza_qa::repo_root()
 }
 
 fn doc() -> String {
