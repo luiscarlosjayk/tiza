@@ -241,7 +241,7 @@ enum Cmd {
         /// Force the line-number gutter on (overrides a document saved with `:numbers off`)
         #[arg(long)]
         numbers: bool,
-        /// Cap on the right margin in cells (notes wrap there, labels, legends and long notes are cut; overrides the document's `margin` field)
+        /// Cap on the right margin in cells (a longer note, label or legend continues on the free rows below, then is cut with …; overrides the document's `margin` field)
         #[arg(long)]
         margin_cols: Option<usize>,
         /// Language override (otherwise detected from the file or its content)

@@ -50,7 +50,7 @@ Two examples show moves and views:
 | `theme` | `"dark"`, `"light"` or `"terminal"` | No default | The theme of the document. |
 | `theme_overrides` | object | No default | Colors that apply over the `[theme]` table of the config file (see [Theme overrides](#theme-overrides)). |
 | `padding` | array of two integers | `pad` of the config file, else `[0, 1]` | The blank rows and columns around the code on the screen, as `[vertical, horizontal]`. |
-| `margin` | integer | No default | The maximum width of the right margin in columns. A note wraps at this width onto the rows under its line. Tiza cuts a label, a legend, and a note that is too long for its rows there, and ends it with `…`. |
+| `margin` | integer | No default | The maximum width of the right margin in columns. In the right margin, a note, a label or a legend that is longer than the margin continues on the free rows under its line. When no row is free, Tiza cuts it and ends it with `…`. |
 | `numbers` | `true` or `false` | `numbers` of the config file, else `true` | When `false`, Tiza does not show line numbers. |
 
 - `views` holds the full code of a linked file. The window stays in the move.

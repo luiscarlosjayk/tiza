@@ -129,7 +129,7 @@ The same step after `:pad 0 0`. The document now has changes that are not saved,
 
 ## `:margin`
 
-Sets the largest width of the right margin, from 12 to 200 cells. Tiza puts notes, labels and legends in the right margin when it has room, and under the line when it has no room. In the right margin, a note wraps onto the rows under its line. Tiza cuts a label, a legend, or a note that is too long for its rows, and ends it with `…`.
+Sets the largest width of the right margin, from 12 to 200 cells. Tiza puts notes, labels and legends in the right margin when it has room, and under the line when it has no room. In the right margin, a note, a label or a legend that is longer than the margin continues on the free rows under its line. When no row is free, Tiza cuts it and ends it with `…`.
 
 ```
 :margin N
