@@ -79,10 +79,18 @@ pub struct Opened {
 /// has a `.tiza` sidecar next to it, the sidecar is preferred (it keeps the annotations).
 /// One line naming what of the document Tiza does not draw as the file
 /// says: the annotations whose lines fall outside the code (they are kept
-/// in the file but cannot be drawn), and what this version does not know
+/// in the file but cannot be drawn), the annotations with another problem
+/// that `tiza check` gives, and what this version does not know
 /// ([`not_known_notice`]), or `None`.
 pub fn open_notice(doc: &Document) -> Option<String> {
-    let notices = [outside_annotations(doc), not_known_notice(doc)];
+    // The checks of the annotations, once (with moves, each one replays
+    // them).
+    let checks = doc.annotation_checks();
+    let notices = [
+        outside_annotations(doc, &checks),
+        annotation_problems(doc, &checks),
+        not_known_notice(doc),
+    ];
     let notices: Vec<String> = notices.into_iter().flatten().collect();
     (!notices.is_empty()).then(|| notices.join("; "))
 }
@@ -256,13 +264,49 @@ fn unknown_effects_notice(doc: &Document) -> Option<String> {
     ))
 }
 
+/// Whether `e`, an error of [`Document::validate_annotation`], says that
+/// the annotation is outside the code: a line that the code does not have.
+/// The layout then does not draw it. Columns past the end of a line are
+/// another problem: the layout draws the part on the line.
+fn is_outside(e: &Error) -> bool {
+    match e {
+        Error::LineOutOfRange { .. } => true,
+        Error::Within { inner, .. } | Error::Because { inner, .. } => is_outside(inner),
+        _ => false,
+    }
+}
+
+/// The annotations that fail a check and are not outside the code (a
+/// mark kind that Tiza does not know, columns past the end of a line), or
+/// `None`: `tiza check` gives each problem. The notice does not say
+/// whether Tiza draws them: it draws some of them.
+fn annotation_problems(doc: &Document, checks: &[Result<(), Error>]) -> Option<String> {
+    let bad: Vec<&str> = doc
+        .annotations
+        .iter()
+        .zip(checks)
+        .filter(|(_, c)| c.as_ref().is_err_and(|e| !is_outside(e)))
+        .map(|(a, _)| a.id.as_str())
+        .collect();
+    if bad.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "tiza check gives the problem of {} annotation{}: {}",
+        bad.len(),
+        if bad.len() == 1 { "" } else { "s" },
+        bad.join(", ")
+    ))
+}
+
 /// The annotations outside the code, or `None`.
-fn outside_annotations(doc: &Document) -> Option<String> {
+fn outside_annotations(doc: &Document, checks: &[Result<(), Error>]) -> Option<String> {
     let bad: Vec<String> = doc
         .annotations
         .iter()
-        .filter(|a| doc.validate_annotation(a).is_err())
-        .map(|a| match &a.file {
+        .zip(checks)
+        .filter(|(_, c)| c.as_ref().is_err_and(is_outside))
+        .map(|(a, _)| match &a.file {
             // Each with the lines of its own file.
             Some(f) => {
                 let n = doc.view_code.get(f).map_or(0, Vec::len);

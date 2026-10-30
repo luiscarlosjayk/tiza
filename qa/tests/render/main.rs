@@ -18,6 +18,7 @@ mod line_numbers;
 mod line_range;
 mod margin_callouts;
 mod narrow_arrow_labels;
+mod open_notice;
 mod padding;
 mod padding_override;
 mod presentation_geometry;
