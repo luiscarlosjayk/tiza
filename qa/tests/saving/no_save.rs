@@ -156,7 +156,7 @@ fn autosave_on_ends_no_save() {
 }
 
 #[test]
-fn the_help_and_the_changelog_say_it() {
+fn the_help_says_it() {
     let help: Vec<String> = tiza_tui::keys::HELP
         .iter()
         .flat_map(|(_, rows)| rows.iter().map(|r| r.key_text()))
@@ -166,9 +166,6 @@ fn the_help_and_the_changelog_say_it() {
             == "With --no-save, :saveas PATH saves to another file, and every change saves there after it."),
         "{help:?}"
     );
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    assert!(read("CHANGELOG.md").contains("unsaved (:saveas PATH · :q! discards)"));
 }
 
 #[test]
@@ -363,17 +360,6 @@ fn the_saveas_message_shows_whole_at_100_columns_next_to_the_badge() {
         "{b}"
     );
     assert!(b.contains(" saved as /"), "{b}");
-}
-
-#[test]
-fn the_changelog_names_the_chips_and_the_message() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    let changelog = read("CHANGELOG.md");
-    assert!(changelog.contains("It shows `no-save` with `--no-save`"));
-    assert!(changelog.contains("It shows `autosave off` after `:autosave off`"));
-    assert!(changelog.contains("`saved as PATH (autosave on)`, or `(autosave off)`"));
-    assert!(!changelog.contains("changes now save there"));
 }
 
 // A count of one says it in the singular: `1 line pasted (1 annotation

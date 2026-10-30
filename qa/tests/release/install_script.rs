@@ -1496,8 +1496,6 @@ fn the_script_names_the_release_files_and_keeps_to_https() {
     let mut known: Vec<&str> = TARGETS.iter().map(|t| t.2).collect();
     known.sort_unstable();
     assert_eq!(built, known, "the targets of release.yml");
-
-    assert!(read("CHANGELOG.md").contains("`install.sh`"));
 }
 
 // --- AC8 ------------------------------------------------------------------

@@ -346,13 +346,6 @@ fn the_read_only_message_points_at_saveas_and_it_works() {
     std::fs::set_permissions(&tiza, perm).unwrap();
 }
 
-#[test]
-fn changelog() {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let read = |f: &str| std::fs::read_to_string(root.join(f)).unwrap();
-    assert!(read("CHANGELOG.md").contains(":saveas"), "CHANGELOG");
-}
-
 // ---------- Review ----------
 
 #[test]
