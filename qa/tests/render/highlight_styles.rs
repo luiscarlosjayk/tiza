@@ -61,10 +61,12 @@ fn glued_brackets_fall_back_to_the_row_below() {
     let lines: Vec<&str> = t.lines().collect();
     let i = lines.iter().position(|l| l.contains("takes(s)")).unwrap();
     // `3:s` finds the first `s` (inside `takes`): a one-cell span glued on
-    // both sides → a plain ‾ under it.
+    // both sides → `⊔` under it. `⌊` and `⌋` would share the cell, and `‾`
+    // looked the same as an underline.
     let col = lines[i].find("takes(s)").unwrap() + 4;
     let under: String = lines[i + 1].chars().collect();
-    assert_eq!(under.chars().nth(col), Some('‾'), "{t}");
+    assert_eq!(under.chars().nth(col), Some('⊔'), "{t}");
+    assert!(!under.contains('‾'), "{t}");
     // A wider span glued on one side: both brackets go below it, as a
     // pair, and the space on its free side stays a space.
     live.command("hl 2:String::from emphasis=brackets");
@@ -122,6 +124,19 @@ fn a_one_character_span_keeps_the_bracket_that_has_room() {
     let under: Vec<char> = lines[i + 1].chars().collect();
     assert_eq!(under.get(at), Some(&'⌊'), "{t}");
     assert!(!lines[i + 1].contains('‾'), "{t}");
+    // Room before it only: `⌈` beside it and `⌋` under it, not `⊔`.
+    let live = Live::from_code(CODE, "rs", "one-cell-before");
+    live.command("hl 4:& emphasis=brackets");
+    let t = text(&live);
+    let lines: Vec<&str> = t.lines().collect();
+    let i = lines
+        .iter()
+        .position(|l| l.contains("len(⌈&s )"))
+        .unwrap_or_else(|| panic!("no «len(⌈&s )»:\n{t}"));
+    let at = lines[i].chars().position(|c| c == '&').unwrap();
+    let under: Vec<char> = lines[i + 1].chars().collect();
+    assert_eq!(under.get(at), Some(&'⌋'), "{t}");
+    assert!(!lines[i + 1].contains('⊔'), "{t}");
 }
 
 #[test]

@@ -190,7 +190,7 @@ Each value has this meaning:
 
 - `emphasis`: `fill` tints the span.
 - `emphasis`: `underline` draws a row under the span.
-- `emphasis`: `brackets` draws `⌈ ⌉` beside the span. When one side of the span has no space, it draws `⌊ ⌋` on a row under the span, under its first and its last character. At the end of the longest line, the code column has no space after the span. A span of one character keeps its bracket beside it on the side with space, and the other bracket goes under it.
+- `emphasis`: `brackets` draws `⌈ ⌉` beside the span. When one side of the span has no space, it draws `⌊ ⌋` on a row under the span, under its first and its last character. At the end of the longest line, the code column has no space after the span. A span that is one column wide keeps its bracket beside it on the side with space, and the other bracket goes under it. When it has no space on either side, it gets `⊔` under it.
 - `emphasis`: `strike` draws a line through the span.
 - `emphasis`: `fill` is the default. Tiza does not write it to the file.
 - `placement`: `margin` puts the callout in the right margin.

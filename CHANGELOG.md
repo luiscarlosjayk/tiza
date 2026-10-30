@@ -64,6 +64,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - In presentation mode, the step counter on the empty step after the last one gives the same count as the status bar, for example `8/8`. It also shows there in a document of one step. Before, it showed `8/7`.
 - When the start-up wait for the color answer stops in the middle of an answer, the rest of the answer comes as key presses. Tiza now takes it out of the keys also when the frames are slow, for example on a busy computer. Before, the second started before the first frame, and each key of the rest drew a frame. When these frames took more than 1 s, Tiza used the rest of the answer as keys. For example, the `:` of `rgb:` opened the command line, or the theme did not change to light for a light terminal. Now a key of the answer does not draw a frame.
 - With a spotlight, the annotations that touch the lines of the live pointer keep their colors: a mark, a highlight or a note on a line of the pointer, and a box or an arrow that goes through one. Before, only the code of those lines kept its colors, and their annotations stayed dimmed.
+- `brackets` on a span that is one column wide and has no space on either side draws `⊔` under the span. Before, it drew `‾`, and the span looked the same as a span with `underline`.
 
 ## [0.1.2] - 2026-10-26
 

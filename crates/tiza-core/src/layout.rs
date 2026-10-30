@@ -92,7 +92,7 @@ pub enum Row {
     BoxTop(usize),
     BoxBottom(usize),
     ArrowUnder(usize),
-    /// Row under a code line with ▔ / ⌊ ⌋ for underline/bracket emphases.
+    /// Row under a code line with ‾ / ⌊ ⌋ ⊔ for underline/bracket emphases.
     Emphasis(u32),
     /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
@@ -317,6 +317,10 @@ pub fn stable_geometry(doc: &Document, opts: &LayoutOptions) -> StableGeometry {
 /// Glyph of the underline emphasis, on the virtual row under the code:
 /// the overline (top of its cell) is thinner than the one-eighth block ▔.
 pub const UNDERLINE_GLYPH: &str = "‾";
+/// Glyph of the brackets emphasis under a one-cell span with no space on
+/// either side: `⌊` and `⌋` would share the cell, and `‾` reads as an
+/// underline. JetBrains Mono and the symbols font of the exports have it.
+pub const ONE_CELL_BRACKETS_GLYPH: &str = "⊔";
 /// How much of the annotation colour the emphasis glyphs keep (the rest is
 /// the background): softened so the code reads first, still visible after
 /// video compression (checked by the legibility gate). Tried and set by eye:
@@ -1763,9 +1767,9 @@ fn layout_pass(
                         canvas.put(x1, y, "⌉", base.fg(soft));
                     } else if let Some(uy) = under {
                         // A one-cell span glued on both sides: ⌊ and ⌋ would
-                        // share the cell, so it gets a plain underline.
+                        // share the cell, so it gets one glyph for both.
                         let sym = if x1 - x0 == 1 && !blank_before {
-                            UNDERLINE_GLYPH
+                            ONE_CELL_BRACKETS_GLYPH
                         } else {
                             "⌋"
                         };
