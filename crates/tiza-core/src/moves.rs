@@ -20,7 +20,9 @@ use crate::protocol::{MoveSpec, Where};
 /// One move of the demo.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Move {
-    /// Step at which it runs (going forward) and is reverted (going back). `>= 1`.
+    /// Step at which it runs (going forward) and is reverted (going back),
+    /// from 1: step 0 is the code with no change.
+    #[schemars(range(min = 1))]
     pub at_step: u32,
     #[serde(flatten)]
     pub action: MoveAction,

@@ -1238,9 +1238,9 @@
             ],
             "properties": {
               "at_step": {
-                "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+                "description": "Step at which it runs (going forward) and is reverted (going back),\nfrom 1: step 0 is the code with no change.",
                 "format": "uint32",
-                "minimum": 0,
+                "minimum": 1,
                 "type": "integer"
               },
               "rebind": {
@@ -4158,9 +4158,9 @@
             ],
             "properties": {
               "at_step": {
-                "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+                "description": "Step at which it runs (going forward) and is reverted (going back),\nfrom 1: step 0 is the code with no change.",
                 "format": "uint32",
-                "minimum": 0,
+                "minimum": 1,
                 "type": "integer"
               },
               "rebind": {
@@ -5398,9 +5398,9 @@
         ],
         "properties": {
           "at_step": {
-            "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+            "description": "Step at which it runs (going forward) and is reverted (going back),\nfrom 1: step 0 is the code with no change.",
             "format": "uint32",
-            "minimum": 0,
+            "minimum": 1,
             "type": "integer"
           },
           "rebind": {
@@ -5684,9 +5684,9 @@
             ],
             "properties": {
               "at_step": {
-                "description": "Step at which it runs (going forward) and is reverted (going back). `>= 1`.",
+                "description": "Step at which it runs (going forward) and is reverted (going back),\nfrom 1: step 0 is the code with no change.",
                 "format": "uint32",
-                "minimum": 0,
+                "minimum": 1,
                 "type": "integer"
               },
               "index": {

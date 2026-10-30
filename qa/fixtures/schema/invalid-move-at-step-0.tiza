@@ -1,0 +1,9 @@
+{
+ "schema": 1,
+ "source": {"language": "rs", "first_line": 1},
+ "code": ["fn main() {}"],
+ "annotations": [],
+ "moves": [
+  {"at_step": 0, "action": "cursor", "line": 1}
+ ]
+}
