@@ -49,13 +49,14 @@ Use these commands to build and test Tiza from a clone of the repository.
 ```sh
 cargo test                                   # core, TUI (incl. socket), commands and the QA tests (qa/)
 cargo clippy --all-targets -- -D warnings
+cargo test -p tiza-site-checks               # the docs against the code (site/checks), as the docs site job runs them
 cargo run -- examples/ownership.rs
 scripts/size-check.sh                        # release binary < 16 MB, download < 8 MB, ≤ 10 % over qa/budgets.json
 scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
 scripts/docs-frames.sh                       # the frames of the docs pages: a real WebP export for each `<!-- frame -->` comment
 ```
 
-Build the docs site locally with `site/build.sh` and Zola 0.23.6.
+Build the docs site locally with `site/build.sh` and Zola 0.23.6. `cargo test` does not run the checks of the docs: run them when you change the docs or the code that they describe.
 
 Crates: `tiza-core` (model, anchors, layout, rendering, protocol; no terminal dependencies), `tiza-tui` (ratatui + crossterm + socket server), `tiza-mcp` (MCP bridge with `rmcp`), `tiza-export` (SVG, PNG and GIF with `resvg` and embedded fonts; lossless WebP with libwebp, a C library that `libwebp-sys` compiles, so a build needs a C compiler), `tiza` (the binary, in `crates/tiza-cli`). `cargo-deny` checks the licenses and the advisories of the dependencies in CI.
 
