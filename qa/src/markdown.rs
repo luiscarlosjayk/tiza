@@ -1,5 +1,5 @@
-//! Readers for the Markdown of the docs, for the tests that compare a page
-//! with the code.
+//! Readers for Markdown: for the checks of the docs against the code
+//! (`site/checks`), and for the tests of the README that a crate packages.
 
 /// Each number N that a line of `md` gives as `before` N `after`: the line
 /// (from 1) and N. The words around the number find it; they are not a
@@ -75,4 +75,12 @@ pub fn scene_patch_json(text: &str) -> Option<serde_json::Value> {
         serde_json::from_str(&text[start..start + len])
             .unwrap_or_else(|e| panic!("the JSON of `tiza scene patch` is not valid: {e}")),
     )
+}
+
+/// Every link and image target of a Markdown text: `](target)`.
+pub fn link_targets(md: &str) -> Vec<String> {
+    md.split("](")
+        .skip(1)
+        .map(|rest| rest.split(')').next().unwrap_or("").to_string())
+        .collect()
 }

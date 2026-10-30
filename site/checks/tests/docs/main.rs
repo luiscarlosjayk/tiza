@@ -3,10 +3,13 @@
 //! show. Only the job that builds the site runs these checks
 //! (`cargo test -p tiza-site-checks`).
 
+mod brand_page;
 mod config_example;
 mod doc_constants;
+mod install_command;
 mod keys_page;
 mod readme_images;
+mod reporting_links;
 mod scenario_paths;
 mod text_frames;
 mod tour_of_tally;
