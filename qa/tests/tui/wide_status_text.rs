@@ -7,16 +7,19 @@
 //! Acceptance criteria:
 //! - AC1 At start-up Tiza measures how wide the terminal draws them (a
 //!   cursor position request after each one). Where one is wide, Tiza's
-//!   own text outside the code shows its plain form (`!`, `>`, `|`): the
+//!   own text outside the code shows its plain form (`!`, `>`, `||`): the
 //!   bar is whole, with no scroll. Where they are narrow, or where the
 //!   terminal does not answer, the bar is as before.
 //! - AC2 An answer of the probe that comes late, whole or cut by the
 //!   wait, is never taken as keys.
+//! - At the right edge (less than two cells after the cursor), the probe
+//!   writes no sign: the shell's line stays, and the screen does not move.
 //! - AC3 The code and the annotations keep the glyphs (`render.text`).
 //!
 //! The terminal is an emulator in the pty (`tiza_qa::WIDETERM`). Its
 //! answers to the probe are written before `tiza` starts (the cursor is at
-//! row 1), as a terminal that answers at once: no race with the wait. The
+//! row 1, or after the text that the shell wrote), as a terminal that
+//! answers at once: no race with the wait. The
 //! other texts outside the code (a message, supervised mode, a panel, the
 //! message line of presentation mode) are checked in process, with the
 //! signs set as measured wide.
@@ -69,18 +72,31 @@ if cfg.get("no_osc"):
     env["TIZA_NO_OSC"] = "1"
 rows, cols = cfg["rows"], cfg["cols"]
 term = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=cfg["cpr"])
+# What the shell wrote before `tiza` starts: `xs` letters, on the last row
+# when `last_row`. A line as wide as the row leaves the cursor in the last
+# column, with the wrap waiting.
+before = b"\r\n" * (rows - 1 if cfg["last_row"] else 0) + b"x" * cfg["xs"]
+term.feed(before)
+row, col = (rows if cfg["last_row"] else 1), min(cfg["xs"] + 1, cols)
+# The glyphs go after the first report when a wide one fits before the edge.
+room = col + 2 <= cols
 # The answers of a terminal that draws `wide` two cells wide, to the probe
-# (the cursor at row 1, column 1; then each of ⚠ ↪ ⏸ ▶ from there), after
-# the colour answers when the theme asks for them.
-reports = bytes.fromhex(cfg["colors"]) + b"\x1b[1;1R" + b"".join(
-    b"\x1b[1;%dR" % (1 + (2 if g in cfg["wide"] else 1)) for g in "⚠↪⏸▶"
-) if cfg["cpr"] else b""
+# (the cursor; then each of ⚠ ↪ ⏸ ▶ from there), after the colour answers
+# when the theme asks for them.
+first = bytes.fromhex(cfg["colors"]) + b"\x1b[%d;%dR" % (row, col)
+each = b"".join(
+    b"\x1b[%d;%dR" % (row, col + (2 if g in cfg["wide"] else 1)) for g in "⚠↪⏸▶"
+)
+reports = (first + (each if room else b"")) if cfg["cpr"] else b""
 early, after = cfg["early"].encode(), cfg["after"].encode()
 when = cfg["answers"]
+cut = len(reports) - cfg["rest"]
+# A first report cut short or late: the glyphs never go, nor their answers.
+glyphs = cfg["cpr"] and room and when != "late" and cut >= len(first)
 seed, rest = {
     "now": (early + reports + after, b""),
-    "cut": (early + reports[: len(reports) - cfg["rest"]], reports[len(reports) - cfg["rest"]:]),
-    "late": (early, reports),
+    "cut": (early + reports[:cut], reports[cut:] if glyphs else reports[cut:len(first)]),
+    "late": (early, reports[:len(first)]),
 }[when]
 argv = [binary, "--theme", cfg["theme"], "--no-save", "--socket", "s.sock", "--step", str(cfg["step"]), "doc.tiza"]
 s = Pty(argv, rows, cols, env=env, ctty=True, raw=True, seed=seed)
@@ -96,7 +112,8 @@ def pump():
 def bar_has(pred):
     return lambda out: (pump(), pred(term.lines()[-1]))[1]
 if not cfg.get("no_osc"):
-    s.wait_for(lambda out: (pump(), term.cpr_asked >= 5)[1], 10, "the probe")
+    asked = 5 if glyphs else 1
+    s.wait_for(lambda out: (pump(), term.cpr_asked >= asked)[1], 10, "the probe")
 if rest:
     # The rest after the end of the start-up read: the timed read set
     # VTIME before it wrote the probe, and puts the old mode (VTIME 0)
@@ -114,6 +131,12 @@ print("UP", up, flush=True)
 # clears only what it wrote: the text before the cursor stays.
 main = s.out.split(b"\x1b[?1049h")[0]
 print("CLEARED", main.rfind(b"\x1b8\x1b[K") > main.rfind(b"\x1b[6n") >= 0, flush=True)
+print("MAIN", json.dumps(main.decode("utf-8", "replace")), flush=True)
+# The shell's screen as the TUI found it.
+shell = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=False)
+shell.feed(before + main)
+print("SHELL", json.dumps(shell.lines()), flush=True)
+print("SHELL_SCROLLS", shell.scrolls, flush=True)
 if up and cfg["early"]:
     # The command line that the early `:` opened: what reaches it.
     s.send(b"x")
@@ -145,6 +168,11 @@ struct Run {
     bar: String,
     scrolls: u64,
     take: String,
+    /// What `tiza` wrote before the TUI took the screen.
+    main: String,
+    /// The shell's screen then, and how often it moved up.
+    shell: Vec<String>,
+    shell_scrolls: u64,
     out: String,
 }
 
@@ -172,6 +200,9 @@ fn run(name: &str, link: bool, cfg: Value) -> Run {
         bar: field("BAR").as_str().unwrap_or_default().to_string(),
         scrolls: field("SCROLLS").as_u64().unwrap_or(u64::MAX),
         take: field("TAKE").as_str().unwrap_or_default().to_string(),
+        main: field("MAIN").as_str().unwrap_or_default().to_string(),
+        shell: serde_json::from_value(field("SHELL")).unwrap_or_default(),
+        shell_scrolls: field("SHELL_SCROLLS").as_u64().unwrap_or(u64::MAX),
         out: out.clone(),
     }
 }
@@ -180,6 +211,7 @@ fn cfg(wide: &str, cols: u16, autowrap: bool, message: &str, shown: &str) -> Val
     json!({
         "rows": 10, "cols": cols, "wide": wide, "autowrap": autowrap, "cpr": true,
         "answers": "now", "rest": 0, "early": "", "after": "", "step": 1,
+        "xs": 0, "last_row": false,
         "theme": "dark", "colors": "",
         "message": message, "shown": shown,
     })
@@ -261,13 +293,59 @@ fn where_the_signs_are_narrow_or_not_measured_the_bar_keeps_them() {
 }
 
 #[test]
+fn at_the_right_edge_the_probe_writes_no_sign_on_the_shell_line() {
+    let signs = |main: &str| main.contains(['\u{26A0}', '\u{21AA}', '\u{23F8}', '\u{25B6}']);
+    // The shell's line fills the last row, 135 columns: the cursor waits
+    // in the last column for the wrap. A sign there went to the next row,
+    // the screen moved up, and `ESC [ K` cleared the last letter. Now
+    // Tiza asks for the cursor only.
+    let mut c = cfg("", 135, true, "", TITLE);
+    c["xs"] = json!(135);
+    c["last_row"] = json!(true);
+    let r = run("edge-last-column", false, c);
+    assert!(r.out.contains("ASKED 1"), "{}", r.out);
+    assert!(!signs(&r.main) && !r.main.contains("\x1b[K"), "{}", r.out);
+    assert_eq!(r.shell_scrolls, 0, "{}", r.out);
+    assert_eq!(
+        r.shell.last().map(|l| l.trim_end()),
+        Some(&*"x".repeat(135))
+    );
+    assert!(
+        r.shell[..9].iter().all(|l| l.trim().is_empty()),
+        "{}",
+        r.out
+    );
+    assert!(r.bar.contains(TITLE), "{}", r.out);
+    // One column before the last: a wide sign fits, but the cursor after
+    // it waits at the edge and reports the last column again, one cell.
+    // Tiza measures nothing there: the signs stay as they are.
+    let mut c = cfg("\u{26A0}", 80, true, "", "");
+    c["xs"] = json!(78);
+    let r = run("edge-one-before", false, c);
+    assert!(r.out.contains("ASKED 1"), "{}", r.out);
+    assert!(!signs(&r.main) && !r.main.contains("\x1b[K"), "{}", r.out);
+    assert_eq!(r.shell[0].trim_end(), "x".repeat(78), "{}", r.out);
+    // Two columns before the last: the cursor after a wide sign is still
+    // in the row. The probe measures it, and clears what it wrote.
+    let mut c = cfg("\u{26A0}", 80, true, "", "! the borrow !");
+    c["xs"] = json!(77);
+    let r = run("edge-two-before", false, c);
+    assert!(r.out.contains("ASKED 5"), "{}", r.out);
+    assert!(r.bar.contains("! the borrow !"), "{}", r.out);
+    assert_eq!(r.scrolls, 0, "{}", r.out);
+    assert!(r.out.contains("CLEARED True"), "{}", r.out);
+    assert_eq!(r.shell[0].trim_end(), "x".repeat(77), "{}", r.out);
+    assert_eq!(r.shell_scrolls, 0, "{}", r.out);
+}
+
+#[test]
 fn an_answer_of_the_probe_that_comes_late_is_not_keys() {
     // A `:` typed at start-up opens the command line before the answer
     // ends: a part of the answer taken as keys would be typed there
     // (`:3Rx` in place of `:x`). The last report (`ESC [ 1 ; 3 R`) comes
     // whole and late, or is cut at each place: after the ESC, after the
-    // `[`, after the row, after the `;`, before the `R`. Or every report
-    // comes late.
+    // `[`, after the row, after the `;`, before the `R`. Or the first
+    // report comes late: then the glyphs never go.
     let mut cases: Vec<(String, Value)> = [6usize, 5, 4, 3, 2, 1]
         .into_iter()
         .map(|rest| {
@@ -281,7 +359,7 @@ fn an_answer_of_the_probe_that_comes_late_is_not_keys() {
     let mut late = cfg("\u{26A0}", 80, true, "", "");
     late["answers"] = json!("late");
     late["early"] = json!(":");
-    cases.push(("every report late".into(), late));
+    cases.push(("the first report late".into(), late));
     // With the colour query too: the colours come whole, and the first
     // report (the cursor before the glyphs) is cut right after its ESC.
     let mut colors = cfg("\u{26A0}", 80, true, "", "");

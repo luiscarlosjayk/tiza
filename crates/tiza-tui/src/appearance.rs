@@ -50,21 +50,38 @@ pub const PROBED: [(char, &str); 4] = [
     ('\u{25B6}', ">"),
 ];
 
-/// The start-up probe. It saves the cursor (`ESC 7`) and asks for its
-/// position (`ESC [ 6 n`); then, for each glyph of [`PROBED`], it puts the
-/// cursor back (`ESC 8`), writes the glyph and asks again. The column of
-/// each report, less the first one, is how many cells the terminal used.
-/// Last, it puts the cursor back and clears from there to the end of the
-/// line: the text before the cursor stays.
-pub fn probe() -> String {
-    let mut s = String::from("\x1b7\x1b[6n");
-    s.extend(PROBED.iter().map(|(g, _)| format!("\x1b8{g}\x1b[6n")));
+/// The start of the start-up probe: it saves the cursor (`ESC 7`) and
+/// asks for its position (`ESC [ 6 n`). The glyphs ([`probe_glyphs`]) go
+/// only when that report shows room for them ([`room_for_glyphs`]).
+pub const PROBE_START: &str = "\x1b7\x1b[6n";
+
+/// The rest of the probe: for each glyph of [`PROBED`], it puts the cursor
+/// back (`ESC 8`), writes the glyph and asks again. The column of each
+/// report, less the first one, is how many cells the terminal used. Last,
+/// it puts the cursor back and clears from there to the end of the line:
+/// the text before the cursor stays.
+pub fn probe_glyphs() -> String {
+    let mut s: String = PROBED
+        .iter()
+        .map(|(g, _)| format!("\x1b8{g}\x1b[6n"))
+        .collect();
     s.push_str("\x1b8\x1b[K");
     s
 }
 
-/// How many cursor reports the probe asks for: the cursor before the
-/// glyphs, then one after each glyph.
+/// Whether the glyphs of the probe go, from the first report (the cursor)
+/// in a row `cols` wide: a glyph two cells wide must fit with the cursor
+/// after it still in the row. Nearer the right edge, the glyph goes to the
+/// next row (and at the last row the screen moves up), and a cursor in
+/// the last column reports that column again: the width is wrong. At the
+/// last column, `ESC [ K` also clears the last cell of the line. So there
+/// the probe writes nothing more, and measures nothing.
+pub fn room_for_glyphs((_, col): (u16, u16), cols: u16) -> bool {
+    col.saturating_add(2) <= cols
+}
+
+/// How many cursor reports the probe asks for when the glyphs go: the
+/// cursor before the glyphs, then one after each glyph.
 pub const REPORTS: usize = PROBED.len() + 1;
 
 /// Which glyphs of [`PROBED`] the terminal draws two cells wide, as the
@@ -259,7 +276,8 @@ pub struct StartUp {
 
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
 /// on `/dev/tty`, the colour query (when `colors`) and the probe of the
-/// wide glyphs ([`probe`]), a timed read (VTIME), the old mode back. It
+/// wide glyphs ([`PROBE_START`], then [`probe_glyphs`] after the first
+/// report when there is room), a timed read (VTIME), the old mode back. It
 /// stops when every answer came, or when the terminal does not answer in
 /// time ([`COLOR_QUERY_WAIT`]). Nothing is asked when there is no tty, or
 /// when the `TIZA_NO_OSC` variable is set (tests, pipelines). Also returns
@@ -296,12 +314,18 @@ pub fn query_host(colors: bool) -> StartUp {
     } else {
         String::new()
     };
-    ask.push_str(&probe());
+    ask.push_str(PROBE_START);
+    // The width of the row, for the room of the glyphs; unknown: no room.
+    let cols = rustix::termios::tcgetwinsize(&tty).map_or(0, |w| w.ws_col);
+    // The reports that the read waits for: the cursor, then one for each
+    // glyph when they go.
+    let mut expected = 1;
     let _ = (|| {
         tty.write_all(ask.as_bytes()).ok()?;
         tty.flush().ok()?;
         let mut chunk = [0u8; 256];
         let start = Instant::now();
+        let mut first = true;
         loop {
             let n = tty.read(&mut chunk).ok()?;
             if n == 0 {
@@ -309,7 +333,16 @@ pub fn query_host(colors: bool) -> StartUp {
             }
             reads.push(buf.len());
             buf.extend_from_slice(&chunk[..n]);
-            if all_in(&buf, colors) || start.elapsed() > COLOR_QUERY_WAIT * COLOR_QUERY_LATE_FACTOR
+            if first && let Some(cursor) = parse_reports(&buf).first().copied() {
+                first = false;
+                if room_for_glyphs(cursor, cols) {
+                    tty.write_all(probe_glyphs().as_bytes()).ok()?;
+                    tty.flush().ok()?;
+                    expected = REPORTS;
+                }
+            }
+            if all_in(&buf, colors, expected)
+                || start.elapsed() > COLOR_QUERY_WAIT * COLOR_QUERY_LATE_FACTOR
             {
                 break;
             }
@@ -321,7 +354,7 @@ pub fn query_host(colors: bool) -> StartUp {
         Some(parse_answers(&String::from_utf8_lossy(&buf))).filter(|h| colors && h.bg.is_some());
     let reports = parse_reports(&buf);
     let due = Reports {
-        due: reports.len() < REPORTS,
+        due: reports.len() < expected,
         answered: host.is_some() || !reports.is_empty(),
     };
     let (typed, cut) = start_up_rest(&buf, &reads, host.as_ref(), due);
@@ -356,11 +389,12 @@ impl Reports {
 }
 
 /// Whether every answer that the start-up read waits for is in `buf`: the
-/// colours (when `colors`) and a cursor report for each glyph of the probe.
-/// Then the read stops at once.
-pub fn all_in(buf: &[u8], colors: bool) -> bool {
+/// colours (when `colors`) and the cursor reports of the probe, `reports`
+/// of them (one, or [`REPORTS`] when the glyphs went). Then the read stops
+/// at once.
+pub fn all_in(buf: &[u8], colors: bool, reports: usize) -> bool {
     let host = parse_answers(&String::from_utf8_lossy(buf));
-    (!colors || (host.bg.is_some() && host.fg.is_some())) && parse_reports(buf).len() >= REPORTS
+    (!colors || (host.bg.is_some() && host.fg.is_some())) && parse_reports(buf).len() >= reports
 }
 
 /// What the start-up read gives the event loop besides `host`: the keys
@@ -761,12 +795,13 @@ mod tests {
 
     #[test]
     fn the_probe_measures_each_glyph_by_the_column_of_its_report() {
-        // The cursor first, then one request per glyph, in the order of
-        // `PROBED`, each from the saved cursor; the cursor back at the end,
-        // and what the probe wrote cleared.
-        let p = probe();
-        assert_eq!(p.matches("\x1b[6n").count(), REPORTS);
-        assert!(p.starts_with("\x1b7\x1b[6n\x1b8\u{26A0}\x1b[6n"), "{p:?}");
+        // The cursor first; then, after its report, one request per glyph,
+        // in the order of `PROBED`, each from the saved cursor; the cursor
+        // back at the end, and what the probe wrote cleared.
+        assert_eq!(PROBE_START, "\x1b7\x1b[6n");
+        let p = probe_glyphs();
+        assert_eq!(p.matches("\x1b[6n").count(), REPORTS - 1);
+        assert!(p.starts_with("\x1b8\u{26A0}\x1b[6n\x1b8"), "{p:?}");
         assert!(p.ends_with("\x1b8\x1b[K"), "{p:?}");
         // The reports in order, among the colour answers and keys.
         let buf = b"\x1b]11;rgb:1/2/3\x07j\x1b[12;5R\x1b[12;7R\x1b[12;6Rk\x1b[12;7R\x1b[12;6R";
@@ -807,16 +842,35 @@ mod tests {
     }
 
     #[test]
+    fn the_glyphs_go_only_with_room_for_two_cells_before_the_edge() {
+        // In 80 columns: from column 78 a wide glyph ends at 79, and the
+        // cursor after it is at 80, in the row.
+        assert!(room_for_glyphs((5, 1), 80));
+        assert!(room_for_glyphs((5, 78), 80));
+        // From column 79 the cursor after a wide glyph waits at 80 for the
+        // wrap, and reports 80 again: one cell, wrong. At 80 (also with a
+        // wrap that waits) the glyph goes to the next row.
+        assert!(!room_for_glyphs((5, 79), 80));
+        assert!(!room_for_glyphs((5, 80), 80));
+        // The width not known: no glyph.
+        assert!(!room_for_glyphs((1, 1), 0));
+    }
+
+    #[test]
     fn the_read_stops_when_every_answer_is_in() {
         let reports = b"\x1b[1;1R\x1b[1;2R\x1b[1;2R\x1b[1;2R\x1b[1;3R";
         let colors = b"\x1b]11;rgb:1/2/3\x07\x1b]10;rgb:4/5/6\x07";
         // The probe alone: its reports, the cursor and one for each glyph.
-        assert!(all_in(reports, false));
-        assert!(!all_in(&reports[..24], false));
+        assert!(all_in(reports, false, REPORTS));
+        assert!(!all_in(&reports[..24], false, REPORTS));
+        // No glyph went (no room): the report of the cursor is all.
+        assert!(all_in(&reports[..6], false, 1));
+        assert!(!all_in(&reports[..5], false, 1));
         // With the colours asked: both answers too.
-        assert!(!all_in(reports, true));
-        assert!(!all_in(colors, true));
-        assert!(all_in(&[&colors[..], &reports[..]].concat(), true));
+        assert!(!all_in(reports, true, REPORTS));
+        assert!(!all_in(colors, true, 1));
+        assert!(all_in(&[&colors[..], &reports[..]].concat(), true, REPORTS));
+        assert!(all_in(&[&colors[..], &reports[..6]].concat(), true, 1));
         // The bar's `▶` is measured too: the fourth report.
         assert_eq!(
             Wide::from_reports(&parse_reports(reports)).plain(" \u{256D}\u{25B6} "),
