@@ -24,7 +24,7 @@
 use std::path::PathBuf;
 
 use serde_json::Value;
-use tiza_qa::{bin, scratch};
+use tiza_qa::{FOLLOW_START_BUDGET, bin, scratch};
 
 const CODE: &str = "fn main() {\n    let a = 1;\n}\n";
 
@@ -44,7 +44,10 @@ fn setup(name: &str) -> PathBuf {
 }
 
 /// Python shared by the tests: the TUI with a test hook, `api()` timed,
-/// `status()`, and `until()` that waits on a condition (10 s).
+/// `status()`, `until()` that waits on a condition (13 s), and
+/// `until_watcher()`. `until_watcher()` waits up to `BUDGET` s ([`run`])
+/// for a watcher to start or to go away: fseventsd does both, and on a
+/// loaded Mac each can take tens of seconds.
 const PRELUDE: &str = r##"
 import json
 binary, cwd, hook = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -72,6 +75,9 @@ def until(pred, timeout=13.0):
         time.sleep(0.05)
     return pred()
 
+def until_watcher(pred):
+    return until(pred, BUDGET)
+
 def start():
     s = Pty([binary, "--socket", "s.sock", "main.rs.tiza"], 30, 160, env=env)
     ok = s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame")
@@ -84,12 +90,18 @@ def quit(s):
     print("EXIT", code, "%.2f" % (time.monotonic() - t0), flush=True)
 "##;
 
+/// Runs `body` after [`PRELUDE`], with `BUDGET` set to
+/// [`FOLLOW_START_BUDGET`]. Each `until_watcher` of `body` can take all of
+/// `BUDGET`, so the deadline of the script adds one `BUDGET` for each.
 fn run(dir: &std::path::Path, name: &str, hook: &str, body: &str) -> String {
-    tiza_qa::pty_script(
+    let budget = FOLLOW_START_BUDGET.as_secs();
+    let waits = body.matches("until_watcher(").count() as u64;
+    tiza_qa::pty_script_with_deadline(
         dir,
         name,
-        &format!("{PRELUDE}\n{body}"),
+        &format!("BUDGET = {budget}\n{PRELUDE}\n{body}"),
         &[bin().to_str().unwrap(), dir.to_str().unwrap(), hook],
+        tiza_qa::PTY_DEADLINE_S + waits * budget,
     )
 }
 
@@ -153,7 +165,7 @@ if ok:
     print("SET", rc, "%.2f" % t, flush=True)
     with open("main.rs", "w") as f:
         f.write("fn main() {\n    let a = 10;\n}\n")
-    print("RELOADED", until(lambda: "let a = 10" in screen()), flush=True)
+    print("RELOADED", until_watcher(lambda: "let a = 10" in screen()), flush=True)
     print("STATUS", json.dumps(status()), flush=True)
     # A running watcher stops at once too, and goes away on its own thread:
     # the next request answers at once while it does (the instance is not
@@ -162,7 +174,7 @@ if ok:
     print("SET", rc, "%.2f" % t, flush=True)
     rc, _, t = api("status")
     print("NEXT", rc, "%.2f" % t, flush=True)
-    print("GONE", until(lambda: status().get("watchers") == 0), flush=True)
+    print("GONE", until_watcher(lambda: status().get("watchers") == 0), flush=True)
     quit(s)
 "##,
     );
@@ -193,7 +205,7 @@ if ok:
     rc, _, t = api("status")
     print("NEXT", rc, "%.2f" % t, flush=True)
     # The watcher that was starting goes away once it has started.
-    print("GONE", until(lambda: status().get("watchers") == 0), flush=True)
+    print("GONE", until_watcher(lambda: status().get("watchers") == 0), flush=True)
     # No watcher is left (GONE), and follow is off with no counts: nothing
     # can read this save, so there is nothing to wait for.
     st = status()
@@ -233,17 +245,17 @@ if ok:
         print("SET", rc, "%.2f" % t, flush=True)
     # Every start counts from its thread's first moment: once the two
     # started for nothing have ended, one watcher is left, the last one.
-    print("ONE", until(lambda: status().get("watchers") == 1), flush=True)
+    print("ONE", until_watcher(lambda: status().get("watchers") == 1), flush=True)
     with open("main.rs", "w") as f:
         f.write("fn main() {\n    let a = 10;\n}\n")
-    print("RELOADED", until(lambda: "let a = 10" in screen()), flush=True)
+    print("RELOADED", until_watcher(lambda: "let a = 10" in screen()), flush=True)
     print("STATUS", json.dumps(status()), flush=True)
     # A put of another document stops the running watcher at once.
     doc = json.loads(api("scene.get")[1])["document"]
     other = dict(doc, source=dict(doc["source"], path="elsewhere.rs"), code=["fn elsewhere() {}"], annotations=[])
     rc, _, t = api("scene.put", {"document": other})
     print("PUT", rc, "%.2f" % t, flush=True)
-    print("GONE", until(lambda: status().get("watchers") == 0), flush=True)
+    print("GONE", until_watcher(lambda: status().get("watchers") == 0), flush=True)
     quit(s)
 "##,
     );
@@ -270,7 +282,7 @@ s, ok = start()
 if ok:
     rc, _, t = api("follow.set", {"enabled": True})
     print("SET", rc, "%.2f" % t, flush=True)
-    print("OFF", until(lambda: status()["enabled"] is False), flush=True)
+    print("OFF", until_watcher(lambda: status()["enabled"] is False), flush=True)
     print("STATUS", json.dumps(status()), flush=True)
     api("follow.set", {"enabled": False})
     print("CLEARED", json.dumps(status()), flush=True)
@@ -325,21 +337,23 @@ if ok:
     api("step.set", {"step": 1})
     rc, out, t = api("follow.set", {"enabled": True})
     print("SET", rc, "%.2f" % t, flush=True)
-    # One watcher (the one of the first `follow on` is gone). It counts
-    # from the start of its thread, before the slow hook: to see the start,
-    # wait for its read, the second of this follow (`follow.set` read
-    # the file first). Then the start must not pass for a save.
-    print("ONE", until(lambda: status().get("watchers") == 1), flush=True)
-    print("READ", until(lambda: (status().get("reads") or 0) >= 2), flush=True)
+    # To see the start, wait for its read, the second of this follow
+    # (`follow.set` read the file first). Then the start must not pass for
+    # a save.
+    print("READ", until_watcher(lambda: (status().get("reads") or 0) >= 2), flush=True)
     print("STATUS", json.dumps(status()), flush=True)
+    # The watcher of the first `follow on`, stopped by the paste, goes
+    # away on its own thread: then one watcher is left. The bar above does
+    # not wait for it.
+    print("ONE", until_watcher(lambda: status().get("watchers") == 1), flush=True)
     quit(s)
 "##,
     );
     assert!(out.contains("PASTED True"), "{out}");
     assert_quick(&out, "SET");
-    assert!(out.contains("ONE True"), "{out}");
     assert!(out.contains("READ True"), "{out}");
     let st = line_json(&out, "STATUS");
     assert_eq!(st["bar"], "following main.rs; step 0 loads a save", "{out}");
     assert_eq!(st["reason"], "paused; loads at step 0", "{out}");
+    assert!(out.contains("ONE True"), "{out}");
 }

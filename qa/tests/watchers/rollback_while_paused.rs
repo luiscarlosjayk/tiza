@@ -79,6 +79,20 @@ fn helpers() -> String {
     format!("BUDGET = {}\n{HELPERS}", FOLLOW_START_BUDGET.as_secs())
 }
 
+/// Runs `body` as a pty script. Each `until("…")` of `body` can take all
+/// of `BUDGET`, so the deadline of the script adds one `BUDGET` for each.
+fn run(dir: &Path, name: &str, body: &str, args: &[&str]) -> String {
+    let budget = FOLLOW_START_BUDGET.as_secs();
+    let waits = body.matches("until(\"").count() as u64;
+    tiza_qa::pty_script_with_deadline(
+        dir,
+        name,
+        body,
+        args,
+        tiza_qa::PTY_DEADLINE_S + waits * budget,
+    )
+}
+
 #[test]
 fn pty_a_dropped_step_to_the_resume_step_keeps_the_change_waiting() {
     let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
@@ -111,7 +125,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
 print("EXIT", s.finish(10))
 "##
     );
-    let out = tiza_qa::pty_script(
+    let out = run(
         &dir,
         "resume.py",
         &body,
@@ -192,7 +206,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
 print("EXIT", s.finish(10))
 "##
     );
-    let out = tiza_qa::pty_script(
+    let out = run(
         &dir,
         "reason.py",
         &body,
@@ -238,7 +252,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
 print("EXIT", s.finish(10))
 "##
     );
-    let out = tiza_qa::pty_script(
+    let out = run(
         &dir,
         "failed.py",
         &body,
@@ -293,7 +307,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
 print("EXIT", s.finish(10))
 "##
     );
-    let out = tiza_qa::pty_script(
+    let out = run(
         &dir,
         "follow_off.py",
         &body,
@@ -359,7 +373,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
 print("EXIT", s.finish(10))
 "##
     );
-    let out = tiza_qa::pty_script(
+    let out = run(
         &dir,
         "put_load.py",
         &body,

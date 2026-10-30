@@ -73,9 +73,12 @@ pub fn scratch(name: &str) -> PathBuf {
     dir
 }
 
-/// How long a test waits for a follow watcher to start. A start takes
-/// milliseconds; on macOS it takes seconds when the folder of the test
-/// binary holds many files (see [`slow_follow_start`]).
+/// How long a test waits for a follow watcher to start, or to go away
+/// after follow goes off. A start takes milliseconds; on macOS it takes
+/// seconds when the folder of the test binary holds many files (see
+/// [`slow_follow_start`]), or when fseventsd is busy (many watchers that
+/// start at once, a build that runs beside it). The drop of a watcher
+/// goes through fseventsd too.
 pub const FOLLOW_START_BUDGET: Duration = Duration::from_secs(30);
 
 /// Waits while `starting` says a follow watcher is still starting, on this

@@ -8,10 +8,14 @@
 //! the watcher sees later are one change, never two reloads.
 
 use serde_json::Value;
-use tiza_qa::{bin, scratch};
+use tiza_qa::{FOLLOW_START_BUDGET, PTY_DEADLINE_S, bin, scratch};
 
 const OLD: &str = "fn main() {\n    let a = 1;\n}\n";
 
+/// The script. `until()` waits on `follow.status` for at most `BUDGET` s
+/// ([`FOLLOW_START_BUDGET`], set before it runs): each wait is for the
+/// watcher, or for a save that it reads, and on a loaded Mac fseventsd
+/// can take tens of seconds.
 const BODY: &str = r##"
 import hashlib, json
 binary, cwd = sys.argv[1], sys.argv[2]
@@ -26,7 +30,7 @@ def api(method, params=None):
 def status():
     return api("follow.status") or {}
 
-def until(pred, timeout=13.0):
+def until(pred, timeout=BUDGET):
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         if pred():
@@ -84,11 +88,16 @@ fn a_save_while_the_watch_starts_waits_and_loads_once() {
                    "find": "a = 1", "content": "    let a = 2;"}]
     });
     std::fs::write(dir.join("main.rs.tiza"), doc.to_string()).unwrap();
-    let out = tiza_qa::pty_script(
+    // Each `until` can take all of `BUDGET`: the deadline of the script
+    // adds one `BUDGET` for each.
+    let budget = FOLLOW_START_BUDGET.as_secs();
+    let waits = BODY.matches("until(lambda").count() as u64;
+    let out = tiza_qa::pty_script_with_deadline(
         &dir,
         "slow.py",
-        BODY,
+        &format!("BUDGET = {budget}\n{BODY}"),
         &[bin().to_str().unwrap(), dir.to_str().unwrap()],
+        PTY_DEADLINE_S + waits * budget,
     );
     assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
     let set = line_json(&out, "SET");
