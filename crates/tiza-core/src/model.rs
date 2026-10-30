@@ -2094,20 +2094,25 @@ impl Document {
             .unwrap_or(0)
     }
 
-    /// Highest step used by any annotation or move (at least 1).
     /// The steps, up to `last`, at which what a take draws can change:
-    /// 0, each annotation's step and the one after it (a spotlight
-    /// shows only at its own), each move's step. Every other step draws
+    /// 0, each annotation's step and the one after it (a spotlight without
+    /// `until` ends there), the step after the `until` of a spotlight, and
+    /// each move's step. The end of a spotlight changes more than colours:
+    /// a mark that it dimmed shows its label again. Every other step draws
     /// exactly as the last of these before it, so a loop over the take that
     /// looks for a maximum, a union or the first step of something visits
     /// only these, and costs the same whatever the number of empty steps.
     pub fn change_steps(&self, last: u32) -> Vec<u32> {
         let mut out: Vec<u32> = std::iter::once(0)
-            .chain(
-                self.annotations
-                    .iter()
-                    .flat_map(|a| [a.step, a.step.saturating_add(1)]),
-            )
+            .chain(self.annotations.iter().flat_map(|a| {
+                let end = match &a.shape {
+                    Shape::Spotlight {
+                        until: Some(until), ..
+                    } => Some(until.saturating_add(1)),
+                    _ => None,
+                };
+                [a.step, a.step.saturating_add(1)].into_iter().chain(end)
+            }))
             .chain(self.moves.iter().map(|m| m.at_step))
             .filter(|s| *s <= last)
             .collect();
@@ -2187,6 +2192,7 @@ impl Document {
         self.newer_moves.gaps.clear();
     }
 
+    /// Highest step used by any annotation or move (at least 1).
     pub fn max_step(&self) -> u32 {
         self.annotations
             .iter()

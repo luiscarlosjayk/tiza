@@ -45,7 +45,8 @@ pub struct Finding {
     /// `steps`, `unanchored`, `outside_window` (outside the `code.link`
     /// window of a step that shows its file), `not_shown` (its own step
     /// shows another file), `clipped_label`, `empty_step`, `effect` (the
-    /// enter effect `draw` on a shape with no stroke), and `stale` (a live
+    /// enter effect `draw` on a shape with no stroke), `until` (a
+    /// spotlight's `until` before its `step`), and `stale` (a live
     /// instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
@@ -1453,6 +1454,22 @@ fn take_options(doc: &Document, width: usize, step: u32) -> LayoutOptions {
     }
 }
 
+/// Whether `step`, one of the steps of `take`, draws at `width` as the
+/// step before it. A spotlight that starts or ends at a step makes it one
+/// of them ([`Document::change_steps`]); its end changes nothing when
+/// another spotlight keeps the same lines bright, or when its file is not
+/// the one shown.
+fn same_as_before(take: &Take, theme: &Theme, width: usize, step: u32) -> bool {
+    match take.steps.iter().position(|s| s.step == step) {
+        Some(i) if i > 0 => same_take(
+            &take.layout(i - 1, theme, width),
+            &take.layout(i, theme, width),
+            theme,
+        ),
+        _ => false,
+    }
+}
+
 /// The warning of an annotation from a file with `draw` and no line.
 const EFFECT_WITHOUT_STROKE: &str = "effect draw needs a stroke, so this annotation comes in with no effect. Use fade, or put draw on a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike.";
 
@@ -1515,6 +1532,29 @@ fn check_loaded(
                     .step(a.step)
                     .file(a.file.clone())
                     .line(anchor_line(&a.shape)),
+            );
+        }
+        // A spotlight active from its step to an `until` before it: at no
+        // step.
+        if let Shape::Spotlight {
+            until: Some(until), ..
+        } = a.shape
+            && until < a.step
+        {
+            bad.insert(a.id.clone());
+            out.push(
+                Finding::new(
+                    Level::Error,
+                    "until",
+                    format!(
+                        "until {until} is before its step {step}: the spotlight never shows. Give an until of {step} or later, or remove it.",
+                        step = a.step
+                    ),
+                )
+                .id(a.id.clone())
+                .step(a.step)
+                .file(a.file.clone())
+                .line(anchor_line(&a.shape)),
             );
         }
         // An effect of a newer Tiza: the file opens, with no effect there.
@@ -1615,13 +1655,16 @@ fn check_loaded(
     // ---- steps with nothing new ----
     for step in 1..=max {
         // A step of a skipped move: its own warning says why it is empty.
+        // The start or the end of a spotlight is new when it changes the
+        // take.
         let has = doc.annotations.iter().any(|a| a.step == step)
             || doc.moves.iter().any(|m| m.at_step == step)
             || doc
                 .newer_moves
                 .skipped
                 .iter()
-                .any(|m| m.at_step == Some(u64::from(step)));
+                .any(|m| m.at_step == Some(u64::from(step)))
+            || (doc.spots_change_at(step) && !same_as_before(take, theme, width, step));
         if !has {
             out.push(
                 Finding::new(

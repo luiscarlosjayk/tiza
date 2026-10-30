@@ -206,6 +206,7 @@ The `code` of a finding is one of these:
 | `unknown_id` | Error | The `ids` of a spotlight name an annotation that does not exist. |
 | `unknown_id` | Warning | A `rebind` names an annotation that does not exist. Tiza ignores that `rebind`. |
 | `unknown_file` | Error | An annotation names a file that no `code.link` shows. |
+| `until` | Error | The `until` of a spotlight is before its `step`. Thus the spotlight never shows. |
 | `anchor` | Error | An anchor does not match at its step. |
 | `anchor` | Warning | A span or an arrow end of an annotation has a key that this version of Tiza does not know. Tiza ignores it. |
 | `marker` | Error | A marker does not match, or the end marker is only before the start marker. |
@@ -213,7 +214,7 @@ The `code` of a finding is one of these:
 | `unanchored` | Warning | A move removes the code that an annotation is on. |
 | `outside_window` | Warning | An annotation is outside the `code.link` window of its step, or a later patch pushes it out. |
 | `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
-| `empty_step` | Warning | A step changes nothing. |
+| `empty_step` | Warning | A step changes nothing. The step where a spotlight stops gets this warning only when its take is the same as the take of the step before. |
 | `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
 | `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. It comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
