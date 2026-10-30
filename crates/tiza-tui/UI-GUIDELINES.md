@@ -213,6 +213,8 @@ It keeps, on the last row:
 - the chip `⏸ 2 to review · :review` at the left, when agent changes wait;
 - the command line while the user types after `:`, and its result for 2 s.
 
+While the step counter or the chip shows, the last row has no code: the code does not go under them. A padding at the bottom keeps that row free already. The command line and its result go on the last row only for a short time, and can cover code.
+
 A panel opens in presentation mode only when the user opens it. A panel never shows in an export, a GIF or a recording made by Tiza.
 
 In presentation mode, `←`/`→` change the step. A panel must not use `←`/`→`, so that a presenter's clicker cannot change the panel by mistake.

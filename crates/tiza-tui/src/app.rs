@@ -1364,7 +1364,7 @@ impl App {
             return tiza_core::check::DEFAULT_WIDTH;
         }
         let (_, pad_h) =
-            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
+            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.status_rows());
         usize::from(cols.saturating_sub(2 * pad_h)).max(1)
     }
 
@@ -1374,11 +1374,12 @@ impl App {
     /// off. What `code needs N cols` names.
     pub fn columns_for(&self, width: usize) -> usize {
         let rows = self.size.1;
+        let status_h = self.status_rows();
         (width..=usize::from(u16::MAX))
             .find(|&cols| {
                 let c = cols as u16;
                 let (_, pad_h) =
-                    crate::ui::clamp_padding(self.effective_padding(), (c, rows), self.present);
+                    crate::ui::clamp_padding(self.effective_padding(), (c, rows), status_h);
                 usize::from(c.saturating_sub(2 * pad_h)) >= width
             })
             .unwrap_or(width)
@@ -2194,16 +2195,37 @@ impl App {
     }
 
     /// The height the screen shows the code in: the terminal of the last
-    /// frame less the status bar and the padding, as `ui::draw` does.
+    /// frame less the rows at the bottom ([`App::status_rows`]) and the
+    /// padding, as `ui::draw` does.
     pub fn screen_height(&self) -> usize {
         let (cols, rows) = self.size;
         if cols == 0 || rows == 0 {
             return 0;
         }
-        let status_h = if self.present { 0 } else { 1 };
-        let (pad_v, _) =
-            crate::ui::clamp_padding(self.effective_padding(), (cols, rows), self.present);
+        let status_h = self.status_rows();
+        let (pad_v, _) = crate::ui::clamp_padding(self.effective_padding(), (cols, rows), status_h);
         usize::from(rows.saturating_sub(status_h).saturating_sub(pad_v * 2))
+    }
+
+    /// The rows at the bottom of the terminal that are not code: the status
+    /// bar in normal mode; in presentation mode, the row of the step
+    /// counter or of the review chip while one of them shows, so that they
+    /// never cover code (also on a terminal too narrow to draw them). They
+    /// are drawn on the last row: a padding at the bottom keeps it free of
+    /// code already, and then no row is taken.
+    pub fn status_rows(&self) -> u16 {
+        if !self.present {
+            return 1;
+        }
+        let drawn = self.present_counter_shown() || !self.proposals.is_empty();
+        let (pad_v, _) = crate::ui::clamp_padding(self.effective_padding(), self.size, 0);
+        u16::from(drawn && pad_v == 0)
+    }
+
+    /// Presentation mode draws the step counter: with more than one step,
+    /// and on step 0 (also of a document of one step).
+    pub fn present_counter_shown(&self) -> bool {
+        self.doc.step_total(self.doc.step) > 1 || self.doc.step == 0
     }
 
     /// A step change in presentation mode, before the moves of the new
@@ -6948,7 +6970,7 @@ impl App {
                     self.doc.padding = Some((v, h));
                     self.padding_override = None;
                     self.touch();
-                    let (cv, ch) = crate::ui::clamp_padding((v, h), self.size, self.present);
+                    let (cv, ch) = crate::ui::clamp_padding((v, h), self.size, self.status_rows());
                     Ok(if (cv, ch) != (v, h) {
                         format!(
                             "padding {v} {h} (shown as {cv} {ch}: the terminal is too small for more)"

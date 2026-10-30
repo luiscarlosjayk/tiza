@@ -14,7 +14,9 @@ use tiza_tui::app::App;
 
 const COLS: u16 = 80;
 const ROWS: u16 = 24;
-/// The last row of code in normal mode, over the status bar.
+/// The last row of code, over the status bar in normal mode and over the
+/// step counter in presentation mode (the documents of the tests that use
+/// it have more than one step).
 const BOTTOM: u16 = ROWS - 2;
 
 /// The document `tui/scroll_move/FILE`. `typed.tiza` types one line an
@@ -25,7 +27,8 @@ fn load(file: &str) -> Document {
 }
 
 /// The TUI on `tui/scroll_move/FILE` in presentation mode, with no
-/// padding (every row of the terminal shows code), at `step`.
+/// padding (every row of the terminal but the last one, the row of the
+/// step counter, shows code), at `step`.
 fn open(name: &str, file: &str, step: u32) -> Live {
     open_doc(name, load(file), step)
 }
@@ -74,7 +77,7 @@ fn a_camera_step_puts_its_line_where_align_says() {
     let center = row_of(&live, "let v50 = 50;").unwrap();
     assert!((11..=12).contains(&center), "center: row {center}");
     key(&live, KeyCode::Char('n'));
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1), "bottom");
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM), "bottom");
 }
 
 #[test]
@@ -122,16 +125,16 @@ fn a_box_comes_in_whole_after_the_wait_of_its_step() {
     let live = open("scroll-wait", "effect.tiza", 2);
     key(&live, KeyCode::Char('n'));
     assert_eq!(live.with(|a| a.doc.step), 3);
-    assert_eq!(row_of(&live, "let v63 = 63;"), Some(ROWS - 2), "waiting");
-    assert_eq!(row_of(&live, "let v60 = 60;"), Some(ROWS - 5), "waiting");
+    assert_eq!(row_of(&live, "let v63 = 63;"), Some(BOTTOM - 1), "waiting");
+    assert_eq!(row_of(&live, "let v60 = 60;"), Some(BOTTOM - 4), "waiting");
     // A key ends the wait and does nothing else.
     key(&live, KeyCode::Char('x'));
     let row = row_of(&live, "let v63 = 63;").unwrap();
-    assert_eq!(row, ROWS - 2, "the last line of the box over its border");
-    assert_eq!(row_of(&live, "let v60 = 60;"), Some(ROWS - 5));
+    assert_eq!(row, BOTTOM - 1, "the last line of the box over its border");
+    assert_eq!(row_of(&live, "let v60 = 60;"), Some(BOTTOM - 4));
     let border = live.with(|a| {
         let b = draw(a);
-        (0..COLS).any(|x| b[(x, ROWS - 1)].symbol() == "╰")
+        (0..COLS).any(|x| b[(x, BOTTOM)].symbol() == "╰")
     });
     assert!(border, "the bottom border of the box is in view");
 }
@@ -185,7 +188,7 @@ fn with_the_pointer_on_the_effect_of_a_camera_step_plays_on() {
 #[test]
 fn the_tui_opens_on_the_target_of_its_step() {
     let live = open("scroll-open", "camera.tiza", 4);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
 }
 
 #[test]
@@ -260,7 +263,7 @@ fn a_document_or_a_step_an_agent_sends_lands_on_its_camera() {
     .unwrap();
     doc["step"] = serde_json::json!(4);
     live.api_ok("scene.put", serde_json::json!({ "document": doc }));
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1), "scene.put");
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM), "scene.put");
     live.api_ok("scene.patch", serde_json::json!({ "step": 2 }));
     assert_eq!(row_of(&live, "let v50 = 50;"), Some(0), "scene.patch");
 }
@@ -268,10 +271,10 @@ fn a_document_or_a_step_an_agent_sends_lands_on_its_camera() {
 #[test]
 fn deleting_the_scroll_of_the_step_leaves_the_view() {
     let live = open("scroll-delete", "camera.tiza", 4);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
     // The `scroll` of step 4 is move #4.
     live.api_ok("move.delete", serde_json::json!({ "index": 4 }));
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
     assert!(
         live.with(|a| a.scroll_held.is_none()),
         "the view is not held"
@@ -290,7 +293,7 @@ fn the_scroll_command_adds_a_move_at_the_step_and_the_view_goes_there() {
     // A text, and an annotation of a later step.
     live.command("scroll @'let v95 = 95;' align=bottom");
     assert!(!live.message().unwrap().1);
-    assert_eq!(row_of(&live, "let v95 = 95;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v95 = 95;"), Some(BOTTOM));
     live.command("scroll b7 align=top");
     let (msg, error) = live.message().unwrap();
     assert!(!error, "{msg}");
@@ -355,7 +358,7 @@ fn a_goto_to_the_step_on_screen_puts_the_view_back() {
     key(&live, KeyCode::Char('G'));
     assert_eq!(row_of(&live, "let v50 = 50;"), None);
     live.command("goto 4");
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
 }
 
 #[test]
@@ -456,10 +459,10 @@ fn undoing_a_scroll_leaves_the_view() {
 #[test]
 fn a_target_ends_before_a_box_that_starts_on_the_next_line() {
     // At step 7 the box b7 starts on line 100: line 99 at the bottom is
-    // the last row, the top border of the box under it.
+    // the last row of code, the top border of the box under it.
     let live = open("scroll-box-next", "camera.tiza", 7);
     live.command("scroll 99 align=bottom");
-    assert_eq!(row_of(&live, "let v99 = 99;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v99 = 99;"), Some(BOTTOM));
 }
 
 #[test]
@@ -559,7 +562,8 @@ fn a_box_of_a_later_step_comes_in_without_moving_its_lines() {
     // camera.tiza: step 6 puts the box b7 of step 7 (lines 100-104, with a
     // label) at the bottom. At step 6 the view keeps the rows of its
     // borders; at step 7 the lines of the box keep their rows, line 99
-    // goes one row up for the title, and the border takes the last row.
+    // goes one row up for the title, and the border takes the last row of
+    // code.
     let live = open("scroll-later-box", "camera.tiza", 5);
     const BOX: &[&str] = &["let v100 = 100;", "let v102 = 102;", "let v104 = 104;"];
     key(&live, KeyCode::Char('n'));
@@ -567,7 +571,7 @@ fn a_box_of_a_later_step_comes_in_without_moving_its_lines() {
     let v99 = row_of(&live, "let v99 = 99;").unwrap();
     assert_eq!(
         before[2],
-        Some(ROWS - 2),
+        Some(BOTTOM - 1),
         "step 6: the row of the border is free"
     );
     key(&live, KeyCode::Char('n'));
@@ -798,9 +802,9 @@ fn with_show_or_center_the_lines_of_a_later_box_keep_their_rows() {
 #[test]
 fn a_pointer_that_the_border_to_come_pushes_out_goes_off_at_the_jump() {
     // camera.tiza: step 6 puts the box b7 (lines 100-104) of step 7 at
-    // the bottom. The pointer on line 105 is on the last row at step 6, the
-    // row that the bottom border takes at step 7: it goes off at the jump,
-    // not later while it is out of view.
+    // the bottom. The pointer on line 105 is on the last row of code at
+    // step 6, the row that the bottom border takes at step 7: it goes off at
+    // the jump, not later while it is out of view.
     let live = open("scroll-pointer-to-come", "camera.tiza", 5);
     live.api_ok("pointer.set", serde_json::json!({ "line": 105 }));
     key(&live, KeyCode::Char('n'));
@@ -813,12 +817,12 @@ fn in_presentation_the_note_of_a_step_comes_in_and_an_older_cursor_stays_out() {
     // note n5 on line 52, under the view: it comes in with the least move.
     // The `cursor` of step 1 (line 10) does not pull the view back (N (a)).
     let live = open("scroll-reveal-n5", "camera.tiza", 4);
-    assert_eq!(row_of(&live, "let v50 = 50;"), Some(ROWS - 1));
+    assert_eq!(row_of(&live, "let v50 = 50;"), Some(BOTTOM));
     key(&live, KeyCode::Char('n'));
     assert_eq!(live.with(|a| a.doc.step), 5);
     assert_eq!(
         row_of(&live, "let v52 = 52;"),
-        Some(ROWS - 1),
+        Some(BOTTOM),
         "the note in view"
     );
     assert_eq!(
@@ -845,7 +849,7 @@ fn in_presentation_a_goto_to_the_next_step_applies_its_camera_then_shows_what_co
         }
         live.command("goto 5");
         let view = rows_of(&live, &["let v50 = 50;", "let v52 = 52;"]);
-        assert_eq!(view, [Some(ROWS - 3), Some(ROWS - 1)], "pointer {pointer}");
+        assert_eq!(view, [Some(BOTTOM - 2), Some(BOTTOM)], "pointer {pointer}");
         views.push((view, live.with(|a| a.scroll)));
     }
     assert_eq!(views[0], views[1], "with the pointer and without it");

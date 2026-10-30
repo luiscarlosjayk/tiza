@@ -23,6 +23,7 @@ mod open_notice;
 mod paste_in_each_mode;
 mod personal_defaults;
 mod personal_styles;
+mod present_bottom_row;
 mod present_view;
 mod presentation_command_line;
 mod presentation_no_edits;

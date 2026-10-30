@@ -103,10 +103,10 @@ fn blit(canvas: &Canvas, rows: std::ops::Range<usize>, area: Rect, buf: &mut Buf
 /// document does not set `padding` (`:pad V H`).
 pub const DEFAULT_PADDING: (u16, u16) = (0, 1);
 
-/// Padding that fits a terminal of `size`: the code keeps at least 20 columns
-/// and three rows plus the status line.
-pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, u16) {
-    let status_h = if present { 0 } else { 1 };
+/// Padding that fits a terminal of `size` with `status_h` rows at the
+/// bottom that are not code ([`App::status_rows`]): the code keeps at least
+/// 20 columns and three rows.
+pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), status_h: u16) -> (u16, u16) {
     (
         pad.0.min(size.1.saturating_sub(status_h + 3) / 2),
         pad.1.min(size.0.saturating_sub(20) / 2),
@@ -128,12 +128,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let base = Style::default().fg(rgb(th.fg)).bg(rgb(th.bg));
     frame.buffer_mut().set_style(area, base);
 
-    let status_h = if app.present { 0 } else { 1 };
-    let (pad_v, pad_h) = clamp_padding(
-        app.effective_padding(),
-        (area.width, area.height),
-        app.present,
-    );
+    let status_h = app.status_rows();
+    let (pad_v, pad_h) =
+        clamp_padding(app.effective_padding(), (area.width, area.height), status_h);
     let canvas_area = Rect {
         x: area.x + pad_h,
         y: area.y + pad_v,
@@ -407,9 +404,10 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     } else {
         // Discreet step counter in presentation mode, with the count of the
         // status bar: on the new empty step after the last one too, also in
-        // a document of one step.
-        let total = app.doc.step_total(app.doc.step);
-        if total > 1 || app.doc.step == 0 {
+        // a document of one step. It and the chip below are on the last
+        // row, which has no code ([`App::status_rows`]).
+        if app.present_counter_shown() {
+            let total = app.doc.step_total(app.doc.step);
             let txt = format!(" {}/{} ", app.doc.step, total);
             let w = txt.width() as u16;
             if area.width > w {
