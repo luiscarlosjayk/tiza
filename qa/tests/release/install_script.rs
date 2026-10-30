@@ -1496,6 +1496,13 @@ fn the_script_names_the_release_files_and_keeps_to_https() {
     let mut known: Vec<&str> = TARGETS.iter().map(|t| t.2).collect();
     known.sort_unstable();
     assert_eq!(built, known, "the targets of release.yml");
+    // The Linux archive links the glibc of its build: Ubuntu 22.04 gives
+    // 2.35, the version that the script checks before it installs.
+    assert!(
+        workflow.contains(r#"container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu"#),
+        "release.yml builds the Linux archive on another glibc than the 2.35 of install.sh"
+    );
+    assert!(script.contains("glibc 2.35"));
 }
 
 // --- AC8 ------------------------------------------------------------------
