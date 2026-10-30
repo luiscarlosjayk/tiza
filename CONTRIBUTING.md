@@ -54,6 +54,7 @@ cargo run -- examples/ownership.rs
 scripts/size-check.sh                        # release binary < 16 MB, download < 8 MB, ≤ 10 % over qa/budgets.json
 scripts/bench.sh                             # timings vs qa/bench/baseline.json (warns > 20 % slower); --install adds a cold `cargo install`
 scripts/docs-frames.sh                       # the frames of the docs pages: a real WebP export for each `<!-- frame -->` comment
+scripts/tui-captures.sh                      # the images of the TUI in docs/images/tui (VHS, Menlo, macOS): run it after a change to a panel, the status bar, presentation mode or examples/ownership.rs
 ```
 
 Build the docs site locally with `site/build.sh` and Zola 0.23.6. `cargo test` does not run the checks of the docs: run them when you change the docs or the code that they describe.
