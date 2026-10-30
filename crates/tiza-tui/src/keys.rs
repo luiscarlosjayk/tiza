@@ -246,7 +246,9 @@ pub const HELP: &[(Section, &[Row])] = &[
         &[
             Key {
                 keys: "Tab/S-Tab",
-                desc: "Select the next or the previous annotation on the screen.",
+                desc: "Select the next or the previous annotation on the screen. In \
+                       presentation mode, go to the next or the previous line where an \
+                       annotation in the view starts, and select nothing.",
                 when: Normal,
             },
             Key {
@@ -276,7 +278,8 @@ pub const HELP: &[(Section, &[Row])] = &[
             },
             Key {
                 keys: "u/U",
-                desc: "Undo or redo the last change. Ctrl-R also redoes.",
+                desc: "Undo or redo the last change. Ctrl-R also redoes. In presentation \
+                       mode, type :undo or :redo.",
                 when: Normal,
             },
             Key {

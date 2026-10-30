@@ -56,6 +56,28 @@ fn in_presentation_the_list_edits_nothing_and_undo_as_a_command_works() {
 }
 
 #[test]
+fn in_presentation_a_result_names_undo_as_a_command() {
+    // `u` does nothing while presenting, so a result that can be undone
+    // names `:undo`, and `:undo` gives the annotation back.
+    let message = |live: &Live| live.with(|a| a.message.as_ref().map(|(m, _)| m.clone()));
+    let live = presenting("undo-hint");
+    live.command("clear");
+    assert_eq!(
+        message(&live).as_deref(),
+        Some("1 annotation(s) cleared (:undo to undo)")
+    );
+    live.command("undo");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+    // In normal mode the message names `u`, as before.
+    live.with(|a| a.set_present(false));
+    live.command("clear");
+    assert_eq!(
+        message(&live).as_deref(),
+        Some("1 annotation(s) cleared (u to undo)")
+    );
+}
+
+#[test]
 fn in_presentation_the_list_redoes_nothing() {
     // An undo in normal mode leaves something to redo; in presentation
     // mode the list's `U` and Ctrl-R do nothing.

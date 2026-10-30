@@ -4267,6 +4267,12 @@ impl App {
         })
     }
 
+    /// How a message tells the presenter to undo: `u`, or `:undo` in
+    /// presentation mode, where `u` does nothing.
+    fn undo_hint(&self) -> &'static str {
+        if self.present { ":undo" } else { "u" }
+    }
+
     pub fn undo(&mut self) {
         self.finish_typing();
         let before = self.before_history();
@@ -6530,9 +6536,10 @@ impl App {
                             Some(format!("link {file}")),
                         );
                         let what = format!(
-                            "the .tiza now references {file} and shows its code ({} annotation{} kept; u undoes)",
+                            "the .tiza now references {file} and shows its code ({} annotation{} kept; {} undoes)",
                             out.kept,
-                            if out.kept == 1 { "" } else { "s" }
+                            if out.kept == 1 { "" } else { "s" },
+                            self.undo_hint()
                         );
                         if out.dropped > 0 || out.stale.is_some() {
                             self.stale_notice(
@@ -6637,7 +6644,7 @@ impl App {
                     Ok(if n == 0 {
                         "nothing to clear".into()
                     } else {
-                        format!("{n} annotation(s) cleared (u to undo)")
+                        format!("{n} annotation(s) cleared ({} to undo)", self.undo_hint())
                     })
                 }
                 "del" | "delete" | "rm" => {
