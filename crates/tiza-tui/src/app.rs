@@ -7085,11 +7085,11 @@ impl App {
                     )),
                     "stable" | "take" => {
                         self.layout_stable = true;
-                        Ok("layout stable: lanes and margin sized for every step, as in presentation mode and exports".into())
+                        Ok("layout stable: the layout fits every step, as in presentation mode and exports".into())
                     }
                     "dynamic" | "auto" => {
                         self.layout_stable = false;
-                        Ok("layout dynamic: the authoring screen grows lanes as steps add arrows (exports stay stable)".into())
+                        Ok("layout dynamic: the layout fits the step on screen (exports use every step)".into())
                     }
                     other => Err(Error::Invalid(format!(
                         "layout {other}: use `:layout stable` or `:layout dynamic`"

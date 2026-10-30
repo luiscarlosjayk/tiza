@@ -135,8 +135,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `margin already auto` | The margin had no limit already. |
 | `margin auto (the right margin takes what the width leaves)` | `:margin` shows that the margin has no limit. |
 | `margin N (a longer note, label or legend continues on the free rows below, then is cut with …; :margin auto removes the cap)` | `:margin` shows the limit. |
-| `layout stable: lanes and margin sized for every step, as in presentation mode and exports` | `:layout stable` set the take as the layout. |
-| `layout dynamic: the authoring screen grows lanes as steps add arrows (exports stay stable)` | `:layout dynamic` set the layout that grows. |
+| `layout stable: the layout fits every step, as in presentation mode and exports` | `:layout stable` set the take as the layout. |
+| `layout dynamic: the layout fits the step on screen (exports use every step)` | `:layout dynamic` set the layout of the step on screen. |
 | `layout stable` or `layout dynamic` | `:layout` shows the layout. |
 | `presentation mode (P to exit)` | `:present` started presentation mode. |
 | `supervised mode on (N pending)` or `supervised mode off (N pending)` | `:supervise` shows the state. |
