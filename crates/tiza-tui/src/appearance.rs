@@ -356,6 +356,7 @@ pub fn query_host(colors: bool) -> StartUp {
     let due = Reports {
         due: reports.len() < expected,
         answered: host.is_some() || !reports.is_empty(),
+        colors_due: colors && host.is_none(),
     };
     let (typed, cut) = start_up_rest(&buf, &reads, host.as_ref(), due);
     StartUp {
@@ -373,10 +374,12 @@ pub struct Reports {
     /// the wait cut short.
     pub due: bool,
     /// The terminal answered something in this read (a colour or a
-    /// report). Only then is an ESC, or an `ESC [` with no digit, at the
-    /// end taken for the start of a report: from a terminal that answers
-    /// nothing it is the user's key.
+    /// report). Only then is an `ESC [` with no digit at the end taken for
+    /// the start of a report: from a terminal that answers nothing it is
+    /// the user's key (an arrow, say).
     pub answered: bool,
+    /// The colours were asked for, and the background answer did not come.
+    pub colors_due: bool,
 }
 
 impl Reports {
@@ -399,11 +402,12 @@ pub fn all_in(buf: &[u8], colors: bool, reports: usize) -> bool {
 
 /// What the start-up read gives the event loop besides `host`: the keys
 /// ([`without_answers`]) and the answer cut short ([`cut_answer`]). When
-/// an answer is still due (the background answer came but the text answer
-/// did not, or a report of the probe did not come from a terminal that
-/// answered: `reports`), an ESC at the very end is the start of that
-/// answer, not a key: its `]` or `[` and the rest come later, and the
-/// capture takes them.
+/// an answer is still due (a colour answer, or a report of the probe:
+/// `reports`), an ESC at the very end may be the start of that answer or
+/// an Escape that the user typed: only the next key tells. The capture
+/// holds it ([`OscCapture::resume`]): a `]` or a `[` goes on with the
+/// answer, and any other key, or no key in its second, gives the ESC back
+/// as the user's Escape ([`OscCapture::take_released`]).
 pub fn start_up_rest(
     buf: &[u8],
     reads: &[usize],
@@ -411,7 +415,7 @@ pub fn start_up_rest(
     reports: Reports,
 ) -> (Vec<Vec<u8>>, Option<String>) {
     let answer_due =
-        (reports.due && reports.answered) || host.is_some_and(|h| h.bg.is_some() && h.fg.is_none());
+        reports.due || reports.colors_due || host.is_some_and(|h| h.bg.is_some() && h.fg.is_none());
     if answer_due && buf.last() == Some(&0x1b) && cut_answer(buf, reports).is_none() {
         let keys = &buf[..buf.len() - 1];
         return (
@@ -549,7 +553,12 @@ pub fn request_host() {
 pub struct OscCapture {
     buf: Option<String>,
     started: Option<Instant>,
+    /// The keys that the capture gives back ([`OscCapture::take_released`]).
+    released: Vec<crossterm::event::KeyCode>,
 }
+
+/// How long a capture waits for the rest of an answer.
+const CAPTURE_LIMIT: Duration = Duration::from_secs(1);
 
 impl OscCapture {
     /// Starts the capture with the beginning of an answer that the start-up
@@ -570,6 +579,41 @@ impl OscCapture {
         }
     }
 
+    /// Whether the capture holds only an ESC from the end of the start-up
+    /// read: the start of an answer, or an Escape that the user typed.
+    fn holds_escape(&self) -> bool {
+        self.buf.as_deref() == Some("\x1b")
+    }
+
+    /// Stops the capture. An ESC that it held alone was the user's Escape:
+    /// it is given back ([`OscCapture::take_released`]), never lost.
+    fn stop(&mut self) {
+        if self.holds_escape() {
+            self.released.push(crossterm::event::KeyCode::Esc);
+        }
+        self.buf = None;
+        self.started = None;
+    }
+
+    /// The keys that the capture gives back, to handle before the key that
+    /// came: an ESC that it held alone as the start of an answer, when the
+    /// next key did not go on with an answer, or when no key came in its
+    /// second.
+    pub fn take_released(&mut self) -> Vec<crossterm::event::KeyCode> {
+        self.take_released_at(Instant::now())
+    }
+
+    fn take_released_at(&mut self, now: Instant) -> Vec<crossterm::event::KeyCode> {
+        if self.holds_escape()
+            && self
+                .started
+                .is_some_and(|t| now.duration_since(t) > CAPTURE_LIMIT)
+        {
+            self.stop();
+        }
+        std::mem::take(&mut self.released)
+    }
+
     /// Feeds one key. Returns `Some(host)` when an answer closed and said
     /// something, `None` otherwise; `swallowed` tells whether the key was
     /// part of an answer (and must not reach the editor).
@@ -582,12 +626,12 @@ impl OscCapture {
         let alt = mods.contains(KeyModifiers::ALT);
         let ctrl = mods.contains(KeyModifiers::CONTROL);
         // A stale capture (no terminator within a second) is dropped so the
-        // keyboard never stays hijacked.
+        // keyboard never stays hijacked; an ESC that it held alone is given
+        // back.
         if let Some(t) = self.started
-            && t.elapsed() > Duration::from_secs(1)
+            && t.elapsed() > CAPTURE_LIMIT
         {
-            self.buf = None;
-            self.started = None;
+            self.stop();
         }
         match (&mut self.buf, code) {
             (None, KeyCode::Char(']')) if alt => {
@@ -646,10 +690,9 @@ impl OscCapture {
             }
             // After an ESC that the start-up read took as the start of an
             // answer, only `]` goes on with one (`[` is above): any other
-            // key is the user's.
+            // key is the user's, and so was the ESC.
             (Some(b), KeyCode::Char(c)) if !ctrl && !alt && b == "\x1b" && c != ']' => {
-                self.buf = None;
-                self.started = None;
+                self.stop();
                 (false, None)
             }
             (Some(b), KeyCode::Char(c)) if !ctrl && !alt => {
@@ -669,8 +712,7 @@ impl OscCapture {
             }
             (Some(_), _) => {
                 // Anything else is the user: give the key back and stop.
-                self.buf = None;
-                self.started = None;
+                self.stop();
                 (false, None)
             }
         }
@@ -894,6 +936,7 @@ mod tests {
         let answering = Reports {
             due: true,
             answered: true,
+            ..Reports::default()
         };
         for cut in ["\x1b[", "\x1b[1", "\x1b[12", "\x1b[12;", "\x1b[12;3"] {
             let buf = [b"j\x1b[12;3R".as_slice(), cut.as_bytes()].concat();
@@ -910,21 +953,86 @@ mod tests {
         // A lone ESC at the end, while a report is due, is its start.
         let (typed, got) = start_up_rest(b"j\x1b", &[0], None, answering);
         assert_eq!((typed, got.as_deref()), (vec![b"j".to_vec()], Some("\x1b")));
-        // From a terminal that answered nothing yet, an ESC or an `ESC [`
-        // alone at the end is the user's key; with a digit it is a report.
+        // From a terminal that answered nothing yet, an `ESC [` alone at
+        // the end is the user's key (an arrow); with a digit it is a report.
         let silent = Reports {
             due: true,
-            answered: false,
+            ..Reports::default()
         };
-        for keys in [&b"n:abc\x1b"[..], b"j\x1b["] {
-            let (typed, got) = start_up_rest(keys, &[0], None, silent);
-            assert_eq!((typed, got), (vec![keys.to_vec()], None), "{keys:?}");
-        }
+        let (typed, got) = start_up_rest(b"j\x1b[", &[0], None, silent);
+        assert_eq!((typed, got), (vec![b"j\x1b[".to_vec()], None));
         let (typed, got) = start_up_rest(b"j\x1b[1", &[0], None, silent);
         assert_eq!(
             (typed, got.as_deref()),
             (vec![b"j".to_vec()], Some("\x1b[1"))
         );
+    }
+
+    #[test]
+    fn a_lone_esc_at_the_end_is_held_while_an_answer_is_due() {
+        // A report is due from a terminal that answered nothing, or the
+        // colour answers did not come: the ESC may be the start of one.
+        // The capture holds it, and the keys before it stay keys.
+        let silent = Reports {
+            due: true,
+            ..Reports::default()
+        };
+        let colors = Reports {
+            colors_due: true,
+            ..Reports::default()
+        };
+        for due in [silent, colors] {
+            let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], None, due);
+            assert_eq!(
+                (typed, got.as_deref()),
+                (vec![b"n:abc".to_vec()], Some("\x1b")),
+                "{due:?}"
+            );
+        }
+        // No answer due: the ESC is a key at once.
+        let (typed, got) = start_up_rest(b"n:abc\x1b", &[0], None, Reports::default());
+        assert_eq!((typed, got), (vec![b"n:abc\x1b".to_vec()], None));
+    }
+
+    #[test]
+    fn the_capture_never_loses_an_esc_that_it_held() {
+        let none = KeyModifiers::NONE;
+        // Another key after it: the ESC is given back first, and the key
+        // goes on.
+        for (key, what) in [(KeyCode::Char('n'), "a letter"), (KeyCode::Enter, "Enter")] {
+            let mut c = OscCapture::default();
+            c.resume("\x1b".into());
+            assert_eq!(c.feed(key, none), (false, None), "{what}");
+            assert_eq!(c.take_released(), vec![KeyCode::Esc], "{what}");
+            assert!(!c.active(), "{what}");
+            assert_eq!(c.take_released(), vec![], "{what}: once");
+        }
+        // The rest of a colour answer: no key is given back.
+        let mut c = OscCapture::default();
+        c.resume("\x1b".into());
+        for ch in "]11;rgb:ffff/ffff/ffff".chars() {
+            assert!(c.feed(KeyCode::Char(ch), none).0);
+        }
+        let (swallowed, host) = c.feed(KeyCode::Char('\\'), KeyModifiers::ALT);
+        assert!(swallowed && host.is_some_and(|h| h.bg.is_some()));
+        assert_eq!(c.take_released(), vec![]);
+        // No key in the second of the capture: the ESC is given back then.
+        let mut c = OscCapture::default();
+        c.resume("\x1b".into());
+        let now = Instant::now();
+        assert_eq!(c.take_released_at(now), vec![]);
+        assert!(c.active());
+        assert_eq!(
+            c.take_released_at(now + CAPTURE_LIMIT + Duration::from_millis(1)),
+            vec![KeyCode::Esc]
+        );
+        assert!(!c.active());
+        // A report that the read cut is the terminal's, not keys: another
+        // key ends it and gives nothing back.
+        let mut c = OscCapture::default();
+        c.resume("\x1b[12".into());
+        assert_eq!(c.feed(KeyCode::Char('x'), none), (false, None));
+        assert_eq!(c.take_released(), vec![]);
     }
 
     #[test]

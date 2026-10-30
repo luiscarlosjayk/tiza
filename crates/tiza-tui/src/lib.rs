@@ -696,6 +696,15 @@ fn event_loop(
                 _ => {}
             }
         }
+        // An ESC that the capture held as the start of an answer, with no
+        // key after it in its second: the user's Escape.
+        let held = app.osc.take_released();
+        if !held.is_empty() {
+            for k in held {
+                on_key(app, k, KeyModifiers::NONE);
+            }
+            needs_draw = true;
+        }
         if app.quit {
             return Ok(End::Quit);
         }
@@ -765,6 +774,11 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     let (swallowed, host) = app.osc.feed(code, mods);
     if let Some(h) = host {
         app.set_host(h);
+    }
+    // An ESC that the capture held as the start of an answer, and that no
+    // answer followed: the user's Escape, before this key.
+    for held in app.osc.take_released() {
+        key(app, held, KeyModifiers::NONE);
     }
     if swallowed {
         return;

@@ -193,6 +193,9 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 - Tiza drops a paste or a mouse report that comes during the wait.
 - An answer that comes after the wait arrives as key presses. Tiza takes it out of the keys and uses it.
 - When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes before the first frame of the TUI or not more than 1 s after the first frame.
+- When the wait stops right after the `ESC` of an answer, Tiza cannot tell that `ESC` from the Escape key. Thus Tiza keeps it until the next key. When the next key is `]` or `[`, the `ESC` is the start of the answer. When the next key is another key, the `ESC` is your Escape key, and Tiza uses it before that key.
+- When no key comes in 1 s after the first frame, Tiza uses the `ESC` as your Escape key. Thus an Escape that you type at the very end of the wait can come up to 1 s late.
+- When you type Escape and then `]` at the very end of the wait, Tiza takes them for the start of an answer, and drops them after 1 s.
 
 ### The width probe
 
@@ -204,7 +207,7 @@ At start, also with a theme that needs no color query, Tiza measures how wide th
 - The cursor is near the right edge only when the line where you start Tiza has text up to that edge. An example is output of `printf` with no line end. In a terminal that draws the signs two cells wide, the status bar can then be too long for its row, as before.
 - The probe uses the same wait as the color query. Tiza writes the signs after the first answer. Thus the probe adds two round trips to the terminal at start. With a theme that needs the color query, it adds one round trip. A terminal that does not answer the probe adds 100 ms.
 - An answer that comes after the wait is not a key, and Tiza does not use it: it shows the signs as they are. On a slow link, such as SSH with more than 100 ms of round trip, this can be the case. Then the status bar can be too long for its row, as before.
-- When the wait stops in the middle of an answer, Tiza takes its rest out of the keys too, as for the color query. There is one exception: the terminal answered nothing else, and the wait stops right after the `ESC` or the `ESC [` of the first answer. Then that `ESC` is a key, as an `ESC` that you type, and the rest of the answer comes as key presses.
+- When the wait stops in the middle of an answer, Tiza takes its rest out of the keys too, as for the color query. This is also true when the wait stops right after the `ESC` of the first answer. There is one exception: the terminal answered nothing else, and the wait stops right after the `ESC [` of the first answer. Then that `ESC [` is a key, as an arrow key that you type, and the rest of the answer comes as key presses.
 - On a slow link, an answer can come after the wait but before the TUI starts. Then the terminal can show it, for example `^[[1;2R`, on the line where you started Tiza. This is also true for an answer to the color query.
 - `TIZA_NO_OSC` stops the width probe too.
 

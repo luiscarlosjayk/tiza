@@ -172,6 +172,59 @@ fn an_esc_typed_early_is_a_key() {
     assert_eq!(step_of(&out), "2", "{out}");
 }
 
+#[test]
+fn a_colour_answer_cut_right_after_its_esc_is_not_keys() {
+    // The start-up read ends right after the ESC of the background answer,
+    // and the terminal answered nothing else yet: the rest of the answer
+    // comes after the first frame. Taken for keys, the `:` of `rgb:` opened
+    // the command line, and the second `n` went there.
+    let rest = [&LIGHT[1..], b"n"].concat();
+    let out = run("cut-esc", &[], b"n\x1b", b"", 0, &rest);
+    assert_eq!(step_of(&out), "2", "{out}");
+    assert!(out.contains("LIGHT True"), "{out}");
+}
+
+#[test]
+fn an_esc_alone_at_the_end_of_the_read_is_a_key_in_a_second() {
+    // The ESC ends the start-up read while a colour answer is due: it can
+    // be the start of the answer, so the capture holds it. No key comes
+    // after it, so in the second of the capture it is the user's Escape:
+    // it closes the command line that `:abc` opened.
+    let dir = scratch("esc-alone");
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs.tiza"),
+        dir.join("doc.tiza"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
+    let body = r##"
+binary, cwd = sys.argv[1:3]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color")
+env.pop("TIZA_NO_OSC", None)
+argv = [binary, "--theme", "auto", "--step", "0", "--no-save", "--socket", "s.sock", "doc.tiza"]
+s = Pty(argv, 30, 120, env=env, ctty=True, raw=True, seed=b":abc\x1b")
+ok = s.wait_for(lambda out: ":abc" in plain(out), 10, "the command line")
+mark = len(s.out)
+closed = ok and s.wait_for(lambda out: "NORMAL" in plain(out[mark:]), 10, "the command line closed")
+print("CLOSED", closed, flush=True)
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let out = tiza_qa::pty_script(
+        &dir,
+        "esc_alone.py",
+        body,
+        &[bin().to_str().unwrap(), dir.to_str().unwrap()],
+    );
+    assert!(out.contains("CLOSED True"), "{out}");
+    assert!(out.contains("EXIT 0"), "{out}");
+}
+
 // ---------- AC2 ----------
 
 #[test]
