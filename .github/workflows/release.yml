@@ -3,7 +3,9 @@ name: Release
 # Every vX.Y.Z tag publishes a GitHub Release with binaries for macOS (arm64, x86_64)
 # and Linux (x86_64), checksums and the release notes of docs/release-notes/
 # (scripts/release-notes.sh: a vX.Y.Z tag without its notes stops in the first
-# job, before anything is built).
+# job, before anything is built). The first job also checks the docs that a
+# release reads: the README status and the release section of CONTRIBUTING.md
+# (scripts/release-check.py).
 # Tags with a suffix (-alpha.1, -rc.1) are marked as prerelease.
 # crates.io is published by hand: CONTRIBUTING.md#releases-maintainers.
 # scripts/release-local.sh builds the same archives when Actions is off.
@@ -26,6 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: scripts/release-notes.sh "${GITHUB_REF_NAME}" "${GITHUB_REPOSITORY}" > /dev/null
+      # The toolchain that rust-toolchain.toml pins, for the next step.
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup toolchain install && rustc --version
+      - name: the README status and the release section of CONTRIBUTING.md
+        run: scripts/release-check.py "${GITHUB_REF_NAME}"   # it reads `cargo metadata`
 
   build:
     needs: notes
