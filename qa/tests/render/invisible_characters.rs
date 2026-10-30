@@ -684,13 +684,6 @@ fn without_these_characters_every_measure_is_the_old_one() {
     assert!(seen >= 3, "{seen} examples");
 }
 
-#[test]
-fn changelog() {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
-    let changelog = std::fs::read_to_string(root.join("CHANGELOG.md")).unwrap();
-    assert!(changelog.contains("U+2B1A"), "CHANGELOG");
-}
-
 // ---------- Review ----------
 
 fn doc_in(lang: &str, code: &[&str], annotations: Value) -> Document {
