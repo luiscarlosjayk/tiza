@@ -23,7 +23,10 @@
 //! mouse capture on.
 //!
 //! An answer that the end of the wait cuts short: its rest comes as keys
-//! later, and the event loop takes it as the rest of the answer.
+//! later, and the event loop takes it as the rest of the answer, also
+//! after a slow first frame and with slow frames (a busy machine used the
+//! second of the capture before the event loop read the rest). When the
+//! rest never comes, the keys work again a second after the first frame.
 
 use std::path::Path;
 
@@ -327,15 +330,52 @@ fn the_rest_of_an_answer_cut_by_the_wait_is_not_keys() {
     // inside the text answer, the `:` of `rgb:` opened the command line,
     // and the `nn` after it went there.
     for (cut, place) in [(9, "the background answer"), (33, "the text answer")] {
-        let out = cut_answer_run(cut);
+        let out = cut_answer_run(cut, "", "later");
         assert_eq!(step_of(&out), "2", "{place}: {out}");
         assert!(out.contains("LIGHT True"), "{place}: {out}");
     }
 }
 
-/// [`LIGHT`] in two parts, `cut` bytes, then the rest 500 ms later, after
-/// the colour query; then `nn` after the first frame.
-fn cut_answer_run(cut: usize) -> String {
+#[test]
+fn after_a_slow_first_frame_the_rest_of_an_answer_is_still_not_keys() {
+    // A busy machine: the second of the capture started before the first
+    // frame, and a first frame of more than a second
+    // (`draw:slow-first-frame`, a test hook, takes 1.5 s) dropped the
+    // capture before the event loop read the rest. Under load the test
+    // above failed in about a third of the runs.
+    for (cut, place) in [(9, "the background answer"), (33, "the text answer")] {
+        let out = cut_answer_run(cut, "draw:slow-first-frame", "later");
+        assert_eq!(step_of(&out), "2", "{place}: {out}");
+        assert!(out.contains("LIGHT True"), "{place}: {out}");
+    }
+}
+
+#[test]
+fn with_slow_frames_the_rest_of_an_answer_is_still_not_keys() {
+    // Each key of the rest drew a frame: with frames of 100 ms more
+    // (`draw:slow-frames`, a test hook) the keys of the rest used the
+    // second of the capture before its end came.
+    for (cut, place) in [(9, "the background answer"), (33, "the text answer")] {
+        let out = cut_answer_run(cut, "draw:slow-frames", "later");
+        assert_eq!(step_of(&out), "2", "{place}: {out}");
+        assert!(out.contains("LIGHT True"), "{place}: {out}");
+    }
+}
+
+#[test]
+fn when_the_rest_never_comes_the_keys_work_after_a_second() {
+    // The terminal never sends the rest: the capture takes the keys for a
+    // second after the first frame, not more. A second that started at
+    // the first key took `nn` too.
+    let out = cut_answer_run(33, "", "never");
+    assert_eq!(step_of(&out), "2", "{out}");
+}
+
+/// [`LIGHT`] in two parts: `cut` bytes after the colour query, then the
+/// rest 500 ms later (`rest` is `later`) or never (`never`); then `nn`,
+/// when the TUI is up (`later`) or more than a second after its first
+/// frame (`never`). `hook` names a test hook, or is empty.
+fn cut_answer_run(cut: usize, hook: &str, rest: &str) -> String {
     let dir = scratch("cut-answer");
     std::fs::copy(
         fixture("shared/ownership/ownership.rs.tiza"),
@@ -349,10 +389,12 @@ fn cut_answer_run(cut: usize) -> String {
     .unwrap();
     let body = r##"
 import json
-binary, cwd, light, cut = sys.argv[1], sys.argv[2], bytes.fromhex(sys.argv[3]), int(sys.argv[4])
+binary, cwd, light, cut, hook, rest = sys.argv[1], sys.argv[2], bytes.fromhex(sys.argv[3]), int(sys.argv[4]), sys.argv[5], sys.argv[6]
 os.chdir(cwd)
 env = dict(os.environ, TERM="xterm-256color")
 env.pop("TIZA_NO_OSC", None)
+if hook:
+    env["TIZA_TEST_HOOK"] = hook
 argv = [binary, "--theme", "auto", "--step", "0", "--no-save", "--socket", "s.sock", "doc.tiza"]
 s = Pty(argv, 30, 120, env=env, ctty=True, raw=True)
 def status():
@@ -361,9 +403,16 @@ def status():
 step = None
 if s.wait_for(lambda out: b"\x1b]10;?" in out, 10, "colour query"):
     s.send(light[:cut])
-    time.sleep(0.5)  # the delay under test, not a synchronisation
-    s.send(light[cut:])
-    if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+    if rest == "later":
+        time.sleep(0.5)  # the delay under test, not a synchronisation
+        s.send(light[cut:])
+        up = s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "the TUI")
+    else:
+        # The first frame shows the theme of the background answer, which
+        # came whole; then more than the second of the capture goes by.
+        up = s.wait_for(lambda out: "light·auto" in plain(out) and os.path.exists("s.sock"), 10, "first frame")
+        time.sleep(1.5)  # the delay under test, not a synchronisation
+    if up:
         s.send(b"nn")
         end = time.monotonic() + 10
         while time.monotonic() < end:
@@ -373,7 +422,11 @@ if s.wait_for(lambda out: b"\x1b]10;?" in out, 10, "colour query"):
             s.settle(0.05)
 print("STEP", step, flush=True)
 # The frame of the light theme follows the rest of the answer: waited for.
-print("LIGHT", s.wait_for(lambda out: "light·auto" in plain(out), 10, "light theme"), flush=True)
+shown = s.wait_for(lambda out: "light·auto" in plain(out), 10, "light theme")
+print("LIGHT", shown, flush=True)
+if step != 2 or not shown:
+    # The end of the screen, for the cause of a failure.
+    print("SCREEN", repr(plain(s.out)[-2000:]), flush=True)
 s.send(b"\x1b:q!\r")
 print("EXIT", s.finish(10), flush=True)
 "##;
@@ -386,6 +439,8 @@ print("EXIT", s.finish(10), flush=True)
             dir.to_str().unwrap(),
             &hex(LIGHT),
             &cut.to_string(),
+            hook,
+            rest,
         ],
     )
 }

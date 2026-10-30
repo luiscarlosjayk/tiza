@@ -33,6 +33,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versio
 - An animated export (GIF, WebP, MP4 and WebM) of a long take uses much less memory. Tiza keeps only the cells that change from one frame to the next, not every frame. For 990 frames of effects on a 300-line document, a GIF export at scale 1 on macOS arm64 uses 125 MB of memory. Before, it used 1.8 GB. The time and the file are the same.
 - `tiza check` and the `check` request of the socket and MCP use less time and memory. For a 2,000-line document with 20 steps on macOS arm64, `tiza check` uses 1.5 s and 250 MB of memory. Before, it used 3.6 s and 453 MB. The report is the same.
 
+### Fixed
+- When the start-up wait for the color answer stops in the middle of an answer, the rest of the answer comes as key presses. Tiza now takes it out of the keys also when the frames are slow, for example on a busy computer. Before, the second started before the first frame, and each key of the rest drew a frame. When these frames took more than 1 s, Tiza used the rest of the answer as keys. For example, the `:` of `rgb:` opened the command line, or the theme did not change to light for a light terminal. Now a key of the answer does not draw a frame.
+
 ## [0.1.2] - 2026-10-26
 
 ### Added

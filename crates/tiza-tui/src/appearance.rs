@@ -293,10 +293,20 @@ pub struct OscCapture {
 impl OscCapture {
     /// Starts the capture with the beginning of an answer that the start-up
     /// read cut short ([`cut_answer`]), so that its rest, which comes as
-    /// keys, is taken too. The usual limit of a second applies.
+    /// keys, is taken too. The usual limit of a second applies; it starts
+    /// again at [`OscCapture::restart_clock`].
     pub fn resume(&mut self, cut: String) {
         self.buf = Some(cut);
         self.started = Some(Instant::now());
+    }
+
+    /// The second of an open capture starts again now. The TUI calls it
+    /// after its first frame: a slow first frame (a big file, a busy
+    /// machine) does not use the second before the first key is read.
+    pub fn restart_clock(&mut self) {
+        if self.buf.is_some() {
+            self.started = Some(Instant::now());
+        }
     }
 
     /// Feeds one key. Returns `Some(host)` when an answer closed and said

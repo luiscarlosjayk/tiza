@@ -181,7 +181,7 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 - When the terminal answers only OSC 11, Tiza uses that answer after 100 ms with no new data.
 - Tiza drops a paste or a mouse report that comes during the wait.
 - An answer that comes after the wait arrives as key presses. Tiza takes it out of the keys and uses it.
-- When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes in 1 s or less.
+- When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes before the first frame of the TUI or not more than 1 s after the first frame.
 
 ### No answer to the color query
 

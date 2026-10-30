@@ -487,6 +487,10 @@ fn spare_answered_requests() {
     }));
 }
 
+/// The `draw:slow-first-frame` test hook slows only the first frame.
+#[cfg(feature = "test-hooks")]
+static SLOW_FIRST_FRAME_DONE: AtomicBool = AtomicBool::new(false);
+
 /// Draws one frame, and the terminal paints it at once: the output of the
 /// frame goes in a synchronized update (DEC mode 2026), so that a big
 /// change never shows half the frame before and half the new one. The
@@ -496,6 +500,17 @@ fn spare_answered_requests() {
 fn draw_frame(terminal: &mut ratatui::DefaultTerminal, app: &mut App) -> io::Result<()> {
     let drawn = terminal.draw(|f| {
         ui::draw(f, app);
+        // Test hooks, only with the `test-hooks` feature, as on a busy
+        // machine: the first frame takes 1.5 s more, or each frame takes
+        // 100 ms more.
+        #[cfg(feature = "test-hooks")]
+        match std::env::var("TIZA_TEST_HOOK").as_deref() {
+            Ok("draw:slow-first-frame") if !SLOW_FIRST_FRAME_DONE.swap(true, Ordering::Relaxed) => {
+                std::thread::sleep(Duration::from_millis(1500));
+            }
+            Ok("draw:slow-frames") => std::thread::sleep(Duration::from_millis(100)),
+            _ => {}
+        }
         // Test hooks, only with the `test-hooks` feature: a panic at the
         // end of the layout, before the update begins, and one inside the
         // update, for the tests that no update stays open.
@@ -536,6 +551,7 @@ fn event_loop(
     // due ([`frame_due_of`]).
     let mut frame_due: Option<(Instant, Instant)> = None;
     let started = |app: &App| app.effect.as_ref().map(|e| e.started);
+    let mut first_read = true;
     loop {
         if needs_draw {
             if let Err(e) = draw_frame(terminal, app) {
@@ -604,6 +620,12 @@ fn event_loop(
         } else {
             Duration::from_millis(50)
         };
+        // The rest of an answer that the start-up wait cut short comes
+        // with the first keys, after the first frame: its second starts
+        // at this first read, so a slow first frame does not use it.
+        if std::mem::take(&mut first_read) {
+            app.osc.restart_clock();
+        }
         let ready = match event::poll(wait) {
             Ok(ready) => ready,
             Err(e) => return hung_up_or(hangup, e),
@@ -622,7 +644,12 @@ fn event_loop(
             match ev {
                 Event::Key(k) if k.kind != KeyEventKind::Release => {
                     on_key(app, k.code, k.modifiers);
-                    needs_draw = true;
+                    // A key of a color answer that is not complete changes
+                    // nothing on the screen: no frame, so that the rest of
+                    // the answer comes in its second.
+                    if !app.osc.active() {
+                        needs_draw = true;
+                    }
                 }
                 Event::Paste(text) => {
                     app.paste(&text);
