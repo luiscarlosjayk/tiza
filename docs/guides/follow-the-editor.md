@@ -142,7 +142,7 @@ Agents control follow mode through the socket methods `follow.set` and `follow.s
   tiza api follow.status
   ```
 
-- `hash` is `null` when the last read failed, for example when the file is removed. A file that is not UTF-8 has a hash: Tiza read it, and the status bar shows the error.
+- `hash` is `null` when Tiza could not read the file, for example when the file is removed. A file that is not UTF-8 has a hash: Tiza read it, and the status bar shows the error.
 - `reads` counts the reads of the file. It increases also when a save changes nothing, for example a save of the same bytes or of other line ends. When the watcher starts after `follow.set`, Tiza reads the file one more time.
 - Saves that come close together can give one read. Wait until `reads` is more than before, not for one read for each save.
 - While the presenter types a `:` command, selects text or has a panel open, or while a move types its code, a save waits. Tiza reads it when they finish.

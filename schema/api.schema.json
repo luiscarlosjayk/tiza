@@ -6838,7 +6838,7 @@
           },
           "hash": {
             "default": null,
-            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when the\nlast read failed. When it is the hash of the file you saved, Tiza\nread your save. A save of the same bytes does not change it: then\n`reads` increases.",
+            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when Tiza\ncould not read the file, for example when the file is removed. When\nit is the hash of the file you saved, Tiza read your save. A save of\nthe same bytes does not change it: then `reads` increases.",
             "type": [
               "string",
               "null"
@@ -6941,7 +6941,7 @@
           },
           "hash": {
             "default": null,
-            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when the\nlast read failed. When it is the hash of the file you saved, Tiza\nread your save. A save of the same bytes does not change it: then\n`reads` increases.",
+            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when Tiza\ncould not read the file, for example when the file is removed. When\nit is the hash of the file you saved, Tiza read your save. A save of\nthe same bytes does not change it: then `reads` increases.",
             "type": [
               "string",
               "null"

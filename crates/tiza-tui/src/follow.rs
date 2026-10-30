@@ -37,8 +37,9 @@ pub struct Follow {
     /// one read.
     pub reads: u64,
     /// The sha256 of the bytes of the last read, in lowercase hex. `None`
-    /// before a read, or when the last read failed. The lines come from
-    /// the same bytes.
+    /// before a read, or when Tiza could not read the file (for example
+    /// when it is removed); a file that is not UTF-8 has one. The lines
+    /// come from the same bytes.
     pub hash: Option<String>,
     pub last_reload: Option<Instant>,
     pub last_reload_clock: Option<String>,

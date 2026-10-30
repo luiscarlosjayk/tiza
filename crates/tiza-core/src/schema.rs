@@ -120,10 +120,10 @@ pub struct FollowStatus {
     pub reads: Option<u64>,
     /// With follow on: the sha256 of the file as Tiza last read it, in
     /// lowercase hex (what `shasum -a 256 FILE` prints). It is the hash of
-    /// the whole file, also when `code` is a range of it. Null when the
-    /// last read failed. When it is the hash of the file you saved, Tiza
-    /// read your save. A save of the same bytes does not change it: then
-    /// `reads` increases.
+    /// the whole file, also when `code` is a range of it. Null when Tiza
+    /// could not read the file, for example when the file is removed. When
+    /// it is the hash of the file you saved, Tiza read your save. A save of
+    /// the same bytes does not change it: then `reads` increases.
     #[serde(default)]
     pub hash: Option<String>,
     /// Time of the last reload, `HH:MM:SSZ`.
