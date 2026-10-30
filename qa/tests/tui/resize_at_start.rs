@@ -223,7 +223,8 @@ def status(sock):
 
 def quiet(p, quiet_s=0.3, timeout=10):
     """Lets the reader thread take the frame already written: returns once
-    the child wrote nothing for `quiet_s`."""
+    the child wrote nothing for `quiet_s`. It takes a stable screen; it
+    does not check that something does not happen."""
     end = time.monotonic() + timeout
     while time.monotonic() < end:
         with p._cv:
