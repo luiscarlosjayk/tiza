@@ -288,6 +288,10 @@ pub const PROPOSAL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 /// presentation mode, where there is no status bar to keep it.
 pub const PRESENT_MESSAGE_TTL: std::time::Duration = std::time::Duration::from_secs(2);
 
+/// How many `:` commands the command history keeps: one more drops the
+/// oldest.
+pub const HISTORY_COMMANDS: usize = 100;
+
 /// How many pasted codes [`App`] remembers to tell a paste on screen from
 /// an older version of the followed file.
 const PASTES_KEPT: usize = 32;
@@ -6340,7 +6344,7 @@ impl App {
         }
         if self.history_cmds.last().map(String::as_str) != Some(input) {
             self.history_cmds.push(input.to_string());
-            if self.history_cmds.len() > 100 {
+            if self.history_cmds.len() > HISTORY_COMMANDS {
                 self.history_cmds.remove(0);
             }
         }
