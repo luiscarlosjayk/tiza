@@ -177,6 +177,9 @@ impl Follow {
     /// and these tests need none of its events.
     #[cfg(any(test, feature = "test-hooks"))]
     pub fn by_hand(path: PathBuf, current: Vec<String>) -> Follow {
+        // No sender: the channel of the events is closed from the start,
+        // and `poll` reads a closed channel as one with no event. It is
+        // not a watcher that ended.
         let (_, rx) = mpsc::channel();
         Follow::new(path, Watch::ByHand, rx, current)
     }
@@ -210,6 +213,14 @@ impl Follow {
     /// [`Follow::poll`] takes it.
     pub fn starting(&self) -> bool {
         matches!(self.watch, Watch::Starting(_))
+    }
+
+    /// Test hook, only in the builds of the tests (the `test-hooks`
+    /// feature, and the unit tests): whether a read of the file is due
+    /// after the debounce (a save seen, a `touch` or a `defer`).
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn reload_due(&self) -> bool {
+        self.pending_since.is_some()
     }
 
     /// Test hook, only in the builds of the tests (the `test-hooks`

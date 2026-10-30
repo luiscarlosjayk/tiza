@@ -455,6 +455,10 @@ fn over_a_paste_the_wait_does_not_say_the_file_changed() {
     live.command("follow on");
     assert_eq!(message(&live), SAID);
     assert_eq!(status(&live)["reason"], WAITING);
+    // The read that a watcher makes when it starts, by hand: the bar
+    // still says so.
+    live.with(|app| app.read_save());
+    assert_eq!(message(&live), SAID);
     same_as_fresh(&live, &tiza, ":follow on over the paste");
     live.command("follow off");
     live.with(|app| app.message = None);

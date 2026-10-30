@@ -11,12 +11,14 @@
 //!   file of a `:ref`. It is not «starting» either, so a test does not wait
 //!   for it.
 //! - AC2 It makes no read when the watcher would start: `:follow on`
-//!   reads the file once, inside the call, and then only the test does.
+//!   reads the file once, inside the call, and no read is due after it.
+//!   Then only the test reads the file.
 //! - AC3 The empty first write of an editor is read again after the
 //!   debounce, as with a watcher.
 //! - AC4 A read by hand while a watcher is on panics, and so does
 //!   `set_follow_by_hand` after a follow with a watcher started: the
 //!   watcher would read the same save at a time the test does not know.
+//!   A read beside the watcher with a follow by hand panics too.
 //! - AC5 A panic on the TUI thread of `Live` fails only its test: before,
 //!   the drop of `Live` panicked on the poisoned lock, and the whole test
 //!   binary aborted.
@@ -49,28 +51,40 @@ fn watching(live: &Live) -> Option<&'static str> {
     live.with(|app| app.follow.as_ref().map(|f| f.watching()))
 }
 
+/// Whether a read of the followed file is due after the debounce.
+fn reload_due(live: &Live) -> bool {
+    live.with(|app| app.follow.as_ref().is_some_and(|f| f.reload_due()))
+}
+
 fn code(live: &Live) -> Vec<String> {
     live.with(|app| app.doc.code.clone())
 }
 
-/// AC1: by `:follow on`, by `follow.set` and after `:ref`, the follow has
-/// no watcher, and it is not starting.
+/// AC1, AC2: by `:follow on`, by `follow.set` and after `:ref`, the
+/// follow has no watcher, it is not starting, and no read is due.
 #[test]
 fn a_follow_by_hand_has_no_watcher() {
     let (live, _dir) = opened("no-watcher");
     crate::by_hand(&live);
     // In one call: `Live::command` would wait for a follow that starts.
-    let starting = live.with(|app| {
+    let (starting, due) = live.with(|app| {
         app.run_command("follow on");
-        app.follow_starting()
+        let due = app.follow.as_ref().is_some_and(|f| f.reload_due());
+        (app.follow_starting(), due)
     });
     assert!(!starting, "a follow by hand is not starting");
+    assert!(!due, "a read is due after follow on");
     assert_eq!(watching(&live), Some("by_hand"));
     live.command("follow off");
     assert_eq!(watching(&live), None);
     live.api_ok("follow.set", json!({"enabled": true}));
+    assert!(!reload_due(&live), "a read is due after follow.set");
     assert_eq!(watching(&live), Some("by_hand"));
-    live.command("ref other.rs");
+    let due = live.with(|app| {
+        app.run_command("ref other.rs");
+        app.follow.as_ref().is_some_and(|f| f.reload_due())
+    });
+    assert!(!due, "a read is due after :ref");
     let path = live.with(|app| app.follow.as_ref().map(|f| f.path.clone()));
     assert!(
         path.as_ref().is_some_and(|p| p.ends_with("other.rs")),
@@ -85,13 +99,14 @@ fn a_follow_by_hand_has_no_watcher() {
 fn a_follow_by_hand_makes_no_read_when_it_starts() {
     let (live, _dir) = opened("no-start-read");
     crate::by_hand(&live);
-    let (watch, polls) = live.with(|app| {
+    let (watch, due, polls) = live.with(|app| {
         app.set_follow(true).unwrap();
         let f = app.follow.as_mut().expect("following");
-        (f.watching(), [f.poll(), f.poll(), f.poll()])
+        (f.watching(), f.reload_due(), [f.poll(), f.poll(), f.poll()])
     });
     // A watcher still starting gives no `Started` yet either.
     assert_eq!(watch, "by_hand");
+    assert!(!due, "a read is due after the start");
     assert_eq!(polls, [Poll::Idle, Poll::Idle, Poll::Idle]);
 }
 
@@ -122,7 +137,7 @@ fn the_empty_first_write_is_read_again_after_the_debounce() {
 
 /// AC4: with a watcher on, a read by hand and `set_follow_by_hand` panic.
 /// All in one call, while the watcher starts: the test does not wait for
-/// it.
+/// it. With a follow by hand, a read beside the watcher panics.
 #[test]
 fn a_read_by_hand_beside_a_watcher_panics() {
     let (live, _dir) = opened("beside");
@@ -136,6 +151,12 @@ fn a_read_by_hand_beside_a_watcher_panics() {
     assert!(matches!(watch, Some("starting" | "running")), "{watch:?}");
     assert!(read, "a read by hand with a watcher on");
     assert!(set, "by hand after a follow with a watcher");
+    let (live, _dir) = opened("beside-by-hand");
+    crate::by_hand(&live);
+    live.command("follow on");
+    let beside = live
+        .with(|app| catch_unwind(AssertUnwindSafe(|| app.read_save_beside_the_watcher())).is_err());
+    assert!(beside, "a read beside the watcher with a follow by hand");
 }
 
 /// AC5: a panic on the TUI thread fails this test alone, with the message

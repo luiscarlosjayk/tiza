@@ -5290,9 +5290,16 @@ impl App {
 
     /// Test hook, only with the `test-hooks` feature: [`App::read_save`]
     /// while a watcher is on, for a test that needs both. The watcher can
-    /// read the save first.
+    /// read the save first. With a follow by hand it panics: such a test
+    /// uses `read_save`.
     #[cfg(feature = "test-hooks")]
     pub fn read_save_beside_the_watcher(&mut self) -> bool {
+        assert!(
+            self.follow
+                .as_ref()
+                .is_none_or(|f| f.watching() != "by_hand"),
+            "a read beside the watcher with a follow by hand: use read_save"
+        );
         self.read_save_now()
     }
 
