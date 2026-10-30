@@ -10,9 +10,12 @@ authors.workspace = true
 readme = "README.md"
 
 [features]
-# Test-only hooks: environment variables that make a request
-# panic on purpose or shorten the MCP export deadline. `qa`'s `bin()`
-# builds the test binary with it; a release build never has it.
+# Test-only hooks: environment variables that make a request panic on
+# purpose or slow the clock and the frames, a hold of the live checks,
+# the watchers and the bar message in `follow.status`, and the held
+# checks in `status`. `qa`'s `bin()` builds the test binary with it, and
+# the tests of `qa` turn it on as a dev-dependency for the instance in
+# their own process; a release build never has it.
 test-hooks = []
 
 [dependencies]

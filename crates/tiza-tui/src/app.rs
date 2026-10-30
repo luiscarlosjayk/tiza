@@ -8258,6 +8258,15 @@ impl App {
         ));
     }
 
+    /// Test hook, only with the `test-hooks` feature: the hold of the live
+    /// checks of this instance ([`crate::checks::Hold`]), so that a test
+    /// can ask for more checks while the first one runs. The test takes it
+    /// once and sets it from its own thread, not from the TUI thread.
+    #[cfg(feature = "test-hooks")]
+    pub fn live_check_hold(&self) -> std::sync::Arc<crate::checks::Hold> {
+        self.checks.hold()
+    }
+
     /// `check`: answered from a thread of its own on a copy of the
     /// document as it is now, so the screen, the keys and the other
     /// requests do not wait for it ([`crate::checks`]). Its parameters are
@@ -8625,7 +8634,19 @@ impl App {
             "ping" => json!("pong"),
             "status" => {
                 self.sync_pointer();
-                serde_json::to_value(self.status())?
+                #[allow(unused_mut)]
+                let mut st = serde_json::to_value(self.status())?;
+                // Only in the tests' build: the live checks that wait in
+                // the hold, and the requests that wait for the one that
+                // runs.
+                #[cfg(feature = "test-hooks")]
+                {
+                    st["checks"] = json!({
+                        "held": self.checks.hold().held(),
+                        "waiters": self.checks.running_waiters(),
+                    });
+                }
+                st
             }
             "pointer.set" => {
                 let p: tiza_core::protocol::PointerParams = parse(params)?;

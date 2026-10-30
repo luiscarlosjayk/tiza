@@ -49,7 +49,101 @@ struct State {
 
 /// The live checks of one instance (see the module documentation).
 #[derive(Default)]
-pub struct Checks(Arc<Mutex<State>>);
+pub struct Checks(Arc<Mutex<State>>, #[cfg(feature = "test-hooks")] Arc<Hold>);
+
+/// Test hook, only with the `test-hooks` feature: while it is on, a check
+/// thread that starts waits before its first computation, with its batch
+/// already the one that runs. A test asks for more checks then, and they
+/// join or wait as they would beside a long check, whatever the speed of
+/// the machine. The batch that waits is computed when the first one ends,
+/// with no hold.
+///
+/// A test sees that a check waits ([`Hold::wait_held`]; `status.checks` on
+/// a pty). A hold ends by itself after 10 s and says so
+/// ([`Hold::expired`]): a test that keeps it longer fails when it lets it
+/// go, and never hangs.
+#[cfg(feature = "test-hooks")]
+#[derive(Default)]
+pub struct Hold {
+    state: Mutex<HoldState>,
+    changed: std::sync::Condvar,
+}
+
+#[cfg(feature = "test-hooks")]
+#[derive(Default)]
+struct HoldState {
+    on: bool,
+    /// The check threads that wait now, in the hold or for the file.
+    held: usize,
+    expired: bool,
+}
+
+#[cfg(feature = "test-hooks")]
+impl Hold {
+    /// How long a check waits while the hold is on.
+    const LIMIT: std::time::Duration = std::time::Duration::from_secs(10);
+    /// How long a check waits for the file `check-hold`: longer, as the
+    /// scripts on a pty start a process for each request. A check that
+    /// waits blocks neither the TUI nor its exit.
+    const FILE_LIMIT: std::time::Duration = std::time::Duration::from_secs(60);
+
+    fn state(&self) -> MutexGuard<'_, HoldState> {
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Holds the checks (`true`) or lets them go (`false`).
+    pub fn set(&self, on: bool) {
+        self.state().on = on;
+        self.changed.notify_all();
+    }
+
+    /// The check threads that wait now.
+    pub fn held(&self) -> usize {
+        self.state().held
+    }
+
+    /// Whether a check stopped waiting because the hold lasted 10 s.
+    pub fn expired(&self) -> bool {
+        self.state().expired
+    }
+
+    /// Waits until a check thread waits, at most `limit`; `false` if none
+    /// did.
+    pub fn wait_held(&self, limit: std::time::Duration) -> bool {
+        let st = self.state();
+        let (st, _) = self
+            .changed
+            .wait_timeout_while(st, limit, |st| st.held == 0)
+            .unwrap_or_else(|e| e.into_inner());
+        st.held > 0
+    }
+
+    /// Waits while the hold is on. Then, for a TUI on a pty with
+    /// `TIZA_TEST_HOOK=check:hold`, waits while the file `check-hold` is in
+    /// the runtime folder of Tiza.
+    fn wait(&self) {
+        let mut st = self.state();
+        st.held += 1;
+        self.changed.notify_all();
+        let (mut st, waited) = self
+            .changed
+            .wait_timeout_while(st, Self::LIMIT, |st| st.on)
+            .unwrap_or_else(|e| e.into_inner());
+        if waited.timed_out() {
+            st.expired = true;
+        }
+        drop(st);
+        if crate::test_hook("check:hold") {
+            let file = tiza_core::socket::runtime_dir().join("check-hold");
+            let start = std::time::Instant::now();
+            while file.exists() && start.elapsed() < Self::FILE_LIMIT {
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        }
+        self.state().held -= 1;
+        self.changed.notify_all();
+    }
+}
 
 fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
     // A panic never happens under this lock (the check runs outside it);
@@ -58,6 +152,23 @@ fn lock(state: &Mutex<State>) -> MutexGuard<'_, State> {
 }
 
 impl Checks {
+    /// Test hook, only with the `test-hooks` feature: the hold of these
+    /// checks ([`Hold`]).
+    #[cfg(feature = "test-hooks")]
+    pub fn hold(&self) -> Arc<Hold> {
+        Arc::clone(&self.1)
+    }
+
+    /// Test hook, only with the `test-hooks` feature: the requests that
+    /// wait for the check that runs.
+    #[cfg(feature = "test-hooks")]
+    pub fn running_waiters(&self) -> usize {
+        lock(&self.0)
+            .running
+            .as_ref()
+            .map_or(0, |b| b.waiters.len())
+    }
+
     /// Answers request `id` on `reply` with the check of the document at
     /// `revision`, at `width` (the one the check uses, never "the
     /// default"). `snapshot` copies the document; it is called only when no
@@ -124,9 +235,15 @@ impl Checks {
         };
         drop(st);
         let state = Arc::clone(&self.0);
+        #[cfg(feature = "test-hooks")]
+        let hold = Arc::clone(&self.1);
         let spawned = std::thread::Builder::new()
             .name("tiza-check".into())
-            .spawn(move || run(&state, job, width));
+            .spawn(move || {
+                #[cfg(feature = "test-hooks")]
+                hold.wait();
+                run(&state, job, width)
+            });
         if let Err(e) = spawned {
             // Nothing will run them: every waiting request is told.
             let mut st = lock(&self.0);

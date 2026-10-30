@@ -62,7 +62,10 @@ fn big_file(name: &str) -> PathBuf {
 /// runs inside the instance. That it runs there is shown by the instance
 /// itself: of three checks at three widths (the default, 60 and 70), one is
 /// told `busy` — replaced while it waited, which only happens while another
-/// check runs — and the other two get no reply before the quit. Then Tiza
+/// check runs — and the other two get no reply before the quit. The first
+/// check waits for the file `check-hold` (`TIZA_TEST_HOOK=check:hold`), so
+/// it still runs when Tiza quits, however fast the machine;
+/// `status.checks` shows that it waits. Then Tiza
 /// exits with status 0 (within a second on an idle machine; waited for up
 /// to 10 s, so a loaded one is no false red), leaves the alternate screen with
 /// the line discipline restored (canonical mode and echo on), removes its
@@ -72,10 +75,18 @@ fn quitting_while_a_check_runs_exits_at_once() {
     let _alone = crate::alone();
     let file = big_file("ac5");
     let dir = file.parent().unwrap().to_path_buf();
+    let runtime = dir.join("run");
+    std::fs::create_dir_all(&runtime).unwrap();
     let body = r##"
 import json
-binary, doc = sys.argv[1], sys.argv[2]
+binary, doc, runtime = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(os.path.dirname(doc))
+# While this file is there, a check waits before it computes. It stays
+# until the end: the instance quits while its first check waits.
+hold = os.path.join(runtime, "tiza", "check-hold")
+os.makedirs(os.path.dirname(hold), exist_ok=True)
+open(hold, "w").close()
+env = dict(os.environ, TIZA_TEST_HOOK="check:hold", XDG_RUNTIME_DIR=runtime)
 # How long one check of this document takes here and now (a loaded machine
 # stretches it as it stretches the quit): the quit must take far less.
 t = time.monotonic()
@@ -83,16 +94,25 @@ subprocess.run([binary, "check", doc, "--json"], capture_output=True, timeout=12
 print("CHECK_TIME %.3f" % (time.monotonic() - t), flush=True)
 for how in ["q", "ctrl-c", "hup", "close"]:
     sock = how + ".sock"
-    s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120)
+    s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120, env=env)
     if not s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
         break
     checks = [subprocess.Popen([binary, "api", "check", json.dumps(p), "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
               for p in [{}, {"width": 60}, {"width": 70}]]
+    # Until a check waits for the file (a status call while it does).
+    held = None
     try:
-        r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=10)
+        end = time.monotonic() + 10
+        while True:
+            r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=10)
+            held = json.loads(r.stdout)["checks"]["held"] if r.returncode == 0 else None
+            if held == 1 or time.monotonic() > end:
+                break
+            s.settle(0.02)
         print(how, "STATUS", r.returncode, flush=True)
     except subprocess.TimeoutExpired:
         print(how, "STATUS_TIMEOUT", flush=True)
+    print(how, "HELD", held, flush=True)
     end = time.monotonic() + 10
     while not any(c.poll() is not None for c in checks) and time.monotonic() < end:
         s.settle(0.02)
@@ -131,7 +151,11 @@ for how in ["q", "ctrl-c", "hup", "close"]:
         &dir,
         "quit.py",
         body,
-        &[tiza_qa::bin().to_str().unwrap(), file.to_str().unwrap()],
+        &[
+            tiza_qa::bin().to_str().unwrap(),
+            file.to_str().unwrap(),
+            runtime.to_str().unwrap(),
+        ],
         150,
     );
     let check_time: f64 = out
@@ -143,6 +167,10 @@ for how in ["q", "ctrl-c", "hup", "close"]:
     for how in ["q", "ctrl-c", "hup", "close"] {
         let has = |what: &str| out.contains(&format!("{how} {what}"));
         assert!(has("STATUS 0"), "{how}:\n{out}");
+        assert!(
+            has("HELD 1"),
+            "{how}: the first check did not wait for the file\n{out}"
+        );
         assert!(
             has("TOLD 1 True"),
             "{how}: no check was told `busy`, so none was shown running in the instance\n{out}"

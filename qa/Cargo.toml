@@ -24,6 +24,10 @@ crossterm.workspace = true
 image-webp.workspace = true
 
 [dev-dependencies]
+# The tests hold the live checks of the instance in their own process.
+# Only as a dev-dependency: a plain `cargo build` of the workspace has no
+# hooks (a build of the tests has them).
+tiza-tui = { workspace = true, features = ["test-hooks"] }
 insta.workspace = true
 jsonschema.workspace = true
 proptest.workspace = true

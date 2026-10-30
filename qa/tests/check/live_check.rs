@@ -31,19 +31,25 @@
 //! running.
 //!
 //! The document is generated (300 lines, 16 annotations over 4 steps, as
-//! the card measured), big enough for a check that takes seconds in a
-//! debug build and most of a second in a release one. Nothing waits on a
-//! fixed sleep: a request is answered within a deadline or the test
-//! fails, and "while the check runs" means before its reply arrived.
+//! the card measured). Its check takes seconds in a debug build and most
+//! of a second in a release one, but a fast or busy machine can end it
+//! before a test asks again. So the tests that need a check that still
+//! runs hold it before it computes, see that it waits, and let it go
+//! after: in the process of the test with [`hold`], and on a pty with
+//! `TIZA_TEST_HOOK=check:hold` and the file `check-hold` (`status.checks`
+//! tells the checks that wait). Nothing waits on a fixed sleep: a request
+//! is answered within a deadline or the test fails, and "while the check
+//! runs" means before its reply arrived.
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 use crossterm::event::KeyCode;
 use serde_json::{Value, json};
 use tiza_core::protocol::{Request, Response};
 use tiza_qa::{Live, McpClient, scratch, tiza_with_config};
+use tiza_tui::checks::Hold;
 
 /// How long a request answered while a check runs is waited for: a
 /// condition's timeout; that it did not wait for the check is shown by the
@@ -195,27 +201,71 @@ fn next_report(rx: &mpsc::Receiver<Response>) -> (u64, Value) {
     (id, r.result.unwrap())
 }
 
-/// After the last check of [`ask_check_on`] was handed over: no reply came
-/// yet, so the first check still runs. A reply here is a request that was
-/// replaced (`busy`), or a first check that ended before the others came.
+/// After the last check of [`ask_check_on`] was handed over, with the
+/// first check held: no reply came yet. A reply here is a request that was
+/// replaced (`busy`), or a report of a check that did not wait in the hold.
 fn none_answered_yet(rx: &mpsc::Receiver<Response>) {
     if let Ok(r) = rx.try_recv() {
         panic!(
-            "check {} was answered before the first check ended ({:?}): it was replaced, or the first check did not run long enough to tell",
+            "check {} was answered while the first check was held ({:?}): it was replaced, or the check did not wait in the hold",
             r.id, r.error
         );
     }
 }
 
+/// Holds the live checks of `live` before they compute until it is
+/// dropped, also when the test fails: a check asked meanwhile runs, as a
+/// long one would, whatever the speed of the machine. The test lets go
+/// from its own thread, not through the TUI thread: if a check waits on the
+/// TUI thread (a bug), the test fails and does not hang. A hold that ended
+/// by its limit (10 s) before the test let it go fails the test.
+struct Held(Arc<Hold>);
+
+impl Held {
+    /// Waits until the first check waits in the hold, so that the checks
+    /// asked after it join it or wait.
+    fn until_a_check_waits(&self) {
+        assert!(
+            self.0.wait_held(QUICK),
+            "no check waited in the hold within {QUICK:?}"
+        );
+    }
+}
+
+impl Drop for Held {
+    fn drop(&mut self) {
+        self.0.set(false);
+        if !std::thread::panicking() {
+            assert!(
+                !self.0.expired(),
+                "the hold ended by its limit before the test let it go"
+            );
+        }
+    }
+}
+
+fn hold(live: &Live) -> Held {
+    let hold = live.with(|app| app.live_check_hold());
+    hold.set(true);
+    Held(hold)
+}
+
 /// Step 1 / AC1: a check in flight; meanwhile `status`, `render.text` and
 /// an annotation edit over the socket and `n` on the keyboard are answered
 /// within `QUICK`, again and again, before the check's reply arrives.
+/// The check is held until the key and the edits are answered, so they are
+/// answered before it computes; the status calls after that are answered
+/// while it computes. A computation that blocks the TUI thread for less
+/// than `QUICK` is not found by this test.
 #[test]
 fn status_a_key_and_edits_are_answered_while_a_check_runs() {
     let (_, live) = big_live("ac1");
     let sock = live.socket.clone();
     let step = quick(&sock, "status", json!({}))["step"].as_u64().unwrap();
+    // Let go once the key and the edits are answered.
+    let mut held = Some(hold(&live));
     let check = ask_check(&live, json!({}));
+    held.as_ref().unwrap().until_a_check_waits();
     let mut answered = 0;
     let mut key_pressed = false;
     loop {
@@ -242,7 +292,7 @@ fn status_a_key_and_edits_are_answered_while_a_check_runs() {
             assert_eq!(s["step"], step + 1, "{s}");
             assert!(
                 matches!(check.try_recv(), Err(mpsc::TryRecvError::Empty)),
-                "the check answered before the key was handled: it did not run long enough to tell"
+                "the check answered before the key was handled"
             );
             key_pressed = true;
         }
@@ -255,6 +305,7 @@ fn status_a_key_and_edits_are_answered_while_a_check_runs() {
                 json!({"id": "x1", "step": 1, "type": "note", "line": 2, "text": "added meanwhile"}),
             );
             assert_eq!(r["id"], "x1", "{r}");
+            drop(held.take());
         }
         assert!(s["revision"].is_u64(), "{s}");
         if answered > 10_000 {
@@ -281,7 +332,9 @@ fn a_change_during_the_check_is_not_in_it_and_the_reply_names_its_revision() {
     let before = quick(&sock, "status", json!({}))["revision"]
         .as_u64()
         .unwrap();
+    let held = hold(&live);
     let check = ask_check(&live, json!({}));
+    held.until_a_check_waits();
     // A note at step 5: a report that saw it would say `max_step: 5`.
     let added = quick(
         &sock,
@@ -292,8 +345,9 @@ fn a_change_during_the_check_is_not_in_it_and_the_reply_names_its_revision() {
     assert!(after > before, "{added}");
     assert!(
         matches!(check.try_recv(), Err(mpsc::TryRecvError::Empty)),
-        "the check answered before the edit: it did not run long enough to tell"
+        "the check answered before the edit"
     );
+    drop(held);
     let (_, v) = check_reply(&check);
     let checked = v["revision"].as_u64().expect("revision");
     assert_eq!(
@@ -322,11 +376,14 @@ fn two_checks_at_once_share_one_computation() {
     let (_, live) = big_live("ac3");
     let sock = live.socket.clone();
     let (tx, replies) = mpsc::channel();
+    let held = hold(&live);
     ask_check_on(&live, 1, json!({}), tx.clone());
+    held.until_a_check_waits();
     quick(&sock, "status", json!({}));
     ask_check_on(&live, 2, json!({}), tx.clone());
     ask_check_on(&live, 3, json!({"width": 60}), tx);
     none_answered_yet(&replies);
+    drop(held);
     quick(&sock, "status", json!({}));
     let (first, a) = next_report(&replies);
     let (second, b) = next_report(&replies);
@@ -350,7 +407,9 @@ fn two_checks_at_once_share_one_computation() {
 #[test]
 fn another_width_while_one_waits_replaces_it_and_it_is_told_at_once() {
     let (_, live) = big_live("ac3-replace");
+    let held = hold(&live);
     let running = ask_check(&live, json!({}));
+    held.until_a_check_waits();
     let replaced = ask_check(&live, json!({"width": 60}));
     let newest = ask_check(&live, json!({"width": 70}));
     let (_, r) = replaced
@@ -364,8 +423,9 @@ fn another_width_while_one_waits_replaces_it_and_it_is_told_at_once() {
     );
     assert!(
         matches!(running.try_recv(), Err(mpsc::TryRecvError::Empty)),
-        "the running check answered before the replaced one was told: it did not run long enough to tell"
+        "the running check answered before the replaced one was told"
     );
+    drop(held);
     let (_, a) = check_reply(&running);
     assert_eq!(a["width"], 100, "{a}");
     let (_, c) = check_reply(&newest);
@@ -382,11 +442,14 @@ fn another_width_while_one_waits_replaces_it_and_it_is_told_at_once() {
 fn the_default_width_and_the_same_width_given_share_one_computation() {
     let (_, live) = big_live("ac3-default");
     let (tx, replies) = mpsc::channel();
+    let held = hold(&live);
     ask_check_on(&live, 1, json!({}), tx.clone());
+    held.until_a_check_waits();
     let width = json!({"width": tiza_core::check::DEFAULT_WIDTH});
     ask_check_on(&live, 2, width, tx.clone());
     ask_check_on(&live, 3, json!({"width": 60}), tx);
     none_answered_yet(&replies);
+    drop(held);
     let (first, a) = next_report(&replies);
     let (second, b) = next_report(&replies);
     let (third, c) = next_report(&replies);
@@ -416,14 +479,26 @@ import json
 binary, doc, runtime = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(os.path.dirname(doc))
 sock = "b.sock"
-env = dict(os.environ, TIZA_TEST_HOOK="request:check", XDG_RUNTIME_DIR=runtime)
+env = dict(os.environ, TIZA_TEST_HOOK="request:check,check:hold", XDG_RUNTIME_DIR=runtime)
+# While this file is there, a check waits before it computes.
+hold = os.path.join(runtime, "tiza", "check-hold")
+os.makedirs(os.path.dirname(hold), exist_ok=True)
+open(hold, "w").close()
 def check(params):
     return subprocess.Popen([binary, "api", "check", json.dumps(params), "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
     first = check({})
-    r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=10)
+    # Until the first check waits for the file (a status call while it does).
+    end = time.monotonic() + 10
+    while True:
+        r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=10)
+        held = json.loads(r.stdout)["checks"]["held"] if r.returncode == 0 else None
+        if held == 1 or time.monotonic() > end:
+            break
+        s.settle(0.05)
     print("STATUS", r.returncode, flush=True)
+    print("HELD", held, flush=True)
     burst = [check({"width": w}) for w in range(30, 50)]
     # Every one but one is told it was replaced; the last waits.
     end = time.monotonic() + 30
@@ -432,6 +507,7 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "f
     told = [p for p in burst if p.poll() is not None]
     print("TOLD", len(told), flush=True)
     print("FIRST_IN_FLIGHT", first.poll() is None, flush=True)
+    os.remove(hold)
     print("BUSY", sum('busy' in p.communicate(timeout=5)[0] for p in told), flush=True)
     print("FIRST", json.dumps(first.communicate(timeout=120)[0]), flush=True)
     for p in burst:
@@ -452,10 +528,14 @@ s.finish(10)
         150,
     );
     assert!(out.contains("STATUS 0"), "{out}");
+    assert!(
+        out.contains("HELD 1"),
+        "the first check did not wait for the file\n{out}"
+    );
     assert!(out.contains("TOLD 19"), "{out}");
     assert!(
         out.contains("FIRST_IN_FLIGHT True"),
-        "the first check ended before the burst was told: it did not run long enough to tell\n{out}"
+        "the first check ended before the burst was told\n{out}"
     );
     assert!(out.contains("BUSY 19"), "{out}");
     for who in ["FIRST", "LAST"] {
@@ -477,7 +557,8 @@ s.finish(10)
 /// panics once it is done (one line in `panics.log` each). Two checks at
 /// once leave one line and two `internal` replies, and the TUI keeps
 /// answering (the panic on the check thread neither closes it nor
-/// restores its terminal).
+/// restores its terminal). The first check waits for the file
+/// `check-hold` until the second one joins it.
 #[test]
 fn two_checks_at_once_are_one_computation_and_a_panic_in_it_is_caught() {
     let file = big_file("ac3-hook");
@@ -489,17 +570,32 @@ import json
 binary, doc, runtime = sys.argv[1], sys.argv[2], sys.argv[3]
 os.chdir(os.path.dirname(doc))
 sock = "h.sock"
-env = dict(os.environ, TIZA_TEST_HOOK="request:check", XDG_RUNTIME_DIR=runtime)
+env = dict(os.environ, TIZA_TEST_HOOK="request:check,check:hold", XDG_RUNTIME_DIR=runtime)
+# While this file is there, a check waits before it computes.
+hold = os.path.join(runtime, "tiza", "check-hold")
+os.makedirs(os.path.dirname(hold), exist_ok=True)
+open(hold, "w").close()
 def api(*args, timeout=120):
     r = subprocess.run([binary, "api", *args, "--socket", sock], capture_output=True, text=True, timeout=timeout)
     return r.returncode, r.stdout + r.stderr
+def until_checks(key, value):
+    """Status calls until `status.checks[key]` is `value`, for 10 s at most."""
+    end = time.monotonic() + 10
+    while True:
+        r = subprocess.run([binary, "api", "status", "--socket", sock], capture_output=True, text=True, timeout=10)
+        got = json.loads(r.stdout)["checks"][key] if r.returncode == 0 else None
+        if got == value or time.monotonic() > end:
+            return got
+        s.settle(0.05)
 s = Pty([binary, "--socket", sock, "--no-save", doc], 30, 120, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 20, "first frame"):
     a = subprocess.Popen([binary, "api", "check", "{}", "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-    api("status", timeout=10)
+    print("HELD", until_checks("held", 1), flush=True)
     b = subprocess.Popen([binary, "api", "check", "{}", "--socket", sock], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    print("WAITERS", until_checks("waiters", 2), flush=True)
     code, text = api("status", timeout=10)
     print("STATUS", code, flush=True)
+    os.remove(hold)
     print("A", json.dumps(a.communicate(timeout=120)[0]), flush=True)
     print("B", json.dumps(b.communicate(timeout=120)[0]), flush=True)
     code, text = api("status", timeout=10)
@@ -518,6 +614,14 @@ s.finish(10)
             runtime.to_str().unwrap(),
         ],
         150,
+    );
+    assert!(
+        out.contains("HELD 1"),
+        "the first check did not wait for the file\n{out}"
+    );
+    assert!(
+        out.contains("WAITERS 2"),
+        "the second check did not join the first\n{out}"
     );
     assert!(out.contains("STATUS 0"), "{out}");
     for who in ["A", "B"] {
@@ -592,16 +696,20 @@ fn the_live_check_is_the_cli_check() {
 
 /// Corner case: an MCP client that stops waiting for `check` before it
 /// ends. Its other calls (`status`) are answered meanwhile, and the
-/// server still answers the check when it is done, with the report.
+/// server still answers the check when it is done, with the report. The
+/// check is held until `status` is answered, so `status` is answered
+/// before the check computes.
 #[test]
 fn mcp_check_with_a_client_timeout_shorter_than_the_check() {
     let (_, live) = big_live("mcp");
     let mut mcp = McpClient::start(&live.socket);
+    let held = hold(&live);
     let check = mcp.send("tools/call", json!({"name": "check", "arguments": {}}));
+    held.until_a_check_waits();
     assert!(
         mcp.reply_within(check, Duration::from_millis(200))
             .is_none(),
-        "the check answered within 0.2 s: it did not run long enough to tell"
+        "the held check answered within 0.2 s"
     );
     let status = mcp.send("tools/call", json!({"name": "status", "arguments": {}}));
     let s = mcp
@@ -613,6 +721,7 @@ fn mcp_check_with_a_client_timeout_shorter_than_the_check() {
         !mcp.replied(check),
         "status was answered only after the check"
     );
+    drop(held);
     let v = mcp
         .reply_within(check, CHECK)
         .expect("the MCP check never answered");

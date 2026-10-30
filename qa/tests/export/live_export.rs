@@ -1389,7 +1389,9 @@ fn a_dropped_request_leaves_no_animation_drawing_the_value() {
 /// feature (the tests' binary): in every source file of every crate, each
 /// read of a hook's environment variable (`TIZA_TEST_*`, `TIZA_MCP_TEST_*`,
 /// `TIZA_MCP_EXPORT_TIMEOUT_MS`) is behind `#[cfg(feature = "test-hooks")]`,
-/// no crate turns it on by default, and the old unguarded names are gone.
+/// no crate turns it on by default, every manifest names it only in
+/// `[features]` (`qa` only for a dev-dependency), and the old unguarded
+/// names are gone.
 #[test]
 fn the_test_hooks_are_never_in_a_release_build() {
     fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -1449,8 +1451,9 @@ fn the_test_hooks_are_never_in_a_release_build() {
     // The readers of today: `test_hook` of the TUI (one reader for the
     // request and check panics, the follow hooks, the slow clock and the
     // late frames of an enter effect, a panic in the layout of a frame and
-    // one inside it, slow frames: a call to it outside the feature does
-    // not build), `:panic`, and the two of the MCP server.
+    // one inside it, slow frames, the hold of the live checks on a pty: a
+    // call to it outside the feature does not build), `:panic`, and the
+    // two of the MCP server.
     assert_eq!(seen.len(), 4, "{seen:#?}");
     for manifest in [
         "crates/tiza-tui/Cargo.toml",
@@ -1464,6 +1467,42 @@ fn the_test_hooks_are_never_in_a_release_build() {
             "{manifest} has default features"
         );
     }
+    // Where each manifest names the feature: the crates define it (and
+    // pass it on) only in `[features]`, and `qa` turns it on only for a
+    // dev-dependency. A feature turned on for a dependency is in every
+    // build that has the crate (a `cargo build` of the workspace too); one
+    // for a dev-dependency is only in the builds of its tests.
+    let mut manifests = vec![
+        ("Cargo.toml".to_string(), "[features]"),
+        ("qa/Cargo.toml".to_string(), "[dev-dependencies]"),
+    ];
+    for e in std::fs::read_dir(root.join("crates")).unwrap() {
+        let name = e.unwrap().file_name().to_string_lossy().into_owned();
+        let manifest = format!("crates/{name}/Cargo.toml");
+        if root.join(&manifest).is_file() {
+            manifests.push((manifest, "[features]"));
+        }
+    }
+    let mut qa_turns_it_on = 0;
+    for (manifest, only_in) in &manifests {
+        let text = std::fs::read_to_string(root.join(manifest)).unwrap();
+        let mut section = "";
+        for l in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
+            if l.starts_with('[') {
+                section = l.trim();
+            }
+            if l.contains("test-hooks") {
+                assert_eq!(section, *only_in, "{manifest}: {l}");
+                if manifest == "qa/Cargo.toml" {
+                    qa_turns_it_on += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(
+        qa_turns_it_on, 1,
+        "qa/Cargo.toml does not turn the hooks on"
+    );
 }
 
 /// V3: the dropped request leaves no undo entry: the first `u` says there
