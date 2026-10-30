@@ -90,19 +90,19 @@ The messages of follow mode are in [Messages of follow mode](../reference/comman
 
 ### Moves
 
-Only a `code.patch` move changes the text of the code. A `cursor`, `select`, `wait` or `code.link` move does not change the text. Thus a save at a step where no patch is applied loads at once, also when other moves are applied. The step keeps the file that its `code.link` shows, and step 0 shows the new code.
+Only a `code.patch` move changes the text of the code. A `cursor`, `select`, `wait`, `code.link` or `scroll` move does not change the text. Thus a save at a step where no patch is applied loads at once, also when other moves are applied. The step keeps the file that its `code.link` shows, and step 0 shows the new code.
 
 Follow mode is paused at a step where a `code.patch` is applied. A patch is applied when its `at_step` is that step or an earlier step. The patch can change any file of the document.
 
 1. The bar shows `⟳ paused`.
 2. A save in the editor does not load. It is a change that waits, and the bar shows `⟳ paused · changed`. Only the newest save counts.
-3. The first change of a pause gives one message: `step N loads the change to FILE`. Step N is the last step before the first patch. The next saves of the same pause give no message.
-4. While a change waits, the document keeps the code on screen as embedded code. If you quit, the document opens as you saw it.
+3. The first change of a pause gives one message: `step N loads the change to FILE`. Step N is the last step before the first patch. The next saves of the same pause give no message, except when the file comes back after it was removed or could not be read. Then the message comes again.
+4. While a change waits, the document keeps the code on screen as embedded code. With autosave on, if you quit, the document opens as you saw it. With autosave off, that code is not saved: see [Quitting](../concepts/saving.md#quitting).
 5. At step N or an earlier step, Tiza loads the change at once. This is one reload. `u` undoes it.
 
 - The moves apply again on the new code. A move that does not match the new code is stale: Tiza skips it and tells you one time. In a `loop`, this message comes one time for each change, not at each loop.
 - A jump to step N or earlier, such as `:goto 0` or `step.goto`, loads the change before the reply.
-- When you save the file back to the code on screen, no change waits. No new message comes, and the message about the change goes from the bar.
+- When you save the file back to the code on screen, no change waits. No new message comes, and the message about the change goes from the bar. When Tiza could not read the file before, the message is `FILE can be read again; following it`.
 - When the file is removed during a pause, the bar shows `⟳ paused (file removed)`. When the file comes back with other code, that code is the change that waits.
 - When the file is not valid UTF-8, the message `cannot follow FILE: not valid UTF-8 (keeping the previous content)` comes one time. That file is not a change. At step N, Tiza reads the file again.
 - In presentation mode, no message comes. When you leave presentation mode, the bar shows the state.

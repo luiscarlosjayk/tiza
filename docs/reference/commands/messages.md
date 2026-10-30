@@ -119,7 +119,7 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `title updated` | `:title` set or removed the title. |
 | `numbers on (saved in the document)` | `:numbers on` showed the line numbers. |
 | `numbers off: the gutter is hidden here, in exports and for agents (saved in the document; :numbers on restores it)` | `:numbers off` hid the line numbers. |
-| `numbers already on` or `numbers already off` | The line numbers were in that state already. |
+| `numbers already on` or `numbers already off` | The document already sets that value. |
 | `numbers on` or `numbers off` | `:numbers` shows the state of the line numbers. |
 | `numbers on (from config.toml)` or `numbers off (from config.toml)` | `:numbers` shows the state that the config file sets, because the document does not set it. |
 | `padding V H` | `:pad` set the padding. |
@@ -184,6 +184,7 @@ When `:q` refuses, the status bar shows one of these messages:
 | `step N loads the change to FILE` | You saved the file while a `code.patch` is applied. The change waits for step N. |
 | `FILE removed; waiting for it to come back` | The file is not on disk. |
 | `FILE is back; following it` | The file is on disk again. |
+| `FILE can be read again; following it` | During a pause, Tiza could not read the file. Now it can, and the file holds the code on screen. |
 | `cannot follow FILE: not valid UTF-8 (keeping the previous content)` | The file is not text that Tiza can read. |
 | `nothing to follow: the code is embedded (use :link path to reference a file)` | `:follow on` found embedded code. |
 | `the .tiza already references FILE` | `:link` with no path found the code reference. |

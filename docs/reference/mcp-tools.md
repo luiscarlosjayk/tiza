@@ -243,7 +243,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `delete_annotation` | `id` | The id of the annotation to delete. |
 | `clear_annotations` | `step` | The step to clear. Leave out `step` to clear every annotation. |
 | `delete_move` | `index` | The index of the move, from 1, as `list_moves` gives it. |
-| `set_step` | `step` | The step to show, where a step after the last step shows the last step. |
+| `set_step` | `step` | The step to show. A step after the last step shows the last step. On the empty step after the last one, that step or a later step stays there. |
 | `goto_step` | `id` | The `id` of a named step, or a step number as `4` or `"4"`. |
 | `set_focus` | `from_line`, `to_line` | The range to keep in focus, or no line to clear the focus. |
 | `point_at` | `line`, `find`, `from`, `to` | The line or the range that the live pointer shows. |

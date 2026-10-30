@@ -114,7 +114,7 @@ A mark is always on one line. After `m` on two or more lines, type the kind, the
 
 ### Presentation mode
 
-Presentation mode (`P`) ignores each click and drag. The wheel moves the view three rows for each notch, and the hidden cursor stays in the view. With the live pointer on, the wheel moves the pointer. While an effect plays, a notch only ends the effect, as a key does. Mouse capture stays on, so the terminal does not select text either. Presentation mode hides the cursor and the selection. `Tab` goes only through the annotations in the view and selects none of them. To annotate with the mouse, leave presentation mode first. The mouse then works without `:mouse on`.
+Presentation mode (`P`) ignores each click and drag. The wheel moves the view three rows for each notch, and the hidden cursor stays in the view. With the live pointer on, the wheel moves the pointer, and while an effect plays, a notch only ends the effect, as a key does. With the live pointer off, the wheel moves the view, and the effect continues. Mouse capture stays on, so the terminal does not select text either. Presentation mode hides the cursor and the selection. `Tab` goes only through the annotations in the view and selects none of them. To annotate with the mouse, leave presentation mode first. The mouse then works without `:mouse on`.
 
 ## How it works
 

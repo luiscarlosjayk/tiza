@@ -117,11 +117,11 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 | `--format` | A format | From the extension of `--out` | The format of the export, from [Formats](#formats). |
 | `--step` | A step number | The last step, or the step on screen of the live instance | The step to export, except in a recording. |
 | `--all-steps` | None | Off | Tiza writes one file for each step, and you cannot use it with `--step`. |
-| `--width` | 20 to 400 columns | `width` of the config file, else 100. For the live instance, the width of the code area of its screen: the terminal width less the side padding on each side, from 20 to 400, or 100 when the size of the terminal is not known. For a `.tape`, the terminal width of the instance. | The width of the take. |
+| `--width` | 20 to 400 columns | `width` of the config file, else 100. For the live instance, the width of the code area of its screen: the terminal width less the side padding on each side, from 20 to 400, or 100 when the size of the terminal is not known. For a `.tape` of the live instance, its terminal width. | The width of the take. |
 | `--theme` | A theme name | The theme of the document, or `dark` | The colors of the export. |
 | `--theme-file` | A TOML file | The overrides of the document | Theme overrides for this export, instead of the overrides of the document. |
-| `--numbers` | None | The `numbers` field of the document | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |
-| `--no-numbers` | None | The `numbers` field of the document | Tiza hides the line numbers. |
+| `--numbers` | None | The `numbers` field of the document, else `numbers` of the config file, else on. For the live instance, what its screen shows. | Tiza shows the line numbers, and you cannot use it with `--no-numbers`. |
+| `--no-numbers` | None | As `--numbers` | Tiza hides the line numbers. |
 | `--margin-cols` | 12 to 200 cells | The `margin` field of the document | The largest right margin of a step or of `--all-steps`. Notes wrap at this width. Tiza cuts labels, legends and long notes there. |
 | `--lang` | A language id | The `--lang` before `render`, or the detected language | The language of the code. |
 | `--font-size` | 4 to 96 px | 16 | The size of the font in an image or a video. |
@@ -141,7 +141,7 @@ An agent calls the MCP tool `export_image` with a `path`. The formats are in [Wh
 - The theme overrides of your config file also apply. See [Themes](themes.md).
 - `--font-size`, `--margin` and `--radius` work for an SVG, a PNG, a WebP, a GIF, an MP4 and a WebM export.
 - `--margin-cols` also works for a GIF, an animated WebP, an MP4, a WebM and a `.cast`.
-- A `.tape` passes `--theme`, `--theme-file` and `--lang` to the TUI. It refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change the document. See [A `.tape`](#a-tape).
+- A `.tape` passes `--theme`, `--theme-file` and `--lang` to the TUI. It refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change what the TUI shows. See [A `.tape`](#a-tape).
 
 ### Timing of a recording
 
@@ -356,7 +356,7 @@ See [Files of `--all-steps`](#files-of---all-steps).
 | `the tape opens PATH, which this instance does not autosave: save it (:w) first so it holds what is on screen` | A `.tape` of the live instance, with autosave off. |
 | `` cannot write a .tape for the document path «PATH»: it holds a control character, a newline or a `"`, which VHS would read as commands of its own; rename the file `` | A path in the tape has a control character, a newline or `"`. |
 | `` cannot write a .tape for the value «VALUE»: it holds a control character, a newline or a `"`, which VHS would read as commands of its own `` | The value of `--theme-file` or `--lang` has a control character, a newline or `"`. |
-| `a .tape drives the TUI, which takes the line numbers from the document: set them with :numbers in Tiza, or export a .gif` | `--numbers` or `--no-numbers` would change the line numbers of the document. |
+| `a .tape drives the TUI, which takes the line numbers from the document or config.toml: set them with :numbers in Tiza, or export a .gif` | `--numbers` or `--no-numbers` would change the line numbers that the TUI shows. |
 | `a .tape drives the TUI, which takes the margin from the document: set it with :margin in Tiza, or export a .gif` | `--margin-cols` would change the margin of the document. |
 
 - After the `ffmpeg not found` message, Tiza shows how to install `ffmpeg`. It also says that `.gif` and `.cast` need no other program.
@@ -413,8 +413,8 @@ A `.tape` starts the real TUI with `tiza DOCUMENT --present --no-socket --step N
 - `--no-save`: the recording never writes the document.
 - `--theme`, `--theme-file` and `--lang` also go to the TUI. `--theme auto` does not go, because the TUI then shows the theme of the document, as the export does. `--theme` and `--theme-file` also set the colors of the VHS window.
 - Without `--theme`, a document that names a theme shows that theme. A document that names no theme follows the terminal, and that terminal is the VHS window.
-- The `[theme]` overrides of the config file on the computer that runs `vhs` also apply to the TUI.
-- The TUI takes the line numbers and the margin only from the document. Tiza refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change the document. Set them with `:numbers` and `:margin` in Tiza, or export a GIF.
+- The `[theme]` overrides and the `[defaults]` of the config file on the computer that runs `vhs` also apply to the TUI, for example `pad` and `effect_fps`.
+- The TUI takes the line numbers from the document, else from the config file. It takes the margin only from the document. Tiza refuses `--numbers`, `--no-numbers` and `--margin-cols` when they change what the TUI shows. Set them with `:numbers` and `:margin` in Tiza, or export a GIF.
 - `--width` sets the size of the window. `--title` is only a comment in the tape.
 
 ### A step after the last one
@@ -481,7 +481,7 @@ Normal mode grows the lanes as the steps add arrows. `:layout stable` shows the 
 
 ### The GIF
 
-Tiza draws each frame as a PNG export does, then encodes the GIF itself.
+Tiza draws each frame as a PNG export does, then encodes the GIF itself. Some pixels at the edges of the letters can be a little different from the PNG. You cannot see the difference.
 
 - One palette of at most 256 colors holds the colors of all the frames.
 - When the frames have more than 256 colors, Tiza keeps the most frequent colors exactly. Examples are the background, the code and the vertical lines of the arrows. It mixes the other colors into the rest of the palette.

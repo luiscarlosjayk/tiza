@@ -66,7 +66,7 @@ tiza examples/ownership.rs.tiza --present   # open a document in presentation mo
 
 | Flag | Command | What it does |
 |---|---|---|
-| `--width N` | `tiza check` | Checks the labels at `N` columns. The default is `width` of the config file, else 100. |
+| `--width N` | `tiza check` | Checks the labels and the code lines at `N` columns. The default is `width` of the config file, else 100. |
 | `--json` | `tiza check` | Prints the findings as JSON. |
 | `--strict` | `tiza check` | Exits with code 1 also for warnings. |
 | `--width N` | `tiza scene text` | Prints the take at `N` columns, in place of the width of the screen. |

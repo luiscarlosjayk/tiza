@@ -4,7 +4,7 @@ Tiza saves each change to the document when you make it. This page tells when Ti
 
 ## Autosave
 
-Autosave is on when you open a file, except with `--no-save`. Tiza writes each change to the `.tiza` document next to the source file. For example, `tiza src/main.rs` saves to `src/main.rs.tiza`.
+Autosave is on when you open a file, except with `--no-save` or with `autosave = false` in the [config file](../reference/config.md#defaults). Tiza writes each change to the `.tiza` document next to the source file. For example, `tiza src/main.rs` saves to `src/main.rs.tiza`.
 
 Type `:autosave` to see the state. The `status` reply of the API also has the field `autosave`.
 
@@ -15,7 +15,7 @@ In these cases, a change stays in memory and is not on disk:
 | Case | How it starts | Status bar after a change |
 |---|---|---|
 | No-save mode | `tiza FILE --no-save` | `unsaved (:saveas PATH · :q! discards)` |
-| Autosave off | `:autosave off` | `unsaved (:w)` |
+| Autosave off | `:autosave off`, or `autosave = false` in the config file | `unsaved (:w)` |
 | A document from an agent | A `scene put` that turns autosave off | `unsaved (:w)` |
 | A failed save | A save that cannot write the `.tiza` file | `read-only • unsaved (:w)` |
 
@@ -87,6 +87,8 @@ tiza: quit without saving main.rs.tiza: 1 change not saved (note a1)
 ```
 
 With autosave off, `:wq PATH` writes the copy and prints the same line for the open document.
+
+With autosave off, a follow pause can put code on screen that is not saved. Then the list names it first: `the code on screen in place of main.rs`. See [Follow the editor](../guides/follow-the-editor.md#moves).
 
 ## A failed save
 

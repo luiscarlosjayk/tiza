@@ -49,7 +49,7 @@ Two examples show moves and views:
 | `title` | string | No default | The title of the document. |
 | `theme` | `"dark"`, `"light"` or `"terminal"` | No default | The theme of the document. |
 | `theme_overrides` | object | No default | Colors that apply over the `[theme]` table of the config file (see [Theme overrides](#theme-overrides)). |
-| `padding` | array of two integers | No default | The blank rows and columns around the code, as `[vertical, horizontal]`. |
+| `padding` | array of two integers | `pad` of the config file, else `[0, 1]` | The blank rows and columns around the code on the screen, as `[vertical, horizontal]`. |
 | `margin` | integer | No default | The maximum width of the right margin in columns. Notes wrap at this width. Tiza cuts labels, legends and long notes there. |
 | `numbers` | `true` or `false` | `numbers` of the config file, else `true` | When `false`, Tiza does not show line numbers. |
 
@@ -178,7 +178,7 @@ Each `type` adds its own fields.
 | `from_line` | integer | Required when there are no `ids` | The first line that the spotlight does not dim. |
 | `to_line` | integer | `from_line` | The last line that the spotlight does not dim, not before `from_line`. |
 | `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim, also outside its lines. |
-| `until` | integer | No default | The last step at which the spotlight is active, not before `step`. |
+| `until` | integer | No default | The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. |
 
 #### Values of annotation fields
 
@@ -239,6 +239,7 @@ The `kind` of a mark is one of these:
 - A built-in kind: `info`, `note`, `warn`, `error`, `ok`, `question`, `important`, `read`, `write`, `move`, `new`, `drop`, `scope`, `flow`, `todo`.
 - An alias of a built-in kind, from the table under this list.
 - The name of a style in `styles`. A style with the name of a built-in kind replaces that kind.
+- The name of a personal style in `[styles]` of the config file. Tiza then copies the style into `styles`. See [Personal styles](config.md#styles).
 - Any name, when the mark has a `style` with a `glyph`. The name is then the default legend.
 
 When you add a mark, Tiza refuses any other `kind`. A loaded file keeps such a mark, and `tiza check` reports it. Case does not matter for a built-in kind or an alias.

@@ -178,7 +178,7 @@ An empty panel says why it is empty and what to do next. Use one or two short se
 
 ## 8. Messages
 
-Messages show on the message line (the right side of the status bar) and, in presentation mode, on the last row for 2 s.
+Messages show on the message line (the right side of the status bar). Presentation mode shows only the result of a `:` command on the last row, for 2 s. When the TUI opens in presentation mode and the document has entries that this version does not know, the message at start, with their count, also shows there for 2 s.
 
 - Use ASD-STE100 Simplified Technical English. One idea per sentence. Active voice. At most 20 words in an instruction.
 - A confirmation names what changed: `a3 deleted (u to undo)`.
@@ -210,13 +210,14 @@ Presentation mode (`P`) shows only the code and the annotations. It hides:
 
 It keeps, on the last row:
 
-- the step counter `2/5` at the right, in the muted color, when the take has more than one step;
+- the step counter `2/5` at the right, in the muted color, when the take has more than one step, and on step 0. In a take of one step, it also shows on the empty step after the last one (`2/2`);
 - the chip `⏸ 2 to review · :review` at the left, when agent changes wait;
-- the command line while the user types after `:`, and its result for 2 s.
+- the command line while the user types after `:`, and its result for 2 s;
+- the message at start for 2 s, when it holds the count of the entries that this version does not know.
 
 While the step counter or the chip shows, the last row has no code: the code does not go under them. A padding at the bottom keeps that row free already. The command line and its result go on the last row only for a short time, and can cover code.
 
-When the chip comes or goes, the top line of the view stays: the last line of code goes out of view under the chip, and comes back. With the live pointer on that line, the view moves up one row instead, so that the line of the pointer stays in view.
+While the step counter shows, the chip takes no other row. When the counter does not show and the padding at the bottom is 0, the chip takes the last row: when it comes or goes, the top line of the view stays, and the last line of code goes out of view under the chip and comes back. With the live pointer on that line, the view moves up one row instead, so that the line of the pointer stays in view.
 
 A panel opens in presentation mode only when the user opens it. A panel never shows in an export, a GIF or a recording made by Tiza.
 

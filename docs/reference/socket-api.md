@@ -240,7 +240,7 @@ When a method refuses a key that it does not know, the message names a known key
 | Message | When |
 |---|---|
 | ``invalid parameters: unknown field `alig` of a scroll move, expected one of `at_step`, `action`, `line`, `find`, `occurrence`, `annotation`, `align`. Did you mean `align`?`` | `move.add` got a `scroll` move with the key `alig`. |
-| ``invalid parameters: unknown field `line` of a code.patch move, expected one of …. `line` is a key of a cursor or scroll move: send the `action` of the move`` | `move.add` got a move with `line` and no `action` other than `code.patch`. |
+| ``invalid parameters: unknown field `line` of a code.patch move, expected one of …. `line` is a key of a cursor or scroll move: send the `action` of the move`` | `move.add` got a move with `"action": "code.patch"` and `line`. The MCP tool `add_move` gives it too for `line` with no `action`, because its default action is `code.patch`. |
 | ``invalid parameters: move #3: unknown field `alig` of a scroll move, …`` | `scene.put` got a document whose third move has the key `alig`. |
 
 A file with a key that this version does not know opens, and `tiza check` gives a warning (see [Moves from a newer version](document-format.md#moves-from-a-newer-version)).
@@ -284,7 +284,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 
 - `message` tells what the method did, in words.
 - `label` is the step label: the text of the status bar for the step, for example `step 3/7 · Shared borrow`.
-- `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number.
+- `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number, and `pending` of its `follow` field is `true` or `false`.
 - `shown` of `pointer.set` is `false` while the presenter has the command line open. The pointer shows when the command line closes.
 - `hash` of `follow.status` is the sha256 of the followed file as Tiza last read it, in lowercase hex, as `shasum -a 256 FILE` prints it. It is the hash of the whole file, also when the code is a range of it. It is `null` when Tiza could not read the file, for example when the file is removed. `reads` counts the reads of the file, also the reads that load nothing. A save of the same bytes does not change `hash`: then `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - The fields of the `check` report are in [Check report](cli.md#check-report).
