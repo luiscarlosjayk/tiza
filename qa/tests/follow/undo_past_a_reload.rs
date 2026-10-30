@@ -105,12 +105,6 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
     }
 }
 
-/// Quiet time after which "nothing happened" is believed (several times
-/// the debounce plus the worst event latency seen on CI), as in the reload on save tests.
-fn settle() {
-    std::thread::sleep(Duration::from_millis(700));
-}
-
 /// Saves like an editor: a temp file renamed over the target.
 fn save(path: &Path, content: &str) {
     let tmp = path.with_extension("rs.tmp");
@@ -236,9 +230,10 @@ fn u_past_the_reload_turns_follow_off_once_and_saves_embedded() {
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
     same_as_fresh(&live, &tiza, "after the second u");
 
-    // A save in the editor does not reach the screen: follow is off.
+    // A save in the editor does not reach the screen: follow is off, and
+    // no watcher is left to read it.
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&tiza.with_file_name("main.rs"), &SEVEN.replace('7', "9"));
-    settle();
     assert_eq!(code(&live), lines(CODE));
 }
 
@@ -383,9 +378,9 @@ fn redo_onto_the_files_code_leaves_follow_off_and_says_how() {
     // The file's code again: a reference again.
     assert!(saved_code(&tiza).is_object(), "{}", saved_code(&tiza));
     same_as_fresh(&live, &tiza, "after U");
-    // Follow stays off until the author turns it on.
+    // Follow stays off until the author turns it on: no watcher is left.
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&src, CODE);
-    settle();
     assert_eq!(code(&live), lines(SEVEN));
     // Now main.rs holds x = 1 again: `u` to x = 1 shows what the file
     // holds (kept embedded, as the undo step was).
@@ -474,8 +469,9 @@ fn a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
 fn u_of_a_paste_after_the_file_changed_is_embedded() {
     let (live, src, tiza) = followed("paste-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
+    // The paste turned follow off: no watcher is left to read the save.
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&src, SEVEN);
-    settle();
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(code(&live), lines(CODE));
     assert_eq!(

@@ -40,12 +40,6 @@ fn reloads(live: &Live) -> u64 {
 /// loaded CI runners can deliver an event well after the write.
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Quiet time after which "nothing happened" is believed (several times the
-/// debounce plus the worst event latency seen on CI).
-fn settle() {
-    std::thread::sleep(Duration::from_millis(700));
-}
-
 /// Waits (up to `WAIT`) until the reload counter reaches `n`.
 fn wait_reloads(live: &Live, n: u64) {
     let start = Instant::now();
@@ -89,8 +83,14 @@ fn tmp_rename_save_reloads_once_after_debounce() {
         std::fs::write(&src, CODE.replace("done", &format!("v{i}"))).unwrap();
     }
     wait_reloads(&live, 2);
-    settle();
-    assert_eq!(reloads(&live), 2, "burst must collapse into one reload");
+    // Then a save of the same text: its read comes after the events of the
+    // burst, so when it is done, a reload more of the burst would show.
+    std::fs::write(&src, CODE.replace("done", "v4")).unwrap();
+    assert_eq!(
+        live.wait_follow_read(&src).reloads,
+        2,
+        "burst must collapse into one reload"
+    );
     assert!(code(&live)[3].contains("v4"), "{:?}", code(&live));
 }
 
