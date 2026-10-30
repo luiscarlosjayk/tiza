@@ -19,7 +19,8 @@
 //!   the counter goes there, and the code keeps the rows it had.
 //! - AC5 When a change of an agent comes in for review, or goes, the top
 //!   line of the view stays: the last line of code goes under the chip and
-//!   comes back.
+//!   comes back. With the live pointer on that line, the view moves up one
+//!   row instead, and the line of the pointer stays in view.
 //!
 //! Corner cases: a line that fits only with the cells of the counter; step
 //! 0 of a document of one step (the counter `0/1` takes the row, and at
@@ -226,6 +227,45 @@ fn a_change_for_review_that_comes_and_goes_keeps_the_top_of_the_view() {
     assert_eq!(with_chip[0], before[0], "the top line:\n{all}");
     assert_eq!(with_chip[usize::from(ROWS) - 1].trim(), CHIP, "{all}");
     assert_eq!(with_chip[usize::from(ROWS) - 2], before_last, "{all}");
+    live.command("supervise off");
+    assert!(reply.try_recv().is_ok_and(|r| r.error.is_some()));
+    let after = after_keys(&live, &[]);
+    assert_eq!(after, before, "{}", after.join("\n"));
+}
+
+/// The row of the screen that shows line `n`, if one does.
+fn row_of(screen: &[String], n: u32) -> Option<usize> {
+    screen
+        .iter()
+        .position(|r| r.contains(&format!("let v{n:02} ")))
+}
+
+/// AC5 with the live pointer: a document of one step at step 1, the view
+/// at the end, and the pointer on line 20, on the last row. A change that
+/// comes in for review takes that row for its chip, and the view moves up
+/// one row: line 20, with the pointer, is on the row above the chip. When
+/// supervised mode goes off, the change is rejected, and the screen is as
+/// before.
+#[test]
+fn a_change_for_review_keeps_the_line_of_the_pointer_in_view() {
+    let live = open("chip-pointer", 1, 1);
+    after_keys(&live, &[KeyCode::Char('G')]);
+    after_keys(&live, &[KeyCode::Char('f')]);
+    let before = after_keys(&live, &[KeyCode::Char('G')]);
+    let all = before.join("\n");
+    assert_eq!(live.with(|a| a.pointer.map(|p| p.line)), Some(LINES));
+    assert_eq!(row_of(&before, LINES), Some(usize::from(ROWS) - 1), "{all}");
+    let reply = propose(&live);
+    let with_chip = after_keys(&live, &[]);
+    let all = with_chip.join("\n");
+    assert_eq!(with_chip[usize::from(ROWS) - 1].trim(), CHIP, "{all}");
+    assert_eq!(
+        row_of(&with_chip, LINES),
+        Some(usize::from(ROWS) - 2),
+        "{all}"
+    );
+    assert_eq!(with_chip[0], before[1], "one row up:\n{all}");
+    assert_eq!(live.with(|a| a.pointer.map(|p| p.line)), Some(LINES));
     live.command("supervise off");
     assert!(reply.try_recv().is_ok_and(|r| r.error.is_some()));
     let after = after_keys(&live, &[]);

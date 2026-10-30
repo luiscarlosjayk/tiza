@@ -216,6 +216,8 @@ It keeps, on the last row:
 
 While the step counter or the chip shows, the last row has no code: the code does not go under them. A padding at the bottom keeps that row free already. The command line and its result go on the last row only for a short time, and can cover code.
 
+When the chip comes or goes, the top line of the view stays: the last line of code goes out of view under the chip, and comes back. With the live pointer on that line, the view moves up one row instead, so that the line of the pointer stays in view.
+
 A panel opens in presentation mode only when the user opens it. A panel never shows in an export, a GIF or a recording made by Tiza.
 
 In presentation mode, `←`/`→` change the step. A panel must not use `←`/`→`, so that a presenter's clicker cannot change the panel by mistake.
