@@ -160,7 +160,8 @@ Sets the layout of normal mode.
 ```
 
 - `:layout stable` uses the take while you edit. The status bar shows `⊞ stable`.
-- `:layout dynamic` lets the layout grow as the steps add arrows.
+- `:layout dynamic` sizes the arrow lanes, the box band and the code column for the step on screen. The take sizes them for all the steps. Thus at an earlier step, a label can be in a different place from presentation mode and the exports.
+- In normal mode, the `!` badge of the status bar tells what the screen cuts. `tiza check` checks the take. See [Badges on the status bar](../../guides/check-before-you-record.md#badges-on-the-status-bar).
 - Presentation mode and exports always use the take.
 - `:layout` alone shows the current value.
 - `:layout` changes only this session. The document does not keep it. `layout` in the config file sets the layout at start. See [`[defaults]`](../config.md#defaults).
@@ -172,6 +173,14 @@ Sets the layout of normal mode.
 <img src="../../images/tui/layout-stable.webp" width="840" alt="Step 1 with the lanes of the arrows of all the steps, so the code starts more to the right. The status bar shows stable.">
 
 `:layout stable` at the same step. The lanes of the arrows of later steps are there already, as in presentation mode and the exports: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
+
+<img src="../../images/tui/layout-band-dynamic.webp" width="1016" alt="Step 4 of 5. The code starts one column more to the left than in the next image. The note bearer header is cut in the right margin as bearer head…, and the callout debug shows SQL is under line 3. The status bar shows ! 1 label cut.">
+
+`:layout dynamic` at step 4 of a document whose box comes in at step 5. The band of the box is not there yet, so the code starts one column more to the left, and the margin two columns. The note `bearer header` is cut in the margin, and the callout `debug shows SQL` goes under line 3. An image of the TUI in a real terminal of 122 columns and 30 rows, with the Menlo font.
+
+<img src="../../images/tui/layout-band-stable.webp" width="1016" alt="The same step with the band of the box. The note bearer header is under line 2, and the callout debug shows SQL is in the right margin. The status bar shows stable.">
+
+`:layout stable` at the same step. The band of the box is there already, and the labels are where presentation mode and the exports put them. An image of the TUI in a real terminal of 122 columns and 30 rows, with the Menlo font.
 
 ## `:mouse`
 

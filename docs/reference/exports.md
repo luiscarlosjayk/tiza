@@ -477,7 +477,7 @@ Tiza then makes all the frames of a GIF, an animated WebP or a video, or all the
 
 A typed frame of a GIF, an animated WebP or a video shows different code. Thus Tiza sizes its layout separately.
 
-Normal mode grows the lanes as the steps add arrows. `:layout stable` shows the layout of the take in normal mode. The status bar then shows `⊞ stable`. `:layout dynamic` returns to the lanes that grow with the steps.
+Normal mode sizes the arrow lanes, the box band and the code column for the step on screen. Thus at an earlier step, a label in normal mode can be in a different place from the take. `:layout stable` shows the layout of the take in normal mode. The status bar then shows `⊞ stable`. `:layout dynamic` returns to the layout of the step on screen. `tiza check` checks the take, not the screen.
 
 ### The GIF
 

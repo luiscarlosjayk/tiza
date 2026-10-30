@@ -12,7 +12,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 4. Pick the width. The last line of the report gives the narrowest width from which no label is cut. Use that width or more. A `clipped_code` warning gives the width from which no code line is cut, or tells you that no width up to 400 shows every code line whole.
 5. Use demo values for tokens, passwords and credentials. The audience sees what is in the file.
 6. Set up the terminal. See [Terminal and font](#terminal-and-font).
-7. Before you record, go through the steps in normal mode. Look for a `!` badge on the status bar. See [Badges on the status bar](#badges-on-the-status-bar).
+7. Before you record, type `:layout stable`, which shows the take, and go through the steps in normal mode. Look for a `!` badge on the status bar. See [Badges on the status bar](#badges-on-the-status-bar).
 
 ## What check reports
 
@@ -86,6 +86,7 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 | `! code needs N cols` | A code line is cut. |
 
 - In `! code needs N cols`, `N` is the narrowest terminal width that shows every code line of the step.
+- In normal mode, the badge tells what the screen cuts, and `tiza check` tells what the take cuts. With `:layout dynamic`, the default, the screen at an earlier step has no space yet for the arrows, the boxes and the code of later steps, so the two can differ. See [`:layout`](../reference/commands/view.md#layout).
 - The status bar shows one badge at a time. `! code needs N cols` comes before `! N labels cut`.
 - When the status bar has no space, `! N labels cut` gets shorter and shows only `!`.
 - The `status` reply of the API lists the details in `warnings`, for example `2 labels cut at 40 columns: a4, a3`.

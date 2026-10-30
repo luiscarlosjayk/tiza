@@ -137,7 +137,7 @@ The status bar shows the selected annotation and its keys. A message hides them.
 
 Step 3 of `examples/ownership.rs.tiza` in presentation mode: an image of the TUI in a real terminal of 100 columns and 30 rows, with the Menlo font.
 
-- Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
+- Presentation mode hides the interface. It uses the take. By default, normal mode sizes the arrow lanes, the box band and the code column for the step on screen, so a label can be in a different place from presentation mode. `:layout stable` shows the take in normal mode. See [`:layout`](commands/view.md#layout).
 - The last row shows the step counter at the right, for example `3/7`, in the muted color. The counter shows when the document has more than one step, at step 0, and on the empty step after the last one. There it gives the same count as the status bar, for example `8/8`. When agent changes wait, the last row also shows `⏸ N to review · :review` at the left.
 - While the step counter or `⏸ N to review · :review` shows, the last row has no code, so the code has one row less than the terminal. With a padding at the bottom, that row is free already, and the code keeps its rows.
 - In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. A trackpad and a mouse wheel also move the view. With mouse capture, each notch moves it three rows. Without mouse capture, the terminal sends them as `↑` and `↓`.

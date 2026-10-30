@@ -147,6 +147,39 @@ BADGE_DOC = {
     ],
 }
 
+# The document of the `layout-band` captures: margin callouts at steps 1
+# to 4, and a box at step 5. At step 4, normal mode has no box band yet, so
+# its code starts one column more to the left than in the take, and its
+# margin two columns, and a label is in a different place.
+BAND_DOC = {
+    "schema": 1,
+    "title": "Steps that add callouts, then a box",
+    "source": {"language": "sh", "first_line": 1},
+    "code": [
+        "DB_URL=postgres://demo:demo@localhost/app",
+        "API_TOKEN=demo-token-123",
+        "LOG_LEVEL=info",
+        "PORT=8080",
+        "WORKERS=4",
+        "TIMEOUT=30",
+        "RETRIES=3",
+        "CACHE_TTL=600",
+        "REGION=us-east-1",
+        "FEATURE_X=on",
+    ],
+    "annotations": [
+        {"id": "n2", "step": 1, "type": "note", "line": 2, "text": "bearer header"},
+        {"id": "c1", "step": 2, "type": "callout", "from_line": 2, "to_line": 2,
+         "text": "rotate it every month", "placement": "margin"},
+        {"id": "c2", "step": 3, "type": "callout", "from_line": 2, "to_line": 2,
+         "text": "never commit the real one", "placement": "margin"},
+        {"id": "n3", "step": 3, "type": "note", "line": 3, "text": "chatty"},
+        {"id": "c3", "step": 4, "type": "callout", "from_line": 3, "to_line": 3,
+         "text": "debug shows SQL", "placement": "margin"},
+        {"id": "b", "step": 5, "type": "box", "from_line": 1, "to_line": 4, "label": "env"},
+    ],
+}
+
 OWNERSHIP = ["examples/ownership.rs.tiza", "examples/ownership.rs"]
 TALLY = ["examples/tally-tour.tiza", "examples/tally"]
 
@@ -253,6 +286,28 @@ CAPTURES = [
            command(":layout dynamic") + [("sleep", 500), ("shot", 0)], step="1"),
     normal("layout-stable", ["docs/reference/commands/view.md"],
            command(":layout stable") + [("sleep", 500), ("shot", 0)], step="1"),
+    # Step 4 of BAND_DOC before its box: normal mode places the labels
+    # without the box band, and the take with it.
+    {
+        "id": "layout-band-dynamic",
+        "pages": ["docs/reference/commands/view.md"],
+        "files": [],
+        "document": ("band.tiza", BAND_DOC),
+        "args": ["--step", "4", "band.tiza"],
+        "size": (122, 30),
+        "ready": r"step 4\/5",
+        "do": [("wait", r"labels? cut"), ("shot", 0)],
+    },
+    {
+        "id": "layout-band-stable",
+        "pages": ["docs/reference/commands/view.md"],
+        "files": [],
+        "document": ("band.tiza", BAND_DOC),
+        "args": ["--step", "4", "band.tiza"],
+        "size": (122, 30),
+        "ready": r"step 4\/5",
+        "do": command(":layout stable") + [("sleep", 500), ("shot", 0)],
+    },
     # A code line wider than the terminal gives the first badge.
     normal("badge-code", ["docs/guides/check-before-you-record.md"],
            [("wait", r"code needs"), ("shot", 0)], size=(58, 20)),
