@@ -47,7 +47,7 @@ pub struct Finding {
     /// shows another file), `clipped_label`, `clipped_code` (code lines
     /// cut with `…`, one finding for each file and set of cut lines),
     /// `empty_step`, `effect` (the enter effect `draw` on a shape with no
-    /// stroke), `until` (a spotlight's `until` before its `step`), and
+    /// stroke, or an effect that this version does not know), `until` (a spotlight's `until` before its `step`), and
     /// `stale` (a live instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
