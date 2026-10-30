@@ -16,8 +16,8 @@ const COLS: u16 = 80;
 const ROWS: u16 = 24;
 
 /// `tui/present_view/anchor.tiza` and its code file in a scratch folder,
-/// in presentation mode, with no padding (every row of the terminal shows
-/// code), at step 1. The code is 160 lines `let vN = N;`. Step 1 has a box
+/// in presentation mode, with no padding (every row of the terminal but the
+/// last one, the row of the step counter, shows code), at step 1. The code is 160 lines `let vN = N;`. Step 1 has a box
 /// with a title on lines 60-62 and one on lines 83-85; steps 2 to 4 add
 /// annotations on lines 65-70, and step 3 auto-advances after one hour.
 /// Also returns the folder.
@@ -157,8 +157,9 @@ impl Seeded {
 }
 
 /// Moves the view with the keys until line 60 is on the first row: the
-/// title of its box is on the row above, out of view, and the box of line
-/// 83 starts on the row after the last one.
+/// title of its box is on the row above, out of view, and line 82 is on the
+/// row after the last row of code (the last row of the terminal is the
+/// step counter's), with the box of line 83 under it.
 fn view_on_line_60(live: &Live) {
     let rows = live.with(|a| a.layout(usize::from(COLS)).row_of_line[&60]);
     live.with(move |a| {
@@ -171,7 +172,11 @@ fn view_on_line_60(live: &Live) {
         draw(a, COLS, ROWS);
         a.hit.rows.iter().rev().find_map(|r| *r)
     });
-    assert_eq!(last, Some(82), "the box of line 83 starts under the view");
+    assert_eq!(
+        last,
+        Some(81),
+        "line 82 and the box of line 83 are under the view"
+    );
 }
 
 #[test]
@@ -823,7 +828,8 @@ fn open_steps(name: &str, more: serde_json::Value, moves: serde_json::Value) -> 
 #[test]
 fn a_step_shows_what_comes_in_with_the_least_move() {
     // Step 2 brings a box on lines 100-102, far under the view: the view
-    // goes down just enough to show it whole, its border on the last row.
+    // goes down just enough to show it whole, its border on the last row
+    // of code, over the step counter.
     // Step 3 brings a note that is in view: the view does not move.
     let live = open_steps(
         "reveal-least",
@@ -835,9 +841,9 @@ fn a_step_shows_what_comes_in_with_the_least_move() {
     );
     assert_eq!(top_text(&live), "let v1 = 1;");
     live.with(|a| key(a, KeyCode::Char('n')));
-    assert_eq!(top_text(&live), "let v81 = 81;", "step 2: the least move");
+    assert_eq!(top_text(&live), "let v82 = 82;", "step 2: the least move");
     live.with(|a| key(a, KeyCode::Char('n')));
-    assert_eq!(top_text(&live), "let v81 = 81;", "step 3: in view already");
+    assert_eq!(top_text(&live), "let v82 = 82;", "step 3: in view already");
 }
 
 #[test]
