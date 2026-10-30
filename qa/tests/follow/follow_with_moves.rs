@@ -50,17 +50,6 @@ const SAID: &str = "following main.rs; step 0 loads a save";
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// The in-process tests start and drop many file watchers; macOS makes a
-/// new one wait while they do, so a TUI started with `--follow` alongside
-/// can take seconds to draw (more than 20 s seen with the whole file
-/// running). The pty tests that took it alone are in the watchers crate
-/// now; the tests here still share it.
-static WATCHERS: std::sync::RwLock<()> = std::sync::RwLock::new(());
-
-fn shared() -> std::sync::RwLockReadGuard<'static, ()> {
-    WATCHERS.read().unwrap_or_else(|e| e.into_inner())
-}
-
 fn repro(note: bool) -> Value {
     let mut doc = json!({
         "schema": 1,
@@ -246,7 +235,6 @@ fn save_then_step_0(live: &Live, src: &Path, tiza: &Path) {
 
 #[test]
 fn follow_on_at_step_1_waits_and_says_so() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("cmd");
     live.command("follow on");
     let said = SAID.to_string();
@@ -266,7 +254,6 @@ fn follow_on_at_step_1_waits_and_says_so() {
 
 #[test]
 fn follow_set_at_step_1_waits_and_says_so() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("api");
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     let said = SAID.to_string();
@@ -280,7 +267,6 @@ fn follow_set_at_step_1_waits_and_says_so() {
 
 #[test]
 fn mcp_set_follow_at_step_1_waits() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("mcp");
     let mut mcp = McpClient::start(&live.socket);
     let (err, text, _) = mcp.call("set_follow", json!({"enabled": true}));
@@ -292,7 +278,6 @@ fn mcp_set_follow_at_step_1_waits() {
 
 #[test]
 fn at_step_0_as_before() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("step0");
     live.command("step 0");
     live.command("follow on");
@@ -309,10 +294,10 @@ fn at_step_0_as_before() {
 
 #[test]
 fn a_change_made_while_follow_was_off_waits_too() {
-    let _watchers = shared();
     // The file changed while follow was off: turning it on at step 1 does
     // not load it there; it waits like a save, and step 0 loads it.
     let (live, src, tiza) = opened("off-change");
+    crate::by_hand(&live);
     save(&src, NEW);
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["message"], SAID, "{r}");
@@ -333,7 +318,6 @@ fn a_change_made_while_follow_was_off_waits_too() {
 
 #[test]
 fn step_0_never_has_a_patch() {
-    let _watchers = shared();
     // So a save always loads at step 0: a move at step 0 does not load.
     let (_, _, tiza) = files("step0-patch", false);
     let mut doc = repro(false);
@@ -345,7 +329,6 @@ fn step_0_never_has_a_patch() {
 
 #[test]
 fn no_save_writes_nothing() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("no-save");
     live.with(|app| app.autosave = false);
     let before = std::fs::read(&tiza).unwrap();
@@ -359,7 +342,6 @@ fn no_save_writes_nothing() {
 
 #[test]
 fn the_file_missing_at_step_1() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("missing");
     std::fs::remove_file(&src).unwrap();
     live.command("follow on");
@@ -385,10 +367,10 @@ fn the_file_missing_at_step_1() {
 
 #[test]
 fn pasted_code_then_step_1_then_follow_on() {
-    let _watchers = shared();
     // Pasted over the file at step 0 (follow goes off), then step 1: `:follow
     // on` there waits, and step 0 loads the file over the paste as one undo.
     let (live, _src, tiza) = opened("paste");
+    crate::by_hand(&live);
     live.command("step 0");
     live.command("follow on");
     let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
@@ -431,7 +413,6 @@ fn a1_line(live: &Live) -> u32 {
 
 #[test]
 fn a_first_move_at_step_3_loads_at_step_2() {
-    let _watchers = shared();
     let mut doc = repro(false);
     doc["moves"][0]["at_step"] = json!(3);
     doc["step"] = json!(3);
@@ -457,6 +438,7 @@ fn a_first_move_at_step_3_loads_at_step_2() {
 /// QA's repro with `a1`, pasted over at step 0 (follow goes off), at step 1.
 fn pasted_at_step_1(name: &str) -> (Live, PathBuf) {
     let (live, _src, tiza) = opened(name);
+    crate::by_hand(&live);
     live.command("step 0");
     live.command("follow on");
     let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
@@ -468,7 +450,6 @@ fn pasted_at_step_1(name: &str) -> (Live, PathBuf) {
 
 #[test]
 fn over_a_paste_the_wait_does_not_say_the_file_changed() {
-    let _watchers = shared();
     let (live, tiza) = pasted_at_step_1("paste-words");
     live.with(|app| app.message = None);
     live.command("follow on");
@@ -484,7 +465,6 @@ fn over_a_paste_the_wait_does_not_say_the_file_changed() {
 
 #[test]
 fn u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
-    let _watchers = shared();
     // The paste undone at step 1: the file's code again, a reference, so
     // step 0 has nothing to load (no reload, no undo step that does nothing).
     let (live, tiza) = pasted_at_step_1("paste-u");
@@ -494,6 +474,9 @@ fn u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
     assert!(live.with(|app| !app.doc.is_embedded()));
     assert_eq!(status(&live)["enabled"], true);
     same_as_fresh(&live, &tiza, "u of the paste at step 1");
+    // The read that a watcher makes when it starts, by hand: nothing to load.
+    live.with(|app| app.read_save());
+    assert_eq!(status(&live)["reloads"], 0, "{}", message(&live));
     live.command("step 0");
     assert_eq!(status(&live)["reloads"], 0, "{}", message(&live));
     assert_eq!(base(&live), lines(OLD));
@@ -503,7 +486,6 @@ fn u_of_the_paste_while_waiting_leaves_nothing_to_reload() {
 
 #[test]
 fn the_file_back_unchanged_at_step_1_is_no_change() {
-    let _watchers = shared();
     let (live, src, tiza) = opened("back-same");
     std::fs::remove_file(&src).unwrap();
     live.api_ok("follow.set", json!({"enabled": true}));
@@ -528,6 +510,7 @@ fn ranged_paste(name: &str) -> (Live, PathBuf) {
     doc["code"] = json!({"file": "main.rs", "lines": "2-5"});
     doc["annotations"] = json!([{"id": "a1", "step": 1, "type": "note", "line": 3, "text": "x"}]);
     let (live, src, tiza) = opened_doc(name, doc, six);
+    crate::by_hand(&live);
     live.command("step 0");
     live.command("follow on");
     let pasted = "fn main() {\n    let x = 1;\n    let y = 3;\n}\n";
@@ -545,7 +528,6 @@ fn ranged_paste(name: &str) -> (Live, PathBuf) {
 
 #[test]
 fn a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
-    let _watchers = shared();
     // At step 1 it waits (the paste stays, embedded with its numbers); step
     // 0 loads the file's lines, numbered from 2, and a1 stays on its text.
     let (live, tiza) = ranged_paste("range-1");
@@ -554,6 +536,10 @@ fn a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
     assert_eq!(status(&live)["reason"], WAITING);
     assert!(live.with(|app| app.doc.is_embedded()));
     same_as_fresh(&live, &tiza, "follow on over the paste at step 1");
+    // The read that a watcher makes when it starts, by hand: it still waits.
+    live.with(|app| app.read_save());
+    assert_eq!(status(&live)["reason"], WAITING);
+    assert!(live.with(|app| app.doc.is_embedded()));
     live.command("step 0");
     assert_eq!(live.with(|app| app.doc.base_first()), 2);
     assert_eq!(a1_line(&live), 3);
@@ -566,9 +552,12 @@ fn a_paste_the_file_holds_on_other_lines_loads_with_the_files_numbers() {
 
 #[test]
 fn a_paste_the_file_holds_on_other_lines_at_step_0() {
-    let _watchers = shared();
     let (live, tiza) = ranged_paste("range-0");
     live.command("follow on");
+    // The read that a watcher makes when it starts, by hand: nothing more to load.
+    let reloads = status(&live)["reloads"].clone();
+    live.with(|app| app.read_save());
+    assert_eq!(status(&live)["reloads"], reloads);
     assert_eq!(live.with(|app| app.doc.base_first()), 2);
     assert_eq!(a1_line(&live), 3);
     assert_eq!(
@@ -580,8 +569,8 @@ fn a_paste_the_file_holds_on_other_lines_at_step_0() {
 
 #[test]
 fn follow_set_keeps_an_error_of_its_own_on_the_bar() {
-    let _watchers = shared();
     let (live, src, _tiza) = opened("utf8");
+    crate::by_hand(&live);
     std::fs::write(&src, b"fn main() {\n    \xff\xfe\n}\n").unwrap();
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");

@@ -306,6 +306,8 @@ fn embedded_code_and_follows() {
     assert_eq!(v["code"], json!(["fn pasted() {}"]), "{v}");
     assert_eq!(v["follows"], json!({"file": "../proj/main.rs"}), "{v}");
     let reopened = open(&copy);
+    // No watcher: this test reads no save.
+    reopened.with(|a| a.set_follow_by_hand());
     reopened.command("follow on");
     assert_eq!(message(&reopened).0, "following main.rs");
     assert_eq!(

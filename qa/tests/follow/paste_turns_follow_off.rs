@@ -36,14 +36,27 @@ const NOTICE: &str = "follow off: the code is pasted, not main.rs; :follow on re
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// A source file next to its sidecar, opened by reference, following.
+/// A source file next to its sidecar, opened by reference, following by
+/// hand (`crate::by_hand`).
 fn followed(name: &str, code: &str) -> (Live, PathBuf) {
+    open_followed(name, code, true)
+}
+
+/// [`followed`] with the watcher: a save is read when it sees it.
+fn watched(name: &str, code: &str) -> (Live, PathBuf) {
+    open_followed(name, code, false)
+}
+
+fn open_followed(name: &str, code: &str, by_hand: bool) -> (Live, PathBuf) {
     let dir = scratch(name);
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     std::fs::write(&src, code).unwrap();
     let mut doc = Document::from_code(code, "rs", Some(src.display().to_string()));
     doc.reference_file(src.display().to_string(), None);
     let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
+    if by_hand {
+        crate::by_hand(&live);
+    }
     live.command("follow on");
     assert_eq!(live.message().unwrap().0, "following main.rs");
     (live, src)
@@ -120,7 +133,7 @@ fn a_paste_turns_follow_off_and_a_save_changes_nothing() {
 
 #[test]
 fn follow_on_reloads_the_file_and_u_gives_the_paste_back() {
-    let (live, src) = followed("ac3", CODE);
+    let (live, src) = watched("ac3", CODE);
     live.command("note 2 the string");
     live.with(|app| app.replace_code(PASTED).unwrap());
     save(&src, &CODE.replace("takes", "gives"));
@@ -201,7 +214,7 @@ fn a_paste_with_follow_off_says_nothing_new() {
 
 #[test]
 fn a_paste_of_what_the_file_holds_keeps_following() {
-    let (live, src) = followed("same", CODE);
+    let (live, src) = watched("same", CODE);
     live.with(|app| app.replace_code(CODE).unwrap());
     let (msg, _) = live.message().unwrap();
     assert!(!msg.contains("follow off"), "{msg}");
@@ -358,6 +371,7 @@ fn an_undo_that_leaves_embedded_code_says_embedded_not_paste() {
         live.message().unwrap().0,
         format!("the .tiza now references {}", src.display())
     );
+    crate::by_hand(&live);
     live.command("follow on");
     assert_eq!(status(&live)["enabled"], true);
     live.with(|app| app.undo());

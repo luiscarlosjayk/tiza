@@ -27,6 +27,10 @@
 //! on src/queue.rs, `m5` at step 5 on main.rs L3 while step 5 shows
 //! src/queue.rs (step 6 shows main.rs again). The editor save adds a line
 //! at the top of main.rs, so the main-file annotations move down one line.
+//!
+//! The follows have no watcher (`crate::by_hand`): each save is read with
+//! `App::read_save`, as the watcher reads it. These tests are about the
+//! re-anchoring, not the watcher.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -107,10 +111,11 @@ fn open(dir: &Path, tiza: &Path) -> Live {
     Live::open(doc, tiza.to_path_buf(), dir.join("live.sock"))
 }
 
-/// `demo.tiza` (or `name`) opened at step 0 with follow on.
+/// `demo.tiza` (or `name`) opened at step 0 with follow on, by hand.
 fn followed(dir_name: &str, name: &str) -> (Live, PathBuf, PathBuf) {
     let (dir, tiza) = copy(dir_name, name);
     let live = open(&dir, &tiza);
+    crate::by_hand(&live);
     live.command("follow on");
     assert_eq!(live.message().unwrap().0, "following main.rs");
     (live, dir.join("main.rs"), tiza)
@@ -137,6 +142,12 @@ fn edit(src: &Path) {
     let tmp = src.with_extension("rs.tmp");
     std::fs::write(&tmp, format!("// v2\n{text}")).unwrap();
     std::fs::rename(&tmp, src).unwrap();
+}
+
+/// [`edit`], then the read of the save, as the watcher makes it.
+fn edit_and_read(live: &Live, src: &Path) {
+    edit(src);
+    live.with(|app| app.read_save());
 }
 
 fn goto(live: &Live, step: u64) {
@@ -195,9 +206,9 @@ fn save_at(step: u64) {
     let (live, src, tiza) = followed(&format!("save-{step}"), "demo.tiza");
     assert_eq!(saved(&tiza), authored());
     goto(&live, step);
-    edit(&src);
+    edit_and_read(&live, &src);
     goto(&live, 0);
-    wait_for("the reload", || reloads(&live) >= 1);
+    assert_eq!(reloads(&live), 1);
     assert_eq!(saved(&tiza), reloaded(), "the saved .tiza");
     assert_eq!(scene(&live), reloaded(), "scene.get");
     assert_screen(&live);
@@ -225,8 +236,8 @@ fn save_at_step_3_on_the_link() {
 #[test]
 fn undo_and_redo_of_the_reload() {
     let (live, src, tiza) = followed("undo", "demo.tiza");
-    edit(&src);
-    wait_for("the reload", || reloads(&live) >= 1);
+    edit_and_read(&live, &src);
+    assert_eq!(reloads(&live), 1);
     assert_eq!(saved(&tiza), reloaded());
     live.with(|app| app.undo());
     assert_eq!(scene(&live), authored(), "undo");
@@ -267,8 +278,8 @@ fn ref_of_the_changed_file() {
 #[test]
 fn scene_put_round_trip() {
     let (live, src, tiza) = followed("put", "demo.tiza");
-    edit(&src);
-    wait_for("the reload", || reloads(&live) >= 1);
+    edit_and_read(&live, &src);
+    assert_eq!(reloads(&live), 1);
     let mut doc = live.api_ok("scene.get", json!({}))["document"].clone();
     doc["title"] = json!("Put back");
     live.api_ok("scene.put", json!({ "document": doc }));
@@ -288,8 +299,8 @@ fn a_file_saved_with_moved_annotations_stays_as_saved() {
     ];
     let (live, src, tiza) = followed("moved", "moved.tiza");
     assert_eq!(saved(&tiza), moved);
-    edit(&src);
-    wait_for("the reload", || reloads(&live) >= 1);
+    edit_and_read(&live, &src);
+    assert_eq!(reloads(&live), 1);
     let after = vec![
         place("n0", 1, None, 10),
         place("q3", 3, Some(QUEUE), 2),
@@ -309,7 +320,8 @@ fn an_annotation_without_its_text_is_dropped() {
     let tmp = src.with_extension("rs.tmp");
     std::fs::write(&tmp, text).unwrap();
     std::fs::rename(&tmp, &src).unwrap();
-    wait_for("the reload", || reloads(&live) >= 1);
+    live.with(|app| app.read_save());
+    assert_eq!(reloads(&live), 1);
     let left = vec![place("q3", 3, Some(QUEUE), 2), place("m5", 5, None, 3)];
     assert_eq!(scene(&live), left);
     assert_eq!(saved(&tiza), left);
@@ -318,8 +330,8 @@ fn an_annotation_without_its_text_is_dropped() {
 #[test]
 fn a_document_without_code_link_does_not_change() {
     let (live, src, tiza) = followed("plain", "plain.tiza");
-    edit(&src);
-    wait_for("the reload", || reloads(&live) >= 1);
+    edit_and_read(&live, &src);
+    assert_eq!(reloads(&live), 1);
     let after = vec![place("n0", 0, None, 10), place("n2", 2, None, 4)];
     assert_eq!(saved(&tiza), after);
     assert_eq!(scene(&live), after);
@@ -338,8 +350,8 @@ fn a_save_at_a_step_with_no_patch_loads_at_once() {
         let (live, src, tiza) = followed(&format!("now-{step}"), "demo.tiza");
         goto(&live, step);
         let before = live.api_ok("status", json!({}));
-        edit(&src);
-        wait_for("the reload", || reloads(&live) >= 1);
+        edit_and_read(&live, &src);
+        assert_eq!(reloads(&live), 1);
         let after = live.api_ok("status", json!({}));
         assert_eq!(after["step"], step, "loaded at step {step}");
         assert_eq!(after["view"], before["view"], "step {step}: the view");
@@ -377,11 +389,12 @@ fn a_save_while_a_window_of_main_rs_is_shown() {
     let tiza = dir.join("window.tiza");
     std::fs::write(&tiza, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     let live = open(&dir, &tiza);
+    crate::by_hand(&live);
     live.command("follow on");
     goto(&live, 1);
     assert_eq!(live.api_ok("status", json!({}))["first_line"], 7);
-    edit(&dir.join("main.rs"));
-    wait_for("the reload", || reloads(&live) >= 1);
+    edit_and_read(&live, &dir.join("main.rs"));
+    assert_eq!(reloads(&live), 1);
     let st = live.api_ok("status", json!({}));
     assert_eq!(
         (st["step"].clone(), st["first_line"].clone()),

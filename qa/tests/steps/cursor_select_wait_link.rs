@@ -694,7 +694,9 @@ fn paste_stays_refused_and_follow_does_not_wait_for_a_link() {
         "{err}"
     );
     // Follow turns on (it used to be refused). A link does not change the
-    // text, so a save loads at once: only a patch makes it wait.
+    // text, so a save loads at once: only a patch makes it wait. No
+    // watcher: this test reads no save.
+    live.with(|a| a.set_follow_by_hand());
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
     assert!(r.get("reason").is_none(), "{r}");

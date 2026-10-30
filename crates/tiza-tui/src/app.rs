@@ -755,6 +755,10 @@ pub struct App {
     /// start. Said while that file is still the one to follow and nothing
     /// else explains the code on screen, until follow is turned on or off.
     follow_failed: Option<(PathBuf, String)>,
+    /// Test hook, only with the `test-hooks` feature: the follows that
+    /// start from now on have no watcher ([`App::set_follow_by_hand`]).
+    #[cfg(feature = "test-hooks")]
+    follow_by_hand: bool,
     /// Follow paused at a step with a patch applied: what waits for the
     /// resume step. While a change waits, the code on screen is embedded.
     pause: Pause,
@@ -931,6 +935,8 @@ impl App {
             selected_shown: Default::default(),
             follow: None,
             follow_failed: None,
+            #[cfg(feature = "test-hooks")]
+            follow_by_hand: false,
             pause: Pause::default(),
             save_held: false,
             pasted_codes: Vec::new(),
@@ -5082,8 +5088,9 @@ impl App {
         })?;
         // The step-0 code: with moves applied, `doc.code` is what they made.
         self.follow_failed = None;
-        let f =
-            crate::follow::Follow::start(path, self.doc.base().to_vec()).map_err(Error::Invalid)?;
+        let f = self
+            .start_follow(path, self.doc.base().to_vec())
+            .map_err(Error::Invalid)?;
         let name = f.file_name();
         self.follow = Some(f);
         self.pause = Pause::default();
@@ -5128,6 +5135,35 @@ impl App {
         })
     }
 
+    /// Starts to follow `path`, whose code on screen is `base`: a watcher,
+    /// or, after [`App::set_follow_by_hand`], none.
+    fn start_follow(
+        &self,
+        path: PathBuf,
+        base: Vec<String>,
+    ) -> Result<crate::follow::Follow, String> {
+        #[cfg(feature = "test-hooks")]
+        if self.follow_by_hand {
+            return Ok(crate::follow::Follow::by_hand(path, base));
+        }
+        crate::follow::Follow::start(path, base)
+    }
+
+    /// Test hook, only with the `test-hooks` feature: the follows that
+    /// start from now on have no watcher, and the test reads the file with
+    /// [`App::read_save`]. Before any follow with a watcher: set late, it
+    /// would leave that watcher on, so it panics.
+    #[cfg(feature = "test-hooks")]
+    pub fn set_follow_by_hand(&mut self) {
+        assert!(
+            self.follow
+                .as_ref()
+                .is_none_or(|f| f.watching() == "by_hand"),
+            "a follow with a watcher is on: by hand goes before `follow on`"
+        );
+        self.follow_by_hand = true;
+    }
+
     /// Follow on while the document references a file (after `:ref`, or
     /// an undo or a redo past one): the watch moves to that file, its
     /// counts kept, and what it holds now is read, so a save made meanwhile
@@ -5159,7 +5195,7 @@ impl App {
         );
         self.pause = Pause::default();
         self.save_held = false;
-        match crate::follow::Follow::start(path, base) {
+        match self.start_follow(path, base) {
             Ok(mut f) => {
                 (f.reloads, f.reads, f.last_reload, f.last_reload_clock) =
                     (reloads, reads, last, clock);
@@ -5182,13 +5218,13 @@ impl App {
             return false;
         };
         match f.poll() {
-            crate::follow::Poll::Reload => self.read_save(),
+            crate::follow::Poll::Reload => self.read_save_now(),
             // A save held while the presenter was busy, read now that they
             // are done; and a step change that is not `step_to` (a step
             // cleared away) can end a pause too.
             crate::follow::Poll::Idle => {
                 if self.save_held && !self.presenter_busy() {
-                    return self.read_save();
+                    return self.read_save_now();
                 }
                 self.reload_waiting()
             }
@@ -5228,14 +5264,36 @@ impl App {
     /// (after its debounce): the file is read and loaded, or, paused, kept
     /// as the change that waits. While the presenter is busy
     /// ([`App::presenter_busy`]) it is read when they are done. `true` when
-    /// the screen changed. The in-process tests call it in place of the
-    /// watcher.
-    pub fn read_save(&mut self) -> bool {
+    /// the screen changed.
+    fn read_save_now(&mut self) -> bool {
         self.save_held = self.presenter_busy();
         if self.save_held || self.follow.is_none() {
             return false;
         }
         self.reload_from_disk(false)
+    }
+
+    /// Test hook, only with the `test-hooks` feature: what the watcher does
+    /// after a save, called by a test in its place. Only with a follow
+    /// with no watcher ([`App::set_follow_by_hand`]): a watcher would read
+    /// the save too, at a time the test does not know.
+    #[cfg(feature = "test-hooks")]
+    pub fn read_save(&mut self) -> bool {
+        assert!(
+            self.follow
+                .as_ref()
+                .is_none_or(|f| f.watching() == "by_hand"),
+            "a read by hand with a watcher on: use set_follow_by_hand"
+        );
+        self.read_save_now()
+    }
+
+    /// Test hook, only with the `test-hooks` feature: [`App::read_save`]
+    /// while a watcher is on, for a test that needs both. The watcher can
+    /// read the save first.
+    #[cfg(feature = "test-hooks")]
+    pub fn read_save_beside_the_watcher(&mut self) -> bool {
+        self.read_save_now()
     }
 
     /// At a step with no patch applied, the pause is over: a change on

@@ -51,6 +51,15 @@ const WAIT: Duration = Duration::from_secs(10);
 
 /// A source file next to its sidecar, opened by reference, following.
 fn followed(name: &str, code: &str) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, code, false)
+}
+
+/// [`followed`] by hand (`crate::by_hand`): no watcher reads a save.
+fn followed_by_hand(name: &str, code: &str) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, code, true)
+}
+
+fn open_followed(name: &str, code: &str, by_hand: bool) -> (Live, PathBuf, PathBuf) {
     let dir = scratch(name);
     let src = std::path::absolute(dir.join("main.rs")).unwrap();
     std::fs::write(&src, code).unwrap();
@@ -59,6 +68,9 @@ fn followed(name: &str, code: &str) -> (Live, PathBuf, PathBuf) {
     doc.step = 0;
     let tiza = dir.join("main.rs.tiza");
     let live = Live::open(doc, tiza.clone(), dir.join("live.sock"));
+    if by_hand {
+        crate::by_hand(&live);
+    }
     live.command("follow on");
     assert_eq!(live.message().unwrap().0, "following main.rs");
     (live, src, tiza)
@@ -467,10 +479,10 @@ fn a_file_removed_while_follow_is_off_reloads_when_it_comes_back() {
 
 #[test]
 fn u_of_a_paste_after_the_file_changed_is_embedded() {
-    let (live, src, tiza) = followed("paste-u", CODE);
+    let (live, src, tiza) = followed_by_hand("paste-u", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
-    // The paste turned follow off: no watcher is left to read the save.
-    assert!(live.follow_seen().is_none(), "a watcher is left");
+    // The paste turned follow off: nothing reads the save.
+    assert!(live.follow_seen().is_none(), "follow is on");
     save(&src, SEVEN);
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     assert_eq!(code(&live), lines(CODE));
@@ -539,7 +551,7 @@ fn get_put_after_the_step5_u_keeps_the_code_embedded() {
 
 #[test]
 fn get_put_after_a_paste_keeps_the_code_embedded() {
-    let (live, _src, tiza) = followed("put-paste", CODE);
+    let (live, _src, tiza) = followed_by_hand("put-paste", CODE);
     live.command("hl 3:println one");
     live.with(|app| {
         app.replace_code("fn other() {\n    println!(\"hi\");\n}\n")
@@ -651,7 +663,7 @@ fn the_reason_says_what_the_screen_shows_after_every_change() {
 fn a_redo_back_to_the_paste_says_paste_not_version() {
     // Paste, save main.rs, `:follow on` (reload), `u` (the paste), `u` (the
     // code before the paste, which main.rs no longer holds), `U` (the paste).
-    let (live, src, tiza) = followed("redo-paste", CODE);
+    let (live, src, tiza) = followed_by_hand("redo-paste", CODE);
     live.with(|app| app.replace_code("fn other() {}\n").unwrap());
     save(&src, SEVEN);
     live.command("follow on");

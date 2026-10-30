@@ -32,18 +32,19 @@ const NOTHING: &str =
 
 const WAIT: Duration = Duration::from_secs(10);
 
-/// The in-process tests start and drop file watchers; macOS makes a new one
-/// wait while they do. The pty tests that took it alone are in the
-/// watchers crate now; the tests here still share it.
-static WATCHERS: std::sync::RwLock<()> = std::sync::RwLock::new(());
-
-fn shared() -> std::sync::RwLockReadGuard<'static, ()> {
-    WATCHERS.read().unwrap_or_else(|e| e.into_inner())
+/// `main.rs` and its sidecar `main.rs.tiza` in a scratch folder, opened as
+/// `tiza main.rs` opens it (a relative reference), following by hand
+/// (`crate::by_hand`).
+fn followed(name: &str) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, true)
 }
 
-/// `main.rs` and its sidecar `main.rs.tiza` in a scratch folder, opened as
-/// `tiza main.rs` opens it (a relative reference), following.
-fn followed(name: &str) -> (Live, PathBuf, PathBuf) {
+/// [`followed`] with the watcher: a save is read when it sees it.
+fn watched(name: &str) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, false)
+}
+
+fn open_followed(name: &str, by_hand: bool) -> (Live, PathBuf, PathBuf) {
     let dir = scratch(name);
     let src = dir.join("main.rs");
     std::fs::write(&src, CODE).unwrap();
@@ -52,15 +53,21 @@ fn followed(name: &str) -> (Live, PathBuf, PathBuf) {
     doc.step = 0;
     let tiza = dir.join("main.rs.tiza");
     let live = Live::open(doc, tiza.clone(), dir.join("live.sock"));
+    if by_hand {
+        crate::by_hand(&live);
+    }
     live.command("follow on");
     assert_eq!(message(&live), "following main.rs");
     (live, src, tiza)
 }
 
-/// The saved `.tiza` opened again, as `tiza main.rs.tiza` opens it.
+/// The saved `.tiza` opened again, as `tiza main.rs.tiza` opens it. Its
+/// follows go by hand.
 fn reopen(tiza: &Path, sock: &str) -> Live {
     let doc = tiza_core::fs::load_document(tiza).unwrap();
-    Live::open(doc, tiza.to_path_buf(), tiza.with_file_name(sock))
+    let live = Live::open(doc, tiza.to_path_buf(), tiza.with_file_name(sock));
+    crate::by_hand(&live);
+    live
 }
 
 fn paste(live: &Live) {
@@ -107,7 +114,6 @@ fn wait_for(what: &str, mut ok: impl FnMut() -> bool) {
 
 #[test]
 fn reopened_after_a_paste_follow_on_reloads_the_file() {
-    let _w = shared();
     let (live, _src, tiza) = followed("paste");
     paste(&live);
     let v = saved(&tiza);
@@ -140,8 +146,7 @@ fn reopened_after_a_paste_follow_on_reloads_the_file() {
 
 #[test]
 fn reopened_after_an_undo_follow_on_reloads_the_file() {
-    let _w = shared();
-    let (live, src, tiza) = followed("undo");
+    let (live, src, tiza) = watched("undo");
     // A highlight on the `1` of `x = 1`: the reload drops it, so it is an
     // undo step.
     live.command("hl 2:1 one");
@@ -166,7 +171,6 @@ fn reopened_after_an_undo_follow_on_reloads_the_file() {
 
 #[test]
 fn after_embed_the_message_says_how_to_link() {
-    let _w = shared();
     for pasted_first in [false, true] {
         let (live, _src, tiza) = followed(&format!("embed-{pasted_first}"));
         if pasted_first {
@@ -191,7 +195,6 @@ fn after_embed_the_message_says_how_to_link() {
 
 #[test]
 fn an_old_file_with_no_follows_is_unchanged() {
-    let _w = shared();
     let dir = scratch("old");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     let tiza = dir.join("main.rs.tiza");
@@ -212,7 +215,6 @@ fn an_old_file_with_no_follows_is_unchanged() {
 
 #[test]
 fn follows_beside_a_file_reference_is_not_written_back() {
-    let _w = shared();
     let dir = scratch("beside");
     std::fs::write(dir.join("main.rs"), CODE).unwrap();
     std::fs::write(dir.join("other.rs"), SEVEN).unwrap();
@@ -237,7 +239,6 @@ fn follows_beside_a_file_reference_is_not_written_back() {
 
 #[test]
 fn link_and_a_reload_clear_it() {
-    let _w = shared();
     let (live, _src, tiza) = followed("link");
     paste(&live);
     assert_eq!(saved(&tiza)["follows"], json!({"file": "main.rs"}));
@@ -267,7 +268,6 @@ fn put(live: &Live, document: &Value) -> Value {
 
 #[test]
 fn scene_get_put_round_trip_keeps_it() {
-    let _w = shared();
     let (live, _src, tiza) = followed("put");
     paste(&live);
     let doc = get(&live);
@@ -298,7 +298,6 @@ fn scene_get_put_round_trip_keeps_it() {
 
 #[test]
 fn a_put_of_another_document_takes_its_own() {
-    let _w = shared();
     for with in [false, true] {
         let (live, _src, _tiza) = followed(&format!("other-{with}"));
         paste(&live);
@@ -325,7 +324,6 @@ fn a_put_of_another_document_takes_its_own() {
 
 #[test]
 fn a_put_that_changes_only_follows_is_undone_with_u() {
-    let _w = shared();
     let (live, src, tiza) = followed("rev-only");
     std::fs::write(src.with_file_name("other.rs"), SEVEN).unwrap();
     paste(&live);
@@ -342,7 +340,6 @@ fn a_put_that_changes_only_follows_is_undone_with_u() {
 
 #[test]
 fn u_back_to_the_first_paste_follows_the_file_it_replaced() {
-    let _w = shared();
     // Paste over main.rs, `:ref other.rs`, paste again, `u`, `u`: the first
     // paste is back, and so is the file it replaced.
     let (live, src, tiza) = followed("rev-ref");
@@ -369,7 +366,6 @@ fn u_back_to_the_first_paste_follows_the_file_it_replaced() {
 
 #[test]
 fn u_of_a_put_of_another_document_brings_the_file_back() {
-    let _w = shared();
     let (live, _src, tiza) = followed("rev-other-u");
     paste(&live);
     let mut other = get(&live);
@@ -386,7 +382,6 @@ fn u_of_a_put_of_another_document_brings_the_file_back() {
 
 #[test]
 fn a_bad_follows_is_refused_on_load_and_on_put() {
-    let _w = shared();
     let (live, _src, tiza) = followed("rev-bad");
     paste(&live);
     for (bad, says) in [

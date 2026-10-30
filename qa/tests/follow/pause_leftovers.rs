@@ -18,8 +18,9 @@
 //!   with other changes; not when the sidecar holds it (after `:w`, or
 //!   with autosave on) or when no pause embedded code.
 //!
-//! The saves are read with `App::read_save` (what the watcher does after
-//! its debounce) on the TUI thread.
+//! The follows have no watcher (`crate::by_hand`): the saves are read
+//! with `App::read_save` (what the watcher does after its debounce) on the
+//! TUI thread.
 
 use std::path::{Path, PathBuf};
 
@@ -56,6 +57,7 @@ fn following_at(name: &str, step: u32) -> (Live, PathBuf) {
     std::fs::write(&tiza, document().to_string()).unwrap();
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     let live = Live::open(doc, tiza, dir.join("live.sock"));
+    crate::by_hand(&live);
     live.command("follow on");
     live.api_ok("step.set", json!({"step": step}));
     (live, src)

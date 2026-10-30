@@ -307,6 +307,7 @@ fn every_empty_first_write_waits_for_the_second() {
     // The empty first write of an editor is skipped at each save, not only
     // at the first one. Each save is read as the watcher reads it.
     let (live, src) = followed("truncate-again", CODE);
+    crate::by_hand(&live);
     live.command("follow on");
     let seen = live.with(move |app| {
         let one = CODE.replace("done", "one");
@@ -423,10 +424,10 @@ fn the_status_gives_the_hash_and_the_reads_of_the_file() {
     let (kept, after) = live.with(move |app| {
         let before = app.follow.as_ref().unwrap().hash.clone();
         std::fs::write(&path, "").unwrap();
-        app.read_save();
+        app.read_save_beside_the_watcher();
         let kept = app.follow.as_ref().unwrap().hash == before;
         std::fs::write(&path, CODE).unwrap();
-        app.read_save();
+        app.read_save_beside_the_watcher();
         (kept, app.follow.as_ref().unwrap().hash.clone())
     });
     assert!(kept, "the hash of an empty read that waits");
@@ -456,6 +457,7 @@ fn the_hash_of_a_range_is_the_hash_of_the_whole_file() {
     let mut doc = Document::from_code(CODE, "rs", Some(src.display().to_string()));
     doc.reference_file(src.display().to_string(), Some((2, 3)));
     let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
+    crate::by_hand(&live);
     live.command("follow on");
     assert_eq!(code(&live).len(), 2, "the range: {:?}", code(&live));
     let st = live.api_ok("follow.status", json!({}));

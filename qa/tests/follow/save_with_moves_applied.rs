@@ -50,8 +50,18 @@ const OTHER: &str = "fn f(t: &str) -> usize {\n    let n = t.bytes().len();\n   
 const WAIT: Duration = Duration::from_secs(10);
 
 /// `main.rs` (OLD) and its sidecar, opened by reference at step 0,
-/// following. `rebind`: the step-2 move rebinds `a1` to `t.len()`.
+/// following by hand (`crate::by_hand`). `rebind`: the step-2 move rebinds
+/// `a1` to `t.len()`.
 fn followed(name: &str, rebind: bool) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, rebind, true)
+}
+
+/// [`followed`] with the watcher: a save is read when it sees it.
+fn watched(name: &str, rebind: bool) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, rebind, false)
+}
+
+fn open_followed(name: &str, rebind: bool, by_hand: bool) -> (Live, PathBuf, PathBuf) {
     let dir = scratch(name);
     let src = dir.join("main.rs");
     std::fs::write(&src, OLD).unwrap();
@@ -77,6 +87,9 @@ fn followed(name: &str, rebind: bool) -> (Live, PathBuf, PathBuf) {
     std::fs::write(&tiza, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     let live = Live::open(doc, tiza.clone(), dir.join("live.sock"));
+    if by_hand {
+        crate::by_hand(&live);
+    }
     live.command("follow on");
     assert_eq!(live.message().unwrap().0, "following main.rs");
     (live, src, tiza)
@@ -129,6 +142,14 @@ fn save_at_step_2(live: &Live, src: &Path, content: &str) {
     live.with(|app| app.message = None);
     save(src, content);
     live.with(|app| app.read_save());
+    assert_eq!(status(live)["pending"], true, "{}", message(live));
+}
+
+/// [`save_at_step_2`] with the watcher on: it can read the save first.
+fn save_at_step_2_beside_the_watcher(live: &Live, src: &Path, content: &str) {
+    live.with(|app| app.message = None);
+    save(src, content);
+    live.with(|app| app.read_save_beside_the_watcher());
     assert_eq!(status(live)["pending"], true, "{}", message(live));
 }
 
@@ -305,7 +326,7 @@ fn saved_back_as_it_was_is_no_reload() {
     live.command("step 2");
     save_at_step_2(&live, &src, NEW);
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
-    // Whether the watcher saw it yet or not, step 0 reads the file as it is.
+    // Not read by hand: step 0 reads the file as it is.
     save(&src, OLD);
     live.command("step 0");
     assert_eq!(base(&live), lines(OLD));
@@ -318,13 +339,13 @@ fn saved_back_as_it_was_is_no_reload() {
 
 #[test]
 fn the_file_removed_at_step_2_and_back_with_other_code() {
-    let (live, src, tiza) = followed("removed", true);
+    let (live, src, tiza) = watched("removed", true);
     live.command("step 2");
     std::fs::remove_file(&src).unwrap();
     wait_for("the removal", || {
         message(&live) == "main.rs removed; waiting for it to come back"
     });
-    save_at_step_2(&live, &src, NEW);
+    save_at_step_2_beside_the_watcher(&live, &src, NEW);
     same_as_fresh(&live, &tiza, "back with other code at step 2");
     live.command("step 0");
     assert_eq!(base(&live), lines(NEW));
@@ -390,9 +411,9 @@ fn an_unreadable_file_then_saved_back_is_a_reference_again() {
     // The change that waited became unreadable (not UTF-8): step 0 cannot
     // reload it and keeps the code embedded; the file saved back as the
     // screen has it makes the document reference it again.
-    let (live, src, tiza) = followed("unreadable", true);
+    let (live, src, tiza) = watched("unreadable", true);
     live.command("step 2");
-    save_at_step_2(&live, &src, NEW);
+    save_at_step_2_beside_the_watcher(&live, &src, NEW);
     live.with(|app| app.message = None);
     let tmp = src.with_extension("rs.tmp");
     std::fs::write(&tmp, b"fn f() {\n    \xff\xfe\n}\n").unwrap();

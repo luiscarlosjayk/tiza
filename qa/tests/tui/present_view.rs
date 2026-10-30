@@ -210,19 +210,17 @@ fn with_no_camera_only_the_presenter_and_new_annotations_move_the_view() {
     view_on_line_60(&live);
     run(&live, Event::UpdateLabel, (COLS, ROWS));
     assert_eq!(first_line(&live, (COLS, ROWS)), Some(60), "after an update");
+    // No watcher: the save is read by hand, as the watcher reads it.
+    live.with(|a| a.set_follow_by_hand());
     live.command("follow on");
-    live.wait_follow_started();
     let file = dir.join("anchor.rs");
     let code = std::fs::read_to_string(&file).unwrap();
     std::fs::write(&file, code.replace("let v150 = 150;", "let v150 = 1500;")).unwrap();
-    // The watcher can read the save first: wait for the new code.
-    let end = Instant::now() + Duration::from_secs(10);
-    while !live.with(|a| {
+    let reloaded = live.with(|a| {
         a.read_save();
         a.doc.code.iter().any(|l| l == "let v150 = 1500;")
-    }) {
-        assert!(Instant::now() < end, "the reload did not happen in 10 s");
-    }
+    });
+    assert!(reloaded, "the reload");
     assert_eq!(first_line(&live, (COLS, ROWS)), Some(60), "after a reload");
 }
 

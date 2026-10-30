@@ -87,6 +87,10 @@ enum Watch {
     /// Starting on its own thread, which sends it here (or why it failed).
     Starting(mpsc::Receiver<Result<Counted, String>>),
     Running(Counted),
+    /// No watcher: a follow of the tests that read the file by hand
+    /// ([`Follow::by_hand`]).
+    #[cfg(any(test, feature = "test-hooks"))]
+    ByHand,
     Stopped,
 }
 
@@ -135,11 +139,7 @@ impl Follow {
     /// thread of its own and [`Follow::poll`] takes it when it is ready;
     /// a start that fails says so there.
     pub fn start(path: PathBuf, current: Vec<String>) -> Result<Follow, String> {
-        let dir = path
-            .parent()
-            .filter(|d| !d.as_os_str().is_empty())
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
+        let dir = parent_dir(&path);
         let (tx, rx) = mpsc::channel();
         let (started_tx, started_rx) = mpsc::channel();
         let d = dir.clone();
@@ -166,11 +166,32 @@ impl Follow {
                 let _ = started_tx.send(started.map(|()| counted));
             })
             .map_err(|e| format!("cannot watch {}: {e}", dir.display()))?;
-        let dir_canon = canonical_dir(&dir);
-        Ok(Follow {
+        Ok(Follow::new(path, Watch::Starting(started_rx), rx, current))
+    }
+
+    /// Test hook, only in the builds of the tests (the `test-hooks`
+    /// feature, and the unit tests): a follow with no watcher, so no file
+    /// event and no read when it starts. The test reads the file with
+    /// `App::read_save`; a `defer` still reads it again after the debounce.
+    /// A watcher puts load on fseventsd for every process of the machine,
+    /// and these tests need none of its events.
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn by_hand(path: PathBuf, current: Vec<String>) -> Follow {
+        let (_, rx) = mpsc::channel();
+        Follow::new(path, Watch::ByHand, rx, current)
+    }
+
+    fn new(
+        path: PathBuf,
+        watch: Watch,
+        rx: mpsc::Receiver<notify::Result<notify::Event>>,
+        current: Vec<String>,
+    ) -> Follow {
+        let dir_canon = canonical_dir(&parent_dir(&path));
+        Follow {
             path,
             dir_canon,
-            watch: Watch::Starting(started_rx),
+            watch,
             rx,
             pending_since: None,
             deferred_empty: false,
@@ -182,13 +203,27 @@ impl Follow {
             last_reload_clock: None,
             last_content: current,
             missing: false,
-        })
+        }
     }
 
     /// Whether the watcher is still starting on its own thread: until
     /// [`Follow::poll`] takes it.
     pub fn starting(&self) -> bool {
         matches!(self.watch, Watch::Starting(_))
+    }
+
+    /// Test hook, only in the builds of the tests (the `test-hooks`
+    /// feature, and the unit tests): what watches the
+    /// file. `by_hand` for [`Follow::by_hand`], otherwise `starting`,
+    /// `running` or `stopped`.
+    #[cfg(any(test, feature = "test-hooks"))]
+    pub fn watching(&self) -> &'static str {
+        match self.watch {
+            Watch::Starting(_) => "starting",
+            Watch::Running(_) => "running",
+            Watch::ByHand => "by_hand",
+            Watch::Stopped => "stopped",
+        }
     }
 
     pub fn file_name(&self) -> String {
@@ -331,6 +366,14 @@ fn hook_slow() {
     }
 }
 
+/// The directory of `path`, `.` for a bare file name.
+fn parent_dir(path: &Path) -> PathBuf {
+    path.parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
 /// The directory with symlinks resolved; falls back to the absolute form
 /// when it cannot be resolved (removed while the editor replaced it).
 fn canonical_dir(dir: &Path) -> PathBuf {
@@ -372,7 +415,7 @@ mod tests {
         return;
         std::fs::write(real.join("main.rs"), "fn main() {}\n").unwrap();
 
-        let through_link = Follow::start(link.join("main.rs"), vec![]).unwrap();
+        let through_link = Follow::by_hand(link.join("main.rs"), vec![]);
         assert!(
             through_link.same_file(&real.join("main.rs")),
             "real path for a linked watch"
@@ -384,7 +427,7 @@ mod tests {
             "same name, other directory"
         );
 
-        let through_real = Follow::start(real.join("main.rs"), vec![]).unwrap();
+        let through_real = Follow::by_hand(real.join("main.rs"), vec![]);
         assert!(
             through_real.same_file(&link.join("main.rs")),
             "linked path for a real watch"

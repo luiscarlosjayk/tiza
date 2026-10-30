@@ -663,7 +663,9 @@ fn paste_is_refused_and_follow_waits_while_moves_are_applied() {
         err.contains("cannot paste while moves are applied (step 1)"),
         "{err}"
     );
-    // Follow turns on and waits for step 0 (it used to be refused).
+    // Follow turns on and waits for step 0 (it used to be refused). No
+    // watcher: this test reads no save.
+    live.with(|a| a.set_follow_by_hand());
     let r = live.api_ok("follow.set", json!({"enabled": true}));
     assert_eq!(r["enabled"], true, "{r}");
     assert_eq!(r["reason"], "paused; loads at step 0", "{r}");

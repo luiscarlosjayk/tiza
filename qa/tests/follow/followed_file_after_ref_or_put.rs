@@ -220,6 +220,7 @@ fn follow_on_after_ref_and_a_paste_reloads_the_new_file() {
     // main.rs), `:ref other.rs`, then another paste with follow off:
     // `:follow on` reloads other.rs, the file the document referenced last.
     let (live, _dir, tiza) = opened("ref-paste");
+    crate::by_hand(&live);
     live.command("follow on");
     live.with(|app| app.replace_code("fn pasted() {}\n"))
         .unwrap();
@@ -269,6 +270,7 @@ fn ref_to_the_same_code_keeps_everything() {
 fn a_put_of_another_document_turns_follow_off() {
     // Test step 2.
     let (live, dir, _tiza) = opened("put");
+    crate::by_hand(&live);
     live.command("follow on");
     let other = json!({
         "schema": 1,
@@ -295,6 +297,7 @@ fn a_put_of_another_document_turns_follow_off() {
 #[test]
 fn with_autosave_already_off_the_put_says_follow_off() {
     let (live, _dir, _tiza) = opened("put-nosave");
+    crate::by_hand(&live);
     live.command("follow on");
     live.command("autosave off");
     let other = json!({
@@ -365,6 +368,7 @@ fn a_paste_of_older_code_with_follow_off_is_embedded() {
 #[test]
 fn ref_to_a_missing_file_changes_nothing() {
     let (live, _dir, tiza) = opened("missing");
+    crate::by_hand(&live);
     live.command("follow on");
     let before = live.with(|app| app.doc.code_src.clone());
     live.command("ref nowhere.rs");
@@ -399,6 +403,7 @@ fn ref_to_another_range_of_the_same_file_then_a_paste() {
     // The watch stays on main.rs; what it loaded last is the range now on
     // screen, so a paste of the whole file is not «what the file holds».
     let (live, _dir, tiza) = opened("range");
+    crate::by_hand(&live);
     live.command("follow on");
     live.command("step 0");
     live.command("ref main.rs:2-3");
@@ -418,6 +423,7 @@ fn ref_to_the_whole_file_from_a_range_then_a_paste() {
     let opened = tiza_core::fs::open(&format!("{}:2-3", dir.join("main.rs").display())).unwrap();
     let tiza = opened.save_path.clone();
     let live = Live::open(opened.document, tiza.clone(), dir.join("live.sock"));
+    crate::by_hand(&live);
     live.command("follow on");
     live.command("ref main.rs");
     assert_eq!(base(&live), lines(MAIN));
@@ -465,6 +471,7 @@ fn with_follow_never_on_a_paste_has_nothing_to_follow() {
 fn u_of_a_ref_over_a_paste_follows_the_first_file_again() {
     // The paste was over main.rs; `:ref other.rs` and its `u` leave it so.
     let (live, _dir, tiza) = opened("paste-ref-u");
+    crate::by_hand(&live);
     live.command("follow on");
     live.command("step 0");
     live.with(|app| app.replace_code("fn pasted() {}\n"))

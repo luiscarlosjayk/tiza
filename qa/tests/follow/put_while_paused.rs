@@ -17,9 +17,9 @@
 //!   there; a pause with a file that cannot be read takes the put of the
 //!   code on screen too.
 //!
-//! The saves are read with `App::read_save` (what the watcher does after
-//! its debounce) on the TUI thread, so that what a save did is known when
-//! the call returns.
+//! The follows have no watcher (`crate::by_hand`): the saves are read
+//! with `App::read_save` (what the watcher does after its debounce) on the
+//! TUI thread, so that what a save did is known when the call returns.
 
 use std::path::{Path, PathBuf};
 
@@ -62,6 +62,7 @@ fn paused_at(name: &str, patch_step: u32) -> (Live, PathBuf) {
     std::fs::write(&tiza, document(patch_step).to_string()).unwrap();
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     let live = Live::open(doc, tiza, dir.join("live.sock"));
+    crate::by_hand(&live);
     live.command("follow on");
     live.api_ok("step.set", json!({"step": patch_step}));
     (live, src)
@@ -215,6 +216,7 @@ fn a_document_opened_over_the_file_it_follows_is_checked_too() {
     std::fs::write(&tiza, doc.to_string()).unwrap();
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     let live = Live::open(doc, tiza, dir.join("live.sock"));
+    crate::by_hand(&live);
     live.api_ok("step.set", json!({"step": 2}));
     live.command("follow on");
     assert_eq!(pause(&live).1, json!(true));

@@ -379,7 +379,7 @@ impl Live {
                 let _ = rtx.send(f(app));
             }))
             .unwrap();
-        rrx.recv().unwrap()
+        rrx.recv().expect("the TUI thread of Live panicked")
     }
 
     /// Presses keys exactly as the TUI would handle them.
@@ -580,7 +580,10 @@ impl Live {
 
 impl Drop for Live {
     fn drop(&mut self) {
-        self.tx.lock().unwrap().take();
+        // A panic of the app thread poisons the lock that `with` holds: the
+        // test fails with that panic, and the drop must not panic again
+        // (that aborts every test of the binary).
+        self.tx.lock().unwrap_or_else(|e| e.into_inner()).take();
         if let Some(j) = self.join.take() {
             let _ = j.join();
         }

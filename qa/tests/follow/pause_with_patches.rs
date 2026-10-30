@@ -30,9 +30,11 @@
 //! one reload; an undo of a reload at a paused step turns follow off, as
 //! before.
 //!
-//! Most tests read the save with `App::read_save` (what the watcher does
-//! after its debounce) on the TUI thread, so that what a save did is known
-//! when the call returns.
+//! Most follows have no watcher (`crate::by_hand`): the tests read the
+//! save with `App::read_save` (what the watcher does after its debounce) on
+//! the TUI thread, so that what a save did is known when the call returns.
+//! Two tests keep the watcher ([`watched`]): its read of a save is what
+//! they check.
 
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -81,8 +83,22 @@ fn document(looping: bool, typing: bool) -> Value {
 }
 
 /// `main.rs` (OLD), the `files` a `code.link` shows, and the sidecar, at
-/// step 0, following.
+/// step 0, following by hand.
 fn followed_doc(name: &str, doc: Value, files: &[(&str, &str)]) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, doc, files, true)
+}
+
+/// [`followed`] with the watcher: a save is read when it sees it.
+fn watched(name: &str) -> (Live, PathBuf, PathBuf) {
+    open_followed(name, document(false, false), &[], false)
+}
+
+fn open_followed(
+    name: &str,
+    doc: Value,
+    files: &[(&str, &str)],
+    by_hand: bool,
+) -> (Live, PathBuf, PathBuf) {
     let dir = scratch(name);
     let src = dir.join("main.rs");
     std::fs::write(&src, OLD).unwrap();
@@ -93,6 +109,9 @@ fn followed_doc(name: &str, doc: Value, files: &[(&str, &str)]) -> (Live, PathBu
     std::fs::write(&tiza, serde_json::to_string_pretty(&doc).unwrap()).unwrap();
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     let live = Live::open(doc, tiza.clone(), dir.join("live.sock"));
+    if by_hand {
+        crate::by_hand(&live);
+    }
     live.command("follow on");
     assert_eq!(message(&live), "following main.rs");
     (live, src, tiza)
@@ -156,6 +175,12 @@ fn save_and_read(live: &Live, src: &Path, content: &[u8]) {
     live.with(|app| app.read_save());
 }
 
+/// [`save_and_read`] with the watcher on: it can read the save first.
+fn save_and_read_beside_the_watcher(live: &Live, src: &Path, content: &[u8]) {
+    save(src, content);
+    live.with(|app| app.read_save_beside_the_watcher());
+}
+
 /// (paused, pending, resume_step) of `follow.status`, and the same in
 /// `status.follow`. Both are read in one go: the watcher can read a save
 /// between two requests.
@@ -211,7 +236,7 @@ fn assert_notice(live: &Live) {
 fn a_save_that_waits_has_its_hash_and_the_resume_step_reads_it_again() {
     // Paused, a save is read and waits: `hash` is the one of the save,
     // with `pending`. At the resume step the file is read again to load.
-    let (live, src, _tiza) = followed("hash-pause");
+    let (live, src, _tiza) = watched("hash-pause");
     goto(&live, 2);
     save(&src, NEW.as_bytes());
     live.wait_follow_read(&src);
@@ -317,7 +342,7 @@ fn the_reply_of_follow_on_fits_at_80_columns() {
 
 #[test]
 fn one_notice_per_pause_and_changed_follows_the_file() {
-    let (live, src, tiza) = followed("one-notice");
+    let (live, src, tiza) = watched("one-notice");
     goto(&live, 2);
     clear(&live);
     // The real watcher: the save waits, the code on screen stays.
@@ -330,11 +355,11 @@ fn one_notice_per_pause_and_changed_follows_the_file() {
     assert!(saved_code(&tiza).is_array(), "{}", saved_code(&tiza));
     // A second save in the same pause: no notice.
     clear(&live);
-    save_and_read(&live, &src, OTHER.as_bytes());
+    save_and_read_beside_the_watcher(&live, &src, OTHER.as_bytes());
     assert_eq!(live.message(), None);
     assert_eq!(pause(&live), paused(true));
     // Saved back as the screen shows it: nothing waits, in silence.
-    save_and_read(&live, &src, OLD.as_bytes());
+    save_and_read_beside_the_watcher(&live, &src, OLD.as_bytes());
     assert_eq!(live.message(), None);
     assert_eq!(pause(&live), paused(false));
     let b = bar(&live);
@@ -343,7 +368,7 @@ fn one_notice_per_pause_and_changed_follows_the_file() {
         "{b}"
     );
     // Changed again: still the same pause, still no notice.
-    save_and_read(&live, &src, NEW.as_bytes());
+    save_and_read_beside_the_watcher(&live, &src, NEW.as_bytes());
     assert_eq!(live.message(), None);
     assert_eq!(pause(&live), paused(true));
     // Forward: it keeps waiting.
@@ -361,7 +386,7 @@ fn one_notice_per_pause_and_changed_follows_the_file() {
     // A new pause gives its own notice.
     goto(&live, 2);
     clear(&live);
-    save_and_read(&live, &src, OTHER.as_bytes());
+    save_and_read_beside_the_watcher(&live, &src, OTHER.as_bytes());
     assert_notice(&live);
 }
 
@@ -778,8 +803,8 @@ fn a_save_while_the_command_line_or_a_panel_is_open_waits_for_it() {
         (KeyCode::Char('?'), "busy-help"),
     ] {
         let (live, src, _tiza) = followed(name);
-        // All on the TUI thread: the watcher's own read of this save comes
-        // after its debounce, later than the tick after Esc.
+        // All on the TUI thread: no tick comes between the key, the save
+        // and its read.
         let (under, after) = live.with(move |app| {
             tiza_tui::on_key(app, open, crossterm::event::KeyModifiers::NONE);
             save(&src, NEW.as_bytes());
