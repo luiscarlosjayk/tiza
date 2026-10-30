@@ -2,6 +2,7 @@
 //! (Zed saves with tmp + rename, so the *parent directory* is watched), with
 //! a debounce, keeping the annotations by re-anchoring them to their text.
 
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc;
@@ -26,12 +27,38 @@ pub struct Follow {
     /// An empty read was deferred once, waiting for the editor's second write.
     deferred_empty: bool,
     pub reloads: u64,
+    /// The file on disk at the last read to load it, taken just before the
+    /// read. A test compares it with the file after a save: when they are
+    /// the same, the read saw that save.
+    pub last_read: Option<Stamp>,
     pub last_reload: Option<Instant>,
     pub last_reload_clock: Option<String>,
     /// Content as last loaded, to skip reloads that change nothing.
     pub last_content: Vec<String>,
     /// Whether the file is currently missing on disk.
     pub missing: bool,
+}
+
+/// What tells one save of a file from the next: its size, its time of
+/// change and its inode (a save with a temp file and a rename makes a new
+/// one).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stamp {
+    pub len: u64,
+    pub modified: Option<std::time::SystemTime>,
+    pub inode: u64,
+}
+
+impl Stamp {
+    /// The stamp of the file at `path` now. `None` when it cannot be read.
+    pub fn of(path: &Path) -> Option<Stamp> {
+        let m = std::fs::metadata(path).ok()?;
+        Some(Stamp {
+            len: m.len(),
+            modified: m.modified().ok(),
+            inode: m.ino(),
+        })
+    }
 }
 
 /// The file watcher. It starts and stops on threads of its own: with
@@ -129,6 +156,7 @@ impl Follow {
             pending_since: None,
             deferred_empty: false,
             reloads: 0,
+            last_read: None,
             last_reload: None,
             last_reload_clock: None,
             last_content: current,

@@ -274,6 +274,14 @@ pub struct Live {
 
 type Job = Box<dyn FnOnce(&mut App) + Send>;
 
+/// What the follow watcher of a [`Live`] did ([`Live::follow_seen`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FollowSeen {
+    pub reloads: u64,
+    /// The followed file on disk at the last read to load it.
+    pub last_read: Option<tiza_tui::follow::Stamp>,
+}
+
 impl Live {
     /// Opens `doc` (saved to `save_path` on autosave) and starts serving `socket`.
     pub fn open(doc: Document, save_path: PathBuf, socket: PathBuf) -> Live {
@@ -397,6 +405,43 @@ impl Live {
     /// took, or the message of a start that took longer.
     pub fn wait_follow_started_within(&self, budget: Duration) -> Result<Duration, String> {
         wait_for_watcher(budget, || self.with(|app| app.follow_starting()))
+    }
+
+    /// What the follow watcher did, read in one call on the app thread.
+    /// `None` with follow off: then no watcher is left, and only the
+    /// watcher reads the followed file again.
+    pub fn follow_seen(&self) -> Option<FollowSeen> {
+        self.with(|app| {
+            app.follow.as_ref().map(|f| FollowSeen {
+                reloads: f.reloads,
+                last_read: f.last_read,
+            })
+        })
+    }
+
+    /// Waits until the follow watcher read the file at `path` as it is on
+    /// disk now (after a save), 10 s at most, and returns what the watcher
+    /// did then. A read of an older version does not count. To see that a
+    /// save changed nothing, wait for its read, then look: never a fixed
+    /// time, which a slow machine can pass before the read.
+    pub fn wait_follow_read(&self, path: &Path) -> FollowSeen {
+        let now = tiza_tui::follow::Stamp::of(path)
+            .unwrap_or_else(|| panic!("cannot read {}", path.display()));
+        let start = Instant::now();
+        loop {
+            let seen = self
+                .follow_seen()
+                .unwrap_or_else(|| panic!("follow is off: no read of {}", path.display()));
+            if seen.last_read == Some(now) {
+                return seen;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "in 10 s no read of {} as saved ({now:?}); the last read: {seen:?}",
+                path.display()
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
     }
 
     /// Types text as individual key presses (use `KeyCode::Enter` via `keys`).
