@@ -40,6 +40,10 @@ commands, for a move or a field that no `:` command makes:
   the typing and the enter effects; `animate=1` starts at step 1
   (`--skip-zero`). A `code=` frame takes `animate=` too.
 - `interval=S` is the time of each step in seconds (`--interval`).
+- `files=PATH[,PATH…]` (`code=` only) copies files of the repository next
+  to the code, under their own names, for a command that reads a file:
+  `files=examples/themes/catppuccin-mocha.toml` with
+  `:theme file catppuccin-mocha.toml`.
 - The page shows the JSON of the document next to its frame. The document
   and its code go in docs/frames/.
 
@@ -82,7 +86,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 COMMENT = re.compile(r"<!-- frame id=(\S+)((?: \w+=\S+)*) -->")
 # The block of `:` commands right after the comment of a `code=` frame.
 BLOCK = re.compile(r"\n```\n(.*?)\n```", re.S)
-KEYS = {"code", "doc", "width", "theme", "step", "animate", "interval"}
+KEYS = {"code", "doc", "width", "theme", "step", "animate", "interval", "files"}
 
 
 def frames_of(page_path, page):
@@ -107,6 +111,8 @@ def frames_of(page_path, page):
             sys.exit(f"{where}: a doc= frame needs step=N (a still) or animate=0|1")
         if "interval" in opts and "animate" not in opts:
             sys.exit(f"{where}: interval= is only for animate=")
+        if "files" in opts and "code" not in opts:
+            sys.exit(f"{where}: files= copies files next to the code of a code= frame")
         for key, pattern in [("step", r"\d+"), ("animate", r"[01]"), ("width", r"\d+"),
                              ("interval", r"\d+(\.\d+)?"), ("code", r"\S+:\d+-\d+")]:
             if key in opts and not re.fullmatch(pattern, opts[key]):
@@ -146,10 +152,13 @@ def wait(cond, error, timeout=10):
     sys.exit(f"docs-frames: {error}")
 
 
-def make_doc(tiza, fid, path, rng, cmds, work, sock):
-    """Types `cmds` in the TUI on lines `rng` of a copy of `path`, saves the
-    document with `:wq`, and returns its path."""
+def make_doc(tiza, fid, path, rng, cmds, work, sock, files=()):
+    """Types `cmds` in the TUI on lines `rng` of a copy of `path`, with a
+    copy of each of `files` next to it, saves the document with `:wq`, and
+    returns its path."""
     shutil.copy(os.path.join(ROOT, path), work)
+    for f in files:
+        shutil.copy(os.path.join(ROOT, f), work)
     name = os.path.basename(path)
     master, slave = pty.openpty()
     fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 30, 120, 0, 0))
@@ -306,6 +315,17 @@ def main():
                          "of the repository")
             if key == "doc" and not rel.endswith(".tiza"):
                 sys.exit(f"docs-frames: {page_path}: frame {fid}: doc={rel} is not a .tiza document")
+            names = {os.path.basename(rel)}
+            for f in opts.get("files", "").split(",") if "files" in opts else []:
+                fp = os.path.realpath(os.path.join(ROOT, f))
+                if not f or os.path.isabs(f) or os.path.commonpath([fp, root]) != root \
+                        or not os.path.isfile(fp):
+                    sys.exit(f"docs-frames: {page_path}: frame {fid}: files= {f!r} is not a file "
+                             "of the repository")
+                if os.path.basename(f) in names:
+                    sys.exit(f"docs-frames: {page_path}: frame {fid}: two files have the name "
+                             f"{os.path.basename(f)}")
+                names.add(os.path.basename(f))
             img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[end:])
             if not img:
                 sys.exit(f"docs-frames: {page_path}: frame {fid} has no <img> after it")
@@ -332,7 +352,8 @@ def main():
                 frames += 1
                 if "code" in opts:
                     path, rng = opts["code"].rsplit(":", 1)
-                    doc = make_doc(tiza, fid, path, rng, cmds, work, sock)
+                    files = opts["files"].split(",") if "files" in opts else []
+                    doc = make_doc(tiza, fid, path, rng, cmds, work, sock, files)
                     ellipsis = "…" in read(os.path.join(ROOT, path))
                 else:
                     # The document as it is in the repository: the export

@@ -1,0 +1,19 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {
+    "file": "ownership.rs",
+    "lines": "1-13"
+  },
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 3, "end": 7}, "label": "orange", "color": "orange"},
+    {"id": "h2", "step": 1, "type": "highlight", "span": {"line": 2, "start": 12, "end": 18}, "label": "blue", "color": "blue"},
+    {"id": "h3", "step": 1, "type": "highlight", "span": {"line": 3, "start": 4, "end": 9}, "label": "green", "color": "green"},
+    {"id": "h4", "step": 1, "type": "highlight", "span": {"line": 4, "start": 7, "end": 15}, "label": "purple", "color": "purple"},
+    {"id": "h5", "step": 1, "type": "highlight", "span": {"line": 6, "start": 12, "end": 18}, "label": "pink", "color": "pink"},
+    {"id": "h6", "step": 1, "type": "highlight", "span": {"line": 7, "start": 12, "end": 15}, "label": "cyan", "color": "cyan"},
+    {"id": "h7", "step": 1, "type": "highlight", "span": {"line": 8, "start": 4, "end": 12}, "label": "yellow", "color": "yellow"},
+    {"id": "h8", "step": 1, "type": "highlight", "span": {"line": 10, "start": 16, "end": 22}, "label": "red", "color": "red"},
+    {"id": "h9", "step": 1, "type": "highlight", "span": {"line": 11, "start": 4, "end": 8}, "label": "gray", "color": "gray"}
+  ]
+}

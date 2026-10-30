@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight",
+     "span": {"line": 7, "start": 12, "end": 19}, "label": "borrow"}
+  ],
+  "moves": [
+    {"at_step": 2, "action": "code.patch", "op": "replace", "find": "let n = len(&t);",
+     "content": "    let n = t.len();", "rebind": {"h1": {"at": {"find": "t.len()"}}}}
+  ]
+}

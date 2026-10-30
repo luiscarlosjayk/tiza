@@ -37,6 +37,15 @@ These are the invisible characters in the code:
 
 On the screen, each invisible character takes one cell. Tiza draws it as `⬚` (U+2B1A) in the error color of the theme. Thus `ad⬚min` does not look like `admin`.
 
+For example, `docs/frames/invisible.rs` has `admin` on line 1, and `ad`, a zero-width joiner and `min` on line 2. The image is a real `tiza render` export:
+
+<!-- frame id=invisible code=docs/frames/invisible.rs:1-2 -->
+```
+:note 2 not the name on line 1
+```
+
+<img src="../images/format/invisible.webp" width="279" alt="Line 1 is let admin = false;. Line 2 is let ad⬚min = true;, with ⬚ in the error color, and the note not the name on line 1.">
+
 - Anchors and `find` count the real characters. Thus the columns of the graphemes do not change.
 - `get_code` and `tiza://code` give the invisible characters as they are, except a bidi control, which is `�`.
 - After the code, `get_code` and `tiza://code` give a note for each line with invisible characters, for example `# line 3: U+200B zero width space, col 5`. The note names each character, and gives its column as the `col` of an anchor. The socket method `code.get` gives the same list in `invisible`. See [Invisible characters in `code.get`](socket-api.md#invisible-characters-in-codeget).

@@ -305,6 +305,15 @@ For example, add a note on line 3:
 
 <img src="../../images/commands/note-default.webp" width="364" alt="Line 3 has the note s moves into takes.">
 
+When the terminal is wider, the right margin has room, and the note goes there:
+
+<!-- frame id=note-margin code=examples/ownership.rs:2-3 width=64 -->
+```
+:note 3 s moves into takes
+```
+
+<img src="../../images/commands/note-margin.webp" width="552" alt="Line 3, and the note s moves into takes in the right margin, on the same row as line 3.">
+
 ### Notes on `:note`
 
 - A note needs text.
@@ -405,6 +414,19 @@ For example, highlight `&t`, then put a spotlight on lines 7 and 8:
 
 <img src="../../images/commands/spot-default.webp" width="380" alt="Line 6 is dim. Lines 7 and 8 and the label shared borrow are bright.">
 
+### `:spot` with an id
+
+A spotlight with only an id dims all the code, except the code of that annotation. It also dims the other annotations. A dimmed mark keeps its label.
+
+<!-- frame id=spot-ids code=examples/ownership.rs:1-8 -->
+```
+:hl 7:&t shared borrow
+:mark move 3:takes the value moves
+:spot a1
+```
+
+<img src="../../images/commands/spot-ids.webp" width="528" alt="All the code is dim, except line 7, with &t and its label shared borrow. The mark on takes and its label the value moves are dim.">
+
 ### Notes on `:spot`
 
 - `:spot ID…` adds a spotlight on the annotations that you name. The fields are in [`spotlight`](../document-format.md#spotlight).
@@ -425,7 +447,20 @@ Keeps a spotlight active up to a later step.
 For example, `:until a2 4` keeps the spotlight `a2` active from its step to step 4.
 
 - `N` cannot be before the step of the spotlight.
-- A frame shows one step. This page has no frame for `:until`.
+
+This frame is animated, from step 1 to step 3. The spotlight `a1` starts at step 1, and `:until a1 2` keeps it active at step 2. At step 3 it is not active:
+
+<!-- frame id=until-default code=examples/ownership.rs:6-8 animate=1 -->
+```
+:spot 6-7
+:note 8 t is still here
+:step a2 2
+:note 6 t owns its String
+:step a3 3
+:until a1 2
+```
+
+<img src="../../images/commands/until-default.webp" width="380" alt="At steps 1 and 2, line 8 is dim, and at step 2 the note t is still here is dim too. At step 3, no line is dim, and the note t owns its String comes in under line 6.">
 
 ## `:style`
 

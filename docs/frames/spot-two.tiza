@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight",
+     "span": {"line": 7, "start": 16, "end": 18}, "label": "shared borrow"},
+    {"id": "s1", "step": 1, "type": "spotlight", "from_line": 2, "to_line": 3},
+    {"id": "s2", "step": 1, "type": "spotlight", "ids": ["h1"]}
+  ]
+}

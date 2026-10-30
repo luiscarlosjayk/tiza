@@ -65,6 +65,16 @@ Each color of a theme has a name: its token. You can give a token a new value in
 - The [Catppuccin Mocha example](../../examples/themes/catppuccin-mocha.toml) is the file to copy. It sets the tokens of Tiza to the published Catppuccin Mocha colors. It passes the legibility check. See [Legibility](#legibility).
 - No token sets a color of the syntax, such as the color of a keyword.
 
+For example, load the Catppuccin Mocha example, a copy of [`examples/themes/catppuccin-mocha.toml`](../../examples/themes/catppuccin-mocha.toml), and highlight `&t`. The image is a real `tiza render` export with the tokens of the document:
+
+<!-- frame id=theme-file code=examples/ownership.rs:6-8 files=examples/themes/catppuccin-mocha.toml theme=doc -->
+```
+:theme file catppuccin-mocha.toml
+:hl 7:&t shared borrow
+```
+
+<img src="../images/themes/theme-file.webp" width="380" alt="Lines 6 to 8 with the Catppuccin Mocha colors: a dark blue-gray background, a tint on &t, and the label shared borrow in peach.">
+
 ## Theme names
 
 | Name | What it shows | Also accepted by `:theme` |

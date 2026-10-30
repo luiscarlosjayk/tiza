@@ -118,6 +118,10 @@ Each `type` adds its own fields.
 | `label` | string | No default | The text next to the code. |
 | `emphasis` | string | `"fill"` | How Tiza draws the span, one of the [emphasis values](#values-of-annotation-fields). |
 
+A `highlight` from [`:hl`](commands/annotate.md#hl), as its frame shows it:
+
+<img src="../images/commands/hl-default.webp" width="380" alt="The span &t on line 7 has a tint. The label shared borrow is under line 7.">
+
 #### `mark`
 
 | Field | Type | Default | Meaning |
@@ -127,6 +131,10 @@ Each `type` adds its own fields.
 | `label` | string | No default | The text after the legend. |
 | `style` | object | No default | A [mark style](#mark-style) for this mark only. |
 | `emphasis` | string | `"fill"` | How Tiza draws the span, one of the [emphasis values](#values-of-annotation-fields). |
+
+A `mark` from [`:mark`](commands/annotate.md#mark), as its frame shows it:
+
+<img src="../images/commands/mark-default.webp" width="364" alt="Under line 3, the label row shows the move glyph, the legend move and the label the value moves.">
 
 #### `box`
 
@@ -139,6 +147,10 @@ Each `type` adds its own fields.
 | `corners` | `"rounded"` or `"sharp"` | `"rounded"` | The shape of the corners. |
 | `fill` | `true` or `false` | `true` | When `true`, Tiza tints the inside of the box. |
 
+A `box` from [`:box`](commands/annotate.md#box), as its frame shows it:
+
+<img src="../images/commands/box-default.webp" width="396" alt="Lines 6 to 8 are in a box with rounded corners and a tint. The label shared is on the top border.">
+
 #### `arrow`
 
 | Field | Type | Default | Meaning |
@@ -150,12 +162,20 @@ Each `type` adds its own fields.
 | `route` | `"rounded"` or `"sharp"` | `"rounded"` | The shape of the corners. |
 | `heads` | object `{start, end}` | `{"start": "none", "end": "arrow"}` | The heads at the two ends, each one of the [head values](#values-of-annotation-fields). |
 
+An `arrow` from [`:arrow`](commands/annotate.md#arrow), as its frame shows it:
+
+<img src="../images/commands/arrow-default.webp" width="380" alt="An arrow goes from s on line 2 to s on line 3, with the label the value moves.">
+
 #### `note`
 
 | Field | Type | Default | Meaning |
 |---|---|---|---|
 | `line` | integer | Required | The line of the note. |
 | `text` | string | Required | The text of the note, which is not blank. |
+
+A `note` from [`:note`](commands/annotate.md#note), as its frame shows it:
+
+<img src="../images/commands/note-default.webp" width="364" alt="Line 3 has the note s moves into takes.">
 
 #### `callout`
 
@@ -171,6 +191,10 @@ Each `type` adds its own fields.
 | `corners` | `"rounded"` or `"sharp"` | `"rounded"` | The shape of the corners. |
 | `fill` | `true` or `false` | `false` | When `true`, Tiza tints the inside of the callout. |
 
+A `callout` from [`:callout`](commands/annotate.md#callout), as its frame shows it:
+
+<img src="../images/commands/callout-default.webp" width="567" alt="In the right margin of lines 6 to 8, a callout with a border holds the text t stays with main.">
+
 #### `spotlight`
 
 | Field | Type | Default | Meaning |
@@ -179,6 +203,14 @@ Each `type` adds its own fields.
 | `to_line` | integer | `from_line` | The last line that the spotlight does not dim, not before `from_line`. |
 | `ids` | array of ids | Required when there is no `from_line`, else `[]` | The ids of annotations in the document that the spotlight does not dim, also outside its lines. |
 | `until` | integer | No default | The last step at which the spotlight is active. When `until` is before `step`, the spotlight never shows, and `tiza check` gives the error `until`. |
+
+A `spotlight` from [`:spot`](commands/annotate.md#spot), as its frame shows it:
+
+<img src="../images/commands/spot-default.webp" width="380" alt="Line 6 is dim. Lines 7 and 8 and the label shared borrow are bright.">
+
+A spotlight with only `ids`, from [`:spot` with an id](commands/annotate.md#spot-with-an-id):
+
+<img src="../images/commands/spot-ids.webp" width="528" alt="All the code is dim, except line 7, with &t and its label shared borrow. The mark on takes and its label the value moves are dim.">
 
 #### Values of annotation fields
 
@@ -210,6 +242,25 @@ Each value has this meaning:
 - An annotation touches the lines of a spotlight when one or more of its lines are in the range. The lines of a box or a callout go from `from_line` to `to_line`. The lines of an arrow go from one end to the other. Thus an arrow that goes across the range touches it.
 - A spotlight with only `ids` shows only the code of those annotations. It dims all the other annotations.
 - When two or more spotlights are active at one step, Tiza uses the lines and the `ids` of all of them.
+
+Two spotlights at step 1: one on lines 2 and 3, and one on the highlight `h1`. The image is a real `tiza render` export of this document at step 1:
+
+<!-- frame id=spot-two doc=docs/frames/spot-two.tiza step=1 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight",
+     "span": {"line": 7, "start": 16, "end": 18}, "label": "shared borrow"},
+    {"id": "s1", "step": 1, "type": "spotlight", "from_line": 2, "to_line": 3},
+    {"id": "s2", "step": 1, "type": "spotlight", "ids": ["h1"]}
+  ]
+}
+```
+
+<img src="../images/format/spot-two.webp" width="528" alt="Lines 2, 3 and 7 are bright, with &t and its label shared borrow on line 7. The other lines are dim.">
 - Tiza refuses a blank `text`, and a range that ends before it starts, when you add an annotation.
 - An annotation whose lines are not in the code stays in the file. Tiza does not draw it, and `tiza check` gives an error for it.
 
@@ -255,6 +306,65 @@ When you add a mark, Tiza refuses any other `kind`. A loaded file keeps such a m
 | `warning` | `warn` |
 | `tip` | `info` |
 
+Each built-in kind has its own glyph, legend and color. A mark with no `label` shows only the glyph and the legend. These images are real `tiza render` exports at step 1 of `docs/frames/kinds-1.tiza` and `docs/frames/kinds-2.tiza`:
+
+<!-- frame id=kinds-1 doc=docs/frames/kinds-1.tiza step=1 -->
+
+<img src="../images/format/kinds-1.webp" width="528" alt="Seven marks on lines 1 to 8, each with the glyph and the legend of its kind: info, note, warning for warn, error, ok, why? for question, and important.">
+
+<details><summary>The document: <code>docs/frames/kinds-1.tiza</code></summary>
+
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {
+    "file": "ownership.rs",
+    "lines": "1-8"
+  },
+  "annotations": [
+    {"id": "m1", "step": 1, "type": "mark", "kind": "info", "span": {"line": 1, "start": 3, "end": 7}},
+    {"id": "m2", "step": 1, "type": "mark", "kind": "note", "span": {"line": 2, "start": 8, "end": 9}},
+    {"id": "m3", "step": 1, "type": "mark", "kind": "warn", "span": {"line": 3, "start": 4, "end": 9}},
+    {"id": "m4", "step": 1, "type": "mark", "kind": "error", "span": {"line": 4, "start": 7, "end": 15}},
+    {"id": "m5", "step": 1, "type": "mark", "kind": "ok", "span": {"line": 6, "start": 8, "end": 9}},
+    {"id": "m6", "step": 1, "type": "mark", "kind": "question", "span": {"line": 7, "start": 12, "end": 15}},
+    {"id": "m7", "step": 1, "type": "mark", "kind": "important", "span": {"line": 8, "start": 4, "end": 12}}
+  ]
+}
+```
+
+</details>
+
+<!-- frame id=kinds-2 doc=docs/frames/kinds-2.tiza step=1 -->
+
+<img src="../images/format/kinds-2.webp" width="536" alt="Eight marks on lines 2 to 13, each with the glyph and the legend of its kind: new, move, scope, read, flow, write, todo and drop.">
+
+<details><summary>The document: <code>docs/frames/kinds-2.tiza</code></summary>
+
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {
+    "file": "ownership.rs",
+    "lines": "2-13"
+  },
+  "annotations": [
+    {"id": "m1", "step": 1, "type": "mark", "kind": "new", "span": {"line": 2, "start": 12, "end": 18}},
+    {"id": "m2", "step": 1, "type": "mark", "kind": "move", "span": {"line": 3, "start": 4, "end": 9}},
+    {"id": "m3", "step": 1, "type": "mark", "kind": "scope", "span": {"line": 6, "start": 8, "end": 9}},
+    {"id": "m4", "step": 1, "type": "mark", "kind": "read", "span": {"line": 7, "start": 16, "end": 18}},
+    {"id": "m5", "step": 1, "type": "mark", "kind": "flow", "span": {"line": 8, "start": 4, "end": 12}},
+    {"id": "m6", "step": 1, "type": "mark", "kind": "write", "span": {"line": 10, "start": 12, "end": 13}},
+    {"id": "m7", "step": 1, "type": "mark", "kind": "todo", "span": {"line": 11, "start": 4, "end": 8}},
+    {"id": "m8", "step": 1, "type": "mark", "kind": "drop", "span": {"line": 13, "start": 0, "end": 1}}
+  ]
+}
+```
+
+</details>
+
 ### Mark style
 
 Each entry of `styles`, and the `style` of a mark, has these fields. The `style` of a mark replaces each field that it gives.
@@ -278,6 +388,38 @@ Each entry of `styles`, and the `style` of a mark, has these fields. The `style`
 | `yellow` | `amarillo` |
 | `red` | `rojo` |
 | `gray` | `grey`, `gris` |
+
+The nine color names, on highlights. The image is a real `tiza render` export at step 1 of `docs/frames/colors.tiza`:
+
+<!-- frame id=colors doc=docs/frames/colors.tiza step=1 -->
+
+<img src="../images/format/colors.webp" width="536" alt="Nine highlights on lines 1 to 11, each with its color name as the label: orange, blue, green, purple, pink, cyan, yellow, red and gray.">
+
+<details><summary>The document: <code>docs/frames/colors.tiza</code></summary>
+
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {
+    "file": "ownership.rs",
+    "lines": "1-13"
+  },
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 3, "end": 7}, "label": "orange", "color": "orange"},
+    {"id": "h2", "step": 1, "type": "highlight", "span": {"line": 2, "start": 12, "end": 18}, "label": "blue", "color": "blue"},
+    {"id": "h3", "step": 1, "type": "highlight", "span": {"line": 3, "start": 4, "end": 9}, "label": "green", "color": "green"},
+    {"id": "h4", "step": 1, "type": "highlight", "span": {"line": 4, "start": 7, "end": 15}, "label": "purple", "color": "purple"},
+    {"id": "h5", "step": 1, "type": "highlight", "span": {"line": 6, "start": 12, "end": 18}, "label": "pink", "color": "pink"},
+    {"id": "h6", "step": 1, "type": "highlight", "span": {"line": 7, "start": 12, "end": 15}, "label": "cyan", "color": "cyan"},
+    {"id": "h7", "step": 1, "type": "highlight", "span": {"line": 8, "start": 4, "end": 12}, "label": "yellow", "color": "yellow"},
+    {"id": "h8", "step": 1, "type": "highlight", "span": {"line": 10, "start": 16, "end": 22}, "label": "red", "color": "red"},
+    {"id": "h9", "step": 1, "type": "highlight", "span": {"line": 11, "start": 4, "end": 8}, "label": "gray", "color": "gray"}
+  ]
+}
+```
+
+</details>
 
 - Case does not matter. A hex color has exactly six digits, so `#rgb` is not a color of an annotation.
 - Tiza refuses an unknown color when you add an annotation. In a file, Tiza draws an annotation with an unknown color in its default color.
@@ -508,6 +650,27 @@ You add an annotation on the code at its own step. A later move changes the line
 - Only a `code.patch` move can have `rebind`.
 - Tiza keeps an entry for an annotation that is not in the document, and ignores it. `tiza render` gives a warning for it, and `tiza check` names it.
 
+A highlight on `len(&t)` at step 1, and a `replace` of its line at step 2 with a `rebind` entry for it. The image is a real `tiza render` export of this document, from step 1 to step 2:
+
+<!-- frame id=rebind doc=docs/frames/rebind.tiza animate=1 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "annotations": [
+    {"id": "h1", "step": 1, "type": "highlight",
+     "span": {"line": 7, "start": 12, "end": 19}, "label": "borrow"}
+  ],
+  "moves": [
+    {"at_step": 2, "action": "code.patch", "op": "replace", "find": "let n = len(&t);",
+     "content": "    let n = t.len();", "rebind": {"h1": {"at": {"find": "t.len()"}}}}
+  ]
+}
+```
+
+<img src="../images/format/rebind.webp" width="380" alt="At step 1, len(&t) on line 7 has a tint and the label borrow. At step 2, line 7 is let n = t.len(); and the tint and the label are on t.len().">
+
 `:list` marks a hidden annotation `! unanchored`. The socket method `scene.list` and the MCP tool `list_annotations` mark it `(unanchored)`. `tiza check` gives a warning for it, with its steps.
 
 ### Point
@@ -609,6 +772,24 @@ a4 [step 3] box L15-17 (src/queue.rs)
 - `tiza render --step N` and the image exports draw the cursor and the selection immediately.
 - The TUI, the GIF, MP4 and WebM exports and the `.tape` show the pause of a `wait`. A `.cast` adds the pause to the time of the step, except at the last step.
 - A still export ignores a `wait`.
+
+A `cursor` move at step 1 and a `select` move at step 2. The image is a real `tiza render` export of this document, from step 1 to step 2:
+
+<!-- frame id=cursor-select doc=docs/frames/cursor-select.tiza animate=1 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "cursor", "line": 6, "col": 8},
+    {"at_step": 2, "action": "select",
+     "from": {"line": 7, "find": "len(&t)"}, "to": {"line": 7, "find": "len(&t)"}}
+  ]
+}
+```
+
+<img src="../images/format/cursor-select.webp" width="380" alt="At step 1, the cursor is on t in line 6. At step 2, len(&t) on line 7 is selected, and the cursor stays on t.">
 
 ### Scroll
 
