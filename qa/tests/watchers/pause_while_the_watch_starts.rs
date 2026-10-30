@@ -13,7 +13,7 @@ use tiza_qa::{bin, scratch};
 const OLD: &str = "fn main() {\n    let a = 1;\n}\n";
 
 const BODY: &str = r##"
-import json
+import hashlib, json
 binary, cwd = sys.argv[1], sys.argv[2]
 os.chdir(cwd)
 env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="follow:slow")
@@ -48,8 +48,15 @@ if ok:
     s.send(b"p")
     print("LOADED", until(lambda: status().get("reloads") == 1), flush=True)
     # A late event of the watcher, if any, reads the same text: no reload.
-    s.settle(0.6)
-    print("AFTER", json.dumps(status()), flush=True)
+    # A save of the same text: its read comes after that late event, so
+    # once `reads` goes up the late event is read too.
+    reads = status().get("reads") or 0
+    open(tmp, "w").write("fn main() {\n    let a = 10;\n}\n")
+    os.rename(tmp, "main.rs")
+    print("READ", until(lambda: (status().get("reads") or 0) > reads), flush=True)
+    after = status()
+    print("AFTER", json.dumps(after), flush=True)
+    print("HASH", after.get("hash") == hashlib.sha256(open("main.rs", "rb").read()).hexdigest(), flush=True)
     print("CODE", json.dumps(api("code.get")), flush=True)
     s.send(b":q!\r")
 print("EXIT", s.finish(10))
@@ -101,8 +108,10 @@ fn a_save_while_the_watch_starts_waits_and_loads_once() {
             .is_some_and(|b| b.contains("step 0") && b.contains("main.rs")),
         "{out}"
     );
-    // Step 0 loads it once.
+    // Step 0 loads it once, and the same text read again loads nothing.
     assert!(out.contains("LOADED True"), "{out}");
+    assert!(out.contains("READ True"), "{out}");
+    assert!(out.contains("HASH True"), "{out}");
     let after = line_json(&out, "AFTER");
     assert_eq!(after["reloads"], 1, "{out}");
     assert_eq!(after["paused"], false, "{out}");
