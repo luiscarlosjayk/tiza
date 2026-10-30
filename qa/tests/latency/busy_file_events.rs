@@ -194,9 +194,12 @@ if ok:
     print("NEXT", rc, "%.2f" % t, flush=True)
     # The watcher that was starting goes away once it has started.
     print("GONE", until(lambda: status().get("watchers") == 0), flush=True)
+    # No watcher is left (GONE), and follow is off with no counts: nothing
+    # can read this save, so there is nothing to wait for.
+    st = status()
+    print("OFF", st.get("enabled") is False and "reads" not in st, flush=True)
     with open("main.rs", "w") as f:
         f.write("fn main() {\n    let a = 10;\n}\n")
-    s.settle(0.6)
     print("RELOADED", "let a = 10" in screen(), flush=True)
     # Quitting while a watcher starts waits for nothing.
     rc, _, t = api("follow.set", {"enabled": True})
@@ -207,6 +210,7 @@ if ok:
     assert_quick(&out, "SET");
     assert_next_within_1s(&out);
     assert!(out.contains("GONE True"), "{out}");
+    assert!(out.contains("OFF True"), "{out}");
     assert!(out.contains("RELOADED False"), "{out}");
     let (code, secs) = timed(&out, "EXIT")[0];
     assert_eq!(code, 0, "{out}");
@@ -321,9 +325,12 @@ if ok:
     api("step.set", {"step": 1})
     rc, out, t = api("follow.set", {"enabled": True})
     print("SET", rc, "%.2f" % t, flush=True)
-    # The watcher has started (the one of the first `follow on` is gone).
+    # One watcher (the one of the first `follow on` is gone). It counts
+    # from the start of its thread, before the slow hook: to see the start,
+    # wait for its read, the second of this follow (`follow.set` read
+    # the file first). Then the start must not pass for a save.
     print("ONE", until(lambda: status().get("watchers") == 1), flush=True)
-    s.settle(0.6)
+    print("READ", until(lambda: (status().get("reads") or 0) >= 2), flush=True)
     print("STATUS", json.dumps(status()), flush=True)
     quit(s)
 "##,
@@ -331,6 +338,7 @@ if ok:
     assert!(out.contains("PASTED True"), "{out}");
     assert_quick(&out, "SET");
     assert!(out.contains("ONE True"), "{out}");
+    assert!(out.contains("READ True"), "{out}");
     let st = line_json(&out, "STATUS");
     assert_eq!(st["bar"], "following main.rs; step 0 loads a save", "{out}");
     assert_eq!(st["reason"], "paused; loads at step 0", "{out}");
