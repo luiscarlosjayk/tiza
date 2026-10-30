@@ -284,7 +284,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 - `label` is the step label: the text of the status bar for the step, for example `step 3/7 · Shared borrow`.
 - `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number.
 - `shown` of `pointer.set` is `false` while the presenter has the command line open. The pointer shows when the command line closes.
-- `hash` of `follow.status` is the sha256 of the followed file as Tiza last read it, in lowercase hex, as `shasum -a 256 FILE` prints it. It is the hash of the whole file, also when the code is a range of it. It is `null` when the last read failed. `reads` counts the reads of the file, also the reads that load nothing. A save of the same bytes does not change `hash`: then `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
+- `hash` of `follow.status` is the sha256 of the followed file as Tiza last read it, in lowercase hex, as `shasum -a 256 FILE` prints it. It is the hash of the whole file, also when the code is a range of it. It is `null` when Tiza could not read the file, for example when the file is removed. `reads` counts the reads of the file, also the reads that load nothing. A save of the same bytes does not change `hash`: then `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - The fields of the `check` report are in [Check report](cli.md#check-report).
 
 ### Invisible characters in `code.get`
