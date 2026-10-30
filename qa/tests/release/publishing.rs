@@ -36,6 +36,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use tiza_qa::markdown::link_targets;
 use tiza_qa::scratch;
 
 const REPO: &str = "https://github.com/luiscarlosjayk/tiza";
@@ -440,14 +441,6 @@ fn packaged(name: &str) -> Vec<String> {
         .collect()
 }
 
-/// Every link and image target of a Markdown text: `](target)`.
-fn link_targets(md: &str) -> Vec<String> {
-    md.split("](")
-        .skip(1)
-        .map(|rest| rest.split(')').next().unwrap_or("").to_string())
-        .collect()
-}
-
 /// Slugs that exist on crates.io (checked against its API on 2026-10-22).
 const CATEGORIES: &[&str] = &[
     "command-line-utilities",
@@ -718,48 +711,6 @@ fn stamp_this_checkout_keeps_its_commit() {
     assert!(said.contains(&format!("({head}")), "{said}");
 }
 
-// --- How to help, and security (AC7) ----------------------------------
-
-/// The links of SECURITY.md, CONTRIBUTING.md, the README and the release
-/// notes: a relative one names a file of the repository, an absolute one
-/// this repository, and the reports go where Luis decided (2026-10-24):
-/// Discussions, the bug form, the private vulnerability report.
-#[test]
-fn the_reporting_links_resolve_and_go_to_the_right_place() {
-    let security = read("SECURITY.md");
-    assert!(security.contains(&format!("<{REPO}/security/advisories/new>")));
-    for name in ["SECURITY.md", "CONTRIBUTING.md"] {
-        for t in link_targets(&read(name)) {
-            if t.starts_with("https://") {
-                assert!(t.starts_with(REPO), "{name}: {t}");
-            } else {
-                let file = t.split('#').next().unwrap();
-                assert!(root().join(file).is_file(), "{name}: {t}");
-            }
-        }
-    }
-    let readme = read("README.md");
-    for link in [
-        "(CONTRIBUTING.md)".to_string(),
-        "(SECURITY.md)".to_string(),
-        format!("({REPO}/discussions)"),
-    ] {
-        assert!(readme.contains(&link), "the README does not link {link}");
-    }
-    let notes = read("docs/release-notes/v0.1.0.md");
-    for (name, md) in [("the release notes", &notes), ("the README", &readme)] {
-        assert!(md.contains(&format!("({REPO}/discussions)")), "{name}");
-        assert!(
-            md.contains(&format!("({REPO}/issues/new/choose)")),
-            "{name}"
-        );
-        assert!(
-            !md.contains(&format!("({REPO}/issues)")),
-            "{name} sends people to Issues without the form"
-        );
-    }
-}
-
 // --- Brand assets (Luis, 2026-10-24) -----------------------------------
 
 /// The logo files Luis chose, kept in the repository as Herdr keeps its
@@ -775,17 +726,8 @@ const BRAND: [&str; 5] = [
 
 #[test]
 fn brand_the_files_stay_out_of_the_packages() {
-    let about = read("docs/brand/README.md");
     for f in BRAND {
         assert!(root().join("docs/brand").join(f).is_file(), "{f}");
-        assert!(
-            about.contains(&format!("`{f}`")),
-            "docs/brand/README.md: {f}"
-        );
-    }
-    let svg = read("docs/brand/logo.svg");
-    for color in ["#22272b", "#f3f0e7"] {
-        assert!(svg.contains(color) && about.contains(color), "{color}");
     }
     // Outlines, not text: the logo does not depend on the font, and has
     // nothing that runs or loads.

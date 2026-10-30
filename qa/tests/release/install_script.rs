@@ -32,7 +32,8 @@
 //!   command reads the rest of a script that comes through a pipe.
 //! - AC9 The README gives the command of `--help` as the first way to
 //!   install, with what it does and its two variables; the archives and
-//!   `cargo install tiza` come after it.
+//!   `cargo install tiza` come after it. The checks of the docs
+//!   (`site/checks`) check it.
 //!
 //! The releases come from a local HTTP server (`TIZA_DOWNLOAD_BASE`, for
 //! tests only), and the platform from fake `uname`, `getconf`, `ldd`,
@@ -1528,35 +1529,4 @@ fn help_lists_the_variables() {
     assert!(run.stderr.contains("TIZA_INSTALL_DIR"), "{run}");
     assert_eq!(run.stdout, "");
     assert_eq!(m.server.take_hits(), Vec::<String>::new());
-}
-
-// --- AC9 ------------------------------------------------------------------
-
-#[test]
-fn the_readme_gives_the_command_first() {
-    let command =
-        "curl -fsSL https://raw.githubusercontent.com/luiscarlosjayk/tiza/main/install.sh | sh";
-    let script = read("install.sh");
-    assert!(
-        script.contains("SCRIPT_URL=https://raw.githubusercontent.com/$REPO/main/install.sh\n")
-    );
-    let readme = read("README.md");
-    let install = readme
-        .split("\n## Installation\n")
-        .nth(1)
-        .and_then(|rest| rest.split("\n## ").next())
-        .expect("an Installation section");
-    let first = install
-        .find(&format!("```sh\n{command}\n```"))
-        .expect("the command");
-    let at = install
-        .find("cargo install tiza")
-        .expect("cargo install tiza");
-    assert!(first < at, "the command comes before cargo install tiza");
-    // The install page gives the options of the script; the variable that
-    // only the tests use is in neither.
-    let page = read("docs/guides/install.md");
-    for text in [install, page.as_str()] {
-        assert!(!text.contains("TIZA_DOWNLOAD_BASE"), "for tests only");
-    }
 }
