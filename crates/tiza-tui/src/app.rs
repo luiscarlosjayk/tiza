@@ -2944,6 +2944,19 @@ impl App {
         }
         let base = self.save_path.parent().map(Path::to_path_buf);
         let other = doc.source.path != self.doc.source.path;
+        // In a pause over embedded code, `follows` names the file that
+        // follow reads at the resume step ([`App::paused`]): no put points
+        // it at another file.
+        if !other
+            && self.follow.is_some()
+            && let Some(tiza_core::model::CodeSource::File { file, .. }) = self.paused()
+            && doc.follows.is_some()
+            && doc.follows != self.doc.follows
+        {
+            return Err(Error::Invalid(format!(
+                "scene.put: follow is paused and reads {file}: a put cannot change `follows` now. Send `follows` as scene.get gives it, or leave it out"
+            )));
+        }
         if !self.doc.is_embedded() {
             self.reference = Some(self.doc.code_src.clone());
         }
@@ -3073,7 +3086,36 @@ impl App {
             ));
         }
         self.touch();
+        self.settle_pause();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
+    }
+
+    /// After a change of the moves or the step that did not go through a
+    /// step change (a put, a move added or deleted) under a follow pause:
+    /// with no patch applied any more, the change that waits loads now, as
+    /// a step change loads it before its reply; still paused, the notice
+    /// names the step where it loads now.
+    fn settle_pause(&mut self) {
+        if self.reload_waiting() {
+            return;
+        }
+        let (Some(old), Some(at), Some(f)) =
+            (self.pause.notice.clone(), self.resume_step(), &self.follow)
+        else {
+            return;
+        };
+        let notice = format!("step {at} loads the change to {}", f.file_name());
+        if notice == old {
+            return;
+        }
+        if self
+            .message
+            .as_ref()
+            .is_some_and(|(m, error)| !error && *m == old)
+        {
+            self.info(notice.clone());
+        }
+        self.pause.notice = Some(notice);
     }
 
     /// Saving rule of a put of the open document: a file the open document
@@ -3984,6 +4026,7 @@ impl App {
                 self.camera_changed();
                 self.touch();
                 let warning = before.and_then(|b| b.warning(&self.doc));
+                self.settle_pause();
                 Ok((i, warning))
             }
             Err(e) => {
@@ -4028,6 +4071,7 @@ impl App {
         self.camera_changed_with(false);
         self.touch();
         let warning = before.and_then(|b| b.warning(&self.doc));
+        self.settle_pause();
         Ok((m, warning))
     }
 
