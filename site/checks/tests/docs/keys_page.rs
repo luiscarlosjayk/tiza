@@ -1,12 +1,13 @@
 //! The keys page, `docs/reference/keys.md`, against the keys of the help
 //! (`tiza_tui::keys::HELP`) and the TUI: each key of its tables works in the
 //! state of its section, each key of the help is in one of its tables, and
-//! the command history keeps as many commands as the page says.
+//! the page gives the size of the command history (`HISTORY_COMMANDS`).
 
 use crossterm::event::{KeyCode, KeyModifiers};
 use tiza_qa::help_keys::{documented, enter, fresh, presses, state};
 use tiza_qa::markdown::{cited, section, table_rows};
-use tiza_qa::{Live, repo_file};
+use tiza_qa::repo_file;
+use tiza_tui::app::HISTORY_COMMANDS;
 use tiza_tui::keys::{HELP, Row, When};
 
 /// The sections of `docs/reference/keys.md` with a table of keys, and
@@ -158,32 +159,22 @@ fn every_key_of_the_help_is_on_the_keys_page() {
     );
 }
 
-/// The keys page gives the size of the command history: Tiza keeps that
-/// many commands and drops the oldest one.
+/// The keys page gives the size of the command history.
 #[test]
-fn the_history_keeps_as_many_commands_as_the_keys_page_says() {
+fn the_keys_page_gives_the_size_of_the_command_history() {
     let cites = cited(
         &repo_file("docs/reference/keys.md"),
         "keeps the last ",
         " commands",
     );
-    let [(_, n)] = cites[..] else {
+    let [(line, n)] = cites[..] else {
         panic!(
             "keys.md gives the size of the history {} times, not once: {cites:?}",
             cites.len()
         );
     };
-    let live = Live::from_code("fn main() {}\n", "rs", "history-size");
-    live.with(|a| a.autosave = false);
-    // Each command differs from the one before it: Tiza adds them all.
-    for k in 0..=n {
-        live.command(&format!("title t{k}"));
-    }
-    let (len, oldest) = live.with(|a| (a.history_cmds.len(), a.history_cmds[0].clone()));
     assert_eq!(
-        (len as u64, oldest.as_str()),
-        (n, "title t1"),
-        "after {} commands the history has {len}, the oldest {oldest:?}; keys.md says it keeps {n}",
-        n + 1
+        n, HISTORY_COMMANDS as u64,
+        "keys.md:{line} says that the history keeps {n} commands, and HISTORY_COMMANDS is {HISTORY_COMMANDS}"
     );
 }

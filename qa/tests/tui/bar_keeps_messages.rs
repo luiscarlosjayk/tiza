@@ -122,3 +122,23 @@ fn command_mode_shows_candidates_truncated_and_history_stops_at_oldest() {
     });
     assert_eq!(input, "note 1 one", "↑ past the oldest stays on the oldest");
 }
+
+/// The command history keeps `HISTORY_COMMANDS` commands: one more drops
+/// the oldest.
+#[test]
+fn the_history_keeps_its_size_and_drops_the_oldest() {
+    let n = tiza_tui::app::HISTORY_COMMANDS;
+    let live = Live::from_code("fn main() {}\n", "rs", "history-size");
+    live.with(|a| a.autosave = false);
+    // Each command differs from the one before it: Tiza adds them all.
+    for k in 0..=n {
+        live.command(&format!("title t{k}"));
+    }
+    let (len, oldest) = live.with(|a| (a.history_cmds.len(), a.history_cmds[0].clone()));
+    assert_eq!(
+        (len, oldest.as_str()),
+        (n, "title t1"),
+        "after {} commands the history has {len}, the oldest {oldest:?}",
+        n + 1
+    );
+}
