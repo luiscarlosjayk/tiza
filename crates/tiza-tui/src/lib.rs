@@ -98,20 +98,23 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if opts.theme_auto {
         app.theme_follow_host();
     }
-    // The host's appearance: asked before crossterm owns the input, one
-    // `COLOR_QUERY_WAIT` with no answer and about three at most, silent
-    // fallback to dark. Keys typed meanwhile were read with the answer:
-    // handled before the first frame.
-    let mut early = Vec::new();
-    let mut cut_answer = None;
-    if app.theme_auto || app.theme.is_terminal() {
-        let (host, typed, cut) = appearance::query_host();
-        if let Some(host) = host {
-            app.set_host(host);
-        }
-        early = typed.iter().flat_map(|p| early_keys::keys(p)).collect();
-        cut_answer = cut;
+    // The host's appearance, and how wide it draws the glyphs of Tiza's own
+    // text: asked before crossterm owns the input, one `COLOR_QUERY_WAIT`
+    // with no answer and about three at most, silent fallback to dark and
+    // to the glyphs as they are. The colours only for a theme that follows
+    // the terminal; the probe always. Keys typed meanwhile were read with
+    // the answers: handled before the first frame.
+    let start_up = appearance::query_host(app.theme_auto || app.theme.is_terminal());
+    if let Some(host) = start_up.host {
+        app.set_host(host);
     }
+    app.wide = start_up.wide;
+    let early: Vec<_> = start_up
+        .typed
+        .iter()
+        .flat_map(|p| early_keys::keys(p))
+        .collect();
+    let cut_answer = start_up.cut;
     if let Some(s) = opts.step {
         app.set_step(s);
         // The step it opens at shows its final drawing, with no enter

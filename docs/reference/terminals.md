@@ -117,6 +117,17 @@ Tiza asks the terminal for mouse events only while mouse capture is on. Without 
 - While mouse capture is on, a drag selects code in Tiza, not text in the terminal.
 - To select text in the terminal, see [Copy text from the terminal](../guides/present.md#copy-text-from-the-terminal).
 
+### Signs that some terminals draw wide
+
+Unicode gives `⚠` (U+26A0), `↪` (U+21AA), `⏸` (U+23F8) and `▶` (U+25B6) one cell, but some terminals draw them two cells wide. The status bar counts one cell for each, so in such a terminal the bar is too long for its row.
+
+- At start, Tiza measures how wide the terminal draws each of these signs. See [The width probe](#the-width-probe).
+- When the terminal draws a sign two cells wide, the text that Tiza shows outside the code shows a plain form in its place: `!` for `⚠`, `>` for `↪` and `▶`, and `||` for `⏸`. This text is the status bar with its hints and messages, the messages of the command line, the panels, and the messages of presentation mode.
+- A step title, a label and a message that you write get the plain form there too.
+- The code and the annotations keep the signs, also in the exports. In such a terminal, a `⚠` in a line of code moves the rest of that line by one cell. At the right edge of the screen, the line can then go past the edge: the screen moves up one row, or the end of the line is lost.
+- What you type in the command line keeps the signs.
+- When the terminal draws the signs one cell wide, or does not answer, Tiza shows them as they are.
+
 ### Invisible characters
 
 Tiza draws each invisible character as `⬚` (U+2B1A). [Control and invisible characters](characters.md) gives the rules. Herdr, Terminal.app and the Zed terminal draw `⬚` in one cell. See [Tested terminals](#tested-terminals).
@@ -171,10 +182,10 @@ Tiza reads an answer in the form `rgb:R/G/B`, with 1 to 4 hex digits for each pa
 
 At start, Tiza turns on raw mode on that terminal for the wait. After the wait, it puts back the old mode. Tiza waits with these rules:
 
-1. Tiza sends the color query and reads what the terminal sends.
-2. When the terminal has answered both OSC 11 and OSC 10, Tiza stops the wait.
+1. Tiza sends the color query, when the theme needs it, and the [width probe](#the-width-probe). Then it reads what the terminal sends.
+2. When the terminal has answered all of them, Tiza stops the wait. That is OSC 11 and OSC 10, when Tiza sent the color query, and the cursor reports of the width probe.
 3. When nothing comes for 100 ms, Tiza stops.
-4. When something comes more than 200 ms after the color query, Tiza stops after it reads it.
+4. When something comes more than 200 ms after the color query and the width probe, Tiza stops after it reads it.
 
 - So the wait is 100 ms when the terminal does not answer and you do not type.
 - When data comes while Tiza waits, the wait can be almost 300 ms. For example, you type, or a slow answer comes over SSH.
@@ -182,6 +193,18 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 - Tiza drops a paste or a mouse report that comes during the wait.
 - An answer that comes after the wait arrives as key presses. Tiza takes it out of the keys and uses it.
 - When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes before the first frame of the TUI or not more than 1 s after the first frame.
+
+### The width probe
+
+At start, also with a theme that needs no color query, Tiza measures how wide the terminal draws `⚠`, `↪`, `⏸` and `▶`. See [Signs that some terminals draw wide](#signs-that-some-terminals-draw-wide).
+
+- Tiza saves the cursor and asks for its position (`ESC [ 6 n`). Then, for each sign, it puts the cursor back, writes the sign and asks again. The column of each answer (`ESC [ row ; col R`), less the first column, gives the width of the sign.
+- Then Tiza puts the cursor back and clears the line from there. The signs show for a moment where the cursor was. The text before the cursor stays.
+- The probe uses the same wait as the color query. With a theme that needs no color query, the probe adds one round trip to the terminal at start. A terminal that does not answer the probe adds 100 ms.
+- An answer that comes after the wait is not a key, and Tiza does not use it: it shows the signs as they are. On a slow link, such as SSH with more than 100 ms of round trip, this can be the case. Then the status bar can be too long for its row, as before.
+- When the wait stops in the middle of an answer, Tiza takes its rest out of the keys too, as for the color query. There is one exception: the terminal answered nothing else, and the wait stops right after the `ESC` or the `ESC [` of the first answer. Then that `ESC` is a key, as an `ESC` that you type, and the rest of the answer comes as key presses.
+- On a slow link, an answer can come after the wait but before the TUI starts. Then the terminal can show it, for example `^[[1;2R`, on the line where you started Tiza. This is also true for an answer to the color query.
+- `TIZA_NO_OSC` stops the width probe too.
 
 ### No answer to the color query
 

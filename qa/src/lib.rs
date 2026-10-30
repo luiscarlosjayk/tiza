@@ -872,6 +872,11 @@ fn python_env(
 /// that does not exit, and a SIGALRM backstop at `TIZA_PTY_DEADLINE` seconds.
 pub const PTY_PRELUDE: &str = include_str!("pty.py");
 
+/// A terminal emulator for pty tests (`qa/src/wideterm.py`): a `Term`
+/// that draws some characters two cells wide and answers a cursor
+/// position request, for a test that puts it before its body.
+pub const WIDETERM: &str = include_str!("wideterm.py");
+
 /// Default hard deadline of one pty script, Python side (seconds). The Rust
 /// side kills the interpreter 10 s after it.
 pub const PTY_DEADLINE_S: u64 = 40;

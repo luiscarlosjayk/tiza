@@ -801,6 +801,10 @@ pub struct App {
     pub theme_notes: Vec<String>,
     /// OSC answers arriving through the key stream after a re-query.
     pub osc: crate::appearance::OscCapture,
+    /// The glyphs of Tiza's own text that this terminal draws two cells
+    /// wide, measured at start-up: the bar and the other text outside the
+    /// code show their plain form ([`App::plain`]).
+    pub wide: crate::appearance::Wide,
     /// The live pointer: `f` (or `pointer.set`) turns it on; while
     /// on, its lines are drawn normally and the rest of the code dimmed on
     /// this screen only. Never in the document, the undo stack, a save or
@@ -865,6 +869,7 @@ impl App {
             personal_styles: BTreeMap::new(),
             theme_notes: Vec::new(),
             osc: Default::default(),
+            wide: Default::default(),
             doc,
             save_path,
             history: History::default(),
@@ -998,6 +1003,14 @@ impl App {
             ),
             None => self.rebuild_theme(),
         }
+    }
+
+    /// `s` as the text outside the code shows it on this terminal: a glyph
+    /// that it draws wider than Unicode says ([`App::wide`]) in its plain
+    /// form, so the bar keeps its width. The code, the annotations and the
+    /// exports never use it.
+    pub fn plain<'a>(&self, s: &'a str) -> std::borrow::Cow<'a, str> {
+        self.wide.plain(s)
     }
 
     /// The terminal answered (at start-up or after a resize): remember its

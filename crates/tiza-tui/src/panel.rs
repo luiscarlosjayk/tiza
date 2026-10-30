@@ -82,6 +82,44 @@ pub struct Panel {
     pub position: Option<String>,
 }
 
+impl Panel {
+    /// The panel with `f` applied to each text in it: the plain form of
+    /// the glyphs that the terminal draws wide ([`crate::app::App::plain`]).
+    pub fn map_text(mut self, f: impl Fn(&str) -> String) -> Panel {
+        self.title = f(&self.title);
+        self.filter = f(&self.filter);
+        for row in &mut self.rows {
+            match row {
+                PanelRow::Section(t) | PanelRow::Sub(t) | PanelRow::Note(t) | PanelRow::Text(t) => {
+                    *t = f(t)
+                }
+                PanelRow::Blank => {}
+                PanelRow::Pair { key, desc, .. } => {
+                    for (k, _) in key.iter_mut() {
+                        *k = f(k);
+                    }
+                    *desc = f(desc);
+                }
+                PanelRow::Item {
+                    cols, label, flag, ..
+                } => {
+                    for (c, _) in cols.iter_mut() {
+                        *c = f(c);
+                    }
+                    *label = f(label);
+                    if let Some((t, _)) = flag {
+                        *t = f(t);
+                    }
+                }
+            }
+        }
+        if let Some(p) = &mut self.position {
+            *p = f(p);
+        }
+        self
+    }
+}
+
 /// Where a panel goes in `area`, or `None` when the terminal is smaller
 /// than [`MIN_SIZE`].
 pub fn rect(area: Rect) -> Option<Rect> {

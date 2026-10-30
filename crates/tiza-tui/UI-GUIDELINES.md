@@ -155,7 +155,8 @@ With the `terminal` theme, the roles map to the terminal's own 16 colors. The ru
 - A label can hold wide characters: CJK text, emoji, a mark glyph. Count them as two cells.
 - Never put half of a wide character at the end of a column. Leave the cell blank.
 - Show control characters as their pictures (`printable_line`), as the code does.
-- New glyphs in the UI chrome must be one cell wide in every common terminal. Use the glyphs Tiza already draws: `╭ ╮ ╰ ╯ ─ │ ▸ · … ↪ ⟳ ⏸ ▏`. Do not add `⚠` or `●`: some terminals draw them two cells wide.
+- New glyphs in the UI chrome must be one cell wide in every common terminal. Use the glyphs Tiza already draws: `╭ ╮ ╰ ╯ ─ │ ▸ · … ⟳ ▏`. Do not add `●`: some terminals draw it two cells wide.
+- A glyph with an emoji form (`⚠ ↪ ⏸ ▶`) can be two cells wide in some terminals. Tiza measures each one at start (`appearance::PROBED`) and shows its plain form where it is wide. A new glyph of that kind goes in `PROBED` with a plain form, and its text goes through `App::plain`.
 
 ## 7. Empty states
 

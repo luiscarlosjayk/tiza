@@ -75,7 +75,8 @@ Tiza sends the color query to the terminal only when the theme is `auto`, the de
 
 - At start, Tiza sends the color query through `/dev/tty` when standard input is not a terminal.
 - At each resize, Tiza sends it again through the same terminal as at start.
-- `TIZA_NO_OSC` stops the color query at start and at each resize. Any value works, even an empty one.
+- At start, with any theme, Tiza also sends the width probe: it writes `⚠`, `↪`, `⏸` and `▶` and asks the terminal for the cursor position after each one. [The width probe](../reference/terminals.md#the-width-probe) gives the rules.
+- `TIZA_NO_OSC` stops the color query at start and at each resize, and the width probe. Any value works, even an empty one.
 - When standard input is a pipe, Tiza reads its keys from `/dev/tty`.
 
 ### The config file
@@ -220,7 +221,7 @@ Tiza reads these variables:
 | `TIZA_SESSION` | The name of the session. |
 | `TIZA_SOCKET` | The path of the socket. |
 | `TIZA_FFMPEG` | The path of `ffmpeg`. |
-| `TIZA_NO_OSC` | Stops the color query. |
+| `TIZA_NO_OSC` | Stops the color query and the width probe. |
 | `HOME` | The config file, and `~` at the start of a path in `:w`, `:saveas`, `:wq` and `:export`. |
 | `XDG_CONFIG_HOME` | The folder of the config file. |
 | `XDG_RUNTIME_DIR` | The runtime folder. |

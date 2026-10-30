@@ -425,7 +425,9 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             // An agent is waiting: the chip is the only sign in presentation
             // mode (no popup), bottom-left, in the accent color, with the
             // words of the bar's chip.
-            let txt = format!(" ⏸ {} to review · :review ", app.proposals.len());
+            let txt = app
+                .plain(&format!(" ⏸ {} to review · :review ", app.proposals.len()))
+                .into_owned();
             let w = txt.width() as u16;
             if area.width > w {
                 frame.buffer_mut().set_string(
@@ -482,7 +484,9 @@ fn draw_command_line(frame: &mut Frame, app: &App, input: &str, area: Rect) {
     ]);
     frame.render_widget(Paragraph::new(line), area);
     if let Some((m, _)) = &app.message {
-        // Completion candidates and notices: as much as fits, with an ellipsis.
+        // Completion candidates and notices: as much as fits, with an
+        // ellipsis, in the form this terminal shows ([`App::plain`]).
+        let m = app.plain(m).into_owned();
         let room = (area.width as usize).saturating_sub(input.width() + 4);
         let text = if m.width() <= room {
             m.clone()
@@ -858,7 +862,7 @@ fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
     // Keep the beginning, with an ellipsis, as the status bar does.
     let room = (area.width as usize).saturating_sub(2);
     let text = if room >= 2 {
-        fit_message(m, room)
+        fit_message(&app.plain(m), room)
     } else {
         String::new()
     };
@@ -915,8 +919,9 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         .unwrap_or_else(|| "(stdin)".into());
     // While a `code.link` shows another file, name it (with its window).
     let file = app.shown_view().map(|l| format!("↪ {l}")).unwrap_or(file);
+    let file = app.plain(&file).into_owned();
     let mut left = vec![
-        Span::styled(" ╭▶ ", accent),
+        Span::styled(app.plain(" ╭▶ ").into_owned(), accent),
         Span::styled(mode, accent),
         Span::styled(
             // `step 3/7 · Shared borrow` on a named step; a long
@@ -926,7 +931,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
                     "  step {}/{} · {}",
                     app.doc.step,
                     app.doc.step_total(app.doc.step),
-                    fit_message(&tiza_core::printable::printable_line(&t), 32)
+                    fit_message(&app.plain(&tiza_core::printable::printable_line(&t)), 32)
                 ),
                 None => format!(
                     "  step {}/{}",
@@ -988,7 +993,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         } else {
             format!("  ⏸ {} to review · :review", app.proposals.len())
         };
-        left.push(Span::styled(text, accent));
+        left.push(Span::styled(app.plain(&text).into_owned(), accent));
     }
     // A notice about stale moves names every one of them: it takes the room
     // of the optional segments, the time of the last reload included.
@@ -1046,14 +1051,23 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
         .fg(rgb(th.error))
         .bg(rgb(th.status_bg))
         .add_modifier(Modifier::BOLD);
-    let message = app.message.as_ref();
+    // The message as this terminal shows it ([`App::plain`]): it is
+    // measured and cut in that form.
+    let plain_message = app
+        .message
+        .as_ref()
+        .map(|(m, is_err)| (app.plain(m).into_owned(), *is_err));
+    let message = plain_message.as_ref();
     let (right_text, right_style, essential): (String, Style, bool) =
         match (&app.save_error, message) {
             (_, Some((m, is_err))) => {
                 (format!("{m} "), if *is_err { err_style } else { bar }, true)
             }
             (_, None) if app.selected.is_some() => (
-                tab_hint(&app.selected_text().unwrap_or_default(), usize::MAX),
+                tab_hint(
+                    &app.plain(&app.selected_text().unwrap_or_default()),
+                    usize::MAX,
+                ),
                 accent,
                 true,
             ),
@@ -1183,7 +1197,7 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             right.push(Span::styled(right_text, right_style));
         } else if message.is_none() && app.selected.is_some() {
             // The Tab hint keeps its keys: the label gives way first.
-            let hint = tab_hint(&app.selected_text().unwrap_or_default(), room);
+            let hint = tab_hint(&app.plain(&app.selected_text().unwrap_or_default()), room);
             right.push(Span::styled(hint, right_style));
         } else if select_hint {
             // Shorter forms, the keys kept to the last; a form gives up its
@@ -1293,7 +1307,10 @@ fn draw_panel(
     let Some(rect) = crate::panel::rect(frame.area()) else {
         return;
     };
-    let p = make(app, (rect.width as usize).saturating_sub(4));
+    let mut p = make(app, (rect.width as usize).saturating_sub(4));
+    if !app.wide.is_empty() {
+        p = p.map_text(|s| app.plain(s).into_owned());
+    }
     let drawn = crate::panel::draw(frame, rect, &app.theme, &p, app.overlay_scroll);
     app.overlay_drawn.set(drawn);
     app.overlay_scroll = drawn.scroll;

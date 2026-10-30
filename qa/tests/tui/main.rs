@@ -41,3 +41,4 @@ mod terminal_setup;
 mod terminal_theme;
 mod text_anchor_errors;
 mod viewport_warning;
+mod wide_status_text;
