@@ -957,6 +957,13 @@ pub struct FollowState {
     /// that waits loads (an earlier step loads it too).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resume_step: Option<u32>,
+    /// How many times Tiza read the followed file, as in `follow.status`.
+    #[serde(default)]
+    pub reads: u64,
+    /// The sha256 of the followed file as Tiza last read it, as in
+    /// `follow.status`.
+    #[serde(default)]
+    pub hash: Option<String>,
 }
 
 /// Where the live pointer is.
@@ -1236,7 +1243,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "follow.status",
-        "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
+        "Follow mode state: enabled, path, reloads, reads (the reads of the file, also those that load nothing), hash (the sha256 of the file as last read: equal to the hash of your save when Tiza read it; a save of the same bytes does not change it, then reads increases), last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
     ),
     (
         "supervise.set",

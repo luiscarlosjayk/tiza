@@ -156,7 +156,11 @@ fn ref_another_file_while_following_follows_it() {
     // Test step 1.
     let (live, dir, tiza) = opened("ref");
     live.command("follow on");
+    let reads = status(&live)["reads"].as_u64().expect("reads");
     live.command("ref other.rs");
+    // A new watcher for other.rs: the counts go on (the read of other.rs
+    // is one more).
+    assert!(status(&live)["reads"].as_u64().unwrap() > reads);
     // The document reads other.rs now, so the screen shows its code.
     assert_eq!(base(&live), lines(OTHER), "{}", message(&live));
     assert_eq!(saved_code(&tiza), json!({"file": "other.rs"}));

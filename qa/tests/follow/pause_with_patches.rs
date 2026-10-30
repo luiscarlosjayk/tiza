@@ -208,6 +208,27 @@ fn assert_notice(live: &Live) {
 }
 
 #[test]
+fn a_save_that_waits_has_its_hash_and_the_resume_step_reads_it_again() {
+    // Paused, a save is read and waits: `hash` is the one of the save,
+    // with `pending`. At the resume step the file is read again to load.
+    let (live, src, _tiza) = followed("hash-pause");
+    goto(&live, 2);
+    save(&src, NEW.as_bytes());
+    live.wait_follow_read(&src);
+    let st = status(&live);
+    assert_eq!(pause(&live), paused(true));
+    assert_eq!(
+        st["hash"],
+        tiza_tui::follow::sha256_hex(NEW.as_bytes()),
+        "{st}"
+    );
+    let reads = st["reads"].as_u64().expect("reads");
+    goto(&live, 1);
+    assert_eq!(base(&live), lines(NEW));
+    assert!(status(&live)["reads"].as_u64().unwrap() > reads);
+}
+
+#[test]
 fn a_patch_of_a_linked_file_pauses_too() {
     // Step 1 shows other.rs, step 2 patches it: main.rs is not patched,
     // and a save of main.rs still waits.

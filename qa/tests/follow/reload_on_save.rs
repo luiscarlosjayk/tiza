@@ -364,6 +364,109 @@ fn identical_content_and_sidecar_autosave_do_not_reload() {
 }
 
 #[test]
+fn the_status_gives_the_hash_and_the_reads_of_the_file() {
+    use tiza_tui::follow::sha256_hex;
+    // The hash is what `shasum -a 256` prints for the bytes.
+    assert_eq!(
+        sha256_hex(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    let disk = |p: &Path| sha256_hex(&std::fs::read(p).unwrap());
+    let status = |live: &Live| live.api_ok("follow.status", json!({}));
+    let (live, src) = followed("hash", CODE);
+    live.command("follow on");
+    // `follow on` reads the file.
+    let st = status(&live);
+    assert_eq!(st["hash"], disk(&src), "{st}");
+    let reads = st["reads"].as_u64().expect("reads");
+    assert!(reads >= 1, "{st}");
+    // The reply of `follow.set` and the `follow` field of `status` give
+    // them too.
+    let set = live.api_ok("follow.set", json!({"enabled": true}));
+    assert_eq!(set["hash"], disk(&src), "{set}");
+    assert!(set["reads"].as_u64().is_some(), "{set}");
+    let brief = live.api_ok("status", json!({}))["follow"].clone();
+    assert_eq!(brief["hash"], disk(&src), "{brief}");
+    assert!(brief["reads"].as_u64().is_some(), "{brief}");
+
+    // A save that changes the code: the hash of the new bytes.
+    save_like_zed(&src, &CODE.replace("done", "hashed"));
+    live.wait_follow_read(&src);
+    let st = status(&live);
+    assert_eq!(st["hash"], disk(&src), "{st}");
+    let reads_after = st["reads"].as_u64().unwrap();
+    assert!(reads_after > reads, "{st}");
+    // The same bytes again: one read more, the same hash, no reload.
+    let (hash, reloads) = (st["hash"].clone(), st["reloads"].clone());
+    save_like_zed(&src, &CODE.replace("done", "hashed"));
+    live.wait_follow_read(&src);
+    let st = status(&live);
+    let reads_same = st["reads"].as_u64().unwrap();
+    assert!(reads_same > reads_after, "{st}");
+    assert_eq!(
+        (st["hash"].clone(), st["reloads"].clone()),
+        (hash.clone(), reloads.clone())
+    );
+    // Other line ends: the same code, so no reload, but other bytes, so
+    // another hash.
+    save_like_zed(&src, &CODE.replace("done", "hashed").replace('\n', "\r\n"));
+    live.wait_follow_read(&src);
+    let st = status(&live);
+    assert!(st["reads"].as_u64().unwrap() > reads_same, "{st}");
+    assert_eq!(st["hash"], disk(&src), "{st}");
+    assert_ne!(st["hash"], hash, "{st}");
+    assert_eq!(st["reloads"], reloads, "{st}");
+    // The empty first write of an editor: its read waits for the second
+    // write, and the hash stays the one of the code on screen until then.
+    // Both reads in one call, as the watcher makes them.
+    let path = src.clone();
+    let (kept, after) = live.with(move |app| {
+        let before = app.follow.as_ref().unwrap().hash.clone();
+        std::fs::write(&path, "").unwrap();
+        app.read_save();
+        let kept = app.follow.as_ref().unwrap().hash == before;
+        std::fs::write(&path, CODE).unwrap();
+        app.read_save();
+        (kept, app.follow.as_ref().unwrap().hash.clone())
+    });
+    assert!(kept, "the hash of an empty read that waits");
+    assert_eq!(after, Some(sha256_hex(CODE.as_bytes())));
+    // Bytes that are not UTF-8: read, so they have a hash; the code stays.
+    save_like_zed(&src, "fn main() {}\n");
+    live.wait_follow_read(&src);
+    std::fs::write(&src, b"fn main() {\n    \xff\xfe\n}\n").unwrap();
+    live.wait_follow_read(&src);
+    assert_eq!(status(&live)["hash"], disk(&src));
+    assert!(code(&live)[0].contains("fn main() {}"), "{:?}", code(&live));
+    // A file that is gone: the read fails, and the hash is null.
+    std::fs::remove_file(&src).unwrap();
+    let start = Instant::now();
+    while status(&live)["missing"] != true {
+        assert!(start.elapsed() < WAIT, "{}", status(&live));
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert_eq!(status(&live)["hash"], serde_json::Value::Null);
+}
+
+#[test]
+fn the_hash_of_a_range_is_the_hash_of_the_whole_file() {
+    let dir = scratch("hash-range");
+    let src = std::path::absolute(dir.join("main.rs")).unwrap();
+    std::fs::write(&src, CODE).unwrap();
+    let mut doc = Document::from_code(CODE, "rs", Some(src.display().to_string()));
+    doc.reference_file(src.display().to_string(), Some((2, 3)));
+    let live = Live::open(doc, dir.join("main.rs.tiza"), dir.join("live.sock"));
+    live.command("follow on");
+    assert_eq!(code(&live).len(), 2, "the range: {:?}", code(&live));
+    let st = live.api_ok("follow.status", json!({}));
+    assert_eq!(
+        st["hash"],
+        tiza_tui::follow::sha256_hex(CODE.as_bytes()),
+        "{st}"
+    );
+}
+
+#[test]
 fn non_utf8_keeps_previous_content() {
     let (live, src) = followed("utf8", CODE);
     live.command("follow on");

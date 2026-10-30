@@ -127,13 +127,26 @@ Some editors save a file with two writes. The first write is empty. When Tiza re
 
 ## Agents and follow mode
 
-Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`.
+Agents control follow mode through the socket methods `follow.set` and `follow.status`, and the MCP tool `set_follow`. `follow.status` gives `enabled`, `path`, `reloads`, `reads`, `hash`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`.
 
 - The reply of `follow.set` comes at once, for example `following FILE`. The file watcher starts on a thread of its own.
 - A save while the watcher starts loads when the watcher runs.
 - `paused` is `true` at a step where a `code.patch` is applied. Then `resume_step` gives step N, where a change that waits loads. `pending` is `true` when a change waits.
-- `status` gives the same `paused`, `pending` and `resume_step` in its `follow` field while follow mode is on.
+- `status` gives the same `paused`, `pending`, `resume_step`, `reads` and `hash` in its `follow` field while follow mode is on. An MCP agent reads them with the tool `status`.
 - `reason` tells why a save does not load now, or why follow mode is off. `reason` is absent when no reason applies.
+- `hash` is the sha256 of the file as Tiza last read it. To know that Tiza read your save, compare `hash` with the sha256 of the file that you saved. When they are the same, Tiza read your save. `reloads`, `pending` and the status bar tell what Tiza did with it.
+- When you save the same bytes again, `hash` does not change. Then wait until `reads` increases.
+
+  ```sh
+  shasum -a 256 main.rs     # or: sha256sum main.rs
+  tiza api follow.status
+  ```
+
+- `hash` is `null` when the last read failed, for example when the file is removed. A file that is not UTF-8 has a hash: Tiza read it, and the status bar shows the error.
+- `reads` counts the reads of the file. It increases also when a save changes nothing, for example a save of the same bytes or of other line ends. When the watcher starts after `follow.set`, Tiza reads the file one more time.
+- Saves that come close together can give one read. Wait until `reads` is more than before, not for one read for each save.
+- While the presenter types a `:` command, selects text or has a panel open, or while a move types its code, a save waits. Tiza reads it when they finish.
+- With follow mode off, `follow.status` has no `reads` and no `hash`. The counts start again at each `follow on`.
 - `scene.get` gives `follows`. A `scene.put` that sends `follows` sets the file that `:follow on` reloads.
 - A `scene.put` of the open document without `follows` keeps the file that the open document follows.
 

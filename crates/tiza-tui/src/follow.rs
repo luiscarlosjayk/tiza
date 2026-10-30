@@ -31,6 +31,15 @@ pub struct Follow {
     /// read. A test compares it with the file after a save: when they are
     /// the same, the read saw that save.
     pub last_read: Option<Stamp>,
+    /// How many times the file was read to load it: after a save (once the
+    /// debounce elapsed), when follow starts and at the resume step. The
+    /// reads that load nothing count too. Two saves in one debounce are
+    /// one read.
+    pub reads: u64,
+    /// The sha256 of the bytes of the last read, in lowercase hex. `None`
+    /// before a read, or when the last read failed. The lines come from
+    /// the same bytes.
+    pub hash: Option<String>,
     pub last_reload: Option<Instant>,
     pub last_reload_clock: Option<String>,
     /// Content as last loaded, to skip reloads that change nothing.
@@ -47,6 +56,15 @@ pub struct Stamp {
     pub len: u64,
     pub modified: Option<std::time::SystemTime>,
     pub inode: u64,
+}
+
+/// The sha256 of `bytes`, in lowercase hex: what `shasum -a 256` prints.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 impl Stamp {
@@ -157,6 +175,8 @@ impl Follow {
             deferred_empty: false,
             reloads: 0,
             last_read: None,
+            reads: 0,
+            hash: None,
             last_reload: None,
             last_reload_clock: None,
             last_content: current,

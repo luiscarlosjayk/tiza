@@ -44,6 +44,10 @@ clap = { version = "4.6.7", features = ["derive"] }
 base64 = "0.23.1"
 # File watching for follow mode: notify 8.x stable (9 is still rc).
 notify = "8.2.0"
+# The sha256 of the followed file as Tiza read it, in `follow.status`: an agent compares it with the file it
+# saved. No default features: no `std`, and `asm` stays off (pure Rust). Version 0.10.9 is in Cargo.lock
+# already (through ratatui-termwiz, which is not built): one version for `cargo deny`.
+sha2 = { version = "0.10.9", default-features = false }
 proptest = "1.12.0"
 insta = "1.49.0"
 jsonschema = { version = "0.59.0", default-features = false }
