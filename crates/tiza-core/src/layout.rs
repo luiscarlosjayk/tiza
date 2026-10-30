@@ -183,6 +183,8 @@ struct Label {
     /// drawn before the text instead of the bare `·`, so the label reads
     /// as the arrow's and not as a loose comment.
     glyph: Option<String>,
+    /// The cell of the code where its span starts, for a label under its line.
+    at: Option<usize>,
 }
 
 /// Nesting depth of a set of line ranges (boxes): the deepest box plus one,
@@ -1063,7 +1065,8 @@ fn layout_pass(
         rows.push(Row::Code(line));
         if own.iter().any(|&i| match &vis[i].shape {
             Shape::Highlight { span, emphasis, .. } | Shape::Mark { span, emphasis, .. } => {
-                span.line == line && emphasis_needs_row(doc, span, *emphasis)
+                span.line == line
+                    && emphasis_needs_row(doc, span, *emphasis, code_w, opts.tab_width)
             }
             _ => false,
         }) {
@@ -1089,6 +1092,7 @@ fn layout_pass(
                             color: color_of(a),
                             note: false,
                             glyph: None,
+                            at: None,
                         },
                         false,
                     ));
@@ -1100,7 +1104,7 @@ fn layout_pass(
             for a in own.iter().map(|&i| vis[i]) {
                 let lbl = match &a.shape {
                     Shape::Note { line: l, text } if *l == line => {
-                        Some((text.clone(), color_of(a), true))
+                        Some((text.clone(), color_of(a), true, None))
                     }
                     Shape::Mark {
                         kind,
@@ -1112,12 +1116,15 @@ fn layout_pass(
                         mark_text(doc, kind, style, label.as_deref()),
                         color_of(a),
                         false,
+                        Some(span.start),
                     )),
                     Shape::Highlight {
                         span,
                         label: Some(l),
                         ..
-                    } if span.line == line => Some((l.clone(), color_of(a), false)),
+                    } if span.line == line => {
+                        Some((l.clone(), color_of(a), false, Some(span.start)))
+                    }
                     Shape::Arrow {
                         from,
                         to,
@@ -1128,17 +1135,10 @@ fn layout_pass(
                         // the code of the target line when it fits inside the
                         // code column, else on the row below behind the
                         // arrow's own glyph.
-                        let g = Glyphs::for_style(ls);
-                        let glyph = format!(
-                            "{}{}",
-                            g.h,
-                            head_glyph(ls.heads.end, true, g.h).unwrap_or(g.h)
-                        );
-                        let text_w = code_width(doc.line_text(line).unwrap_or(""), opts.tab_width);
-                        let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(l, 4);
+                        let (glyph, fits) = head_label(doc, line, ls, l, code_w, opts.tab_width);
                         // A wide layout's line with several labels keeps
                         // every one of them under it.
-                        if !labels_in_margin && need <= code_w {
+                        if !labels_in_margin && fits {
                             beside.push((line, glyph, l.clone(), color_of(a), a.id.clone()));
                         } else {
                             unders.push((
@@ -1148,6 +1148,7 @@ fn layout_pass(
                                     color: color_of(a),
                                     note: false,
                                     glyph: Some(glyph),
+                                    at: None,
                                 },
                                 false,
                             ));
@@ -1157,7 +1158,7 @@ fn layout_pass(
                     }
                     _ => None,
                 };
-                if let Some((text, color, is_note)) = lbl {
+                if let Some((text, color, is_note, start)) = lbl {
                     unders.push((
                         Label {
                             id: a.id.clone(),
@@ -1165,6 +1166,9 @@ fn layout_pass(
                             color,
                             note: is_note,
                             glyph: None,
+                            at: start.map(|c| {
+                                col_to_x(doc.line_text(line).unwrap_or(""), c, opts.tab_width)
+                            }),
                         },
                         is_note,
                     ));
@@ -1265,6 +1269,7 @@ fn layout_pass(
                 color: color_of(a),
                 note,
                 glyph: None,
+                at: None,
             });
         };
         for a in &vis {
@@ -1290,13 +1295,24 @@ fn layout_pass(
                 push(y, a, &text, false);
             }
         }
+        // The label of an arrow over several lines goes beside the code of
+        // its target line, after the arrow's own glyph, as in the narrow
+        // layout, when the code column holds it; else in the margin.
         for a in &multi_arrows {
             if let Shape::Arrow {
-                to, label: Some(l), ..
+                to,
+                label: Some(l),
+                line: ls,
+                ..
             } = &a.shape
                 && in_margin(to.line)
             {
-                push(row_of_line[&to.line], a, l, false);
+                match head_label(doc, to.line, ls, l, code_w, opts.tab_width) {
+                    (glyph, true) => {
+                        beside.push((to.line, glyph, l.clone(), color_of(a), a.id.clone()))
+                    }
+                    _ => push(row_of_line[&to.line], a, l, false),
+                }
             }
         }
         for (y, row) in rows.iter().enumerate() {
@@ -1560,6 +1576,16 @@ fn layout_pass(
                     let blank_after =
                         x1 < code_x + code_w && canvas.get(x1, y).is_some_and(|c| c.sym == " ");
                     let under = emphasis_row.get(&span.line).copied();
+                    // With no space on one side, both brackets go under
+                    // the span, `⌊` and `⌋`, so they read as a pair. A span
+                    // of one cell keeps the one beside it that has room
+                    // (`⌊` and `⌋` would share its cell).
+                    let (blank_before, blank_after) =
+                        if under.is_some() && !(blank_before && blank_after) && x1 - x0 > 1 {
+                            (false, false)
+                        } else {
+                            (blank_before, blank_after)
+                        };
                     canvas.trace_part(Part::Stroke);
                     // From the left bracket to the right one, on the rows
                     // where they go: beside the span, or under it when no
@@ -1943,10 +1969,15 @@ fn layout_pass(
             }
             None => {
                 let prefix = if *is_note { "┆ " } else { "· " };
-                keep_bg(&mut canvas, code_x, y, |c| {
-                    c.put_str(code_x, y, prefix, style)
-                });
-                code_x + 2
+                // The label of a span starts under its span when it fits
+                // there; a note, or a label that does not fit, at the code.
+                let px = lbl
+                    .at
+                    .map(|at| code_x + at)
+                    .filter(|&px| px + 2 + display_width(&lbl.text, 4) <= end)
+                    .unwrap_or(code_x);
+                keep_bg(&mut canvas, px, y, |c| c.put_str(px, y, prefix, style));
+                px + 2
             }
         };
         let avail = end.saturating_sub(x);
@@ -2319,6 +2350,28 @@ fn keep_bg(
 
 /// Glyph for a head at a line end, or `None` to continue the line.
 /// `points_right` is the direction the line travels into that end.
+/// The label of an arrowhead beside the code of its target line `line`:
+/// the arrow's own glyph to put before it (`─▶`), and whether the code
+/// column of `code_w` cells holds the code, the glyph and the label.
+fn head_label(
+    doc: &Document,
+    line: u32,
+    ls: &crate::model::LineStyle,
+    label: &str,
+    code_w: usize,
+    tab_width: usize,
+) -> (String, bool) {
+    let g = Glyphs::for_style(ls);
+    let glyph = format!(
+        "{}{}",
+        g.h,
+        head_glyph(ls.heads.end, true, g.h).unwrap_or(g.h)
+    );
+    let text_w = code_width(doc.line_text(line).unwrap_or(""), tab_width);
+    let need = text_w + 2 + display_width(&glyph, 4) + 1 + display_width(label, 4);
+    (glyph, need <= code_w)
+}
+
 fn head_glyph(head: crate::model::Head, points_right: bool, _line: &str) -> Option<&'static str> {
     use crate::model::Head;
     Some(match (head, points_right) {
@@ -2488,8 +2541,16 @@ pub(crate) fn wrap_words(text: &str, width: usize) -> Vec<String> {
 
 /// Screen column (relative to the start of the code) of grapheme `col` of `text`.
 /// Whether a span's emphasis needs the row under its line: underlines always,
-/// brackets only when a side has no blank cell beside the span.
-fn emphasis_needs_row(doc: &Document, span: &TextSpan, e: Emphasis) -> bool {
+/// brackets only when a side has no blank cell beside the span. The end of
+/// a line is room only when the code column of `code_w` cells goes on after
+/// it (the longest line fills the column).
+fn emphasis_needs_row(
+    doc: &Document,
+    span: &TextSpan,
+    e: Emphasis,
+    code_w: usize,
+    tab_width: usize,
+) -> bool {
     use unicode_segmentation::UnicodeSegmentation;
     match e {
         Emphasis::Underline => true,
@@ -2503,7 +2564,10 @@ fn emphasis_needs_row(doc: &Document, span: &TextSpan, e: Emphasis) -> bool {
                 .checked_sub(1)
                 .and_then(|i| g.get(i as usize))
                 .is_some_and(|c| c.trim().is_empty());
-            let after = g.get(span.end as usize).is_none_or(|c| c.trim().is_empty());
+            let after = match g.get(span.end as usize) {
+                Some(c) => c.trim().is_empty(),
+                None => col_to_x(text, span.end, tab_width) < code_w,
+            };
             !(before && after)
         }
         _ => false,

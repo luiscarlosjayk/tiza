@@ -522,7 +522,7 @@ fn p4_the_note_is_cut_at_the_box_rail() {
             "   ╭─ secrets ──────────────────────────────────╮
  1 │  DB_URL=postgres://demo:demo@localhost/app │
  2 │  API_TOKEN=demo-token-123                  │
-   │  · demo token                              │
+   │            · demo token                    │
    │  ┆ sent as a bearer header to every servi… │
  3 │  LOG_LEVEL=info                            │
    ╰────────────────────────────────────────────╯

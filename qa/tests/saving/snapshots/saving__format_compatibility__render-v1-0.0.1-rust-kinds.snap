@@ -6,12 +6,12 @@ expression: out
      ╭─ scope ──────────────────────────╮
  2 ╭─┼─     let s = String::from("x");  │
  3 │ │      let r = &s;                 │
-   │ │  · ╌▶ read: shared               │
-   │ │  · ┆ scope                       │
+   │ │              · ╌▶ read: shared   │
+   │ │          · ┆ scope               │
    │ │  ┆ a note from v0.0.1            │
  4 │ │      let m = &mut String::new(); │ ═▶ write
  5 ╰─┼▶     drop(s);                    │
-     │  · ╳ drop: s dies                │
+     │      · ╳ drop: s dies            │
      │  ─▶ owner                        │
      ╰──────────────────────────────────╯
  6      }

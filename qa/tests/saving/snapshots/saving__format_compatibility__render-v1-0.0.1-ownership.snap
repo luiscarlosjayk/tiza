@@ -18,17 +18,17 @@ expression: out
  13 │ │ │    }                                                                    «hey!»
  14 │ │ │
     │ │ │ ╭─ takes es dueña de s y la libera al final ────────────────────────╮
- 15 ╰─│─│─┼▶ fn takes(s: String) {                                            │ move
+ 15 ╰─│─│─┼▶ fn takes(s: String) {  ─▶ move                                   │
  16   │ │ │      println!("{s}");                                             │
  17   │ │ │  }                                                                │ ╳ drop: aquí muere
       │ │ ╰───────────────────────────────────────────────────────────────────╯ s
  18   │ │
- 19   ╰─│──▶ fn len(s: &String) -> usize {                                      borrow &
+ 19   ╰─│──▶ fn len(s: &String) -> usize {  ─▶ borrow &
  20     │        s.len()
  21     │    }
  22     │
         │ ╭─ muta sin tomar propiedad ────────────────────────────────────────╮
- 23     ╰─┼▶ fn push(s: &mut String) {                                        │ &mut
+ 23     ╰─┼▶ fn push(s: &mut String) {  ─▶ &mut                               │
  24       │      s.push('!');                                                 │
  25       │  }                                                                │
           ╰───────────────────────────────────────────────────────────────────╯

@@ -9,7 +9,10 @@
 //! - AC2 Marks keep glyph + legend, notes keep `┆`; only arrow labels change.
 //! - AC3 A label inside a box range stays tied to its arrow and never touches
 //!   the box border.
-//! - AC4 Wide mode is unchanged (the frame snapshots at ≥ 100 columns).
+//! - AC4 Wide mode was unchanged then. Since a later decision of Luis, the
+//!   label of an arrow over several lines also goes beside the code of its
+//!   target line in wide mode, after the arrow's glyph, when the code column
+//!   holds it; else in the margin.
 //! - AC5 This file, with the ownership example at 80 and 60 columns (its
 //!   copy from then in `qa/fixtures/render/narrow_arrow_labels/`: the example changed later).
 
@@ -150,15 +153,15 @@ fn two_arrows_into_one_line_follow_each_other() {
 #[test]
 fn wide_mode_and_the_tui_agree() {
     let doc = ownership();
+    // Wide mode attaches the label to its arrowhead too, beside the code of
+    // the target line, and not in the margin.
     let wide = text(&doc, 120, 7);
-    assert!(
-        wide.contains("move\n") || wide.contains("  move  "),
-        "margin label: {wide}"
-    );
-    assert!(
-        !wide.contains("─▶ move"),
-        "wide mode keeps the margin label"
-    );
+    let row = wide
+        .lines()
+        .find(|l| l.contains("fn takes(s: String)"))
+        .unwrap();
+    assert!(row.contains("fn takes(s: String) {  ─▶ move"), "{wide}");
+    assert_eq!(row.matches("move").count(), 1, "{wide}");
     // The TUI at 80 columns shows the same attached label (presentation and
     // normal mode).
     let dir = tiza_qa::scratch("live");

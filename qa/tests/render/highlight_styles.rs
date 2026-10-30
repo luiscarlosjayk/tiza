@@ -65,12 +65,63 @@ fn glued_brackets_fall_back_to_the_row_below() {
     let col = lines[i].find("takes(s)").unwrap() + 4;
     let under: String = lines[i + 1].chars().collect();
     assert_eq!(under.chars().nth(col), Some('‾'), "{t}");
-    // A wider span: the free side keeps ⌈ beside it, the glued side goes below.
+    // A wider span glued on one side: both brackets go below it, as a
+    // pair, and the space on its free side stays a space.
     live.command("hl 2:String::from emphasis=brackets");
     let t = text(&live);
-    assert!(t.contains("let s =⌈String::from(\"hello\");"), "{t}");
-    assert!(t.contains("⌋"), "{t}");
-    assert!(!t.contains("⌊"), "{t}");
+    assert!(t.contains("let s = String::from(\"hello\");"), "{t}");
+    let lines: Vec<&str> = t.lines().collect();
+    let i = lines
+        .iter()
+        .position(|l| l.contains("String::from"))
+        .unwrap();
+    let under = lines[i + 1];
+    let at = |c: char| under.chars().position(|x| x == c);
+    let first = lines[i].chars().position(|c| c == 'S').unwrap();
+    assert_eq!(at('⌊'), Some(first), "⌊ under the first character: {t}");
+    assert_eq!(
+        at('⌋'),
+        Some(first + "String::from".len() - 1),
+        "⌋ under the last: {t}"
+    );
+    assert!(!t.contains('⌈') && !t.contains('⌉'), "{t}");
+}
+
+#[test]
+fn brackets_at_the_end_of_the_longest_line_go_under_as_a_pair() {
+    // The code column ends with the longest line: there is no cell after
+    // its last character, and the `⌉` was lost. Both go under the span.
+    let live = Live::from_code(
+        "fn main() {\n    let total = items.len() + extra\n}\n",
+        "rs",
+        "line-end",
+    );
+    live.command("hl 2:extra emphasis=brackets");
+    let t = text(&live);
+    let lines: Vec<&str> = t.lines().collect();
+    let i = lines.iter().position(|l| l.contains("+ extra")).unwrap();
+    assert!(!t.contains('⌈') && !t.contains('⌉'), "{t}");
+    let first = lines[i][..lines[i].find("extra").unwrap()].chars().count();
+    let under: Vec<char> = lines[i + 1].chars().collect();
+    assert_eq!((under[first], under[first + 4]), ('⌊', '⌋'), "{t}");
+}
+
+#[test]
+fn a_one_character_span_keeps_the_bracket_that_has_room() {
+    // `⌊` and `⌋` would share the one cell, and `‾` looks like an
+    // underline: the bracket of the side with room stays beside it.
+    let live = Live::from_code("fn main() {\n    work();\n}\n", "rs", "one-cell");
+    live.command("hl 3:} emphasis=brackets");
+    let t = text(&live);
+    let lines: Vec<&str> = t.lines().collect();
+    let i = lines
+        .iter()
+        .position(|l| l.trim_end().ends_with("}⌉"))
+        .unwrap_or_else(|| panic!("no «}}⌉»:\n{t}"));
+    let at = lines[i].chars().position(|c| c == '}').unwrap();
+    let under: Vec<char> = lines[i + 1].chars().collect();
+    assert_eq!(under.get(at), Some(&'⌊'), "{t}");
+    assert!(!lines[i + 1].contains('‾'), "{t}");
 }
 
 #[test]
@@ -216,15 +267,24 @@ fn two_underlines_share_one_row_and_marks_keep_their_legend() {
 
 #[test]
 fn edges_dimmed_and_reanchor() {
-    // Span at column 0 and at the end of the line: bracket sides go below.
+    // A span at column 0 has no cell before it: its two brackets go below.
+    // The span after it then has the space between them, and the code
+    // column is wider than the line: its brackets go beside it.
     let live = Live::from_code("abc def\n", "rs", "edges");
     live.command("hl 1:abc emphasis=brackets");
     live.command("hl 1:def emphasis=brackets");
     let t = text(&live);
-    // `abc` has no cell before it (⌊ below) and takes the shared space for
-    // its ⌉; `def` then finds that cell occupied and also opens below.
-    assert!(t.contains("abc⌉def⌉"), "{t}");
-    assert_eq!(t.matches('⌊').count(), 2, "{t}");
+    assert!(t.contains("abc⌈def⌉"), "{t}");
+    let lines: Vec<&str> = t.lines().collect();
+    let i = lines.iter().position(|l| l.contains("abc")).unwrap();
+    let a = lines[i].chars().position(|c| c == 'a').unwrap();
+    let under: Vec<char> = lines[i + 1].chars().collect();
+    assert_eq!((under[a], under[a + 2]), ('⌊', '⌋'), "{t}");
+    assert_eq!(
+        (t.matches('⌊').count(), t.matches('⌋').count()),
+        (1, 1),
+        "{t}"
+    );
     // Dimmed by a focus: still drawn (in the dimmed color), never panics.
     live.command("focus 1-1");
     live.command("spot a1");

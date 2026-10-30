@@ -78,7 +78,7 @@ fn margin_of(text: &str, n: u32, code: &str) -> String {
 }
 
 const HL_100: &str = " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info                             ┆ how chatty the logs are
@@ -103,7 +103,7 @@ fn mark_and_note_and_highlight_and_mark() {
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
-     · ! warning: the key
+            · ! warning: the key
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info                             ┆ how chatty the logs are
@@ -115,7 +115,7 @@ fn mark_and_note_and_highlight_and_mark() {
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      · ! warning: read at startup
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info                             ┆ how chatty the logs are
@@ -132,7 +132,7 @@ fn sixty_columns_are_the_narrow_layout_as_before() {
         (
             "two-labels-hl.tiza",
             " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info
@@ -143,7 +143,7 @@ fn sixty_columns_are_the_narrow_layout_as_before() {
         (
             "two-labels-mark.tiza",
             " 1   DB_URL=postgres://demo:demo@localhost/app
-     · ! warning: the key
+            · ! warning: the key
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info
@@ -154,7 +154,7 @@ fn sixty_columns_are_the_narrow_layout_as_before() {
         (
             "two-labels-hl-mark.tiza",
             " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      · ! warning: read at startup
  2   API_TOKEN=demo-token-123
  3   LOG_LEVEL=info
@@ -178,7 +178,9 @@ fn examples_with_one_label_per_line_render_as_before() {
     // --all-steps --format txt` of the example by the binary of c8a271e
     // (before two labels on a line), the steps one after another behind `== step-NN.txt`.
     // Later layout decisions change them on purpose, in the commit of each
-    // decision: a dimmed mark keeps its label in the margin.
+    // decision: a dimmed mark keeps its label in the margin; a label under
+    // its line starts under its span; the label of an arrow over several
+    // lines goes beside the code of its target line.
     // ownership.rs at 108 is the README's width (scripts/readme-images.sh).
     // ownership-moves (L7) and stack-impl (L20) change on purpose at steps
     // 4-5 and are not here.
@@ -338,7 +340,7 @@ fn three_labels_on_one_line_all_under_it_in_order() {
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      · ! warning: read at startup
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
@@ -360,10 +362,10 @@ fn two_consecutive_lines_each_under_its_own_line() {
     assert_eq!(
         t,
         " 1   DB_URL=postgres://demo:demo@localhost/app
-     · the key
+            · the key
      ┆ DB connection string
  2   API_TOKEN=demo-token-123
-     · ! warning: demo token
+               · ! warning: demo token
      ┆ sent as a bearer header
  3   LOG_LEVEL=info
  4   PORT=8080                                  ┆ one label: stays in the margin
@@ -380,12 +382,12 @@ fn box_arrow_and_spotlight_follow_the_extra_rows() {
         "       ╭─ secrets ──────────────────────────────────╮
  1 ╭─╭─┼▶ DB_URL=postgres://demo:demo@localhost/app │
    │ │ │  ─▶ read first                             │
-   │ │ │  · the key                                 │
+   │ │ │         · the key                          │
    │ │ │  ┆ DB connection string                    │
  2 │ │ │  API_TOKEN=demo-token-123                  │
    │ │ ╰────────────────────────────────────────────╯
  3 │ ╰─── LOG_LEVEL=info
- 4 ╰────▶ PORT=8080                                   same service
+ 4 ╰────▶ PORT=8080  ─▶ same service
 ",
         "{t}"
     );
@@ -483,7 +485,8 @@ fn every_export_draws_the_same_rows() {
         at("API_TOKEN"),
     );
     assert!(l1.1 < key.1 && key.1 < note.1 && note.1 < l2.1, "{svg}");
-    assert_eq!(key.0, note.0);
+    // A label of a span starts under its span, a note at the code.
+    assert!(key.0 > note.0, "{svg}");
     assert!(key.0 > l1.0);
     // PNG: the same canvas as the SVG (scale 2).
     let dir = scratch("png");
@@ -550,7 +553,7 @@ fn a_margin_callout_with_no_room_counts_as_a_label_of_its_line() {
     assert!(
         t.starts_with(
             " 1   DB_URL=postgres://demo:demo@localhost/app  ╭─────────╮
-     · the key                                  │ short   │
+            · the key                           │ short   │
      ┆ DB connection string                     │ callout │
 "
         ),

@@ -15,19 +15,19 @@
    13 │ ╎ ┃    }
    14 │ ╎ ┃
       │ ╎ ┃ ╭─ takes owns s and frees it at the end ───────────────────╮
-   15 ╰─╎─┃─┼▶ fn takes(s: String) {                                   │ move
+   15 ╰─╎─┃─┼▶ fn takes(s: String) {  ─▶ move                          │
    16   ╎ ┃ │      println!("{s}");                                    │
    17   ╎ ┃ │  }                                                       │ ╳ drop: s dies here
         ╎ ┃ ╰──────────────────────────────────────────────────────────╯
    18   ╎ ┃
         ╎ ┃ ╭─ borrows read-only: main keeps using t ──────────────────╮
-   19   ╰╌┃╌┼▶ fn len(s: &String) -> usize {                           │ borrow &
+   19   ╰╌┃╌┼▶ fn len(s: &String) -> usize {  ╌▶ borrow &              │
    20     ┃ │      s.len()                                             │
    21     ┃ │  }                                                       │
           ┃ ╰──────────────────────────────────────────────────────────╯
    22     ┃
           ┃ ╭─ borrows mutably: the caller sees the change ────────────╮
-   23     ┗━┿▶ fn push(s: &mut String) {                               │ &mut
+   23     ┗━┿▶ fn push(s: &mut String) {  ━▶ &mut                      │
    24       │      s.push('!');                                        │
    25       │  }                                                       │
             ╰──────────────────────────────────────────────────────────╯

@@ -18,7 +18,7 @@ expression: symbols
    12 │       println!("{u}");
    13 │   }
    14 │
-   15 ╰─▶ fn takes(s: String) {                                    move
+   15 ╰─▶ fn takes(s: String) {  ─▶ move
    16         println!("{s}");
    17     }
    18

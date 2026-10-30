@@ -51,7 +51,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
      8
      9    fn main() -> ExitCode {
     10        let opts = match args::parse(std::env::args().skip(1)) {
-          · → flow: 1 parse the flags
+                               · → flow: 1 parse the flags
     11            Ok(opts) => opts,
     12            Err(msg) => {
     13                eprintln!("tally: {msg}");
@@ -65,14 +65,14 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
     19 │      for path in &opts.paths {                                                      │
     20 │          match std::fs::read_to_string(path) {                                      │
     21 │              Ok(text) => rows.push((path.clone(), count::count(&text))),            │
-       │  · → flow: 2 count each file                                                        │
+       │                                                   · → flow: 2 count each file       │
     22 │              Err(e) => eprintln!("tally: {path}: {e}"),                             │
     23 │          }                                                                          │
     24 │      }                                                                              │
        ╰─────────────────────────────────────────────────────────────────────────────────────╯
     25
     26        print!("{}", report::table(&rows, opts.sort));
-          · → flow: 3 print the table
+                           · → flow: 3 print the table
     27        ExitCode::SUCCESS
     28    }
    ```
@@ -104,7 +104,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
     19 │              sort = Sort::Words;                                                    │
     20 │          } else if arg.starts_with("--") {                                          │
     21 │              return Err(format!("unknown flag {arg}"));                             │
-       │  · ✗ error: main prints it, exits 2                                                 │
+       │                     · ✗ error: main prints it, exits 2                              │
     22 │          } else {                                                                   │
     23 │              paths.push(arg);                                                       │
     24 │          }                                                                          │
@@ -158,7 +158,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
     15 │      for line in text.lines() {                                                     │
     16 │          c.lines += 1;                                                              │
     17 │          c.words += line.split_whitespace().count();                                │
-       │  · runs of spaces count once                                                        │
+       │                          · runs of spaces count once                                │
     18 │      }                                                                              │
        ╰─────────────────────────────────────────────────────────────────────────────────────╯
     19        c
@@ -190,7 +190,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
      5
      6    pub fn table(rows: &[(String, Counts)], sort: Sort) -> String {
      7        let mut rows = rows.to_vec();
-          · + new: a copy: the caller's rows are untouched
+                             · + new: a copy: the caller's rows are untouched
        ╭─ --by-words: most words first ──────────────────────────────────────────────────────╮
      8 │      match sort {                                                                   │
      9 │          Sort::Name => rows.sort_by(|a, b| a.0.cmp(&b.0)),                          │
@@ -226,7 +226,7 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
    ```text
      9    fn main() -> ExitCode {
     10        let opts = match args::parse(std::env::args().skip(1)) {
-          · → flow: 1 parse the flags
+                               · → flow: 1 parse the flags
     11            Ok(opts) => opts,
     12            Err(msg) => {
     13                eprintln!("tally: {msg}");
@@ -240,14 +240,14 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
     19 │      for path in &opts.paths {                                                      │
     20 │          match std::fs::read_to_string(path) {                                      │
     21 │              Ok(text) => rows.push((path.clone(), count::count(&text))),            │
-       │  · → flow: 2 count each file                                                        │
+       │                                                   · → flow: 2 count each file       │
     22 │              Err(e) => eprintln!("tally: {path}: {e}"),                             │
     23 │          }                                                                          │
     24 │      }                                                                              │
        ╰─────────────────────────────────────────────────────────────────────────────────────╯
     25
     26        print!("{}", report::table(&rows, opts.sort));
-          · → flow: 3 print the table
+                           · → flow: 3 print the table
           ╭─ the whole flow ───────────────────────────────────────────────────────────────╮
           │ args.rs turns the flags into Options, count.rs reads each file once, report.rs │
           │ sorts and prints. main only wires them together.                               │

@@ -4,5 +4,5 @@ expression: out
 ---
  1     fn main() {
  2 ╭──     let s = String::from("hi");
- 3 ╰─▶     takes(s.clone());            moved
+ 3 ╰─▶     takes(s.clone());  ─▶ moved
  4     }

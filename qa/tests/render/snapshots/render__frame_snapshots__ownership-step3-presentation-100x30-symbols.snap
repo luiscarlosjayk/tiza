@@ -19,7 +19,7 @@ expression: symbols
    13 │        }
    14 │
       │     ╭─ takes owns s and frees it at the end ───────────────────╮
-   15 ╰─────┼▶ fn takes(s: String) {                                   │ move
+   15 ╰─────┼▶ fn takes(s: String) {  ─▶ move                          │
    16       │      println!("{s}");                                    │
    17       │  }                                                       │ ╳ drop: s dies here
             ╰──────────────────────────────────────────────────────────╯

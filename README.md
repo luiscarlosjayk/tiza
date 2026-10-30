@@ -87,7 +87,7 @@ This animation and this text block are real Tiza exports of [the ownership examp
  13 │ ╎ ┃    }
  14 │ ╎ ┃
     │ ╎ ┃ ╭─ takes owns s and frees it at the end ───────────────────╮
- 15 ╰─╎─┃─┼▶ fn takes(s: String) {                                   │ move
+ 15 ╰─╎─┃─┼▶ fn takes(s: String) {  ─▶ move                          │
  16   ╎ ┃ │      println!("{s}");                                    │
  17   ╎ ┃ │  }                                                       │ ╳ drop: s dies here
       ╎ ┃ ╰──────────────────────────────────────────────────────────╯

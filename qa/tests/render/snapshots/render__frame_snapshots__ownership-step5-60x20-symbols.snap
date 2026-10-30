@@ -8,13 +8,13 @@ expression: symbols
       │                ◀───╯
       │        · s is born
     3 │            takes(s);
-      │        · ━▶ move: into takes
+      │                  · ━▶ move: into takes
     4 │            // println!("{s}"); // error: borrow…
       │        ┆ s no longer owns it: using it here does …
     5 │
     6 │            let t = String::from("world");
     7 │ ╭╌╌╌╌╌     let n = len(&t);
-      │ ╎      · ╌▶ read: borrowed
+      │ ╎                      · ╌▶ read: borrowed
     8 │ ╎          println!("{t} has {n} letters");
       │ ╎      ┆ t is still valid
     9 │ ╎

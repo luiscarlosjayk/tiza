@@ -13,6 +13,7 @@ mod enter_effects;
 mod frame_snapshots;
 mod highlight_styles;
 mod invisible_characters;
+mod label_places;
 mod language_detection;
 mod line_numbers;
 mod line_range;

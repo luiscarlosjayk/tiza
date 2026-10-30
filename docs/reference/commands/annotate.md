@@ -8,6 +8,9 @@ Each image on this page is a frame of a `tiza render` export. The code is `examp
 
 Tiza puts a label, a legend or a note in the right margin when the margin has room. When it has no room, Tiza puts it under the line. The frames on this page are narrow, so their labels are under the line.
 
+- Under the line, the label of a highlight or a mark starts under its span when it fits there.
+- The label of an arrow that goes to another line is beside the code of that line, after the glyph of the arrow, when the code column has room for it. When it has no room, the label goes in the right margin or under the line.
+
 ## `:mark`
 
 Adds a mark on a span of code. The mark has a glyph, a legend and your label.

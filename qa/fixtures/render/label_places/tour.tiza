@@ -1,0 +1,97 @@
+{
+  "schema": 1,
+  "title": "label places",
+  "source": {
+    "language": "rs",
+    "first_line": 1
+  },
+  "code": [
+    "use std::collections::VecDeque;",
+    "",
+    "struct Queue {",
+    "    items: VecDeque<String>,",
+    "    limit: usize,",
+    "}",
+    "",
+    "impl Queue {",
+    "    fn new(limit: usize) -> Self {",
+    "        Queue { items: VecDeque::new(), limit }",
+    "    }",
+    "",
+    "    fn push(&mut self, item: String) {",
+    "        if self.items.len() == self.limit {",
+    "            self.items.pop_front();",
+    "        }",
+    "        self.items.push_back(item);",
+    "    }",
+    "",
+    "    fn peek(&self) -> Option<&String> {",
+    "        self.items.front()",
+    "    }",
+    "}",
+    "",
+    "fn main() {",
+    "    let mut q = Queue::new(2);",
+    "    q.push(String::from(\"a\"));",
+    "    q.push(String::from(\"b\"));",
+    "    println!(\"{:?}\", q.peek());",
+    "}"
+  ],
+  "annotations": [
+    {
+      "id": "b1",
+      "step": 1,
+      "type": "box",
+      "from_line": 3,
+      "to_line": 6,
+      "label": "the queue"
+    },
+    {
+      "id": "c1",
+      "step": 2,
+      "type": "callout",
+      "from_line": 13,
+      "to_line": 18,
+      "title": "push",
+      "text": "drops the oldest item when the queue is full"
+    },
+    {
+      "id": "a1",
+      "step": 3,
+      "type": "arrow",
+      "from": {
+        "line": 26,
+        "col": 27
+      },
+      "to": {
+        "line": 5,
+        "col": 4
+      },
+      "label": "limit"
+    },
+    {
+      "id": "u1",
+      "step": 4,
+      "type": "highlight",
+      "emphasis": "underline",
+      "span": {
+        "line": 14,
+        "start": 11,
+        "end": 43
+      },
+      "label": "full?"
+    },
+    {
+      "id": "k1",
+      "step": 5,
+      "type": "highlight",
+      "emphasis": "brackets",
+      "span": {
+        "line": 15,
+        "start": 12,
+        "end": 34
+      }
+    }
+  ],
+  "moves": []
+}

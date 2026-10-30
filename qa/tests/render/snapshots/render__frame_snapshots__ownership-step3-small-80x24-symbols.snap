@@ -8,7 +8,7 @@ expression: symbols
       │            ◀───╯
       │    · s is born
     3 │        takes(s);
-      │    · ━▶ move: s moves into takes
+      │              · ━▶ move: s moves into takes
     4 │        // println!("{s}"); // error: value borrowed here after move
       │    ┆ s no longer owns it: using it here does not compile
     5 │

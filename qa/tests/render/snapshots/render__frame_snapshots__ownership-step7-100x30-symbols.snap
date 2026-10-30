@@ -19,16 +19,16 @@ expression: symbols
    13 │ ┃ ╎    }
    14 │ ┃ ╎
       │ ┃ ╎ ╭─ takes owns s and frees it at the end ───────────────────╮
-   15 ╰─┃─╎─┼▶ fn takes(s: String) {                                   │ move
+   15 ╰─┃─╎─┼▶ fn takes(s: String) {  ─▶ move                          │
    16   ┃ ╎ │      println!("{s}");                                    │
    17   ┃ ╎ │  }                                                       │ ╳ drop: s dies here
         ┃ ╎ ╰──────────────────────────────────────────────────────────╯
    18   ┃ ╎
-   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {                             borrow &
+   19   ┃ ╰╌╌▶ fn len(s: &String) -> usize {  ╌▶ borrow &
    20   ┃          s.len()
    21   ┃      }
    22   ┃
         ┃   ╭─ mutates without taking ownership ───────────────────────╮
-   23   ┗━━━┿▶ fn push(s: &mut String) {                               │ &mut
+   23   ┗━━━┿▶ fn push(s: &mut String) {  ━▶ &mut                      │
 
  ╭▶ NORMAL  step 7/7  100×30  dark  ownership.rs  L1  16 ann.           : command · ? help · q quit

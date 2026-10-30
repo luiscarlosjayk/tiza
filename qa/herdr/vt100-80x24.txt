@@ -5,19 +5,19 @@
                        ◀───╯
                · s is born
     3 ╭───────     takes(s);
-      │        · ━▶ move: into takes
+      │                  · ━▶ move: into takes
     4 │            // println!("{s}"); // error: borrow of moved value
       │        ┆ s no longer owns it: using it here does not compile
     5 │
     6 │            let t = String::from("world");
     7 │ ╭╌╌╌╌╌     let n = len(&t);
-      │ ╎      · ╌▶ read: borrowed
+      │ ╎                      · ╌▶ read: borrowed
     8 │ ╎          println!("{t} has {n} letters");
       │ ╎      ┆ t is still valid
     9 │ ╎
    10 │ ╎          let mut u = String::from("hey");
    11 │ ╎ ┏━━━     push(&mut u);
-      │ ╎ ┃    · ✎▶ &mut borrow
+      │ ╎ ┃             · ✎▶ &mut borrow
    12 │ ╎ ┃        println!("{u}");
       │ ╎ ┃    ┆ u is now "hey!"
    13 │ ╎ ┃    }
