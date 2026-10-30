@@ -315,6 +315,7 @@ The other messages of `tiza` are in [Messages](cli.md#messages).
 | `config ignored` | Tiza cannot read your config file. |
 | `` no grammar for `LANG`; the code is shown as plain text `` | `--lang` names a language that Tiza cannot color. |
 | `N annotations outside the code and not drawn: IDS` | Annotations of the document point at lines that the code does not have. |
+| `tiza check gives the problem of N annotations: IDS` | Annotations of the document are on lines of the code, but they fail another check. For example, a mark has a kind that Tiza does not know, or a span goes past the end of its line. `tiza check` gives each problem. |
 | `the file has N lines: range A-B clamped to C-D` | The range of `FILE:A-B` goes after the last line of the file. |
 
 - In `tiza render`, the `terminal` warning always says `dark`. In `:export`, it can say `light`.
