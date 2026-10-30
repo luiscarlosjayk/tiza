@@ -128,6 +128,12 @@ Unicode gives `⚠` (U+26A0), `↪` (U+21AA), `⏸` (U+23F8) and `▶` (U+25B6) 
 - What you type in the command line keeps the signs.
 - When the terminal draws the signs one cell wide, or does not answer, Tiza shows them as they are.
 
+A sign followed by the emoji selector VS16 (U+FE0F), for example `⚠️`, is two cells wide in Unicode, and most terminals draw it so. Some terminals, for example Herdr, draw it in one cell. The status bar counts two cells, so in such a terminal the bar has one blank cell too many.
+
+- At start, Tiza also measures how wide the terminal draws `⚠` with VS16. How a terminal draws VS16 is the same for every sign, so this one measure is enough.
+- When the terminal draws it in one cell, the text that Tiza shows outside the code leaves out every VS16, after every sign. For example, `⚠️`, `❤️` and `☑️` in a step title or a message show as `⚠`, `❤` and `☑`. The status bar then counts one cell for each, as the terminal draws it.
+- The code and the annotations keep each VS16, also in the exports.
+
 ### Invisible characters
 
 Tiza draws each invisible character as `⬚` (U+2B1A). [Control and invisible characters](characters.md) gives the rules. Herdr, Terminal.app and the Zed terminal draw `⬚` in one cell. See [Tested terminals](#tested-terminals).
@@ -199,7 +205,7 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 
 ### The width probe
 
-At start, also with a theme that needs no color query, Tiza measures how wide the terminal draws `⚠`, `↪`, `⏸` and `▶`. See [Signs that some terminals draw wide](#signs-that-some-terminals-draw-wide).
+At start, also with a theme that needs no color query, Tiza measures how wide the terminal draws `⚠`, `↪`, `⏸`, `▶` and `⚠` with VS16. See [Signs that some terminals draw wide](#signs-that-some-terminals-draw-wide).
 
 - Tiza saves the cursor and asks for its position (`ESC [ 6 n`). When the answer comes, Tiza writes the signs if the cursor is two columns or more before the last column. For each sign, it puts the cursor back, writes the sign and asks again. The column of each answer (`ESC [ row ; col R`), less the first column, gives the width of the sign.
 - Then Tiza puts the cursor back and clears the line from there. The signs show for a moment where the cursor was. The text before the cursor stays.

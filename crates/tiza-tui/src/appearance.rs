@@ -55,16 +55,23 @@ pub const PROBED: [(char, &str); 4] = [
 /// only when that report shows room for them ([`room_for_glyphs`]).
 pub const PROBE_START: &str = "\x1b7\x1b[6n";
 
-/// The rest of the probe: for each glyph of [`PROBED`], it puts the cursor
-/// back (`ESC 8`), writes the glyph and asks again. The column of each
-/// report, less the first one, is how many cells the terminal used. Last,
-/// it puts the cursor back and clears from there to the end of the line:
-/// the text before the cursor stays.
+/// U+26A0 with the emoji selector (VS16, U+FE0F) after it. Most terminals
+/// draw it two cells wide, as Unicode gives it; some draw it in one cell,
+/// as U+26A0 alone. How a terminal draws a sign with VS16 is the same for
+/// every sign: the probe measures this one.
+pub const VS16_PROBE: &str = "\u{26A0}\u{FE0F}";
+
+/// The rest of the probe: for each glyph of [`PROBED`], then for
+/// [`VS16_PROBE`], it puts the cursor back (`ESC 8`), writes the glyph and
+/// asks again. The column of each report, less the first one, is how many
+/// cells the terminal used. Last, it puts the cursor back and clears from
+/// there to the end of the line: the text before the cursor stays.
 pub fn probe_glyphs() -> String {
     let mut s: String = PROBED
         .iter()
         .map(|(g, _)| format!("\x1b8{g}\x1b[6n"))
         .collect();
+    s.push_str(&format!("\x1b8{VS16_PROBE}\x1b[6n"));
     s.push_str("\x1b8\x1b[K");
     s
 }
@@ -81,51 +88,72 @@ pub fn room_for_glyphs((_, col): (u16, u16), cols: u16) -> bool {
 }
 
 /// How many cursor reports the probe asks for when the glyphs go: the
-/// cursor before the glyphs, then one after each glyph.
-pub const REPORTS: usize = PROBED.len() + 1;
+/// cursor before the glyphs, one after each glyph, and one after
+/// [`VS16_PROBE`].
+pub const REPORTS: usize = PROBED.len() + 2;
 
-/// Which glyphs of [`PROBED`] the terminal draws two cells wide, as the
-/// start-up probe measured them. Empty when the terminal did not answer.
+/// How this terminal draws Tiza's signs, as the start-up probe measured
+/// them: which glyphs of [`PROBED`] it draws two cells wide, and whether
+/// it draws a sign with VS16 in one cell. Nothing when the terminal did
+/// not answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Wide([bool; PROBED.len()]);
+pub struct Wide {
+    glyphs: [bool; PROBED.len()],
+    /// The terminal draws [`VS16_PROBE`] in one cell: VS16 does not make
+    /// a sign wider there, as Unicode gives it.
+    vs16_narrow: bool,
+}
 
 impl Wide {
-    /// From the cursor reports of the probe ([`probe`]): the first is the
-    /// cursor before the glyphs, then one after each glyph, in the order of
-    /// [`PROBED`]. A glyph took the cells from the first column to its own.
-    /// One that went to another row (the right edge) counts as narrow.
+    /// From the cursor reports of the probe ([`probe_glyphs`]): the first is
+    /// the cursor before the glyphs, then one after each glyph, in the order
+    /// of [`PROBED`], then one after [`VS16_PROBE`]. A glyph took the cells
+    /// from the first column to its own. One that went to another row (the
+    /// right edge) counts as narrow.
     pub fn from_reports(reports: &[(u16, u16)]) -> Wide {
-        let mut wide = [false; PROBED.len()];
+        let mut glyphs = [false; PROBED.len()];
+        let mut vs16_narrow = false;
         if let Some(((row0, col0), after)) = reports.split_first() {
-            for (w, (row, col)) in wide.iter_mut().zip(after) {
+            for (w, (row, col)) in glyphs.iter_mut().zip(after) {
                 *w = row == row0 && col.saturating_sub(*col0) >= 2;
             }
+            if let Some((row, col)) = after.get(PROBED.len()) {
+                vs16_narrow = row == row0 && col.saturating_sub(*col0) == 1;
+            }
         }
-        Wide(wide)
+        Wide {
+            glyphs,
+            vs16_narrow,
+        }
     }
 
+    /// Whether [`Wide::plain`] gives every text as it is.
     pub fn is_empty(&self) -> bool {
-        !self.0.iter().any(|w| *w)
+        !self.glyphs.iter().any(|w| *w) && !self.vs16_narrow
     }
 
     /// `s` with each glyph that this terminal draws wide in its plain form,
     /// and the emoji selector (VS16) after it left out. A plain form is
-    /// ASCII: the bar counts its cells as every terminal draws them.
+    /// ASCII: the bar counts its cells as every terminal draws them. In a
+    /// terminal that draws a sign with VS16 in one cell, every VS16 is left
+    /// out: the bar then counts one cell for the sign, as the terminal
+    /// draws it.
     pub fn plain<'a>(&self, s: &'a str) -> std::borrow::Cow<'a, str> {
         let wide = |c: char| {
             PROBED
                 .iter()
-                .zip(self.0)
+                .zip(self.glyphs)
                 .find(|((g, _), w)| *w && *g == c)
                 .map(|((_, p), _)| *p)
         };
-        if !s.chars().any(|c| wide(c).is_some()) {
+        let vs16 = |c: char| self.vs16_narrow && c == '\u{FE0F}';
+        if !s.chars().any(|c| wide(c).is_some() || vs16(c)) {
             return std::borrow::Cow::Borrowed(s);
         }
         let mut out = String::with_capacity(s.len());
         let mut after_plain = false;
         for c in s.chars() {
-            if after_plain && c == '\u{FE0F}' {
+            if (after_plain && c == '\u{FE0F}') || vs16(c) {
                 after_plain = false;
                 continue;
             }
@@ -845,6 +873,11 @@ mod tests {
         assert_eq!(p.matches("\x1b[6n").count(), REPORTS - 1);
         assert!(p.starts_with("\x1b8\u{26A0}\x1b[6n\x1b8"), "{p:?}");
         assert!(p.ends_with("\x1b8\x1b[K"), "{p:?}");
+        // Last of the glyphs, U+26A0 with VS16.
+        assert!(
+            p.contains("\x1b8\u{26A0}\u{FE0F}\x1b[6n\x1b8\x1b[K"),
+            "{p:?}"
+        );
         // The reports in order, among the colour answers and keys.
         let buf = b"\x1b]11;rgb:1/2/3\x07j\x1b[12;5R\x1b[12;7R\x1b[12;6Rk\x1b[12;7R\x1b[12;6R";
         assert_eq!(
@@ -853,7 +886,13 @@ mod tests {
         );
         // From column 5: to column 7 is two cells, to column 6 one.
         let wide = Wide::from_reports(&parse_reports(buf));
-        assert_eq!(wide, Wide([true, false, true, false]));
+        assert_eq!(
+            wide,
+            Wide {
+                glyphs: [true, false, true, false],
+                vs16_narrow: false,
+            }
+        );
         assert!(!wide.is_empty());
         // A glyph that went to the next row (the right edge): narrow.
         let edge = Wide::from_reports(&[(3, 80), (4, 3), (3, 81), (3, 81), (3, 81)]);
@@ -866,7 +905,10 @@ mod tests {
 
     #[test]
     fn only_the_glyphs_measured_wide_take_their_plain_form() {
-        let wide = Wide([true, false, true, false]);
+        let wide = Wide {
+            glyphs: [true, false, true, false],
+            vs16_narrow: false,
+        };
         assert_eq!(wide.plain("\u{26A0} borrow \u{26A0}"), "! borrow !");
         // The emoji selector after a glyph that takes its plain form goes:
         // the plain form is ASCII.
@@ -899,10 +941,33 @@ mod tests {
     }
 
     #[test]
+    fn where_a_sign_with_vs16_is_one_cell_every_vs16_is_left_out() {
+        // The cursor at column 5; the four glyphs one cell; U+26A0 with
+        // VS16 one cell (as herdr draws it), or two (as most terminals).
+        let narrow = Wide::from_reports(&[(1, 5), (1, 6), (1, 6), (1, 6), (1, 6), (1, 6)]);
+        let wide = Wide::from_reports(&[(1, 5), (1, 6), (1, 6), (1, 6), (1, 6), (1, 7)]);
+        assert!(!narrow.is_empty());
+        assert!(wide.is_empty());
+        // Every VS16, after any sign: the bar counts one cell for each, as
+        // the terminal draws it.
+        let text = "\u{26A0}\u{FE0F} the borrow \u{2764}\u{FE0F} \u{2611}\u{FE0F} done";
+        assert_eq!(
+            narrow.plain(text),
+            "\u{26A0} the borrow \u{2764} \u{2611} done"
+        );
+        // Where VS16 makes a sign two cells wide, the text stays as it is.
+        assert!(matches!(wide.plain(text), std::borrow::Cow::Borrowed(t) if t == text));
+        // A report that went to another row measures nothing.
+        let edge = Wide::from_reports(&[(1, 5), (1, 6), (1, 6), (1, 6), (1, 6), (2, 1)]);
+        assert!(edge.is_empty());
+    }
+
+    #[test]
     fn the_read_stops_when_every_answer_is_in() {
-        let reports = b"\x1b[1;1R\x1b[1;2R\x1b[1;2R\x1b[1;2R\x1b[1;3R";
+        let reports = b"\x1b[1;1R\x1b[1;2R\x1b[1;2R\x1b[1;2R\x1b[1;3R\x1b[1;3R";
         let colors = b"\x1b]11;rgb:1/2/3\x07\x1b]10;rgb:4/5/6\x07";
-        // The probe alone: its reports, the cursor and one for each glyph.
+        // The probe alone: its reports, the cursor, one for each glyph and
+        // one for U+26A0 with VS16.
         assert!(all_in(reports, false, REPORTS));
         assert!(!all_in(&reports[..24], false, REPORTS));
         // No glyph went (no room): the report of the cursor is all.

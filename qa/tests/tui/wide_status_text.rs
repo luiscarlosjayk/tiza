@@ -14,6 +14,9 @@
 //!   wait, is never taken as keys.
 //! - At the right edge (less than two cells after the cursor), the probe
 //!   writes no sign: the shell's line stays, and the screen does not move.
+//! - The probe also measures U+26A0 with VS16. Where the terminal draws it
+//!   in one cell (herdr), Tiza's own text outside the code leaves out every
+//!   VS16: the bar counts one cell for the sign, as the terminal draws it.
 //! - AC3 The code and the annotations keep the glyphs (`render.text`).
 //!
 //! The terminal is an emulator in the pty (`tiza_qa::WIDETERM`). Its
@@ -38,9 +41,9 @@ fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// `main.rs` with a step 1 titled [`TITLE`] and a note with ⚠ in it, or
+/// `main.rs` with a step 1 titled `title` and a note with ⚠ in it, or
 /// (`link`) with a `code.link` to `other.rs` at step 1.
-fn files(name: &str, link: bool) -> std::path::PathBuf {
+fn files(name: &str, link: bool, title: &str) -> std::path::PathBuf {
     let dir = scratch(name);
     std::fs::write(dir.join("main.rs"), MAIN).unwrap();
     std::fs::write(dir.join("other.rs"), OTHER).unwrap();
@@ -52,7 +55,7 @@ fn files(name: &str, link: bool) -> std::path::PathBuf {
         "annotations": [
             {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "\u{26A0} a shared borrow"}
         ],
-        "steps": [{"step": 1, "title": TITLE}]
+        "steps": [{"step": 1, "title": title}]
     });
     if link {
         doc["moves"] = json!([{"at_step": 1, "action": "code.link", "file": "other.rs"}]);
@@ -71,7 +74,8 @@ env.pop("TIZA_NO_OSC", None)
 if cfg.get("no_osc"):
     env["TIZA_NO_OSC"] = "1"
 rows, cols = cfg["rows"], cfg["cols"]
-term = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=cfg["cpr"])
+term = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=cfg["cpr"],
+            vs16_wide=cfg["vs16_wide"])
 # What the shell wrote before `tiza` starts: `xs` letters, on the last row
 # when `last_row`. A line as wide as the row leaves the cursor in the last
 # column, with the wrap waiting.
@@ -87,6 +91,10 @@ first = bytes.fromhex(cfg["colors"]) + b"\x1b[%d;%dR" % (row, col)
 each = b"".join(
     b"\x1b[%d;%dR" % (row, col + (2 if g in cfg["wide"] else 1)) for g in "⚠↪⏸▶"
 )
+# U+26A0 with VS16: two cells where the terminal draws U+26A0 wide or
+# makes a sign wider for VS16, one cell where it does neither (herdr).
+each += b"\x1b[%d;%dR" % (row, col + (2 if "\u26a0" in cfg["wide"] or cfg["vs16_wide"] else 1))
+
 reports = (first + (each if room else b"")) if cfg["cpr"] else b""
 early, after = cfg["early"].encode(), cfg["after"].encode()
 when = cfg["answers"]
@@ -112,7 +120,7 @@ def pump():
 def bar_has(pred):
     return lambda out: (pump(), pred(term.lines()[-1]))[1]
 if not cfg.get("no_osc"):
-    asked = 5 if glyphs else 1
+    asked = 6 if glyphs else 1
     s.wait_for(lambda out: (pump(), term.cpr_asked >= asked)[1], 10, "the probe")
 if rest:
     # The rest after the end of the start-up read: the timed read set
@@ -133,7 +141,8 @@ main = s.out.split(b"\x1b[?1049h")[0]
 print("CLEARED", main.rfind(b"\x1b8\x1b[K") > main.rfind(b"\x1b[6n") >= 0, flush=True)
 print("MAIN", json.dumps(main.decode("utf-8", "replace")), flush=True)
 # The shell's screen as the TUI found it.
-shell = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=False)
+shell = Term(rows, cols, wide=cfg["wide"], autowrap=cfg["autowrap"], cpr=False,
+             vs16_wide=cfg["vs16_wide"])
 shell.feed(before + main)
 print("SHELL", json.dumps(shell.lines()), flush=True)
 print("SHELL_SCROLLS", shell.scrolls, flush=True)
@@ -177,7 +186,7 @@ struct Run {
 }
 
 fn run(name: &str, link: bool, cfg: Value) -> Run {
-    let dir = files(name, link);
+    let dir = files(name, link, cfg["title"].as_str().unwrap_or(TITLE));
     let script = format!("{}\n{BODY}", tiza_qa::WIDETERM);
     let out = tiza_qa::pty_script(
         &dir,
@@ -211,7 +220,7 @@ fn cfg(wide: &str, cols: u16, autowrap: bool, message: &str, shown: &str) -> Val
     json!({
         "rows": 10, "cols": cols, "wide": wide, "autowrap": autowrap, "cpr": true,
         "answers": "now", "rest": 0, "early": "", "after": "", "step": 1,
-        "xs": 0, "last_row": false,
+        "xs": 0, "last_row": false, "vs16_wide": true,
         "theme": "dark", "colors": "",
         "message": message, "shown": shown,
     })
@@ -269,6 +278,57 @@ fn where_the_link_sign_is_wide_the_view_shows_it_plain() {
     assert!(r.bar.contains("> other.rs"), "{}", r.out);
     assert!(!r.bar.contains('\u{21AA}'), "{}", r.out);
     assert_eq!(r.scrolls, 0, "{}", r.out);
+}
+
+/// [`TITLE`] with VS16 (the emoji form) after each U+26A0.
+const TITLE_VS16: &str = "\u{26A0}\u{FE0F} the borrow \u{26A0}\u{FE0F}";
+
+#[test]
+fn where_a_sign_with_vs16_is_one_cell_the_bar_counts_one_cell() {
+    // A terminal that draws U+26A0 with VS16 in one cell, as herdr: the bar
+    // of a title with VS16 is the bar of the same title without it. Before,
+    // the bar counted two cells for each, and had a blank too many.
+    let bar = |title: &str, vs16_wide: bool| {
+        // The bar after the message: its title and the message, both.
+        let mut c = cfg("", 80, true, "numbers off", "the borrow");
+        c["title"] = json!(title);
+        c["vs16_wide"] = json!(vs16_wide);
+        let name = format!("vs16-{vs16_wide}-{}", title.len());
+        let r = run(&name, false, c);
+        assert!(r.out.contains("ASKED 6"), "{}", r.out);
+        assert_eq!(r.scrolls, 0, "{}", r.out);
+        assert!(
+            r.bar.contains("the borrow") && r.bar.contains("numbers"),
+            "{}",
+            r.out
+        );
+        r.bar
+    };
+    assert_eq!(bar(TITLE_VS16, false), bar(TITLE, false));
+    // Where VS16 makes a sign two cells wide, the title keeps it: each
+    // U+26A0 takes one cell more.
+    assert_ne!(bar(TITLE_VS16, true), bar(TITLE, true));
+}
+
+#[test]
+fn where_a_sign_with_vs16_is_one_cell_the_bar_leaves_every_vs16_out() {
+    // How a terminal draws VS16 is the same for every sign: a message with
+    // other signs in the emoji form loses its VS16 too.
+    let live = opened("vs16-message");
+    let screen = screen_with(&live, |app| {
+        app.wide = tiza_tui::appearance::Wide::from_reports(&[
+            (1, 1),
+            (1, 2),
+            (1, 2),
+            (1, 2),
+            (1, 2),
+            (1, 2),
+        ]);
+        app.message = Some(("\u{2764}\u{FE0F} saved \u{2611}\u{FE0F} done".into(), false));
+    });
+    let bar = screen.lines().last().unwrap_or_default().to_string();
+    assert!(bar.contains("\u{2764} saved \u{2611} done"), "{screen}");
+    assert!(!bar.contains('\u{FE0F}'), "{screen}");
 }
 
 #[test]
@@ -330,7 +390,7 @@ fn at_the_right_edge_the_probe_writes_no_sign_on_the_shell_line() {
     let mut c = cfg("\u{26A0}", 80, true, "", "! the borrow !");
     c["xs"] = json!(77);
     let r = run("edge-two-before", false, c);
-    assert!(r.out.contains("ASKED 5"), "{}", r.out);
+    assert!(r.out.contains("ASKED 6"), "{}", r.out);
     assert!(r.bar.contains("! the borrow !"), "{}", r.out);
     assert_eq!(r.scrolls, 0, "{}", r.out);
     assert!(r.out.contains("CLEARED True"), "{}", r.out);
@@ -366,7 +426,7 @@ fn an_answer_of_the_probe_that_comes_late_is_not_keys() {
     colors["theme"] = json!("auto");
     colors["colors"] = json!(hex(LIGHT));
     colors["answers"] = json!("cut");
-    colors["rest"] = json!(5 * 6 - 1);
+    colors["rest"] = json!(6 * 6 - 1);
     colors["early"] = json!(":");
     cases.push((
         "the colours, then the first report cut after its ESC".into(),
@@ -395,7 +455,7 @@ fn screen_with(
 }
 
 fn opened(name: &str) -> tiza_qa::Live {
-    let dir = files(name, false);
+    let dir = files(name, false, TITLE);
     let tiza = dir.join("doc.tiza");
     let doc = tiza_core::fs::load_document(&tiza).unwrap();
     tiza_qa::Live::open(doc, tiza, dir.join("live.sock"))

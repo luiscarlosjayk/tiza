@@ -75,7 +75,7 @@ Tiza sends the color query to the terminal only when the theme is `auto`, the de
 
 - At start, Tiza sends the color query through `/dev/tty` when standard input is not a terminal.
 - At each resize, Tiza sends it again through the same terminal as at start.
-- At start, with any theme, Tiza also sends the width probe: it asks the terminal for the cursor position. When the line has room, Tiza then writes `⚠`, `↪`, `⏸` and `▶` and asks for the cursor position after each one. [The width probe](../reference/terminals.md#the-width-probe) gives the rules.
+- At start, with any theme, Tiza also sends the width probe: it asks the terminal for the cursor position. When the line has room, Tiza then writes `⚠`, `↪`, `⏸`, `▶` and `⚠` with VS16, and asks for the cursor position after each one. [The width probe](../reference/terminals.md#the-width-probe) gives the rules.
 - `TIZA_NO_OSC` stops the color query at start and at each resize, and the width probe. Any value works, even an empty one.
 - When standard input is a pipe, Tiza reads its keys from `/dev/tty`.
 
