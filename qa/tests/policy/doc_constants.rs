@@ -9,12 +9,10 @@
 use std::time::Duration;
 
 use tiza_qa::markdown::cited;
-use tiza_qa::repo_file;
+use tiza_qa::{repo_file, repository_files};
 use tiza_tui::app::PRESENT_MESSAGE_TTL;
 use tiza_tui::appearance::{COLOR_QUERY_LATE_FACTOR, COLOR_QUERY_WAIT};
 use tiza_tui::ipc::ANSWER_TIMEOUT;
-
-use crate::common::repository_files;
 
 /// The words before and after a number, and how many times the docs have
 /// them today.
