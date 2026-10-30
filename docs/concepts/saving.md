@@ -118,6 +118,7 @@ An agent can send a document with `scene put`. Autosave never writes a document 
 - With follow mode on, a document from another source also turns follow mode off. The message says so.
 - When the code sent is the copy that Tiza loaded, and only the file changed on disk, the code stays a code reference. Autosave goes on. The screen keeps the copy that Tiza loaded.
 - After a `scene get` and a `scene put` of the open document, a document that reads its code from a file still reads it from the file. Tiza embeds nothing.
+- While follow mode is paused with a change that waits, the code on screen is embedded until the change loads. A `scene get` and a `scene put` of the open document keep it so, and the change still loads at the resume step. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - After a `scene put` of changed code, the document holds the code embedded. A `scene put` of the text of the file makes the code a file reference again.
 - Tiza drops a `views` entry that no `code.link` names. It does not save it.
 - A `scene put` that changes nothing writes nothing.

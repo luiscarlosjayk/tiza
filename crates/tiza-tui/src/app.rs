@@ -3033,7 +3033,39 @@ impl App {
                 "scene.put: {file} cannot be read ({e}) and the document reads its code from it: put the file back, or :embed to keep the copy loaded"
             ))
         };
+        // While follow is paused, the screen keeps its code and a change of
+        // the file waits for the resume step. The code on screen comes back
+        // as the open document holds it: a reference, or embedded over the
+        // change that waits (which still loads there). Other code would load
+        // a change at a step with a patch: refused, and while a change waits
+        // the reason is that the file is not the code on screen (a save, or
+        // a paste before `:follow on`). A document opened embedded over the
+        // file it follows has no `reference`: its `follows` names the file.
+        let mut kept = false;
+        if self.follow_paused()
+            && let Some(CodeSource::File { file, .. }) =
+                self.reference.clone().or_else(|| self.paused())
+            && let CodeSource::Embedded(lines) = &doc.code_src
+        {
+            let loaded = self.doc.base() == lines.as_slice()
+                && self.doc.base_first() == doc.source.first_line;
+            if loaded {
+                doc.code_src = self.doc.code_src.clone();
+                kept = true;
+            } else if self.follow_pending() {
+                let at = self.resume_step().unwrap_or(0);
+                let when = if at == 0 {
+                    "at step 0".to_string()
+                } else {
+                    format!("at step {at} or earlier")
+                };
+                return Err(Error::Invalid(format!(
+                    "scene.put: follow is paused, and the code on screen is not what {file} holds now: {file} loads {when}. Send the code as scene.get gives it; to change the code, edit {file}"
+                )));
+            }
+        }
         if let Some(reference @ CodeSource::File { file, .. }) = &self.reference
+            && !kept
             && let CodeSource::Embedded(lines) = &doc.code_src
         {
             let mut probe = self.doc.clone();
