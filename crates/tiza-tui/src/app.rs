@@ -664,7 +664,9 @@ pub struct App {
     /// step put it, for (id, revision, step): drawn each frame, projected
     /// once.
     selected_shown: std::cell::RefCell<Option<(String, u64, u32, String)>>,
-    /// Follow mode: the watched source file, when enabled.
+    /// Follow mode: the watched source file, when enabled. Only this
+    /// watcher reads the file again: with `None`, no save reaches the
+    /// screen.
     pub follow: Option<crate::follow::Follow>,
     /// Why follow went off by itself: the watcher of that file could not
     /// start. Said while that file is still the one to follow and nothing
@@ -4957,6 +4959,7 @@ impl App {
             return false;
         };
         let base = self.save_path.parent().map(Path::to_path_buf);
+        f.last_read = crate::follow::Stamp::of(&f.path);
         let read = fs::reread_reference(&probe, base.as_deref());
         let name = f.file_name();
         let (new, read_first) = match read {
