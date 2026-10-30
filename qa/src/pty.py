@@ -62,9 +62,19 @@ class Pty:
             fcntl.ioctl(0, termios.TIOCSCTTY, 0)
 
         kw = dict(preexec_fn=make_ctty) if ctty else dict(start_new_session=True)
+        # The child inherits the write end of this pipe: the read end gives
+        # EOF when the child, and every process that kept it, is gone. So the
+        # reader learns of the exit without reaping the child, which a body
+        # may wait for itself (`closed_terminal` with `os.wait4`).
+        self._gone, gone_w = os.pipe()
         self.p = subprocess.Popen(argv, stdin=slave, stdout=slave, stderr=slave,
-                                  close_fds=True, env=env, **kw)
-        os.close(slave)
+                                  close_fds=True, pass_fds=(gone_w,), env=env, **kw)
+        os.close(gone_w)
+        # Kept open until the child is gone and its output is read: on macOS
+        # the last close of the slave drops what the master has not read, so
+        # a child that wrote and exited fast lost its last output when the
+        # reader came late (under load).
+        self._slave = slave
         os.set_blocking(self.master, False)
         self.ctty = ctty
         self.closed = False
@@ -98,12 +108,17 @@ class Pty:
             with self._cv:
                 if self._stop:
                     return
+            watch = [self.master] if self._gone is None else [self.master, self._gone]
             try:
-                r, _, _ = select.select([self.master], [], [], 0.05)
+                r, _, _ = select.select(watch, [], [], 0.05)
             except (OSError, ValueError):
                 r, chunk = None, b""
             else:
                 if not r:
+                    continue
+                if self.master not in r:
+                    # Only the pipe: the child is gone.
+                    self._child_gone()
                     continue
                 try:
                     chunk = os.read(self.master, 65536)
@@ -121,6 +136,40 @@ class Pty:
             if not chunk:
                 return
 
+    def _child_gone(self):
+        """The child is gone, and the master had nothing to read a moment
+        ago. Read what came since, then close the slave. The master then
+        reports EOF (EIO on Linux) when every other process that has the
+        slave is gone too, a grandchild included. Nothing the child wrote is
+        dropped: the slave was open here until now. (A child that has the pty
+        as its controlling terminal, as `sh` takes it, does not even end its
+        exit on macOS until its output is read.)"""
+        os.close(self._gone)
+        self._gone = None
+        while True:
+            try:
+                r, _, _ = select.select([self.master], [], [], 0)
+                chunk = os.read(self.master, 65536) if r else b""
+            except (BlockingIOError, InterruptedError):
+                chunk = b""
+            except OSError:
+                chunk = b""
+            with self._cv:
+                if chunk:
+                    self._out += chunk
+                    self._last = time.monotonic()
+                self._cv.notify_all()
+            if not chunk:
+                break
+        self._close_slave()
+
+    def _close_slave(self):
+        """Closes the slave once, from the reader or from `finish`."""
+        with self._cv:
+            slave, self._slave = self._slave, None
+        if slave is not None:
+            os.close(slave)
+
     def _left(self, end):
         return min(end, DEADLINE) - time.monotonic()
 
@@ -131,8 +180,9 @@ class Pty:
 
     def _drain(self):
         """The child exited: let the reader take what is left and stop at
-        EOF or the first quiet 0.2 s (macOS may never report EOF on the
-        master), at most 2 s."""
+        EOF (the master gives it once the harness closed its slave and every
+        other process that has it is gone) or at the first quiet 0.2 s, at
+        most 2 s."""
         end = time.monotonic() + 2
         with self._cv:
             while not self._eof and self._left(end) > 0:
@@ -230,6 +280,10 @@ class Pty:
         past `timeout` its process group is killed (`CHILD_KILLED`). Returns
         the exit code (negative when killed by a signal)."""
         end = time.monotonic() + timeout
+        if not self._reader.is_alive():
+            # No reader: a child with the pty as its controlling terminal
+            # would wait at its exit for its output to be read.
+            self._close_slave()
         try:
             self.p.wait(timeout=max(0.0, self._left(end)))
         except subprocess.TimeoutExpired:
@@ -240,6 +294,10 @@ class Pty:
         self._drain()
         if not self.closed:
             self._stop_reader()
+            self._close_slave()
+            if self._gone is not None:
+                os.close(self._gone)
+                self._gone = None
             os.close(self.master)
             self.closed = True
         return self.p.returncode
