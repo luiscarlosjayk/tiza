@@ -25,7 +25,7 @@ The commands are in [`:` commands](../commands.md).
 | `ID now appears at step N` | `:step ID N` moved an annotation. |
 | `ID → step N` | `:step ID N` moved an annotation to a step that does not draw it. |
 | `N deleted` | `:del` deleted `N` annotations. |
-| `N annotation(s) cleared (u to undo)` | `:clear` deleted `N` annotations. |
+| `N annotation(s) cleared (u to undo)` | `:clear` deleted `N` annotations. In presentation mode, the message says `:undo` in place of `u`, because `u` does nothing there. |
 | `nothing to clear` | `:clear` found no annotation to delete. |
 
 - A message about a new annotation can end with a step hint, for example `(step N, press n)`. The hint shows when the annotation goes to a later step than the step on screen.
@@ -41,6 +41,7 @@ The commands are in [`:` commands](../commands.md).
 | `«TEXT» is in FILE at LN, outside the lines shown at step S (A-B).` | The text is in the file, but outside the lines on screen. |
 | `«TEXT» is in FILE at LN, shown at step S.` | The text is in a file that another step shows. |
 | `line N does not exist (the document spans A to B)` | The line is not in the code. |
+| `use L@C or the whole character "CHAR" (the text "TEXT" starts inside it)` | The text of `L:TEXT` starts or ends inside a character, for example a joiner alone or a combining accent alone. With `ends`, the text ends inside the character. Use the column, or put the whole character in the text. |
 | `annotation ID does not exist` | No annotation has the id. |
 | `invalid range: R` | The range is not a range of lines. |
 | `invalid range: R: write A-B without spaces` | The range has spaces around the `-`. |
@@ -100,7 +101,8 @@ In `is not in the code shown`, `FILE` can end with the lines on screen, for exam
 | `move #N added: step S shows FILE (:ref path to change the document's own file)` | `:link PATH` at step 1 or later added a `code.link` move. |
 | `move #N added: step S scrolls to TARGET (ALIGN)` | `:scroll` added a `scroll` move. |
 | `scroll: go to step 1 or later (step 0 is the code before any move)` | `:scroll` at step 0. |
-| `the .tiza now references FILE and shows its code (N annotations kept; u undoes)` | `:ref` or `:link` loaded the code of another file. |
+| `scroll: REASON` | The target of `:scroll` is not in the code at the step on screen. For example, `REASON` is `line N is not in the code shown at this step (lines A-B)`. Tiza adds no move. |
+| `the .tiza now references FILE and shows its code (N annotations kept; u undoes)` | `:ref` or `:link` loaded the code of another file. In presentation mode, the message says `:undo` in place of `u`. |
 | `the .tiza now references FILE` | `:ref` or `:link` referenced a file that has the code on screen. |
 | `the .tiza already references FILE` | `:ref` or `:link` got no path, and the document references a file already. |
 | `line ranges start at 1` | `:link` or `:ref` got `PATH:A-B` with `A` = 0. |

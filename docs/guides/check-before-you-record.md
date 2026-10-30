@@ -36,6 +36,9 @@ The table gives the usual problems. Each finding in the JSON output also has a `
 | A label is cut with `…`, or has no space and is not drawn, at the width that you record at. | Warning |
 | A code line is cut with `…` at the width that you record at. | Warning |
 | A step changes nothing. | Warning |
+| The `until` of a spotlight is before its `step`. The spotlight never shows. | Error |
+| An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. | Warning |
+| A move has an action, a value or a key that this version of Tiza does not know. Tiza skips the move, or uses the default value. | Warning |
 | A marker (`find_start` or `find_end`) matches more than one time. | Warning |
 | A `rebind` names an unknown id. Tiza ignores that `rebind`. | Warning |
 
@@ -101,7 +104,7 @@ The status bar shows the terminal size as `COLS×ROWS`. It shows a `!` badge onl
 - For an arrow between two lines, the label then goes on the row of the arrowhead, after the code, when it fits. Otherwise, it goes on the row below. In both places, the glyph of the arrow comes first: `─▶ move`. Thus the label reads as part of the arrow, not as a separate comment.
 - The label of an arrow on one line goes on a row under the arrow.
 - On a narrow terminal, Tiza also draws a callout with `placement: auto` or `placement: margin` under its lines.
-- By default, Tiza keeps one blank column at each side. `:pad V H` changes the padding. `:pad 0 0` removes it. `:pad default` sets it back.
+- By default, Tiza keeps one blank column at each side. `pad` in the [config file](../reference/config.md#defaults) changes this default. `:pad V H` changes the padding. `:pad 0 0` removes it. `:pad default` sets it back.
 
 ## JSON output
 

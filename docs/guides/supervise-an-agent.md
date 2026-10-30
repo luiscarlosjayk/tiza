@@ -22,7 +22,7 @@ I accept or reject each change that you make.
 4. Select a change with `j` or `k`. Press `y` or `Enter` to accept it, or `n` to reject it.
 5. To stop, type `:supervise off`. Tiza rejects the changes that still wait.
 
-Nothing opens over the code by itself. In presentation mode, `⏸ N to review · :review` shows at the bottom left.
+Nothing opens over the code by itself. In presentation mode, `⏸ N to review · :review` shows at the bottom left. In a terminal that draws `⏸` two cells wide, it shows `||` in place of `⏸`. See [Signs that some terminals draw wide](../reference/terminals.md#signs-that-some-terminals-draw-wide).
 
 - The call of the agent waits for your decision.
 - Tiza rejects a change that nobody decides in 60 s.

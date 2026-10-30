@@ -131,8 +131,11 @@ The status bar shows the selected annotation and its keys. A message hides them.
 | `↓` `↑` `j` `k` | Moves the view one row down or up. |
 | `J` `K` | Moves the view half a screen down or up. |
 | `g` `G` `Home` `End` | Goes to the start or the end of the code. |
+| `Tab` `Shift-Tab` | Goes to the next or the previous line where an annotation in the view starts. Nothing is selected. |
 
 - Presentation mode hides the interface. It uses the take. See [`:layout`](commands/view.md#layout).
+- The last row shows the step counter at the right, for example `3/7`, in the muted color. The counter shows when the document has more than one step, and at step 0. On the empty step after the last one, it gives the same count as the status bar, for example `8/8`. When agent changes wait, the last row also shows `⏸ N to review · :review` at the left.
+- While the step counter or `⏸ N to review · :review` shows, the last row has no code, so the code has one row less than the terminal. With a padding at the bottom, that row is free already, and the code keeps its rows.
 - In presentation mode, the keys of the view move the view, as in a web browser. The hidden cursor stays in the view, so `f` points at a line that you see. A trackpad and a mouse wheel also move the view. With mouse capture, each notch moves it three rows. Without mouse capture, the terminal sends them as `↑` and `↓`.
 - With the live pointer on, the keys of the view move the pointer, as in normal mode. The view follows the pointer. When the chip `⏸ N to review` comes in on the last row and the line of the pointer is on that row, the view moves up one row, so that the line of the pointer stays in view.
 - `Tab` goes only through the annotations that the view shows, and the view does not move. With the live pointer on, the pointer goes with `Tab`. See [Edit an annotation](#edit-an-annotation).

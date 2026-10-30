@@ -22,7 +22,7 @@ Each command adds one annotation at the step on screen. The status bar shows its
 |---|---|
 | [Annotation commands](commands/annotate.md) | `:mark`, `:hl`, `:arrow`, `:box`, `:note`, `:callout`, `:spot`, `:until`, `:style` |
 | [Change commands](commands/change.md) | `:label`, `:color`, `:set`, `:step ID N`, `:del`, `:clear` |
-| [Step and file commands](commands/steps-and-files.md) | `:step`, `:next`, `:prev`, `:goto`, `:link`, `:ref`, `:embed`, `:follow` |
+| [Step and file commands](commands/steps-and-files.md) | `:step`, `:next`, `:prev`, `:goto`, `:link`, `:ref`, `:embed`, `:scroll`, `:follow` |
 | [View commands](commands/view.md) | `:focus`, `:theme`, `:lang`, `:title`, `:numbers`, `:pad`, `:margin`, `:layout`, `:mouse` |
 | [Export and agent commands](commands/export-and-agents.md) | `:export`, `:supervise`, `:review` |
 | [Save, quit, panel and undo commands](commands/save-and-quit.md) | `:w`, `:saveas`, `:wq`, `:q`, `:autosave`, `:list`, `:present`, `:help`, `:undo`, `:redo` |
@@ -40,6 +40,8 @@ The commands use these arguments:
 | `L:TEXT/N` | The `N`th `TEXT` on line `L`. |
 | `L:` | The whole line `L`. |
 | `.:TEXT` | The first `TEXT` on the cursor line. |
+| `L@C` | The character at column `C` of line `L`. The column counts the characters from 0. |
+| `L@S..E` | The characters from column `S` to column `E` of line `L`. The selection keys write this form. |
 | `@'START'..@'END'` | The lines from the first `START` in the code to the first `END` after it. |
 | `ID` | The id of an annotation, for example `a3`. |
 | `N` | A number, for example a step number. |

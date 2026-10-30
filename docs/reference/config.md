@@ -193,6 +193,8 @@ Tiza never stops because of the config file. When it cannot use an entry, it ign
 | `tiza: config: PATH:LINE: N more keys that are in the file two times: Tiza uses the first value of each` | More than 200 keys are in the file two times. |
 | `tiza: config: PATH:LINE: this line is not valid UTF-8: Tiza ignores its entries` | A line has bytes that are not UTF-8. |
 | `tiza: config: PATH:LINE: ERROR: the table header has an error` | A table header does not parse. Tiza ignores the entries under it, up to the next header. |
+| `tiza: config: PATH:LINE: HEADER: a table or a value above it has this name` | A table header has the name of a table or a key above it. Tiza ignores the entries under it, up to the next header. |
+| `tiza: config: PATH:LINE: this line is not valid UTF-8: the table header has an error` | A table header has bytes that are not UTF-8. Tiza ignores the entries under it, up to the next header. |
 | `tiza: config: PATH:LINE: [TABLE] KEY: ERROR` | A line does not parse. |
 | `tiza: config: PATH:LINE: too many errors` | The file has more than 200 errors. Tiza ignores the rest of the file. |
 | `tiza: config: PATH: TIZA_CONFIG names this file, but it does not exist` | `TIZA_CONFIG` names a file that is not there. |

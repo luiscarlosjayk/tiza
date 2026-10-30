@@ -188,7 +188,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - In the margin, `width` goes from 8 to the width of the margin minus 5. The default is 34.
 - Below the code, `width` is at most the room under the code. The default is all that room.
 - In the margin, a long title can make the block wider. Below the code, Tiza cuts a long title.
-- `kind` is a [kind](document-format.md#kinds), the name of a style, or any name when `style` has a `glyph`.
+- `kind` is a [kind](document-format.md#kinds), the name of a style, the name of a personal style of the config file of the instance, or any name when `style` has a `glyph`. `list_kinds` gives the personal styles in `personal`.
 - `style` is a [mark style](document-format.md#mark-style) for this mark only: `glyph`, `legend` and `color`.
 - `until` is the last step at which a spotlight is active. Without it, the spotlight is active only at its `step`.
 
@@ -263,6 +263,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - `set_theme` with an empty string changes between dark and light. The theme name is not case-sensitive.
 - `goto_step` with an id that no named step has fails with `not_found`.
 - `goto_step` with a step after the last step fails with `invalid_argument`. It does not show the last step, as `set_step` does.
+- `goto_step` to the step on screen applies the moves of that step to the view again. The cursor and the view of the presenter go back to the line of a `cursor` or a `code.link` move of the step, or to the target of its `scroll` move. When the live pointer stays, the cursor stays on the pointer.
 - `goto_step` with an `id` that is not a string or a whole number fails with `invalid_argument`.
 - `set_focus` with `from_line` only puts one line in focus.
 - `set_focus` with `to_line` only fails with `invalid_argument`.

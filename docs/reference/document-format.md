@@ -439,7 +439,7 @@ You add an annotation on the code at its own step. A later move changes the line
 - In a `rebind` entry, `find` searches `line` first, and then the whole code.
 - In a `rebind` entry without `line`, `find` must match exactly once, or the point must have `occurrence`. With `line`, Tiza does not check the number of matches.
 - In a `select`, `find` in `from` starts at the start of the text, and `find` in `to` ends at the end of the text.
-- The edge of `find` that gives a column must be on the edge of a character (a grapheme). That is the start in the `from` of a `select` and the end in its `to`, the two edges in a `rebind` entry of a span, and the start in a `rebind` entry of an arrow end. For example, a joiner alone in `ad` U+200D `min` is an error. Put the whole character in `find`, or use `line` and `col`. The `at` of a note takes only the line, so there it is not an error.
+- The edge of `find` that gives a column must be on the edge of a character (a grapheme). That is the start in the `from` of a `select` and the end in its `to`, the two edges in a `rebind` entry of a span, and the start in a `rebind` entry of an arrow end. For example, a joiner alone in `ad` U+200D `min` is an error. Put the whole character in `find`, or use `line` and `col`. The `at` of a note takes only the line, so there it is not an error. A document whose `select` or `rebind` entry has such a `find` does not open, and the error names the move. `tiza check` gives the same error.
 - In a `select` without `col`, `from` is the start of the line and `to` is the end of the line. In a `rebind` entry, the default `col` is 0.
 
 ### Several files
@@ -680,6 +680,7 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 - In presentation mode, a key that only moves the view does not end the effect: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves and the effect continues. Thus a trackpad or a mouse wheel does not end the effect. With mouse capture, the wheel moves the view. Without mouse capture, the terminal sends the wheel as `↑` and `↓`. When the live pointer is on, these keys end the effect, as any other key does. With mouse capture and the live pointer on, a notch of the wheel also ends the effect, and does nothing else.
 - A change of the live pointer ends the effect, for example when an agent points at a line or the pointer goes off.
 - The auto-advance countdown starts when the effect ends.
+- On the screen, an effect plays at 60 frames each second, or at 30 with `effect_fps = 30` in the [config file](config.md#defaults). A GIF, a WebP or a video plays it at 25 frames each second.
 - A GIF, an animated WebP, an MP4 and a WebM show the effect of each step as frames. The first step of the take shows the final drawing, as when the document opens. A `.tape` records the TUI with its effects. A still, a text export, a `.md`, a `.cast` and `render --step N` show the final drawing.
 - With the `terminal` theme, a fade changes the color in one step at its middle.
 
@@ -702,6 +703,8 @@ The [document schema](../../schema/tiza.schema.json) accepts some documents that
 - A `rebind` entry for an annotation of the document is not empty.
 
 A spotlight with no `from_line` and no `ids` also passes the schema. Tiza loads it, and `tiza check` gives an error for it.
+
+The schema also refuses some documents that Tiza opens: a file from a newer version with a move action, an `op`, an `effect` or a key of a position that this version does not know. See [Moves from a newer version](#moves-from-a-newer-version).
 
 ## Status bar
 

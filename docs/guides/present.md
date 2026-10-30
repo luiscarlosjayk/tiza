@@ -13,6 +13,7 @@ The mouse is off by default. While mouse capture is on, a drag selects code in T
 | Command | What it does |
 |---|---|
 | `tiza FILE --mouse` | Starts Tiza with mouse capture on. |
+| `mouse = true` in `[defaults]` of the [config file](../reference/config.md#defaults) | Starts each session with mouse capture on. |
 | `:mouse on` | Turns mouse capture on. |
 | `:mouse off` | Turns mouse capture off. |
 | `:mouse` | Shows the state of mouse capture. |

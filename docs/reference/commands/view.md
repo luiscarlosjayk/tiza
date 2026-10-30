@@ -96,6 +96,7 @@ For example, hide the line numbers:
 ### Notes on `:numbers`
 
 - `:numbers` alone shows the current value.
+- A document without `numbers` uses `numbers` of the config file, else it shows the line numbers. `:numbers on` and `:numbers off` write the value into the document, also when the config file gives the same value. See [Which value wins](../config.md#which-value-wins).
 - `tiza render --numbers` and `--no-numbers` change the line numbers for one export.
 
 ## `:pad`
@@ -109,7 +110,7 @@ Sets the blank cells around the code and its annotations: `V` rows and `H` colum
 
 For example, `:pad 0 0` removes the padding.
 
-- `:pad default` sets the default padding again.
+- `:pad default` removes the padding of the document. The padding is then `pad` of the config file, else 0 rows and 1 column. The message ends with `(from config.toml)` or `(default)`.
 - `:pad V` sets `H` to two times `V`.
 - `:pad` also takes `V,H` with a comma. Tiza ignores the values after `H`.
 - `:pad` alone shows the current value.
@@ -142,6 +143,7 @@ Sets the layout of normal mode.
 - `:layout dynamic` lets the layout grow as the steps add arrows.
 - Presentation mode and exports always use the take.
 - `:layout` alone shows the current value.
+- `:layout` changes only this session. The document does not keep it. `layout` in the config file sets the layout at start. See [`[defaults]`](../config.md#defaults).
 
 ## `:mouse`
 

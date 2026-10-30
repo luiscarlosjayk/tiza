@@ -128,7 +128,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `step.set` | `step` | Shows a step. In presentation mode, to the step on screen it does what `step.goto` does. | `set_step` |
 | `step.next` | None | Shows the next step. | `next_step` |
 | `step.prev` | None | Shows the previous step. | `prev_step` |
-| `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. | `goto_step` |
+| `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. To the step on screen, it puts the cursor and the view back where the moves of the step put them. | `goto_step` |
 
 ### Focus and pointer
 
@@ -224,6 +224,7 @@ A position also refuses a key that it does not know, in every method. These are 
 
 - the `at`, `from` and `to` of `annotation.add`, `annotation.update` and `move.add`;
 - the span and the arrow ends of the annotations of `scene.put` and `scene.patch`;
+- the `from` and `to` of a `select` move of `scene.put`;
 - the `rebind` entries.
 
 For example, `"at": {"line": 3, "start": 4}` fails, because a position calls its first grapheme `col`. A span calls it `start`.

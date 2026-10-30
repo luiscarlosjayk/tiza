@@ -106,7 +106,7 @@ Follow mode is paused at a step where a `code.patch` is applied. A patch is appl
 - When the file is removed during a pause, the bar shows `⟳ paused (file removed)`. When the file comes back with other code, that code is the change that waits.
 - When the file is not valid UTF-8, the message `cannot follow FILE: not valid UTF-8 (keeping the previous content)` comes one time. That file is not a change. At step N, Tiza reads the file again.
 - In presentation mode, no message comes. When you leave presentation mode, the bar shows the state.
-- `:follow off` drops a change that waits. The message is `follow off: the change to FILE is not loaded`. When an agent turns follow mode off, the message about the change goes from the bar.
+- `:follow off` drops a change that waits. The code on screen stays, as embedded code, and `:follow on` loads the file. The message is `follow off: the change to FILE is not loaded`. When an agent turns follow mode off, the message about the change goes from the bar.
 - A save while you type a `:` command, select text with `v` or `V`, have a panel open, or while a move types its code, waits until you finish.
 
 A document opens at its saved `step`, or at step 1 when it has none. When a patch is applied at that step, `--follow` and `:follow on` start follow mode paused. The message is `following FILE; step N loads a save`. When the file has other code than the screen, that code is the change that waits.
@@ -159,7 +159,7 @@ Agents control follow mode through the socket methods `follow.set` and `follow.s
 | `paused; loads at step 0` | Follow mode is on, and a `code.patch` is applied at the step on screen. |
 | `the code is pasted, not FILE; :follow on reloads FILE` | Follow mode is off after a paste. |
 | `the code is the paste again, not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back a paste. |
-| `the code on screen is not FILE; :follow on reloads FILE` | Follow mode is off, and an undo or a redo brought back code that the file does not have now. |
+| `the code on screen is not FILE; :follow on reloads FILE` | Follow mode is off, and the file does not have the code on screen now. An undo or a redo brought back that code, or `:follow off` dropped a change that waited. |
 | `cannot watch DIR: ERROR` | Follow mode is off, because the file watcher could not start. |
 
 - When the first patch is at step 2 or later, the first row ends with `loads at step M or earlier`. `M` is the step before the first patch.

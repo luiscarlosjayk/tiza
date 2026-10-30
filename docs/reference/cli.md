@@ -269,7 +269,12 @@ Tiza shows these messages in the status bar:
 | `the file has N lines: range A-B clamped to C-D` | The range goes past the end of the file. |
 | `opened the existing PATH` | The range has a `FILE.A-B.tiza` document from an earlier session, and Tiza opened it. |
 | `local API disabled: an instance is already listening on PATH (use --session for another one)` | A second instance starts in a session that already has an instance. |
+| `NAME:LINE: KEY: … (N warnings: tiza config)` | The config file has warnings. At start, the status bar shows the first one. See [Warnings](config.md#warnings). |
+| `N annotations outside the code and not drawn: IDS` | When the document opens, annotations point at lines that the code does not have. |
+| `tiza check gives the problem of N annotations: IDS` | When the document opens, annotations are on lines of the code, but they fail another check. `tiza check` gives the problem. |
+| `N entries are not known: see tiza check` | The document has effects, moves or values that this version of Tiza does not know. See [Moves from a newer version](document-format.md#moves-from-a-newer-version). |
 
 - For a file with one line, the first message says `line`, not `lines`.
+- With one annotation, the messages of the open document say `annotation`. When the document has more than one of these problems at start, one message gives them, with `;` between them.
 - After `local API disabled`, agents and the step commands talk to the first instance.
 - The other causes of `local API disabled` are in [The runtime folder](../concepts/privacy-and-network.md#the-runtime-folder).

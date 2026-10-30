@@ -122,7 +122,7 @@ Tiza asks the terminal for mouse events only while mouse capture is on. Without 
 Unicode gives `⚠` (U+26A0), `↪` (U+21AA), `⏸` (U+23F8) and `▶` (U+25B6) one cell, but some terminals draw them two cells wide. The status bar counts one cell for each, so in such a terminal the bar is too long for its row.
 
 - At start, Tiza measures how wide the terminal draws each of these signs. See [The width probe](#the-width-probe).
-- When the terminal draws a sign two cells wide, the text that Tiza shows outside the code shows a plain form in its place: `!` for `⚠`, `>` for `↪` and `▶`, and `||` for `⏸`. This text is the status bar with its hints and messages, the messages of the command line, the panels, and the messages of presentation mode.
+- When the terminal draws a sign two cells wide, the text that Tiza shows outside the code shows a plain form in its place: `!` for `⚠`, `>` for `↪` and `▶`, and `||` for `⏸`. This text is the status bar with its hints and messages, the messages of the command line, the panels, and the messages and the review chip of presentation mode.
 - A step title, a label and a message that you write get the plain form there too.
 - The code and the annotations keep the signs, also in the exports. In such a terminal, a `⚠` in a line of code moves the rest of that line by one cell. At the right edge of the screen, the line can then go past the edge: the screen moves up one row, or the end of the line is lost.
 - What you type in the command line keeps the signs.

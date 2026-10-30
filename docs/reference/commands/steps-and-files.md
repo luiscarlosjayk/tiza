@@ -11,7 +11,7 @@ Goes to a step.
 ```
 
 - `:step N` can go to the step after the last step. That step is empty. New annotations go there. On that step, `:step N` again and `step.set` stay on it. `n` stays on it too, unless the document loops: then `n` goes to step 0.
-- In presentation mode, `:step N` to the step on screen does what `:goto N` does there: the view goes back to the target of the `scroll` of the step, and what comes in at the step comes into the view. See [Present](../keys.md#present).
+- In presentation mode, `:step N` to the step on screen does what `:goto N` does there: the view goes back to the target of the `scroll` of the step, and what comes in at the step comes into the view. A `cursor` or a `code.link` move of the step puts the cursor and the view back on its line. See [Present](../keys.md#present).
 - When a move does not apply, the status bar shows the warning of the move in place of `step N/M`.
 - `:step ID N` moves an annotation to a step. See [`:step ID N`](change.md#step-id-n).
 
@@ -37,6 +37,9 @@ Goes to a named step or to a step number. Tiza applies the steps from step 0 up 
 ```
 
 For example, `:goto borrow` goes to the step with the name `borrow`. Named steps are in [Go to a named step](../document-format.md#go-to-a-named-step).
+
+- `:goto` to the step on screen applies the moves of that step to the view again. A `scroll` move puts the view back on its target. A `cursor` or a `code.link` move puts the cursor and the view back on its line. When the live pointer stays, the cursor stays on the pointer.
+- In presentation mode, what comes in at that step also comes into the view again.
 
 ## `:link`
 
@@ -73,6 +76,7 @@ For example, `:scroll 120 align=top` puts line 120 at the top of the view at the
 - `align=A` is `top`, `center`, `bottom` or `show`. Without it, the target goes to the center.
 - The view moves at once. See [Scroll](../document-format.md#scroll).
 - At step 0, `:scroll` gives an error, because step 0 is the code before any move.
+- `:scroll` refuses a target that is not in the code at the step on screen, and adds no move. For example: `scroll: line 120 is not in the code shown at this step (lines 1-80)`.
 
 ## `:ref`
 

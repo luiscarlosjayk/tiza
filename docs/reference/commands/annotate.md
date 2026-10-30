@@ -30,7 +30,7 @@ How Tiza draws the span.
 </dd>
 </dl>
 
-`KIND` is a built-in kind, an alias, the name of a style or a glyph. The kinds are in [Kinds](../document-format.md#kinds).
+`KIND` is a built-in kind, an alias, the name of a style, the name of a personal style of the [config file](../config.md#styles), or a glyph. The kinds are in [Kinds](../document-format.md#kinds).
 
 For example, mark `takes` on line 3 with the `move` kind:
 
@@ -473,5 +473,5 @@ For example, define the style `io` and use it in a mark:
 ### Notes on `:style`
 
 - `:style NAME` removes the style. When `NAME` is not a style, Tiza shows the usage.
-- `:style` alone shows the styles and the built-in kinds.
+- `:style` alone shows the styles, the personal styles of the config file that the document does not have, and the built-in kinds.
 - A style is a custom kind. Tiza saves it in the document.
