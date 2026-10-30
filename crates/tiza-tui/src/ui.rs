@@ -114,6 +114,8 @@ pub fn clamp_padding(pad: (u16, u16), size: (u16, u16), present: bool) -> (u16, 
 }
 
 pub fn draw(frame: &mut Frame, app: &mut App) {
+    // This frame puts the held view of a step change on screen.
+    app.held_unresolved = false;
     let area = frame.area();
     app.size = (area.width, area.height);
     app.close_panel_too_small();
@@ -237,6 +239,34 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         app.scroll = app.scroll.saturating_add_signed(rows);
     }
     app.scroll = app.scroll.min(total.saturating_sub(visible));
+    // D14 at each frame: a held view keeps its target, also when the
+    // terminal gets smaller, and the live pointer stays only where the
+    // view shows its lines. So the screen is never dimmed with no lit line.
+    if app.scroll_held.is_some()
+        && let Some(p) = app.pointer
+        && ![p.line, p.to].iter().all(|l| {
+            layout
+                .row_of_line
+                .get(l)
+                .is_some_and(|&r| r >= app.scroll && r < app.scroll + visible)
+        })
+    {
+        app.clear_pointer();
+        // The held view keeps holding, with the pointer off now; in normal
+        // mode the cursor goes to its target, as at a jump (in
+        // presentation mode the hidden cursor goes into the view below).
+        if let Some(h) = app.scroll_held.as_mut() {
+            h.pointer = None;
+            if !app.present {
+                app.cursor_line = h.lines.0;
+                app.cursor_col = 0;
+            }
+            h.cursor = (app.cursor_line, app.cursor_col);
+        }
+        // The layout of this frame dims all but the lines of the pointer:
+        // lay it out again, the same rows with nothing dimmed.
+        layout = app.screen_layout_with_pointer(canvas_area.width as usize);
+    }
     if app.present && app.mode == Mode::Normal {
         match app.pointer {
             // The hidden cursor goes into the view; a held view (a reveal)
@@ -375,9 +405,12 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             }
         }
     } else {
-        if app.doc.max_step() > 1 || app.doc.step == 0 {
-            // Discreet step counter in presentation mode.
-            let txt = format!(" {}/{} ", app.doc.step, app.doc.max_step());
+        // Discreet step counter in presentation mode, with the count of the
+        // status bar: on the new empty step after the last one too, also in
+        // a document of one step.
+        let total = app.doc.step_total(app.doc.step);
+        if total > 1 || app.doc.step == 0 {
+            let txt = format!(" {}/{} ", app.doc.step, total);
             let w = txt.width() as u16;
             if area.width > w {
                 frame.buffer_mut().set_string(
@@ -806,7 +839,7 @@ fn fit_bar_message(
 /// mode, for [`crate::app::PRESENT_MESSAGE_TTL`]: the status bar's
 /// text on the command line's row, nothing else of the bar.
 fn draw_present_message(frame: &mut Frame, app: &App, area: Rect) {
-    let Some((m, is_err)) = &app.message else {
+    let Some((m, is_err)) = &app.present_message else {
         return;
     };
     let th = &app.theme;
@@ -889,18 +922,16 @@ fn draw_status(frame: &mut Frame, app: &App, layout: &Layout, area: Rect) {
             // `step 3/7 · Shared borrow` on a named step; a long
             // title is cut so the rest of the bar keeps its room.
             match app.doc.step_title(app.doc.step) {
-                // The new empty step after the last one counts too: never
-                // `step 2/1`.
                 Some(t) => format!(
                     "  step {}/{} · {}",
                     app.doc.step,
-                    app.doc.max_step().max(app.doc.step),
+                    app.doc.step_total(app.doc.step),
                     fit_message(&tiza_core::printable::printable_line(&t), 32)
                 ),
                 None => format!(
                     "  step {}/{}",
                     app.doc.step,
-                    app.doc.max_step().max(app.doc.step)
+                    app.doc.step_total(app.doc.step)
                 ),
             },
             bar,

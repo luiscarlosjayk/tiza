@@ -741,6 +741,8 @@ pub fn request_redraws(method: &str, changed: bool) -> bool {
 /// Handles one key press exactly as the event loop does (public so QA tests
 /// can drive the real keyboard logic without a terminal).
 pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
+    // A step change in this turn of the loop: its view first.
+    app.resolve_pending_view();
     key(app, code, mods);
     // The live pointer follows the cursor or the selection.
     app.sync_pointer();
@@ -756,6 +758,10 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     if swallowed {
         return;
     }
+    // The next key hides the result of a `:` command in presentation mode,
+    // also one that ends a typing or works in a panel; the message of that
+    // key does not take its place there.
+    app.present_message = None;
     // Ctrl-C is looked at before anything else can take it as text (the
     // command line would type a `c`, a typing animation would only end).
     if code == KeyCode::Char('c') && mods.contains(KeyModifiers::CONTROL) {
@@ -960,9 +966,11 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
             app.next_step();
         }
         KeyCode::Char('p') | KeyCode::PageUp => app.set_step(app.doc.step.saturating_sub(1)),
-        KeyCode::Char('u') => app.undo(),
-        KeyCode::Char('U') => app.redo(),
-        KeyCode::Char('r') if ctrl => app.redo(),
+        // Presenting, not editing: in presentation mode these keys do
+        // nothing (`:undo` and `:redo` still work, and show their result).
+        KeyCode::Char('u') if !app.present => app.undo(),
+        KeyCode::Char('U') if !app.present => app.redo(),
+        KeyCode::Char('r') if ctrl && !app.present => app.redo(),
         KeyCode::Char('t') => app.toggle_theme(),
         KeyCode::Char('P') => app.set_present(!app.present),
         // The live pointer: on the cursor line, or off.
@@ -1202,14 +1210,16 @@ fn list_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
                 app.go_to_list_item(&item);
             }
         }
-        KeyCode::Char('x') => {
+        // In presentation mode the list edits nothing, as the keys of an
+        // annotation reached with Tab.
+        KeyCode::Char('x') if !app.present => {
             if let Some(item) = chosen {
                 app.delete_list_item(&item);
             }
         }
-        KeyCode::Char('u') => app.undo(),
-        KeyCode::Char('U') => app.redo(),
-        KeyCode::Char('r') if ctrl => app.redo(),
+        KeyCode::Char('u') if !app.present => app.undo(),
+        KeyCode::Char('U') if !app.present => app.redo(),
+        KeyCode::Char('r') if ctrl && !app.present => app.redo(),
         _ => {}
     }
     // A stale move says why on the bar while it is selected.

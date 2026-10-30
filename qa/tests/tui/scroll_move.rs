@@ -441,7 +441,8 @@ fn undoing_a_scroll_leaves_the_view() {
     let live = open("scroll-undo", "effect.tiza", 1);
     live.command("scroll 60 align=top");
     assert_eq!(row_of(&live, "let v60 = 60;"), Some(0));
-    key(&live, KeyCode::Char('u'));
+    // `:undo`: in presentation mode the key `u` does nothing.
+    live.command("undo");
     assert_eq!(
         live.api_ok("move.list", serde_json::json!({}))["moves"]
             .as_array()

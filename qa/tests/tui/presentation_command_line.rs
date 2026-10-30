@@ -23,7 +23,7 @@ use crossterm::event::KeyCode;
 use ratatui::{Terminal, backend::TestBackend};
 use serde_json::json;
 use tiza_qa::Live;
-use tiza_tui::app::{Mode, Overlay, PRESENT_MESSAGE_TTL};
+use tiza_tui::app::{Mode, MouseKind, Overlay, PRESENT_MESSAGE_TTL};
 
 const CODE: &str = "fn main() {\n    let s = String::from(\"hello\");\n    takes(s);\n}\n\nfn takes(s: String) {\n    println!(\"{s}\");\n}\n";
 
@@ -300,4 +300,67 @@ fn colon_with_an_overlay_open_is_unchanged() {
     live.keys(&[KeyCode::Char(':')]);
     assert_eq!(live.with(|a| a.mode.clone()), Mode::Normal);
     assert_eq!(live.with(|a| a.overlay), Overlay::Help);
+}
+
+#[test]
+fn the_message_of_a_key_never_shows_in_presentation_mode() {
+    // `:foo` shows its result for 2 s. A key then (`f` says «pointer on»)
+    // hides it, and its own message does not take its place.
+    let live = presenting("key-message");
+    live.type_text(":foo");
+    live.keys(&[KeyCode::Enter]);
+    assert!(last_row(&live, 70, 14).contains("unknown"));
+    live.keys(&[KeyCode::Char('f')]);
+    assert!(live.with(|a| a.message.is_some()), "f says something");
+    assert!(!live.with(|a| a.present_message_shown()));
+    assert!(!last_row(&live, 70, 14).contains("pointer"));
+}
+
+#[test]
+fn the_last_row_shows_the_result_of_the_command_whatever_else_says_something() {
+    // While the result of `:foo` shows, a message comes from elsewhere (a
+    // watcher, a request): the last row keeps the result of the command.
+    let live = presenting("result-kept");
+    live.type_text(":foo");
+    live.keys(&[KeyCode::Enter]);
+    live.with(|a| a.message = Some(("from elsewhere".into(), false)));
+    let row = last_row(&live, 70, 14);
+    assert!(row.contains("unknown"), "{row:?}");
+    assert!(!row.contains("elsewhere"), "{row:?}");
+}
+
+#[test]
+fn a_key_that_ends_a_typing_also_hides_the_result() {
+    // `:step 2` goes to a step that types (one line an hour): its result
+    // shows. The next key ends the typing, and hides the result too.
+    let live = presenting("typing-hides");
+    live.api_ok(
+        "move.add",
+        serde_json::json!({
+            "at_step": 2, "action": "code.patch", "op": "insert", "position": "2",
+            "content": "// typed", "typing": "line", "speed_ms": 3_600_000
+        }),
+    );
+    live.with(|a| a.doc.step = 1);
+    live.type_text(":step 2");
+    live.keys(&[KeyCode::Enter]);
+    assert!(live.with(|a| a.is_typing() && a.present_message_shown()));
+    live.keys(&[KeyCode::Char('x')]);
+    assert!(!live.with(|a| a.is_typing()));
+    assert!(!live.with(|a| a.present_message_shown()));
+}
+
+#[test]
+fn a_notch_of_the_wheel_hides_the_result_as_a_key_does() {
+    // With mouse capture the wheel comes as no key: the result stayed for
+    // its 2 seconds while the view moved. Without the capture the terminal
+    // sends ↓, which hid it at once.
+    let live = presenting("wheel-hides");
+    live.with(|a| a.mouse = true);
+    live.type_text(":foo");
+    live.keys(&[KeyCode::Enter]);
+    assert!(last_row(&live, 70, 14).contains("unknown"));
+    live.with(|a| a.on_mouse(MouseKind::ScrollDown, 10, 3));
+    assert!(!live.with(|a| a.present_message_shown()));
+    assert!(!last_row(&live, 70, 14).contains("unknown"));
 }

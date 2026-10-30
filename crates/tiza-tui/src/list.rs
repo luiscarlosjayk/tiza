@@ -351,6 +351,9 @@ pub fn list(app: &App) -> (Panel, Vec<ListItem>) {
         selected,
         footer: if app.overlay_typing {
             typing_footer()
+        } else if app.present {
+            // Presentation mode: the list edits nothing.
+            vec![("j/k", "select"), ("enter", "go")]
         } else {
             vec![
                 ("j/k", "select"),

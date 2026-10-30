@@ -131,10 +131,16 @@ impl Document {
         n.title.clone().or_else(|| n.id.clone())
     }
 
+    /// The count after `step` in `step 3/7`: the last step, or `step` on
+    /// the new empty step after it, which counts too (never `2/1`). The
+    /// labels, the status bar and the counter of presentation mode use it.
+    pub fn step_total(&self, step: u32) -> u32 {
+        self.max_step().max(step)
+    }
+
     /// `step 3/7`, or `step 3/7 · Shared borrow` on a named step.
     pub fn step_label(&self, step: u32) -> String {
-        // The new empty step after the last one counts too: never `2/1`.
-        let base = format!("step {step}/{}", self.max_step().max(step));
+        let base = format!("step {step}/{}", self.step_total(step));
         match self.step_title(step) {
             Some(t) => format!("{base} · {t}"),
             None => base,

@@ -10,7 +10,7 @@ Goes to a step.
 :step N
 ```
 
-- `:step N` can go to the step after the last step. That step is empty. New annotations go there.
+- `:step N` can go to the step after the last step. That step is empty. New annotations go there. On that step, `:step N` again and `step.set` stay on it. `n` stays on it too, unless the document loops: then `n` goes to step 0.
 - In presentation mode, `:step N` to the step on screen does what `:goto N` does there: the view goes back to the target of the `scroll` of the step, and what comes in at the step comes into the view. See [Present](../keys.md#present).
 - When a move does not apply, the status bar shows the warning of the move in place of `step N/M`.
 - `:step ID N` moves an annotation to a step. See [`:step ID N`](change.md#step-id-n).

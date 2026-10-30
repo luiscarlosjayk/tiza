@@ -1838,3 +1838,76 @@ fn in_normal_mode_with_a_margin_the_lines_of_a_later_box_keep_their_rows() {
     live.with(|a| key(a, KeyCode::Char('n')));
     assert_eq!(rows(&live), step2);
 }
+
+#[test]
+fn after_a_shrink_the_pointer_out_of_a_held_view_turns_off() {
+    // Step 2 holds line 100 at the bottom. The pointer, set before the
+    // step on line 90, on line 98, or on lines 90-98, stays at the jump.
+    // The terminal then gets 14 rows shorter: the held view keeps line 100
+    // at the bottom, and a pointer with a line out of the view turns off.
+    // That frame is drawn with nothing dimmed (the next one is the same),
+    // and the held view still holds: back to the full size, line 100 is
+    // on the last row again. In normal mode the cursor goes to the target.
+    for present in [true, false] {
+        for (from, to, stays) in [(90, 90, false), (98, 98, true), (90, 98, false)] {
+            let what = format!("present {present}, pointer {from}-{to}");
+            let doc = serde_json::json!({
+                "schema": 1, "source": {"language": "rs", "first_line": 1},
+                "code": code_of(160, "v"), "annotations": [],
+                "moves": [{"at_step": 2, "action": "scroll", "line": 100, "align": "bottom"}],
+                "step": 1
+            });
+            let live = open_doc(
+                &format!("ps-{}-{from}-{to}", u8::from(present)),
+                doc,
+                present,
+            );
+            live.api_ok("pointer.set", serde_json::json!({ "from": from, "to": to }));
+            top_text(&live);
+            live.with(|a| key(a, KeyCode::Char('n')));
+            top_text(&live);
+            let at = live.with(|a| a.pointer.map(|p| (p.line, p.to)));
+            assert_eq!(at, Some((from, to)), "{what}: at the jump");
+            let (small, again) =
+                live.with(|a| (draw(a, COLS, ROWS - 14), draw(a, COLS, ROWS - 14)));
+            let at = live.with(|a| a.pointer.map(|p| (p.line, p.to)));
+            assert_eq!(at, stays.then_some((from, to)), "{what}");
+            if !stays {
+                assert_eq!(small, again, "{what}: a frame with nothing dimmed");
+                if !present {
+                    assert_eq!(live.with(|a| a.cursor_line), 100, "{what}: the cursor");
+                }
+            }
+            let last = live.with(|a| {
+                draw(a, COLS, ROWS);
+                a.hit.rows.iter().rposition(|r| r.is_some())
+            });
+            let row_100 = row_of(&live, 100);
+            assert_eq!(row_100, last, "{what}: the held view holds");
+        }
+    }
+}
+
+#[test]
+fn a_key_in_the_same_turn_as_a_step_with_a_camera_starts_from_its_view() {
+    // Step 2 holds line 80 at the top; notes on line 5 and line 90. `n`
+    // and Tab come with no frame between (an auto-advance and a key in one
+    // turn of the loop): Tab goes to the note of line 90, in the view of
+    // step 2, and the view is that of the `scroll`.
+    let live = open_json(
+        "same-turn",
+        serde_json::json!([
+            {"id": "n1", "step": 1, "type": "note", "line": 5, "text": "up"},
+            {"id": "n2", "step": 1, "type": "note", "line": 90, "text": "down"}
+        ]),
+        serde_json::json!([{"at_step": 2, "action": "scroll", "line": 80, "align": "top"}]),
+        1,
+    );
+    assert_eq!(top_text(&live), "let v1 = 1;");
+    live.with(|a| {
+        key(a, KeyCode::Char('n'));
+        key(a, KeyCode::Tab);
+    });
+    assert_eq!(live.with(|a| (a.doc.step, a.cursor_line)), (2, 90));
+    assert_eq!(top_text(&live), "let v80 = 80;");
+}

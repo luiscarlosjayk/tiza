@@ -334,6 +334,7 @@ struct RequestState {
     scroll_applied: Option<(u32, usize)>,
     scroll_step: u32,
     scroll_held: Option<ScrollHeld>,
+    held_unresolved: bool,
     view_anchor: Option<(u32, isize)>,
     view_cursor_line: u32,
     view_request: Option<ViewRequest>,
@@ -374,6 +375,7 @@ impl RequestState {
             scroll_applied: app.scroll_applied,
             scroll_step: app.scroll_step,
             scroll_held: app.scroll_held.clone(),
+            held_unresolved: app.held_unresolved,
             view_anchor: app.view_anchor,
             view_cursor_line: app.view_cursor_line,
             view_request: app.view_request,
@@ -413,6 +415,7 @@ impl RequestState {
         app.scroll_applied = self.scroll_applied;
         app.scroll_step = self.scroll_step;
         app.scroll_held = self.scroll_held;
+        app.held_unresolved = self.held_unresolved;
         app.view_anchor = self.view_anchor;
         app.view_cursor_line = self.view_cursor_line;
         app.view_request = self.view_request;
@@ -579,9 +582,13 @@ pub struct App {
     /// `rebind` entry a paste or a reload left ignored): while it is the
     /// message, the bar gives it the room it needs.
     pub stale_message: Option<String>,
-    /// Presentation mode only: until when `message` — the result of
-    /// the command just run — is drawn on the last row. `None`: hidden.
+    /// Presentation mode only: until when `present_message` — the result
+    /// of the command just run — is drawn on the last row. `None`: hidden.
     pub present_message_until: Option<std::time::Instant>,
+    /// Presentation mode only: the result of the `:` command (or the notice
+    /// at the start) that the last row shows, apart from `message`, so that
+    /// the message of a key never shows there.
+    pub present_message: Option<(String, bool)>,
     pub revision: u64,
     /// The take's geometry (arrow lanes, box band, code column), computed
     /// from the whole document once per change instead of once per frame:
@@ -730,6 +737,10 @@ pub struct App {
     /// After a jump, the view keeps the target where `align` puts it, frame
     /// after frame, until the cursor or the pointer moves.
     pub scroll_held: Option<ScrollHeld>,
+    /// A step change left a held view that no frame has put on screen yet:
+    /// a key or a mouse event before that frame resolves it first
+    /// ([`App::resolve_pending_view`]). The frame clears it.
+    pub held_unresolved: bool,
     /// Where the last frame showed the code ([`view_anchor_of`]): in
     /// presentation mode the next frame keeps that line at that row while
     /// the rows above it change. `None` after [`App::set_scroll`]: then
@@ -796,6 +807,7 @@ impl App {
             message: None,
             stale_message: None,
             present_message_until: None,
+            present_message: None,
             revision: 1,
             geometry: Default::default(),
             viewport: Default::default(),
@@ -844,6 +856,7 @@ impl App {
             scroll_applied: None,
             scroll_step: 0,
             scroll_held: None,
+            held_unresolved: false,
             view_anchor: None,
             view_cursor_line: cursor_line,
             view_request: None,
@@ -1774,6 +1787,41 @@ impl App {
             show_row: None,
         });
         true
+    }
+
+    /// A key or a mouse event before the first frame of a step with a held
+    /// view: the view of that step first ([`App::held_unresolved`]).
+    pub fn resolve_pending_view(&mut self) {
+        if std::mem::take(&mut self.held_unresolved) {
+            self.resolve_held_view();
+        }
+    }
+
+    /// The view that the held view (a `scroll` or a reveal) puts on screen,
+    /// at once, as the next frame would: a key that comes before that frame
+    /// starts from it, and a key that moves the cursor does not let the
+    /// held view go before it is applied. One layout, only with a held view.
+    fn resolve_held_view(&mut self) {
+        // Before the first frame the size is not known: that frame does it.
+        if self.scroll_held.is_none() || self.screen_height() == 0 {
+            return;
+        }
+        let width = self.screen_width();
+        let layout = self.screen_layout_with_pointer(width);
+        let visible = self.screen_height();
+        // From the view the next frame would show, as `ui::draw` does.
+        let current = self
+            .view_anchor
+            .filter(|_| self.present)
+            .and_then(|a| view_row_of(&layout, a))
+            .unwrap_or(self.scroll);
+        let to_come = self.held_rows_to_come(&layout, width);
+        let Some(h) = self.scroll_held.as_mut() else {
+            return;
+        };
+        if let Some(top) = h.scroll_on(&layout, (visible, width), current, to_come) {
+            self.set_scroll(top);
+        }
     }
 
     /// The live pointer at a jump or a reveal (D14): it stays only when the
@@ -3253,6 +3301,11 @@ impl App {
     /// the step on screen, as a goto there: its camera again, and what
     /// comes in at it. Normal mode does not change.
     fn step_to_asked(&mut self, step: u32) -> bool {
+        // On the empty step after the last one, that step or a later one:
+        // it stays there (a step change would go back to the last step).
+        if self.doc.step > self.doc.max_step() && step >= self.doc.step {
+            return false;
+        }
         let here = self.present && step.min(self.doc.max_step().max(1)) == self.doc.step;
         self.step_to_with(step, here)
     }
@@ -3274,6 +3327,9 @@ impl App {
         match self.doc.next_step_from(self.doc.step) {
             Some(0) => self.step_to_with(0, true),
             Some(n) => self.step_to(n),
+            // At the empty step after the last one: nothing moves (a step
+            // change would go back to the last step).
+            None if self.doc.step > self.doc.max_step() => false,
             // At the last step: as before, nothing moves.
             None => self.step_to(self.doc.step + 1),
         }
@@ -3447,6 +3503,7 @@ impl App {
                 // lines, and the cursor with it (D14): decided once, on the
                 // view of the camera and the reveal together. Back at the
                 // top, on the top.
+                let pointer_on = self.pointer.is_some();
                 if settle {
                     self.settle_pointer(before);
                 } else if went_top
@@ -3456,6 +3513,11 @@ impl App {
                     self.pointer = None;
                     (self.cursor_line, self.cursor_col) = placed;
                 }
+                // A key in the same turn of the loop, before the next frame,
+                // starts from the view of the new step: it resolves the held
+                // view first (`settle_pointer` already did, with the
+                // pointer). The frame does it at no cost otherwise.
+                self.held_unresolved = self.scroll_held.is_some() && !(settle && pointer_on);
             }
             self.clamp_cursor();
             // The step moved the cursor (to the pointer, a `cursor` move):
@@ -4047,6 +4109,7 @@ impl App {
     pub fn set_present(&mut self, on: bool) {
         self.present = on;
         self.present_message_until = None;
+        self.present_message = None;
         // A key of the view and a reveal are for presentation mode only.
         self.view_request = None;
         // A selection of normal mode cannot be seen there: it goes.
@@ -4068,11 +4131,11 @@ impl App {
     /// A `:` command just ran (Enter): in presentation mode its message
     /// stays on the last row for [`PRESENT_MESSAGE_TTL`].
     pub fn command_finished(&mut self, now: std::time::Instant) {
-        self.present_message_until = if self.present && self.message.is_some() {
-            Some(now + PRESENT_MESSAGE_TTL)
-        } else {
-            None
-        };
+        self.present_message = self.message.clone().filter(|_| self.present);
+        self.present_message_until = self
+            .present_message
+            .is_some()
+            .then_some(now + PRESENT_MESSAGE_TTL);
     }
 
     /// Presentation mode hides the bar: when the TUI opens there, the effects
@@ -4093,6 +4156,7 @@ impl App {
         {
             self.info(short);
         }
+        self.present_message = self.message.clone();
         self.present_message_until = Some(now + PRESENT_MESSAGE_TTL);
     }
 
@@ -4102,6 +4166,7 @@ impl App {
         match self.present_message_until {
             Some(until) if now >= until => {
                 self.present_message_until = None;
+                self.present_message = None;
                 if self.present {
                     // Seen and gone: it must not come back on the status
                     // bar when presentation mode ends.
@@ -4117,7 +4182,7 @@ impl App {
     pub fn present_message_shown(&self) -> bool {
         self.present
             && self.present_message_until.is_some()
-            && self.message.is_some()
+            && self.present_message.is_some()
             && !matches!(self.mode, Mode::Command(_))
     }
 
@@ -6302,10 +6367,14 @@ impl App {
                                     max + 1
                                 )));
                             }
-                            if n == max + 1 && n != self.doc.step {
-                                self.doc.step = n;
-                                self.camera_changed();
-                                self.revision += 1;
+                            if n == max + 1 {
+                                // Already there: it stays (a step change
+                                // would go back to the last step).
+                                if n != self.doc.step {
+                                    self.doc.step = n;
+                                    self.camera_changed();
+                                    self.revision += 1;
+                                }
                                 return Ok(format!("step {n}/{n}: empty, new annotations go here"));
                             }
                             Ok(self.step_message_asked(n))
@@ -8941,6 +9010,7 @@ impl App {
         if !self.mouse || self.overlay != Overlay::None {
             return MouseOutcome::Ignored;
         }
+        self.resolve_pending_view();
         // Presentation mode hides the status bar, the cursor and the
         // selection, so annotating with the mouse there would be blind: a
         // click or a drag does nothing (back in normal mode it works again).
@@ -8955,6 +9025,9 @@ impl App {
             if self.mode != Mode::Normal {
                 return MouseOutcome::Ignored;
             }
+            // A notch hides the result of a `:` command, as a key does: so
+            // do ↓ and ↑ when the terminal sends the wheel as keys.
+            self.present_message = None;
             if self.pointer.is_none() {
                 self.view_by(rows);
             } else if self.is_typing() {
@@ -8972,11 +9045,15 @@ impl App {
         }
         // A button ends an enter effect and does nothing else, as a key
         // does; the wheel lets it play, as the keys that only move the view.
+        // With the live pointer on, the wheel would move the pointer, and a
+        // change of the pointer ends the effect: it ends it and does
+        // nothing else, as a key does.
         if self.is_playing_effect()
-            && matches!(
+            && (matches!(
                 kind,
                 MouseKind::Down | MouseKind::Drag | MouseKind::OtherButton
-            )
+            ) || (self.pointer.is_some()
+                && matches!(kind, MouseKind::ScrollDown | MouseKind::ScrollUp)))
         {
             self.finish_effect();
             self.drag_from = None;

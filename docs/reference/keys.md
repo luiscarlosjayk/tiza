@@ -139,9 +139,10 @@ The status bar shows the selected annotation and its keys. A message hides them.
 - The view stays on the same code when you go to another step, when an agent changes an annotation and when the terminal changes size. At a step change, these things move it: a `scroll`, a `cursor` or a `code.link` move of the step, the return to the top at a step that no `scroll` move reaches (see [Scroll](document-format.md#scroll)), what comes in at the step, and code that is not on screen at the new step (another file, or lines out of the window of a `code.link`). When an agent or `Enter` in the list moves the cursor to another line, the view follows the cursor.
 - When you go to a step, its new annotations and the lines that its moves write come into the view, and the view moves as little as possible. When they do not fit, the view shows their start. The hidden cursor goes to the first of these lines, so `f` points at it. This also occurs with `:goto`, with `:step`, with the auto-advance, and when Tiza opens at a step in presentation mode. It does not occur when you go back one step (also with `:goto` or `:step`), when you go back to step 0, or when you start presentation mode with `P`. When you go back to a step that no `scroll` move reaches, the view goes to the top (see [Scroll](document-format.md#scroll)). Until a key moves the view or the cursor, what came in stays in view when the terminal changes size.
 - A `scroll`, a `cursor` or a `code.link` move of the step places the view, and then nothing else comes into the view. A `scroll` move that finds no target does not place the view. A `cursor` or a `code.link` of an earlier step does not move the view, unless the code of the view is not on screen at the new step. Then the view shows the code as that move puts it.
-- The other keys of normal mode also work in presentation mode.
+- The other keys of normal mode also work in presentation mode, except the keys that edit. See the items below.
 - Press `:` to type a command. The command line shows on the last row. The result of the command stays there for 2 seconds.
-- Only the result of a `:` command shows. The messages of the keys, for example after `u`, do not show in presentation mode.
+- Only the result of a `:` command shows. The messages of the keys, for example after `f`, do not show in presentation mode, also in the 2 seconds after the result of a command. The next key hides that result. With mouse capture, a notch of the wheel also hides it.
+- In presentation mode, `u`, `U` and `Ctrl-R` do nothing, because you present and do not edit. In the list (`L`), `x`, `u`, `U` and `Ctrl-R` do nothing too. To undo or redo while you present, type `:undo` or `:redo`: the last row shows the result.
 - `Ctrl-C` quits in presentation mode when no item of the [Ctrl-C](#ctrl-c) list is open.
 - In presentation mode, a click or a drag does nothing. See [Presentation mode](../guides/present.md#presentation-mode).
 - While an enter effect plays, the keys that only move the view do not end it. See [Enter effects](document-format.md#enter-effects-experimental).
@@ -156,8 +157,10 @@ The live pointer works like a laser pointer. It shows one line or a group of lin
 4. Press `f` to turn it off.
 
 - `Esc` also turns off the pointer when no selection, panel or command line is open. In a selection, `Esc` closes only the selection, and the pointer stays on the cursor line.
-- The pointer stays on its line when you change the step. When the step moves the view (a camera move of the step, the return to the top, or in presentation mode what comes in at the step) and the new view does not show the lines of the pointer, the pointer turns off. When the pointer stays, a `cursor` or a `code.link` of the step does not move it, and the cursor stays on the pointer. This also occurs with a goto to the step on screen.
+- The pointer stays on its line when you change the step. When the pointer stays, a `cursor` or a `code.link` of the step does not move it, and the cursor stays on the pointer. This also occurs with a goto to the step on screen.
+- When a step moves the view and the new view does not show the lines of the pointer, the pointer turns off. A camera move of the step and the return to the top move the view. In presentation mode, what comes in at the step also moves the view.
 - When a move removes the line of the pointer, the pointer turns off. It also turns off when a move fails at a change of step.
+- When the view of a `scroll` move or of what came in at the step keeps its place and the terminal gets smaller, the pointer turns off if the view does not show its lines.
 - After a paste or a reload, the pointer goes to the cursor line.
 - The command line hides the pointer while it is open.
 - Tiza never saves the pointer. An export never shows it. `u` does not undo it.

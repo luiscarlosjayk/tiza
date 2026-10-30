@@ -329,3 +329,39 @@ fn the_help_names_the_flag() {
     let help = tiza_qa::tiza_ok(&["--help"]);
     assert!(help.contains("--mouse"), "{help}");
 }
+
+#[test]
+fn with_the_pointer_on_the_wheel_ends_an_effect_and_does_nothing_else() {
+    // Normal mode, mouse on: a box of step 2 plays `draw`. With the live
+    // pointer on line 1, a notch of the wheel ends the effect and the
+    // pointer stays, as a key does. With the pointer off, the wheel lets
+    // the effect play and moves the cursor, as before.
+    for pointer in [true, false] {
+        let l = live(&format!("wheel-effect-{pointer}"));
+        l.api_ok(
+            "annotation.add",
+            serde_json::json!({"type": "box", "from_line": 2, "to_line": 3, "step": 2, "effect": "draw"}),
+        );
+        l.with(|a| a.cursor_line = 1);
+        if pointer {
+            l.keys(&[KeyCode::Char('f')]);
+        }
+        l.keys(&[KeyCode::Char('n')]);
+        assert!(l.with(|a| a.is_playing_effect()), "pointer {pointer}");
+        let out = l.with(|a| a.on_mouse(MouseKind::ScrollDown, 5, 2));
+        let got = l.with(|a| {
+            (
+                a.is_playing_effect(),
+                a.cursor_line,
+                a.pointer.map(|p| p.line),
+            )
+        });
+        if pointer {
+            assert_eq!(out, MouseOutcome::EndedEffect);
+            assert_eq!(got, (false, 1, Some(1)));
+        } else {
+            assert_eq!(out, MouseOutcome::Scrolled);
+            assert!(got.0, "the effect plays on");
+        }
+    }
+}
