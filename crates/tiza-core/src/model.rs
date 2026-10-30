@@ -2718,6 +2718,9 @@ pub(crate) fn inside_character(
     end: usize,
     edges: Edges,
 ) -> Option<Error> {
+    // The first character that the hit touches, and the one after the last.
+    let first = grapheme_around(t, start).map_or_else(|| grapheme_index(t, start), |(i, _)| i);
+    let whole = (first, grapheme_index(t, end));
     let starts = (edges != Edges::End).then_some((start, "starts"));
     let ends = (edges != Edges::Start).then_some((end, "ends"));
     [starts, ends]
@@ -2731,6 +2734,7 @@ pub(crate) fn inside_character(
                 character: crate::error::shorten(character),
                 line,
                 col,
+                whole,
             })
         })
 }

@@ -4764,8 +4764,9 @@ impl App {
         let mut parts = Vec::new();
         if dropped > 0 {
             parts.push(format!(
-                "{dropped} annotation{} dropped ({why}; u undoes){}",
+                "{dropped} annotation{} dropped ({why}; {} undoes){}",
                 if dropped == 1 { "" } else { "s" },
+                self.undo_hint(),
                 ignored
                     .as_ref()
                     .map(|t| format!("; {t}"))
@@ -7423,16 +7424,23 @@ impl App {
         }
         let span = match w.resolve_span_at(&self.doc, edges) {
             Err(Error::TextNotFound(text)) => return Err(self.not_in_the_code(&text)),
-            // The command first, as above: `L@C` is the column.
+            // The command first, as above: `L@S..E` for a span (`L@C` would
+            // run to the end of the line), `L@C` for an arrow end.
             Err(Error::InsideCharacter {
                 text,
                 edge,
                 character,
                 line,
                 col,
+                whole: (start, end),
             }) => {
+                let at = if edges == tiza_core::model::Edges::Both {
+                    format!("{line}@{start}..{end}")
+                } else {
+                    format!("{line}@{col}")
+                };
                 return Err(Error::Invalid(format!(
-                    "use {line}@{col} or the whole character {character:?} (the text {text:?} {edge} inside it)"
+                    "use {at} or the whole character {character:?} (the text {text:?} {edge} inside it)"
                 )));
             }
             r => r?,

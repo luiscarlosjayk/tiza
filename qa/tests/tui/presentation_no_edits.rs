@@ -78,6 +78,26 @@ fn in_presentation_a_result_names_undo_as_a_command() {
 }
 
 #[test]
+fn in_presentation_a_ref_that_drops_annotations_names_undo_as_a_command() {
+    // `:ref` to code without the line of the note drops it: the message of
+    // the drop names `:undo` too, and `:undo` gives the note back.
+    let live = presenting("ref-undo-hint");
+    let dir = live.with(|a| a.save_path.parent().unwrap().to_path_buf());
+    std::fs::write(dir.join("other.rs"), "fn other() {}\n").unwrap();
+    live.command("ref other.rs");
+    let said = live
+        .with(|a| a.message.as_ref().map(|(m, _)| m.clone()))
+        .unwrap_or_default();
+    assert!(
+        said.contains("1 annotation dropped (their text is gone; :undo undoes)"),
+        "{said}"
+    );
+    assert!(!said.contains("; u undoes"), "{said}");
+    live.command("undo");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+}
+
+#[test]
 fn in_presentation_the_list_redoes_nothing() {
     // An undo in normal mode leaves something to redo; in presentation
     // mode the list's `U` and Ctrl-R do nothing.

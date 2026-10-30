@@ -42,6 +42,9 @@ pub enum Error {
         character: String,
         line: u32,
         col: u32,
+        /// The hit as columns, widened to whole characters: `start..end`,
+        /// `end` not in it. A command names it for a span.
+        whole: (u32, u32),
     },
     /// A move's target that matches nothing at its step, in the words of
     /// `tiza check`: `move #2, step 3: find «x» matches nothing in the code

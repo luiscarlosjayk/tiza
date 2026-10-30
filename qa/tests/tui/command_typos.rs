@@ -304,15 +304,22 @@ fn a_change_of_emphasis_keeps_the_stroke_that_draw_needs() {
 }
 
 /// An anchor typed in a command whose text starts inside a character (a
-/// joiner alone, in the grapheme of `d`) gets the column to use first; an
-/// arrow end uses only the start of its text, so `ad` works there.
+/// joiner alone, in the grapheme of `d`) gets the columns to use first: a
+/// span of whole characters for `:hl` and `:mark` (`1@5` alone would run
+/// to the end of the line), the column for an arrow end. An arrow end uses
+/// only the start of its text, so `ad` works there.
 #[test]
 fn an_anchor_inside_a_character_names_the_column_to_use() {
     let live = Live::from_code("let ad\u{200D}min = 1;\nfn b() {}\n", "rs", "inside");
     rejected(
         &live,
         "hl 1:\u{200D}",
-        "use 1@5 or the whole character \"d\\u{200d}\" (the text \"\\u{200d}\" starts inside it)",
+        "use 1@5..6 or the whole character \"d\\u{200d}\" (the text \"\\u{200d}\" starts inside it)",
+    );
+    rejected(
+        &live,
+        "mark warn 1:\u{200D}min",
+        "use 1@5..9 or the whole character",
     );
     rejected(
         &live,
@@ -323,4 +330,9 @@ fn an_anchor_inside_a_character_names_the_column_to_use() {
     let (msg, err) = live.message().unwrap_or_default();
     assert!(!err, "{msg}");
     assert_eq!(count(&live), 1);
+    // The span that the message gives takes the whole character.
+    live.command("hl 1@5..6");
+    let (msg, err) = live.message().unwrap_or_default();
+    assert!(!err, "{msg}");
+    assert_eq!(count(&live), 2);
 }

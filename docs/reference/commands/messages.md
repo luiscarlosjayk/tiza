@@ -41,7 +41,7 @@ The commands are in [`:` commands](../commands.md).
 | `«TEXT» is in FILE at LN, outside the lines shown at step S (A-B).` | The text is in the file, but outside the lines on screen. |
 | `«TEXT» is in FILE at LN, shown at step S.` | The text is in a file that another step shows. |
 | `line N does not exist (the document spans A to B)` | The line is not in the code. |
-| `use L@C or the whole character "CHAR" (the text "TEXT" starts inside it)` | The text of `L:TEXT` starts or ends inside a character, for example a joiner alone or a combining accent alone. With `ends`, the text ends inside the character. Use the column, or put the whole character in the text. |
+| `use L@S..E or the whole character "CHAR" (the text "TEXT" starts inside it)` | The text of `L:TEXT` starts or ends inside a character, for example a joiner alone or a combining accent alone. With `ends`, the text ends inside the character. `L@S..E` is the span of the text with the whole characters. For an arrow end, the message gives `L@C`, the column of the character. Use that form, or put the whole character in the text. |
 | `annotation ID does not exist` | No annotation has the id. |
 | `invalid range: R` | The range is not a range of lines. |
 | `invalid range: R: write A-B without spaces` | The range has spaces around the `-`. |
