@@ -2878,6 +2878,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tiza-site-checks"
+version = "0.1.2"
+dependencies = [
+ "image-webp",
+ "serde_json",
+ "tiza-core",
+ "tiza-qa",
+ "tiza-tui",
+]
+
+[[package]]
 name = "tiza-tui"
 version = "0.1.2"
 dependencies = [

@@ -1,0 +1,20 @@
+[package]
+name = "tiza-site-checks"
+description = "Checks of the docs against the code: only the job that builds the site runs them"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+tiza-qa = { path = "../../qa" }
+tiza-core.workspace = true
+tiza-tui.workspace = true
+serde_json.workspace = true
+image-webp.workspace = true
+
+[lints]
+workspace = true
