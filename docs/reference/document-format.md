@@ -206,6 +206,7 @@ Each value has this meaning:
 - A spotlight is active from its `step` to `until`. Without `until`, it is active only at its `step`.
 - A spotlight dims the code outside its lines. It does not dim the code of the annotations in its `ids`.
 - A spotlight also dims each annotation that does not touch its lines and that is not in its `ids`.
+- A dimmed mark keeps its label, in the dimmed color.
 - An annotation touches the lines of a spotlight when one or more of its lines are in the range. The lines of a box or a callout go from `from_line` to `to_line`. The lines of an arrow go from one end to the other. Thus an arrow that goes across the range touches it.
 - A spotlight with only `ids` shows only the code of those annotations. It dims all the other annotations.
 - When two or more spotlights are active at one step, Tiza uses the lines and the `ids` of all of them.

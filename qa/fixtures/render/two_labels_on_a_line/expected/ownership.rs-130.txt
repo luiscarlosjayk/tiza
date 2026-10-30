@@ -111,7 +111,7 @@
   1          fn main() {
   2 ╭───────     let s = String::from("hello");
     │                ◀───╯                                                      s is born
-  3 │            takes(s);                                                      ━▶ move
+  3 │            takes(s);                                                      ━▶ move: s moves into takes
   4 │            // println!("{s}"); // error: value borrowed here after move   ┆ s no longer owns it: using it here does not
   5 │                                                                             compile
   6 │            let t = String::from("world");
@@ -126,7 +126,7 @@
     │ ╎   ╭─ takes owns s and frees it at the end ────────────────────────────╮
  15 ╰─╎───┼▶ fn takes(s: String) {                                            │ move
  16   ╎   │      println!("{s}");                                             │
- 17   ╎   │  }                                                                │ ╳ drop
+ 17   ╎   │  }                                                                │ ╳ drop: s dies here
       ╎   ╰───────────────────────────────────────────────────────────────────╯
  18   ╎
  19   ╰╌╌╌╌▶ fn len(s: &String) -> usize {                                      borrow &

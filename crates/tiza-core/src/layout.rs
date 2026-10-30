@@ -1274,22 +1274,14 @@ fn layout_pass(
                     label: Some(l),
                     ..
                 } => (span, l.clone()),
-                // A dimmed mark keeps its legend only.
+                // A dimmed mark keeps its label, as under its line.
                 Shape::Mark {
                     kind,
                     span,
                     label,
                     style,
                     ..
-                } => (
-                    span,
-                    mark_text(
-                        doc,
-                        kind,
-                        style,
-                        label.as_deref().filter(|_| !ann_dimmed(a)),
-                    ),
-                ),
+                } => (span, mark_text(doc, kind, style, label.as_deref())),
                 _ => continue,
             };
             if in_margin(span.line)

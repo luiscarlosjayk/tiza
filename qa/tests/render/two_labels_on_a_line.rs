@@ -177,6 +177,8 @@ fn examples_with_one_label_per_line_render_as_before() {
     // `qa/fixtures/render/two_labels_on_a_line/expected/<example>-<width>.txt`: `render
     // --all-steps --format txt` of the example by the binary of c8a271e
     // (before two labels on a line), the steps one after another behind `== step-NN.txt`.
+    // Later layout decisions change them on purpose, in the commit of each
+    // decision: a dimmed mark keeps its label in the margin.
     // ownership.rs at 108 is the README's width (scripts/readme-images.sh).
     // ownership-moves (L7) and stack-impl (L20) change on purpose at steps
     // 4-5 and are not here.

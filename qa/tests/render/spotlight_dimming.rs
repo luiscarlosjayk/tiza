@@ -247,21 +247,30 @@ fn a_highlight_outside_the_lines_dims_the_code_that_it_colors() {
 }
 
 #[test]
-fn a_dimmed_mark_keeps_only_its_legend() {
+fn a_dimmed_mark_keeps_its_label_in_the_margin_and_under_its_line() {
+    // In the margin (140 columns) a dimmed mark kept only its legend, and
+    // under its line (60 columns) it kept its label: now both keep it, in
+    // the dimmed color.
     let th = Theme::dark();
-    let on = render("shapes.tiza", 2, 140, "dark");
     let off = render("shapes.tiza", 3, 140, "dark");
     let row = "let path = \"app.toml\"";
     assert!(off.text(off.row(row)).contains("read: reads the file"));
+    let on = render("shapes.tiza", 2, 140, "dark");
     let text = on.text(on.row(row));
-    assert!(
-        text.contains("read") && !text.contains("reads the file"),
-        "{text}"
-    );
-    assert_eq!(fg(&on, row, "read"), th.dimmed);
+    assert!(text.contains("read: reads the file"), "{text}");
+    assert_eq!(fg(&on, row, "reads the file"), th.dimmed);
     // The code of the mark is dimmed too.
     assert_eq!(fg(&on, row, "app.toml"), th.dimmed);
     assert_ne!(fg(&off, row, "app.toml"), th.dimmed);
+    let narrow = render("shapes.tiza", 2, 60, "dark");
+    let label = "read: reads the file";
+    assert_eq!(
+        narrow.row(label),
+        narrow.row(row) + 1,
+        "the label goes under its line:\n{}",
+        narrow.all_text()
+    );
+    assert_eq!(fg(&narrow, label, "reads the file"), th.dimmed);
 }
 
 #[test]

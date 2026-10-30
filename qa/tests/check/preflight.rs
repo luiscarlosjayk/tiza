@@ -343,9 +343,10 @@ fn clipped_labels_at_the_default_width_and_the_narrowest_clean_one() {
             .ends_with("no label is clipped at 108 or wider (`tiza render --width 108`)"),
         "{plain}"
     );
-    // The step a clipped label names is the first one it is clipped at.
+    // The step a clipped label names is the first one it is clipped at. At
+    // step 4 a spotlight dims a1, and a dimmed mark keeps its label.
     assert!(
-        plain.contains("at width 100, first at step 3, then at steps 5-7"),
+        plain.contains("at width 100, first at step 3, then at steps 4-7"),
         "{plain}"
     );
     let (_, v) = check_json(
