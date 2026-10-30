@@ -10,6 +10,7 @@ mod install_command;
 mod keys_page;
 mod readme_images;
 mod reporting_links;
+mod scenario_12;
 mod scenario_paths;
 mod text_frames;
 mod tour_of_tally;

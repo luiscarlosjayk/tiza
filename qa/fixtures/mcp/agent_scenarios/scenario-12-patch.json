@@ -1,0 +1,40 @@
+{
+  "steps": [
+    {
+      "step": 0,
+      "id": "intro",
+      "auto_advance_ms": 2000
+    },
+    {
+      "step": 1,
+      "id": "main",
+      "title": "main.rs: parse, count, report",
+      "auto_advance_ms": 4000
+    },
+    {
+      "step": 2,
+      "id": "args",
+      "title": "args.rs: one flag, by hand",
+      "auto_advance_ms": 4000
+    },
+    {
+      "step": 3,
+      "id": "count",
+      "title": "count.rs: one pass",
+      "auto_advance_ms": 4000
+    },
+    {
+      "step": 4,
+      "id": "report",
+      "title": "report.rs: sort, then print",
+      "auto_advance_ms": 4000
+    },
+    {
+      "step": 5,
+      "id": "recap",
+      "title": "Back in main.rs",
+      "auto_advance_ms": 6000
+    }
+  ],
+  "loop": true
+}
