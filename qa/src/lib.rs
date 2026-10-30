@@ -13,6 +13,7 @@ use ratatui::{Terminal, backend::TestBackend};
 use tiza_core::Document;
 use tiza_tui::app::App;
 
+pub mod help_keys;
 pub mod markdown;
 
 /// The root of the repository: the folder above `qa/`.
