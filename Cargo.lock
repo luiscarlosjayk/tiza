@@ -2881,6 +2881,7 @@ dependencies = [
 name = "tiza-site-checks"
 version = "0.1.2"
 dependencies = [
+ "crossterm",
  "image-webp",
  "serde_json",
  "tiza-core",
