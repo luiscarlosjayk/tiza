@@ -78,12 +78,6 @@ fn wait_reloads(live: &Live, n: u64) {
     }
 }
 
-/// Quiet time after which "nothing happened" is believed (several times
-/// the debounce plus the worst event latency seen on CI), as in the reload on save tests.
-fn settle() {
-    std::thread::sleep(Duration::from_millis(700));
-}
-
 fn save(path: &Path, content: &str) {
     let tmp = path.with_extension("rs.tmp");
     std::fs::write(&tmp, content).unwrap();
@@ -118,8 +112,8 @@ fn a_paste_turns_follow_off_and_a_save_changes_nothing() {
 
     // A save in the editor: the pasted code stays, nothing is said.
     live.with(|app| app.info("before the save"));
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&src, &CODE.replace("takes", "gives"));
-    settle();
     assert_eq!(code(&live), lines(PASTED));
     assert_eq!(live.message().unwrap().0, "before the save");
 }
@@ -186,8 +180,9 @@ fn undoing_the_paste_leaves_follow_off() {
         "follow off (:follow on to reload when the file is saved)"
     );
     assert!(!bar(&live).contains("following"));
+    // No watcher is left to read a save.
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&src, &CODE.replace("takes", "gives"));
-    settle();
     assert_eq!(code(&live), lines(CODE));
     // `:follow on` from there is the usual one.
     live.command("follow on");

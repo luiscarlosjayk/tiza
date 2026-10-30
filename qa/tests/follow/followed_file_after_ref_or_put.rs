@@ -149,10 +149,6 @@ fn same_as_fresh(live: &Live, tiza: &Path, what: &str) {
     assert_eq!(live_steps, disk_steps, "{what}: render --all-steps");
 }
 
-/// How long a save of a file follow does not watch is given to show it
-/// is ignored (the reload of a watched one comes ~120 ms after the write).
-const SETTLE: Duration = Duration::from_millis(600);
-
 // ---------- AC1 ----------
 
 #[test]
@@ -173,12 +169,15 @@ fn ref_another_file_while_following_follows_it() {
         message(&live)
     );
     same_as_fresh(&live, &tiza, ":ref other.rs");
-    // A save of the old file reloads nothing.
-    let reloads = status(&live)["reloads"].clone();
+    // A save of the old file reloads nothing. Then a save of other.rs with
+    // the same text: its read comes after the events of main.rs, so when it
+    // is done, a reload of main.rs would be on screen.
+    let reloads = live.follow_seen().expect("following").reloads;
     save(&dir.join("main.rs"), MAIN2);
-    std::thread::sleep(SETTLE);
+    save(&dir.join("other.rs"), OTHER);
+    let seen = live.wait_follow_read(&dir.join("other.rs"));
     assert_eq!(base(&live), lines(OTHER));
-    assert_eq!(status(&live)["reloads"], reloads);
+    assert_eq!(seen.reloads, reloads);
     // A save of the new one does.
     save(&dir.join("other.rs"), OTHER2);
     wait_for("other.rs reloaded", || base(&live) == lines(OTHER2));
@@ -282,9 +281,10 @@ fn a_put_of_another_document_turns_follow_off() {
         "{msg}"
     );
     assert!(!bar(&live).contains("⟳ following"), "{}", bar(&live));
-    // A save of main.rs no longer reaches the screen.
+    // A save of main.rs no longer reaches the screen: no watcher is left to
+    // read it.
+    assert!(live.follow_seen().is_none(), "a watcher is left");
     save(&dir.join("main.rs"), MAIN2);
-    std::thread::sleep(SETTLE);
     assert_eq!(base(&live), vec!["fn elsewhere() {}".to_string()]);
 }
 
@@ -482,8 +482,15 @@ fn a_redo_of_the_ref_names_the_file_on_screen() {
     live.command("follow on");
     live.command("step 0");
     live.command("ref other.rs");
+    // A save of the old file, then one of other.rs with the same text: when
+    // that one is read, the events of main.rs are done. Neither reloads.
+    let reloads = live.follow_seen().expect("following").reloads;
     save(&dir.join("main.rs"), MAIN2);
-    std::thread::sleep(SETTLE);
+    save(&dir.join("other.rs"), OTHER);
+    assert_eq!(
+        live.wait_follow_read(&dir.join("other.rs")).reloads,
+        reloads
+    );
     live.keys(&[crossterm::event::KeyCode::Char('u')]);
     live.keys(&[crossterm::event::KeyCode::Char('U')]);
     let msg = message(&live);

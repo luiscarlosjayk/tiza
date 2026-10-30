@@ -347,11 +347,13 @@ fn line_endings_and_a_final_newline_change_nothing() {
     let (live, dir) = replace_line_2("crlf");
     follow(&live);
     // The reload reads lines as before: CRLF and a missing final newline
-    // are the same code, so nothing reloads and nothing goes stale.
-    save_like_zed(&dir.join("config.ini"), &INI.replace('\n', "\r\n"));
-    std::thread::sleep(Duration::from_millis(700));
-    save_like_zed(&dir.join("config.ini"), INI.trim_end());
-    std::thread::sleep(Duration::from_millis(700));
+    // are the same code, so nothing reloads and nothing goes stale. Each
+    // save is checked after the read of that save.
+    let ini = dir.join("config.ini");
+    save_like_zed(&ini, &INI.replace('\n', "\r\n"));
+    assert_eq!(live.wait_follow_read(&ini).reloads, 0, "CRLF");
+    save_like_zed(&ini, INI.trim_end());
+    assert_eq!(live.wait_follow_read(&ini).reloads, 0, "no final newline");
     assert_eq!(reloads(&live), 0);
     assert_eq!(stale_count(&live), 0);
     paste(&live, &INI.replace('\n', "\r\n"));
@@ -526,27 +528,32 @@ fn a_loop_says_it_once_per_change_not_once_per_round() {
     paste(&live, &host_edited());
     let notice = message(&live);
     assert!(notice.starts_with("stale move skipped"), "{notice}");
-    // Three rounds of the loop: watch every message the bar shows.
-    let mut seen = Vec::new();
-    let mut zeros = 0;
-    let mut was = 0;
-    let start = Instant::now();
-    while zeros < 3 {
-        assert!(start.elapsed() < WAIT, "the loop did not go round");
-        let (step, msg) = live.with(|app| (app.doc.step, app.message.clone()));
-        if step == 0 && was != 0 {
-            zeros += 1;
+    // Three rounds of the loop in one call: the test gives the time to each
+    // tick of the auto-advance, so no step and no message is missed, also
+    // on a slow machine. Each message is taken off the bar, so that one
+    // said again shows again. Only the ticks of the auto-advance run in the
+    // call: follow is off in this test, so no other tick has a message.
+    let (said, zeros) = live.with(|app| {
+        app.message = None;
+        let (mut said, mut zeros) = (Vec::new(), 0);
+        for _ in 0..100 {
+            let was = app.doc.step;
+            app.auto_advance_tick(Instant::now() + Duration::from_secs(1));
+            if app.doc.step == 0 && was != 0 {
+                zeros += 1;
+            }
+            if let Some((m, _)) = app.message.take() {
+                said.push(m);
+            }
+            if zeros == 3 {
+                break;
+            }
         }
-        was = step;
-        if let Some((m, _)) = msg
-            && seen.last() != Some(&m)
-        {
-            seen.push(m);
-        }
-        std::thread::sleep(Duration::from_millis(5));
-    }
-    let notices = seen.iter().filter(|m| m.contains("stale move")).count();
-    assert!(notices <= 1, "{seen:?}");
+        (said, zeros)
+    });
+    assert_eq!(zeros, 3, "the loop did not go round: {said:?}");
+    let notices = said.iter().filter(|m| m.contains("stale move")).count();
+    assert_eq!(notices, 0, "said again in a round: {said:?}");
     assert_eq!(stale_count(&live), 1);
 }
 
