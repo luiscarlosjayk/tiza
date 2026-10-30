@@ -52,12 +52,9 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - Add a test for the regression of each bug that you fix.
 - Put a test in the crate of its area in `qa/tests/<area>/` (render, tui, follow, api, steps, export, saving, check, mcp, release, policy), in the module of the behavior that it checks. Give it a name that tells the behavior.
 - Put its fixtures in `qa/fixtures/<area>/<module>/`, or in `qa/fixtures/shared/` when tests of several areas read them. A test that changes the environment of its own process goes in `env`. A test that checks how fast a child process answers goes in `latency`. A test that checks a cache of its whole process goes in the crate `cache`. A test that runs a TUI with follow on a pty goes in the crate `watchers`.
-- A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading. A test can read a doc only in these cases:
-  - A script or a workflow reads that text, for example `## [Unreleased]` for `scripts/bump-version.sh`.
-  - The test compares the doc with the code, for example the keys table.
-  - The test checks that a generated image is equal to a fresh export.
-  - The test checks that links and anchors resolve.
-  - The test enforces a repository policy, for example no ticket ids.
+- A test must catch a bug or a broken user experience. Do not write a test that only checks a sentence or a heading.
+- The tests of qa/ test the code (the binary, the API, MCP, the TUI, the exports) and the policies of the repository (ticket ids, licenses). They do not check what the docs say. The checks of the docs run only in the job that builds the site.
+- Put a check of the docs against the code in `site/checks/`. When you change the docs or the code that they describe, run `cargo test -p tiza-site-checks`, or check the "Docs site" job of your pull request. Before a release, `scripts/release-check.py` checks the docs that the release reads.
 - Do not use `#[ignore]`. Do not retry a test blindly. Do not use a sleep to synchronize. Wait on a condition with a timeout of 10 s.
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and `tiza api status --socket PATH`.
 - `examples/` holds demos only, never test data.

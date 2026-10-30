@@ -11,6 +11,8 @@ cargo test -p tiza-qa --test render line_numbers   # one module
 cargo test -p tiza-qa --test export -- svg_and_png::svg_is_standalone_and_fonts_are_optional --nocapture
 ```
 
+These tests do not check what the docs say. The exceptions are the policies of the repository (ticket ids, licenses) and the README that the `tiza` crate packages for crates.io. Some tests give the README or the CHANGELOG to a script as data. The checks of the docs against the code (their numbers, keys, config, paths, frames and images) are in `site/checks/`, and only the job that builds the site runs them: `cargo test -p tiza-site-checks`. They use the helpers of `tiza_qa` too.
+
 Test data lives in `qa/fixtures/<area>/<module>/`, and data that several areas use in `qa/fixtures/shared/` (never in `examples/`, which are the demos people open). `tiza_qa` (in `src/lib.rs`) gives the helpers: `bin()` builds and locates the `tiza` binary, `tiza_ok(&[…])` runs it, `fixture("render/callouts/callouts.tiza")`, `scratch(name)` for output (a new empty folder on each call, also with the same name), and `Live` — a headless instance with the real `App` and the real socket server, so a test can call the API (`live.api_ok("annotation.add", json!({…}))`), press keys (`live.keys(&[KeyCode::Char('V')])`), run `:` commands and read the screen (`live.screen(100, 30)`).
 
 A helper that several areas use goes in `tiza_qa`. A helper that several modules of one area use goes in `tests/<area>/common.rs`, which that area's `main.rs` declares with `mod common;` (as in [Submodules in integration tests](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)). Do not copy a helper.
