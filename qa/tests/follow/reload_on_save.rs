@@ -56,12 +56,6 @@ fn reloads(live: &Live) -> u64 {
 /// loaded CI runners can deliver an event well after the write.
 const WAIT: Duration = Duration::from_secs(10);
 
-/// Quiet time after which "nothing happened" is believed (several times the
-/// debounce plus the worst event latency seen on CI).
-fn settle() {
-    std::thread::sleep(Duration::from_millis(700));
-}
-
 /// Waits (up to `WAIT`) until the reload counter reaches `n`.
 fn wait_reloads(live: &Live, n: u64) {
     let start = Instant::now();
@@ -184,8 +178,12 @@ fn status_line_and_follow_command() {
     assert_eq!(live.message().unwrap().0, "follow off");
     let bar = live.screen(120, 12).lines().last().unwrap().to_string();
     assert!(!bar.contains("following"), "{bar}");
+    // Off: no watcher is left to read a save, so nothing can reload.
+    assert!(
+        live.follow_seen().is_none(),
+        "a watcher is left after :follow off"
+    );
     save_like_zed(&src, &CODE.replace("done", "ignored"));
-    settle();
     assert!(code(&live)[3].contains("ok"), "no reload after :follow off");
 
     live.command("follow sideways");
@@ -286,12 +284,16 @@ fn truncate_then_write_is_one_reload() {
     live.command("box 2-3 keep");
     live.command("follow on");
     // An editor that truncates first and writes the content afterwards.
+    // The pause is the editor's, between its two writes: it is not a wait
+    // for something that must not happen.
     std::fs::write(&src, "").unwrap();
     std::thread::sleep(Duration::from_millis(60));
     std::fs::write(&src, CODE.replace("done", "rewritten")).unwrap();
     wait_reloads(&live, 1);
-    settle();
-    assert_eq!(reloads(&live), 1);
+    // A late event of the two writes comes before the events of this save
+    // of the same text: when this save is read, so is that event.
+    save_like_zed(&src, &CODE.replace("done", "rewritten"));
+    assert_eq!(live.wait_follow_read(&src).reloads, 1);
     assert!(code(&live)[3].contains("rewritten"));
     assert_eq!(
         box_lines(&live, "a1"),
@@ -326,18 +328,39 @@ fn every_empty_first_write_waits_for_the_second() {
 fn identical_content_and_sidecar_autosave_do_not_reload() {
     let (live, src) = followed("same", CODE);
     live.command("follow on");
-    save_like_zed(&src, CODE);
-    settle();
-    assert_eq!(reloads(&live), 0, "same bytes: nothing to do");
-    assert!(live.message().is_none_or(|(m, _)| !m.contains("reloaded")));
+    // A new box autosaves the document `main.rs.tiza` in the watched
+    // folder, through a temp file. Neither is the followed file, also by
+    // the canonical path that FSEvents gives (`/private/var/…` for
+    // `/var/…`); main.rs is.
+    let dir = src.parent().unwrap().to_path_buf();
+    let canonical = std::fs::canonicalize(&dir).unwrap();
+    let mut paths = Vec::new();
+    for d in [&dir, &canonical] {
+        paths.push(d.join("main.rs.tiza"));
+        paths.push(d.join("main.rs.tiza.tmp"));
+    }
+    let main = src.clone();
+    let (taken, main_is) = live.with(move |app| {
+        let f = app.follow.as_ref().expect("following");
+        let taken: Vec<_> = paths.into_iter().filter(|p| f.same_file(p)).collect();
+        (taken, f.same_file(&main))
+    });
+    assert!(taken.is_empty(), "taken for main.rs: {taken:?}");
+    assert!(main_is, "main.rs is not the followed file");
 
-    // Annotating autosaves `main.rs.tiza` in the watched folder.
+    // Three autosaves, then a save of main.rs with the same bytes: its read
+    // comes after the events of the autosaves, and nothing reloaded.
     for i in 0..3 {
         live.command(&format!("box {} sidecar", i + 1));
     }
-    settle();
-    assert_eq!(reloads(&live), 0, "the sidecar write is not the source");
     assert!(src.with_extension("rs.tiza").exists());
+    save_like_zed(&src, CODE);
+    assert_eq!(
+        live.wait_follow_read(&src).reloads,
+        0,
+        "the autosaves and the same bytes: nothing to do"
+    );
+    assert!(live.message().is_none_or(|(m, _)| !m.contains("reloaded")));
 }
 
 #[test]
