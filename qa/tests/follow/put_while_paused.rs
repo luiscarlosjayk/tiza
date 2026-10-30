@@ -267,6 +267,13 @@ fn a_put_while_a_change_waits_cannot_change_the_file_that_follow_reads() {
         assert_eq!(refused(&live, put), said, "{other}");
     }
     assert_eq!(pause(&live), before);
+    // The same file written another way: fine.
+    for same in [
+        json!({"file": "./main.rs"}),
+        json!({"file": src.to_str().unwrap()}),
+    ] {
+        live.api_ok("scene.put", got(&live, |doc| doc["follows"] = same.clone()));
+    }
     // Left out, `null`, or as scene.get gives it: fine.
     live.api_ok(
         "scene.put",

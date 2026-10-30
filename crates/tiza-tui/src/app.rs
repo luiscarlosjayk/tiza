@@ -2946,12 +2946,13 @@ impl App {
         let other = doc.source.path != self.doc.source.path;
         // In a pause over embedded code, `follows` names the file that
         // follow reads at the resume step ([`App::paused`]): no put points
-        // it at another file.
+        // it at another file. The same file written another way
+        // (`./main.rs`, its absolute path) is the same file, as for follow.
         if !other
             && self.follow.is_some()
             && let Some(tiza_core::model::CodeSource::File { file, .. }) = self.paused()
-            && doc.follows.is_some()
-            && doc.follows != self.doc.follows
+            && let Some(sent) = &doc.follows
+            && !self.follows_the_followed_file(sent)
         {
             return Err(Error::Invalid(format!(
                 "scene.put: follow is paused and reads {file}: a put cannot change `follows` now. Send `follows` as scene.get gives it, or leave it out"
@@ -3088,6 +3089,23 @@ impl App {
         self.touch();
         self.settle_pause();
         Ok(self.scene_changed(Vec::new(), Vec::new(), Vec::new()))
+    }
+
+    /// Whether `sent` names the file that follow reads, in any spelling
+    /// (resolved next to the document, as [`crate::follow::Follow::same_file`]
+    /// matches it), with the same `lines`.
+    fn follows_the_followed_file(&self, sent: &tiza_core::model::FileRef) -> bool {
+        let Some(f) = &self.follow else {
+            return false;
+        };
+        let same_lines = self
+            .doc
+            .follows
+            .as_ref()
+            .is_some_and(|o| o.lines == sent.lines);
+        same_lines
+            && fs::code_source_file(&sent.clone().into(), self.save_path.parent())
+                .is_some_and(|p| f.same_file(&p))
     }
 
     /// After a change of the moves or the step that did not go through a

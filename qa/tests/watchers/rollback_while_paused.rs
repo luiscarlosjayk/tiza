@@ -308,3 +308,74 @@ print("EXIT", s.finish(10))
         "{out}"
     );
 }
+
+/// A dropped `scene.put` that ended the pause (no patch any more) and so
+/// loaded the change inside the request: the pause, the change that waits
+/// and the code are as before, and the next step to the resume step loads
+/// it.
+#[test]
+fn pty_a_dropped_put_that_loaded_the_change_keeps_it_waiting() {
+    let _alone = WATCHERS.write().unwrap_or_else(|e| e.into_inner());
+    let dir = scratch("rollback-put-load");
+    files(&dir);
+    let body = format!(
+        r##"
+binary, cwd, new = sys.argv[1], sys.argv[2], sys.argv[3]
+os.chdir(cwd)
+{HELPERS}
+env = dict(os.environ, TERM="xterm-256color", TIZA_NO_OSC="1", TIZA_TEST_HOOK="request:scene.put")
+s = Pty([binary, "--socket", "s.sock", "--follow", "main.rs.tiza"], 30, 160, env=env)
+if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
+    until("the watcher", lambda st: st.get("enabled") and st.get("reads", 0) >= 1)
+    api("step.next")
+    api("step.next")
+    with open("main.rs.tmp", "w") as f:
+        f.write(new)
+    os.rename("main.rs.tmp", "main.rs")
+    print("BEFORE", json.dumps(until("the save", lambda st: st.get("pending"))), flush=True)
+    doc = json.loads(api("scene.get")[1])["document"]
+    doc["moves"] = [m for m in doc["moves"] if m["action"] != "code.patch"]
+    print("DROPPED", json.dumps(api("scene.put", {{"document": doc}})[0]), flush=True)
+    print("AFTER", json.dumps(status()), flush=True)
+    print("CODE", json.dumps(code()), flush=True)
+    api("step.prev")
+    print("LOADED", json.dumps(status()), flush=True)
+    print("CODE2", json.dumps(code()), flush=True)
+    s.send(b":q!\r")
+print("EXIT", s.finish(10))
+"##
+    );
+    let out = tiza_qa::pty_script(
+        &dir,
+        "put_load.py",
+        &body,
+        &[bin().to_str().unwrap(), dir.to_str().unwrap(), NEW],
+    );
+    assert!(out.contains("EXIT 0") && !out.contains("TIMEOUT"), "{out}");
+    assert_ne!(line_json(&out, "DROPPED"), json!(0), "{out}");
+    let before = line_json(&out, "BEFORE");
+    let after = line_json(&out, "AFTER");
+    for key in ["paused", "pending", "resume_step", "reloads"] {
+        assert_eq!(after[key], before[key], "{key}: {out}");
+    }
+    assert!(
+        line_json(&out, "CODE")
+            .as_str()
+            .unwrap()
+            .contains("t.len()"),
+        "{out}"
+    );
+    let loaded = line_json(&out, "LOADED");
+    assert_eq!(
+        loaded["reloads"].as_u64().unwrap(),
+        before["reloads"].as_u64().unwrap() + 1,
+        "{out}"
+    );
+    assert!(
+        line_json(&out, "CODE2")
+            .as_str()
+            .unwrap()
+            .contains("t.chars().count()"),
+        "{out}"
+    );
+}
