@@ -437,6 +437,7 @@ You add an annotation on the code at its own step. A later move changes the line
 - In a `rebind` entry, `find` searches `line` first, and then the whole code.
 - In a `rebind` entry without `line`, `find` must match exactly once, or the point must have `occurrence`. With `line`, Tiza does not check the number of matches.
 - In a `select`, `find` in `from` starts at the start of the text, and `find` in `to` ends at the end of the text.
+- The edge of `find` that gives a column must be on the edge of a character (a grapheme). That is the start in the `from` of a `select` and the end in its `to`, the two edges in a `rebind` entry of a span, and the start in a `rebind` entry of an arrow end. For example, a joiner alone in `ad` U+200D `min` is an error. Put the whole character in `find`, or use `line` and `col`. The `at` of a note takes only the line, so there it is not an error.
 - In a `select` without `col`, `from` is the start of the line and `to` is the end of the line. In a `rebind` entry, the default `col` is 0.
 
 ### Several files

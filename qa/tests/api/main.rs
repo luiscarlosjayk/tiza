@@ -5,6 +5,7 @@ mod annotation_effect;
 mod clear_and_put_validation;
 mod error_values;
 mod file_not_shown;
+mod find_inside_a_character;
 mod fuzzing;
 mod help_and_error_texts;
 mod move_an_annotation;

@@ -2505,6 +2505,11 @@ impl Document {
         self.settle_file(&mut ann)?;
         self.validate_shape_in(&ann.shape, &ann.file, ann.step)?;
         sanitize_texts(&mut ann.shape);
+        // A new shape can make a rebind of it fail (a `find` inside a
+        // character is fine for the line of a note, not for a span).
+        if self.moves.iter().any(|m| m.rebind.contains_key(&ann.id)) {
+            moves::check_named_by_rebind(self, &ann)?;
+        }
         let slot = self
             .annotations
             .iter_mut()
@@ -2523,8 +2528,6 @@ impl Document {
         Ok(self.annotations.remove(pos))
     }
 
-    /// Searches `text` in the code and returns the span of the `occurrence`-th
-    /// match (1-based). If `near_line` is given, that line is searched first.
     /// Resolves a line range from two markers: `start` is the first
     /// occurrence in the document, `end` the first occurrence at or after it
     /// (same line allowed when it comes after the start text). Errors name
@@ -2582,47 +2585,144 @@ impl Document {
         None
     }
 
+    /// The `occurrence`-th hit of `text` (with `near_line`, that line is
+    /// searched first), in graphemes. A hit that starts or ends inside a
+    /// grapheme takes the graphemes that start before its ends: right for a
+    /// caller that wants only the line (a box marker); one that uses the
+    /// column takes [`Document::find_span`].
     pub fn find_text(
         &self,
         text: &str,
         occurrence: u32,
         near_line: Option<u32>,
     ) -> Option<TextSpan> {
-        if text.is_empty() {
-            return None;
-        }
-        let occurrence = occurrence.max(1);
-        let mut seen = 0;
-        let search_line = |line: u32, seen: &mut u32| -> Option<TextSpan> {
-            let t = self.line_text(line)?;
-            let mut from = 0;
-            while let Some(pos) = t[from..].find(text) {
-                let byte_start = from + pos;
-                *seen += 1;
-                if *seen == occurrence {
-                    return Some(TextSpan {
-                        line,
-                        start: grapheme_index(t, byte_start),
-                        end: grapheme_index(t, byte_start + text.len()),
-                    });
-                }
-                from = byte_start + text.len().max(1);
-            }
-            None
+        let (line, start, end) = self.find_bytes(text, occurrence, near_line)?;
+        let t = self.line_text(line)?;
+        Some(TextSpan {
+            line,
+            start: grapheme_index(t, start),
+            end: grapheme_index(t, end),
+        })
+    }
+
+    /// [`Document::find_text`] for a caller that uses a column of the hit
+    /// (`edges`: both for a span, the start for an arrow end): a hit whose
+    /// edge starts or ends inside a character (a grapheme, such as `d` with
+    /// a joiner, or `e` with an accent) is an error that says what to do,
+    /// not a guess of the column. The count of `occurrence` is the same as
+    /// `find_text`'s.
+    pub fn find_span(
+        &self,
+        text: &str,
+        occurrence: u32,
+        near_line: Option<u32>,
+        edges: Edges,
+    ) -> Result<Option<TextSpan>, Error> {
+        let Some((line, start, end)) = self.find_bytes(text, occurrence, near_line) else {
+            return Ok(None);
         };
-        if let Some(l) = near_line {
-            if let Some(s) = search_line(l, &mut seen) {
-                return Some(s);
-            }
-            seen = 0;
+        let t = self.line_text(line).unwrap_or_default();
+        if let Some(e) = inside_character(t, text, line, start, end, edges) {
+            return Err(e);
         }
-        for line in self.source.first_line..=self.last_line() {
-            if let Some(s) = search_line(line, &mut seen) {
-                return Some(s);
+        Ok(Some(TextSpan {
+            line,
+            start: grapheme_index(t, start),
+            end: grapheme_index(t, end),
+        }))
+    }
+
+    /// The line and the byte range of the `occurrence`-th hit of `text`.
+    fn find_bytes(
+        &self,
+        text: &str,
+        occurrence: u32,
+        near_line: Option<u32>,
+    ) -> Option<(u32, usize, usize)> {
+        find_bytes_in(
+            &self.code,
+            self.source.first_line,
+            text,
+            occurrence,
+            near_line,
+        )
+    }
+}
+
+/// The line and the byte range of the `occurrence`-th hit of `text` in
+/// `code`, whose first line is `first_line` (with `near_line`, that line is
+/// searched first). Every hit counts, also one inside a character.
+pub(crate) fn find_bytes_in(
+    code: &[String],
+    first_line: u32,
+    text: &str,
+    occurrence: u32,
+    near_line: Option<u32>,
+) -> Option<(u32, usize, usize)> {
+    if text.is_empty() {
+        return None;
+    }
+    let occurrence = occurrence.max(1);
+    let mut seen = 0;
+    let search_line = |line: u32, seen: &mut u32| -> Option<(u32, usize, usize)> {
+        let t = code.get(line.checked_sub(first_line)? as usize)?;
+        let mut from = 0;
+        while let Some(pos) = t[from..].find(text) {
+            let byte_start = from + pos;
+            *seen += 1;
+            if *seen == occurrence {
+                return Some((line, byte_start, byte_start + text.len()));
             }
+            from = byte_start + text.len().max(1);
         }
         None
+    };
+    if let Some(l) = near_line {
+        if let Some(s) = search_line(l, &mut seen) {
+            return Some(s);
+        }
+        seen = 0;
     }
+    (0..code.len()).find_map(|i| search_line(first_line.saturating_add(i as u32), &mut seen))
+}
+
+/// Which edges of a hit of a `find` give a column: both for a span, the
+/// start for an arrow end or the start of a selection, the end for the end
+/// of a selection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Edges {
+    Both,
+    Start,
+    End,
+}
+
+/// The error for the hit `start..end` (bytes) of `text` on the line `t`
+/// (number `line`) when one of its `edges` is inside a character, a
+/// grapheme: a column there would be a guess. `None` when those edges are
+/// on the edges of characters.
+pub(crate) fn inside_character(
+    t: &str,
+    text: &str,
+    line: u32,
+    start: usize,
+    end: usize,
+    edges: Edges,
+) -> Option<Error> {
+    let starts = (edges != Edges::End).then_some((start, "starts"));
+    let ends = (edges != Edges::Start).then_some((end, "ends"));
+    [starts, ends]
+        .into_iter()
+        .flatten()
+        .find_map(|(byte, edge)| {
+            grapheme_around(t, byte).map(|(col, character)| Error::InsideCharacter {
+                text: text.to_string(),
+                edge,
+                // A grapheme can hold any number of accents.
+                character: crate::error::shorten(character),
+                line,
+                col,
+            })
+        })
 }
 
 /// Converts a byte offset into `s` to the corresponding grapheme index.
@@ -2630,6 +2730,15 @@ pub fn grapheme_index(s: &str, byte_offset: usize) -> u32 {
     s.grapheme_indices(true)
         .take_while(|(b, _)| *b < byte_offset)
         .count() as u32
+}
+
+/// The grapheme of `s` that the byte `byte` is inside of (after its start,
+/// before its end), with its index; `None` on the edge of a grapheme.
+fn grapheme_around(s: &str, byte: usize) -> Option<(u32, &str)> {
+    s.grapheme_indices(true)
+        .enumerate()
+        .find(|(_, (b, g))| *b < byte && byte < b + g.len())
+        .map(|(i, (_, g))| (i as u32, g))
 }
 
 /// Byte offset where grapheme `index` starts (`s.len()` past the end).
@@ -2774,5 +2883,94 @@ mod tests {
             "🦀"
         );
         assert_eq!(s.end - s.start, 1);
+    }
+
+    #[test]
+    fn find_span_refuses_a_hit_inside_a_character() {
+        let code = "let ad\u{200D}min = 1;\nlet cafe\u{301} = \"e\";\nlet f = \"\u{1F468}\u{200D}\u{1F469}\";\n";
+        let d = Document::from_code(code, "rs", None);
+        let inside = |text: &str, occurrence: u32, near: Option<u32>| match d.find_span(
+            text,
+            occurrence,
+            near,
+            Edges::Both,
+        ) {
+            Err(Error::InsideCharacter {
+                edge,
+                character,
+                line,
+                col,
+                ..
+            }) => Some((edge, character, line, col)),
+            Err(e) => panic!("{text:?}: {e}"),
+            Ok(_) => None,
+        };
+        // The joiner alone starts inside `d` + joiner.
+        assert_eq!(
+            inside("\u{200D}", 1, None),
+            Some(("starts", "d\u{200D}".to_string(), 1, 5))
+        );
+        // `cafe` ends inside `e` + accent; the accent alone starts inside it.
+        assert_eq!(
+            inside("cafe", 1, None),
+            Some(("ends", "e\u{301}".to_string(), 2, 7))
+        );
+        assert_eq!(
+            inside("\u{301}", 1, None),
+            Some(("starts", "e\u{301}".to_string(), 2, 7))
+        );
+        // One person of the family ends inside the family.
+        assert_eq!(
+            inside("\u{1F468}", 1, None),
+            Some(("ends", "\u{1F468}\u{200D}\u{1F469}".to_string(), 3, 9))
+        );
+        // `occurrence` counts every hit, as find_text does: on line 2 the
+        // `e` of `let` is the first, the one inside `e` + accent the second,
+        // the one in quotes the third.
+        assert_eq!(
+            inside("e", 2, Some(2)),
+            Some(("ends", "e\u{301}".to_string(), 2, 7))
+        );
+        let whole = d.find_span("e", 3, Some(2), Edges::Both).unwrap().unwrap();
+        assert_eq!((whole.line, whole.start, whole.end), (2, 12, 13));
+        // A whole character is found as before, with the same span as find_text.
+        for (text, line) in [
+            ("d\u{200D}", 1),
+            ("ad\u{200D}min", 1),
+            ("cafe\u{301}", 2),
+            ("\u{1F468}\u{200D}\u{1F469}", 3),
+            ("let", 1),
+        ] {
+            let s = d
+                .find_span(text, 1, Some(line), Edges::Both)
+                .unwrap()
+                .unwrap();
+            assert_eq!(Some(s), d.find_text(text, 1, Some(line)), "{text:?}");
+        }
+        assert_eq!(d.find_span("nowhere", 1, None, Edges::Both).unwrap(), None);
+        // Only the edges that give a column count: `cafe` starts on the edge
+        // of `c` (an arrow end there is right) and ends inside `e` + accent;
+        // the accent alone starts inside it and ends on its edge.
+        let start = |text: &str, edges| {
+            d.find_span(text, 1, None, edges)
+                .map(|s| s.map(|s| s.start))
+        };
+        let end = |text: &str, edges| d.find_span(text, 1, None, edges).map(|s| s.map(|s| s.end));
+        assert_eq!(start("cafe", Edges::Start).unwrap(), Some(4));
+        assert!(end("cafe", Edges::End).is_err());
+        assert!(start("\u{301}", Edges::Start).is_err());
+        assert_eq!(end("\u{301}", Edges::End).unwrap(), Some(8));
+        // A character with many accents is cut in the message.
+        let many = format!("x e{}\n", "\u{301}".repeat(50));
+        let accents = Document::from_code(&many, "rs", None);
+        match accents.find_span("\u{301}", 1, None, Edges::Both) {
+            Err(Error::InsideCharacter { character, .. }) => {
+                assert_eq!(character.chars().count(), crate::error::QUOTED_MAX + 1);
+                assert!(character.starts_with('e') && character.ends_with('…'));
+            }
+            r => panic!("{r:?}"),
+        }
+        // find_text keeps its span for a caller that wants only the line.
+        assert_eq!(d.find_text("\u{200D}", 1, None).map(|s| s.line), Some(1));
     }
 }

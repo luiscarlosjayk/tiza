@@ -122,6 +122,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - With `line` and `find`, Tiza looks for the match of `occurrence` on that line first.
 - When that line does not have it, Tiza looks in all the code. It then counts again from the top of the code.
 - When the text is not in the code, the tool fails with `text_not_found`. Do not guess a column.
+- When the column comes from an edge of the text that is inside a character, the tool fails with `invalid_argument`. Examples are a joiner alone in `ad` U+200D `min`, and a combining accent alone. `highlight` and `add_mark` use the two edges of the text, and an arrow end uses its start. The message names the character, its line and its column. Put the whole character in `find`, or use `line` and `col`. See [A `find` inside a character](socket-api.md#a-find-inside-a-character).
 - For `highlight` and `add_mark`, the anchor gives a span. With `find`, the span is the text. Without `find`, the span goes from `col` to the end of the line.
 - For `add_arrow`, the anchor gives an [arrow end](document-format.md#arrow-end): the first grapheme of the text, or `col`.
 - The socket also takes `end` in an anchor. See [Differences from the MCP tools](socket-api.md#differences-from-the-mcp-tools). The tools send every key of an anchor to the socket. Thus `end` also works in an anchor of a tool, with `line` and `col`, and a key that the socket does not know fails.
@@ -159,6 +160,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - `find_start` is the first match in the code. `find_end` is the first match after `find_start`, on the same line or on a later line.
 - Thus a `find_end` of `}` is often the brace of an inner block. To put a box around a whole function, give its lines.
 - A marker that matches nothing fails with `text_not_found`. The message names the marker.
+- A marker gives only a line. Thus a marker that starts or ends inside a character works.
 - The annotation keeps the two texts in `markers`.
 - `add_spotlight` can have no range when it has `ids`.
 

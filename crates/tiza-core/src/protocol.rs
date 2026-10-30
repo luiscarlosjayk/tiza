@@ -82,9 +82,20 @@ pub struct Where {
 
 impl Where {
     pub fn resolve_span(&self, doc: &Document) -> Result<TextSpan, crate::Error> {
+        self.resolve_span_at(doc, crate::model::Edges::Both)
+    }
+
+    /// [`Where::resolve_span`] for a caller that uses only some `edges` of
+    /// a `find` (an arrow end uses its start): only those must be on the
+    /// edges of characters.
+    pub fn resolve_span_at(
+        &self,
+        doc: &Document,
+        edges: crate::model::Edges,
+    ) -> Result<TextSpan, crate::Error> {
         if let Some(f) = &self.find {
             return doc
-                .find_text(f, self.occurrence.unwrap_or(1), self.line)
+                .find_span(f, self.occurrence.unwrap_or(1), self.line, edges)?
                 .ok_or_else(|| crate::Error::TextNotFound(f.clone()));
         }
         let line = self
@@ -99,10 +110,8 @@ impl Where {
     }
 
     pub fn resolve_anchor(&self, doc: &Document) -> Result<Anchor, crate::Error> {
-        if let Some(f) = &self.find {
-            let s = doc
-                .find_text(f, self.occurrence.unwrap_or(1), self.line)
-                .ok_or_else(|| crate::Error::TextNotFound(f.clone()))?;
+        if self.find.is_some() {
+            let s = self.resolve_span_at(doc, crate::model::Edges::Start)?;
             return Ok(Anchor {
                 line: s.line,
                 col: s.start,
@@ -115,6 +124,20 @@ impl Where {
             line,
             col: self.col.unwrap_or(0),
         })
+    }
+
+    /// The line of the position, for a shape that takes only the line (the
+    /// `at` of a note): a `find` that starts or ends inside a character is
+    /// fine here, as no column comes from it.
+    pub fn resolve_line(&self, doc: &Document) -> Result<u32, crate::Error> {
+        if let Some(f) = &self.find {
+            return doc
+                .find_text(f, self.occurrence.unwrap_or(1), self.line)
+                .map(|s| s.line)
+                .ok_or_else(|| crate::Error::TextNotFound(f.clone()));
+        }
+        self.line
+            .ok_or_else(|| crate::Error::Invalid("missing `line` or `find`".into()))
     }
 }
 
@@ -546,7 +569,7 @@ impl MoveSpec {
                     return reject("to_line", "`at` or `from_line`");
                 }
                 if let Some(at) = &self.at {
-                    *line = at.resolve_anchor(doc)?.line;
+                    *line = at.resolve_line(doc)?;
                 }
                 if let Some(l) = self.from_line {
                     *line = l;

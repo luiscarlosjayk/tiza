@@ -302,3 +302,25 @@ fn a_change_of_emphasis_keeps_the_stroke_that_draw_needs() {
         "{shape:?}"
     );
 }
+
+/// An anchor typed in a command whose text starts inside a character (a
+/// joiner alone, in the grapheme of `d`) gets the column to use first; an
+/// arrow end uses only the start of its text, so `ad` works there.
+#[test]
+fn an_anchor_inside_a_character_names_the_column_to_use() {
+    let live = Live::from_code("let ad\u{200D}min = 1;\nfn b() {}\n", "rs", "inside");
+    rejected(
+        &live,
+        "hl 1:\u{200D}",
+        "use 1@5 or the whole character \"d\\u{200d}\" (the text \"\\u{200d}\" starts inside it)",
+    );
+    rejected(
+        &live,
+        "arrow 1:\u{200D}min 2:fn x",
+        "use 1@5 or the whole character",
+    );
+    live.command("arrow 1:ad 2:fn x");
+    let (msg, err) = live.message().unwrap_or_default();
+    assert!(!err, "{msg}");
+    assert_eq!(count(&live), 1);
+}

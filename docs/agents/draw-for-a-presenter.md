@@ -17,7 +17,7 @@ Then go back to step 0 and tell me how many steps there are.
 1. Call `status`. It tells you that an instance listens, and it gives `cols` and `rows`. It also gives `warnings` when there are some.
 2. Call `get_code`. Read the line numbers, and pick exact texts for the anchors.
    - The code can hold characters that you cannot see, for example a zero-width space. The presenter sees `⬚` for each one. After the code, a note names them, for example `# line 3: U+200B zero width space, col 5`.
-   - For a text with such a character, put the real character in the `find`, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and the `col` of the note.
+   - For a text with such a character, put the real character in the `find`, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and the `col` of the note. A `find` with only the joiner of `ad` U+200D `min` fails, because the joiner is part of the character `d`.
 3. Add the annotations in the order of the explanation. Give each one the same `step` as the one before, or a higher one.
 4. Call `set_step` with `0`. Step 0 shows only the code, so the take can start there.
 5. Call `check`. Fix each error. The presenter decides about each warning.

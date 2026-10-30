@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 use unicode_segmentation::UnicodeSegmentation;
 
 use crate::Error;
-use crate::model::{Anchor, Annotation, Document, Shape, TextSpan};
+use crate::model::{Anchor, Annotation, Document, Edges, Shape, TextSpan};
 use crate::protocol::{MoveSpec, Where};
 
 /// One move of the demo.
@@ -1075,7 +1075,16 @@ fn resolve_point(
     d.code = code.to_vec();
     d.source.first_line = first_line;
     let span = d
-        .find_text(text, w.occurrence.unwrap_or(1), w.line)
+        .find_span(
+            text,
+            w.occurrence.unwrap_or(1),
+            w.line,
+            if end { Edges::End } else { Edges::Start },
+        )
+        .map_err(|e| Error::Within {
+            what: what.to_string(),
+            inner: Box::new(e),
+        })?
         .ok_or_else(|| Error::NoMatch(format!("{what} «{text}»")))?;
     Ok(Anchor {
         line: span.line,
@@ -1531,7 +1540,9 @@ pub fn validate_shapes(
 /// What is wrong with the `find`s of a patch's `rebind` on `after`, the
 /// code right after the patch (`rebind «a3» «x» matches 2 times…`), if
 /// anything: each must match exactly once or carry an `occurrence` within
-/// the matches. Entries for annotations not in `annotations` are ignored.
+/// the matches, and where the column counts (not the `at` of a note) its
+/// hit must not start or end inside a character. Entries for annotations
+/// not in `annotations` are ignored.
 pub(crate) fn rebind_problem(
     m: &Move,
     annotations: &[Annotation],
@@ -1539,29 +1550,57 @@ pub(crate) fn rebind_problem(
     first: u32,
 ) -> Option<String> {
     for (id, spec) in &m.rebind {
-        if !annotations.iter().any(|a| &a.id == id) {
+        let Some(a) = annotations.iter().find(|a| &a.id == id) else {
             continue;
-        }
+        };
         for w in [&spec.at, &spec.from, &spec.to].into_iter().flatten() {
-            let (Some(text), None) = (&w.find, w.line) else {
-                continue;
+            let Some(text) = &w.find else { continue };
+            if w.line.is_none() {
+                let n = matches_of(after, first, text).len();
+                let bad = match w.occurrence {
+                    None if n == 1 => None,
+                    None => Some(format!(
+                        "«{text}» matches {n} time{} after the patch; it must match exactly once (add occurrence: N)",
+                        if n == 1 { "" } else { "s" }
+                    )),
+                    Some(0) => Some(format!("«{text}»: occurrence is 1-based")),
+                    Some(k) if (k as usize) > n => Some(format!(
+                        "«{text}»: occurrence {k} asked, only {n} match{} after the patch",
+                        if n == 1 { "" } else { "es" }
+                    )),
+                    Some(_) => None,
+                };
+                if let Some(why) = bad {
+                    return Some(format!("rebind «{id}» {why}"));
+                }
+            }
+            // The edges of the hit that give a column: a span uses both, an
+            // arrow end its start; a note takes only the line of its `at`,
+            // and a range refuses `at`, `from` and `to` when it applies.
+            let is = |slot: &Option<Where>| slot.as_ref().is_some_and(|s| std::ptr::eq(s, w));
+            let edges = match a.shape {
+                Shape::Highlight { .. } | Shape::Mark { .. } if is(&spec.at) => Some(Edges::Both),
+                Shape::Arrow { .. } if is(&spec.from) || is(&spec.to) => Some(Edges::Start),
+                _ => None,
             };
-            let n = matches_of(after, first, text).len();
-            let bad = match w.occurrence {
-                None if n == 1 => None,
-                None => Some(format!(
-                    "«{text}» matches {n} time{} after the patch; it must match exactly once (add occurrence: N)",
-                    if n == 1 { "" } else { "s" }
-                )),
-                Some(0) => Some(format!("«{text}»: occurrence is 1-based")),
-                Some(k) if (k as usize) > n => Some(format!(
-                    "«{text}»: occurrence {k} asked, only {n} match{} after the patch",
-                    if n == 1 { "" } else { "es" }
-                )),
-                Some(_) => None,
-            };
-            if let Some(why) = bad {
-                return Some(format!("rebind «{id}» {why}"));
+            if let Some(edges) = edges
+                && let Some((line, start, end)) = crate::model::find_bytes_in(
+                    after,
+                    first,
+                    text,
+                    w.occurrence.unwrap_or(1),
+                    w.line,
+                )
+                && let Some(e) = crate::model::inside_character(
+                    &after[(line - first) as usize],
+                    text,
+                    line,
+                    start,
+                    end,
+                    edges,
+                )
+            {
+                return Some(format!("rebind «{id}»: {e}"));
             }
         }
     }
@@ -1637,18 +1676,30 @@ pub fn newly_ignored(before: &Document, after: &Document) -> Option<String> {
     })
 }
 
-/// Refuses `ann` when an ignored `rebind` entry names its id and would not
-/// work with it back: an entry that says nowhere to go, or a `find` that
-/// does not match exactly once after its patch. Taking the id would make
-/// the document fail to load; any other id is fine.
+/// Refuses `ann` when a `rebind` entry names its id and would not work
+/// with it: an entry that says nowhere to go, or a `find` that does not
+/// match exactly once after its patch, or that starts or ends inside a
+/// character where the new shape uses the column. For an add, the entry
+/// was ignored and taking the id back would make the document fail to
+/// load (any other id is fine); for an update, the new shape would.
 pub fn check_named_by_rebind(doc: &Document, ann: &Annotation) -> Result<(), Error> {
     let id = &ann.id;
+    // An add brings the id back; an update changes the annotation it names.
+    let back = doc.find_annotation(id).is_none();
     let refused = |i: usize, why: String| {
-        Error::Invalid(format!(
-            "annotation {id}: move #{} (step {}) has a rebind for {id} that would not work with it back ({why}); use another id",
-            i + 1,
-            doc.moves[i].at_step
-        ))
+        Error::Invalid(if back {
+            format!(
+                "annotation {id}: move #{} (step {}) has a rebind for {id} that would not work with it back ({why}); use another id",
+                i + 1,
+                doc.moves[i].at_step
+            )
+        } else {
+            format!(
+                "annotation {id}: move #{} (step {}) has a rebind for {id} that would not work with this change ({why})",
+                i + 1,
+                doc.moves[i].at_step
+            )
+        })
     };
     for (i, m) in doc.moves.iter().enumerate() {
         if m.rebind.get(id).is_some_and(|spec| spec.is_empty()) {
@@ -1659,6 +1710,7 @@ pub fn check_named_by_rebind(doc: &Document, ann: &Annotation) -> Result<(), Err
         return Ok(());
     };
     let mut annotations = doc.annotations.clone();
+    annotations.retain(|a| &a.id != id);
     annotations.push(ann.clone());
     for ap in &p.patches {
         let m = &doc.moves[ap.index];

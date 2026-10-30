@@ -7048,7 +7048,7 @@ impl App {
         w: &tiza_core::protocol::Where,
     ) -> Result<tiza_core::model::Anchor, Error> {
         if w.find.is_some() {
-            let s = self.resolve_span_strict(w)?;
+            let s = self.resolve_span_strict(w, tiza_core::model::Edges::Start)?;
             return Ok(tiza_core::model::Anchor {
                 line: s.line,
                 col: s.start,
@@ -7072,6 +7072,7 @@ impl App {
     fn resolve_span_strict(
         &self,
         w: &tiza_core::protocol::Where,
+        edges: tiza_core::model::Edges,
     ) -> Result<tiza_core::model::TextSpan, Error> {
         if let Some(line) = w.line
             && !self.doc.has_line(line)
@@ -7082,8 +7083,20 @@ impl App {
                 last: self.doc.last_line(),
             });
         }
-        let span = match w.resolve_span(&self.doc) {
+        let span = match w.resolve_span_at(&self.doc, edges) {
             Err(Error::TextNotFound(text)) => return Err(self.not_in_the_code(&text)),
+            // The command first, as above: `L@C` is the column.
+            Err(Error::InsideCharacter {
+                text,
+                edge,
+                character,
+                line,
+                col,
+            }) => {
+                return Err(Error::Invalid(format!(
+                    "use {line}@{col} or the whole character {character:?} (the text {text:?} {edge} inside it)"
+                )));
+            }
             r => r?,
         };
         if let (Some(line), Some(text)) = (w.line, &w.find)
@@ -7467,7 +7480,10 @@ impl App {
                     ));
                 }
                 let w = parse_where(at, self.cursor_line)?;
-                (self.resolve_span_strict(&w)?, label)
+                (
+                    self.resolve_span_strict(&w, tiza_core::model::Edges::Both)?,
+                    label,
+                )
             }
         };
         let id = self.add_annotation_full(
@@ -7564,7 +7580,10 @@ impl App {
                     )));
                 }
                 let w = parse_where(at, self.cursor_line)?;
-                (self.resolve_span_strict(&w)?, label)
+                (
+                    self.resolve_span_strict(&w, tiza_core::model::Edges::Both)?,
+                    label,
+                )
             }
         };
         if inline {

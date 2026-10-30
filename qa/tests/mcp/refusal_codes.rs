@@ -91,6 +91,43 @@ fn every_refusal_of_the_mcp_tools_has_its_code() {
     assert_eq!(live.with(|a| a.doc.moves.len()), 0);
 }
 
+/// A `find` that starts inside a character (here the joiner of `d` and
+/// `min`) is refused where the column counts, with the code of a wrong
+/// argument; where only the line counts (the markers of a box), it works.
+#[test]
+fn a_find_inside_a_character_is_refused_with_its_code() {
+    let live = Live::from_code("let ad\u{200D}min = 1;\nfn b() {}\n", "rs", "inside-codes");
+    let mut mcp = McpClient::start(&live.socket);
+    let joiner = json!({"find": "\u{200D}"});
+    let cases = [
+        ("highlight", json!({"at": joiner})),
+        ("add_mark", json!({"kind": "warn", "at": joiner})),
+        (
+            "add_arrow",
+            json!({"from": joiner, "to": {"line": 2, "col": 0}}),
+        ),
+        (
+            "add_move",
+            json!({"at_step": 1, "action": "select", "from": joiner, "to": {"line": 2, "col": 2}}),
+        ),
+    ];
+    for (tool, args) in cases {
+        let (err, text, _) = mcp.call(tool, args.clone());
+        assert!(err, "{tool} {args}: accepted: {text}");
+        assert!(
+            text.contains("put the whole character in the find, or use line and col")
+                && text.ends_with("(invalid_argument)"),
+            "{tool} {args}: {text}"
+        );
+    }
+    let (err, text, _) = mcp.call(
+        "add_box",
+        json!({"find_start": "\u{200D}", "find_end": "fn b"}),
+    );
+    assert!(!err, "{text}");
+    assert_eq!(live.with(|a| a.doc.annotations.len()), 1);
+}
+
 /// `export_image` checks a number only for the formats that use it, as
 /// `tiza render` does: the scale of the pixels, the font size of an image.
 #[test]

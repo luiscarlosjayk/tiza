@@ -30,6 +30,19 @@ pub enum Error {
     /// another pair of quotes as if the phrase were the text searched).
     #[error("{0} matches nothing in the code")]
     NoMatch(String),
+    /// A `find` whose hit starts or ends inside a character (a grapheme)
+    /// where the column counts (`Document::find_span`): `edge` is `starts`
+    /// or `ends`, `col` the grapheme of `character`.
+    #[error(
+        "text {text:?} {edge} inside the character {character:?} at line {line}, col {col}: put the whole character in the find, or use line and col"
+    )]
+    InsideCharacter {
+        text: String,
+        edge: &'static str,
+        character: String,
+        line: u32,
+        col: u32,
+    },
     /// A move's target that matches nothing at its step, in the words of
     /// `tiza check`: `move #2, step 3: find «x» matches nothing in the code
     /// at this step`. `index` is the number of the move in the messages
@@ -79,7 +92,7 @@ impl Error {
             Error::TextNotFound(_) | Error::NoMatch(_) | Error::MoveNoMatch { .. } => {
                 "text_not_found"
             }
-            Error::Invalid(_) => "invalid_argument",
+            Error::Invalid(_) | Error::InsideCharacter { .. } => "invalid_argument",
             Error::UnsupportedSchema { .. } => "unsupported_schema",
             Error::Io(_) => "io",
             Error::Json(_) => "invalid_json",
@@ -131,6 +144,15 @@ const QUOTED: [(&str, char); 5] = [
 
 /// Longest string an `invalid type` message quotes, in characters.
 pub const QUOTED_MAX: usize = 40;
+
+/// `s` cut to [`QUOTED_MAX`] characters and `…`: a value of the code that
+/// an error quotes, such as a character with a thousand accents.
+pub fn shorten(s: &str) -> String {
+    match s.char_indices().nth(QUOTED_MAX) {
+        Some((i, _)) => format!("{}…", &s[..i]),
+        None => s.to_string(),
+    }
+}
 
 /// What may come before serde's own text in a message that reaches
 /// [`serde_text`]: rmcp's wording for MCP arguments.

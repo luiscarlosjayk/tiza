@@ -295,7 +295,27 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 - The list has each character that the screen shows as `⬚`, and each control character other than the tab. See [Control and invisible characters](characters.md).
 - A character that has a function on the screen is not in the list, for example the joiner of an emoji sequence. A tab is not in the list.
 - The list is empty when the code has none of these characters.
-- A `find` for a text with such a character must hold the real character, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and `col`.
+- A `find` for a text with such a character must hold the real character, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and `col`. See [A `find` inside a character](#a-find-inside-a-character).
+
+### A `find` inside a character
+
+A character (a grapheme) can be more than one code point, for example `d` with a joiner, `e` with a combining accent, or an emoji sequence.
+
+- When a column comes from a `find`, that edge of the text must be on the edge of a grapheme:
+  - a span, the `at` of a highlight or a mark, uses the two edges;
+  - an arrow end, `from` or `to`, and the `from` of a `select` use the start of the text;
+  - the `to` of a `select` uses the end of the text.
+- This applies in `annotation.add`, `annotation.update` with `shape` or `move`, `move.add`, `scene.put`, and a `rebind` entry of a span or an arrow end.
+- When that edge is inside a grapheme, the method fails with `invalid_argument`. For example, a joiner alone in `ad` U+200D `min` on line 1 gives:
+
+  ```
+  text "\u{200d}" starts inside the character "d\u{200d}" at line 1, col 1: put the whole character in the find, or use line and col
+  ```
+
+- Put the whole character in the `find`, for example `"d\u200d"` in JSON, or use `line` and `col`.
+- When only the line counts, this is not an error: a `find_start` or `find_end` marker, the `at` of a note (in `annotation.update` with `move`, and in a `rebind`), the target of a `code.patch`, and `pointer.set`.
+- `annotation.update` refuses a new `shape` when a `rebind` of the annotation would not work with it. An example is a note whose `rebind` has a joiner alone, which cannot become a highlight.
+- `occurrence` counts every match, also a match inside a grapheme.
 
 ### Fields of `status`
 
@@ -349,7 +369,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 | `not_found` | No annotation, move, named step or linked file has that name. |
 | `duplicate_id` | The document has an annotation with that id already. |
 | `text_not_found` | A `find`, a marker or the target of a move matches nothing in the code. |
-| `invalid_argument` | A parameter is not valid, or the method does not exist. |
+| `invalid_argument` | A parameter is not valid, or the method does not exist. A `find` that starts or ends inside a character where the column counts is not valid. |
 | `invalid_json` | The line is not a JSON request. |
 | `unsupported_schema` | The document of a `scene.put` has a `schema` that is newer than this version. |
 | `busy` | A newer `check` at another width replaced this `check` before it ran. |

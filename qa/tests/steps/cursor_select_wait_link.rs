@@ -799,3 +799,71 @@ fn rebind_only_on_patches_and_bad_windows_name_the_move() {
     assert_eq!(d.annotations[0].file.as_deref(), Some("other.rs"));
     assert_eq!(d.schema, 1);
 }
+
+/// A point of a `select` whose `find` starts inside a character (a joiner
+/// in the grapheme of `d`) is a load-time error naming the move, in a
+/// render and in `tiza check`, as a `find` that matches nothing is.
+#[test]
+fn a_select_point_inside_a_character_is_a_load_error() {
+    let dir = scratch("select-inside");
+    let bad = dir.join("bad.tiza");
+    std::fs::write(
+        &bad,
+        json!({
+            "schema": 1, "source": {"language": "rs"}, "code": ["let ad\u{200D}min = 1;"],
+            "moves": [
+                {"at_step": 1, "action": "select", "from": {"find": "\u{200D}"}, "to": {"find": "min"}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let said = "move #1, step 1: select from: text \"\\u{200d}\" starts inside the character \"d\\u{200d}\" at line 1, col 5";
+    for args in [
+        vec!["render", bad.to_str().unwrap(), "--out", "-"],
+        vec!["check", bad.to_str().unwrap()],
+    ] {
+        let out = tiza(&args);
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(all.contains(said), "{args:?}: {all}");
+    }
+    // The same for the rebind of a highlight; the rebind of a note takes
+    // only the line, and the file opens.
+    let rebind = |id: &str| {
+        json!({
+            "schema": 1, "source": {"language": "rs"}, "code": ["let ad\u{200D}min = 1;"],
+            "annotations": [
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 1, "start": 0, "end": 3}},
+                {"id": "n1", "step": 1, "type": "note", "line": 1, "text": "a note"}
+            ],
+            "moves": [
+                {"at_step": 2, "action": "code.patch", "op": "insert", "position": "1",
+                 "content": "// new", "rebind": {id: {"at": {"find": "\u{200D}"}}}}
+            ]
+        })
+        .to_string()
+    };
+    std::fs::write(&bad, rebind("h1")).unwrap();
+    let said = "rebind «h1»: text \"\\u{200d}\" starts inside the character \"d\\u{200d}\" at line 2, col 5";
+    for args in [
+        vec!["render", bad.to_str().unwrap(), "--out", "-"],
+        vec!["check", bad.to_str().unwrap()],
+    ] {
+        let out = tiza(&args);
+        let all = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(
+            !out.status.success() && all.contains(said),
+            "{args:?}: {all}"
+        );
+    }
+    std::fs::write(&bad, rebind("n1")).unwrap();
+    tiza_ok(&["check", bad.to_str().unwrap()]);
+}

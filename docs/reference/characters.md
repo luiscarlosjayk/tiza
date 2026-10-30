@@ -40,6 +40,7 @@ On the screen, each invisible character takes one cell. Tiza draws it as `⬚` (
 - Anchors and `find` count the real characters. Thus the columns of the graphemes do not change.
 - `get_code` and `tiza://code` give the invisible characters as they are, except a bidi control, which is `�`.
 - After the code, `get_code` and `tiza://code` give a note for each line with invisible characters, for example `# line 3: U+200B zero width space, col 5`. The note names each character, and gives its column as the `col` of an anchor. The socket method `code.get` gives the same list in `invisible`. See [Invisible characters in `code.get`](socket-api.md#invisible-characters-in-codeget).
+- A `find` that starts or ends inside a character, for example a joiner alone in `ad` U+200D `min`, fails where the column counts. Put the whole character in the `find`, or use the `line` and `col` of the note. See [A `find` inside a character](socket-api.md#a-find-inside-a-character).
 - The note does not name a character that has a function (see the list below), a tab, or the byte order mark that Tiza drops.
 
 Tiza draws an invisible character as it is when the character has a function:
