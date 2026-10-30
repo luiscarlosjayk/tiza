@@ -7,3 +7,4 @@ mod ctrl_c_over_follow;
 mod follow_with_moves;
 mod pause_while_the_watch_starts;
 mod reopen_after_follow_off;
+mod rollback_while_paused;

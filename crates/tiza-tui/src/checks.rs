@@ -181,7 +181,7 @@ fn check(job: &Job, width: usize) -> Result<tiza_core::check::Report, String> {
         // Test hook, only with the `test-hooks` feature: a panic
         // after the check did its work.
         #[cfg(feature = "test-hooks")]
-        if std::env::var("TIZA_TEST_HOOK").is_ok_and(|v| v == "request:check") {
+        if crate::test_hook("request:check") {
             panic!("TIZA_TEST_HOOK at check");
         }
         report

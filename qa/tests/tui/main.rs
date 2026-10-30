@@ -26,6 +26,7 @@ mod personal_styles;
 mod present_view;
 mod presentation_command_line;
 mod presentation_no_edits;
+mod request_rollback;
 mod resize_at_start;
 mod scroll_move;
 mod selection_after_a_command;
