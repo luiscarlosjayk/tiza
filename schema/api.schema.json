@@ -6653,7 +6653,7 @@
             "description": "One problem `check` found.",
             "properties": {
               "code": {
-                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `empty_step`, `effect` (the\nenter effect `draw` on a shape with no stroke), `until` (a\nspotlight's `until` before its `step`), and `stale` (a live\ninstance's move the code changed under).",
+                "description": "Stable kind, for scripts: `schema`, `code`, `link`, `duplicate_id`,\n`unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,\n`steps`, `unanchored`, `outside_window` (outside the `code.link`\nwindow of a step that shows its file), `not_shown` (its own step\nshows another file), `clipped_label`, `clipped_code` (code lines\ncut with `…`, one finding for each file and set of cut lines),\n`empty_step`, `effect` (the enter effect `draw` on a shape with no\nstroke), `until` (a spotlight's `until` before its `step`), and\n`stale` (a live instance's move the code changed under).",
                 "type": "string"
               },
               "file": {
@@ -6674,7 +6674,7 @@
                 "$ref": "#/$defs/Level"
               },
               "line": {
-                "description": "The code line of the anchor or the move target; for a `schema`\nfinding, the line of the `.tiza` itself.",
+                "description": "The code line of the anchor or the move target; for a `schema`\nfinding, the line of the `.tiza` itself; for `clipped_code`, the\nfirst cut line.",
                 "format": "uint32",
                 "minimum": 0,
                 "type": [

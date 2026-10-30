@@ -111,6 +111,9 @@ pub struct Layout {
     /// lanes, box rails, the widest code line and the right rail). `None`
     /// when every line fits.
     pub code_needs: Option<usize>,
+    /// The columns for the code: a line wider than this is drawn cut with
+    /// `…` (see [`Layout::cut_lines`]).
+    code_w: usize,
     /// Whether labels and notes go to the right margin (false: under the line).
     pub labels_in_margin: bool,
     /// Labels and notes drawn clipped with `…`, or left out for lack of
@@ -131,6 +134,23 @@ pub struct ClippedLabel {
 }
 
 impl Layout {
+    /// The code lines that this layout draws cut with `…`, in the order of
+    /// their rows. `doc` and `tab_width` are the ones the layout was made
+    /// with. Empty when every line fits.
+    pub fn cut_lines(&self, doc: &Document, tab_width: usize) -> Vec<u32> {
+        if self.code_needs.is_none() {
+            return Vec::new();
+        }
+        self.rows
+            .iter()
+            .filter_map(|r| match r {
+                Row::Code(line) => Some(*line),
+                _ => None,
+            })
+            .filter(|line| is_cut(doc.line_text(*line).unwrap_or(""), tab_width, self.code_w))
+            .collect()
+    }
+
     pub fn line_at_row(&self, row: usize) -> Option<u32> {
         match self.rows.get(row)? {
             Row::Code(l) => Some(*l),
@@ -2222,6 +2242,7 @@ fn layout_pass(
     Pass::Drawn(Layout {
         canvas,
         rows,
+        code_w,
         row_of_line,
         code_x,
         code_needs: (code_full_w > code_w).then_some(code_x + code_full_w + box_depth + 1),
@@ -2514,6 +2535,12 @@ pub fn col_to_x(text: &str, col: u32, tab_width: usize) -> usize {
     w
 }
 
+/// Whether a code line of `text` is drawn cut with `…` in `room` columns
+/// (`paint_code` and [`Layout::cut_lines`]).
+fn is_cut(text: &str, tab_width: usize, room: usize) -> bool {
+    code_width(text, tab_width) > room
+}
+
 /// Draws a code line from its highlighted segments; returns the cells of
 /// the invisible characters' marks. The line is cut into graphemes whole,
 /// as [`col_to_x`] measures it (a grammar may split a cluster, a ZWNJ
@@ -2534,8 +2561,7 @@ fn paint_code(
 ) -> Vec<usize> {
     let mut marked = Vec::new();
     let line: String = segs.iter().map(|s| s.text.as_str()).collect();
-    let full_w = code_width(text, tab_width);
-    let clip = full_w > max_w;
+    let clip = is_cut(text, tab_width, max_w);
     let limit = if clip { max_w.saturating_sub(1) } else { max_w };
     let style_of = |seg: &Segment| {
         if in_focus {

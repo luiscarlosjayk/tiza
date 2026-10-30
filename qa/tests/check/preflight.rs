@@ -805,14 +805,20 @@ fn a_clean_width_below_the_narrowest_one_says_so() {
         ),
         "{out}"
     );
-    // 66: no label clipped, but the code is cut (QA 2: line 4 below 79).
-    let (_, out, _) = check(&[file, "--width", "66"]);
+    // 66: no label clipped, but the code is cut (QA 2: line 4 below 79):
+    // a warning, so `--strict` fails.
+    let (code, out, _) = check(&[file, "--width", "66"]);
+    assert_eq!(code, 0, "{out}");
     assert!(
         out.contains(
-            "no label is clipped at width 66, but code lines are: they fit from width 79 (`tiza render --width 79`)"
+            "warning: step 0, L4: code is cut with «…» at width 66, first at step 0, then at steps 1-7: L4 (every code line of the take fits from width 79, `tiza render --width 79`)"
         ),
         "{out}"
     );
+    // The warning says it: the summary does not say it again.
+    assert!(!out.contains("but code lines are"), "{out}");
+    let (code, _, _) = check(&[file, "--width", "66", "--strict"]);
+    assert_eq!(code, 1);
     assert!(out.contains("79-93 are clean too"), "{out}");
     let (_, v) = check_json(
         &fixture("check/preflight/ownership.rs.tiza"),

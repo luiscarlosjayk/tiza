@@ -216,6 +216,7 @@ The `code` of a finding is one of these:
 | `not_shown` | Warning | An annotation belongs to a file that its own step does not show. |
 | `empty_step` | Warning | A step changes nothing. The step where a spotlight stops gets this warning only when its take is the same as the take of the step before. |
 | `clipped_label` | Warning | A label is cut, or is not drawn, at the width of the check. |
+| `clipped_code` | Warning | A code line is cut with `…` at the width of the check. There is one warning for each file with a cut line, and one more when a move changes which lines are cut. The warning gives the first five lines, the steps, and the width from which every code line of the take fits, or that no width up to 400 shows them whole. When a move gives the cut lines other numbers, the warning gives their numbers at its first step. |
 | `effect` | Warning | Experimental. An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. It comes in with no effect. See [Enter effects](document-format.md#enter-effects-experimental). |
 
 ## Messages

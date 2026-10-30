@@ -44,10 +44,11 @@ pub struct Finding {
     /// `unknown_id`, `unknown_file`, `anchor`, `marker`, `move`, `rebind`,
     /// `steps`, `unanchored`, `outside_window` (outside the `code.link`
     /// window of a step that shows its file), `not_shown` (its own step
-    /// shows another file), `clipped_label`, `empty_step`, `effect` (the
-    /// enter effect `draw` on a shape with no stroke), `until` (a
-    /// spotlight's `until` before its `step`), and `stale` (a live
-    /// instance's move the code changed under).
+    /// shows another file), `clipped_label`, `clipped_code` (code lines
+    /// cut with `…`, one finding for each file and set of cut lines),
+    /// `empty_step`, `effect` (the enter effect `draw` on a shape with no
+    /// stroke), `until` (a spotlight's `until` before its `step`), and
+    /// `stale` (a live instance's move the code changed under).
     pub code: &'static str,
     /// The annotation id (`a3`) or the move (`move #2`, 1-based as in
     /// `move.list`) the finding is about.
@@ -60,7 +61,8 @@ pub struct Finding {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file: Option<String>,
     /// The code line of the anchor or the move target; for a `schema`
-    /// finding, the line of the `.tiza` itself.
+    /// finding, the line of the `.tiza` itself; for `clipped_code`, the
+    /// first cut line.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub line: Option<u32>,
     pub message: String,
@@ -133,7 +135,8 @@ impl Finding {
 /// What `check` was asked.
 #[derive(Debug, Clone, Default)]
 pub struct CheckOptions {
-    /// Width to check the labels at; `None`: [`DEFAULT_WIDTH`].
+    /// Width to check the labels and the code lines at; `None`:
+    /// [`DEFAULT_WIDTH`].
     pub width: Option<usize>,
     /// The gutter when the document does not set `numbers` (the config
     /// file's default); `None`: on.
@@ -241,14 +244,6 @@ impl Report {
         if self.max_step.is_some() {
             match (self.min_clean_width, &self.narrower) {
                 (Some(w), Some(n)) => {
-                    let width = self.width;
-                    // A width, as every other one here: what `--width`
-                    // takes, not the width of the code alone.
-                    if let Some(c) = n.code_fits_from.filter(|&c| width < c) {
-                        out.push_str(&format!(
-                            "no label is clipped at width {width}, but code lines are: they fit from width {c} (`tiza render --width {c}`)\n"
-                        ));
-                    }
                     let under = n
                         .margin_from
                         .map(|m| format!(" (notes go under the lines below {m} columns)"))
@@ -1197,25 +1192,97 @@ pub fn steps_text(steps: &[u32]) -> String {
     out.join(", ")
 }
 
-/// The labels clipped at `width`, at every step of the take: `(id, text,
-/// dropped)` → the steps it is clipped at.
-fn clipped_at(take: &Take, theme: &Theme, width: usize) -> Vec<((String, String, bool), Vec<u32>)> {
-    let mut out: Vec<((String, String, bool), Vec<u32>)> = Vec::new();
+/// When a finding at `width` holds: `at width 60, only at step 3`, or `at
+/// width 60, first at step 0, then at steps 1-3`. The step that the
+/// finding names is the first one.
+fn at_steps(width: usize, steps: &[u32]) -> String {
+    match steps {
+        [one] => format!("at width {width}, only at step {one}"),
+        [first, rest @ ..] => format!(
+            "at width {width}, first at step {first}, then at step{} {}",
+            if rest.len() == 1 { "" } else { "s" },
+            steps_text(rest)
+        ),
+        [] => format!("at width {width}"),
+    }
+}
+
+/// The code lines of one file cut with `…` at some steps of the take.
+struct CutCode {
+    /// `None`: the main file.
+    file: crate::moves::ViewKey,
+    /// The texts of the cut lines, sorted: what tells one set of cut lines
+    /// from another. A patch above them changes their numbers, not their
+    /// texts, so a typing demo gives one warning, not one at each step.
+    texts: Vec<String>,
+    /// Their numbers at the first step.
+    lines: Vec<u32>,
+    steps: Vec<u32>,
+    /// How many of the steps give them other numbers.
+    renumbered: usize,
+}
+
+/// What the take draws whole or not at `width`, at every step of the take.
+struct AtWidth {
+    /// The labels clipped: `(id, text, dropped)` → the steps.
+    clipped: Vec<((String, String, bool), Vec<u32>)>,
+    /// The code lines cut with `…`: one entry for each file and set of cut
+    /// lines.
+    cut: Vec<CutCode>,
+    /// The width from which every code line fits, when one is cut. The
+    /// geometry is the one of the whole take, so it is the same at every
+    /// step.
+    code_fits: Option<usize>,
+}
+
+/// [`AtWidth`]: each step where something changes is laid out once, and
+/// what it shows holds at every step of its run.
+fn at_width(take: &Take, theme: &Theme, width: usize) -> AtWidth {
+    let mut out = AtWidth {
+        clipped: Vec::new(),
+        cut: Vec::new(),
+        code_fits: None,
+    };
     let mut spare = None;
-    // Laid out once per step where something changes; a label is
-    // clipped at every step of that step's run.
     for (i, step) in take.steps.iter().enumerate() {
-        if !step.labels {
-            continue;
-        }
         let l = take.measure(i, theme, width, spare.take());
-        for c in l.clipped_labels {
-            let key = (c.id, c.text, c.dropped);
+        for c in &l.clipped_labels {
+            let key = (c.id.clone(), c.text.clone(), c.dropped);
             // Cut at some steps and left out at others: two findings, each
             // with its own steps, so each step is reported as it draws.
-            match out.iter_mut().find(|(k, _)| *k == key) {
+            match out.clipped.iter_mut().find(|(k, _)| *k == key) {
                 Some((_, steps)) => steps.extend(step.run.clone()),
-                None => out.push((key, step.run.clone().collect())),
+                None => out.clipped.push((key, step.run.clone().collect())),
+            }
+        }
+        let tab_width = take_options(take.doc, width, step.step).tab_width;
+        let lines = l.cut_lines(&step.shown, tab_width);
+        if !lines.is_empty() {
+            out.code_fits = out.code_fits.max(l.code_needs);
+            let file = take.doc.shown_view_at(step.step).file;
+            let mut texts: Vec<String> = lines
+                .iter()
+                .map(|l| step.shown.line_text(*l).unwrap_or("").to_string())
+                .collect();
+            texts.sort_unstable();
+            match out
+                .cut
+                .iter_mut()
+                .find(|c| c.file == file && c.texts == texts)
+            {
+                Some(c) => {
+                    if c.lines != lines {
+                        c.renumbered += step.run.clone().count();
+                    }
+                    c.steps.extend(step.run.clone());
+                }
+                None => out.cut.push(CutCode {
+                    file,
+                    texts,
+                    lines,
+                    steps: step.run.clone().collect(),
+                    renumbered: 0,
+                }),
             }
         }
         spare = Some(l.canvas);
@@ -1677,7 +1744,8 @@ fn check_loaded(
         }
     }
     // ---- labels clipped with … at the width of the take ----
-    for ((id, text, dropped), steps) in clipped_at(take, theme, width) {
+    let at = at_width(take, theme, width);
+    for ((id, text, dropped), steps) in at.clipped {
         let a = doc.find_annotation(&id);
         // A mark's label is drawn behind its glyph: the text is what the
         // author wrote (`legend: label`).
@@ -1694,20 +1762,10 @@ fn check_loaded(
         } else {
             "is clipped with «…»"
         };
-        // The step the finding names is the first one it is clipped at.
-        let when = match steps.as_slice() {
-            [one] => format!("at width {width}, only at step {one}"),
-            [first, rest @ ..] => format!(
-                "at width {width}, first at step {first}, then at step{} {}",
-                if rest.len() == 1 { "" } else { "s" },
-                steps_text(rest)
-            ),
-            [] => format!("at width {width}"),
-        };
         let mut f = Finding::new(
             Level::Warning,
             "clipped_label",
-            format!("label «{text}» {how} {when}"),
+            format!("label «{text}» {how} {}", at_steps(width, &steps)),
         )
         .id(id)
         .step(steps[0])
@@ -1715,6 +1773,54 @@ fn check_loaded(
         .line(a.and_then(|a| anchor_line(&a.shape)));
         f.text = Some(text);
         out.push(f);
+    }
+    // ---- code lines cut with … at the width of the take ----
+    let fits = match at.code_fits {
+        Some(c) if c <= MAX_WIDTH => {
+            format!("every code line of the take fits from width {c}, `tiza render --width {c}`")
+        }
+        _ => format!("no width up to {MAX_WIDTH} shows every code line whole"),
+    };
+    for CutCode {
+        file,
+        lines,
+        steps,
+        renumbered,
+        ..
+    } in at.cut
+    {
+        const NAMED: usize = 5;
+        let mut which = lines
+            .iter()
+            .take(NAMED)
+            .map(|l| format!("L{l}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        if lines.len() > NAMED {
+            which.push_str(&format!(" and {} more", lines.len() - NAMED));
+        }
+        // The numbers are the ones of the first step: a patch can move the
+        // lines at the others.
+        if renumbered > 0 {
+            which.push_str(&format!(
+                " at step {}, with other numbers at {renumbered} step{}",
+                steps[0],
+                if renumbered == 1 { "" } else { "s" }
+            ));
+        }
+        out.push(
+            Finding::new(
+                Level::Warning,
+                "clipped_code",
+                format!(
+                    "code is cut with «…» {}: {which} ({fits})",
+                    at_steps(width, &steps)
+                ),
+            )
+            .step(steps[0])
+            .file(file)
+            .line(lines.first().copied()),
+        );
     }
     widest_clipped(take, theme).map_or(Some(MIN_WIDTH), clean_above)
 }

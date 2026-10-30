@@ -250,7 +250,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 | `set_theme` | `theme` | `dark`, `light`, `terminal`, `auto` or `toggle`. |
 | `set_follow` | `enabled` | `true` turns follow mode on, and `false` turns it off. |
 | `render_text` | `width` | The width of the take in columns, from 20 to 400, or the width of the code area of the screen. |
-| `check` | `width` | The width at which `check` measures the labels, from 20 to 400. The default is the `width` of the config file, else 100. |
+| `check` | `width` | The width at which `check` measures the labels and the code lines, from 20 to 400. The default is the `width` of the config file, else 100. |
 
 - The presenter can undo `clear_annotations` with `u`. The reply gives `removed`, `remaining` and `revision`.
 - `clear_annotations` refuses `"step": null` and an unknown key. In its input schema, `step` is an integer, and the schema has `"additionalProperties": false`.

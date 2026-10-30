@@ -9,14 +9,14 @@ Tiza is a terminal tool that draws annotations on code. To install it, see [Inst
 1. Run `tiza check demo.tiza`. It loads the document as the TUI does, and lists every problem at once.
 2. Fix the errors. When there is an error, `tiza check` exits with 1.
 3. Read the warnings. Add `--strict` to make a warning also exit with 1.
-4. Pick the width. The last line of the report gives the narrowest width from which no label is cut. Use that width or more.
+4. Pick the width. The last line of the report gives the narrowest width from which no label is cut. Use that width or more. A `clipped_code` warning gives the width from which no code line is cut, or tells you that no width up to 400 shows every code line whole.
 5. Use demo values for tokens, passwords and credentials. The audience sees what is in the file.
 6. Set up the terminal. See [Terminal and font](#terminal-and-font).
 7. Before you record, go through the steps in normal mode. Look for a `!` badge on the status bar. See [Badges on the status bar](#badges-on-the-status-bar).
 
 ## What check reports
 
-`tiza check` does not change any file. It checks the labels at the width that you record at: the `width` of your config file, else 100 columns, or `--width N`.
+`tiza check` does not change any file. It checks the labels and the code lines at the width that you record at: the `width` of your config file, else 100 columns, or `--width N`.
 
 The table gives the usual problems. Each finding in the JSON output also has a `code`.
 
@@ -34,6 +34,7 @@ The table gives the usual problems. Each finding in the JSON output also has a `
 | A later `code.patch` pushes an annotation out of the `code.link` window. | Warning |
 | An annotation belongs to a file that its own step does not show. | Warning |
 | A label is cut with `…`, or has no space and is not drawn, at the width that you record at. | Warning |
+| A code line is cut with `…` at the width that you record at. | Warning |
 | A step changes nothing. | Warning |
 | A marker (`find_start` or `find_end`) matches more than one time. | Warning |
 | A `rebind` names an unknown id. Tiza ignores that `rebind`. | Warning |

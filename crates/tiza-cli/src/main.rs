@@ -280,12 +280,12 @@ enum Cmd {
     },
     /// Preflight before a take: load a .tiza and list every problem (anchors, markers, moves at their
     /// step, linked files, ids, annotations a move hides, labels
-    /// clipped with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
+    /// clipped with «…», code lines cut with «…», steps with nothing new). Exit 1 on errors; warnings fail only with --strict.
     /// Writes nothing.
     Check {
         /// `.tiza` document, a source file with a `.tiza` document next to it, or `-` for stdin
         file: String,
-        /// Width to check the labels at (default: as `render`: `width` in config.toml, else 100)
+        /// Width to check the labels and the code lines at (default: as `render`: `width` in config.toml, else 100)
         #[arg(long)]
         width: Option<usize>,
         /// Print the findings as JSON (for agents and scripts)
