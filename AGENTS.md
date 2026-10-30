@@ -59,7 +59,9 @@ Some pages are maintainer notes outside this repository, in `../dev/` next to th
 - To test the TUI without an interactive terminal, use a pseudo-terminal (Python `pty`) and `tiza api status --socket PATH`.
 - `examples/` holds demos only, never test data.
 - When you change what the renderer draws, run `scripts/readme-images.sh` in the same commit.
+- When you change a panel, the status bar or presentation mode, run `scripts/tui-captures.sh` in the same commit.
 - A frame in a doc or a brand image is a real `tiza render` export. Do not edit it. Do not make a mockup.
+- An image of the TUI is the only other kind of image of Tiza in a doc. Use it only for what `tiza render` does not draw: presentation mode, the status bar, the live pointer, the focus, the padding and the layout of normal mode, a panel or the view of a `scroll` move. Make it with `scripts/tui-captures.sh`. Do not edit it.
 - Keep images out of the repository unless they are necessary. Tests use text exports, not PNG files.
 - Before you push a new dependency or an embedded asset, run `scripts/size-check.sh` and `scripts/bench.sh`. CI does not run them.
 - The limits are in `qa/budgets.json` and `qa/bench/baseline.json`.
