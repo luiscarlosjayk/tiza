@@ -129,14 +129,14 @@ The same step after `:pad 0 0`. The document now has changes that are not saved,
 
 ## `:margin`
 
-Sets the largest width of the right margin, from 12 to 200 cells. Tiza puts notes, labels and legends in the right margin when it has room, and under the line when it has no room. In the right margin, Tiza cuts a note, a label or a legend that is longer than the margin, and ends it with `…`.
+Sets the largest width of the right margin, from 12 to 200 cells. Tiza puts notes, labels and legends in the right margin when it has room, and under the line when it has no room. In the right margin, a note wraps onto the rows under its line. Tiza cuts a label, a legend, or a note that is too long for its rows, and ends it with `…`.
 
 ```
 :margin N
 :margin auto
 ```
 
-For example, `:margin 40` limits the right margin to 40 cells. In this frame, `:margin 20` cuts a long note at 20 cells, and ends it with `…`:
+For example, `:margin 40` limits the right margin to 40 cells. In this frame, `:margin 20` cuts a long note at 20 cells, and ends it with `…`. Line 3 is the last line of the code, so no row is free under it:
 
 <!-- frame id=margin-20 code=examples/ownership.rs:1-3 width=80 -->
 ```

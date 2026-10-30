@@ -50,7 +50,7 @@ Two examples show moves and views:
 | `theme` | `"dark"`, `"light"` or `"terminal"` | No default | The theme of the document. |
 | `theme_overrides` | object | No default | Colors that apply over the `[theme]` table of the config file (see [Theme overrides](#theme-overrides)). |
 | `padding` | array of two integers | `pad` of the config file, else `[0, 1]` | The blank rows and columns around the code on the screen, as `[vertical, horizontal]`. |
-| `margin` | integer | No default | The maximum width of the right margin in columns. Notes wrap at this width. Tiza cuts labels, legends and long notes there. |
+| `margin` | integer | No default | The maximum width of the right margin in columns. A note wraps at this width onto the rows under its line. Tiza cuts a label, a legend, and a note that is too long for its rows there, and ends it with `…`. |
 | `numbers` | `true` or `false` | `numbers` of the config file, else `true` | When `false`, Tiza does not show line numbers. |
 
 - `views` holds the full code of a linked file. The window stays in the move.
@@ -261,6 +261,7 @@ Two spotlights at step 1: one on lines 2 and 3, and one on the highlight `h1`. T
 ```
 
 <img src="../images/format/spot-two.webp" width="528" alt="Lines 2, 3 and 7 are bright, with &t and its label shared borrow on line 7. The other lines are dim.">
+
 - Tiza refuses a blank `text`, and a range that ends before it starts, when you add an annotation.
 - An annotation whose lines are not in the code stays in the file. Tiza does not draw it, and `tiza check` gives an error for it.
 
