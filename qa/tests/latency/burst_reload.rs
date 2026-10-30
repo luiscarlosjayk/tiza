@@ -85,7 +85,9 @@ fn tmp_rename_save_reloads_once_after_debounce() {
     wait_reloads(&live, 2);
     // Then a save of the same text: its read comes after the events of the
     // burst, so when it is done, a reload more of the burst would show.
-    std::fs::write(&src, CODE.replace("done", "v4")).unwrap();
+    // It goes through a rename: in place, the same size can keep the stamp
+    // (a coarse mtime), and the wait would not wait for its read.
+    save_like_zed(&src, &CODE.replace("done", "v4"));
     assert_eq!(
         live.wait_follow_read(&src).reloads,
         2,
