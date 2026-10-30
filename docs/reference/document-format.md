@@ -980,7 +980,7 @@ Each image under this paragraph is a real `tiza render` export of the document a
 
 `draw` on a box at step 1, an arrow at step 2 and an underline at step 3:
 
-<!-- frame id=effect-draw doc=docs/frames/effect-draw.tiza animate=0 -->
+<!-- frame id=effect-draw doc=docs/frames/effect-draw.tiza animate=0 interval=1 -->
 ```json
 {
   "schema": 1,
