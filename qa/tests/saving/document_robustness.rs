@@ -241,3 +241,46 @@ fn a_load_error_names_a_move_by_its_number_in_the_file() {
         assert!(!e.contains("skips"), "{name}: {e}");
     }
 }
+
+#[test]
+fn a_key_under_another_name_in_a_position_names_the_name_to_use() {
+    // `col` in a span, which needs `start`, and `start` in an arrow end,
+    // which needs `col`: the load takes out the key that it does not know,
+    // so the position misses the key that it needs, and the document does
+    // not open. The error names the keys that it took out, and the names
+    // to use, also in `tiza check`.
+    let dir = scratch("position-key-renamed");
+    let file = dir.join("renamed.tiza");
+    std::fs::write(
+        &file,
+        json!({
+            "schema": 1,
+            "source": {"language": "rs", "first_line": 1},
+            "code": ["fn main() {}", "let s = 1;"],
+            "annotations": [
+                {"id": "h1", "step": 1, "type": "highlight", "span": {"line": 2, "col": 4, "end": 5}},
+                {"id": "a1", "step": 1, "type": "arrow", "from": {"line": 1, "start": 0}, "to": {"line": 2, "col": 4}}
+            ]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    let e = tiza_core::fs::open(file.to_str().unwrap())
+        .map(|_| ())
+        .expect_err("the span misses `start`")
+        .to_string();
+    for said in [
+        "missing field `start`",
+        "col in span of annotation h1 (`col` is `start` in a span.)",
+        "start in from of annotation a1 (`start` is `col` in a position.)",
+    ] {
+        assert!(e.contains(said), "{said}: {e}");
+    }
+    let out = tiza(&["check", file.to_str().unwrap()]);
+    assert_eq!(out.status.code(), Some(1));
+    let report = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        report.contains("missing field `start`") && report.contains("`col` is `start` in a span."),
+        "{report}"
+    );
+}

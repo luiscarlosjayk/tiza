@@ -362,12 +362,17 @@ fn check_text_as(
         Ok(d) => d,
         Err(e) => {
             let line = (e.line() > 0).then_some(e.line() as u32);
+            // A key that the load took out can be the one that a position
+            // needs, under another name (`col` in a span).
+            let note = crate::fs::taken_keys_note(&newer.positions)
+                .map(|n| format!(". {n}"))
+                .unwrap_or_default();
             out.push(
                 Finding::new(
                     Level::Error,
                     "schema",
                     format!(
-                        "does not follow the .tiza format: {}",
+                        "does not follow the .tiza format: {}{note}",
                         crate::error::shorten_quoted_value(&e.to_string())
                     ),
                 )
