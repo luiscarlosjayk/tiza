@@ -469,7 +469,9 @@ The fonts are in the `tiza` binary. Thus an image export does not depend on the 
 
 ### One layout for the take
 
-All exports use the layout of the take. Tiza sizes the arrow lanes, the box band and the code column once, for all the steps. Thus the code does not move from one step to the next. Each arrow keeps its lane. A label that fits at step 1 also fits at the last step.
+All exports use the layout of the take. Tiza sizes the arrow lanes, the box band and the code column once, for all the steps. Thus the code does not move left or right from one step to the next, and each arrow keeps its lane. A label that fits at step 1 also fits at the last step.
+
+The take has no empty rows for the annotations of later steps. When a step adds a row above or under a line, the code under that row moves down at that step. Examples are a note or a callout under its line, the row of an underline or of brackets, and the border of a box. A step with a `code.patch` or a `code.link` changes the code, so the code can also move at that step.
 
 Tiza then makes all the frames of a GIF, an animated WebP or a video, or all the files of `--all-steps`, the same size. It adds the background color to the smaller ones.
 
