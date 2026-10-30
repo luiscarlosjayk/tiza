@@ -388,7 +388,7 @@
       }
     },
     {
-      "description": "Code shown at the current step with line numbers (text), and the file/window it comes from",
+      "description": "Code shown at the current step with line numbers (text), the file/window it comes from, and the characters it does not show as they are (invisible)",
       "method": "code.get",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -406,6 +406,30 @@
           },
           "first_line": {
             "type": "integer"
+          },
+          "invisible": {
+            "description": "Each character of the code that the screen does not show as it is (an invisible character or a control character), in order. `text` holds the real character.",
+            "items": {
+              "properties": {
+                "code_point": {
+                  "description": "`U+200B`",
+                  "type": "string"
+                },
+                "col": {
+                  "description": "The grapheme, from 0, as the `col` of an anchor.",
+                  "type": "integer"
+                },
+                "line": {
+                  "type": "integer"
+                },
+                "name": {
+                  "description": "`zero width space`",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
           },
           "language": {
             "type": "string"

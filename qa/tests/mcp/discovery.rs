@@ -60,6 +60,19 @@ fn description(tools: &BTreeMap<String, Value>, name: &str) -> String {
     tools[name]["description"].as_str().unwrap().to_string()
 }
 
+// ---------------------------------------------------------------- AC1
+
+#[test]
+fn the_instructions_stay_under_1200_characters() {
+    let m = mcp("instructions-length");
+    let chars = m.initialize_result()["instructions"]
+        .as_str()
+        .unwrap()
+        .chars()
+        .count();
+    assert!(chars < 1200, "{chars} chars");
+}
+
 // ---------------------------------------------------------------- AC2
 
 #[test]

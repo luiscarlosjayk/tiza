@@ -23,6 +23,7 @@ Code can hold characters that a terminal acts on, for example ESC, NUL and BEL. 
 - In embedded code, a `\r\n` that is one grapheme shows as `␤` on the screen. In a file that Tiza reads, a `\r\n` is a line end.
 - A one-line text in a reply is, for example, a title or a file name.
 - Each picture takes the same number of cells as the character, so the columns do not move.
+- `get_code` and `tiza://code` show a control character in the code as its picture or `�` too, and a `find` with the picture does not match. After the code, a note gives the real character, for example `# line 4: U+001B escape, col 7`. See [Invisible characters in the code](#invisible-characters-in-the-code).
 
 ## Invisible characters in the code
 
@@ -38,6 +39,8 @@ On the screen, each invisible character takes one cell. Tiza draws it as `⬚` (
 
 - Anchors and `find` count the real characters. Thus the columns of the graphemes do not change.
 - `get_code` and `tiza://code` give the invisible characters as they are, except a bidi control, which is `�`.
+- After the code, `get_code` and `tiza://code` give a note for each line with invisible characters, for example `# line 3: U+200B zero width space, col 5`. The note names each character, and gives its column as the `col` of an anchor. The socket method `code.get` gives the same list in `invisible`. See [Invisible characters in `code.get`](socket-api.md#invisible-characters-in-codeget).
+- The note does not name a character that has a function (see the list below), a tab, or the byte order mark that Tiza drops.
 
 Tiza draws an invisible character as it is when the character has a function:
 

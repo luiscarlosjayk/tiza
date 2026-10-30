@@ -8400,11 +8400,17 @@ impl App {
             "code.get" => {
                 let view = self.doc.view_at(self.doc.step);
                 let mut out = String::new();
+                // The characters the screen does not show as they are:
+                // `text` keeps them (a `find` copies them), this names them.
+                let mut invisible = Vec::new();
                 for (i, text) in view.doc.code.iter().enumerate() {
                     let line = self.doc.source.first_line + i as u32;
                     out.push_str(&format!("{line:>4}  {text}\n"));
+                    for (col, c) in tiza_core::printable::unseen(text) {
+                        invisible.push(json!({"line": line, "col": col, "code_point": format!("U+{:04X}", c as u32), "name": tiza_core::printable::char_name(c)}));
+                    }
                 }
-                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.shown_view(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out})
+                json!({"language": self.doc.source.language, "file": self.shown_file(), "view": self.shown_view(), "first_line": self.doc.source.first_line, "last_line": self.doc.last_line(), "text": out, "invisible": invisible})
             }
             "scene.get" => {
                 if !params.is_null() {

@@ -87,7 +87,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 
 | Method | Params | What it does | MCP tool |
 |---|---|---|---|
-| `code.get` | None | Gives the code on screen with line numbers, and the file and the window that it comes from. | `get_code` |
+| `code.get` | None | Gives the code on screen with line numbers, the file and the window that it comes from, and the characters that the screen does not show as they are. | `get_code` |
 | `scene.get` | None | Gives the live document, with the code embedded, and the current step. | `export_image` |
 | `scene.list` | None | Gives one line for each annotation, in the order of the document. | `list_annotations` |
 | `render.text` | `width` | Gives the take at the current step as plain text. | `render_text` |
@@ -251,7 +251,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 | `status` | The fields in [Fields of `status`](#fields-of-status). |
 | `api.methods` | A list of `{method, description}`. |
 | `api.schema` | `protocol`, `request`, `response`, and `methods`, a list of `{method, description, params, result}`. |
-| `code.get` | `language`, `file`, `view`, `first_line`, `last_line` and `text`. |
+| `code.get` | `language`, `file`, `view`, `first_line`, `last_line`, `text` and `invisible`. See [Invisible characters in `code.get`](#invisible-characters-in-codeget). |
 | `scene.get` | `revision`, `step`, `max_step`, `document`, and `stale` and `held` when a move is stale. |
 | `scene.list` | A list of strings, one for each annotation. |
 | `render.text` | `text`, and `width`, the width of the take. |
@@ -285,6 +285,16 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 - `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number.
 - `shown` of `pointer.set` is `false` while the presenter has the command line open. The pointer shows when the command line closes.
 - The fields of the `check` report are in [Check report](cli.md#check-report).
+
+### Invisible characters in `code.get`
+
+`text` gives the real characters of the code. Some of them do not show on the screen as they are. `invisible` is a list of these characters, in the order of the code. Each item is `{line, col, code_point, name}`, for example `{"line": 3, "col": 5, "code_point": "U+200B", "name": "zero width space"}`.
+
+- `col` is the grapheme, counted from 0, as the `col` of an anchor. A joiner in the grapheme of a letter has the column of that letter. For example, in `ad` U+200D `min`, the joiner has `col` 1.
+- The list has each character that the screen shows as `⬚`, and each control character other than the tab. See [Control and invisible characters](characters.md).
+- A character that has a function on the screen is not in the list, for example the joiner of an emoji sequence. A tab is not in the list.
+- The list is empty when the code has none of these characters.
+- A `find` for a text with such a character must hold the real character, for example `"ad\u200bmin"` in JSON. To point at the character itself, use `line` and `col`.
 
 ### Fields of `status`
 

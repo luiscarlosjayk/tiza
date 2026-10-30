@@ -676,6 +676,42 @@ fn exe_mtime() -> Option<std::time::SystemTime> {
         .and_then(|m| m.modified().ok())
 }
 
+/// The note after the code of `get_code` and `tiza://code`: one line for
+/// each code line with characters that the screen does not show as they
+/// are (the `invisible` of `code.get`), after an empty line. Nothing when
+/// there are none, so such a reply is the code alone.
+fn invisible_note(v: &Value) -> String {
+    let Some(items) = v["invisible"].as_array().filter(|i| !i.is_empty()) else {
+        return String::new();
+    };
+    let mut out = String::from(
+        "\n# The code above holds these characters, but you cannot see them or it shows a picture. \
+         col is the grapheme, from 0. A find for a text with one of them must hold the real character, \
+         for example \"ad\\u200bmin\" in JSON. To point at the character itself, use line and col.\n",
+    );
+    let mut last = None;
+    for it in items {
+        let line = it["line"].as_u64();
+        if last == Some(line) {
+            out.push_str("; ");
+        } else {
+            if last.is_some() {
+                out.push('\n');
+            }
+            out.push_str(&format!("# line {}: ", line.unwrap_or(0)));
+        }
+        out.push_str(&format!(
+            "{} {}, col {}",
+            it["code_point"].as_str().unwrap_or(""),
+            it["name"].as_str().unwrap_or(""),
+            it["col"]
+        ));
+        last = Some(line);
+    }
+    out.push('\n');
+    out
+}
+
 /// A tool's text reply, with its control characters shown as pictures
 /// (`␛`, `␀`…) and never sent raw to the client.
 fn text(v: impl ToString) -> CallToolResult {
@@ -831,7 +867,7 @@ impl TizaServer {
 
     #[tool(
         meta = always_load(),
-        description = "Returns the code Tiza shows on screen, with line numbers, to pick where a box, arrow, highlight or note goes (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown."
+        description = "Returns the code Tiza shows on screen, with line numbers, to pick where a box, arrow, highlight or note goes (the file a `code.link` left up, cropped to its window, with the patches of the current step applied). Read it before annotating to pick exact lines and texts; a first line names the file and window when a link is shown. After the code, a note for each line names its invisible and control characters, with their columns (`# line 3: U+200B zero width space, col 5`). A `find` for a text with one of them must hold the real character (`\\u200b`, `\\u001b` in JSON); a control character shows here as its picture, which a `find` does not match."
     )]
     async fn get_code(
         &self,
@@ -839,9 +875,10 @@ impl TizaServer {
     ) -> Result<CallToolResult, McpError> {
         let v = self.call("code.get", json!({})).await?;
         let body = v.get("text").and_then(|t| t.as_str()).unwrap_or("");
+        let note = invisible_note(&v);
         Ok(text(match v.get("view").and_then(|t| t.as_str()) {
-            Some(view) => format!("# {view}\n{body}"),
-            None => body.to_string(),
+            Some(view) => format!("# {view}\n{body}{note}"),
+            None => format!("{body}{note}"),
         }))
     }
 
@@ -1775,7 +1812,7 @@ const RESOURCES: &[(&str, &str, &str, &str)] = &[
     (
         "tiza://code",
         "code",
-        "The code currently shown, with line numbers, as text.",
+        "The code currently shown, with line numbers, as text, and a note for each line with invisible or control characters.",
         "text/plain",
     ),
     (
@@ -1801,7 +1838,8 @@ impl TizaServer {
             }
             "tiza://code" => {
                 let v = self.call("code.get", json!({})).await?;
-                Ok(v["text"].as_str().unwrap_or("").to_string())
+                let body = v["text"].as_str().unwrap_or("");
+                Ok(format!("{body}{}", invisible_note(&v)))
             }
             "tiza://render" => {
                 let v = self.call("render.text", json!({})).await?;
@@ -1946,6 +1984,7 @@ impl ServerHandler for TizaServer {
                  and export PNG, SVG, GIF or text.\n\
                  Flow: `status` → `get_code` → annotate with `find` (exact text) and `step`; each reply says whether it shows at the step on screen.\n\
                  Then `next_step`/`goto_step`, `render_text` to verify and `export_image` to save.\n\
+                 `get_code` notes each invisible or control character: a `find` must hold the real character (`\\u200b` in JSON). \
                  Annotating at step N creates step N (goto_step goes no further than the last). \
                  A `find_end` of `}` takes the first brace after find_start, often an inner block's. \
                  Keep labels short (~100 columns). \

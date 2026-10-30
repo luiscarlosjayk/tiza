@@ -196,7 +196,7 @@ pub fn api_schema() -> ApiSchema {
                 "status" => (schema::<NoParams>(), schema::<Status>()),
                 "api.methods" => (schema::<NoParams>(), serde_json::json!({"type": "array", "items": {"type": "object", "properties": {"method": string(), "description": string()}}})),
                 "api.schema" => (schema::<NoParams>(), schema::<ApiSchema>()),
-                "code.get" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"language": string(), "file": {"type": ["string", "null"]}, "view": {"type": ["string", "null"]}, "first_line": {"type": "integer"}, "last_line": {"type": "integer"}, "text": string()}})),
+                "code.get" => (schema::<NoParams>(), serde_json::json!({"type": "object", "properties": {"language": string(), "file": {"type": ["string", "null"]}, "view": {"type": ["string", "null"]}, "first_line": {"type": "integer"}, "last_line": {"type": "integer"}, "text": string(), "invisible": {"type": "array", "description": "Each character of the code that the screen does not show as it is (an invisible character or a control character), in order. `text` holds the real character.", "items": {"type": "object", "properties": {"line": {"type": "integer"}, "col": {"type": "integer", "description": "The grapheme, from 0, as the `col` of an anchor."}, "code_point": {"type": "string", "description": "`U+200B`"}, "name": {"type": "string", "description": "`zero width space`"}}}}}})),
                 "scene.get" => (schema::<SceneGetParams>(), schema::<Scene>()),
                 "scene.list" => (schema::<NoParams>(), serde_json::json!({"type": "array", "items": string()})),
                 "annotation.add" => (schema::<AddParams>(), schema::<AnnotationMutated>()),

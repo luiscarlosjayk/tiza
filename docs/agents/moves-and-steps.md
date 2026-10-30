@@ -106,7 +106,7 @@ A `code.link` move shows another file from its step, until a later link shows an
 {"name":"add_move","arguments":{"at_step":2,"action":"code.link","file":"src/queue.rs","lines":"10-36"}}
 ```
 
-- `get_code` gives the file on the screen, in its window. When a `code.link` shows the file, the first line names it, for example `# src/queue.rs:10-36`.
+- `get_code` gives the file on the screen, in its window. When a `code.link` shows the file, the first line names it, for example `# src/queue.rs:10-36`. The notes on invisible characters after the code give the lines of the file.
 - `status` gives the file on the screen. See [Fields of `status`](../reference/socket-api.md#fields-of-status).
 - A move carries a window as it carries a line number. An insert at the first line of the window, at the step of the link, makes the window start at the new lines.
 - When a move hides annotations that were on the screen at a step, its reply has a `warning` with their ids. `check` gives the same as `outside_window` or `not_shown`.

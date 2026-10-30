@@ -5,6 +5,7 @@ mod agent_scenarios;
 mod build_identity;
 mod discovery;
 mod export_image_config;
+mod invisible_code;
 mod real_client;
 mod refusal_codes;
 mod resources;

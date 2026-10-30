@@ -1145,7 +1145,7 @@ pub const METHODS: &[(&str, &str)] = &[
     ),
     (
         "code.get",
-        "Code shown at the current step with line numbers (text), and the file/window it comes from",
+        "Code shown at the current step with line numbers (text), the file/window it comes from, and the characters it does not show as they are (invisible)",
     ),
     (
         "scene.get",

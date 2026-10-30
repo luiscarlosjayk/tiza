@@ -34,7 +34,7 @@ The server has these tools. The third column names every socket method that each
 | Tool | What it does | Socket method |
 |---|---|---|
 | `status` | Gives the state of the instance and the `bridge` object of the server. | `status` |
-| `get_code` | Gives the code on screen at the current step, with line numbers. | `code.get` |
+| `get_code` | Gives the code on screen at the current step, with line numbers, and a note for each line with invisible or control characters. | `code.get` |
 | `list_annotations` | Lists the annotations, after a line with the current step. | `status`, `scene.list` |
 | `check` | Gives the report of `tiza check --json` for the live document. | `check` |
 
@@ -275,6 +275,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 Each tool replies with text. The text is JSON, except for the tools in this list:
 
 - `get_code` gives the code, with a line number before each line. When a `code.link` shows a file, the first line is `# VIEW`. `VIEW` is the file, or `FILE:A-B` with a window.
+- After the code, `get_code` gives a note for each line with invisible or control characters. An empty line and a first line, which starts with `# The code above holds these characters`, come before the notes. Each note names the characters of the line, for example `# line 7: U+200D zero width joiner, col 1; U+2060 word joiner, col 4`. `col` is the grapheme, counted from 0, as the `col` of an anchor. When the code has no such characters, `get_code` gives only the code. See [Invisible characters in `code.get`](socket-api.md#invisible-characters-in-codeget).
 - `list_annotations` gives the step label first, as `# LABEL`, for example `# step 3/7 · Shared borrow`. It leaves out this line when the label is empty.
 - Then `list_annotations` gives one line for each annotation, or `(no annotations)`.
 - `render_text` gives the take. A second block of text names its width and tells you to give `check` the same width.
@@ -376,7 +377,7 @@ The server gives these resources. A client that supports resources can attach th
 | Resource | Type | What it holds |
 |---|---|---|
 | `tiza://scene` | `application/json` | The live document as JSON, as the socket method `scene.get` gives it. |
-| `tiza://code` | `text/plain` | The code on screen with line numbers, as `get_code` gives it without its `# VIEW` line. |
+| `tiza://code` | `text/plain` | The code on screen with line numbers, as `get_code` gives it without its `# VIEW` line. The notes on invisible and control characters come after the code. |
 | `tiza://render` | `text/plain` | The take at the current step as plain text, as `render_text` gives it without its width line. |
 | `tiza://render.md` | `text/markdown` | The same take in a fenced `text` block, ready to paste. |
 
