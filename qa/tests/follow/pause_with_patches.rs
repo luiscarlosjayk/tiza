@@ -690,8 +690,12 @@ fn a_file_removed_and_back_with_other_code_is_one_change() {
     save_and_read(&live, &src, NEW.as_bytes());
     assert_eq!(status(&live)["missing"], false);
     assert_eq!(pause(&live), paused(true));
-    // The same pause: its notice came with the first change.
-    assert_eq!(live.message(), None);
+    // The same pause, but what the bar said of the file (it was removed)
+    // is no longer true: the notice comes again.
+    assert_eq!(
+        live.message(),
+        Some(("step 1 loads the change to main.rs".to_string(), false))
+    );
     goto(&live, 1);
     assert_eq!(base(&live), lines(NEW));
     assert_eq!(reloads(&live), 1);

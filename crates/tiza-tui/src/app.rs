@@ -365,6 +365,7 @@ struct RequestState {
     loaded: Option<FollowLoaded>,
     follow_failed: Option<(PathBuf, String)>,
     screen_via_history: bool,
+    pause_embedded: Option<Vec<String>>,
     /// The enter effect that plays: a request that ends it sets
     /// `step_ready_at`, so with the effect gone and `step_ready_at` back the
     /// auto-advance would never start.
@@ -436,6 +437,7 @@ impl RequestState {
             }),
             follow_failed: app.follow_failed.clone(),
             screen_via_history: app.screen_via_history,
+            pause_embedded: app.pause_embedded.clone(),
             effect: app.effect.as_ref().map(EffectState::copy),
         }
     }
@@ -477,6 +479,7 @@ impl RequestState {
         app.agent_notice = self.agent_notice;
         app.agent_deferred = self.agent_deferred;
         app.screen_via_history = self.screen_via_history;
+        app.pause_embedded = self.pause_embedded;
         app.effect = self.effect;
         // Follow holds a file watcher: stopped, or started again. The
         // watcher gets back what a load wrote; one started again, its counts
@@ -762,6 +765,10 @@ pub struct App {
     /// [`PASTES_KEPT`]): embedded code on screen equal to one of them is
     /// «pasted», anything else a version of the file.
     pasted_codes: Vec<Vec<String>>,
+    /// The code a follow pause embedded over its file when a change came
+    /// (the code on screen then): quitting names it while it is on screen
+    /// and not saved, also when nothing waits any more.
+    pause_embedded: Option<Vec<String>>,
     /// The code on screen was reached by an undo or a redo, not by the edit
     /// itself: a paste is then «the paste again».
     screen_via_history: bool,
@@ -922,6 +929,7 @@ impl App {
             pause: Pause::default(),
             save_held: false,
             pasted_codes: Vec::new(),
+            pause_embedded: None,
             screen_via_history: false,
             typing: None,
             effect: None,
@@ -2523,6 +2531,12 @@ impl App {
             .map(|(_, l)| format!("{l} undone"))
             .collect();
         labels.extend(self.history.labels_after(self.saved_at));
+        // The code that a follow pause embedded is no entry of the history:
+        // it is named first (a long list ends with `and N more`) while it is
+        // on screen and the sidecar does not hold it.
+        if let Some(label) = self.pause_code_unsaved() {
+            labels.insert(0, label);
+        }
         let path = self.save_path.display();
         Some(match labels.len() {
             0 => {
@@ -2542,6 +2556,30 @@ impl App {
                 )
             }
         })
+    }
+
+    /// `the code on screen in place of main.rs`: the code that a follow
+    /// pause embedded over its file is still on screen (a change waits, or
+    /// the file went missing, could not be read, or follow is off), and the
+    /// sidecar on disk does not hold it.
+    fn pause_code_unsaved(&self) -> Option<String> {
+        let embedded = self.pause_embedded.as_ref()?;
+        if !self.doc.is_embedded() || self.doc.base() != embedded.as_slice() {
+            return None;
+        }
+        let file = &self.doc.follows.as_ref()?.file;
+        let name = Path::new(file)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| file.clone());
+        let code = |json: &str| {
+            serde_json::from_str::<serde_json::Value>(json)
+                .map(|v| v["code"].clone())
+                .ok()
+        };
+        let pending = code(self.pending_json()?.as_str())?;
+        (self.saved_json.as_deref().and_then(code) != Some(pending))
+            .then(|| format!("the code on screen in place of {name}"))
     }
 
     /// Quits unless there are unsaved changes: ones that could not be
@@ -5279,7 +5317,7 @@ impl App {
             }
         };
         let was_missing = std::mem::replace(&mut f.missing, false);
-        self.pause.unreadable = false;
+        let was_unreadable = std::mem::replace(&mut self.pause.unreadable, false);
         // An editor that truncates and then writes: give the second write a
         // chance, at each save.
         let empty = new.iter().all(|l| l.trim().is_empty());
@@ -5289,6 +5327,10 @@ impl App {
         if empty && !f.last_content.iter().all(|l| l.trim().is_empty()) && !f.take_deferred() {
             f.hash = hash_before;
             f.defer();
+            // The read of the second write is the one that finds the file
+            // back.
+            f.missing = was_missing;
+            self.pause.unreadable = was_unreadable;
             return false;
         }
         // Embedded code numbered from another line than the file's (a paste
@@ -5300,6 +5342,12 @@ impl App {
             // silence, and embedded code the file holds again is the file's
             // once more (the bar changes: `true`).
             self.drop_change();
+            if was_unreadable && !quiet {
+                // What the bar said (it could not be read) is no longer true.
+                self.info(format!("{name} can be read again; following it"));
+                let _ = self.back_to_reference();
+                return true;
+            }
             return self.back_to_reference();
         }
         if paused && new == f.last_content && !renumbered {
@@ -5321,10 +5369,14 @@ impl App {
                 self.doc.follows = self.doc.code_src.file_ref();
                 self.doc.code_src =
                     tiza_core::model::CodeSource::Embedded(self.doc.base().to_vec());
+                self.pause_embedded = Some(self.doc.base().to_vec());
                 self.touch();
             }
             (self.pause.waits, self.pause.pending) = (true, true);
-            if !self.pause.noticed && !quiet {
+            // The notice of the pause, once; and again when what the bar
+            // said of the file last (it went missing, it could not be
+            // read) is no longer true.
+            if (!self.pause.noticed || was_missing || was_unreadable) && !quiet {
                 self.pause.noticed = true;
                 let at = self.resume_step().unwrap_or(0);
                 let notice = format!("step {at} loads the change to {name}");
