@@ -38,7 +38,7 @@ The table gives the usual problems. Each finding in the JSON output also has a `
 | A step changes nothing. | Warning |
 | The `until` of a spotlight is before its `step`. The spotlight never shows. | Error |
 | An annotation has the enter effect `draw` but no stroke, or an effect that this version of Tiza does not know. | Warning |
-| A move has an action, a value or a key that this version of Tiza does not know. Tiza skips the move, or uses the default value. | Warning |
+| A move has an action, a value or a key that this version of Tiza does not know. Tiza skips the move, uses the default value, or ignores the key. | Warning |
 | A marker (`find_start` or `find_end`) matches more than one time. | Warning |
 | A `rebind` names an unknown id. Tiza ignores that `rebind`. | Warning |
 

@@ -90,7 +90,7 @@ Each add tool and `update_annotation` reply with the place of the annotation on 
 
 `check` gives the report of `tiza check --json` for the live document. See [Check a live instance](../guides/check-before-you-record.md#check-a-live-instance).
 
-- `min_clean_width` is the narrowest width with no cut label. A code line can still be cut at that width. Then a `clipped_code` warning gives the width from which every code line fits. Export at the wider of the two widths, or make the labels that the report names shorter.
+- `min_clean_width` is the narrowest width with no cut label. It does not look at the code lines. A `clipped_code` warning gives the code lines that are cut at the width of the check, and the width from which every code line fits. Before you export at another width, call `check` with that `width`. Or make the labels that the report names shorter.
 - `check` only reads.
 - The report is about the `revision` in its reply. When a later change returns a newer `revision`, call `check` again.
 - At most one `check` runs and one waits. After `busy`, call `check` again. See [Error codes](../reference/socket-api.md#error-codes).

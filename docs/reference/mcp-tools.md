@@ -263,7 +263,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - `set_theme` with an empty string changes between dark and light. The theme name is not case-sensitive.
 - `goto_step` with an id that no named step has fails with `not_found`.
 - `goto_step` with a step after the last step fails with `invalid_argument`. It does not show the last step, as `set_step` does.
-- `goto_step` to the step on screen applies the moves of that step to the view again. The cursor and the view of the presenter go back to the line of a `cursor` or a `code.link` move of the step, or to the target of its `scroll` move. When the live pointer stays, the cursor stays on the pointer.
+- `goto_step` to the step on screen puts the view of the step back. The view of a step comes from its last `scroll`, `cursor` or `code.link` move, also from an earlier step. The cursor and the view of the presenter go back to the line of that `cursor` or `code.link` move, or to the target of that `scroll` move. When the live pointer stays, the cursor stays on the pointer.
 - `goto_step` with an `id` that is not a string or a whole number fails with `invalid_argument`.
 - `set_focus` with `from_line` only puts one line in focus.
 - `set_focus` with `to_line` only fails with `invalid_argument`.

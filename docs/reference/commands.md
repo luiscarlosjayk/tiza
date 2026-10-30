@@ -40,8 +40,8 @@ The commands use these arguments:
 | `L:TEXT/N` | The `N`th `TEXT` on line `L`. |
 | `L:` | The whole line `L`. |
 | `.:TEXT` | The first `TEXT` on the cursor line. |
-| `L@C` | The character at column `C` of line `L`. The column counts the characters from 0. |
-| `L@S..E` | The characters from column `S` to column `E` of line `L`. The selection keys write this form. |
+| `L@C` | Column `C` of line `L`. The column counts the characters from 0. For an arrow end, it is that point. For `:hl` and `:mark`, the span goes from column `C` to the end of the line. |
+| `L@S..E` | The characters of line `L` from column `S` up to column `E`. The character at column `E` is not in the span. |
 | `@'START'..@'END'` | The lines from the first `START` in the code to the first `END` after it. |
 | `ID` | The id of an annotation, for example `a3`. |
 | `N` | A number, for example a step number. |

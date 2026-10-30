@@ -38,8 +38,8 @@ Goes to a named step or to a step number. Tiza applies the steps from step 0 up 
 
 For example, `:goto borrow` goes to the step with the name `borrow`. Named steps are in [Go to a named step](../document-format.md#go-to-a-named-step).
 
-- `:goto` to the step on screen applies the moves of that step to the view again. A `scroll` move puts the view back on its target. A `cursor` or a `code.link` move puts the cursor and the view back on its line. When the live pointer stays, the cursor stays on the pointer.
-- In presentation mode, what comes in at that step also comes into the view again.
+- `:goto` to the step on screen puts the view of the step back. The view of a step comes from its last `scroll`, `cursor` or `code.link` move, also from an earlier step. A `scroll` move puts the view back on its target. A `cursor` or a `code.link` move puts the cursor and the view back on its line. When the live pointer stays, the cursor stays on the pointer.
+- In presentation mode, what comes in at that step also comes into the view again, unless the step has a `scroll`, a `cursor` or a `code.link` move of its own.
 
 ## `:link`
 

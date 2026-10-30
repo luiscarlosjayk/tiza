@@ -704,7 +704,7 @@ The [document schema](../../schema/tiza.schema.json) accepts some documents that
 
 A spotlight with no `from_line` and no `ids` also passes the schema. Tiza loads it, and `tiza check` gives an error for it.
 
-The schema also refuses some documents that Tiza opens: a file from a newer version with a move action, an `op`, an `effect` or a key of a position that this version does not know. See [Moves from a newer version](#moves-from-a-newer-version).
+The schema also refuses some documents that Tiza opens: a file from a newer version with a move action, an `op`, a value of `align` or `typing`, an `effect` or a key of a position that this version does not know. See [Moves from a newer version](#moves-from-a-newer-version).
 
 ## Status bar
 

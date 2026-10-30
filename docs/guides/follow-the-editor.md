@@ -106,7 +106,7 @@ Follow mode is paused at a step where a `code.patch` is applied. A patch is appl
 - When the file is removed during a pause, the bar shows `⟳ paused (file removed)`. When the file comes back with other code, that code is the change that waits.
 - When the file is not valid UTF-8, the message `cannot follow FILE: not valid UTF-8 (keeping the previous content)` comes one time. That file is not a change. At step N, Tiza reads the file again.
 - In presentation mode, no message comes. When you leave presentation mode, the bar shows the state.
-- `:follow off` drops a change that waits. The code on screen stays, as embedded code, and `:follow on` loads the file. The message is `follow off: the change to FILE is not loaded`. When an agent turns follow mode off, the message about the change goes from the bar.
+- `:follow off` drops a change that waits. The code on screen stays, as embedded code. `:follow on` follows the file again: at a step where a patch is applied, the file is again a change that waits. The message is `follow off: the change to FILE is not loaded`. When an agent turns follow mode off, the message about the change goes from the bar.
 - A save while you type a `:` command, select text with `v` or `V`, have a panel open, or while a move types its code, waits until you finish.
 
 A document opens at its saved `step`, or at step 1 when it has none. When a patch is applied at that step, `--follow` and `:follow on` start follow mode paused. The message is `following FILE; step N loads a save`. When the file has other code than the screen, that code is the change that waits.

@@ -128,7 +128,7 @@ printf '%s\n' '{"id":1,"method":"annotation.add","params":{"type":"note","line":
 | `step.set` | `step` | Shows a step. In presentation mode, to the step on screen it does what `step.goto` does. | `set_step` |
 | `step.next` | None | Shows the next step. | `next_step` |
 | `step.prev` | None | Shows the previous step. | `prev_step` |
-| `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. To the step on screen, it puts the cursor and the view back where the moves of the step put them. | `goto_step` |
+| `step.goto` | `id` | Goes to a named step or a step number, and applies every move up to that step. To the step on screen, it puts the cursor and the view back where the last `scroll`, `cursor` or `code.link` move up to that step puts them. | `goto_step` |
 
 ### Focus and pointer
 
