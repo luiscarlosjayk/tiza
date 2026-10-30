@@ -196,26 +196,28 @@ master, slave = pty.openpty()
 p = subprocess.Popen([binary, "--socket", os.path.join(cwd, "s.sock"), "main.rs"], cwd=cwd, env=env,
                      stdin=subprocess.DEVNULL, stdout=slave, stderr=slave,
                      start_new_session=True, close_fds=True)
-os.close(slave)
+# The slave stays open here until its output is read: on macOS the last
+# close of the slave drops what the master has not read, and the child
+# writes one line and exits at once.
 out = b""
 end = time.monotonic() + 30
-while time.monotonic() < end:
+while time.monotonic() < end and p.poll() is None:
     r, _, _ = select.select([master], [], [], 0.05)
     if r:
-        try:
-            chunk = os.read(master, 65536)
-        except OSError:
-            break
-        if not chunk:
-            break
-        out += chunk
-    elif p.poll() is not None:
-        break
+        out += os.read(master, 65536)
 try:
     code = p.wait(timeout=10)
 except subprocess.TimeoutExpired:
     p.kill()
     code = "KILLED"
+# The child is gone: all it wrote waits on the master.
+while select.select([master], [], [], 0)[0]:
+    chunk = os.read(master, 65536)
+    if not chunk:
+        break
+    out += chunk
+os.close(slave)
+os.close(master)
 print("CODE", code)
 print("STDERR", repr(out.decode(errors="replace")))
 "#,
