@@ -586,3 +586,118 @@ fn the_command_line_never_toggles_it_and_hides_an_agents_pointer() {
     assert_eq!(lit(&live), all(5, 5), "drawn once it closes");
     assert!(live.with(|a| matches!(a.mode, tiza_tui::app::Mode::Normal)));
 }
+
+/// A document with a spotlight on L1-2 at step 2 and, outside it, a mark
+/// on L3, a highlight on L6, a box over L9-11, an arrow from L5 to L10 and
+/// a note on L12, each with a label.
+fn spotlight_doc(name: &str) -> Live {
+    let dir = tiza_qa::scratch(name);
+    let path = tiza_qa::fixture("tui/live_pointer/spotlight.tiza");
+    let doc = fs::load_document(&path).unwrap();
+    let live = Live::open(doc, dir.join("doc.tiza"), dir.join("p.sock"));
+    live.with(|a| a.autosave = false);
+    live.command("step 2");
+    live
+}
+
+/// The labels of the document drawn in the dimmed color on the
+/// presenter's own frame.
+fn dimmed_labels(live: &Live) -> BTreeSet<&'static str> {
+    live.with(|app| {
+        let l = app.screen_layout_with_pointer(120);
+        let txt = l.canvas.to_plain_text();
+        ["s moves", "the length", "the callee", "goes in", "far away"]
+            .into_iter()
+            .filter(|label| {
+                let (y, row) = txt
+                    .lines()
+                    .enumerate()
+                    .find(|(_, r)| r.contains(label))
+                    .unwrap_or_else(|| panic!("«{label}» is drawn:\n{txt}"));
+                let x = row[..row.find(label).unwrap()].chars().count();
+                l.canvas.get(x, y).unwrap().style.fg == Some(app.theme.dimmed)
+            })
+            .collect()
+    })
+}
+
+fn set(labels: &[&'static str]) -> BTreeSet<&'static str> {
+    labels.iter().copied().collect()
+}
+
+#[test]
+fn the_pointer_lights_the_annotations_that_touch_its_lines() {
+    let live = spotlight_doc("ptr-spot");
+    let every = set(&["s moves", "the length", "the callee", "goes in", "far away"]);
+    assert_eq!(
+        dimmed_labels(&live),
+        every,
+        "no pointer: the spotlight dims all"
+    );
+    for present in [false, true] {
+        live.with(move |a| a.set_present(present));
+        // On the line of the mark: the mark and its label, only. In
+        // presentation mode the keys move the pointer once it is on.
+        press(&live, &[KeyCode::Char('f')]);
+        press(
+            &live,
+            &[KeyCode::Char('g'), KeyCode::Char('j'), KeyCode::Char('j')],
+        );
+        assert_eq!(pointer(&live), Some((3, 3)));
+        let mut lit = every.clone();
+        lit.remove("s moves");
+        assert_eq!(
+            dimmed_labels(&live),
+            lit,
+            "pointer on L3 (present: {present})"
+        );
+        // On L6: the highlight of L6 and the arrow from L5 to L10, which
+        // goes through L6.
+        press(&live, &j(3));
+        assert_eq!(pointer(&live), Some((6, 6)));
+        assert_eq!(
+            dimmed_labels(&live),
+            set(&["s moves", "the callee", "far away"]),
+            "pointer on L6 (present: {present})"
+        );
+        // On L10: the box over L9-11 and the arrow from L5 to L10, whole.
+        press(&live, &j(4));
+        assert_eq!(pointer(&live), Some((10, 10)));
+        assert_eq!(
+            dimmed_labels(&live),
+            set(&["s moves", "the length", "far away"]),
+            "pointer on L10 (present: {present})"
+        );
+        // Inside the spotlight: as without the pointer.
+        press(&live, &[KeyCode::Char('g')]);
+        assert_eq!(
+            dimmed_labels(&live),
+            every,
+            "pointer on L1 (present: {present})"
+        );
+        press(&live, &[KeyCode::Esc]);
+        assert_eq!(pointer(&live), None);
+        assert_eq!(
+            dimmed_labels(&live),
+            every,
+            "pointer off (present: {present})"
+        );
+        live.with(|a| a.set_present(false));
+    }
+    // A group pointer (`V` + `f`) over L11-12: the box and the note.
+    press(
+        &live,
+        &[
+            KeyCode::Char('G'),
+            KeyCode::Char('V'),
+            KeyCode::Char('k'),
+            KeyCode::Char('f'),
+        ],
+    );
+    assert_eq!(pointer(&live), Some((11, 12)));
+    assert_eq!(
+        dimmed_labels(&live),
+        set(&["s moves", "the length", "goes in"]),
+        "group pointer on L11-12"
+    );
+}

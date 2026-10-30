@@ -850,13 +850,15 @@ fn layout_pass(
         canvas.trace_painter((a.step == opts.step).then_some((a.id.as_str(), part)));
     };
     // While a spotlight is active, an annotation stays bright when it is in
-    // the `ids` of a spotlight or when it touches the range of one. Every
-    // other annotation is dimmed.
+    // the `ids` of a spotlight or when it touches the range of one, or the
+    // lines of the live pointer (which lights its code too). Every other
+    // annotation is dimmed.
     let ann_dimmed = |a: &Annotation| {
         spot_any
             && !matches!(a.shape, Shape::Spotlight { .. })
             && !spot_ids.contains(&a.id.as_str())
             && !touches_any(&a.shape, &spot_ranges)
+            && !opts.pointer.is_some_and(|p| touches_any(&a.shape, &[p]))
     };
     let color_of = |a: &Annotation| {
         if ann_dimmed(a) {

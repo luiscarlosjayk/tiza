@@ -156,6 +156,7 @@ The live pointer works like a laser pointer. It shows one line or a group of lin
 3. Move the cursor. The pointer follows it.
 4. Press `f` to turn it off.
 
+- With a spotlight, the annotations that touch the lines of the pointer also keep their colors. A box or an arrow that goes through a line of the pointer keeps its color too.
 - `Esc` also turns off the pointer when no selection, panel or command line is open. In a selection, `Esc` closes only the selection, and the pointer stays on the cursor line.
 - The pointer stays on its line when you change the step. When the pointer stays, a `cursor` or a `code.link` of the step does not move it, and the cursor stays on the pointer. This also occurs with a goto to the step on screen.
 - When a step moves the view and the new view does not show the lines of the pointer, the pointer turns off. A camera move of the step and the return to the top move the view. In presentation mode, what comes in at the step also moves the view.
