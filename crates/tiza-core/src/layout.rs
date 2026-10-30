@@ -96,7 +96,8 @@ pub enum Row {
     Emphasis(u32),
     /// Virtual row with text (note, arrow legend) below the line.
     Under(usize),
-    /// One row of a callout drawn below its range: (callout index in `vis`, row within the block).
+    /// One row of a callout drawn below its range: (its index in the
+    /// layout's callouts, not in the visible annotations; row within the block).
     Callout(usize, usize),
 }
 
@@ -608,29 +609,102 @@ fn layout_run(
     // - a line with a label whose margin row a block leaves fewer than 14
     //   cells beside it puts its labels under itself.
     // Both sets only grow (the extra rows only give the blocks more room),
-    // so this ends. A plan places the rows and the blocks without drawing
-    // anything; the layout is drawn once, from the last plan (a document
-    // with no margin callout at the step has nothing to plan).
+    // so this ends, after at most one plan more than they have members. A plan
+    // places the rows and the blocks without drawing anything; the layout is
+    // drawn once, from the last plan (a document with no margin callout at
+    // the step has nothing to plan).
     let mut planning = doc.annotations.iter().any(|a| {
         a.step <= opts.step
             && matches!(&a.shape, Shape::Callout { placement, .. }
                 if *placement != crate::model::Placement::Below)
     });
+    let plan = |under: &Under| match layout_pass(doc, theme, opts, geometry, under, &shared, None) {
+        Pass::Planned(more, free) => (more, free),
+        Pass::Drawn(_) => unreachable!("a plan draws nothing"),
+    };
     let mut under = Under::default();
+    let mut free = Under::default();
     while planning {
-        let Pass::Planned(more) = layout_pass(doc, theme, opts, geometry, &under, &shared, None)
-        else {
-            unreachable!("a plan draws nothing")
-        };
+        let more;
+        (more, free) = plan(&under);
         let before = (under.callouts.len(), under.lines.len());
         under.callouts.extend(more.callouts);
         under.lines.extend(more.lines);
         planning = (under.callouts.len(), under.lines.len()) != before;
     }
+    // A decision of an early plan can be stale: the rows of a later
+    // decision moved a block, and the margin beside a line is free again.
+    // The last plan names what of `under` its rows would leave in the
+    // margin (`free`, a hint); each one goes back to the margin when a plan
+    // without it asks for nothing more. The hints are tried once each, from
+    // the first line down: one that goes back only takes room in the margin
+    // and removes rows under its line, so it never makes room for one above
+    // it. (Without stable geometry, on the authoring screen, fewer rows can
+    // take an arrow lane away and widen the margin; a hint above can then
+    // miss its turn, and the layout is still whole.) At most one plan for
+    // each member, and none when nothing is free.
+    let mut last: Option<FreeKey> = None;
+    loop {
+        let next = free_order(doc, &free)
+            .into_iter()
+            .find(|k| last.as_ref().is_none_or(|l| free_rank(k) > free_rank(l)));
+        let Some(key) = next else { break };
+        let mut trial = under.clone();
+        match &key {
+            (_, true, _, id) => {
+                trial.back.insert(id.clone());
+                trial.callouts.remove(id)
+            }
+            (line, false, _, _) => trial.lines.remove(line),
+        };
+        let (more, trial_free) = plan(&trial);
+        if more.callouts.is_empty() && more.lines.is_empty() {
+            under = trial;
+            free = trial_free;
+        }
+        last = Some(key);
+    }
     match layout_pass(doc, theme, opts, geometry, &under, &shared, Some(paint)) {
         Pass::Drawn(l) => l,
-        Pass::Planned(_) => unreachable!("a drawing pass returns its layout"),
+        Pass::Planned(..) => unreachable!("a drawing pass returns its layout"),
     }
+}
+
+/// A member of `free`: its line, whether it is a callout, the callout's
+/// place in the document, and its id.
+type FreeKey = (u32, bool, usize, String);
+
+/// The place of a member of `free` in [`free_order`]: its line, then a
+/// callout before the labels of that line, callouts in document order.
+fn free_rank(key: &FreeKey) -> (u32, bool, usize) {
+    (key.0, !key.1, key.2)
+}
+
+/// The members of `free` (see [`layout_run`]) from the first line down: a
+/// callout by its first line, before the labels of that line.
+fn free_order(doc: &Document, free: &Under) -> Vec<FreeKey> {
+    let callout = |id: &str| {
+        let (i, a) = doc
+            .annotations
+            .iter()
+            .enumerate()
+            .find(|(_, a)| a.id == id)?;
+        match &a.shape {
+            Shape::Callout { from_line, .. } => Some((*from_line, i)),
+            _ => None,
+        }
+    };
+    let mut keys: Vec<FreeKey> = free
+        .callouts
+        .iter()
+        .filter_map(|id| {
+            let (line, i) = callout(id)?;
+            Some((line, true, i, id.clone()))
+        })
+        .chain(free.lines.iter().map(|&l| (l, false, 0, String::new())))
+        .collect();
+    keys.sort_by_key(free_rank);
+    keys
 }
 
 /// What every run of one layout shares (see [`layout_with`]).
@@ -648,20 +722,26 @@ struct Shared {
 
 /// What one run of [`layout_pass`] gives back.
 enum Pass {
-    /// A plan's verdict: what must go under its line.
-    Planned(Under),
+    /// A plan's verdict: what must go under its line, and what of the
+    /// `under` it was given its rows would leave in the margin (a hint).
+    Planned(Under, Under),
     /// The layout, drawn.
     Drawn(Layout),
 }
 
 /// What a run of the layout moves under its line (see [`layout_with`]).
-#[derive(Default)]
+#[derive(Default, Clone)]
 struct Under {
     /// Margin callouts drawn as a block under their line.
     callouts: std::collections::BTreeSet<String>,
     /// Lines whose labels go under them because a margin block covers
     /// their row.
     lines: std::collections::BTreeSet<u32>,
+    /// Margin callouts that went back to the margin from under their line:
+    /// their block starts on a row of their line before the blocks under
+    /// it, never beside the block of another callout of their line that
+    /// stays under it or on the bottom row of a box.
+    back: std::collections::BTreeSet<String>,
 }
 
 /// One run of the layout of `doc` (already as the step shows it) with
@@ -925,6 +1005,9 @@ fn layout_pass(
         /// Outer block width (borders included).
         width: usize,
         frame: crate::model::BorderStyle,
+        /// A margin callout that a plan sent under its line: the outer
+        /// width and height of its block in the margin (`layout_run`).
+        margin_size: Option<(usize, usize)>,
     }
     let mut callouts: Vec<CalloutPlan> = Vec::new();
     for (i, a) in vis.iter().enumerate() {
@@ -940,16 +1023,16 @@ fn layout_pass(
         else {
             continue;
         };
-        let below = under_callouts.contains(&a.id)
-            || match placement {
-                crate::model::Placement::Below => true,
-                crate::model::Placement::Margin => !labels_in_margin || margin_est < 12,
-                // Auto: the margin must hold the block *and* leave room for
-                // the labels of the lines it covers, beside it.
-                crate::model::Placement::Auto => {
-                    !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
-                }
-            };
+        let by_rule = match placement {
+            crate::model::Placement::Below => true,
+            crate::model::Placement::Margin => !labels_in_margin || margin_est < 12,
+            // Auto: the margin must hold the block *and* leave room for
+            // the labels of the lines it covers, beside it.
+            crate::model::Placement::Auto => {
+                !labels_in_margin || margin_est < want.unwrap_or(34) + 4 + 1 + 14
+            }
+        };
+        let below = under_callouts.contains(&a.id) || by_rule;
         // Below the code, the widest text of the block. Inside a box (its
         // rows are, see the rows below) the block stays inside the code
         // column, so the box can still draw its right rail. Out of a box it
@@ -970,30 +1053,42 @@ fn layout_pass(
                 room.max((code_w + box_depth).saturating_sub(3).min(8))
             }
         };
+        let margin_text_w = want
+            .unwrap_or(34)
+            .clamp(8, margin_est.saturating_sub(5).max(8));
         let text_w = if below {
             want.unwrap_or(below_cap).clamp(below_cap.min(8), below_cap)
         } else {
-            want.unwrap_or(34)
-                .clamp(8, margin_est.saturating_sub(5).max(8))
+            margin_text_w
         };
-        let mut lines: Vec<String> = Vec::new();
-        for para in text.split('\n') {
-            if para.trim().is_empty() {
-                lines.push(String::new());
-            } else {
-                lines.extend(wrap_words(para, text_w));
+        // The rows of the text wrapped at `text_w`, and the inner width of
+        // the block that holds them.
+        let wrap = |text_w: usize| {
+            let mut lines: Vec<String> = Vec::new();
+            for para in text.split('\n') {
+                if para.trim().is_empty() {
+                    lines.push(String::new());
+                } else {
+                    lines.extend(wrap_words(para, text_w));
+                }
             }
-        }
-        let inner = lines
-            .iter()
-            .map(|l| display_width(l, 4))
-            .max()
-            .unwrap_or(0)
-            .max(title.as_ref().map(|t| display_width(t, 4) + 4).unwrap_or(0))
-            .max(4);
+            let inner = lines
+                .iter()
+                .map(|l| display_width(l, 4))
+                .max()
+                .unwrap_or(0)
+                .max(title.as_ref().map(|t| display_width(t, 4) + 4).unwrap_or(0))
+                .max(4);
+            (lines, inner)
+        };
+        let (lines, inner) = wrap(text_w);
         // Below the code the block is no wider than its text (a long title
         // is clipped in the border instead of breaking a box's rail).
         let inner = if below { inner.min(below_cap) } else { inner };
+        let margin_size = (under_callouts.contains(&a.id) && !by_rule).then(|| {
+            let (lines, inner) = wrap(margin_text_w);
+            (inner + 4, lines.len() + 2)
+        });
         callouts.push(CalloutPlan {
             idx: i,
             below,
@@ -1001,6 +1096,7 @@ fn layout_pass(
             lines,
             width: inner + 4, // "│ " + text + " │"
             frame: *frame,
+            margin_size,
         });
     }
 
@@ -1377,8 +1473,10 @@ fn layout_pass(
             let c = &callouts[ci];
             let h = c.lines.len() + 2;
             let own_end = own_rows_end(&rows, y0);
+            let back = under.back.contains(&vis[c.idx].id);
             let spot = if c.width <= margin_w {
                 (y0..own_end)
+                    .filter(|&y| !(back && matches!(rows[y], Row::Callout(..) | Row::BoxBottom(_))))
                     .take_while(|&y| y + h <= height)
                     .find_map(|y| {
                         let mut x = margin_x;
@@ -1427,10 +1525,58 @@ fn layout_pass(
                 lines.extend(line);
             }
         }
-        return Pass::Planned(Under {
-            callouts: retry,
-            lines,
-        });
+        // What of `under` these rows would leave in the margin. A callout:
+        // its block in the margin finds room as a block of its line does,
+        // without the rows of its block under the line, and leaves 14 cells
+        // beside it on the rows with a margin label. A line: no block takes
+        // its code row. Only a hint for `layout_run`: a plan without it
+        // decides.
+        let mut free = Under::default();
+        if labels_in_margin && margin_w > 0 {
+            for (ci, c) in callouts.iter().enumerate() {
+                if let Some((w, h)) = c.margin_size
+                    && let Shape::Callout { from_line, .. } = &vis[c.idx].shape
+                    && let Some(&y0) = row_of_line.get(from_line)
+                    && w <= margin_w
+                {
+                    // The rows of its block under its line go away there.
+                    let mine = |r: &Row| matches!(r, Row::Callout(i, _) if *i == ci);
+                    let fits = (y0..own_rows_end(&rows, y0))
+                        .filter(|&y| !mine(&rows[y]))
+                        .any(|y| {
+                            let covered: Vec<usize> =
+                                (y..height).filter(|&r| !mine(&rows[r])).take(h).collect();
+                            let Some(&end) = covered.get(h - 1) else {
+                                return false;
+                            };
+                            let mut x = margin_x;
+                            while let Some(right) = overlap(&blocks, x, y, w, end + 1 - y) {
+                                x = right + 1;
+                            }
+                            let beside = margin_w.saturating_sub(x + w + 1 - margin_x);
+                            x + w <= width
+                                && (beside >= 14 || covered.iter().all(|&r| margin[r].is_empty()))
+                        });
+                    if fits {
+                        free.callouts.insert(vis[c.idx].id.clone());
+                    }
+                }
+            }
+            free.lines.extend(
+                under
+                    .lines
+                    .iter()
+                    .filter(|l| row_of_line.get(l).is_some_and(|&y| !occupied[y])),
+            );
+        }
+        return Pass::Planned(
+            Under {
+                callouts: retry,
+                lines,
+                back: Default::default(),
+            },
+            free,
+        );
     };
 
     let base = theme.base();

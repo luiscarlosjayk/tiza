@@ -64,6 +64,20 @@
 //!   continues on them where the margin is blank).
 //! - A margin block started on the top row of the next line's box: a
 //!   box's top row belongs to the line after it.
+//!
+//! A decision of an early plan is undone when a later plan frees the margin
+//! (`stale-callout.tiza`, `stale-callout-long.tiza`, `stale-label.tiza`):
+//! the plans only added to what goes under its line, so a callout or a
+//! label stayed there although the rows of the final drawing left the
+//! margin beside its line free. Now it goes back to the margin when its
+//! line has room there and nothing else must go under its line for it.
+//!
+//! Decided by Luis (2026-10-30): a callout that goes back to the margin
+//! starts on a row of its line before the blocks under it, not beside the
+//! block of another callout of that line or on the bottom row of a box
+//! (`three-on-one-line.tiza` at 80 and 100 and `three-in-a-box.tiza` keep
+//! the callout under its line, as before). A row of a note under the line
+//! is still a row of the line (`later-steps.tiza` at 120).
 
 use serde_json::{Value, json};
 use tiza_core::check::{CheckOptions, check_document};
@@ -1023,5 +1037,112 @@ fn r3_reply_agrees_with_check() {
         "block-gap.tiza",
     ] {
         reply_agrees_with_check(name);
+    }
+}
+
+#[test]
+fn a_callout_goes_back_to_the_margin_when_a_later_plan_frees_its_line() {
+    // The block of L1 took the row of L3 in the first plan, so the callout
+    // of L3 went under L3. The note of L2 then went under L2, the block of
+    // L1 ended before L3, and the callout stayed under its line. With a long
+    // text its block under its line is wider than its block in the margin.
+    for (name, w) in ["stale-callout.tiza", "stale-callout-long.tiza"]
+        .into_iter()
+        .flat_map(|n| (92..=104).map(move |w| (n, w)))
+    {
+        let t = render(name, w);
+        let l3 = t.lines().nth(row_of(&t, 3)).unwrap();
+        assert!(
+            l3.contains('╭'),
+            "{name} at {w}: the block of L3 is not beside L3\n{t}"
+        );
+        assert_eq!(
+            row_of(&t, 4),
+            row_of(&t, 3) + 1,
+            "{name} at {w}: rows under L3\n{t}"
+        );
+    }
+}
+
+#[test]
+fn a_label_goes_back_to_the_margin_when_a_later_plan_frees_its_line() {
+    for w in 92..=104 {
+        let t = render("stale-label.tiza", w);
+        let l3 = t.lines().nth(row_of(&t, 3)).unwrap();
+        assert!(
+            l3.contains("chatty"),
+            "at {w}: «chatty» is not beside L3\n{t}"
+        );
+        assert_eq!(
+            row_of(&t, 4),
+            row_of(&t, 3) + 1,
+            "at {w}: rows under L3\n{t}"
+        );
+    }
+}
+
+#[test]
+fn undone_decisions_lose_nothing_from_60_to_140() {
+    // Nothing is cut at these widths either, so a callout that goes back
+    // and is not drawn cannot hide in what `check` lists.
+    for name in [
+        "stale-callout.tiza",
+        "stale-callout-long.tiza",
+        "stale-label.tiza",
+        "three-in-a-box.tiza",
+    ] {
+        for w in (60..=140).step_by(2) {
+            assert_eq!(check_cuts(name, w), Vec::new(), "{name} at {w}");
+            assert_in_place(name, w);
+        }
+    }
+}
+
+#[test]
+fn a_callout_that_goes_back_never_starts_beside_a_block_under_its_line() {
+    // three-on-one-line at 80 and 100: the margin has room for the second
+    // callout of L2 only on the rows of the block of another callout of L2
+    // under the line. Beside that block it reads as a note on it, so it
+    // stays under L2: left of the margin, where «rotate it» is.
+    for w in [80, 100] {
+        let t = render("three-on-one-line.tiza", w);
+        let col = |text: &str| {
+            t.lines()
+                .find_map(|r| r.find(text).map(|i| r[..i].chars().count()))
+                .unwrap_or_else(|| panic!("at {w}: «{text}» is not drawn\n{t}"))
+        };
+        assert!(
+            col("never commit") < col("rotate it"),
+            "at {w}: «never commit» is not under L2\n{t}"
+        );
+    }
+    // three-in-a-box at 70 to 110: in the margin the callout would start
+    // beside that block or on the bottom row of the box, beside L3, so it
+    // stays under L2 too.
+    for w in (70..=110).step_by(10) {
+        let t = render("three-in-a-box.tiza", w);
+        let col = |text: &str| {
+            t.lines()
+                .find_map(|r| r.find(text).map(|i| r[..i].chars().count()))
+                .unwrap_or_else(|| panic!("at {w}: «{text}» is not drawn\n{t}"))
+        };
+        assert!(
+            col("never commit") < col("rotate it"),
+            "at {w}: «never commit» is not under L2\n{t}"
+        );
+    }
+    // later-steps at 120: the callout of L3 still starts on the row of the
+    // note under L3, beside «┆ chatty».
+    for step in [4, 5] {
+        let t = render_step("later-steps.tiza", step, 120, "txt");
+        let rows: Vec<&str> = t.lines().collect();
+        let y = rows
+            .iter()
+            .position(|r| r.contains("┆ chatty"))
+            .unwrap_or_else(|| panic!("step {step}: no «┆ chatty»\n{t}"));
+        assert!(
+            rows[y].contains('╭') && rows[y + 1].contains("debug shows SQL"),
+            "step {step}: the block of L3 does not start beside «┆ chatty»\n{t}"
+        );
     }
 }

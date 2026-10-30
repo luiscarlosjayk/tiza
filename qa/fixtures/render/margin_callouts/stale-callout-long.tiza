@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "source": {
+    "path": "eight.env",
+    "language": "env",
+    "first_line": 1
+  },
+  "code": {
+    "file": "eight.env"
+  },
+  "step": 1,
+  "title": "stale-callout-long",
+  "annotations": [
+    {
+      "id": "c0",
+      "step": 1,
+      "type": "callout",
+      "from_line": 1,
+      "to_line": 1,
+      "text": "user, host and port",
+      "placement": "margin"
+    },
+    {
+      "id": "n2",
+      "step": 1,
+      "type": "note",
+      "line": 2,
+      "text": "bearer"
+    },
+    {
+      "id": "c3",
+      "step": 1,
+      "type": "callout",
+      "from_line": 3,
+      "to_line": 3,
+      "text": "debug prints every SQL query in dev",
+      "placement": "margin"
+    }
+  ]
+}

@@ -23,3 +23,10 @@ From the third rework (QA 1's final QA of the margin callouts):
 - `block-before-box.tiza`: callouts on L1 and L3 and a box on L4-L6. At 60 columns the block of L3 started on the box's top row, beside L4 and L5.
 - `own-under.tiza` (from the review of this rework): L1 draws its two notes under itself, and the label of an arrow along L1 is in the margin. That label continues on the rows of its own line, where the notes leave the margin blank.
 - `block-gap.tiza`, `block-gap-label.tiza`: a callout block under its line beside code of 10 columns, next to a margin block (40 columns) or the continuation of a highlight label (36 columns). The block keeps one cell from the margin.
+
+From a later plan that freed the margin (the plans only added to what goes under its line):
+
+- `stale-callout.tiza` with `eight.env`: a margin callout on L1 with one row of text took the rows of L1 to L3, so the note of L2 went under L2 and the callout of L3 went under L3. The row of the note moved L3 down, out of the block, but the callout of L3 stayed under its line with the margin beside L3 free (92–104 columns).
+- `stale-callout-long.tiza`: the same with a longer text on L3, whose block under its line is wider than its block in the margin.
+- `stale-label.tiza`: the same with the label of a highlight on L3, which stayed under L3.
+- `three-in-a-box.tiza`: `three-on-one-line.tiza` in a box over L2. From 70 to 110 columns the margin has room for the callout that goes back only beside the block of the other callout under L2 or on the bottom row of the box, beside L3, so it stays under L2.
