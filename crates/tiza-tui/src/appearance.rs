@@ -300,6 +300,9 @@ pub struct StartUp {
     pub typed: Vec<Vec<u8>>,
     /// The answer that the end of the wait cut short ([`cut_answer`]).
     pub cut: Option<String>,
+    /// The colours were asked for and the text answer (OSC 10) did not
+    /// come: the rest can come as keys ([`OscCapture::expect_colors`]).
+    pub colors_due: bool,
 }
 
 /// Asks the terminal at start-up, before crossterm owns the input: raw mode
@@ -388,6 +391,7 @@ pub fn query_host(colors: bool) -> StartUp {
     };
     let (typed, cut) = start_up_rest(&buf, &reads, host.as_ref(), due);
     StartUp {
+        colors_due: colors && host.as_ref().is_none_or(|h| h.fg.is_none()),
         host,
         wide: Wide::from_reports(&reports),
         typed,
@@ -565,14 +569,15 @@ fn input_terminal() -> Option<std::fs::File> {
 /// Sends the query while the TUI runs (after a resize), to the same
 /// terminal as at start and only when `TIZA_NO_OSC` is not set; the answer
 /// comes back through the key stream (`OscCapture`).
-pub fn request_host() {
+/// `true` when it sent the query.
+pub fn request_host() -> bool {
     if osc_disabled() {
-        return;
+        return false;
     }
-    if let Some(mut tty) = input_terminal() {
-        let _ = tty.write_all(QUERY.as_bytes());
-        let _ = tty.flush();
-    }
+    let Some(mut tty) = input_terminal() else {
+        return false;
+    };
+    tty.write_all(QUERY.as_bytes()).is_ok() && tty.flush().is_ok()
 }
 
 /// Collects an OSC answer that crossterm hands us as key presses: `Alt+]`
@@ -583,6 +588,9 @@ pub struct OscCapture {
     started: Option<Instant>,
     /// The keys that the capture gives back ([`OscCapture::take_released`]).
     released: Vec<crossterm::event::KeyCode>,
+    /// The colour answers are due ([`OscCapture::expect_colors`]), since
+    /// this time: the query, the first frame, or the last answer.
+    colors_due: Option<Instant>,
 }
 
 /// How long a capture waits for the rest of an answer.
@@ -598,12 +606,41 @@ impl OscCapture {
         self.started = Some(Instant::now());
     }
 
-    /// The second of an open capture starts again now. The TUI calls it
-    /// after its first frame: a slow first frame (a big file, a busy
-    /// machine) does not use the second before the first key is read.
+    /// The colour answers of a query are due: until the text answer
+    /// (OSC 10) comes, or for a second with nothing of them, an Escape key
+    /// alone can be the start of one (its `ESC` came alone at the end of a
+    /// read). The capture holds it as it holds the `ESC` at the end of the
+    /// start-up read.
+    pub fn expect_colors(&mut self) {
+        self.colors_due = Some(Instant::now());
+    }
+
+    /// Whether the colour answers are still due at `now`.
+    fn colors_due_at(&self, now: Instant) -> bool {
+        self.colors_due
+            .is_some_and(|t| now.duration_since(t) <= CAPTURE_LIMIT)
+    }
+
+    /// An answer closed: the text answer ends the wait for the colours; the
+    /// background answer gives the text answer a second more.
+    fn answered(&mut self, host: &Host) {
+        if host.fg.is_some() {
+            self.colors_due = None;
+        } else if host.bg.is_some() && self.colors_due.is_some() {
+            self.colors_due = Some(Instant::now());
+        }
+    }
+
+    /// The second of an open capture starts again now, and so does the wait
+    /// for the colours. The TUI calls it after its first frame: a slow first
+    /// frame (a big file, a busy machine) does not use the second before the
+    /// first key is read.
     pub fn restart_clock(&mut self) {
         if self.buf.is_some() {
             self.started = Some(Instant::now());
+        }
+        if self.colors_due.is_some() {
+            self.colors_due = Some(Instant::now());
         }
     }
 
@@ -661,9 +698,18 @@ impl OscCapture {
         {
             self.stop();
         }
+        let colors_due = self.colors_due_at(Instant::now());
         match (&mut self.buf, code) {
             (None, KeyCode::Char(']')) if alt => {
                 self.buf = Some(String::from("\x1b]"));
+                self.started = Some(Instant::now());
+                (true, None)
+            }
+            // The `ESC` of a colour answer that came alone at the end of a
+            // read, after the first frame: crossterm gives it as the Escape
+            // key. Held, as the `ESC` at the end of the start-up read.
+            (None, KeyCode::Esc) if mods.is_empty() && colors_due => {
+                self.buf = Some(String::from("\x1b"));
                 self.started = Some(Instant::now());
                 (true, None)
             }
@@ -673,6 +719,7 @@ impl OscCapture {
                 let host = parse_answers(b);
                 self.buf = None;
                 self.started = None;
+                self.answered(&host);
                 (
                     true,
                     (host.bg.is_some() || host.fg.is_some()).then_some(host),
@@ -683,6 +730,7 @@ impl OscCapture {
                 let host = parse_answers(b);
                 self.buf = None;
                 self.started = None;
+                self.answered(&host);
                 (
                     true,
                     (host.bg.is_some() || host.fg.is_some()).then_some(host),
@@ -731,6 +779,7 @@ impl OscCapture {
                     let host = parse_answers(b);
                     self.buf = None;
                     self.started = None;
+                    self.answered(&host);
                     return (
                         true,
                         (host.bg.is_some() || host.fg.is_some()).then_some(host),
@@ -943,7 +992,7 @@ mod tests {
     #[test]
     fn where_a_sign_with_vs16_is_one_cell_every_vs16_is_left_out() {
         // The cursor at column 5; the four glyphs one cell; U+26A0 with
-        // VS16 one cell (as herdr draws it), or two (as most terminals).
+        // VS16 one cell (as some terminals draw it), or two (as most do).
         let narrow = Wide::from_reports(&[(1, 5), (1, 6), (1, 6), (1, 6), (1, 6), (1, 6)]);
         let wide = Wide::from_reports(&[(1, 5), (1, 6), (1, 6), (1, 6), (1, 6), (1, 7)]);
         assert!(!narrow.is_empty());
@@ -1098,6 +1147,41 @@ mod tests {
         c.resume("\x1b[12".into());
         assert_eq!(c.feed(KeyCode::Char('x'), none), (false, None));
         assert_eq!(c.take_released(), vec![]);
+    }
+
+    #[test]
+    fn an_escape_is_held_while_the_colour_answers_are_due() {
+        let none = KeyModifiers::NONE;
+        let answer = |c: &mut OscCapture, body: &str| {
+            for ch in body.chars() {
+                assert!(c.feed(KeyCode::Char(ch), none).0, "{body}: {ch}");
+            }
+            c.feed(KeyCode::Char('\\'), KeyModifiers::ALT)
+        };
+        // No colour answer due: the Escape key is a key at once.
+        let mut c = OscCapture::default();
+        assert_eq!(c.feed(KeyCode::Esc, none), (false, None));
+        // Due: an Escape (an `ESC` alone at the end of a read) is held, and
+        // the rest of the background answer goes on with it.
+        c.expect_colors();
+        assert_eq!(c.feed(KeyCode::Esc, none), (true, None));
+        let (swallowed, host) = answer(&mut c, "]11;rgb:f7f7/f5f5/efef");
+        assert!(swallowed && host.is_some_and(|h| h.bg.is_some()));
+        // The text answer is still due: the next Escape is held too, and a
+        // key that is not an answer gives it back first.
+        assert_eq!(c.feed(KeyCode::Esc, none), (true, None));
+        assert_eq!(c.feed(KeyCode::Char('n'), none), (false, None));
+        assert_eq!(c.take_released(), vec![KeyCode::Esc]);
+        // The text answer: nothing is due any more.
+        assert_eq!(c.feed(KeyCode::Esc, none), (true, None));
+        let (swallowed, host) = answer(&mut c, "]10;rgb:1f1f/2323/2828");
+        assert!(swallowed && host.is_some_and(|h| h.fg.is_some()));
+        assert_eq!(c.feed(KeyCode::Esc, none), (false, None));
+        assert_eq!(c.take_released(), vec![]);
+        // An Escape with a modifier is never held.
+        let mut c = OscCapture::default();
+        c.expect_colors();
+        assert_eq!(c.feed(KeyCode::Esc, KeyModifiers::SHIFT), (false, None));
     }
 
     #[test]

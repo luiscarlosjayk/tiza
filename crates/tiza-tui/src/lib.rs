@@ -108,6 +108,12 @@ pub fn run(opened: Opened, opts: RunOptions) -> io::Result<()> {
     if let Some(host) = start_up.host {
         app.set_host(host);
     }
+    // A colour answer that did not come in the read can still come, as
+    // keys: its `ESC` alone at the end of a later read is not the Escape
+    // key.
+    if start_up.colors_due {
+        app.osc.expect_colors();
+    }
     app.wide = start_up.wide;
     let early: Vec<_> = start_up
         .typed
@@ -670,8 +676,8 @@ fn event_loop(
                     // A theme change usually comes with a resize (or a
                     // `kill -WINCH`): ask the terminal again; the answer
                     // comes back through the key stream.
-                    if app.theme_auto || app.theme.is_terminal() {
-                        appearance::request_host();
+                    if (app.theme_auto || app.theme.is_terminal()) && appearance::request_host() {
+                        app.osc.expect_colors();
                     }
                     needs_draw = true;
                 }
@@ -701,7 +707,7 @@ fn event_loop(
         let held = app.osc.take_released();
         if !held.is_empty() {
             for k in held {
-                on_key(app, k, KeyModifiers::NONE);
+                on_released_key(app, k);
             }
             needs_draw = true;
         }
@@ -768,6 +774,14 @@ pub fn on_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     app.sync_pointer();
 }
 
+/// A key that the OSC capture gives back, as [`on_key`] handles a key, but
+/// past the capture: it is never held again.
+fn on_released_key(app: &mut App, code: KeyCode) {
+    app.resolve_pending_view();
+    editor_key(app, code, KeyModifiers::NONE);
+    app.sync_pointer();
+}
+
 fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // An OSC answer to a re-query arrives as key presses: collect
     // it and keep it away from the editor.
@@ -776,13 +790,19 @@ fn key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
         app.set_host(h);
     }
     // An ESC that the capture held as the start of an answer, and that no
-    // answer followed: the user's Escape, before this key.
+    // answer followed: the user's Escape, before this key. Past the
+    // capture: it is never held again.
     for held in app.osc.take_released() {
-        key(app, held, KeyModifiers::NONE);
+        editor_key(app, held, KeyModifiers::NONE);
     }
     if swallowed {
         return;
     }
+    editor_key(app, code, mods);
+}
+
+/// A key that the OSC capture let through, or gave back: the editor's.
+fn editor_key(app: &mut App, code: KeyCode, mods: KeyModifiers) {
     // The next key hides the result of a `:` command in presentation mode,
     // also one that ends a typing or works in a panel; the message of that
     // key does not take its place there.

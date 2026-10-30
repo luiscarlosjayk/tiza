@@ -128,7 +128,7 @@ Unicode gives `⚠` (U+26A0), `↪` (U+21AA), `⏸` (U+23F8) and `▶` (U+25B6) 
 - What you type in the command line keeps the signs.
 - When the terminal draws the signs one cell wide, or does not answer, Tiza shows them as they are.
 
-A sign followed by the emoji selector VS16 (U+FE0F), for example `⚠️`, is two cells wide in Unicode, and most terminals draw it so. Some terminals, for example Herdr, draw it in one cell. The status bar counts two cells, so in such a terminal the bar has one blank cell too many.
+A sign followed by the emoji selector VS16 (U+FE0F), for example `⚠️`, is two cells wide in Unicode, and most terminals draw it so. Some terminals draw it in one cell. The status bar counts two cells, so in such a terminal the bar has one blank cell too many.
 
 - At start, Tiza also measures how wide the terminal draws `⚠` with VS16. How a terminal draws VS16 is the same for every sign, so this one measure is enough.
 - When the terminal draws it in one cell, the text that Tiza shows outside the code leaves out every VS16, after every sign. For example, `⚠️`, `❤️` and `☑️` in a step title or a message show as `⚠`, `❤` and `☑`. The status bar then counts one cell for each, as the terminal draws it.
@@ -201,6 +201,7 @@ At start, Tiza turns on raw mode on that terminal for the wait. After the wait, 
 - When the wait stops in the middle of an answer, the rest of the answer comes as key presses. Tiza takes it out of the keys too, when it comes before the first frame of the TUI or not more than 1 s after the first frame.
 - When the wait stops right after the `ESC` of an answer, Tiza cannot tell that `ESC` from the Escape key. Thus Tiza keeps it until the next key. When the next key is `]` or `[`, the `ESC` is the start of the answer. When the next key is another key, the `ESC` is your Escape key, and Tiza uses it before that key.
 - When no key comes in 1 s after the first frame, Tiza uses the `ESC` as your Escape key. Thus an Escape that you type at the very end of the wait can come up to 1 s late.
+- The rest of a color answer can also come after the first frame, with its `ESC` alone at the end. Thus, until the text color answer (OSC 10) comes, Tiza keeps an Escape key in the same way. This stops 1 s after the first frame or after the last answer, also when the terminal does not answer.
 - When you type Escape and then `]` at the very end of the wait, Tiza takes them for the start of an answer, and drops them after 1 s.
 
 ### The width probe

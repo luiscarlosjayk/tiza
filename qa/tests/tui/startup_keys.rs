@@ -225,6 +225,99 @@ print("EXIT", s.finish(10), flush=True)
     assert!(out.contains("EXIT 0"), "{out}");
 }
 
+/// Starts Tiza (`--theme auto`, a terminal that answers no cursor report)
+/// with `seed` in the input, then writes each of `pieces` after the first
+/// frame, each with its pause after it (the delays under test, not a
+/// synchronisation). Prints the step that `n` keys reach and the theme.
+fn pieces(name: &str, seed: &[u8], pieces: &[(Vec<u8>, u64)]) -> String {
+    let dir = scratch(name);
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs.tiza"),
+        dir.join("doc.tiza"),
+    )
+    .unwrap();
+    std::fs::copy(
+        fixture("shared/ownership/ownership.rs"),
+        dir.join("ownership.rs"),
+    )
+    .unwrap();
+    let body = r##"
+import json
+binary, cwd, seed, pieces = sys.argv[1:5]
+seed = bytes.fromhex(seed)
+pieces = [(bytes.fromhex(h), int(d)) for h, d in json.loads(pieces)]
+os.chdir(cwd)
+env = dict(os.environ, TERM="xterm-256color")
+env.pop("TIZA_NO_OSC", None)
+argv = [binary, "--theme", "auto", "--step", "0", "--no-save", "--socket", "s.sock", "doc.tiza"]
+s = Pty(argv, 30, 120, env=env, ctty=True, raw=True, seed=seed)
+ok = s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame")
+for piece, pause in pieces:
+    s.send(piece)
+    time.sleep(pause / 1000)  # the delay under test, not a synchronisation
+def status():
+    r = subprocess.run([binary, "--socket", "s.sock", "api", "status"], capture_output=True, text=True, timeout=10)
+    return json.loads(r.stdout) if r.returncode == 0 else {}
+step = None
+end = time.monotonic() + 10
+while ok and time.monotonic() < end:
+    step = status().get("step")
+    if step == 2:
+        break
+    s.settle(0.05)
+print("STEP", step, flush=True)
+print("LIGHT", s.wait_for(lambda out: "light·auto" in plain(out), 10, "light theme"), flush=True)
+s.send(b"\x1b:q!\r")
+print("EXIT", s.finish(10), flush=True)
+"##;
+    let pieces: Vec<(String, u64)> = pieces.iter().map(|(b, d)| (hex(b), *d)).collect();
+    tiza_qa::pty_script(
+        &dir,
+        &format!("{name}.py"),
+        body,
+        &[
+            bin().to_str().unwrap(),
+            dir.to_str().unwrap(),
+            &hex(seed),
+            &serde_json::to_string(&pieces).unwrap(),
+        ],
+    )
+}
+
+#[test]
+fn colour_answers_whose_esc_comes_alone_after_the_first_frame_are_not_keys() {
+    // The background answer and the text answer of LIGHT, each without its
+    // ESC: the ESC comes alone, at the end of a read.
+    let split = LIGHT.windows(2).rposition(|w| w == b"\x1b]").unwrap();
+    let (bg, fg) = (&LIGHT[1..split], &LIGHT[split + 1..]);
+    // Each answer cut right after its ESC: the first ESC ends the start-up
+    // read; the second comes alone at the end of a read after the first
+    // frame, where crossterm gives it as the Escape key. Taken for one, the
+    // rest of the text answer typed `:1f1f/2323/2828\` on the command line,
+    // and the second `n` went there.
+    let cut = pieces(
+        "both-cut",
+        b"n\x1b",
+        &[([bg, b"\x1b"].concat(), 200), ([fg, b"n"].concat(), 0)],
+    );
+    // The answers late: no ESC at the end of the start-up read, and the
+    // first one alone after the first frame.
+    let late = pieces(
+        "both-late",
+        b"n",
+        &[
+            (b"\x1b".to_vec(), 200),
+            ([bg, b"\x1b"].concat(), 200),
+            ([fg, b"n"].concat(), 0),
+        ],
+    );
+    for out in [cut, late] {
+        assert_eq!(step_of(&out), "2", "{out}");
+        assert!(out.contains("LIGHT True"), "{out}");
+        assert!(out.contains("EXIT 0"), "{out}");
+    }
+}
+
 // ---------- AC2 ----------
 
 #[test]

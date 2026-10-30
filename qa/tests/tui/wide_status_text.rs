@@ -15,7 +15,7 @@
 //! - At the right edge (less than two cells after the cursor), the probe
 //!   writes no sign: the shell's line stays, and the screen does not move.
 //! - The probe also measures U+26A0 with VS16. Where the terminal draws it
-//!   in one cell (herdr), Tiza's own text outside the code leaves out every
+//!   in one cell, Tiza's own text outside the code leaves out every
 //!   VS16: the bar counts one cell for the sign, as the terminal draws it.
 //! - AC3 The code and the annotations keep the glyphs (`render.text`).
 //!
@@ -92,7 +92,7 @@ each = b"".join(
     b"\x1b[%d;%dR" % (row, col + (2 if g in cfg["wide"] else 1)) for g in "⚠↪⏸▶"
 )
 # U+26A0 with VS16: two cells where the terminal draws U+26A0 wide or
-# makes a sign wider for VS16, one cell where it does neither (herdr).
+# makes a sign wider for VS16, one cell where it does neither.
 each += b"\x1b[%d;%dR" % (row, col + (2 if "\u26a0" in cfg["wide"] or cfg["vs16_wide"] else 1))
 
 reports = (first + (each if room else b"")) if cfg["cpr"] else b""
@@ -285,7 +285,7 @@ const TITLE_VS16: &str = "\u{26A0}\u{FE0F} the borrow \u{26A0}\u{FE0F}";
 
 #[test]
 fn where_a_sign_with_vs16_is_one_cell_the_bar_counts_one_cell() {
-    // A terminal that draws U+26A0 with VS16 in one cell, as herdr: the bar
+    // A terminal that draws U+26A0 with VS16 in one cell, as some do: the bar
     // of a title with VS16 is the bar of the same title without it. Before,
     // the bar counted two cells for each, and had a blank too many.
     let bar = |title: &str, vs16_wide: bool| {
