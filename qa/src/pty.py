@@ -7,7 +7,7 @@
 # that never writes (or never exits) is killed, and a SIGALRM backstop ends the
 # whole script even if a body does something blocking by mistake. The Rust side (`tiza_qa::python`) adds its own wall-clock timeout
 # around this process.
-import fcntl, os, pty, re, select, signal, struct, subprocess, sys, termios, threading, time, tty
+import fcntl, os, pty, re, select, signal, struct, subprocess, sys, termios, threading, time, tty, unicodedata
 
 DEADLINE_S = float(os.environ.get("TIZA_PTY_DEADLINE", "40"))
 DEADLINE = time.monotonic() + DEADLINE_S
@@ -243,5 +243,41 @@ class Pty:
             os.close(self.master)
             self.closed = True
         return self.p.returncode
+
+_SEQ = re.compile(r"\x1b\[([0-9;?<>=]*)([ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[P^_][^\x1b]*\x1b\\|\x1b.|([^\x1b])", re.S)
+
+def terminal_rows(raw, rows, cols):
+    """The rows a terminal shows after `raw`: the cursor moves, erases and
+    text that ratatui writes through crossterm; styles, modes and OSC
+    strings change no cell."""
+    grid = [[" "] * cols for _ in range(rows)]
+    r = c = 0
+    for m in _SEQ.finditer(raw.decode(errors="replace")):
+        params, final, ch = m.group(1), m.group(3), m.group(4)
+        if ch is not None:
+            if ch == "\r":
+                c = 0
+            elif ch == "\n":
+                r = min(r + 1, rows - 1)
+            elif ch >= " ":
+                w = 0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in "WF" else 1)
+                if w and c < cols:
+                    grid[r][c] = ch
+                    if w == 2 and c + 1 < cols:
+                        grid[r][c + 1] = ""
+                c += w
+        elif final is not None and not params.startswith("?"):
+            n = [int(x) if x else 0 for x in params.split(";")] if params else []
+            first = n[0] if n else 0
+            if final in "Hf":
+                r = min(max((n[0] if n else 1) - 1, 0), rows - 1)
+                c = max((n[1] if len(n) > 1 else 1) - 1, 0)
+            elif final == "J" and first == 2:
+                grid = [[" "] * cols for _ in range(rows)]
+            elif final == "K":
+                lo, hi = {1: (0, c + 1), 2: (0, cols)}.get(first, (c, cols))
+                for x in range(lo, min(hi, cols)):
+                    grid[r][x] = " "
+    return ["".join(row).rstrip() for row in grid]
 
 # ---- end of the prelude; the test's own body follows ----

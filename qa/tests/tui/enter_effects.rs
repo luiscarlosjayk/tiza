@@ -859,8 +859,15 @@ def until(want, what):
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10, "first frame"):
     s.send(b"n")
     if until(True, "the effect starts"):
+        # The wheel moves the cursor three lines: the bar shows `L<n>`.
+        # Once it shows the line three down, the TUI read the wheel, and the
+        # effect must still play.
+        def line_on_bar(out):
+            m = re.search(r" L(\d+) ", terminal_rows(out, 30, 100)[-1] + " ")
+            return int(m.group(1)) if m else None
+        line = line_on_bar(s.out)
         s.send(b"\x1b[<65;20;5M")
-        s.settle(0.3)
+        s.wait_for(lambda out: line is not None and line_on_bar(out) == line + 3, 10, "the wheel moves the cursor")
         print("AFTER_WHEEL", effect(), flush=True)
         s.send(b"\x1b[<2;20;5M\x1b[<2;20;5m")
         until(False, "the right click ends the effect")
