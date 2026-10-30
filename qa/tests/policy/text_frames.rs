@@ -6,9 +6,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use serde_json::Value;
-use tiza_qa::{repo_file, repo_root, tiza, tiza_ok};
+use tiza_qa::{repo_file, repo_root, repository_files, tiza, tiza_ok};
 
-use crate::common::{frames, repository_files};
+use crate::common::frames;
 
 /// The code that a document shows: its file and the file of each
 /// `code.link` move, from the folder of the document.

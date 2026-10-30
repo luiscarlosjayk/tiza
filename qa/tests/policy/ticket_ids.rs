@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::common::repository_files;
+use tiza_qa::repository_files;
 
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
