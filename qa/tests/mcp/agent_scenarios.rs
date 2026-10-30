@@ -24,43 +24,15 @@
 //! The document is prose, so these tests check the worked example: `tiza
 //! check` clean at the width it is recorded at, each step showing its file,
 //! and the MCP tool calls the prompt list leads to rebuilding exactly the
-//! frames of the shipped `.tiza`. `scenario_paths` of the checks of the docs
-//! (`site/checks`) checks the paths that the document names.
+//! frames of the shipped `.tiza`. Scenario 12 runs its patch of the steps,
+//! a copy in `qa/fixtures/mcp/agent_scenarios/`. The checks of the docs
+//! (`site/checks`) check that the document gives that patch, and the paths
+//! that it names.
 
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use tiza_qa::markdown::scene_patch_json;
-use tiza_qa::{Live, McpClient, example, scratch, tiza, tiza_ok};
-
-fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .to_path_buf()
-}
-
-fn doc() -> String {
-    std::fs::read_to_string(root().join("docs/demos/scenarios.md"))
-        .expect("docs/demos/scenarios.md")
-}
-
-/// The numbered scenario sections (`## 1. Title` …), as (title, body).
-fn scenarios() -> Vec<(String, String)> {
-    let text = doc();
-    let mut out = Vec::new();
-    let mut parts = text.split("\n## ").skip(1);
-    for part in parts.by_ref() {
-        let (title, body) = part.split_once('\n').unwrap_or((part, ""));
-        let numbered = title
-            .split_once(". ")
-            .is_some_and(|(n, _)| n.chars().all(|c| c.is_ascii_digit()));
-        if numbered {
-            out.push((title.to_string(), body.to_string()));
-        }
-    }
-    out
-}
+use tiza_qa::{Live, McpClient, example, fixture, scratch, tiza, tiza_ok};
 
 #[test]
 fn the_worked_example_checks_clean_at_its_recording_width() {
@@ -274,10 +246,12 @@ fn the_prompts_tool_calls_rebuild_the_shipped_example() {
     }
 }
 
-/// The JSON that scenario 12 passes to `tiza scene patch '…'`.
+/// The JSON that scenario 12 of `docs/demos/scenarios.md` passes to
+/// `tiza scene patch '…'`, from its copy in the fixtures.
 fn scenario_12_patch() -> Value {
-    let s = scenarios();
-    scene_patch_json(&s[11].1).expect("scenario 12 patches the steps")
+    let path = fixture("mcp/agent_scenarios/scenario-12-patch.json");
+    serde_json::from_str(&std::fs::read_to_string(&path).unwrap())
+        .unwrap_or_else(|e| panic!("{}: {e}", path.display()))
 }
 
 /// Waits (10 s at most) until `cond` holds.
