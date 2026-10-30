@@ -501,7 +501,7 @@
         "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "emphasis": {
-        "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
+        "description": "How the span is drawn: fill (background tint, default), underline (‾ row under it), brackets (⌈ ⌉ beside it; ⌊ ⌋ under it when a side has no space, ⊔ under a one-column span with no space on either side), strike (struck through)",
         "type": [
           "string",
           "null"
@@ -904,7 +904,7 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "properties": {
       "width": {
-        "description": "Width in columns to check the labels at; defaults to 100, as `tiza render`",
+        "description": "Width in columns to check the labels and the code lines at; defaults to the `width` of the config file of the instance, else 100",
         "format": "uint",
         "minimum": 0,
         "type": [
@@ -1162,7 +1162,7 @@
         "description": "Optional. Experimental. The enter effect when the step goes forward: draw (the stroke is drawn) or fade. Draw needs a box, a callout, an arrow, or a highlight or mark with emphasis underline, brackets or strike."
       },
       "emphasis": {
-        "description": "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)",
+        "description": "How the span is drawn: fill (background tint, default), underline (‾ row under it), brackets (⌈ ⌉ beside it; ⌊ ⌋ under it when a side has no space, ⊔ under a one-column span with no space on either side), strike (struck through)",
         "type": [
           "string",
           "null"

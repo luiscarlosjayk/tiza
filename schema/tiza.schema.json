@@ -444,12 +444,12 @@
         },
         {
           "const": "underline",
-          "description": "A row under the line with ▔ under the span.",
+          "description": "A row under the line with ‾ under the span.",
           "type": "string"
         },
         {
           "const": "brackets",
-          "description": "⌈ ⌉ in the cells beside the span (a glued side goes to the row below).",
+          "description": "⌈ ⌉ in the cells beside the span. When a side has no space, ⌊ ⌋ go on\nthe row under the span, under its first and its last character. A\nspan one column wide keeps the bracket beside it on the side with\nspace and puts the other under it; with no space on either side, it\ngets ⊔ under it.",
           "type": "string"
         },
         {

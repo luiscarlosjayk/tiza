@@ -659,9 +659,13 @@ pub enum Emphasis {
     /// Background tint (the default).
     #[default]
     Fill,
-    /// A row under the line with ▔ under the span.
+    /// A row under the line with ‾ under the span.
     Underline,
-    /// ⌈ ⌉ in the cells beside the span (a glued side goes to the row below).
+    /// ⌈ ⌉ in the cells beside the span. When a side has no space, ⌊ ⌋ go on
+    /// the row under the span, under its first and its last character. A
+    /// span one column wide keeps the bracket beside it on the side with
+    /// space and puts the other under it; with no space on either side, it
+    /// gets ⊔ under it.
     Brackets,
     /// A long stroke through every character.
     Strike,

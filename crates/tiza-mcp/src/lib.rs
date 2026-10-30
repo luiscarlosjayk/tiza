@@ -262,7 +262,7 @@ pub struct HighlightParams {
     pub color: Option<String>,
     pub id: Option<String>,
     #[schemars(
-        description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
+        description = "How the span is drawn: fill (background tint, default), underline (‾ row under it), brackets (⌈ ⌉ beside it; ⌊ ⌋ under it when a side has no space, ⊔ under a one-column span with no space on either side), strike (struck through)"
     )]
     pub emphasis: Option<String>,
     #[schemars(
@@ -291,7 +291,7 @@ pub struct MarkParams {
     pub color: Option<String>,
     pub id: Option<String>,
     #[schemars(
-        description = "How the span is drawn: fill (background tint, default), underline (▔ row under it), brackets (⌈ ⌉ beside it), strike (struck through)"
+        description = "How the span is drawn: fill (background tint, default), underline (‾ row under it), brackets (⌈ ⌉ beside it; ⌊ ⌋ under it when a side has no space, ⊔ under a one-column span with no space on either side), strike (struck through)"
     )]
     pub emphasis: Option<String>,
     #[schemars(
@@ -654,7 +654,7 @@ pub struct RenderParams {
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 pub struct CheckParams {
     #[schemars(
-        description = "Width in columns to check the labels at; defaults to 100, as `tiza render`"
+        description = "Width in columns to check the labels and the code lines at; defaults to the `width` of the config file of the instance, else 100"
     )]
     pub width: Option<usize>,
 }

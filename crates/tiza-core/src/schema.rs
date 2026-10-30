@@ -74,7 +74,8 @@ pub struct RenderParams {
 /// Parameters of `check`.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct CheckParams {
-    /// Columns to check the labels at; defaults to 100, as `tiza render`.
+    /// Columns to check the labels and the code lines at; defaults to the
+    /// `width` of the config file of the instance, else 100.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub width: Option<usize>,
 }
