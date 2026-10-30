@@ -15,11 +15,12 @@
 # Default targets: on macOS, aarch64-apple-darwin and x86_64-apple-darwin
 # (the Intel one cross-compiled, as the workflow does); on Linux x86_64,
 # x86_64-unknown-linux-gnu. Nothing is uploaded and nothing is pushed.
+# It needs python3 for scripts/release-check.py.
 
 set -euo pipefail
 
 usage() {
-  sed -n '2,17p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'
   exit "${1:-0}"
 }
 
@@ -52,8 +53,19 @@ cd "$(git rev-parse --show-toplevel)"
 repo="$(git config --get remote.origin.url || true)"
 repo="$(printf '%s' "$repo" | sed -nE 's#^.*github\.com[:/]([^/]+/[^/]+)$#\1#p' | sed 's#\.git$##')"
 [ -n "$repo" ] || repo="luiscarlosjayk/tiza"
-# The notes first: a release without them is not built.
+# The notes first: a release without them is not built. Then the docs that
+# a release reads, as release.yml checks them. A rehearsal comes before the
+# version commit, so it does not compare the tag with the version.
 notes="$(scripts/release-notes.sh "$tag" "$repo")"
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "scripts/release-check.py needs python3 (in an ubuntu:22.04 container: apt-get install -y python3)" >&2
+  exit 1
+fi
+if [ "$allow_untagged" -eq 1 ]; then
+  scripts/release-check.py
+else
+  scripts/release-check.py "$tag"
+fi
 
 # The release must be exactly what the tag names: a clean tree at the tag.
 if [ -n "$(git status --porcelain --untracked-files=no)" ]; then

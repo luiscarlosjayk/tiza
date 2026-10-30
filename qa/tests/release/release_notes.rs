@@ -7,14 +7,16 @@
 //!
 //! Acceptance criteria:
 //! - AC1 One notes file per version, by hand, in English, no board ids;
-//!   v0.1.0's from QA 1's draft, its facts checked against the code.
+//!   v0.1.0's from QA 1's draft, its facts checked against the code when
+//!   it was released.
 //! - AC2 Both release paths use that file, checked before anything is
 //!   built; a plain tag without it is refused naming the path; a suffixed
 //!   tag takes its own notes (`vX.Y.Z-rc.1.md`), or two lines (prerelease,
 //!   link to the CHANGELOG), never the notes of X.Y.Z, whose archive names
 //!   and links are not its own (the self-review's finding).
-//! - AC3 README: the status line names the current version (and the
-//!   version script keeps it so); the macOS Gatekeeper note.
+//! - AC3 README: the status line names the current version (the version
+//!   script keeps it so, and `scripts/release-check.py` checks it before
+//!   the tag); the macOS Gatekeeper note.
 //! - AC4 The condensed CHANGELOG of 0.1.0 is a proposal for Luis, outside
 //!   the repository until he confirms it.
 //! - AC5 This file; CHANGELOG.
@@ -195,54 +197,6 @@ fn notes_that_name_a_card_are_refused() {
         )],
     );
     assert!(notes(&dir, "v9.9.9").status.success());
-}
-
-#[test]
-fn the_v0_1_0_notes_match_what_the_release_builds() {
-    let n = read("docs/release-notes/v0.1.0.md");
-    assert!(!names_a_card(&n));
-    let yml = read(".github/workflows/release.yml");
-    for target in [
-        "aarch64-apple-darwin",
-        "x86_64-apple-darwin",
-        "x86_64-unknown-linux-gnu",
-    ] {
-        assert!(
-            n.contains(&format!("tiza-v0.1.0-{target}.tar.gz")),
-            "{target}"
-        );
-        assert!(yml.contains(&format!("target: {target}")), "{target}");
-    }
-    // glibc 2.35: the Linux archive is built in an Ubuntu 22.04 container.
-    assert!(n.contains("glibc 2.35"));
-    assert!(yml.contains(r#"container: "ubuntu:22.04", target: x86_64-unknown-linux-gnu"#));
-    // Rust 1.88: the workspace's minimum.
-    assert!(n.contains("Rust 1.88"));
-    assert!(read("Cargo.toml").contains("rust-version = \"1.88\""));
-    assert!(n.contains("xattr -d com.apple.quarantine"));
-    // The archives unpack into a folder named as the archive.
-    assert!(
-        read(".github/workflows/release.yml")
-            .contains(r#"name="tiza-${GITHUB_REF_NAME}-${{ matrix.target }}""#)
-    );
-    assert!(n.contains("cp tiza-v0.1.0-<target>/tiza"));
-}
-
-#[test]
-fn the_readme_status_and_the_gatekeeper_note() {
-    let readme = read("README.md");
-    let toml = read("Cargo.toml");
-    let version = toml
-        .split("[workspace.package]")
-        .nth(1)
-        .and_then(|s| s.lines().find_map(|l| l.strip_prefix("version = \"")))
-        .and_then(|v| v.strip_suffix('"'))
-        .unwrap();
-    assert!(
-        readme.contains(&format!("\n> Status: **v{version}**")),
-        "the status names v{version}"
-    );
-    assert!(read("scripts/bump-version.sh").contains("> Status: **v$new**"));
 }
 
 // ---------- Review ----------

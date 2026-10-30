@@ -11,13 +11,12 @@
 //!   command, and the release build adds its target to that toolchain, not
 //!   to `stable`.
 //! - Publication (changed by Luis on 2026-10-22): no workflow publishes to
-//!   crates.io and no secret is needed; CONTRIBUTING.md
-//!   (`## Releases (maintainers)`, the section release.yml names) gives every
-//!   manual step in order (version with
-//!   `scripts/bump-version.sh`, commit, workspace dry run before the tag,
-//!   tag, then one crate at a time in dependency order, checking the index
-//!   before the next). That every `.crate` carries the licence texts and
-//!   `tiza` leaves out its tests is checked in `policy::package_licences`.
+//!   crates.io and no secret is needed. `scripts/release-check.py` checks,
+//!   before the tag, that CONTRIBUTING.md (`## Releases (maintainers)`, the
+//!   section release.yml names) gives every manual step in order, and the
+//!   crates in dependency order (`release_check` tests the script). That
+//!   every `.crate` carries the licence texts and `tiza` leaves out its
+//!   tests is checked in `policy::package_licences`.
 //! - AC2 crates.io page of `tiza`: a readme packaged in the crate with no
 //!   relative links or images, `homepage`, `documentation` on GitHub (not
 //!   docs.rs), at most five keywords and valid categories.
@@ -118,7 +117,7 @@ fn toolchain_rust_toolchain_toml_is_the_only_version() {
     // archives).
     let expected: [(&str, &[&str]); 3] = [
         (".github/workflows/ci.yml", &["check", "legibility"]),
-        (".github/workflows/release.yml", &["build"]),
+        (".github/workflows/release.yml", &["notes", "build"]),
         (".github/workflows/docs.yml", &["build"]),
     ];
     for (wf, cargo_jobs) in expected {
@@ -237,115 +236,6 @@ fn publish_no_workflow_publishes_to_crates_io() {
             "{wf} has a `publish` job"
         );
     }
-}
-
-/// The heading of the release page, as GitHub anchors it: lowercase,
-/// letters, digits, `-` and `_` kept, spaces to `-`, the rest dropped.
-fn anchor(heading: &str) -> String {
-    heading
-        .to_lowercase()
-        .chars()
-        .filter_map(|c| match c {
-            ' ' => Some('-'),
-            c if c.is_alphanumeric() || c == '-' || c == '_' => Some(c),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The release section of CONTRIBUTING.md, the section release.yml
-/// names: from `## Releases (maintainers)` to the next H2.
-fn release_section() -> String {
-    let page = read("CONTRIBUTING.md");
-    let start = page
-        .find("\n## Releases (maintainers)\n")
-        .expect("CONTRIBUTING.md has `## Releases (maintainers)`")
-        + 1;
-    let rest = &page[start..];
-    let end = rest[3..].find("\n## ").map_or(rest.len(), |i| i + 4);
-    rest[..end].to_string()
-}
-
-/// QA P3-4: a real section, with the anchor release.yml points at.
-#[test]
-fn publish_release_section_has_an_anchor_release_yml_uses() {
-    let section = release_section();
-    let heading = section.lines().next().unwrap().trim_start_matches("## ");
-    assert_eq!(anchor(heading), "releases-maintainers");
-    let yml = read(".github/workflows/release.yml");
-    assert!(
-        yml.contains("CONTRIBUTING.md#releases-maintainers"),
-        "release.yml points at the section"
-    );
-    // QA P3-5: no blank line at the end of the workflow.
-    assert!(yml.ends_with('\n') && !yml.ends_with("\n\n"));
-}
-
-/// QA P2-1: the section gives every step, in order: the version (script,
-/// commit), the dry run before the tag (pushing the tag starts the
-/// release), the tag, then one crate at a time in dependency order, and how
-/// to check the index before the next one.
-#[test]
-fn publish_release_page_has_the_manual_steps_in_order() {
-    let section = release_section();
-    let at = |needle: &str| {
-        section
-            .find(needle)
-            .unwrap_or_else(|| panic!("the section lacks `{needle}`"))
-    };
-    let steps = [
-        "git status --short",
-        "scripts/bump-version.sh X.Y.Z",
-        "$EDITOR docs/release-notes/vX.Y.Z.md",
-        "git add docs/release-notes/vX.Y.Z.md",
-        "git commit -am \"vX.Y.Z\"",
-        "cargo publish --workspace --dry-run --locked",
-        "git push origin main",
-        "git tag vX.Y.Z && git push origin vX.Y.Z",
-        "cargo login",
-        "cargo publish --locked -p tiza-core\n",
-        "cargo publish --locked -p tiza-export\n",
-        "cargo publish --locked -p tiza-tui\n",
-        "cargo publish --locked -p tiza-mcp\n",
-        "cargo publish --locked -p tiza\n",
-    ];
-    let positions: Vec<usize> = steps.iter().map(|s| at(s)).collect();
-    for (w, pair) in positions.windows(2).zip(steps.windows(2)) {
-        assert!(w[0] < w[1], "`{}` comes after `{}`", pair[0], pair[1]);
-    }
-    assert!(at("https://index.crates.io/ti/za/tiza-core") > positions[13]);
-    assert!(read("scripts/bump-version.sh").starts_with("#!/usr/bin/env bash\n"));
-    // The order is the dependency order of the manifests.
-    let meta = metadata();
-    let deps = |name: &str| -> Vec<String> {
-        package(&meta, name)["dependencies"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|d| d["name"].as_str().unwrap().to_string())
-            .filter(|d| d.starts_with("tiza"))
-            .collect()
-    };
-    let order = ["tiza-core", "tiza-export", "tiza-tui", "tiza-mcp", "tiza"];
-    for (i, name) in order.iter().enumerate() {
-        for dep in deps(name) {
-            let j = order.iter().position(|o| *o == dep).unwrap();
-            assert!(j < i, "{name} depends on {dep}, published after it");
-        }
-    }
-    // Every crate of the order exists and nothing publishable is left out.
-    let publishable: Vec<String> = meta["packages"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter(|p| p["publish"] != serde_json::json!([]))
-        .map(|p| p["name"].as_str().unwrap().to_string())
-        .collect();
-    let mut sorted = publishable.clone();
-    sorted.sort();
-    let mut expected: Vec<String> = order.iter().map(|s| s.to_string()).collect();
-    expected.sort();
-    assert_eq!(sorted, expected);
 }
 
 fn copy_dir(from: &Path, to: &Path) {
