@@ -4903,12 +4903,18 @@ impl App {
             return None;
         }
         old.stop();
-        let (reloads, last, clock) = (old.reloads, old.last_reload, old.last_reload_clock.clone());
+        let (reloads, reads, last, clock) = (
+            old.reloads,
+            old.reads,
+            old.last_reload,
+            old.last_reload_clock.clone(),
+        );
         self.pause = Pause::default();
         self.save_held = false;
         match crate::follow::Follow::start(path, base) {
             Ok(mut f) => {
-                (f.reloads, f.last_reload, f.last_reload_clock) = (reloads, last, clock);
+                (f.reloads, f.reads, f.last_reload, f.last_reload_clock) =
+                    (reloads, reads, last, clock);
                 let name = f.file_name();
                 self.follow = Some(f);
                 let _ = self.reload_from_disk(false);
@@ -5052,7 +5058,12 @@ impl App {
         };
         let base = self.save_path.parent().map(Path::to_path_buf);
         f.last_read = crate::follow::Stamp::of(&f.path);
-        let read = fs::reread_reference(&probe, base.as_deref());
+        let (read, bytes) = fs::reread_reference_with_bytes(&probe, base.as_deref());
+        f.reads += 1;
+        // Kept for a read that waits for the second write of an editor:
+        // the hash stays the one of the code that the screen has.
+        let hash_before =
+            std::mem::replace(&mut f.hash, bytes.as_deref().map(crate::follow::sha256_hex));
         let name = f.file_name();
         let (new, read_first) = match read {
             Ok(read) => read,
@@ -5101,6 +5112,7 @@ impl App {
             f.take_deferred();
         }
         if empty && !f.last_content.iter().all(|l| l.trim().is_empty()) && !f.take_deferred() {
+            f.hash = hash_before;
             f.defer();
             return false;
         }
@@ -5207,6 +5219,8 @@ impl App {
                     "enabled": true,
                     "path": f.path.display().to_string(),
                     "reloads": f.reloads,
+                    "reads": f.reads,
+                    "hash": f.hash,
                     "last_reload": f.last_reload_clock,
                     "missing": f.missing,
                     "paused": self.follow_paused(),
@@ -8744,6 +8758,8 @@ impl App {
                     paused: self.follow_paused(),
                     pending: self.follow_pending(),
                     resume_step: self.resume_step(),
+                    reads: self.follow.as_ref().map_or(0, |f| f.reads),
+                    hash: self.follow.as_ref().and_then(|f| f.hash.clone()),
                 }),
             effect: self.effect.is_some(),
         }

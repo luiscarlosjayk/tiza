@@ -276,7 +276,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 | `pointer.clear` | The same fields as `pointer.set`, with `pointer` as `null`. |
 | `theme.set` | `theme`, `auto` and `revision`. |
 | `follow.set` | The fields of `follow.status`, and `message`. |
-| `follow.status` | `enabled`, `path`, `reloads`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`, when they apply. |
+| `follow.status` | `enabled`, `path`, `reloads`, `reads`, `hash`, `last_reload`, `missing`, `paused`, `pending`, `resume_step` and `reason`, when they apply. |
 | `supervise.set` | The fields of `supervise.status`, and `message`. |
 | `supervise.status` | `supervised`, `pending`, `accepted`, `rejected` and `timeout_secs`. |
 
@@ -284,6 +284,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 - `label` is the step label: the text of the status bar for the step, for example `step 3/7 · Shared borrow`.
 - `pending` of `supervise.status` is a list of `{id, method, summary, age_ms}`. In `status`, `pending` is a number.
 - `shown` of `pointer.set` is `false` while the presenter has the command line open. The pointer shows when the command line closes.
+- `hash` of `follow.status` is the sha256 of the followed file as Tiza last read it, in lowercase hex, as `shasum -a 256 FILE` prints it. It is the hash of the whole file, also when the code is a range of it. It is `null` when the last read failed. `reads` counts the reads of the file, also the reads that load nothing. A save of the same bytes does not change `hash`: then `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - The fields of the `check` report are in [Check report](cli.md#check-report).
 
 ### Fields of `status`
@@ -316,7 +317,7 @@ A file with a key that this version does not know opens, and `tiza check` gives 
 | `pointer` | The live pointer as `{line, to, by}`, or `null`. |
 | `stale_moves` | The number of moves that do not match the code any more. |
 | `save_error` | Why the last save of the document failed, for example a read-only folder, or `null` when the last save worked. |
-| `follow` | While follow mode is on: `paused`, `pending` and `resume_step`, as `follow.status` gives them. |
+| `follow` | While follow mode is on: `paused`, `pending`, `resume_step`, `reads` and `hash`, as `follow.status` gives them. |
 | `effect` | Experimental. `true` while an enter effect plays on the screen. |
 
 - A field that does not apply is not in the result, except `file`, `pointer` and `save_error`, which are `null`.

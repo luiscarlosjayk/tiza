@@ -20,6 +20,7 @@ tiza-core.workspace = true
 ratatui.workspace = true
 crossterm.workspace = true
 notify.workspace = true
+sha2.workspace = true
 rustix.workspace = true
 signal-hook.workspace = true
 serde.workspace = true

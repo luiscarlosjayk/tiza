@@ -1001,13 +1001,31 @@ pub fn reread_code(doc: &Document, base_dir: Option<&Path>) -> Result<Vec<String
 }
 
 /// [`reread_code`] with the first line the range starts at.
-pub fn reread_reference(
+pub fn reread_reference(doc: &Document, base_dir: Option<&Path>) -> Reread {
+    reread_reference_with_bytes(doc, base_dir).0
+}
+
+/// What [`reread_reference`] gives: the lines and the number of the first
+/// one.
+pub type Reread = Result<(Vec<String>, u32), Error>;
+
+/// [`reread_reference`], and the bytes of the file that it read: `None`
+/// when it could not read the file, or when the code is embedded. The file
+/// is read once, and the lines come from these bytes. A file that is not
+/// UTF-8 gives its bytes and the error.
+pub fn reread_reference_with_bytes(
     doc: &Document,
     base_dir: Option<&Path>,
-) -> Result<(Vec<String>, u32), Error> {
+) -> (Reread, Option<Vec<u8>>) {
     let mut copy = doc.clone();
-    resolve_code(&mut copy, base_dir)?;
-    Ok((copy.code, copy.source.first_line))
+    let mut bytes = None;
+    let lines = resolve_code_read(&mut copy, base_dir, &mut bytes).map(|()| {
+        if copy.code.is_empty() {
+            copy.code.push(String::new());
+        }
+        (copy.code, copy.source.first_line)
+    });
+    (lines, bytes)
 }
 
 /// Fills `doc.code` from `doc.code_src`. The result always has at least one line.
@@ -1020,6 +1038,16 @@ pub fn resolve_code(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), E
 }
 
 fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(), Error> {
+    resolve_code_read(doc, base_dir, &mut None)
+}
+
+/// [`resolve_code_inner`]; the bytes of a referenced file go to `read` as
+/// soon as the file is read, also when they are not UTF-8.
+fn resolve_code_read(
+    doc: &mut Document,
+    base_dir: Option<&Path>,
+    read: &mut Option<Vec<u8>>,
+) -> Result<(), Error> {
     match &doc.code_src {
         CodeSource::Embedded(lines) => {
             doc.code = lines.clone();
@@ -1034,16 +1062,28 @@ fn resolve_code_inner(doc: &mut Document, base_dir: Option<&Path>) -> Result<(),
                     .map(|d| d.join(raw))
                     .unwrap_or_else(|| raw.to_path_buf())
             };
-            let text = std::fs::read_to_string(&full).map_err(|e| {
+            let cannot = |e: std::io::Error| {
                 Error::Invalid(format!(
                     "could not read the referenced code at {} ({e})",
                     full.display()
                 ))
-            })?;
-            // A byte order mark that starts the file is not code, as when
-            // the file was first opened ([`Document::from_code`]).
-            let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
-            let mut all: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+            };
+            let bytes = std::fs::read(&full).map_err(cannot)?;
+            let decoded = match std::str::from_utf8(&bytes) {
+                Ok(text) => {
+                    // A byte order mark that starts the file is not code, as
+                    // when the file was first opened ([`Document::from_code`]).
+                    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
+                    Ok(text.lines().map(|l| l.to_string()).collect::<Vec<String>>())
+                }
+                // The words of `read_to_string` for bytes that are not UTF-8.
+                Err(_) => Err(cannot(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "stream did not contain valid UTF-8",
+                ))),
+            };
+            *read = Some(bytes);
+            let mut all = decoded?;
             let mut first = 1;
             if let Some(spec) = lines {
                 let (a, b) = parse_lines(spec)?;

@@ -28,6 +28,14 @@
           "FollowState": {
             "description": "Follow mode in `status`: whether a save loads now.",
             "properties": {
+              "hash": {
+                "default": null,
+                "description": "The sha256 of the followed file as Tiza last read it, as in\n`follow.status`.",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
               "paused": {
                 "description": "A `code.patch` is applied at the current step: a save does not load\nuntil the presenter is at `resume_step` or earlier.",
                 "type": "boolean"
@@ -35,6 +43,13 @@
               "pending": {
                 "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
                 "type": "boolean"
+              },
+              "reads": {
+                "default": 0,
+                "description": "How many times Tiza read the followed file, as in `follow.status`.",
+                "format": "uint64",
+                "minimum": 0,
+                "type": "integer"
               },
               "resume_step": {
                 "description": "While paused: the last step before the first patch, where a change\nthat waits loads (an earlier step loads it too).",
@@ -6821,6 +6836,14 @@
           "enabled": {
             "type": "boolean"
           },
+          "hash": {
+            "default": null,
+            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when the\nlast read failed. When it is the hash of the file you saved, Tiza\nread your save. A save of the same bytes does not change it: then\n`reads` increases.",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "last_reload": {
             "description": "Time of the last reload, `HH:MM:SSZ`.",
             "type": [
@@ -6856,6 +6879,15 @@
           "pending": {
             "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
             "type": "boolean"
+          },
+          "reads": {
+            "description": "With follow on: how many times Tiza read the file to load it (after\na save, when follow starts, at the resume step), also the reads that\nload nothing. Saves that come close together can be one read.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "reason": {
             "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\na patch is applied (`paused; loads at step 1 or earlier`).",
@@ -6892,7 +6924,7 @@
       }
     },
     {
-      "description": "Follow mode state: enabled, path, reloads, last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
+      "description": "Follow mode state: enabled, path, reloads, reads (the reads of the file, also those that load nothing), hash (the sha256 of the file as last read: equal to the hash of your save when Tiza read it; a save of the same bytes does not change it, then reads increases), last_reload (HH:MM:SSZ), missing, paused (a patch is applied: a save waits), pending (a change waits to load), resume_step (where it loads), reason (why it is off, or why a save waits)",
       "method": "follow.status",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -6906,6 +6938,14 @@
         "properties": {
           "enabled": {
             "type": "boolean"
+          },
+          "hash": {
+            "default": null,
+            "description": "With follow on: the sha256 of the file as Tiza last read it, in\nlowercase hex (what `shasum -a 256 FILE` prints). It is the hash of\nthe whole file, also when `code` is a range of it. Null when the\nlast read failed. When it is the hash of the file you saved, Tiza\nread your save. A save of the same bytes does not change it: then\n`reads` increases.",
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "last_reload": {
             "description": "Time of the last reload, `HH:MM:SSZ`.",
@@ -6942,6 +6982,15 @@
           "pending": {
             "description": "Paused, and the file on disk holds other code than the screen: a\nchange waits to load.",
             "type": "boolean"
+          },
+          "reads": {
+            "description": "With follow on: how many times Tiza read the file to load it (after\na save, when follow starts, at the resume step), also the reads that\nload nothing. Saves that come close together can be one read.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": [
+              "integer",
+              "null"
+            ]
           },
           "reason": {
             "description": "Why follow is off, when something other than `follow.set` turned it\noff: a paste (`the code is pasted, not main.rs; :follow on reloads\nmain.rs`), or a file watcher that could not start (`cannot watch\n/home/me/demo: …`). With follow on, why a save does not load now:\na patch is applied (`paused; loads at step 1 or earlier`).",

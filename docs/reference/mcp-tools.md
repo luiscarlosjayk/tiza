@@ -269,6 +269,7 @@ The fields of each annotation type are in [Annotations](document-format.md#annot
 - `next_step` after the last step goes to step 0 when the document has `"loop": true`.
 - `set_follow` fails when the code is embedded and no followed file is known. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - At a step where a `code.patch` is applied, `set_follow` turns follow mode on paused. The reply gives `paused`, `pending` and `resume_step`.
+- To know that Tiza read a save of the followed file, compare `hash` in the `follow` field of `status` with the sha256 of the file. A save of the same bytes does not change `hash`: then wait until `reads` increases. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 
 ## Replies
 

@@ -111,6 +111,7 @@ To change an annotation and keep its id, call `update_annotation`. See [`update_
 
 - `set_follow` with `"enabled": true` reloads the code each time that the presenter saves the file. The presenter can also type `:follow on`.
 - When a `code.patch` is applied at the step on the screen, follow mode is paused and a save waits. `follow.status` gives `paused`, `pending`, `resume_step` and the `reason`. Tiza follows only the main file, not a file that a `code.link` shows.
+- When you save the file yourself, compare `hash` in the `follow` field of `status` with the sha256 of the file. When they are the same, Tiza read your save. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode).
 - Tiza keeps each annotation on its text, and drops it when its text is gone. See [What happens to annotations](../guides/follow-the-editor.md#what-happens-to-annotations).
 - After a reload, call `list_annotations`, and add the annotations that you need again.
 - A move can become stale after a reload. See [When the presenter edits the file](moves-and-steps.md#when-the-presenter-edits-the-file).
