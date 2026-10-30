@@ -265,13 +265,43 @@ code, kbd, pre { font-family: var(--mono); }
   display: block; white-space: pre-wrap; overflow-wrap: anywhere;
   padding-left: 2ch; text-indent: -2ch;
 }
+/* site.js puts each block in a .code-block with a "Copy" button. The button
+   is text with no border, and it always shows, also on a touch screen. */
+.doc .code-block { position: relative; margin: 0 0 1.2em; }
+.doc .code-block > pre { margin: 0; padding-right: 4.5em; }
 .copy-btn {
   position: absolute; top: 6px; right: 6px;
-  font: 12px var(--font); color: var(--fg-muted);
-  background: var(--bg-elev); border: 1px solid var(--rule); border-radius: 4px;
-  padding: 2px 8px; cursor: pointer; opacity: 0;
+  font: 12px/1 var(--font); color: var(--fg-muted);
+  background: var(--code-bg); border: 0; border-radius: 4px;
+  padding: 5px 8px; cursor: pointer;
 }
-.doc pre:hover .copy-btn, .copy-btn:focus { opacity: 1; }
+.copy-btn:hover { color: var(--fg); background: var(--bg-side); }
+.copy-btn.done { color: var(--link); }
+/* A frame: the image, and the block that makes it. site.js makes the two
+   panels tabs: words in capitals, a thin rule under the band, and a bar in
+   the accent color under the open tab. Without the script, the two panels
+   show one under the other. */
+.doc .frame { margin: 0 0 1.4em; }
+.doc .frame-tabs { display: flex; gap: 4px; margin: 0 0 14px; border-bottom: 1px solid var(--rule); }
+.doc .frame-tabs [role="tab"] {
+  margin-bottom: -1px; padding: 10px 16px 9px;
+  font: 600 12.5px/1 var(--font); letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--fg-muted); background: none; border: 0; border-bottom: 3px solid transparent;
+  cursor: pointer;
+}
+.doc .frame-tabs [role="tab"]:hover { color: var(--fg); background: var(--bg-side); }
+.doc .frame-tabs [role="tab"][aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+.doc .frame-image img { display: block; max-width: 100%; height: auto; }
+.doc .frame:not(.tabbed) .frame-source { margin-top: 14px; }
+.doc .frame-file { margin: 0 0 6px; font: 12px/1.4 var(--mono); color: var(--fg-muted); }
+.doc .frame-source .code-block { margin: 0; }
+.doc .frame-how { margin: 8px 0 0; font-size: 13px; line-height: 1.5; color: var(--fg-muted); }
+/* On paper: both panels of a frame, and no tabs or buttons. */
+@media print {
+  .doc .frame-tabs, .copy-btn { display: none; }
+  .doc .frame-panel[hidden] { display: block; content-visibility: visible; }
+  .doc .frame-source { margin-top: 14px; }
+}
 /* A prompt block: text that the reader copies and gives to an agent. It is
    prose, so it wraps and uses the text font. */
 .doc .prompt-block { margin: 0 0 1.4em; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--code-bg); }

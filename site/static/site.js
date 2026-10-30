@@ -1,4 +1,4 @@
-// Tiza docs: theme toggle, navigation drawer, search, copy buttons, active TOC entry.
+// Tiza docs: theme toggle, navigation drawer, search, frame tabs, copy buttons, active TOC entry.
 // Own code. The search uses the elasticlunr index that Zola writes (search_index.en.js).
 (function () {
   "use strict";
@@ -137,22 +137,100 @@
     box.appendChild(pre);
   });
 
+  // ---- Frames: two tabs ----------------------------------------------------
+  // build.py writes each frame as two panels: the image, then the block that
+  // makes it. Here they become the tabs "Image" and "Source" (a .tiza) or
+  // "Commands" (`:` commands). The arrow keys, Home and End go from tab to
+  // tab. Without this script, the page shows the two panels, one under the
+  // other. A hidden panel is "until-found": find in page opens its tab.
+  document.querySelectorAll(".doc .frame").forEach(function (frame) {
+    var panels = [frame.querySelector(".frame-image"), frame.querySelector(".frame-source")];
+    if (!panels[0] || !panels[1]) return;
+    var names = ["Image", frame.dataset.source || "Source"];
+    var list = document.createElement("div");
+    list.className = "frame-tabs";
+    list.setAttribute("role", "tablist");
+    list.setAttribute("aria-label", "Example");
+    var tabs = panels.map(function (panel, i) {
+      var tab = document.createElement("button");
+      tab.type = "button";
+      tab.id = frame.id + "-tab-" + i;
+      tab.setAttribute("role", "tab");
+      tab.textContent = names[i];
+      panel.id = frame.id + "-panel-" + i;
+      tab.setAttribute("aria-controls", panel.id);
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", tab.id);
+      // The image panel has nothing to focus: the panel takes the focus.
+      if (i === 0) panel.tabIndex = 0;
+      panel.addEventListener("beforematch", function () { select(i, false); });
+      list.appendChild(tab);
+      return tab;
+    });
+    function select(i, focus) {
+      tabs.forEach(function (t, k) {
+        t.setAttribute("aria-selected", String(k === i));
+        t.tabIndex = k === i ? 0 : -1;
+        if (k === i) panels[k].hidden = false;
+        else panels[k].setAttribute("hidden", "until-found");
+      });
+      if (focus) tabs[i].focus();
+    }
+    tabs.forEach(function (t, i) {
+      t.addEventListener("click", function () { select(i, false); });
+      t.addEventListener("keydown", function (e) {
+        var n = tabs.length;
+        var k = e.key === "ArrowRight" ? (i + 1) % n
+          : e.key === "ArrowLeft" ? (i + n - 1) % n
+          : e.key === "Home" ? 0
+          : e.key === "End" ? n - 1 : null;
+        if (k === null) return;
+        e.preventDefault();
+        select(k, true);
+      });
+    });
+    frame.insertBefore(list, panels[0]);
+    frame.classList.add("tabbed");
+    select(0, false);
+  });
+
   // ---- Copy buttons on code blocks ---------------------------------------
+  // Each block gets a "Copy" button at its top right, also on a touch screen.
+  // It copies the exact text of the block. When the page cannot write to the
+  // clipboard, the button selects the text, and tells the key that copies it.
+  var copyKey = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent) ? "⌘C" : "Ctrl-C";
   document.querySelectorAll(".doc pre:not(.prompt)").forEach(function (pre) {
-    if (!navigator.clipboard) return;
+    var box = document.createElement("div");
+    box.className = "code-block";
+    pre.parentNode.insertBefore(box, pre);
+    box.appendChild(pre);
     var b = document.createElement("button");
     b.type = "button";
     b.className = "copy-btn";
     b.textContent = "Copy";
+    // A screen reader says "Copied" when the text changes.
+    b.setAttribute("aria-live", "polite");
+    function done(label) {
+      b.textContent = label;
+      b.classList.add("done");
+      clearTimeout(b.timer);
+      b.timer = setTimeout(function () { b.textContent = "Copy"; b.classList.remove("done"); }, 1500);
+    }
+    function selectText() {
+      var range = document.createRange();
+      range.selectNodeContents(pre.querySelector("code") || pre);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      done("Press " + copyKey + " to copy");
+    }
     b.addEventListener("click", function () {
       var code = pre.querySelector("code") || pre;
       var text = pre.dataset.text || code.innerText.replace(/\n$/, "");
-      navigator.clipboard.writeText(text).then(function () {
-        b.textContent = "Copied";
-        setTimeout(function () { b.textContent = "Copy"; }, 1500);
-      });
+      if (!navigator.clipboard || !window.isSecureContext) { selectText(); return; }
+      navigator.clipboard.writeText(text).then(function () { done("Copied"); }, selectText);
     });
-    pre.appendChild(b);
+    box.appendChild(b);
   });
 
   // ---- Active entry in "On this page" ------------------------------------

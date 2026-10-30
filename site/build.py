@@ -25,6 +25,14 @@ This script copies the pages that nav.json lists into content/, and:
 - turns a code block with the info string "text prompt" into a prompt
   block (<pre class="prompt">); site.js gives it the title "Ask your agent"
   and a "Copy prompt" button. On GitHub it stays a plain text block,
+- turns each frame of a page (its <!-- frame … --> comment, the block
+  that makes it and its <img>, see scripts/docs_frames.py) into two
+  panels: the image first, then the block, with the file that it needs
+  and a line that tells how to make the frame again. site.js shows the
+  two panels as the tabs "Image" and "Source" (a doc= frame) or
+  "Commands" (a code= frame). Without JavaScript, the page shows the
+  image and then the block. The block of a doc= frame must be its file
+  in docs/frames/, as it is. On GitHub the page does not change,
 - puts each table in a <div class="table-wrap">, so a wide table scrolls in
   its own box and the page does not scroll sideways,
 - copies the images and the favicon into static/,
@@ -71,6 +79,9 @@ PROMPT_INFO = "text prompt"
 PROMPT_URL_RE = re.compile(r"https?://[^\s<]+")
 # A release tag: a raw file at such a tag comes from git.
 TAG_RE = re.compile(r"^v\d+\.\d+\.\d+$")
+# The comment of a frame (scripts/docs_frames.py) and the <img> that shows it.
+FRAME_RE = re.compile(r"^<!-- frame id=(\S+)((?: \w+=\S+)*) -->$")
+FRAME_IMG_RE = re.compile(r"^<img\s[^>]*>$")
 # [text](target "title") ; the target has no spaces and no parentheses.
 MD_LINK_RE = re.compile(r"(\]\()([^)\s]+)((?:\s+\"[^\"]*\")?\))")
 HTML_ATTR_RE = re.compile(r"""(\s(?:src|href)=")([^"]+)(")""")
@@ -318,6 +329,126 @@ class Site:
         return ""
 
     # -- pages ---------------------------------------------------------
+    def frame(self, lines, i, src):
+        """The HTML lines of the frame whose comment is lines[i], and the
+        number of its last line. The two forms of a page: the block, then
+        the <img>; or the <img>, then the block in a <details>."""
+        m = FRAME_RE.match(lines[i])
+        fid = m.group(1)
+        opts = dict(kv.split("=", 1) for kv in m.group(2).split())
+        where = "%s:%d: frame %s" % (src, i + 1, fid)
+
+        def blank(j):
+            while j < len(lines) and not lines[j].strip():
+                j += 1
+            return j
+
+        def block(j):
+            f = FENCE_RE.match(lines[j]) if j < len(lines) else None
+            if not f or f.group(1):
+                raise BuildError("%s: the block that makes it is missing" % where)
+            end = j + 1
+            while end < len(lines) and not closes_fence(f.group(2), FENCE_RE.match(lines[end]),
+                                                        lines[end]):
+                end += 1
+            if end == len(lines):
+                raise BuildError("%s: its block does not end" % where)
+            return lines[j:end + 1], end + 1
+
+        def img(j):
+            if j >= len(lines) or not FRAME_IMG_RE.match(lines[j]):
+                raise BuildError("%s: the <img> of the frame is missing" % where)
+            return lines[j], j + 1
+
+        j = i + 1
+        if j < len(lines) and FENCE_RE.match(lines[j]):
+            code, j = block(j)
+            image, j = img(blank(j))
+        else:
+            image, j = img(blank(j))
+            j = blank(j)
+            if j >= len(lines) or not lines[j].startswith("<details>"):
+                raise BuildError("%s: the block that makes it is missing" % where)
+            code, j = block(blank(j + 1))
+            j = blank(j)
+            if j >= len(lines) or lines[j] != "</details>":
+                raise BuildError("%s: its <details> does not end" % where)
+            j += 1
+
+        e = lambda t: html.escape(t, quote=False)
+        link = lambda path, text: '<a href="%s"><code>%s</code></a>' % (
+            html.escape(self.github_url(path, "")), e(text))
+        if "doc" in opts:
+            doc = opts["doc"]
+            if "step" not in opts and "animate" not in opts:
+                raise BuildError("%s: a doc= frame needs step=N or animate=0|1" % where)
+            with open(os.path.join(self.repo, doc), encoding="utf-8") as f:
+                if f.read().rstrip("\n") != "\n".join(code[1:-1]):
+                    raise BuildError("%s: its block is not %s as it is" % (where, doc))
+            name = posixpath.basename(doc)
+            try:
+                d = json.loads("\n".join(code[1:-1]))
+            except ValueError as err:
+                raise BuildError("%s: its block is not JSON: %s" % (where, err))
+            if not isinstance(d, dict):
+                raise BuildError("%s: its block is not a JSON object" % where)
+            # The files that the document reads: its code, and the files
+            # of its code.link moves, each one time.
+            files = []
+            ref = d.get("code")
+            if isinstance(ref, dict) and isinstance(ref.get("file"), str):
+                files.append(ref["file"])
+            moves = d.get("moves") if isinstance(d.get("moves"), list) else []
+            for mv in moves:
+                if isinstance(mv, dict) and mv.get("action") == "code.link" \
+                        and isinstance(mv.get("file"), str) and mv["file"] not in files:
+                    files.append(mv["file"])
+            here = posixpath.dirname(doc)
+            next_to = " and ".join(link(posixpath.normpath(posixpath.join(here, f)), f)
+                                   for f in files)
+            how = "Save it as %s%s." % (link(doc, name), " next to " + next_to if files else "")
+            if "animate" in opts:
+                # A document opens at its own step: --step shows the
+                # animation from where the frame starts.
+                how += " Then run <code>tiza %s --present --step %s</code>, and press " \
+                       "<code>→</code> to go to the next step." % (e(name), e(opts["animate"]))
+            else:
+                how += " Then run <code>tiza %s --step %s</code>." % (e(name), e(opts["step"]))
+            tab, label = "Source", name
+        else:
+            path, _, lines_ab = opts["code"].rpartition(":")
+            a, _, b = lines_ab.partition("-")
+            which = "line %s" % a if a == b or not b else "lines %s to %s" % (a, b)
+            # --no-save: each frame starts from the code, not from the
+            # document that an earlier frame of the same lines saved.
+            if "files" in opts:
+                # A command reads its file from the folder where Tiza runs.
+                put = [link(path, posixpath.basename(path))] + [
+                    link(f, posixpath.basename(f)) for f in opts["files"].split(",")]
+                how = "Put %s in one folder. In that folder, run <code>tiza %s:%s --no-save</code>. " \
+                      "Then type the commands." % (" and ".join(put), e(posixpath.basename(path)),
+                                                  e(lines_ab))
+            else:
+                how = "Open %s of %s: <code>tiza %s --no-save</code>. Then type the commands." % (
+                    e(which), link(path, path), e(opts["code"]))
+            tab, label = "Commands", "%s, %s" % (path, which)
+        if "width" in opts:
+            how += " The image is %s columns wide." % e(opts["width"])
+        out = [
+            '<div class="frame" id="frame-%s" data-source="%s">' % (html.escape(fid), tab),
+            '<div class="frame-panel frame-image">',
+            "",
+            self.rewrite_links(image, src),
+            "",
+            "</div>",
+            '<div class="frame-panel frame-source">',
+            '<p class="frame-file">%s</p>' % e(label),
+            "",
+        ]
+        out += code
+        out += ["", '<p class="frame-how">%s</p>' % how, "</div>", "</div>", ""]
+        return out, j
+
     def convert(self, src, shift=0):
         """The title (the first H1) and the Zola Markdown of a page. shift
         moves each other heading down that many levels, to put the page
@@ -330,8 +461,15 @@ class Site:
         fence = None
         prompt = None  # the lines of a prompt block, while inside one
         table = False  # inside a table that has its wrapper open
+        skip = 0  # the lines up to this one are in a frame, already out
         for n, line in enumerate(lines, 1):
+            if n <= skip:
+                continue
             self.where = "%s:%d" % (src, n)
+            if not fence and FRAME_RE.match(line):
+                frame, skip = self.frame(lines, n - 1, src)
+                out.extend(frame)
+                continue
             if table and not line.strip():
                 out.extend(["", "</div>"])
                 table = False

@@ -7,6 +7,7 @@ mod brand_page;
 mod config_example;
 mod doc_constants;
 mod doc_frames;
+mod frame_tabs;
 mod install_command;
 mod keys_page;
 mod readme_images;
