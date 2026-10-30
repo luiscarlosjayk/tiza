@@ -374,6 +374,58 @@ A newer version of Tiza can write a move that this version does not know. The do
 - A `delete` has no `content`. Tiza ignores a `\n` at the end of `content`.
 - `find_end` must not come before `find_start`.
 
+Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. The code is `docs/frames/ownership.rs`, a copy of `examples/ownership.rs`.
+
+An `insert` puts a line after the line with `let n = len(&t);`:
+
+<!-- frame id=patch-insert doc=docs/frames/patch-insert.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "insert",
+     "after": "let n = len(&t);", "content": "    let m = n * 2;"}
+  ]
+}
+```
+
+<img src="../images/format/patch-insert.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, the new line let m = n * 2; comes after line 7, and println moves down one line.">
+
+A `replace` changes the line with `let n = len(&t);`:
+
+<!-- frame id=patch-replace doc=docs/frames/patch-replace.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace",
+     "find": "let n = len(&t);", "content": "    let n = t.len();"}
+  ]
+}
+```
+
+<img src="../images/format/patch-replace.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, line 7 is let n = t.len(); in place of let n = len(&t);.">
+
+A `delete` removes the line with `println!`:
+
+<!-- frame id=patch-delete doc=docs/frames/patch-delete.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "delete", "find": "println!"}
+  ]
+}
+```
+
+<img src="../images/format/patch-delete.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, the line with println is gone, and lines 6 and 7 stay.">
+
 ### Where a `code.patch` move goes
 
 Tiza finds a target on the code as it is at the step of the move. The target must match exactly once, or `occurrence` names the match.
@@ -391,6 +443,42 @@ With `"typing": "line"` or `"char"`, Tiza types the content on the screen.
 - Any key except Ctrl-C finishes the typing. Tiza uses that key only to finish the typing.
 - In presentation mode, with the live pointer off, a key that only moves the view does not finish the typing: `↑`, `↓`, `j`, `k`, `J`, `K`, `g`, `G`, `Home` and `End`. The view moves, and the typing continues.
 - Thus an `n` during the typing finishes the typing. It does not go to the next step. Press `n` again.
+
+Each image in this section is a real `tiza render` export of the document above it, from step 0 to step 1. An animated export types as the TUI does.
+
+`"typing": "line"` types the new lines one at a time:
+
+<!-- frame id=typing-line doc=docs/frames/typing-line.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "insert", "after": "let t",
+     "content": "    let u = t.clone();\n    let v = u.len();", "typing": "line"}
+  ]
+}
+```
+
+<img src="../images/format/typing-line.webp" width="388" alt="Lines 6 to 8 at step 0. At step 1, let u = t.clone(); comes after line 6, then let v = u.len(); after it, one line at a time.">
+
+`"typing": "char"` types the new line one character at a time:
+
+<!-- frame id=typing-char doc=docs/frames/typing-char.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "replace", "find": "let n = len(&t);",
+     "content": "    let n = t.chars().count();", "typing": "char"}
+  ]
+}
+```
+
+<img src="../images/format/typing-char.webp" width="380" alt="Lines 6 to 8 at step 0. At step 1, line 7 becomes let n = t.chars().count();, one character at a time.">
 
 ### Annotations after a `code.patch` move
 
@@ -467,6 +555,26 @@ At step 2, `:link src/queue.rs:10-36` adds the same move.
 - A `code.patch` move changes the file shown at its step.
 - `:embed` stores every linked file under `views`. Thus the document stays one `.tiza` file.
 - A document fails to load when a linked file cannot be read. The error names the move and the path.
+
+This image is a real `tiza render` export of the document under this paragraph, from step 0 to step 1. At step 1, the screen shows lines 17 to 23 of `queue.rs`, with a box of that file:
+
+<!-- frame id=code-link doc=docs/frames/link.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-4"},
+  "moves": [
+    {"at_step": 1, "action": "code.link", "file": "queue.rs", "lines": "17-23"}
+  ],
+  "annotations": [
+    {"id": "b1", "step": 1, "type": "box", "file": "queue.rs",
+     "from_line": 21, "to_line": 23, "label": "the other end"}
+  ]
+}
+```
+
+<img src="../images/format/code-link.webp" width="552" alt="At step 0, lines 1 to 4 of ownership.rs. At step 1, lines 17 to 23 of queue.rs, with a box on lines 21 to 23 and the label the other end.">
 
 When a document has a `code.link` move or an annotation of another file, `:list` groups the annotations of each step by file. `scene.list` ends the line of an annotation of another file with that file. For example:
 
@@ -664,6 +772,49 @@ At step 2, Tiza draws the stroke of the box. The note comes in at once.
 |---|---|
 | `"draw"` | Tiza draws the stroke of the annotation along its path. The code that the annotation colors fades in with the stroke. Then the text of the annotation fades in. |
 | `"fade"` | The annotation fades in, with its text. On a spotlight, the dim fades in and fades out. |
+
+Each image under this paragraph is a real `tiza render` export of the document above it, from step 0 to step 3. An animated export shows the enter effects as the TUI does.
+
+`draw` on a box at step 1, an arrow at step 2 and an underline at step 3:
+
+<!-- frame id=effect-draw doc=docs/frames/effect-draw.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "b1", "step": 1, "type": "box", "from_line": 6, "to_line": 8,
+     "label": "shared", "effect": "draw"},
+    {"id": "a1", "step": 2, "type": "arrow", "from": {"line": 2, "col": 8},
+     "to": {"line": 3, "col": 10}, "label": "moves", "effect": "draw"},
+    {"id": "h1", "step": 3, "type": "highlight", "span": {"line": 7, "start": 16, "end": 18},
+     "emphasis": "underline", "label": "borrow", "effect": "draw"}
+  ]
+}
+```
+
+<img src="../images/format/effect-draw.webp" width="559" alt="Lines 1 to 8. At step 1, the border of a box on lines 6 to 8 is drawn, then the label shared comes in. At step 2, an arrow from s on line 2 to s on line 3 is drawn. At step 3, a line is drawn under &t on line 7.">
+
+`fade` on a note at step 1 and on a spotlight at step 2. The spotlight has no `until`, so its dim fades out at step 3:
+
+<!-- frame id=effect-fade doc=docs/frames/effect-fade.tiza animate=0 -->
+```json
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "s moves into takes",
+     "effect": "fade"},
+    {"id": "s1", "step": 2, "type": "spotlight", "from_line": 6, "to_line": 8,
+     "effect": "fade"},
+    {"id": "n2", "step": 3, "type": "note", "line": 8, "text": "t is still here"}
+  ]
+}
+```
+
+<img src="../images/format/effect-fade.webp" width="528" alt="Lines 1 to 8. At step 1, the note s moves into takes fades in. At step 2, lines 1 to 5 and the note fade to dim. At step 3, the dim fades out, and the note t is still here comes in at once.">
 
 - `draw` needs a stroke. A box, a callout, an arrow, and a highlight or a mark with the emphasis `underline`, `brackets` or `strike` have a stroke. A note, a spotlight, and a highlight or a mark with `fill` do not have a stroke.
 - An annotation from a file can have `draw` without a stroke. It comes in with no effect, and `tiza check` gives the warning `effect`.

@@ -1,6 +1,6 @@
 # Step and file commands
 
-Use these commands to go to a step, to show another file, and to follow the editor. A frame shows one step, so this page has no frames.
+Use these commands to go to a step, to show another file, and to follow the editor. A frame shows one step, so this page has no frames. An animated frame of a `code.link` move is in [Several files](../document-format.md#several-files).
 
 ## `:step`
 
@@ -50,7 +50,7 @@ At step 1 or later, shows another file from this step on.
 :link
 ```
 
-For example, `:link src/lib.rs:10-30` shows lines 10 to 30 of `src/lib.rs` from the step on screen. Tiza adds a `code.link` move.
+For example, `:link src/lib.rs:10-30` shows lines 10 to 30 of `src/lib.rs` from the step on screen. Tiza adds a `code.link` move. The frame of a `code.link` move is in [Several files](../document-format.md#several-files).
 
 - At step 0, `:link PATH` does the same as `:ref PATH`. See [The document and its code](../document-format.md#the-document-and-its-code).
 - A range can be `A-B`, `A..B` or `A`.

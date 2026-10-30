@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "6-8"},
+  "moves": [
+    {"at_step": 1, "action": "code.patch", "op": "delete", "find": "println!"}
+  ]
+}

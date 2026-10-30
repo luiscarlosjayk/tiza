@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-4"},
+  "moves": [
+    {"at_step": 1, "action": "code.link", "file": "queue.rs", "lines": "17-23"}
+  ],
+  "annotations": [
+    {"id": "b1", "step": 1, "type": "box", "file": "queue.rs",
+     "from_line": 21, "to_line": 23, "label": "the other end"}
+  ]
+}

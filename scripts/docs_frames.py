@@ -27,10 +27,28 @@ code does not have) stops the script.
 - The image goes where the src of its <img> points, and the `width` of the
   <img> becomes the width of the frame in CSS pixels (half its pixels).
 
-Usage: docs_frames.py TIZA [--out DIR] [PAGE...]
+A frame can also show a document of the repository as it is, with no
+commands, for a move or a field that no `:` command makes:
+
+    <!-- frame id=ID doc=PATH [step=N | animate=0|1] [interval=S] [width=W] [theme=…] -->
+
+    <img src="../images/format/ID.webp" width="0" alt="...">
+
+- `step=N` exports step N, a still. A `doc=` frame needs `step=` or
+  `animate=`.
+- `animate=0` exports every step from step 0 as an animated WebP, with
+  the typing and the enter effects; `animate=1` starts at step 1
+  (`--skip-zero`). A `code=` frame takes `animate=` too.
+- `interval=S` is the time of each step in seconds (`--interval`).
+- The page shows the JSON of the document next to its frame. The document
+  and its code go in docs/frames/.
+
+Usage: docs_frames.py TIZA [--out DIR] [--only-doc] [PAGE...]
 Without PAGE: every page under docs/ with a frame comment. With --out, the
 pages and the images go under DIR, at their paths in the repository, and
-the repository does not change.
+the repository does not change. With --only-doc, only the `doc=` frames:
+the check of the docs site makes them again and compares them with the
+committed images (site/checks).
 """
 import argparse
 import atexit
@@ -61,9 +79,47 @@ def no_config():
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRAME = re.compile(
-    r"<!-- frame id=(\S+) code=(\S+):(\d+-\d+)((?: \w+=\S+)*) -->\n```\n(.*?)\n```", re.S
-)
+COMMENT = re.compile(r"<!-- frame id=(\S+)((?: \w+=\S+)*) -->")
+# The block of `:` commands right after the comment of a `code=` frame.
+BLOCK = re.compile(r"\n```\n(.*?)\n```", re.S)
+KEYS = {"code", "doc", "width", "theme", "step", "animate", "interval"}
+
+
+def frames_of(page_path, page):
+    """The frames of a page, each with its id, its options, its `:` commands
+    (`None` for a `doc=` frame), and the end of its comment and block. A
+    frame that the script cannot make stops it."""
+    out = []
+    for m in COMMENT.finditer(page):
+        fid = m.group(1)
+        where = f"docs-frames: {page_path}: frame {fid}"
+        opts = dict(x.split("=", 1) for x in m.group(2).split())
+        unknown = sorted(set(opts) - KEYS)
+        if unknown:
+            sys.exit(f"{where}: unknown key {unknown[0]}= (the keys: {', '.join(sorted(KEYS))})")
+        if ("code" in opts) == ("doc" in opts):
+            sys.exit(f"{where}: give code=PATH:A-B or doc=PATH, one of the two")
+        if "step" in opts and "animate" in opts:
+            sys.exit(f"{where}: step= is a still and animate= an animation: give one of the two")
+        if "step" in opts and "code" in opts:
+            sys.exit(f"{where}: a code= frame shows the step on screen: step= is for doc=")
+        if "doc" in opts and "step" not in opts and "animate" not in opts:
+            sys.exit(f"{where}: a doc= frame needs step=N (a still) or animate=0|1")
+        if "interval" in opts and "animate" not in opts:
+            sys.exit(f"{where}: interval= is only for animate=")
+        for key, pattern in [("step", r"\d+"), ("animate", r"[01]"), ("width", r"\d+"),
+                             ("interval", r"\d+(\.\d+)?"), ("code", r"\S+:\d+-\d+")]:
+            if key in opts and not re.fullmatch(pattern, opts[key]):
+                sys.exit(f"{where}: {key}={opts[key]} is not a value of {key}=")
+        cmds, end = None, m.end()
+        if "code" in opts:
+            b = BLOCK.match(page, m.end())
+            if not b:
+                sys.exit(f"{where}: no block of `:` commands right after the comment")
+            cmds = [line for line in b.group(1).split("\n") if line.startswith(":")]
+            end = b.end()
+        out.append((fid, opts, cmds, end))
+    return out
 
 
 def run(*args, timeout=120, **kw):
@@ -210,6 +266,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     ap.add_argument("tiza", help="the tiza binary")
     ap.add_argument("--out", default=ROOT, help="write the pages and the images under this folder")
+    ap.add_argument("--only-doc", action="store_true",
+                    help="only the doc= frames (no TUI): the check of the docs site")
     ap.add_argument("pages", nargs="*", help="pages relative to the repository (default: every page with a frame)")
     # Intermixed: `TIZA --out DIR PAGE` and `TIZA PAGE --out DIR` both work.
     a = ap.parse_intermixed_args()
@@ -232,20 +290,23 @@ def main():
     seen = set()
     for page_path in pages:
         page = read(os.path.join(ROOT, page_path))
-        for m in FRAME.finditer(page):
-            fid = m.group(1)
+        for fid, opts, _, end in frames_of(page_path, page):
             if not re.fullmatch(r"[A-Za-z0-9_-]+", fid):
                 sys.exit(f"docs-frames: {page_path}: the frame id {fid!r} has a character "
                          "other than a letter, a digit, - or _")
             if fid in seen:
                 sys.exit(f"docs-frames: {page_path}: a second frame has the id {fid}")
             seen.add(fid)
-            code = os.path.realpath(os.path.join(ROOT, m.group(2)))
-            if os.path.isabs(m.group(2)) or os.path.commonpath([code, root]) != root \
-                    or not os.path.isfile(code):
-                sys.exit(f"docs-frames: {page_path}: frame {fid}: code={m.group(2)} is not a file "
+            key = "code" if "code" in opts else "doc"
+            rel = opts[key].rsplit(":", 1)[0] if key == "code" else opts[key]
+            path = os.path.realpath(os.path.join(ROOT, rel))
+            if os.path.isabs(rel) or os.path.commonpath([path, root]) != root \
+                    or not os.path.isfile(path):
+                sys.exit(f"docs-frames: {page_path}: frame {fid}: {key}={opts[key]} is not a file "
                          "of the repository")
-            img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[m.end():])
+            if key == "doc" and not rel.endswith(".tiza"):
+                sys.exit(f"docs-frames: {page_path}: frame {fid}: doc={rel} is not a .tiza document")
+            img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[end:])
             if not img:
                 sys.exit(f"docs-frames: {page_path}: frame {fid} has no <img> after it")
             dest = os.path.realpath(os.path.join(out, os.path.dirname(page_path), img.group(1)))
@@ -260,25 +321,42 @@ def main():
     with tempfile.TemporaryDirectory(prefix="docs-frames-", dir=tmp_base) as tmp:
         for page_path in pages:
             page = read(os.path.join(ROOT, page_path))
-            for m in FRAME.finditer(page):
-                fid, path, rng, attrs, block = m.groups()
-                opts = dict(x.split("=", 1) for x in attrs.split())
-                cmds = [line for line in block.split("\n") if line.startswith(":")]
-                img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[m.end():])
+            for fid, opts, cmds, end in frames_of(page_path, page):
+                if a.only_doc and "doc" not in opts:
+                    continue
+                img = re.search(r'<img src="([^"]*/%s\.webp)"' % re.escape(fid), page[end:])
                 dest = os.path.realpath(os.path.join(out, os.path.dirname(page_path), img.group(1)))
                 work = os.path.join(tmp, fid)
                 os.makedirs(work)
                 sock = os.path.join(tmp, f"{frames}.sock")
                 frames += 1
-                doc = make_doc(tiza, fid, path, rng, cmds, work, sock)
-                code = read(os.path.join(ROOT, path))
-                width = opts.get("width") or narrowest_width(tiza, doc, work, "…" in code)
+                if "code" in opts:
+                    path, rng = opts["code"].rsplit(":", 1)
+                    doc = make_doc(tiza, fid, path, rng, cmds, work, sock)
+                    ellipsis = "…" in read(os.path.join(ROOT, path))
+                else:
+                    # The document as it is in the repository: the export
+                    # only reads it.
+                    doc = os.path.join(ROOT, opts["doc"])
+                    wide = run(tiza, "render", doc, "--format", "txt", "--width", "400", "--out", "-",
+                               cwd=work)
+                    if wide.returncode:
+                        sys.exit(f"docs-frames: {fid}: {wide.stderr.strip()}")
+                    ellipsis = "…" in wide.stdout
+                width = opts.get("width") or narrowest_width(tiza, doc, work, ellipsis)
                 theme = [] if opts.get("theme") == "doc" else ["--theme", opts.get("theme", "dark")]
-                # The step on screen: without --step, an export shows the
-                # last step of the document, not the step it was saved at.
-                step = str(json.loads(read(doc))["step"])
+                if "animate" in opts:
+                    # Every step, with the typing and the enter effects.
+                    steps = ["--skip-zero"] if opts["animate"] == "1" else []
+                    steps += ["--interval", opts["interval"]] if "interval" in opts else []
+                elif "step" in opts:
+                    steps = ["--step", opts["step"]]
+                else:
+                    # The step on screen: without --step, an export shows the
+                    # last step of the document, not the step it was saved at.
+                    steps = ["--step", str(json.loads(read(doc))["step"])]
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
-                r = run(tiza, "render", doc, "--step", step, "--format", "webp", "--font-size", "13",
+                r = run(tiza, "render", doc, *steps, "--format", "webp", "--font-size", "13",
                         "--scale", "2", "--width", str(width), *theme, "--out", dest, cwd=work)
                 if r.returncode:
                     sys.exit(f"docs-frames: {fid}: {r.stderr.strip()}")

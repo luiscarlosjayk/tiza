@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "n1", "step": 1, "type": "note", "line": 3, "text": "s moves into takes",
+     "effect": "fade"},
+    {"id": "s1", "step": 2, "type": "spotlight", "from_line": 6, "to_line": 8,
+     "effect": "fade"},
+    {"id": "n2", "step": 3, "type": "note", "line": 8, "text": "t is still here"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "source": {},
+  "code": {"file": "ownership.rs", "lines": "1-8"},
+  "annotations": [
+    {"id": "b1", "step": 1, "type": "box", "from_line": 6, "to_line": 8,
+     "label": "shared", "effect": "draw"},
+    {"id": "a1", "step": 2, "type": "arrow", "from": {"line": 2, "col": 8},
+     "to": {"line": 3, "col": 10}, "label": "moves", "effect": "draw"},
+    {"id": "h1", "step": 3, "type": "highlight", "span": {"line": 7, "start": 16, "end": 18},
+     "emphasis": "underline", "label": "borrow", "effect": "draw"}
+  ]
+}
