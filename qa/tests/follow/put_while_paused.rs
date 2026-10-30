@@ -254,3 +254,104 @@ fn a_pause_with_a_file_that_cannot_be_read_takes_the_code_on_screen() {
     live.api_ok("scene.put", got(&live, |_| {}));
     assert_eq!(base(&live), lines(OLD));
 }
+
+#[test]
+fn a_put_while_a_change_waits_cannot_change_the_file_that_follow_reads() {
+    let (live, src) = paused_at("put-paused-follows", 2);
+    save_and_read(&live, &src, NEW.as_bytes());
+    let before = pause(&live);
+    let said = "scene.put: follow is paused and reads main.rs: a put cannot change `follows` \
+                now. Send `follows` as scene.get gives it, or leave it out";
+    for other in [json!({"file": "main0.rs"}), json!({"file": "nowhere.rs"})] {
+        let put = got(&live, |doc| doc["follows"] = other.clone());
+        assert_eq!(refused(&live, put), said, "{other}");
+    }
+    assert_eq!(pause(&live), before);
+    // Left out, `null`, or as scene.get gives it: fine.
+    live.api_ok(
+        "scene.put",
+        got(&live, |doc| {
+            doc.as_object_mut().unwrap().remove("follows");
+        }),
+    );
+    live.api_ok("scene.put", got(&live, |doc| doc["follows"] = Value::Null));
+    live.api_ok("scene.put", got(&live, |_| {}));
+    // The change of main.rs is what loads.
+    live.api_ok("step.set", json!({"step": 1}));
+    assert_eq!(base(&live), lines(NEW));
+}
+
+/// The message on the bar.
+fn bar_message(live: &Live) -> String {
+    live.message().unwrap_or_default().0
+}
+
+#[test]
+fn a_put_or_a_move_that_moves_the_resume_step_renews_the_notice() {
+    // A put that moves the patch to step 1: the change loads at step 0.
+    let (live, src) = paused_at("put-paused-notice", 2);
+    save_and_read(&live, &src, NEW.as_bytes());
+    assert_eq!(bar_message(&live), "step 1 loads the change to main.rs");
+    let put = got(&live, |doc| {
+        for m in doc["moves"].as_array_mut().unwrap() {
+            if m["action"] == "code.patch" {
+                m["at_step"] = json!(1);
+            }
+        }
+    });
+    live.api_ok("scene.put", put);
+    assert_eq!(pause(&live).2, json!(0));
+    assert_eq!(bar_message(&live), "step 0 loads the change to main.rs");
+    // A move added at step 1 does the same.
+    let (live, src) = paused_at("move-paused-notice", 2);
+    save_and_read(&live, &src, NEW.as_bytes());
+    live.api_ok(
+        "move.add",
+        json!({"at_step": 1, "action": "code.patch", "op": "insert", "position": "1", "content": "// new"}),
+    );
+    assert_eq!(pause(&live).2, json!(0));
+    assert_eq!(bar_message(&live), "step 0 loads the change to main.rs");
+}
+
+#[test]
+fn a_put_or_a_move_that_ends_the_pause_loads_the_change_before_its_reply() {
+    // The save has one more line, so the reply's `lines` shows the load.
+    let longer = format!("{NEW}// end\n");
+    let status = |live: &Live| live.api_ok("status", json!({}));
+    // A put without the patch, and a put at the resume step.
+    for (name, edit) in [
+        ("put-paused-nopatch", "nopatch"),
+        ("put-paused-step1", "step1"),
+    ] {
+        let (live, src) = paused_at(name, 2);
+        save_and_read(&live, &src, longer.as_bytes());
+        let put = got(&live, |doc| {
+            if edit == "nopatch" {
+                doc["moves"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|m| m["action"] != "code.patch");
+            } else {
+                doc["step"] = json!(1);
+            }
+        });
+        let reply = live.api_ok("scene.put", put);
+        assert_eq!(base(&live), lines(&longer), "{edit}");
+        assert_eq!(reply["lines"], json!(5), "{edit}: {reply}");
+        assert_eq!(
+            reply["revision"],
+            status(&live)["revision"],
+            "{edit}: {reply}"
+        );
+    }
+    // A move deleted: the patch, move #2.
+    let (live, src) = paused_at("move-paused-delete", 2);
+    save_and_read(&live, &src, longer.as_bytes());
+    live.api_ok("step.set", json!({"step": 1}));
+    live.api_ok("step.set", json!({"step": 2}));
+    assert_eq!(base(&live), lines(&longer));
+    save_and_read(&live, &src, NEW.as_bytes());
+    let reply = live.api_ok("move.delete", json!({"index": 2}));
+    assert_eq!(base(&live), lines(NEW));
+    assert_eq!(reply["revision"], status(&live)["revision"], "{reply}");
+}

@@ -210,8 +210,9 @@ Tiza refuses a `scene put` in these saving cases. The error code is `invalid_arg
 | Message | When |
 |---|---|
 | `scene.put: the code sent is not what FILE holds now, and follow is on (the screen shows the file as it is): scene.get again; to change the code, edit FILE` | Follow mode is on, and the code sent for the main file is not the text of the file now. |
+| `scene.put: follow is paused and reads FILE: a put cannot change `follows` now. Send `follows` as scene.get gives it, or leave it out` | Follow mode is paused with a change that waits, and the put sends another `follows`. |
 | `scene.put: follow is paused, and the code on screen is not what FILE holds now: FILE loads at step N or earlier. Send the code as scene.get gives it; to change the code, edit FILE` | Follow mode is paused with a change that waits, and the code sent is not the code on screen. With `resume_step` 0, the message says `at step 0`. A `scene.put` of the code on screen works. See [Agents and follow mode](../guides/follow-the-editor.md#agents-and-follow-mode). |
-| `scene.put: FILE cannot be read (ERROR) and the document reads its code from it: put the file back, or :embed to keep the copy loaded` | The open document reads code from a file, the main file or a linked file that Tiza read before. Tiza cannot read that file now. |
+| `scene.put: FILE cannot be read (ERROR) and the document reads its code from it: put the file back, or :embed to keep the copy loaded` | The open document reads code from a file, the main file or a linked file that Tiza read before. Tiza cannot read that file now. While follow mode is paused, a put of the code on screen works also then. |
 
 `ERROR` is the read error of Tiza. It ends with the error text of the system.
 
