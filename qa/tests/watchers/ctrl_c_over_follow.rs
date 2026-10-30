@@ -40,8 +40,9 @@ impl Run {
 /// and plays `steps`:
 /// - `["k", text, conds]` sends the keys, then waits for `conds` (below);
 /// - `["wait", conds]` waits for `conds`;
-/// - `["alive"]` records whether the child is still running (a short
-///   settle first: it checks that a key did not make Tiza quit);
+/// - `["alive"]` records whether the child still answers a request. Put it
+///   after a step that waits for the effect of its key: a key that made
+///   Tiza quit ends the loop before that request;
 /// - `["api", method, params]` records the reply of the local API;
 /// - `["bg_api", method, params]` calls it without waiting (a proposal
 ///   waits for the presenter);
@@ -66,41 +67,9 @@ file = sys.argv[4]
 steps = json.loads(sys.argv[5])
 os.chdir(cwd)
 ROWS, COLS = 30, 120
-SEQ = re.compile(r"\x1b\[([0-9;?<>=]*)([ -/]*)([@-~])|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[P^_][^\x1b]*\x1b\\|\x1b.|([^\x1b])", re.S)
-
 def screen(raw):
-    """The rows a terminal shows after `raw`: the cursor moves, erases and
-    text that ratatui writes through crossterm; styles, modes and OSC
-    strings change no cell."""
-    grid = [[" "] * COLS for _ in range(ROWS)]
-    r = c = 0
-    for m in SEQ.finditer(raw.decode(errors="replace")):
-        params, final, ch = m.group(1), m.group(3), m.group(4)
-        if ch is not None:
-            if ch == "\r":
-                c = 0
-            elif ch == "\n":
-                r = min(r + 1, ROWS - 1)
-            elif ch >= " ":
-                w = 0 if unicodedata.combining(ch) else (2 if unicodedata.east_asian_width(ch) in "WF" else 1)
-                if w and c < COLS:
-                    grid[r][c] = ch
-                    if w == 2 and c + 1 < COLS:
-                        grid[r][c + 1] = ""
-                c += w
-        elif final is not None and not params.startswith("?"):
-            n = [int(x) if x else 0 for x in params.split(";")] if params else []
-            first = n[0] if n else 0
-            if final in "Hf":
-                r = min(max((n[0] if n else 1) - 1, 0), ROWS - 1)
-                c = max((n[1] if len(n) > 1 else 1) - 1, 0)
-            elif final == "J" and first == 2:
-                grid = [[" "] * COLS for _ in range(ROWS)]
-            elif final == "K":
-                lo, hi = {1: (0, c + 1), 2: (0, COLS)}.get(first, (c, COLS))
-                for x in range(lo, min(hi, COLS)):
-                    grid[r][x] = " "
-    return ["".join(row).rstrip() for row in grid]
+    """The rows a terminal shows after `raw` (`terminal_rows` of the prelude)."""
+    return terminal_rows(raw, ROWS, COLS)
 
 def api(method, params):
     r = subprocess.run([binary, "--socket", "s.sock", "api", method, json.dumps(params)],
@@ -143,8 +112,9 @@ if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists("s.sock"), 10
             if not wait(step[1], "wait"):
                 break
         elif op == "alive":
-            s.settle(0.3)
-            print("ALIVE", 1 if s.p.poll() is None else 0, flush=True)
+            # The step before waited for the effect of its key: had that
+            # key made Tiza quit, no request would get a reply now.
+            print("ALIVE", 1 if api("status", {}) is not None and s.p.poll() is None else 0, flush=True)
         elif op == "api":
             print("API", json.dumps(api(step[1], step[2])), flush=True)
         elif op == "bg_api":

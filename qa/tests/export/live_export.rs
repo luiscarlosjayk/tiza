@@ -1310,6 +1310,8 @@ def api(*args):
     return r.returncode, r.stdout + r.stderr
 s = Pty([binary, "--socket", sock, doc], 30, 120, env=env)
 if s.wait_for(lambda out: b"\x1b[?1049h" in out and os.path.exists(sock), 10, "first frame"):
+    # Not a check: the frames of the start come before `before`. A late
+    # frame of the start shows only step 0, which has no key in it.
     s.settle(0.3)
     before = len(s.out)
     code, text = api("{method}", '{params}')
@@ -1347,7 +1349,13 @@ fn a_dropped_request_leaves_no_animation_drawing_the_value() {
         "step.next",
         "{}",
         r##"
-    s.settle(2.0)
+    # A key ends a typing that runs and draws all its text. So a command
+    # line that opens after the reply shows that no animation of the
+    # dropped request was left: else the key would end it, with the key on
+    # screen, and the line would not open. No time to wait.
+    s.send(b":xyzzy")
+    s.wait_for(lambda out: "xyzzy" in plain(out[before:]), 10, "the command line")
+    s.send(b"\x1b")
     # What a viewer reads: the text without escape sequences (the typed
     # characters land one by one between cursor moves).
     print("AFTER", json.dumps(plain(s.out[before:])), flush=True)
@@ -1361,6 +1369,7 @@ fn a_dropped_request_leaves_no_animation_drawing_the_value() {
         .find(|l| l.starts_with("REPLY"))
         .unwrap_or_else(|| panic!("{out}"));
     assert!(reply.contains("internal"), "{out}");
+    assert!(!out.contains("WAIT_TIMEOUT"), "{out}");
     assert!(out.contains("STEP 0"), "{out}");
     for what in ["AFTER", "RAW"] {
         let after = out
